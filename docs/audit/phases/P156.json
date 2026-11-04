@@ -55,8 +55,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py:1859-2053 (_reach_shell/_reach_facts/_gate_reach), call sites :4813, :8425, :11356; plugins/audit/scripts/governance/_locks.py:141",
         "issue": "The gate-reach check runs inside the manifest index lock (called from _locked_add, _locked_done and _locked_scope between acquire and release). Each call starts the project's listing commands, git ls-files and reads every .py in the tree: measured 5.5 s to 26.6 s per P156 task, where add and done held the lock well under a second before. Another index-lock taker (an executor's file-return in a parallel wave, the panel, another verb) waits WAIT_SECONDS = 5.0 for a live holder and is then refused. In add and scope the result is only printed, so the lock is held for nothing; in add it runs after the write, so an exception in this advisory path would report a successful add as an internal error.",
-        "resolution": "For add and scope compute reach after the lock is released, from the written plan. For done compute it before acquiring the lock from a pre-read, and write the note under the lock only if the task's files and gate are unchanged. Wrap the advisory call fail-open (a 'gate reach not asked: <why>' line). Add a case holding the lock across a slow listing stub and asserting a concurrent note is not refused.",
-        "fixTask": "P156.12-3st"
+        "resolution": "fixed in P156.12-3st (f0042ffc0001): For add and scope compute reach after the lock is released, from the written plan. For done compute it before acquiring the lock from a pre-read, and write the note under the lock only if the task's files and gate are unchanged. Wrap the advisory call fail-open (a 'gate reach not asked: <why>' line). Add a case holding the lock across a slow listing stub and asserting a concurrent note is not refused.",
+        "fixTask": "P156.12-3st",
+        "commit": "f0042ffc0001",
+        "status": "fixed"
       },
       {
         "id": "P156-R5",
@@ -87,8 +89,10 @@
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py:1859-1880 (_reach_shell), :1933-1975 (_reach_facts) vs plugins/audit/scripts/governance/run-test-gate.py _affected_facts/_shell",
         "issue": "The gate-reach fact gathering is a second hand copy of run-test-gate's _affected_facts and has already drifted: plain subprocess.run with no process group (a timed-out listing's children outlive the verb) and different timeouts. A later change to the facts run-test-gate gathers silently changes only one answer.",
-        "resolution": "Move the fact gathering, shell runner with group teardown included, into one shared helper both may import per _deps.LAYERS; have run-test-gate's affected steps and the gate-reach check call it; delete the copy.",
-        "fixTask": "P156.12-3st"
+        "resolution": "fixed in P156.12-3st (f0042ffc0001): Move the fact gathering, shell runner with group teardown included, into one shared helper both may import per _deps.LAYERS; have run-test-gate's affected steps and the gate-reach check call it; delete the copy.",
+        "fixTask": "P156.12-3st",
+        "commit": "f0042ffc0001",
+        "status": "fixed"
       },
       {
         "id": "P156-R9",
@@ -123,7 +127,7 @@
         "fixTask": "P156.17-3st"
       }
     ],
-    "outcome": "[findings: 12 - 0 high, 4 med, 8 low; 1 with a recorded fix commit]"
+    "outcome": "[findings: 12 - 0 high, 4 med, 8 low; 3 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -934,7 +938,7 @@
     {
       "id": "P156.12-3st",
       "title": "The gate-reach check runs outside the index lock, fail-open, through the one shared fact gathering run-test-gate uses",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix P156-R4 and P156-R8 (docs/audit/phases/P156.json review.findings). R4: the gate-reach check runs listing commands, git ls-files and a tree read while the manifest index lock is held (measured up to tens of seconds), so other lock takers are refused after their wait. Move it out of the lock as the resolution says (add/scope after release from the written plan; done before acquiring, with the note written under the lock only if files and gate are unchanged), fail-open, with a case holding the lock across a slow listing stub. R8: the fact gathering is a hand copy of run-test-gate's, already drifted (no process-group teardown, different timeouts); move it into one shared helper both call (respect _deps.LAYERS), delete the copy.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -975,14 +979,29 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f0042ffc0001",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "R8: one fact gathering in _affected_tests.py's new last section: run_listing (plan node preamble + shell, stderr folded, _proc_group group kwargs, stop_and_drain on timeout; exit 127 could-not-run, 124 timed-out), tree_files, prefetch_listings, gather_facts(project, meta, changed, seen=None, sources=True), LISTING_TIMEOUT_SECONDS / GIT_TIMEOUT_SECONDS; module docstring now says the selection is pure and the gathering is that section. run-test-gate.py _affected_facts delegates to it; its AFFECTED_* constants and unused _gate_derive import removed. audit-task.py's copy (_reach_shell, _reach_tree_files, _reach_sources, _prefetch_listings, _reach_facts, GATE_REACH_TIMEOUT_SECONDS, GATE_REACH_WORKERS, _PATTERN_CHARS) deleted; _gate_reach calls the shared gathering (tree list: git's, else _tracked_files). Edges allowed by _deps.LAYERS (_affected_tests L6 -> _proc_group L4, _loader L1). R4: add and scope return (0, _reach_ask(...)) from the locked body and _reach_after_release reads the reach from the written plan after release (a --json payload held back so it is one object); done reads it before acquiring (_reach_before_lock) and _reach_held writes the note under the lock only if files and gate entries are unchanged, else 'WARNING: gate reach not recorded:' (gateReachNotRecorded); _reach_or_why fails open as 'WARNING: gate reach not asked: <why>' (gateReachNotAsked). _plan_location factored out of _under_lock. Pattern class: _task_outputs.entry_is_pattern(half, entry) is the one reading (only an outputs entry can be a pattern), asked by _wave._entry_is_pattern, _wave._segments and audit-task._names_one_file; _wave's local _is_pattern deleted (_doctor_hygiene's _is_pattern left: it reads hygiene rows, not declared entries). Docs: PLUGIN-BUILD-GUIDE.md (_affected_tests section, gate-reach paragraphs, tree line, module map matched to `_deps.py --render`), reference/verbs-in-full.md (add/scope reach passage and done's reach passage), _deps.py layer comments. Tests: grt8-grt13, shf1-shf2, af38-af42, to6; test_run_test_gate _shared_facts_cases reads M._affected._gate_derive. Mutations in a throwaway copy: scope compare dropped -> grt12 red; compare forced 'changed' -> grt6 red; directory rule dropped -> grt9 red; fail-open narrowed -> grt10 red; group kwargs removed -> af38 red; seen cache ignored -> af40, af42 red; entry_is_pattern ignores the half -> to6, grt8 red. Runs: brief gate plus test__areas, test__manifest_vocab, test__output_lints, test__help_lints, test__refs: 10/10 files ok, 2996 cases, exit 0; 45 dependant suites (wave, task_outputs, proc_group, derive_phase_gate, gate_derive, config, invariants, close_phase, drive_phase, integrate_task, full_gate, commit_task_work, filed_returns, stamp_verification, hooks, require_plan and others): 45/45 ok, 7494 cases, exit 0; tools/gate-parity.py exit 0; tools/measure-context.py --gate exit 0 (GATE OK); ruff clean; vermin minimum 3.8. Dependants: full-gate.py and run-test-gate.py use no changed audit-task signature; test_derive_phase_gate's gate_runner._affected_facts kept as a delegate; test__proc_group pgc6 holds because run-test-gate._shell is untouched and still calls stop_and_drain; integrate-task.py and drive-phase.py (via _wave) see an identical predicate (test__wave 21/21); tools/affected.py and test__gate_derive use test__affected_tests' unchanged _cases; the rest are covered by the sweeps above.",
+        "descriptive": "The gate-reach check no longer holds the manifest index lock, fails open, reads a bracketed files entry as a literal path, and gathers its facts through the one helper run-test-gate's affected steps use."
       },
       "startedAt": "2026-11-04T15:28:09Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-04T16:06:22Z",
+      "verifiedBy": [
+        "grt8 a files entry holding [ is asked as a literal path and reached via the listing",
+        "grt9 a directory entry is still named not asked (second direction)",
+        "grt10 an exception in the reach reading leaves add written, exit 0, with a not-asked line",
+        "grt11 a note taken while add is inside a slow listing is not refused",
+        "grt12 a scope widening files while done reads its reach is not refused, and done records no note and says so",
+        "grt13 the reach runs its listings through _affected_tests.run_listing and no copied helper remains",
+        "shf1 run-test-gate's affected facts are the shared gathering's",
+        "shf2 under the shared limits, with no second copy of them in run-test-gate",
+        "af38 a timed-out listing's background grandchild is stopped",
+        "af39 a listing runs with the node preamble, stderr folded, exit kept",
+        "af40 one seen runs each command once",
+        "af41 the gathered facts are the ones select reads",
+        "af42 a prefetch fills seen and the gathering reads it",
+        "to6 only an outputs entry can be a pattern"
+      ],
       "notes": [
         {
           "at": "2026-11-04T15:16:59Z",
@@ -1010,12 +1029,24 @@
         "runId": "2026-11-04T16:06:19Z.36f3ac",
         "status": "passed",
         "at": "2026-11-04T16:06:19Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "f0042ffc0001",
+        "at": "2026-11-04T16:06:22Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-04T16:01:15Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test_run_test_gate.py tests/test__affected_tests.py tests/test__locks.py tests/test__deps.py` in a throwaway tree at HEAD exited 1 with 4 of 14 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - grt8 (house FAIL), grt10 (house FAIL), grt11 (house FAIL), grt12 (house FAIL): SELFTEST FAILED: 13/14 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P156.13-3st",
       "title": "restore reports a dropped copy as its own settled outcome, and the phase-review stop prints its submit block",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix P156-R2 and P156-R3 (docs/audit/phases/P156.json review.findings). R2: restore_tree exits E_USAGE for a copy restore_copy just dropped; report the drop as its own outcome (exit 0, a line saying the copy was dropped and next goes on), keeping E_USAGE for no copy standing; a drive-level case asserting exit and text. R3: the no-phase-review-return stop goes through the same brief_submit helper the reviewer stop uses; a case.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1045,14 +1076,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-04T16:06:50Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1072,12 +1103,18 @@
       "fixes": [
         "P156-R2",
         "P156-R3"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-04T16:33:28Z.e9ed3f",
+        "status": "passed",
+        "at": "2026-11-04T16:33:28Z"
+      }
     },
     {
       "id": "P156.14-3st",
       "title": "Every batch list field goes through the shared list reader, and the reader refuses only real joins",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix P156-R5, P156-R6 and P156-R7 (docs/audit/phases/P156.json review.findings). R5: add --from-file passes files, tests.add, tests.gate, phase.testGate, dependsOn and blockedBy to the task builder without the shared reader, so a joined entry is still stored; run each batch list field through the same per-reading predicate and extend the walk case to the batch keys. R6: the each-part-is-an-entry predicates refuse legitimate prose entries (a tests-add description with a comma, an accept-open reason with an `=`); tighten to whole-entry shapes with allow cases. R7: --gate-drop must be able to drop a legacy joined entry the gate holds; a case.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1086,7 +1123,8 @@
         "tests/test__manifest_phases.py",
         "plugins/audit/reference/verbs-in-full.md",
         "plugins/audit/scripts/manifest/audit-task.py",
-        "tests/test_audit_task.py"
+        "tests/test_audit_task.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1107,14 +1145,14 @@
       "dependsOn": [
         "P156.12-3st"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-04T16:07:17Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1139,7 +1177,8 @@
         "P156-R5",
         "P156-R6",
         "P156-R7"
-      ]
+      ],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P156.15-3st",

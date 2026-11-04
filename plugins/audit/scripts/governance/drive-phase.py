@@ -1601,8 +1601,8 @@ def render_decision(ctx, pending):
     lines = step_text("decide-%s" % (name,), task=pending.get("task"),
                       phase=ctx["phase"], why=pending.get("why") or "",
                       run=verdict_said(pending))
-    if name == "no-reviewer-return":
-        lines += unfiled_submit_lines(pending, "reviewer")
+    if name in UNFILED_SUBMIT_ROLE:
+        lines += unfiled_submit_lines(pending, UNFILED_SUBMIT_ROLE[name])
     if options:
         lines.append(ANSWER_LINE % {
             "phase": ctx["phase"], "options": "|".join(options),
@@ -1622,6 +1622,13 @@ def render_decision(ctx, pending):
 # read back from the brief the drive wrote, never composed again here, since
 # the brief is the one home of that command (`audit-lookup.submit_command`)
 # and an entry point may not load another.
+#
+# The stops a dispatched reviewer's missing return asks, and the words naming
+# that reviewer: each prints the submit block its brief carries.
+UNFILED_SUBMIT_ROLE = {"no-reviewer-return": "reviewer",
+                       "no-phase-review-return": "phase reviewer"}
+
+
 def submit_block_of(text):
     """The last fenced `sh` block in a brief's text, fences included, or None:
     every brief ends on its submit block."""
@@ -1634,13 +1641,14 @@ def submit_block_of(text):
     return body[:ends[0] + 1] if ends else None
 
 
-def brief_submit(ctx, task_id, role):
-    """The decision fields naming `role`'s submit command for `task_id`'s
-    current start: `{"submit": lines}` read off its brief through
-    `audit-lookup.py brief --read`, or `{"submitWhy": why}` when the brief
-    could not be read or holds no block - the gap said, never filled."""
+def brief_submit(ctx, node_id, role):
+    """The decision fields naming `role`'s submit command for `node_id`'s
+    current start - a task's, or a phase's under the `phase` role:
+    `{"submit": lines}` read off its brief through `audit-lookup.py brief
+    --read`, or `{"submitWhy": why}` when the brief could not be read or holds
+    no block - the gap said, never filled."""
     code, said, err = run_verb(ctx, "audit-lookup.py", [
-        ctx["manifest"], "brief", task_id, "--role", role, "--read",
+        ctx["manifest"], "brief", node_id, "--role", role, "--read",
         "--project", ctx["project"]])
     if code != 0:
         return {"submitWhy": _clip("its brief could not be read (%s)" % (
@@ -8121,7 +8129,8 @@ def triage(ctx, state, manifest, phase):
             return _stopped(ctx, problem)
         if review is None:
             return decision(ctx, state, "no-phase-review-return", None,
-                            mark["head"][:12])
+                            mark["head"][:12],
+                            brief_submit(ctx, phase["id"], "phase"))
         found = review.get("findings") or []
         if found and not mark.get("findings"):
             stop = record_findings(ctx, phase, found)
@@ -11115,7 +11124,9 @@ def restore_tree(ctx, task_id):
     the tree kept under that key (`keptTrees` - one a wave ended without
     removing, or one a redo set aside, whose marker names the key), which is
     what status names this verb for; the next `next` measures what was put
-    back."""
+    back. A copy the verb drops, having nothing to put back, settles the tree
+    and exits 0 saying so; E_USAGE is kept for a state or tree with no copy to
+    act on."""
     state = read_state(ctx)
     tree = (((state.get("wave") or {}).get("trees") or {}).get(task_id)
             or (state.get("keptTrees") or {}).get(task_id))
@@ -11139,6 +11150,12 @@ def restore_tree(ctx, task_id):
                                 PREFIX, ctx["phase"], task_id, tree,
                                 ", ".join(said["paths"]) or "no path",
                                 " - %s" % (said["error"],) if said["error"] else ""))
+    elif said.get("dropped") is True:
+        # A drop settles the tree, so it is an outcome the drive goes on from -
+        # never the usage exit a state with no copy to act on answers with.
+        code, text = E_OK, ("%s %s: the copy beside %s was dropped - %s; "
+                            "`next` goes on from here" % (
+                                PREFIX, ctx["phase"], tree, said["error"]))
     elif said["restored"] is None:
         code, text = E_USAGE, "%s %s: nothing restored - %s" % (
             PREFIX, ctx["phase"], said["error"])

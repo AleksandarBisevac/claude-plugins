@@ -2173,7 +2173,7 @@ def _restore_settles_cases(check):
     with open(os.path.join(copy, "0.bin"), "wb") as fh:
         fh.write(b"a copy cut off before its index was written\n")
     before = (_av_bytes(tree, rels), _av_status(tree))
-    dropped = _asked("restore_copy", tree, "T1")
+    dropped = partial = _asked("restore_copy", tree, "T1")
     after = _called(M.tree_unsettled, tree)
     check("un14 a copy with no index.json - never whole, so nothing can be put "
           "back from it - is dropped by the restore verb, said as that rather "
@@ -2192,7 +2192,7 @@ def _restore_settles_cases(check):
     _ok, first = _armed([_refusing_drop()], lambda: M.advance_task_tree(
         tree, "T1", head))
     before = (_av_bytes(tree, rels), _av_status(tree))
-    dropped = _asked("restore_copy", tree, "T1")
+    dropped = recorded = _asked("restore_copy", tree, "T1")
     after = _called(M.tree_unsettled, tree)
     check("un15 a copy of a move the marker already recorded, in a tree whose "
           "work is as the copy holds it, is dropped by the restore verb: nothing "
@@ -2228,6 +2228,19 @@ def _restore_settles_cases(check):
           and (_av_bytes(tree, rels), _av_status(tree)) == before
           and _av_head(tree) == head,
           repr((first.get("kept"), held)))
+    tree, _base, _head, _copy = _settle_tree("unsettled-restorenodrop-")
+    none = _asked("restore_copy", tree, "T1")
+    # A drop is its own outcome, not the absence a missing copy is: both answer
+    # `restored` None, so without the field a caller reading the answer cannot
+    # tell a settled tree it goes on from from a tree with nothing to act on.
+    # The twins - a kept copy and no copy at all - fail a field set on every
+    # answer, and the two drops fail one set on none.
+    drops = [one.get("dropped") for one in (partial, recorded, held, none)]
+    check("un17 a dropped copy is answered as its own outcome - `dropped` True "
+          "for the two drops - and a kept copy and a tree with no copy beside "
+          "it answer `dropped` False: %r" % (drops,),
+          drops == [True, True, False, False]
+          and none.get("restored") is None, repr((drops, none)))
     _autocrlf_cases(check)
 
 

@@ -2344,16 +2344,17 @@ def refuse_unsettled(tree, manifest, project, task_id=None, run=None,
 
 def _dropped(answer, copy, why):
     """`answer` for a copy `restore_copy` had nothing to put back from: the
-    copy taken down (`_drop_copy`) and `restored` None, said as `why` and
-    the drop - or, when it will not come down, False with why not, the copy
-    kept."""
+    copy taken down (`_drop_copy`), `restored` None and `dropped` True once
+    nothing stands beside the tree, said as `why` and the drop - or, when it
+    will not come down, `restored` False with why not, the copy kept."""
     failed = _drop_copy(copy)
     if failed:
         return _with_kept(dict(answer, error="%s; %s, so it stays and nothing was "
                                              "restored" % (why, failed)), copy)
-    return _with_kept(dict(answer, restored=None, error=(
+    said = _with_kept(dict(answer, restored=None, error=(
         "%s; the copy was dropped, so there is nothing to restore and the tree "
         "is settled" % (why,))), copy)
+    return dict(said, dropped=said["kept"] is None)
 
 
 def _settle_recorded(fn, tree, copy, answer, meta, held, record):
@@ -2379,12 +2380,12 @@ def _settle_recorded(fn, tree, copy, answer, meta, held, record):
 
 
 def restore_copy(tree, task_id, is_record=None, run=None):
-    """{"restored", "kept", "paths", "error"} - the work of the task tree
-    `tree`, marked for `task_id`, put back from the copy a move left beside
-    it: the tree checked out at the base the copy was taken at, each path the
-    copy holds written back from its numbered file, the git index from its
-    `git-index`, and the copy dropped once the tree answers as it did before
-    the move (`_undo`'s own check). The verb a stop over an unsettled tree
+    """{"restored", "kept", "paths", "error", "dropped"} - the work of the
+    task tree `tree`, marked for `task_id`, put back from the copy a move left
+    beside it: the tree checked out at the base the copy was taken at, each
+    path the copy holds written back from its numbered file, the git index
+    from its `git-index`, and the copy dropped once the tree answers as it did
+    before the move (`_undo`'s own check). The verb a stop over an unsettled tree
     names; a human runs it, and nothing runs it on its own.
 
     `restored` is True once the work is back and checked; None when no copy
@@ -2393,8 +2394,10 @@ def restore_copy(tree, task_id, is_record=None, run=None):
     `index.json` - cut short before its move began - or of a move the marker
     already recorded, over a tree `_newer_work` finds nothing newer in, is
     dropped, the way `_resume` settles both, since every dispatch and
-    integration stops over a standing copy before any move could. False
-    beside why otherwise, the copy kept. Refused before anything is written
+    integration stops over a standing copy before any move could; `dropped`
+    is True for that drop alone, so a caller tells a tree the drop settled
+    from one that had no copy to act on, both None. False beside why
+    otherwise, the copy kept. Refused before anything is written
     when the marker does not name `task_id` with the base the copy was taken
     from or the commit its move reached, when the copy cannot be read, when
     a recorded move's tree holds work newer than its copy, and when the
@@ -2406,7 +2409,8 @@ def restore_copy(tree, task_id, is_record=None, run=None):
     the copy's own non-work paths join."""
     fn = _runner(run)
     copy = _copy_path(tree, run)
-    answer = {"restored": False, "kept": None, "paths": [], "error": None}
+    answer = {"restored": False, "kept": None, "paths": [], "error": None,
+              "dropped": False}
     if not copy:
         return dict(answer, error="git would not name the admin directory of %s, "
                                   "so no copy beside it could be read"

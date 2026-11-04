@@ -7039,6 +7039,35 @@ def _unsettled_verb_cases(check):
               "no copy of the work stands beside %s" % (tree,) in said[0][1]
               and "records no" not in said[0][1]
               and "no wave tree and no kept tree of P1.1" in said[1][1])
+
+        # A copy with nothing to put back - cut off before its index was
+        # written - is dropped by the verb, which settles the tree: that is an
+        # outcome the drive goes on from, so its exit is not the one a state
+        # naming no copy at all answers with. The tree is marked as the task's,
+        # the way the tree verb marks one: an unmarked tree is refused first.
+        M._worktrees.write_record(tree, {
+            "createdBy": M._worktrees.PROVENANCE_MARK, "taskId": "P1.1",
+            "phaseId": PHASE, "base": _git_out(repo, "rev-parse", "HEAD").strip()})
+        os.mkdir(copy)
+        with open(os.path.join(copy, "0.bin"), "wb") as fh:
+            fh.write(b"a copy cut off before its index was written\n")
+        M.write_state(ctx, {"keptTrees": {"P1.1": tree}})
+        dropped = M.restore_tree(ctx, "P1.1")
+        stood = os.path.exists(copy)
+        check("uv3 a copy the restore verb drops - nothing in it to put back - "
+              "is said as dropped, with `next` going on, and exits 0: the "
+              "tree is settled, the copy gone: %r" % ((dropped, stood),),
+              dropped[0] == M.E_OK and not stood
+              and "dropped" in dropped[1] and copy in dropped[1]
+              and "`next` goes on" in dropped[1]
+              and "nothing restored" not in dropped[1])
+        # THE TWIN, for a mutation that answers every outcome with 0: with no
+        # copy standing there is nothing to act on, and the exit says so.
+        check("uv4 THE TWIN: with no copy standing, and with no tree recorded, "
+              "the verb still exits 2 saying nothing was restored: %r"
+              % ((said, M.E_USAGE),),
+              [s[0] for s in said] == [M.E_USAGE, M.E_USAGE] == [2, 2]
+              and all("nothing restored" in s[1] for s in said))
     finally:
         _harness.remove_tree(base)
 
@@ -13357,6 +13386,69 @@ def _unfiled_reviewer_units(check):
           M.submit_block_of(brief) == block.splitlines()
           and M.submit_block_of("no block here") is None
           and M.submit_block_of("```sh\nopen") is None)
+    _unfiled_phase_review_units(check, M, lookup, lctx)
+
+
+def _unfiled_phase_review_units(check, M, lookup, lctx):
+    """The phase reviewer dispatched for a head and never filed is the same
+    absence as a task reviewer's: the triage's stop prints the submit block
+    the phase brief carries, read off that brief through the one helper the
+    task reviewer's stop uses - asked by the triage itself, so a stop whose
+    render alone learned the block, with nothing asking the brief, stays red."""
+    block = lookup.submit_command(lctx, PHASE, "reviewer",
+                                  " --head %s" % (_HEAD_A,))
+    brief = "\n".join(["# Brief for %s (reviewer, mode: phase)" % (PHASE,), "",
+                       "```sh", "a block the brief quotes earlier", "```", "",
+                       "## Your return", lookup.PRINTED_FILES_NOTHING, block, ""])
+    asked = []
+
+    def read_brief(ctx, script, args, stdin=None, record=False):
+        asked.append((script, list(args)))
+        return 0, brief, ""
+
+    def refuse_brief(ctx, script, args, stdin=None, record=False):
+        asked.append((script, list(args)))
+        return 2, "", "no phase brief is written for P1's current start"
+
+    said = []
+    evidence = _evidence_with({})
+    try:
+        for verb in (read_brief, refuse_brief):
+            M.run_verb = verb
+            state = {"phaseReview": {"head": _HEAD_A}}
+            got = _caught(M.triage, _step_ctx(evidence=evidence), state, {},
+                          _unit_phase())
+            said.append((_text_of(got), state.get("pending") or {}))
+    finally:
+        shutil.rmtree(evidence, ignore_errors=True)
+    text, pending = said[0]
+    lines = text.splitlines()
+    submit = [ln for ln in lines if " submit %s --role reviewer " % (PHASE,) in ln]
+    check("ur5 the phase reviewer dispatched for a head and never filed is a "
+          "stop naming that head, and it prints the phase brief's submit block "
+          "exactly once, as the brief carries it - read through the phase "
+          "role's brief, by the triage that asks the decision: %r"
+          % ((asked, text, pending),),
+          bool(lines)
+          and lines[0].startswith("decide no-phase-review-return %s: the phase "
+                                  "reviewer was dispatched for head %s"
+                                  % (PHASE, _HEAD_A[:12]))
+          and pending.get("decision") == "no-phase-review-return"
+          and pending.get("submit") == block.splitlines()
+          and len(submit) == 1 and block in text
+          and "a block the brief quotes earlier" not in text
+          and [a[1][a[1].index("--role") + 1] for a in asked] == ["phase", "phase"]
+          and [a[1][a[1].index("brief") + 1] for a in asked] == [PHASE, PHASE]
+          and all("--read" in a[1] for a in asked))
+    gone_text, gone = said[1]
+    check("ur6 THE TWIN: a phase brief that cannot be read is said as the "
+          "reason the phase reviewer's command is not shown, the refusal kept, "
+          "and no command composed in its place: %r" % ((gone_text, gone),),
+          gone_text.startswith("decide no-phase-review-return %s:" % (PHASE,))
+          and "no phase brief is written for P1's current start" in gone_text
+          and "phase reviewer's submit command is not shown" in gone_text
+          and "--role reviewer" not in gone_text
+          and "AUDIT_RETURN" not in gone_text and "submit" not in gone)
 
 
 def _retry_reason_units(check):

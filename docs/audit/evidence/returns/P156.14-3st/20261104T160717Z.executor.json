@@ -1,0 +1,43 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-04T16:32:01Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py` in a throwaway tree at HEAD exited 1 with 2 of 1252 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - lr8 (house FAIL), lr10 (house FAIL): SELFTEST FAILED: 1249/1252 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "audit-task.py: the per-part predicates became whole-value readings (_ENTRY_READINGS maps reading -> joined-parts function); new joined_parts(reading, value, build_keys) is the one answer read_list_flags and the batch both ask. R6: tests-add reads through the new _manifest_phases.joined_tests_add_parts (each part a whole entry: once a part is `<path>: <text>`, a later part must open with `<path>:`); pair keys must have the finding-id shape `<x>-<letters><n>` (measured over every review finding id in docs/audit, examples and tests: all fit; the R-only `_FINDING_ID` would have missed hand-recorded T/S ids); waiver paths must name a file (tests_add_path). Tightening only narrows what is refused, so nothing legal before the phase is refused now. R7: gate_drop gets a new reading `held` (values as given, never refused at read); _retarget_gate_now's not-held refusal now appends the per-entry spelling via _held_drop_spelling when the value joins entries the gate holds; --gate-drop help no longer claims the refusal. R5: batch_list_fields() derives [(path, reading)] from BATCH_FLAG_KEYS + PHASE_KEY_DESTS + LIST_FLAG_READINGS (tasks[].files/dependsOn/blockedBy/fixes split, tasks[].tests.add tests-add, tasks[].tests.gate and phase.testGate gate, phase.blockedBy split); _batch_joined_problems refuses any item reading as several entries under its field's reading, named by field path (tasks[0].tests.add); batch_problems(doc, build_keys) and read_batch(..., keys_for) take the plan's buildCommands keys through _gate_build_keys(args, batch_gate_items(doc)), read only when a gate item holds a comma. Docs: PLUGIN-BUILD-GUIDE.md (_manifest_phases and audit-task sections) and verbs-in-full.md (list-flag paragraph, --gate-drop, the batch refusal list). Tests: lr3 gains the `held` branch and _LR_SAMPLES a held row; new lr8-lr11, lb1-lb3 in tests/test_audit_task.py (lr-block 14/14), jp2 in tests/test__manifest_phases.py (146/146). Mutations, each in a throwaway copy of the tree under the scratchpad (never in the task tree): gate_drop back to `gate` -> lr10 red; pair regex loosened -> lr8; waiver one-word -> lr8; batch check removed -> lb1, lb2; build keys not passed to the batch -> lb2; held hint off -> lr11; described rule removed -> jp2 + lr8; over-fire (any comma joins) -> lr6, lr8, lb3; all restored by discarding the copy. Gates: brief gate `python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py` exit 0 (2/2 files ok, 1400 cases); full `python3 tools/sweep-selftests.py` exit 0 (195/195 files ok, 18434 cases, coverage clean); `python3 tools/gate-parity.py` exit 0; `python3 tools/measure-context.py --gate` exit 0 (GATE OK); ruff and vermin -t=3.8- on the four .py files exit 0. Dependants: full-gate.py, run-test-gate.py, _affected_tests.py, _gate_derive.py, _scoped_commit.py, derive-phase-gate.py, drive-phase.py, _manifest_rules.py still correct - they use names this change does not touch (joined_entry_parts unchanged, _is_list_operator, gate_entry_commands untouched); their suites and every importer suite (test__invariants, test_close_phase, test_commit_task_work, test__scoped_commit, test__doctor_trail, test__filed_returns, test__config, test__deps, test__output_lints, test_drive_phase, test_repair_tests_add, test__manifest_rules) pass in the full sweep. PLUGIN-BUILD-GUIDE.md and verbs-in-full.md changed as above; their readers (test__deps doc lints, test__areas, test__manifest_vocab) pass. CHANGELOG.md (not in my files) still lists --gate-drop among the flags refusing a joined value at read; the effect still holds for a value joining held entries (refused by the drop with the per-entry spelling), but the sentence is now loose - left for the orchestrator.",
+    "descriptive": "add --from-file now refuses a joined list item by its field path through the same reading the flags use, the joined check no longer refuses prose entries, and --gate-drop can drop a legacy joined gate entry"
+  },
+  "testsAdded": [
+    "lr8 allow case: a tests.add description naming a file after a comma, accept-open/carried reasons holding `=` after a comma, a waiver reason holding `word:` - each one entry",
+    "lr9 second direction: described tests.add entries, pairs keyed by any-letter finding ids, file-naming waivers joined are still refused",
+    "lr10 retarget and scope --gate-drop lint,test drop a legacy joined gate entry",
+    "lr11 --gate-drop lint,test on a gate holding them apart is refused naming --gate-drop lint --gate-drop test, nothing written",
+    "lb1 every batch list key carries its flag's reading and a planted joined item at each is refused naming its field path; a planted flag row reaches the derivation",
+    "lb2 add --from-file refuses joined tests.add, phase.testGate and dependsOn items by field path before any write",
+    "lb3 batch prose with commas and a gate command whose argument holds a comma are written as given",
+    "jp2 joined_tests_add_parts reads several entries only when each part is a whole entry"
+  ],
+  "casesAdded": [
+    [
+      "lr8",
+      "lr9",
+      "lr10",
+      "lr11",
+      "lb1",
+      "lb2",
+      "lb3"
+    ],
+    [
+      "jp2"
+    ]
+  ],
+  "claims": "claims:\n1 audit-task.py joined_parts() is the branch the LIST_FLAG_READINGS comment and both docs describe; read_list_flags and _batch_joined_problems both call it; batch_list_fields derives the batch rows; _held_drop_spelling is the drop hint verbs-in-full.md describes\n2 eight mutations in throwaway copies, each red (lr10; lr8; lr8; lb1+lb2; lb2; lr11; jp2+lr8) and the over-fire mutation red on lr6, lr8, lb3; copies discarded\n3 grep -rn '_part_names_file|_part_is_key|_part_is_pair|_part_is_waiver|_ENTRY_READINGS|_PAIR_PART' over the tree: hits only in audit-task.py, all rewritten; waiver predicate fixed as the same class though the finding named only tests-add and pair; CHANGELOG.md line naming --gate-drop left (outside files), reported\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:3dea09db81176dcbb0f5b57af2ad6f238b0fe411e60cd3a6278c65ef218ed524\",\"dirtyDigest\":\"sha256:a74ae0c2151778c401583e24cc89667a757d422ac4968118b2a912d061c8a2f8\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"82342172dc3cd401\",\"plugins/audit/reference/verbs-in-full.md\":\"c710bc947cb0a278\",\"plugins/audit/scripts/manifest/_manifest_phases.py\":\"84747e5524b3c357\",\"plugins/audit/scripts/manifest/audit-task.py\":\"42937ed92659ba99\",\"tests/test__manifest_phases.py\":\"2e4a7ff63a93b29d\",\"tests/test_audit_task.py\":\"08f2caf70d21fe41\"},\"head\":\"f0042ffc\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/manifest/_manifest_phases.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"tests/test__manifest_phases.py\",\"tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:61f68c862046d092a65d4780234933971b855b5f1eff5a091d525e8e657434a7\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

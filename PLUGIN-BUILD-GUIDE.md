@@ -1171,7 +1171,10 @@ back is settled by `restore` itself, the way the next move settles it, because e
 integration stops over a standing copy before any move runs: one with no `index.json` is dropped
 (`un14`), and so is the copy of a move the marker already recorded once the tree holds what that
 move left (`un15`), while the same copy over newer work is kept with each diverging path named
-(`un16`). Whether a moved path still holds a commit's bytes is asked by comparing the file's raw
+(`un16`). A drop is answered as its own outcome (`dropped`, `un17`), apart from the `restored`
+None a tree with no copy beside it answers, so `restore` exits 0 saying the copy was dropped and
+`next` goes on, and keeps exit 2 for a state or tree with no copy to act on (`uv3`, `uv4` in
+`tests/test_drive_phase.py`). Whether a moved path still holds a commit's bytes is asked by comparing the file's raw
 bytes with what checkout itself writes there (`git cat-file --filters`, under the tree's own
 attributes and config), so a file differing only in its line endings is not read as the commit's
 and reset (`un5`), while a file a checkout wrote with CRLF under `core.autocrlf=true` is (`un11`) -
@@ -4763,7 +4766,10 @@ return object as a reply, so `no-reviewer-return` says what it holds - the revie
 for this start - and prints the submit block that reviewer's brief carries, read back from the
 brief through `audit-lookup.py brief --read` (`brief_submit`) rather than composed a second time
 here. A brief that cannot be read is named as the reason the block is missing, never replaced
-by a command the drive spelled itself (`ur1`-`ur4`, `rv9b`).
+by a command the drive spelled itself (`ur1`-`ur4`, `rv9b`). The phase reviewer's stop,
+`no-phase-review-return`, is the same absence and goes through the same helper, reading the
+phase brief (`--role phase`), so it prints the submit block keyed on the head it was dispatched
+for, or why that block is not shown (`ur5`, `ur6`).
 
 **A scope change is closed only over a run of the scope.** A filing stamped under another file
 list is the `scope-changed` decision, and before it is printed the drive measures the gate
