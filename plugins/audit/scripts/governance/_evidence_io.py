@@ -766,6 +766,27 @@ FOLLOWER_MARK = "FOLLOWER-OWED"
 _FOLLOWER_LINE = re.compile(r"^\s*%s (.*?)\s*$" % (FOLLOWER_MARK,), re.M)
 
 
+# --- which declared files a task's run reached --------------------------------
+# The keys a row carries `run-test-gate.gate_reach`'s observation under: the
+# steps the run carried and `[{path, why}]` for each declared file no suite of
+# them reaches, or the sentence saying the reading failed. The reading is the
+# gate's; this is what a committed row keeps of it.
+GATE_REACH_KEY = "gateReach"
+GATE_REACH_NOT_ASKED_KEY = "gateReachNotAsked"
+
+
+def _gate_reach(project, reach):
+    """The row's copy of a run's reach: the gate's step names, capped at
+    `MAX_STEPS`, and its gaps capped at `MAX_PATHS`, each path and reason
+    redacted as a basis is. None for a shape that is not the reading's."""
+    if not isinstance(reach, dict):
+        return None
+    gaps = [g for g in reach.get("gaps") or [] if isinstance(g, dict)]
+    return {"gate": [str(n) for n in (reach.get("gate") or [])][:MAX_STEPS],
+            "gaps": [{"path": redacted_paths(project, str(g.get("path") or "")),
+                      "why": redacted_paths(project, str(g.get("why") or ""))}
+                     for g in gaps[:MAX_PATHS]]}
+
 # --- a red read against its base ---------------------------------------------
 # The key a row carries `run-test-gate.base_red`'s reading under, and the fields
 # that cross: the reading is the gate's, this is only what a committed row keeps.
@@ -1036,6 +1057,16 @@ def row_for(project, result, scope, ids, identity, published=None):
     # sentences as a basis is; written only when a red was read that way.
     if isinstance(result.get(BASE_RED_KEY), dict):
         row[BASE_RED_KEY] = _base_red(project, result[BASE_RED_KEY])
+    # WHICH DECLARED FILES NO SUITE OF THE RUN REACHED (`run-test-gate.gate_reach`),
+    # or why that was not read. Written only when the run read it, so a row
+    # from a run that never asked holds no key a reader could take for "every
+    # file reached" - `[]` gaps is that answer, recorded.
+    reach = _gate_reach(project, result.get(GATE_REACH_KEY))
+    if reach is not None:
+        row[GATE_REACH_KEY] = reach
+    if result.get(GATE_REACH_NOT_ASKED_KEY) is not None:
+        row[GATE_REACH_NOT_ASKED_KEY] = redacted_paths(
+            project, str(result[GATE_REACH_NOT_ASKED_KEY]))
     # THE MUTES THAT EXCUSED A FAILING STEP. The step itself keeps its exit and
     # its failing names, so without this a `passed` beside a red step would be
     # a verdict the row cannot be read back for. Allow-listed to the suite,

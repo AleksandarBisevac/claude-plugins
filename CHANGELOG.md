@@ -30,8 +30,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   written and
   the copy kept when the copy will not read, when the tree's marker does not name the task at
   the copy's base, or when any path - one the copy holds included - carries bytes that are
-  neither the copy's nor a commit's, which is work made after the kill. Exit 0 is restored, 1
-  refused, 2 no tree recorded for the task or no copy beside it. Every stop and refusal over a
+  neither the copy's nor a commit's, which is work made after the kill. Exit 0 is restored, or a
+  copy holding nothing to put back dropped with the tree settled; 1 refused; 2 no tree recorded
+  for the task or no copy beside it. Every stop and refusal over a
   tree with a copy or a tombstone beside it names the command; one made because git would not
   name the tree's git directory names none, since whether a copy stands there is not known.
 - **A triage can leave a finding open: `--answer leave --fix <ids> --reason "<why>"`.** The
@@ -44,20 +45,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   task declares, in full or by its basename, with its line and whether that document is among
   the task's files - so an edit that would make a document out of the task's scope stale is
   visible before it is made rather than at submit. A search git could not run says so.
-- **`add`, `scope` and `done` say when a task's gate reaches no suite of a file the task
-  changes.** A passed gate run is evidence only for the files its suites read, so each declared
-  file is asked of the affected-test derivation `run-test-gate.py` uses - the recorded listings,
-  the tree's suites, the Python imports - and compared with what the gate runs. An `add` or a
-  `scope` that sets the gate or the files prints one `WARNING: gate reach: <path> -- <why>` line
-  per file the gate reaches no suite of, short output included, and its `--json` result carries
-  the same answer as `gateReach`; `done` records the gap on the task as one dated note. `add
-  --from-file` (the write `/audit:phase add` makes) reads each task it wrote and prints `WARNING:
-  gate reach: <id>: <path> -- <why>`, its `--json` result carrying `gateReach` and
-  `gateReachNotAsked` keyed by task id; a `--dry-run` reads none. The
-  reading runs with the index lock released, so another verb taken meanwhile is not refused, and
-  a close whose task's files or gate changed while it read records nothing and says so. It is
-  advisory: a reading that fails leaves the write standing and prints `WARNING: gate reach not
-  asked:` with the reason. A past task's recorded gate is not rewritten.
+- **A task's measured gate run says which declared files no suite of that run reaches.** A
+  passed gate run is evidence only for the files its suites read, so `run-test-gate.py --task`,
+  on a task with a gate of its own, asks each declared file of the affected-test derivation -
+  the recorded listings, the tree's suites, the Python imports - over the facts it already
+  gathers for its affected steps, and compares the answer with what the run carries: the task's
+  gate and the affected suites that joined it. Beside the verdict it prints one `gate reach:
+  <path> -- <why>` line per file no suite of the run reaches, and a run with such a line is never
+  clipped to its one-line short form; the evidence row and the `--json` result carry the same
+  answer as `gateReach`. It is advisory: a reading that fails leaves the verdict alone and says
+  `gate reach not asked:` with the reason, recorded as `gateReachNotAsked`. The manifest verbs
+  (`add`, `add --from-file`, `scope`, `done`) do not read it and start no project command. A past
+  task's recorded gate is not rewritten.
 
 ### Changed
 - **`audit-task.py scope <id> --gate CMD` refuses a list that leaves out an entry the task's
@@ -199,16 +198,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   file, a `meta.buildCommands` key, a waiver, a `<findingId>=<text>` pair) is refused before any
   write, naming the repeated spelling. It used to be stored as one entry - `add --tests-add
   a.py,b.py` wrote the path `a.py,b.py`, and `add-phase --gate a,b,c` one gate command no shell
-  can find. A comma inside an entry is kept. `--gate-drop` passes the reader unchanged, so an
-  entry a plan stored joined before the reader existed can still be dropped; a value the gate
-  does not hold is refused by the drop itself, and one joining entries the gate holds separately
-  is refused naming one `--gate-drop` per entry. `add --from-file` reads each list key of the
-  batch the way the flag that writes it does: an item at an id or path key (`files`, `outputs`,
-  `skills`, `dependsOn`, `blockedBy`, `fixes`, `phase.blockedBy`, `phase.area`) is split on its
-  commas as its flag splits them, and an item at a key whose flag takes
-  one entry (`tasks[0].tests.add`, `tasks[0].tests.gate`, `phase.testGate`) that reads as
-  several entries is refused before any write, naming its field path. `phase.area` written as
-  one string is split the same way, as `--area` splits it.
+  can find. A comma inside one entry of those flags is kept. `--gate-drop` passes the reader
+  unchanged, so an entry a plan stored joined before the reader existed can still be dropped; a
+  value the gate does not hold is refused by the drop itself, and one joining entries the gate
+  holds separately is refused naming one `--gate-drop` per entry. `add --from-file` reads each
+  list key of the batch the way the flag that writes it does: an item at an id or path key
+  (`files`, `outputs`, `skills`, `dependsOn`, `blockedBy`, `fixes`, `phase.blockedBy`,
+  `phase.area`) is split on its commas as its flag splits them - except a `dependsOn` or
+  `blockedBy` item that is one of the batch's task keys whole, which names that task, comma
+  included - and an item at a key whose flag takes one entry (`tasks[0].tests.add`,
+  `tasks[0].tests.gate`, `phase.testGate`) that reads as several entries is refused before any
+  write, naming its field path. `phase.area` written as one string is split the same way, as
+  `--area` splits it.
 - **A fix task whose finding leads with a test file is `regression`, not `tdd`.** That finding
   is a fix to the test, so a red run - the strengthened test over HEAD's code - has nothing to
   go red against; the task's note says to show the red by mutation.
@@ -220,7 +221,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   purpose is not seeded.
 - **A task verb's short output keeps the warning for a gate entry that is a directory.** Without
   `--verbose` the short form kept only the warnings naming the id the verb wrote, so this one,
-  which names the entry, never reached an operator; it is kept now, beside the gate-reach lines.
+  which names the entry, never reached an operator; it is kept now.
 - **The wide-gate warning prescribes a call `scope` accepts.** Narrowing takes
   `--gate "<command>" --replace`; declaring the wide gate restates the phase's entries.
 - **A task whose work is its own `outputs` can close.** The close's evidence check read the

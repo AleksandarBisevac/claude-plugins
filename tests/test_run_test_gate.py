@@ -9864,19 +9864,24 @@ def _cli(argv):
 def _success_line_cases(check):
     """A green gate, said in one line naming the verdict and the row it
     recorded; a red one, a refusal and `--verbose`, in full."""
+    # The task's one declared file is the script its gate runs, so the gate
+    # reaches it and no reach line stands beside a plain green.
     def project(name, command):
         root = _mini_repo("run-test-gate-sl-%s-" % (name,))
         mp = os.path.join(root, "audit-plan.json")
+        with open(os.path.join(root, "check.sh"), "w") as fh:
+            fh.write("%s\n" % (command,))
         with open(mp, "w") as fh:
             json.dump({"meta": {"version": 2,
-                                "buildCommands": {"test": command}},
+                                "buildCommands": {"test": "sh check.sh"}},
                        "phases": [{"id": "P1", "title": "p",
                                    "status": "in_progress",
                                    "testGate": ["test"],
                                    "tasks": [{"id": "P1.1", "title": "t",
                                               "status": "in_progress",
-                                              "files": ["a.txt"],
-                                              "tests": {"gate": ["test"]}}]}]},
+                                              "files": ["check.sh"],
+                                              "tests": {"gate": [
+                                                  "sh check.sh"]}}]}]},
                       fh)
         return root, mp
 
@@ -10614,9 +10619,9 @@ def _shared_facts_cases(check):
 
 def _shared_runner_cases(check):
     """`shf`: the facts a task's affected steps read are gathered by
-    `_affected_tests`, the helper the gate-reach check in `audit-task.py`
-    calls too - a recorder put in place of its runner hears every listing and
-    the version command, each under the shared bound for its kind."""
+    `_affected_tests`, the helper this run's gate-reach reading asks too - a
+    recorder put in place of its runner hears every listing and the version
+    command, each under the shared bound for its kind."""
     tree = tempfile.mkdtemp()
     heard = []
     real = M._affected.run_listing
@@ -10658,6 +10663,203 @@ def _shared_runner_cases(check):
           and not [n for n in ("AFFECTED_LISTING_TIMEOUT_SECONDS",
                                "AFFECTED_GIT_TIMEOUT_SECONDS")
                    if hasattr(M, n)])
+
+
+def _gate_reach_cases(check):
+    """`grh`: a task's measured run says which declared files no suite it runs
+    reaches, beside the verdict and on the row it records.
+
+    A passed gate is evidence only for what its suites read. The reading is the
+    run's own: the task's gate plus the affected suites that joined it, over the
+    facts the affected selection gathers.
+
+    THE FIXTURE TELLS THE READINGS APART. `src/m.py` is reached only through
+    `tests/test_m.py`'s import, so a reading of file names alone would name it;
+    `CHANGELOG.md` is reached only once the recorded related listing names a
+    suite for it and that suite joins the run, so a reading that ignored the
+    joined suites would still name it there.
+    """
+    root = _harness.fixture_root("run-test-gate-reach-")
+    for sub in (("docs", "audit", "phases"), (".claude",), ("src",),
+                ("tests",)):
+        os.makedirs(os.path.join(root, *sub))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    evidence = os.path.join(root, "docs", "audit", "evidence")
+    own = "python3 tests/test_m.py"
+    plan = {"meta": {"version": 3, "buildCommands": {"wide": "true"}},
+            "phases": [{"id": "P1", "title": "one",
+                        "shard": "phases/P1.json"}]}
+
+    def write_plan():
+        with open(mpath, "w") as fh:
+            json.dump(plan, fh)
+    write_plan()
+    with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
+              "w") as fh:
+        json.dump({"id": "P1", "title": "one", "status": "in_progress",
+                   "testGate": ["wide"], "tasks": [
+                       {"id": "P1.1", "title": "a gap",
+                        "status": "in_progress",
+                        "files": ["CHANGELOG.md", "src/m.py",
+                                  "tests/test_m.py"],
+                        "tests": {"mode": "regression", "gate": [own]}},
+                       {"id": "P1.2", "title": "reached",
+                        "status": "in_progress",
+                        "files": ["src/m.py", "tests/test_m.py"],
+                        "tests": {"mode": "regression", "gate": [own]}}]},
+                  fh)
+    tally = "%d/%d cases passed" % (1, 1)
+    suite = ("import os, sys\n"
+             "sys.path.insert(0, os.path.join(os.getcwd(), 'src'))\n"
+             "import m\nprint('PASS t1 src/m.py imports')\nprint(%r)\n"
+             % (tally,))
+    for rel, body in (("src/m.py", "X = 1\n"), ("CHANGELOG.md", "# log\n"),
+                      ("tests/test_m.py", suite),
+                      ("tests/test_docs.py",
+                       "print('PASS d1 reads')\nprint(%r)\n" % (tally,))):
+        with open(os.path.join(root, *rel.split("/")), "w") as fh:
+            fh.write(body)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
+    for arg in (["add", "--", "."],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
+    for rel, body in (("src/m.py", "X = 2\n"), ("CHANGELOG.md", "# log 2\n")):
+        with open(os.path.join(root, *rel.split("/")), "w") as fh:
+            fh.write(body)
+    lead = "gate reach: "
+
+    def reach_lines(lines):
+        return [ln.strip() for ln in lines if ln.strip().startswith(lead)]
+
+    def run(task_id, extra=()):
+        lines = []
+        code = M.main([mpath, "P1", "--task", task_id, "--project-dir", root,
+                       "--record"] + list(extra), out=lines.append)
+        rows = [r for r in _recorded_rows(evidence)
+                if r.get("taskId") == task_id] if os.path.isdir(evidence) else []
+        return code, lines, (rows[-1] if rows else {})
+
+    def gap_paths(reach):
+        return [g.get("path") for g in (reach or {}).get("gaps") or []
+                if isinstance(g, dict)]
+
+    try:
+        code, lines, row = run("P1.1")
+        said = reach_lines(lines)
+        check("grh1 a task gate whose suites reach no suite of a declared file "
+              "names that file, once, in the run's output - the document no "
+              "suite reads, not the module the gate's suite imports nor the "
+              "suite the gate runs: %r" % ((code, said),),
+              len(said) == 1 and "CHANGELOG.md" in said[0]
+              and "src/m.py" not in said[0]
+              and "tests/test_m.py" not in said[0].split(" -- ")[0])
+        check("grh2 ...and the evidence row it records keeps the same "
+              "observation as data, one gap with its reason: %r"
+              % (row.get("gateReach"),),
+              gap_paths(row.get("gateReach")) == ["CHANGELOG.md"]
+              and all(g.get("why") for g in
+                      (row.get("gateReach") or {}).get("gaps") or []))
+
+        jlines = []
+        M.main([mpath, "P1", "--task", "P1.1", "--project-dir", root,
+                "--json", "--no-reuse"], out=jlines.append)
+        try:
+            body = json.loads("\n".join(jlines))
+        except ValueError:
+            body = {}
+        check("grh3 ...and `--json` carries it as `gateReach`: %r"
+              % ((body.get("gateReach") if isinstance(body, dict) else body),),
+              isinstance(body, dict)
+              and gap_paths(body.get("gateReach")) == ["CHANGELOG.md"])
+
+        code, lines, row = run("P1.2")
+        check("grh4 SECOND-DIRECTION CASE: a gate whose suites reach every "
+              "declared file prints no reach line and records an empty gap "
+              "list - a reading that named every file would fail here: %r"
+              % ((code, reach_lines(lines), row.get("gateReach")),),
+              reach_lines(lines) == []
+              and isinstance(row.get("gateReach"), dict)
+              and gap_paths(row.get("gateReach")) == [])
+
+        tcode, ttxt = _cli([mpath, "P1", "--task", "P1.1", "--project-dir",
+                            root, "--no-reuse"])
+        qcode, qtxt = _cli([mpath, "P1", "--task", "P1.2", "--project-dir",
+                            root, "--no-reuse"])
+        check("grh5 the short output keeps the reach line: a green run with a "
+              "gap is told in full, never clipped to its one success line - "
+              "while the same green run with no gap still is: %r"
+              % ((tcode, ttxt[-600:], qcode, qtxt[-300:]),),
+              tcode == 0 and len(reach_lines(ttxt.splitlines())) == 1
+              and "CHANGELOG.md" in reach_lines(ttxt.splitlines())[0]
+              and qcode == 0 and len(qtxt.strip().splitlines()) == 1
+              and qtxt.startswith("[run-test-gate] GATE GREEN"))
+
+        plan["meta"]["phaseGate"] = {"derived": {
+            "listing": {"related": "printf '%s\\n' tests/test_docs.py "
+                                   "# {paths}"},
+            "verifiedOn": {"command": "echo v1", "answer": "v1"}}}
+        write_plan()
+        code, lines, row = run("P1.1", ("--no-reuse",))
+        names = [s.get("name") for s in row.get("steps") or []]
+        check("grh6 THE SUITES THAT JOINED THE RUN COUNT: once the recorded "
+              "related listing names a suite for the document and that suite "
+              "joins as an affected step, the document is reached and nothing "
+              "is said: %r" % ((names, reach_lines(lines),
+                                row.get("gateReach")),),
+              "affected/related: tests/test_docs.py" in names
+              and reach_lines(lines) == []
+              and isinstance(row.get("gateReach"), dict)
+              and gap_paths(row.get("gateReach")) == [])
+
+        # The arming is read from inside the gathering itself: the shared
+        # runner's recorder looks at the handler the stop signal has.
+        heard = []
+        real = M._affected.run_listing
+        before = signal.getsignal(signal.SIGTERM)
+
+        def recorded(project, meta, command, timeout):
+            heard.append(signal.getsignal(signal.SIGTERM))
+            return real(project, meta, command, timeout)
+        M._affected.run_listing = recorded
+        try:
+            run("P1.1", ("--no-reuse",))
+        finally:
+            M._affected.run_listing = real
+        check("grh7 the listings the reading runs run with the stop signals "
+              "armed, so a SIGTERM tears their groups down rather than "
+              "leaving them running; the handler is given back after: %r"
+              % ((sorted(set(repr(h) for h in heard)), before,
+                  signal.getsignal(signal.SIGTERM)),),
+              heard and all(h not in (signal.SIG_DFL, None, before)
+                            for h in heard)
+              and signal.getsignal(signal.SIGTERM) == before)
+
+        code, _lines, _row = run("P1.2", ("--no-reuse",))
+        real_reach = M.gate_reach
+
+        def broken(*_a, **_k):
+            raise RuntimeError("the reach reading broke")
+        M.gate_reach = broken
+        try:
+            code_b, lines_b, row_b = run("P1.2", ("--no-reuse",))
+        finally:
+            M.gate_reach = real_reach
+        not_asked = [ln.strip() for ln in lines_b
+                     if ln.strip().startswith("gate reach not asked: ")]
+        check("grh8 the reading is advisory and fails open: an exception in "
+              "it leaves the gate's exit as it was, prints one line saying "
+              "the reach was not asked and why, and the row says so: %r"
+              % ((code_b, not_asked, row_b.get("gateReachNotAsked")),),
+              code_b == code and len(not_asked) == 1
+              and "the reach reading broke" in not_asked[0]
+              and "the reach reading broke"
+              in str(row_b.get("gateReachNotAsked")))
+    finally:
+        _harness.remove_tree(root)
 
 
 def _follower_cases(check):
@@ -11196,6 +11398,7 @@ def _selftest():
         _harness.stage(check, "gtd-block", _task_bug_definition_cases)
         _shared_facts_cases(check)
         _shared_runner_cases(check)
+        _harness.stage(check, "grh-block", _gate_reach_cases)
         _harness.stage(check, "fo-block", _follower_cases)
         _harness.stage(check, "br-block", _base_red_cases)
         _cases(check)

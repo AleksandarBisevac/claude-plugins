@@ -1,0 +1,49 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_audit_task.py tests/test__affected_tests.py tests/test_drive_phase.py tests/test__manifest_phases.py tests/test__branch.py tests/test__config_rules.py tests/test__manifest_vocab.py": "pass",
+    "python3 tools/sweep-selftests.py": "pass",
+    "python3 tools/gate-parity.py": "pass",
+    "python3 tools/measure-context.py --gate": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-04T19:12:29Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_audit_task.py tests/test__affected_tests.py tests/test_drive_phase.py tests/test__manifest_phases.py tests/test__branch.py tests/test__config_rules.py tests/test__manifest_vocab.py` in a throwaway tree at HEAD exited 1 with 15 of 591 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pd9c (house FAIL), fb2 (house FAIL), lb6 (house FAIL), grt1 (house FAIL), grt2 (house FAIL), grt3 (house FAIL), grt4 (house FAIL), grt5 (house FAIL) and 7 more: SELFTEST FAILED: 583/591 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Gate reach moved from the manifest verbs to run-test-gate's task-gate run. audit-task.py: deleted _gate_reach, every _reach_* helper, _related_reach, _declared_paths, _names_one_file, the GATE_REACH* leads, the gateReach/gateReachNotAsked/gateReachNotRecorded keys, the done-time note and _locked_done's before argument; add, add --from-file, scope and done return to plain exits; TASK_WARNING_LEADS keeps the gate-directory lead. _affected_tests.py: new section related_reach/path_reach/reach_answers (per declared file, over the shared seen, prefetch_listings kept); comments now state SIGTERM tears a listing down only where the caller armed it. run-test-gate.py: affected_steps/_affected_facts take a shared seen; new gate_reach/reach_or_why/reach_lines; the affected gathering and reach reading run under arm_interrupt; one 'gate reach: <path> -- <why>' line per gap under covers:, a 'gate reach not asked: <why>' line on failure (fail-open), both leads in _STATEMENT_OPENINGS; res carries gateReach/gateReachNotAsked. _evidence_io.py: GATE_REACH_KEY, GATE_REACH_NOT_ASKED_KEY, _gate_reach; row_for writes them only when present, gate capped at MAX_STEPS, gaps at MAX_PATHS, paths and reasons through redacted_paths. R22: split_batch_items keeps a dependsOn/blockedBy item matching a batch key whole (BATCH_KEY_REFERENCES, _batch_keys) and _batch_joined_problems does not refuse it. R23: CHANGELOG restore exit 0 includes the dropped copy. R24: COMPATIBILITY comma clause moved to the one-entry flags, id/path sentence says they split on every comma. Docs: CHANGELOG gate-reach entry rewritten (read by run-test-gate --task, verbs read none), verbs-in-full.md and PLUGIN-BUILD-GUIDE.md (audit-task, run-test-gate, _affected_tests, _manifest_phases sections and the tree line) say where it is read; tools/lints/_deps.py LAYERS comment for _affected_tests updated. Tests: test_audit_task grt1-grt8 replace the old block (zero run_listing/gather_facts/tree_files calls for add, add --json, scope, done, add --from-file; grt6 proves the recorder live), lb6; pd9c and fb2 back to their pre-reach form; test_run_test_gate grh1-grh8; sl fixture's declared file is now the script its gate runs (the old fixture's gate reached nothing, so it now correctly prints a gap); test__evidence_io grr1-grr5. Consumers checked: grep for row keys over plugins, tools, tests finds no allow-list, schema or report/panel reader enumerating evidence-row keys, so nothing pins or rejects gateReach. Runs: brief gate exit 0, 8/8 files ok; full sweep exit 0, 195/195 files ok; gate-parity exit 0; measure-context --gate exit 0 GATE OK; ruff clean.",
+    "descriptive": "A verb that writes the manifest starts no project command; a task's gate run now says, beside its verdict and on its evidence row, which declared files no suite of that run reaches."
+  },
+  "testsAdded": [
+    "grh1-grh8: a task gate's run names the declared file no suite reaches in output, row and --json, not the reached ones; joined affected suites count; short form keeps the line; listings run with stop signals armed; reading fails open",
+    "grt1-grt6: add, add --json, scope, done and add --from-file start no listing and gather no fact, with a live-recorder second direction",
+    "lb6: a batch dependsOn item that is a comma-holding task key resolves whole",
+    "grr1-grr5 (test__evidence_io): row_for keeps the reach capped and redacted, empty gaps as [], neither key when not read, the failure sentence redacted"
+  ],
+  "casesAdded": [
+    [
+      "grh1",
+      "grh2",
+      "grh3",
+      "grh4",
+      "grh5",
+      "grh6",
+      "grh7",
+      "grh8"
+    ],
+    [
+      "grt1",
+      "grt2",
+      "grt3",
+      "grt4",
+      "grt5",
+      "grt6",
+      "lb6"
+    ]
+  ],
+  "claims": "claims:\n1 run-test-gate.py gate_reach/reach_lines and main's covers-adjacent loop print and carry what CHANGELOG, verbs-in-full and the guide say; _evidence_io.row_for's gateReach branch writes only when present; audit-task cmd_add/cmd_scope/cmd_done/_cmd_batch_add call _under_lock directly\n2 grt1-grt5 red on the old verbs (listings heard), grt6 proves the recorder live; grh4 and grr4 are the second-direction cases (no gap, no key); lb6 red then green; grh-block and grr-block red before the code existed\n3 grep over plugins, tests, tools and *.md for gateReachNotRecorded, _gate_reach, _reach_*, _related_reach, GATE_REACH_NOT_RECORDED, 'gate reach at close', 'WARNING: gate reach': no hits; remaining 'gate reach' hits are the new run-test-gate reading, its docs and cases\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:f7b63bcba5a0ec53dd39f6ac7d76aad70cfe06153b512c439c92a9d8c0996ed9\",\"dirtyDigest\":\"sha256:01c5b3bb8a1162db421c00bd7c027da97f1e8ff3f7777049c05a9db31838082b\",\"dirtyPaths\":{\"CHANGELOG.md\":\"0c52e11ef059da43\",\"COMPATIBILITY.md\":\"619fb37c7666c070\",\"PLUGIN-BUILD-GUIDE.md\":\"ab130b8dc8b40116\",\"plugins/audit/reference/verbs-in-full.md\":\"3a320fec4c94488b\",\"plugins/audit/scripts/governance/_affected_tests.py\":\"98a8596753a922a2\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"1a0ff8bc0cf43dbe\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"4a461829408a94cc\",\"plugins/audit/scripts/manifest/audit-task.py\":\"aad6297c56738c5c\",\"tests/test__affected_tests.py\":\"6ae9b8e301b67708\",\"tests/test__evidence_io.py\":\"e662f80144f7761b\",\"tests/test_audit_task.py\":\"40aaa723134a7f68\",\"tests/test_run_test_gate.py\":\"0774bab44fe78637\",\"tools/lints/_deps.py\":\"83c26663bf634fd9\"},\"head\":\"781d3483\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"COMPATIBILITY.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/config/_config_rules.py\",\"plugins/audit/scripts/governance/_affected_tests.py\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/scripts/manifest/_branch.py\",\"plugins/audit/scripts/manifest/_manifest_vocab.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"tests/test__affected_tests.py\",\"tests/test__branch.py\",\"tests/test__config_rules.py\",\"tests/test__evidence_io.py\",\"tests/test__manifest_phases.py\",\"tests/test__manifest_vocab.py\",\"tests/test_audit_task.py\",\"tests/test_drive_phase.py\",\"tests/test_run_test_gate.py\",\"tools/check-example-ledgers.py\",\"tools/lints/_deps.py\",\"tools/release.py\"],\"scopeDigest\":\"sha256:f73572830a6a7c06994d56e06a1cb2f449976da9fa6c9bda64def65cd93b7e3a\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

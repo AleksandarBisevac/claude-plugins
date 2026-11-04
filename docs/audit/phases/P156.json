@@ -149,24 +149,30 @@
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py:9878-9895 (_batch_joined_problems, batch_list_fields split rows); CHANGELOG.md:202-205; COMPATIBILITY.md",
         "issue": "A batch item such as files ['src/a.py,src/b.py'] (also fixes, blockedBy) was split and accepted at 8c4bb8bd and is now refused (exit 0 to 2), while the --files a,b flag still splits; CHANGELOG says the batch reads each list key the way its flag does, which the code contradicts, and COMPATIBILITY.md's not-promised list does not record the move.",
-        "resolution": "Read split-reading batch items the way their flag reads them (split), refusing only the free-text readings (tests-add, gate, waiver, pair); CHANGELOG then holds as written; if any exit move remains, record it in COMPATIBILITY.md's not-promised list.",
-        "fixTask": "P156.18-3st"
+        "resolution": "fixed in P156.18-3st (781d348350c2): Read split-reading batch items the way their flag reads them (split), refusing only the free-text readings (tests-add, gate, waiver, pair); CHANGELOG then holds as written; if any exit move remains, record it in COMPATIBILITY.md's not-promised list.",
+        "fixTask": "P156.18-3st",
+        "commit": "781d348350c2",
+        "status": "fixed"
       },
       {
         "id": "P156-R14",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py:16692-16694 (LIST_FLAG_READINGS comment), :10197-10198 (_batch_task_args outputs/skills); CHANGELOG.md:204-205",
         "issue": "outputs and skills are batch list keys batch_list_fields never reads; their items are silently split by _split_csv, so the comment, the CHANGELOG and the task title claim more than the code does.",
-        "resolution": "Give outputs and skills batch rows in the same reading as the other keys (or narrow both sentences to what is read).",
-        "fixTask": "P156.18-3st"
+        "resolution": "fixed in P156.18-3st (781d348350c2): Give outputs and skills batch rows in the same reading as the other keys (or narrow both sentences to what is read).",
+        "fixTask": "P156.18-3st",
+        "commit": "781d348350c2",
+        "status": "fixed"
       },
       {
         "id": "P156-R15",
         "severity": "low",
         "file": "CHANGELOG.md:47-57; plugins/audit/scripts/manifest/audit-task.py (_locked_batch_add, _cmd_batch_add)",
         "issue": "add --from-file, the path /audit:phase add writes through, never reads the gate reach, while the CHANGELOG says add warns when a task's gate reaches no suite.",
-        "resolution": "Read the reach for each written task after the batch's lock is released (the same outside-lock path the single add uses), with a case; or state the gap in CHANGELOG and verbs-in-full.md.",
-        "fixTask": "P156.18-3st"
+        "resolution": "fixed in P156.18-3st (781d348350c2): Read the reach for each written task after the batch's lock is released (the same outside-lock path the single add uses), with a case; or state the gap in CHANGELOG and verbs-in-full.md.",
+        "fixTask": "P156.18-3st",
+        "commit": "781d348350c2",
+        "status": "fixed"
       },
       {
         "id": "P156-R16",
@@ -203,10 +209,53 @@
         "severity": "med",
         "file": "tests/test__affected_tests.py af38; plugins/audit/scripts/governance/_affected_tests.py (run_listing)",
         "issue": "Release-tier CI run 41878377203 at ef099080 is red on the linux stress leg (cp1252 plus a spaced, linked TMPDIR): af38 fails - the timed-out listing answers exit -15 'did not finish within 1s', but the grandchild check reads None/False, so either the grandchild's pid was never recorded under the spaced linked TMPDIR or it outlived the teardown.",
-        "resolution": "Reproduce under the stress leg's conditions (tools/sweep-selftests.py --spaced --encoding cp1252 tests/test__affected_tests.py), find which half is wrong (the case's pid record under a spaced path, or the teardown), and fix that one so af38 holds on every leg."
+        "resolution": "fixed in P156.19-3st (441d3601f81c): Reproduce under the stress leg's conditions (tools/sweep-selftests.py --spaced --encoding cp1252 tests/test__affected_tests.py), find which half is wrong (the case's pid record under a spaced path, or the teardown), and fix that one so af38 holds on every leg.",
+        "fixTask": "P156.19-3st",
+        "commit": "441d3601f81c",
+        "status": "fixed"
+      },
+      {
+        "id": "P156-R20",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:1941-1961 (_gate_reach), :1988-2005, :2048-2065; plugins/audit/scripts/governance/drive-phase.py:8295-8327 (add_fix_tasks)",
+        "issue": "The batch reads the gate reach one task at a time from scratch (git ls-files, listings, import graph each time): measured 50.6 s for seven tasks, 5.9-10.5 s each. The drive's --answer fix path calls add --from-file --json and reads only tasks, so it pays this on every triage and drops gateReach; under --json the new task ids print only after the reading, so a caller timing out loses the ids of a write that landed.",
+        "resolution": "See the redesign: the manifest verbs stop reading the reach; it is read where the gate's affected facts are already gathered.",
+        "fixTask": "P156.20-3st"
+      },
+      {
+        "id": "P156-R21",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_affected_tests.py:1260-1265; plugins/audit/scripts/manifest/audit-task.py (reach paths arm no signal handler)",
+        "issue": "A SIGTERM to add, scope or done kills Python without teardown, and each listing started in its own session keeps running (probed: exit 143, grandchild alive); the comment says a listing's children never outlive the verb.",
+        "resolution": "Moot once the verbs no longer start listings; the comment states the teardown the remaining callers have.",
+        "fixTask": "P156.20-3st"
+      },
+      {
+        "id": "P156-R22",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:9929-9955 (split_batch_items), :10052-10055, :10115, :10349; COMPATIBILITY.md:678-679",
+        "issue": "A batch task key containing a comma, referenced whole from dependsOn, was accepted at 8c4bb8bd and is now refused (exit 0 to 2) because the reference is split before keys resolve; COMPATIBILITY says the id and path lists did not move.",
+        "resolution": "Resolve an item matching a batch key whole before splitting it, so the old batch keeps working.",
+        "fixTask": "P156.20-3st"
+      },
+      {
+        "id": "P156-R23",
+        "severity": "low",
+        "file": "CHANGELOG.md:33-34 (restore entry)",
+        "issue": "The CHANGELOG lists restore's exit 0 only as restored, omitting the dropped-copy outcome the usage text and guide now state.",
+        "resolution": "Extend the exit-0 clause to the dropped copy.",
+        "fixTask": "P156.20-3st"
+      },
+      {
+        "id": "P156-R24",
+        "severity": "low",
+        "file": "COMPATIBILITY.md:678-679",
+        "issue": "The new entry attaches 'a comma inside an entry is kept' to the id and path lists, where every comma splits; it is true only of the one-entry flags.",
+        "resolution": "Move the clause to the one-entry-flag sentence; the id/path sentence says only that they split.",
+        "fixTask": "P156.20-3st"
       }
     ],
-    "outcome": "[findings: 19 - 0 high, 5 med, 14 low; 15 with a recorded fix commit]"
+    "outcome": "[findings: 24 - 0 high, 6 med, 18 low; 19 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1612,7 +1661,7 @@
     {
       "id": "P156.18-3st",
       "title": "A batch reads each list key the way its flag does, outputs and skills included, and warns on gate reach like the single add",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix P156-R13, P156-R14 and P156-R15 (docs/audit/phases/P156.json review.findings): a split-reading batch item is split as its flag splits it (only free-text readings refuse a join), outputs and skills go through the same batch reading, and add --from-file reads the gate reach for each written task after its lock is released, as the single add does; CHANGELOG, verbs-in-full and COMPATIBILITY say what the code does.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1652,14 +1701,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "781d348350c2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py. R13: new split_batch_items(doc) returns a copy with each item at a `split` batch key split by _split_csv (only lists of non-empty strings; others left for the type checks); read_batch applies it and hands the split doc on, and batch_problems grades the split doc, so _batch_joined_problems refuses only the free-text readings (tests-add, gate; waiver/pair have no batch key). A dead `if reading == split: continue` I first wrote there was removed after its mutation survived (the doc is already split). phase.area written as one string is now _split_csv'd at build, as --area splits it. R14: CSV_FLAG_READINGS = {skills, outputs, area: split} beside LIST_FLAG_READINGS; batch_list_fields merges it by default, so tasks[].outputs, tasks[].skills and phase.area carry a reading; the LIST_FLAG_READINGS comment now says the batch splits split keys and that the CSV rows are hand-written. R15: _locked_batch_add returns (0, _reach_ask_each(ids, mpath, payload)) on a real write (dry run unchanged, reads none); _cmd_batch_add wraps _under_lock in _reach_after_release, which for a `tids` ask calls the new _reach_each_after_release: one load of the written plan after the lock is released (_reach_each_outside_lock, which _reach_outside_lock now delegates to), per-task _reach_or_why (fail-open kept), human lines `WARNING: gate reach: <id>: <path> -- <why>` (label threaded through _reach_said/_reach_lines, default empty so add/scope/done are byte-identical), --json gateReach and gateReachNotAsked keyed by task id. Docs: CHANGELOG (gate-reach entry names add --from-file; list-flag entry says split keys split and free-text keys refuse), verbs-in-full.md (reach passage + batch refusal list), COMPATIBILITY.md (an 'and it changed' entry in Outside this document entirely for the remaining exit move: a joined value at a one-entry flag or its batch key, 0 -> 2; id/path lists unchanged), PLUGIN-BUILD-GUIDE.md (audit-task list-reader paragraph and the reach-lock paragraph). Tests (tests/test_audit_task.py): lb1 rewritten (want gains fixes/outputs/skills/phase.area; split keys must NOT be refused, free-text keys must be), lb2 now asserts the joined dependsOn is not named, new lb4 (files/outputs/dependsOn joined items split, fileIndex per path, key resolved), lb5 (phase.area string and list item split), grt19 (one reach line, naming the gap task's id, not the reached task), grt20 (--json keyed per task), grt21 (a note taken while the batch reads its reach is not refused - lock released); fb2 now sets the reach lines apart from the two-line short form (its fixture's gate runs `true`, so the batch owes reach warnings). Mutations in a throwaway copy under the scratchpad (never the task tree): split no-op -> lb4 red; area read the old way -> lb5 red; joined check refuses nothing -> lb1, lb2 red; CSV rows dropped -> lb1 red; reach read inside the lock -> grt21 red; id label dropped -> grt19 red; --json not keyed -> grt20 red; restored copy 21/21 and 16/16. Runs: brief gate exit 0, 5/5 files ok; test__deps, test__output_lints, test_drive_phase, test_close_phase, test_commit_task_work, test__filed_returns exit 0, 6/6 files ok; earlier also test__manifest_phases, test__help_lints, test__refs, test__invariants, test__scoped_commit, test__doctor_trail, test__config, test_full_gate, test_run_test_gate exit 0, 15/15 ok; full `python3 tools/sweep-selftests.py` exit 0, 195/195 files ok (run before the dead-branch removal; the brief gate and the six suites were re-run after it); tools/gate-parity.py exit 0; tools/measure-context.py --gate exit 0 (GATE OK); ruff exit 0; vermin -t=3.8- exit 0. Dependants: full-gate.py and run-test-gate.py import audit-task but use none of the changed functions (the _reach_* helpers are private, signatures extended with defaulted args only) - still correct, suites green; test__doctor_trail, test__invariants, test__scoped_commit, test_close_phase, test_commit_task_work, test__filed_returns - still correct, green in the full sweep; tests/test_audit_task.py - changed as above; .github/sweep-costs.json - the suite's per-block costs were not re-recorded, the grt and lr blocks gained cases; tools/affected.py, tools/sweep-selftests.py, docs/research/pipeline-cost-levers.md - name the test file by path, unchanged and still correct; CHANGELOG.md - changed. _config_rules.py, _branch.py, _manifest_vocab.py, _manifest_phases, tools/release.py and their suites (test__config_rules, test__branch, test__manifest_vocab, test__manifest_phases) were not touched by this change and pass in the brief gate.",
+        "descriptive": "A batch splits id/path list items as their flags do, refuses only joined free-text items, reads outputs/skills/area through the same table, and warns on gate reach per written task after its lock is released."
       },
       "startedAt": "2026-11-04T17:41:57Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-04T18:18:41Z",
+      "verifiedBy": [
+        "lb1 (rewritten): every batch list key carries its flag's reading, outputs/skills/area included; a joined value at a split key is not refused, at a free-text key it is",
+        "lb2 (changed): a joined tests.add and testGate item is refused, the joined dependsOn is not named",
+        "lb4: joined files, outputs and dependsOn items are split, indexed per path and resolved per part",
+        "lb5: phase.area joined by commas, as a string or a list item, is written as two tags",
+        "grt19: add --from-file warns once for the task whose gate misses a file, naming that task's id, not the reached task",
+        "grt20: --json carries gateReach per written task id",
+        "grt21: a note taken while the batch reads its reach is not refused - the reach runs with the lock released"
+      ],
       "notes": [
         {
           "at": "2026-11-04T17:41:08Z",
@@ -1676,6 +1733,10 @@
         {
           "at": "2026-11-04T17:41:08Z",
           "text": "no suite: COMPATIBILITY.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__manifest_phases.py, tests/test_validate_manifest.py, tools/lints/_refs.py"
+        },
+        {
+          "at": "2026-11-04T18:18:41Z",
+          "text": "gate reach at close: a passed run of this task's gate (python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py tests/test__branch.py tests/test__config_rules.py tests/test__manifest_vocab.py) is no evidence for CHANGELOG.md (the affected-test derivation selects tests/test__deps.py, tests/test__refs.py for it, and the gate runs none of them); COMPATIBILITY.md (the affected-test derivation selects tests/test__deps.py, tests/test__refs.py for it, and the gate runs none of them); PLUGIN-BUILD-GUIDE.md (the affected-test derivation selects tests/test__deps.py, tests/test__refs.py for it, and the gate runs none of them); tools/release.py (the affected-test derivation selects .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, tests/test__config.py, tests/test__evidence_io.py, tests/test__refs.py, tests/test_stamp_verification.py, tools/release.py for it, and the gate runs none of them)"
         }
       ],
       "fixes": [
@@ -1688,6 +1749,18 @@
         "runId": "2026-11-04T18:18:27Z.8a0c49",
         "status": "passed",
         "at": "2026-11-04T18:18:27Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "781d348350c2",
+        "at": "2026-11-04T18:18:41Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-04T18:09:09Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py tests/test__branch.py tests/test__config_rules.py tests/test__manifest_vocab.py` in a throwaway tree at HEAD exited 1 with 7 of 1264 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - lb1 (house FAIL), lb2 (house FAIL), lb4 (house FAIL), lb5 (house FAIL), grt19 (house FAIL), grt20 (house FAIL), grt21 (house FAIL): SELFTEST FAILED: 1257/1264 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1777,6 +1850,104 @@
         "basis": "`python3 tools/sweep-selftests.py tests/test__affected_tests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with 3 of 842 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - af43 (house FAIL), uv5 (house FAIL), rx1 (house FAIL): SELFTEST FAILED: 840/842 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
         "status": "proved",
         "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P156.20-3st",
+      "title": "The gate reach is read where the gate's affected facts are already gathered, and the manifest verbs start no project command",
+      "status": "in_progress",
+      "description": "Fix P156-R20 to P156-R24 (docs/audit/phases/P156.json review.findings). The gate-reach check added this phase lives in the manifest verbs (add, add --from-file, scope, done), and every review round has found a new defect of that one placement: the index lock held across project listings (R4), a second copy of the fact gathering (R8), warnings dropped from the short output (R12), the batch not warned (R15), an interrupt not tearing listings down (R16), the batch paying the reading per task on every triage (R20), a SIGTERM leaving listings running (R21). The redesign removes the class rather than patching an eighth instance: a verb that writes the manifest starts no project command. The reach is read once, by run-test-gate when it runs a task's gate, from the affected facts it already gathers for that gate (the shared _affected_tests gathering, with its group teardown and the interrupt handling run-test-gate already arms), and it is recorded as an observation of that gate run - which declared files no suite the gate selects reaches - printed beside the verdict and kept in the evidence row, where the close and the drive read it. Delete the verb-side reading (_gate_reach and its outside-lock/after-release/before-lock helpers, the batch reading, the gateReach/gateReachNotAsked keys); keep entry_is_pattern and the shared gathering. Cases: a verb with a gate reaching nothing starts no listing (count run_listing calls: zero); a task gate whose suites reach none of a declared file names it in the gate's output and evidence. R22: a batch reference matching a batch key whole resolves before it is split, so a comma-holding key keeps working as it did at the base. R23: CHANGELOG's restore exit 0 includes the dropped copy. R24: COMPATIBILITY.md's comma clause belongs to the one-entry flags. CHANGELOG, verbs-in-full and the guide say where the reach is read now, and that the verbs no longer read it.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_affected_tests.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_audit_task.py",
+        "tests/test_run_test_gate.py",
+        "tests/test__affected_tests.py",
+        "tests/test_drive_phase.py",
+        "plugins/audit/reference/verbs-in-full.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md",
+        "COMPATIBILITY.md",
+        "plugins/audit/scripts/config/_config_rules.py",
+        "plugins/audit/scripts/manifest/_branch.py",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "tests/test__manifest_phases.py",
+        "tools/check-example-ledgers.py",
+        "tools/release.py",
+        "tests/test__branch.py",
+        "tests/test__config_rules.py",
+        "tests/test__manifest_vocab.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "tests/test__evidence_io.py",
+        "tools/lints/_deps.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_test_gate.py",
+          "tests/test_audit_task.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_audit_task.py tests/test__affected_tests.py tests/test_drive_phase.py tests/test__manifest_phases.py tests/test__branch.py tests/test__config_rules.py tests/test__manifest_vocab.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-04T18:34:52Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-04T18:34:04Z",
+          "text": "scope: plugins/audit/scripts/manifest/audit-task.py, plugins/audit/scripts/governance/drive-phase.py, plugins/audit/scripts/governance/_affected_tests.py, COMPATIBILITY.md, CHANGELOG.md, every path the finding(s) P156-R20, P156-R21, P156-R22, P156-R23, P156-R24 name"
+        },
+        {
+          "at": "2026-11-04T18:34:04Z",
+          "text": "scope: tests/test_audit_task.py, the suite that tests plugins/audit/scripts/manifest/audit-task.py (python: its import closure reaches plugins/audit/scripts/manifest/audit-task.py)"
+        },
+        {
+          "at": "2026-11-04T18:34:04Z",
+          "text": "scope: tests/test_drive_phase.py, the suite that tests plugins/audit/scripts/governance/drive-phase.py (python: it hands drive-phase.py to a loader through a module constant)"
+        },
+        {
+          "at": "2026-11-04T18:34:04Z",
+          "text": "scope: tests/test__affected_tests.py, the suite that tests plugins/audit/scripts/governance/_affected_tests.py (python: its import closure reaches plugins/audit/scripts/governance/_affected_tests.py)"
+        },
+        {
+          "at": "2026-11-04T18:34:04Z",
+          "text": "no suite: COMPATIBILITY.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__manifest_phases.py, tests/test_validate_manifest.py, tools/lints/_refs.py"
+        },
+        {
+          "at": "2026-11-04T18:34:04Z",
+          "text": "no suite: CHANGELOG.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__deps.py, tests/test__manifest_phases.py, tests/test__output.py, tests/test__panel_settings.py, tests/test__refs.py, tests/test_audit_task.py and 4 more"
+        }
+      ],
+      "fixes": [
+        "P156-R20",
+        "P156-R21",
+        "P156-R22",
+        "P156-R23",
+        "P156-R24"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-04T19:17:23Z.2931bb",
+        "status": "passed",
+        "at": "2026-11-04T19:17:23Z"
       }
     }
   ],

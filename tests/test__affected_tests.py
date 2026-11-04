@@ -894,7 +894,7 @@ def _pids_in(path):
 def _interrupt_cases(check):
     """`af43`: an interrupt landing while a prefetch waits on its listings.
     Every listing runs in a session of its own, so the interrupt the terminal
-    sends the verb's group never reaches one; the prefetch is what has to stop
+    sends the caller's group never reaches one; the prefetch is what has to stop
     them. Each listing starts a background grandchild that would outlive a
     teardown of the shell alone, and a slow one, so a prefetch that waited the
     listings out reads as a late return rather than as a pass."""

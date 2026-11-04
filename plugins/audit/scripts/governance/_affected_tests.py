@@ -24,9 +24,10 @@ them.
 THE SELECTION IS PURE. Every observation -- a listing's exit and output, the
 version answer, the Python sources, the tree's suite files -- arrives in
 `facts`, and nothing the selection calls shells out or reads a file. The
-gathering that fills `facts` is the last section of this file (`gather_facts`),
-held apart from the selection and asked by both callers - `run-test-gate.py`'s
-affected steps and `audit-task.py`'s gate-reach check - so the two measure one
+gathering that fills `facts` is its own section of this file (`gather_facts`),
+held apart from the selection, and the one gathering `run-test-gate.py` asks
+for both of its questions - its affected steps and its reading of which
+declared files its gate reaches (the last section) - so the two measure one
 set of facts the one way.
 
 WIDEN, NEVER EMPTY. A listing that cannot answer, a version that does not
@@ -1169,15 +1170,22 @@ def _support_settled(support, phase, meta, project, task_entries, build,
 
 # --- gathering the facts the selection reads --------------------------------------
 # THE ONE PLACE THAT MEASURES. Everything above reads `facts` and nothing else;
-# this is what fills it, for both of the callers that ask the selection a
-# question: `run-test-gate.py`'s affected steps, over a task's whole change, and
-# `audit-task.py`'s gate-reach check, over one declared file at a time. They
-# were two hand copies once and had drifted - one ran a listing with no process
-# group, so a timed-out listing's children outlived the verb, and the two ran
-# under different bounds - so a change to the facts one gathered changed only
-# one of the two answers. A listing runs the way a plan command runs: the
-# plan's node preamble in front, the plan's shell, stderr folded into the
+# this is what fills it, for both of the questions `run-test-gate.py` asks the
+# selection on a task's run: its affected steps, over the task's whole change,
+# and its gate-reach reading (`reach_answers`), over one declared file at a
+# time. Two hand copies of it had drifted once - one ran a listing with no
+# process group, so a timed-out listing's children outlived its caller, and the
+# two ran under different bounds. A listing runs the way a plan command runs:
+# the plan's node preamble in front, the plan's shell, stderr folded into the
 # output, and on timeout its whole tree stopped by `_proc_group.stop_and_drain`.
+#
+# A STOP SIGNAL TEARS A LISTING DOWN ONLY AS AN EXCEPTION. A listing runs in a
+# session of its own, so a signal reaches this process and not its group, and
+# the group goes when the signal surfaces here as `KeyboardInterrupt`. SIGINT
+# always does; SIGTERM does only where the caller armed it, which
+# `run-test-gate.py` does around its affected gathering and its reach reading
+# (`_proc_group.arm_interrupt`). A caller that arms none and is sent SIGTERM
+# dies with its listing still running.
 LISTING_TIMEOUT_SECONDS = 120
 GIT_TIMEOUT_SECONDS = 30
 # How many listing commands `prefetch_listings` runs at once; each is a process.
@@ -1206,7 +1214,7 @@ def _stopped(stop):
 
 def _interrupted(text):
     return {"exit": _INTERRUPTED_EXIT,
-            "output": "%sstopped: the verb running this listing was interrupted"
+            "output": "%sstopped: the run asking this listing was interrupted"
                       % ("%s\n" % (text,) if text else "",)}
 
 
@@ -1260,8 +1268,9 @@ def run_listing(project, meta, command, timeout):
         return {"exit": code,
                 "output": "%s\ndid not finish within %ss" % (text, timeout)}
     except BaseException:
-        # An interrupt lands here too, and the group goes before it leaves: a
-        # listing's children must not outlive the verb that started them.
+        # An interrupt that surfaced as an exception lands here too, and the
+        # group goes before it leaves (the section comment says which signals
+        # surface so, and where).
         _proc_group.stop_and_drain(proc)
         raise
 
@@ -1401,6 +1410,64 @@ def gather_facts(project, meta, changed, seen=None, sources=True):
             seen["sources"] = _python_sources(project, files)
         facts["pySources"] = seen["sources"]
     return facts
+
+
+# --- which declared files a gate's suites reach -----------------------------------
+# A PASSED GATE RUN IS EVIDENCE ONLY FOR THE FILES ITS SUITES READ. A gate whose
+# suites never open a document the task edits, or never import a tool it edits,
+# stays green whatever that file now says. So `run-test-gate.py` asks, on a
+# task's measured run, which of the task's declared files no suite of that run
+# reaches. Each file goes through `select` ALONE, over the gathering above
+# shared with the run's affected steps (`seen`): a listing handed every changed
+# path at once cannot say which of them each suite it names is for.
+def related_reach(meta, facts, runs):
+    """The suites of `runs` among the recorded related listing's answer for one
+    path, when that listing may be read (`_untrusted`); else []. `select` adds
+    every one of them to its answer and no later arm takes one away, so the
+    path is reached whatever the rest say."""
+    if "related" not in listing_templates(meta) or _untrusted(meta, facts):
+        return []
+    listed, why = _ran(facts, "related")
+    return [] if why else [p for p in listed if p in set(runs)]
+
+
+def path_reach(project, meta, phase, entries, runs, path, seen):
+    """`{suites, widen, settled}` - the selection's answer for `path` alone, in
+    the shape `_manifest_phases.gate_reach_gaps` compares: the suites it
+    selects, the widening it could not answer past, and whether one of
+    `entries` is the unscoped call that runs every suite of the selection.
+
+    THE IMPORT GRAPH IS READ ONLY WHEN THE LISTING LEAVES THE QUESTION OPEN.
+    Walking every Python source of a large tree costs seconds a path, and a
+    path the trusted related listing already reaches a suite of `runs` for is
+    reached whatever the graph adds; only the rest pay for `select` whole."""
+    early = gather_facts(project, meta, [path], seen=seen, sources=False)
+    listed = related_reach(meta, early, runs)
+    if listed:
+        return {"suites": listed, "widen": None, "settled": False}
+    info = select([path], meta,
+                  gather_facts(project, meta, [path], seen=seen)
+                  if path.endswith(".py") or changed_suites([path]) else early)
+    picked = [s.get("path") for s in (info.get("suites") or info.get("selected")
+                                      or []) if isinstance(s, dict)]
+    _steps, after = steps_for(info, phase, meta, project, entries)
+    widen = info.get("widen")
+    if widen and info.get("support") and after.get("widen") is None:
+        # The test-support widening a declared unscoped call settles.
+        widen = None
+    settled = (after.get("widen") is None
+               and bool(picked or info.get("support"))
+               and not after.get("suites"))
+    return {"suites": picked, "widen": widen, "settled": settled}
+
+
+def reach_answers(project, meta, phase, entries, runs, paths, seen):
+    """`{path: path_reach(...)}` for each of `paths`, their listings run side by
+    side first (`prefetch_listings`) into the `seen` the run's affected
+    gathering already filled, so a command it ran is not run again."""
+    prefetch_listings(project, meta, paths, seen)
+    return dict((path, path_reach(project, meta, phase, entries, runs, path,
+                                  seen)) for path in paths)
 
 
 # --- cli ------------------------------------------------------------------------

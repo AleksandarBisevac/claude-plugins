@@ -123,9 +123,8 @@ def _stderr_of(call, *args):
 # failing), dd (`start` refuses a task whose declared file has a reader it
 # neither declares nor waives, and `scope --files +a,b` adds to the held list),
 # gk (`scope --gate` keeps every held entry it was not told to drop, and the
-# success line prints the gate a task now holds), grt (a task's gate checked
-# to reach the files it declares: warned by `add` and `scope`, recorded by
-# `done`).
+# success line prints the gate a task now holds), grt (a verb that writes the
+# manifest starts no listing to read a gate's reach).
 def _at_kit(tmp):
     """The helpers every slice of the add-and-close cases builds on, each
     bound to `tmp`, the slice's own scratch directory.
@@ -6950,15 +6949,13 @@ def _close_cases(check):
               "others: `status`, `completedAt` and `commit` every time, the "
               "outcome halves and `verifiedBy` only when the caller passed them, "
               "and `intentCheck` for the answer a close against a commit now "
-              "always records, and `notes` for the gate-reach note - this "
-              "fixture's gate, a key running `true`, reaches no suite of "
-              "`src/fresh.ts`. A row for an untouched field would claim a write "
+              "always records. A row for an untouched field would claim a write "
               "that did not happen, which is the one thing a trail must never "
               "do: %r"
               % ([c["field"] for c in _pd_det["changes"]],),
               [c["field"] for c in _pd_det["changes"]]
               == ["status", "completedAt", "commit", "outcome.technical",
-                  "intentCheck", "notes"])
+                  "intentCheck"])
 
         # THE PHASE QUESTION, SETTLED AND CHECKABLE IN BOTH DIRECTIONS.
         projls, mpls = mk("dn-last", pd_fixture(last=True))
@@ -15458,12 +15455,7 @@ def _batch_cases(check):
           "of its own: %r" % (txt,),
           txt.startswith("[audit-task] phase P2 added with P2.1, P2.2")
           and "written: docs/audit/audit-plan.json" in txt.splitlines()[0]
-          # The reach lines are the batch's warnings about the tasks it wrote
-          # (this fixture's gate runs `true`, which reaches no suite); the
-          # grt block owns them.
-          and [ln for ln in txt.splitlines()[1:]
-               if not ln.startswith(M.GATE_REACH_LEAD)]
-          == ["gate: test (from meta.buildCommands)"])
+          and txt.splitlines()[1:] == ["gate: test (from meta.buildCommands)"])
 
     proj, mpath = project("sharded", sharded=True)
     code, txt = _cli_here(["add", "--from-file", batch(proj, _batch_doc())], proj)
@@ -23141,24 +23133,48 @@ def _list_flag_cases(check):
               and [(t.get("tests") or {}).get("add")
                    for t in new[0]["tasks"]][0]
               == ["tests/b.test.ts: sums exactly, to the cent, as b.ts does"])
+
+        # A batch key may hold a comma, and a reference spelling that key
+        # whole names that task: it resolves before the split `lb4` shows, so
+        # a batch written before list keys were split still lands as it did.
+        proj, mp = mk("lb-comma-key", base_manifest())
+        doc = _batch_doc()
+        doc["tasks"][0]["key"] = "sum,cents"
+        doc["tasks"][1]["dependsOn"] = ["sum,cents", "P1.1"]
+        path = os.path.join(proj, "batch.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh)
+        code, txt = run(["add", "--from-file", path, "--project-dir", proj])
+        new = [p for p in _mio.load_manifest(mp)["phases"]
+               if p.get("title") == "Exact refunds"]
+        tasks = (new[0].get("tasks") if new else None) or [{}, {}]
+        check("lb6 a dependsOn item that is a batch key holding a comma, "
+              "written whole, resolves to that task before any split - the "
+              "batch is written and the dependency names the task's id: %r"
+              % ((code, txt[-400:], [t.get("dependsOn") for t in tasks]),),
+              code == 0 and len(new) == 1 and tasks[0].get("id")
+              and sorted(tasks[1].get("dependsOn") or [])
+              == sorted([tasks[0]["id"], "P1.1"]))
     finally:
         _harness.remove_tree(tmp)
 
 
 def _gate_reach_cases(check):
-    """A task's gate is checked to reach the files the task declares.
+    """A verb that writes the manifest starts no project command.
 
-    A gate that selects no suite reading a file the task changes grades nothing
-    about that file, and a passed run of it read as evidence for the change: a
-    documentation edit graded by suites that never open the document, a tool's
-    edit graded by suites that never import it. `add` and `scope` warn when the
-    gate or the files are set, and `done` records the gap on the task.
+    Whether a task's gate reaches the files the task declares is read by the
+    gate's own run (`run-test-gate.py`), from the facts its affected selection
+    gathers, and recorded beside that run's verdict. The verbs used to read it
+    themselves, and every placement of it there cost them something: the
+    project's listings run while the index lock was held, or after it with no
+    teardown on a stop signal, or once per task for a batch. So `add`,
+    `add --from-file`, `scope` and `done` ask none of it.
 
-    THE FIXTURE TELLS THE READINGS APART. `src/m.py` is reached only through
-    `tests/test_m.py`'s import, so a check that read file names alone would
-    name it; `CHANGELOG.md` is reached only through the recorded related
-    listing's answer, so a check that skipped the listing would name it under a
-    gate that runs the suite the listing names.
+    THE COUNT IS OF THE SHARED RUNNER. Every listing the plugin runs goes
+    through `_affected_tests.run_listing`, and every gathering through
+    `_affected_tests.gather_facts`; a recorder stands in for both and must hear
+    nothing. The fixture records a related listing and declares a document no
+    suite of the gate reads, which is what the verbs' reading used to answer.
     """
     tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
     (run, _run_on_stdin, base_manifest, mk, _mk_empty, task_in, _pin, _unpin,
@@ -23166,7 +23182,6 @@ def _gate_reach_cases(check):
     listing = {"derived": {
         "listing": {"related": "printf '%s\\n' tests/test_docs.py # {paths}"},
         "verifiedOn": {"command": "echo v1", "answer": "v1"}}}
-    lead = "WARNING: gate reach: "
     try:
         def lay_out(proj):
             for rel, text in (("src/m.py", "X = 1\n"),
@@ -23179,345 +23194,167 @@ def _gate_reach_cases(check):
                 with open(path, "w") as fh:
                     fh.write(text)
 
-        def project(name, manifest=None, with_listing=False):
+        def project(name, manifest=None):
             manifest = manifest or base_manifest()
-            if with_listing:
-                manifest["meta"]["phaseGate"] = json.loads(json.dumps(listing))
+            manifest["meta"]["phaseGate"] = json.loads(json.dumps(listing))
             proj, mp = mk(name, manifest)
             lay_out(proj)
             return proj, mp
 
-        def reach_lines(txt):
-            return [ln for ln in txt.splitlines() if ln.startswith(lead)]
+        def counted(argv, stdin=None):
+            """`(exit, text, calls)` of a verb run in-process with the shared
+            runner and the shared gathering each replaced by a recorder."""
+            calls = []
+            real = (M._affected.run_listing, M._affected.gather_facts,
+                    M._affected.tree_files)
 
-        def add(proj, files, gate, extra=()):
-            return run(["add", "Reach", "--phase", "P2", "--project-dir", proj,
-                        "--tests-mode", "regression", "--files", files,
-                        "--gate", gate] + list(extra))
+            def listing(project_dir, meta, command, timeout):
+                calls.append(("run_listing", command))
+                return {"exit": 0, "output": "tests/test_docs.py\n"}
 
-        proj, _mp = project("gr-add")
-        code, txt = add(proj, "CHANGELOG.md,src/m.py,tests/test_m.py",
-                        "python3 tests/test_m.py")
-        lines = reach_lines(txt)
-        check("grt1 `add` warns once for each declared file its gate reaches "
-              "no suite of: the document no suite reads is named, the module "
-              "the gate's suite imports and the suite the gate runs are not: "
-              "%r" % ((code, lines),),
-              code == 0 and len(lines) == 1 and "CHANGELOG.md" in lines[0]
-              and "src/m.py" not in lines[0]
-              and "tests/test_m.py" not in lines[0].split(" -- ")[0])
+            def gathering(*a, **k):
+                calls.append(("gather_facts", a[2:3]))
+                return real[1](*a, **k)
 
-        proj, _mp = project("gr-add-json")
-        code, txt = add(proj, "CHANGELOG.md,src/m.py,tests/test_m.py",
-                        "python3 tests/test_m.py", ("--json",))
-        try:
-            reach = json.loads(txt).get("gateReach") or {}
-        except ValueError:
-            reach = {}
-        check("grt2 ...and `--json` carries the same answer as data, one gap "
-              "per path with its reason: %r" % ((code, reach),),
-              code == 0
-              and [g.get("path") for g in reach.get("gaps") or []]
-              == ["CHANGELOG.md"]
-              and all(g.get("why") for g in reach.get("gaps") or []))
-
-        proj, _mp = project("gr-listing-miss", with_listing=True)
-        code, txt = add(proj, "CHANGELOG.md,tests/test_m.py",
-                        "python3 tests/test_m.py")
-        lines = reach_lines(txt)
-        check("grt3 THE RECORDED RELATED LISTING IS READ: a document the "
-              "listing answers `tests/test_docs.py` for, under a gate that does "
-              "not run that suite, is named with the suite it would have "
-              "needed: %r" % ((code, lines),),
-              code == 0 and len(lines) == 1 and "CHANGELOG.md" in lines[0]
-              and "tests/test_docs.py" in lines[0])
-
-        proj, _mp = project("gr-listing-hit", with_listing=True)
-        code, txt = add(proj, "CHANGELOG.md,tests/test_docs.py",
-                        "python3 tests/test_docs.py")
-        check("grt4 SECOND-DIRECTION CASE: the same document under a gate that "
-              "runs the suite the listing names is reached, and nothing is "
-              "warned - a check that named every document would fail here: %r"
-              % ((code, reach_lines(txt)),),
-              code == 0 and reach_lines(txt) == [])
-
-        proj, mp = project("gr-scope")
-        code, txt = run(["scope", "P2.3", "--project-dir", proj,
-                         "--files", "src/m.py,CHANGELOG.md",
-                         "--tests-mode", "regression",
-                         "--gate", "python3 tests/test_m.py"])
-        lines = reach_lines(txt)
-        code2, txt2 = run(["scope", "P2.3", "--project-dir", proj,
-                           "--description", "Reach, described again"])
-        check("grt5 `scope` setting the gate and the files warns for the file "
-              "the gate reaches no suite of, and a scope that moves neither "
-              "says nothing about reach: %r" % ((code, lines, code2,
-                                                 reach_lines(txt2)),),
-              code == 0 and len(lines) == 1 and "CHANGELOG.md" in lines[0]
-              and code2 == 0 and reach_lines(txt2) == [])
-
-        def closing(name, files):
-            fx = pd_fixture()
-            node = fx["phases"][1]["tasks"][-1]
-            node["files"] = list(files)
-            node["tests"]["gate"] = ["python3 tests/test_m.py"]
-            fx["fileIndex"].pop("src/fresh.ts", None)
-            for rel in files:
-                fx["fileIndex"][rel] = ["P2.4"]
-            return project(name, fx)
-
-        proj, mp = closing("gr-done", ["CHANGELOG.md", "src/m.py",
-                                       "tests/test_m.py"])
-        code, txt = run(["done", "P2.4", "--project-dir", proj,
-                         "--commit", _PD_SHA] + _NOT_ASKED)
-        notes = (task_in(mp, "P2.4") or {}).get("notes") or []
-        said = [n.get("text", "") for n in notes if isinstance(n, dict)]
-        check("grt6 `done` RECORDS the gap: one dated note on the task names "
-              "the file its gate reached no suite of and not the ones it did, "
-              "and the close says so: %r" % ((code, said, reach_lines(txt)),),
-              code == 0 and len(said) == 1 and "CHANGELOG.md" in said[0]
-              and "src/m.py" not in said[0]
-              and isinstance(notes[0].get("at"), str)
-              and len(reach_lines(txt)) == 1)
-
-        proj, mp = closing("gr-done-quiet", ["src/m.py", "tests/test_m.py"])
-        code, txt = run(["done", "P2.4", "--project-dir", proj,
-                         "--commit", _PD_SHA] + _NOT_ASKED)
-        check("grt7 SECOND-DIRECTION CASE: a close whose gate reaches every "
-              "declared file writes no note and prints no reach line: %r"
-              % ((code, (task_in(mp, "P2.4") or {}).get("notes"),
-                  reach_lines(txt)),),
-              code == 0 and not (task_in(mp, "P2.4") or {}).get("notes")
-              and reach_lines(txt) == [])
-
-        # ---- a files entry is a literal path, whatever characters it holds ----
-        # The dynamic-route layout of several web frameworks names real
-        # directories `[slug]`; read as a pattern, the entry was handed over
-        # unanswered and named "not asked" under a gate that does reach it.
-        proj, _mp = project("gr-bracket", with_listing=True)
-        code, txt = add(proj, "app/[slug]/page.tsx,tests/test_docs.py",
-                        "python3 tests/test_docs.py")
-        check("grt8 a `files` entry holding `[` is asked as the literal path it "
-              "names: the listing answers a suite the gate runs, so it is "
-              "reached and nothing is warned: %r" % ((code, reach_lines(txt)),),
-              code == 0 and reach_lines(txt) == [])
-
-        proj, _mp = project("gr-dir-entry", with_listing=True)
-        os.makedirs(os.path.join(proj, "app"))
-        code, txt = add(proj, "app/,tests/test_docs.py",
-                        "python3 tests/test_docs.py")
-        lines = reach_lines(txt)
-        check("grt9 SECOND-DIRECTION CASE: a directory entry still names no one "
-              "file, so it is handed over unanswered and named as not asked - "
-              "a reading that asked every entry would answer it here: %r"
-              % ((code, lines),),
-              code == 0 and len(lines) == 1 and "app/" in lines[0]
-              and "not asked" in lines[0])
-
-        # ---- the advisory check fails open ------------------------------------
-        proj, mp = project("gr-fail-open")
-        real_reach = M._gate_reach
-
-        def broken(*_a, **_k):
-            raise RuntimeError("the reach reading broke")
-        M._gate_reach = broken
-        try:
-            code, txt = add(proj, "CHANGELOG.md,tests/test_m.py",
-                            "python3 tests/test_m.py")
-        finally:
-            M._gate_reach = real_reach
-        not_asked = [ln for ln in txt.splitlines()
-                     if ln.startswith("WARNING: gate reach not asked: ")]
-        check("grt10 an exception in the reach reading does not turn a written "
-              "`add` into an error: the task stands, the exit is 0, and one "
-              "line says the reach was not asked and why: %r"
-              % ((code, not_asked, bool(task_in(mp, "P2.3"))),),
-              code == 0 and task_in(mp, "P2.3") is not None
-              and len(not_asked) == 1
-              and "the reach reading broke" in not_asked[0])
-
-        # ---- the reach is asked with the index lock released ------------------
-        # A listing that blocks until the case lets it go, and only the FIRST
-        # time it is run: the verb under test is caught inside its reach
-        # reading while another verb takes the lock, and every listing the
-        # other verb runs answers at once. The wait is bounded so a case that
-        # never lets go still ends.
-        slow = ("if mkdir .slow-held 2>/dev/null; then : > .slow-started; "
-                "i=0; while [ ! -f .slow-go ] && [ $i -lt 400 ]; do sleep 0.1; "
-                "i=$((i+1)); done; fi; printf '%s\\n' tests/test_docs.py "
-                "# {paths}")
-
-        def slow_project(name, manifest=None):
-            manifest = manifest or base_manifest()
-            manifest["meta"]["phaseGate"] = {"derived": {
-                "listing": {"related": slow},
-                "verifiedOn": {"command": "echo v1", "answer": "v1"}}}
-            proj, mp = mk(name, manifest)
-            lay_out(proj)
-            return proj, mp
-
-        def caught(proj, argv):
-            """The verb started as a process, and the moment its listing
-            began: `(proc, started)`."""
-            env = dict((k, v) for k, v in os.environ.items()
-                       if not k.startswith("CLAUDE")
-                       and k != "AUDIT_LOCK_TOKENS")
-            proc = subprocess.Popen(
-                [sys.executable, _loader.script_path("audit-task.py")] + argv
-                + ["--project-dir", proj],
-                cwd=proj, env=env, stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT)
-            began = os.path.join(proj, ".slow-started")
-            deadline = time.time() + 60
-            while not os.path.exists(began) and proc.poll() is None \
-                    and time.time() < deadline:
-                time.sleep(0.05)
-            return proc, os.path.exists(began)
-
-        def let_go(proj, proc):
-            with open(os.path.join(proj, ".slow-go"), "w"):
-                pass
+            def files(project_dir):
+                calls.append(("tree_files", project_dir))
+                return real[2](project_dir)
+            (M._affected.run_listing, M._affected.gather_facts,
+             M._affected.tree_files) = (listing, gathering, files)
             try:
-                text = proc.communicate(timeout=120)[0]
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                text = proc.communicate()[0]
-            return proc.returncode, text.decode("utf-8", "replace")
+                if stdin is None:
+                    code, txt = run(argv)
+                else:
+                    code, txt = _run_on_stdin(argv, stdin)
+            finally:
+                (M._affected.run_listing, M._affected.gather_facts,
+                 M._affected.tree_files) = real
+            return code, txt, calls
 
-        proj, mp = slow_project("gr-slow-add")
-        proc, started = caught(proj, [
-            "add", "Slow", "--phase", "P2", "--tests-mode", "regression",
-            "--files", "CHANGELOG.md,tests/test_m.py",
-            "--gate", "python3 tests/test_m.py"])
-        try:
-            ncode, ntxt = run(["note", "P2.3", "--project-dir", proj,
-                               "--text", "taken while the add asked its reach"])
-        finally:
-            acode, atxt = let_go(proj, proc)
-        check("grt11 a note taken while `add` is inside its reach reading is not "
-              "refused - the reach runs with the index lock released - and the "
-              "add still warns for the file its gate reaches no suite of: %r"
-              % ((started, ncode, ntxt[-200:], acode,
-                  reach_lines(atxt) or atxt[-600:]),),
-              started and ncode == 0 and acode == 0
-              and len(reach_lines(atxt)) == 1
-              and "CHANGELOG.md" in reach_lines(atxt)[0])
-
-        fx = pd_fixture()
-        node = fx["phases"][1]["tasks"][-1]
-        node["files"] = ["CHANGELOG.md", "tests/test_m.py"]
-        node["tests"]["gate"] = ["python3 tests/test_m.py"]
-        fx["fileIndex"].pop("src/fresh.ts", None)
-        for rel in node["files"]:
-            fx["fileIndex"][rel] = ["P2.4"]
-        proj, mp = slow_project("gr-slow-done", fx)
-        proc, started = caught(proj, ["done", "P2.4", "--commit", _PD_SHA]
-                               + _NOT_ASKED)
-        try:
-            scode, stxt = run(["scope", "P2.4", "--project-dir", proj,
-                               "--files", "+src/m.py"])
-        finally:
-            dcode, dtxt = let_go(proj, proc)
-        notes = [n.get("text", "") for n in
-                 (task_in(mp, "P2.4") or {}).get("notes") or []
-                 if isinstance(n, dict)]
-        check("grt12 a scope widening the files while `done` asks its reach is "
-              "not refused, and the close then records no reach note for a "
-              "scope it did not measure - it says so instead: %r"
-              % ((started, scode, stxt[-200:], dcode,
-                  [n for n in notes if n.startswith("gate reach at close")],
-                  [ln for ln in dtxt.splitlines() if "gate reach" in ln]),),
-              started and scode == 0 and dcode == 0
-              and (task_in(mp, "P2.4") or {}).get("status") == "done"
-              and not [n for n in notes if n.startswith("gate reach at close")]
-              and any(ln.startswith("WARNING: gate reach not recorded: ")
-                      for ln in dtxt.splitlines()))
-
-        # ---- the facts are gathered by the one shared helper ------------------
-        proj, _mp = project("gr-shared", with_listing=True)
-        asked = []
-        real_run = M._affected.run_listing
-
-        def recorded(project_dir, meta, command, timeout):
-            asked.append(command)
-            if command == "echo v1":
-                return {"exit": 0, "output": "v1\n"}
-            return {"exit": 0, "output": "tests/test_docs.py\n"}
-        M._affected.run_listing = recorded
-        try:
-            code, txt = add(proj, "CHANGELOG.md,tests/test_docs.py",
-                            "python3 tests/test_docs.py")
-        finally:
-            M._affected.run_listing = real_run
-        check("grt13 the reach reading runs its listings through "
-              "`_affected_tests.run_listing`, the runner run-test-gate's "
-              "affected steps use, and keeps no runner of its own: %r"
-              % ((code, asked, reach_lines(txt),
-                  [n for n in ("_reach_shell", "_reach_facts",
-                               "_reach_tree_files", "_prefetch_listings")
-                   if hasattr(M, n)]),),
-              code == 0 and any("CHANGELOG.md" in c for c in asked)
-              and reach_lines(txt) == []
-              and not [n for n in ("_reach_shell", "_reach_facts",
-                                   "_reach_tree_files", "_prefetch_listings")
-                       if hasattr(M, n)])
-
-        # ---- the short output keeps the reach lines ---------------------------
-        # Without `--verbose` a task verb prints its headline and the lines it
-        # decided about the task it wrote. A reach line names a path rather
-        # than the id, and is still a warning about that task, so the command
-        # line an operator types must show it. Run through the verb's own
-        # `__main__`, which is where the short form is cut.
-        def terse(proj, argv):
-            return _cli_here(argv + ["--project-dir", proj], proj)
+        def reach_said(txt):
+            return [ln for ln in txt.splitlines() if "gate reach" in ln]
 
         add_argv = ["add", "Reach", "--phase", "P2", "--tests-mode",
                     "regression", "--files",
                     "CHANGELOG.md,src/m.py,tests/test_m.py",
                     "--gate", "python3 tests/test_m.py"]
+        proj, mp = project("gr-add")
+        code, txt, calls = counted(add_argv + ["--project-dir", proj])
+        check("grt1 `add` with a gate that reaches no suite of a declared "
+              "document starts no listing and gathers no fact - the shared "
+              "runner hears nothing - and says nothing about reach: %r"
+              % ((code, calls, reach_said(txt)),),
+              code == 0 and task_in(mp, "P2.3") is not None
+              and calls == [] and reach_said(txt) == [])
+
+        proj, _mp = project("gr-add-json")
+        code, txt, calls = counted(add_argv + ["--project-dir", proj,
+                                               "--json"])
+        try:
+            body = json.loads(txt)
+        except ValueError:
+            body = None
+        check("grt2 ...and its `--json` result carries no reach key: %r"
+              % ((code, calls, sorted(body) if isinstance(body, dict)
+                  else txt[-300:]),),
+              code == 0 and calls == [] and isinstance(body, dict)
+              and not [k for k in body if k.startswith("gateReach")])
+
+        proj, _mp = project("gr-scope")
+        code, txt, calls = counted(["scope", "P2.3", "--project-dir", proj,
+                                    "--files", "src/m.py,CHANGELOG.md",
+                                    "--tests-mode", "regression",
+                                    "--gate", "python3 tests/test_m.py"])
+        check("grt3 `scope` setting the gate and the files starts no listing: "
+              "%r" % ((code, calls, reach_said(txt)),),
+              code == 0 and calls == [] and reach_said(txt) == [])
+
+        fx = pd_fixture()
+        node = fx["phases"][1]["tasks"][-1]
+        node["files"] = ["CHANGELOG.md", "src/m.py", "tests/test_m.py"]
+        node["tests"]["gate"] = ["python3 tests/test_m.py"]
+        fx["fileIndex"].pop("src/fresh.ts", None)
+        for rel in node["files"]:
+            fx["fileIndex"][rel] = ["P2.4"]
+        proj, mp = project("gr-done", fx)
+        code, txt, calls = counted(["done", "P2.4", "--project-dir", proj,
+                                    "--commit", _PD_SHA] + _NOT_ASKED)
+        notes = [n.get("text", "") for n in
+                 (task_in(mp, "P2.4") or {}).get("notes") or []
+                 if isinstance(n, dict)]
+        check("grt4 `done` closes the task and starts no listing, and writes "
+              "no reach note on it: %r" % ((code, calls, notes,
+                                             reach_said(txt)),),
+              code == 0 and (task_in(mp, "P2.4") or {}).get("status") == "done"
+              and calls == [] and reach_said(txt) == []
+              and not [n for n in notes if "gate reach" in n])
+
+        batch = json.dumps({
+            "request": "Reach in a batch.", "openChoices": [],
+            "phase": {"title": "Reach batch",
+                      "desiredOutcome": "every gate reaches its files"},
+            "tasks": [{"title": "the gap",
+                       "files": ["CHANGELOG.md", "src/m.py",
+                                 "tests/test_m.py"],
+                       "tests": {"mode": "regression",
+                                 "gate": ["python3 tests/test_m.py"]}}]})
+        proj, _mp = project("gr-batch")
+        code, txt, calls = counted(["add", "--from-file", "-",
+                                    "--project-dir", proj, "--json"], batch)
+        try:
+            body = json.loads(txt)
+        except ValueError:
+            body = None
+        check("grt5 `add --from-file` starts no listing for the tasks it "
+              "writes, and its `--json` result carries no reach key: %r"
+              % ((code, calls, sorted(body) if isinstance(body, dict)
+                  else txt[-300:]),),
+              code == 0 and calls == [] and isinstance(body, dict)
+              and len(body.get("tasks") or []) == 1
+              and not [k for k in body if k.startswith("gateReach")])
+
+        # For the mutation that unhooks the recorder: a count of zero from a
+        # recorder that never hears anything would pass every case above.
+        proj, _mp = project("gr-live")
+        calls = []
+        real = M._affected.run_listing
+
+        def heard(project_dir, meta, command, timeout):
+            calls.append(command)
+            return {"exit": 0, "output": "v1\n"}
+        M._affected.run_listing = heard
+        try:
+            M._affected.gather_facts(proj, {"phaseGate": listing},
+                                     ["CHANGELOG.md"])
+        finally:
+            M._affected.run_listing = real
+        check("grt6 SECOND-DIRECTION CASE: the recorder is live - the shared "
+              "gathering, asked directly over the same plan, is heard running "
+              "the version command and the related listing: %r" % (calls,),
+              "echo v1" in calls and any("CHANGELOG.md" in c for c in calls))
+
+        # ---- the short output keeps the warnings about the written task ------
+        # Without `--verbose` a task verb prints its headline and the lines it
+        # decided about the task it wrote. A gate-entry warning names the entry
+        # rather than the id and is still a warning about that task, so the
+        # command line an operator types must show it. Run through the verb's
+        # own `__main__`, which is where the short form is cut.
+        def terse(proj, argv):
+            return _cli_here(argv + ["--project-dir", proj], proj)
+
         proj, _mp = project("gr-terse-add")
         code, txt = terse(proj, add_argv)
         proj, _mp = project("gr-terse-add-long")
         vcode, vtxt = terse(proj, add_argv + ["--verbose"])
-        head = (txt.splitlines() or [""])[0]
-        check("grt14 `add` without `--verbose` keeps its reach warning in the "
-              "short output - the one line the long form prints, naming the "
-              "document no suite reads: %r" % ((code, txt),),
-              code == 0 and head.startswith("[audit-task] P2.")
-              and " added" in head and len(reach_lines(txt)) == 1
-              and reach_lines(txt) == reach_lines(vtxt)
-              and "CHANGELOG.md" in reach_lines(txt)[0])
-        # For the mutation that keeps every line: a short form that printed
-        # the long form whole would carry the reach line and pass grt14.
-        check("grt15 SECOND-DIRECTION CASE: ...and the short form is still the "
-              "short one - fewer lines than `--verbose`, without the long "
-              "form's indented record lines: %r" % ((code, txt, vcode),),
+        check("grt7 the short form is the short one - fewer lines than "
+              "`--verbose`, without the long form's indented record lines: %r"
+              % ((code, txt, vcode),),
               code == 0 and vcode == 0
+              and (txt.splitlines() or [""])[0].startswith("[audit-task] P2.")
               and len(txt.splitlines()) < len(vtxt.splitlines())
               and "  written: docs/audit/audit-plan.json" in vtxt.splitlines()
               and "  written: docs/audit/audit-plan.json"
               not in txt.splitlines())
-
-        proj, _mp = project("gr-terse-scope")
-        code, txt = terse(proj, ["scope", "P2.3", "--files",
-                                 "src/m.py,CHANGELOG.md",
-                                 "--tests-mode", "regression",
-                                 "--gate", "python3 tests/test_m.py"])
-        check("grt16 `scope` without `--verbose` keeps the reach warning for "
-              "the file its new gate reaches no suite of: %r" % ((code, txt),),
-              code == 0 and len(reach_lines(txt)) == 1
-              and "CHANGELOG.md" in reach_lines(txt)[0])
-
-        proj, mp = closing("gr-terse-done", ["CHANGELOG.md", "src/m.py",
-                                             "tests/test_m.py"])
-        code, txt = terse(proj, ["done", "P2.4", "--commit", _PD_SHA]
-                          + _NOT_ASKED)
-        check("grt17 `done` without `--verbose` keeps the reach line for the "
-              "gap it recorded on the task: %r" % ((code, txt),),
-              code == 0
-              and (task_in(mp, "P2.4") or {}).get("status") == "done"
-              and len(reach_lines(txt)) == 1
-              and "CHANGELOG.md" in reach_lines(txt)[0])
 
         proj, _mp = project("gr-terse-dir")
         code, txt = terse(proj, ["add", "Dir gate", "--phase", "P2",
@@ -23525,93 +23362,10 @@ def _gate_reach_cases(check):
                                  "--files", "src/m.py", "--gate", "tests"])
         dirs = [ln for ln in txt.splitlines()
                 if ln.startswith("WARNING: gate entry ")]
-        check("grt18 the other warning about the task's own gate that names an "
-              "entry rather than the id - a gate entry that is a directory - "
-              "is kept by the short output too: %r" % ((code, txt),),
+        check("grt8 a warning about the task's own gate that names an entry "
+              "rather than the id - a gate entry that is a directory - is kept "
+              "by the short output: %r" % ((code, txt),),
               code == 0 and len(dirs) == 1 and "'tests'" in dirs[0])
-
-        # ---- `add --from-file` asks the reach of each task it wrote ----------
-        # The batch is the path `/audit:phase add` writes through, so a gate
-        # that reaches no suite of a declared file is warned there as it is by
-        # a single `add`. One task has the gap and one has none, so a reading
-        # that warned for every task, or for none, is told apart.
-        def reach_batch_file(proj):
-            doc = {"request": "Reach in a batch.", "openChoices": [],
-                   "phase": {"title": "Reach batch",
-                             "desiredOutcome": "every gate reaches its files"},
-                   "tasks": [
-                       {"key": "gap", "title": "the gap",
-                        "files": ["CHANGELOG.md", "src/m.py",
-                                  "tests/test_m.py"],
-                        "tests": {"mode": "regression",
-                                  "gate": ["python3 tests/test_m.py"]}},
-                       {"title": "reached", "files": ["src/m.py",
-                                                      "tests/test_m.py"],
-                        "tests": {"mode": "regression",
-                                  "gate": ["python3 tests/test_m.py"]}}]}
-            path = os.path.join(proj, "reach-batch.json")
-            with open(path, "w", encoding="utf-8") as fh:
-                json.dump(doc, fh)
-            return path
-
-        def batch_ids(mp):
-            for ph in _mio.load_manifest(mp).get("phases") or []:
-                if ph.get("title") == "Reach batch":
-                    return [t.get("id") for t in ph.get("tasks") or []]
-            return []
-
-        proj, mp = project("gr-batch")
-        code, txt = run(["add", "--from-file", reach_batch_file(proj),
-                         "--project-dir", proj])
-        ids = batch_ids(mp)
-        lines = reach_lines(txt)
-        check("grt19 `add --from-file` warns once for the written task whose "
-              "gate reaches no suite of a declared file, naming that task and "
-              "the document, and not for the task whose gate reaches every "
-              "file: %r" % ((code, ids, lines, txt[-400:]),),
-              code == 0 and len(ids) == 2 and len(lines) == 1
-              and "CHANGELOG.md" in lines[0] and ids[0] in lines[0]
-              and ids[1] not in lines[0] and "src/m.py" not in lines[0])
-
-        proj, mp = project("gr-batch-json")
-        code, txt = run(["add", "--from-file", reach_batch_file(proj),
-                         "--project-dir", proj, "--json"])
-        try:
-            body = json.loads(txt)
-        except ValueError:
-            body = {}
-        ids = batch_ids(mp)
-        reach = body.get("gateReach") if isinstance(body, dict) else None
-        reach = reach if isinstance(reach, dict) else {}
-        check("grt20 ...and `--json` carries the reach per written task as "
-              "data: the gap task's one gap with its reason, the reached "
-              "task's none: %r" % ((code, ids, reach),),
-              code == 0 and len(ids) == 2
-              and [g.get("path") for g in
-                   (reach.get(ids[0]) or {}).get("gaps") or []]
-              == ["CHANGELOG.md"]
-              and all(g.get("why") for g in
-                      (reach.get(ids[0]) or {}).get("gaps") or [])
-              and ids[1] in reach
-              and not (reach.get(ids[1]) or {}).get("gaps"))
-
-        proj, mp = slow_project("gr-slow-batch")
-        proc, started = caught(proj, ["add", "--from-file",
-                                      reach_batch_file(proj)])
-        try:
-            ncode, ntxt = run(["note", "P2.3", "--project-dir", proj,
-                               "--text", "taken while the batch asked its "
-                               "reach"])
-        finally:
-            bcode, btxt = let_go(proj, proc)
-        check("grt21 a note taken while `add --from-file` is inside its reach "
-              "reading is not refused - the reach runs after the batch's lock "
-              "is released - and the batch still warns for the gap: %r"
-              % ((started, ncode, ntxt[-200:], bcode,
-                  reach_lines(btxt) or btxt[-600:]),),
-              started and ncode == 0 and bcode == 0
-              and len(reach_lines(btxt)) == 1
-              and "CHANGELOG.md" in reach_lines(btxt)[0])
     finally:
         _harness.remove_tree(tmp)
 

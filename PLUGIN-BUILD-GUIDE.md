@@ -179,7 +179,7 @@ claude-plugins/                           # this repo (personal, public)
           _journal_io.py                  # the audit trail: row shape, hash chain, read/append/verify
           _evidence_io.py                 # the test-evidence record: where it lives, what a row may say, and the chain over it
           _gate_derive.py                 # the gate helpers' one home (is_shared_key/path_scoped_sibling/repointed) and a pure derive() for a phase's sign-off gate
-          _affected_tests.py              # which suites a task's change can break, by arm (related listing, Python imports, tree walks, e2e listing, e2e widening) - a pure selection, plus the one gathering of the facts it reads; run-test-gate adds them to a task's run, audit-task's gate-reach check asks the same
+          _affected_tests.py              # which suites a task's change can break, by arm (related listing, Python imports, tree walks, e2e listing, e2e widening) - a pure selection, plus the one gathering of the facts it reads; run-test-gate adds them to a task's run and reads from the same facts which declared files that run reaches
           audit-journal.py                # the CLI over both records: append/verify/show/archive, plus merge and sessions
           _invariants.py                  # the orchestrator's rules, re-derived from git + shard + journal + ledger
           verify-invariants.py            # the CLI over it: one phase or --all, breach = exit 1
@@ -2447,8 +2447,8 @@ commas" - two or more parts, each naming an entry on its own - shared by the joi
 warning here and `audit-task.py`'s list-flag reader; `joined_tests_add_parts(value)` is its
 `tests.add` reading, where each part has to be a whole entry, so a bare file name after a
 described `<path>: <text>` part is that part's prose rather than a second entry. `gate_reach_gaps(asked, runs, answers)`
-is the comparison `audit-task.py`'s gate-reach check makes: each declared path no suite the
-gate runs reaches, with the reason in the affected-test derivation's terms, and a path with
+is the comparison `run-test-gate.py`'s gate-reach reading makes: each declared path no suite the
+run carries reaches, with the reason in the affected-test derivation's terms, and a path with
 no answer named as not asked rather than counted as reached. Also the
 per-phase rules a schema cannot express — a parallel-run `claim` left on a finished phase,
 an `area` that normalises to no tags at all, a `budgetUSD` of zero, and a phase marked done
@@ -4033,16 +4033,19 @@ program a path-scoped call names: `tools/sweep-selftests.py` handed `tests/x.py`
 does not run the sweep's own cases, so a sweep that walks `tests/` still joins.
 
 The selection is PURE: every observation arrives in `facts`. The gathering that fills
-`facts` is this module's last section, `gather_facts()`, asked by both of the selection's
-callers - `run-test-gate.py`'s affected steps and `audit-task.py`'s gate-reach check - so the
-two measure one set of facts the one way: each recorded listing and the version command run
+`facts` is this module's own section, `gather_facts()`, the one `run-test-gate.py` asks for
+both of its questions on a task's run - its affected steps, and which declared files that run
+reaches (`reach_answers()`, the module's last section) - so the two measure one set of facts
+the one way: each recorded listing and the version command run
 through `run_listing()` (the plan's node preamble and shell, stderr folded in, its process
 group torn down by `_proc_group.stop_and_drain` on timeout, under `LISTING_TIMEOUT_SECONDS`
 and `GIT_TIMEOUT_SECONDS`), the tree's files are git's (`tree_files()`), and a `seen` dict
 carries what several gatherings over one tree ask once; `prefetch_listings()` runs a list of
 paths' listings side by side into it, and an interrupt landing while it waits stops every
 listing it started - each group torn down by `stop_and_drain` in the worker reading it, a
-listing not yet started never started - before the interrupt goes on (`af43`). And the
+listing not yet started never started - before the interrupt goes on (`af43`). A stop
+signal reaches a listing only as that exception: SIGINT always surfaces so, SIGTERM only where
+the caller armed it, which `run-test-gate.py` does around its gathering. And the
 selection widens rather than
 returning an empty selection: a listing that exits non-zero, a version mismatch,
 a `.py` change with no sources read, a changed path no arm reads, a changed file
@@ -4062,6 +4065,12 @@ those paths taken out, are a declared entry's command, that entry runs every sui
 the support file can reach, so no phase-gate step joins and the line names the
 entry. A path-scoped entry, the same runner with an option, or another key leaves
 the widening standing.
+
+`reach_answers()` is the gate-reach reading's half of this module: each path asked of `select()`
+ALONE (`path_reach()`), its listings run side by side first (`prefetch_listings()`), because a
+listing handed every changed path at once cannot say which path each suite it names is for. The
+import graph is walked only for a path the trusted related listing does not already reach a run
+suite for (`related_reach()`).
 
 ### `plugins/audit/scripts/governance/verify-invariants.py`
 The CLI over it: `verify-invariants.py <manifest> <phaseId>`, or `--all` for every phase that
@@ -4505,6 +4514,21 @@ The full run passes no task, so only the closed-bug rule applies there.
 `_panel_write.project_of_manifest(manifest)`, the answer `full-gate.py`, `import-evidence.py` and
 `audit-task.py` read, never a count of directories up from the file — that count is right only for
 `<T>/docs/audit/<file>` and would record anywhere else into a ledger outside the project.
+
+**Which declared files a task's run reaches** (`gate_reach`). A passed gate run is evidence only
+for the files its suites read, so a `--task` run with a gate of its own says which of the task's
+declared files no suite of that run reaches - the declared entries, the suites the affected steps
+added, and the phase gate's entries when the selection widened to it. Each declared file is asked
+of `_affected_tests.reach_answers` alone, over the `seen` the run's affected gathering already
+filled, and `_manifest_phases.gate_reach_gaps` compares the answers with `_affected_tests.gate_runs`.
+A `files` entry is a literal path whatever characters it holds (`_task_outputs.entry_is_pattern`),
+so `app/[slug]/page.tsx` is asked; a directory is named as not asked. Each gap prints one
+`gate reach: <path> -- <why>` line under `covers:`, and the result and the evidence row carry
+`gateReach` (`{gate, gaps: [{path, why}]}`). The reading is advisory and fails open (`reach_or_why`):
+an exception in it is one `gate reach not asked: <why>` line, `gateReachNotAsked` on the row, and
+the verdict stands. Both leads are in `_STATEMENT_OPENINGS`, so the short form never clips one
+away. The gathering and the reading run with `arm_interrupt` installed, so a SIGTERM surfaces as
+the interrupt that tears every listing's group down.
 
 ### `plugins/audit/scripts/governance/record-outside-run.py`
 `record-outside-run.py <manifest> --label TEXT --started <ISO> [--ended <ISO> | --duration-ms N]
@@ -5931,37 +5955,15 @@ edit, as a dated note carrying `waives` — append-only, like the list. That is 
 replaced a pair of independent signal checks the task the remedy names failed the gate by
 construction.
 
-**A task's gate is checked to reach the files the task declares** (`_gate_reach`). A passed
-gate run is evidence only for the files its suites read, and a gate selecting no suite that
-opens a document, or imports a tool, the task edits closed on a measurement of nothing about
-that file. Each declared file goes through `_affected_tests.select` alone, over the
-observations `_affected_tests.gather_facts` gathers for `run-test-gate.py`'s measured run
-too - the recorded listings, the tree's suites, every Python source - with
-`_affected_tests.steps_for` answering whether
-a declared entry is the unscoped call that runs the selection, and
-`_manifest_phases.gate_reach_gaps` compares those answers with `_affected_tests.gate_runs`.
-The recorded listing runs once per file, side by side, and the import graph is walked only
-for a file the trusted listing does not already reach a gate-run suite for. A `files` entry
-is a literal path whatever characters it holds (`_task_outputs.entry_is_pattern`, the one
-reading `_wave` asks too), so `app/[slug]/page.tsx` is asked; a directory is named as not
-asked. `add` and a `scope` moving `tests.gate` or `files` print one `WARNING: gate reach:`
-line per gap and carry `gateReach` under `--json`; `done --commit` records the gaps as one
-dated note in the close's own write. A past task's recorded gate is never rewritten.
-
-**None of the reading runs with the index lock held.** Its listings can take tens of seconds,
-and every other lock taker waits a bounded time and is then refused. `add` and `scope` read
-the reach once the lock is released, from the plan they wrote, holding a `--json` payload
-back so the reading joins it as one object. `add --from-file` does the same for every task it
-wrote (`_reach_ask_each`, one read of the written plan): each line carries the task's id after
-the lead, and `gateReach` and `gateReachNotAsked` are keyed by task id. `done` reads it before taking the lock and
-records the note only if the task still declares the files and gate that reading was of,
-else prints `WARNING: gate reach not recorded:` and writes none. The reading is advisory and
-fails open: an exception in it is one `WARNING: gate reach not asked: <why>` line
-(under `--json`, `gateReachNotAsked` for `add` and `scope`, `gateReachNotRecorded` for
-`done`), never an error for the verb that asked. The short output a verb prints without
-`--verbose` keeps a warning naming the id it wrote, and every line opening with a lead in
-`TASK_WARNING_LEADS` - the reach leads above and the gate-directory warning - since each is about that
-task's gate or files and names a path or an entry rather than the id (`_decided_lines`).
+**No verb here reads whether a task's gate reaches the files it declares, and none starts a
+project command.** The reading used to live in `add`, `add --from-file`, `scope` and `done`,
+and every placement of it there cost the verb something - the project's listings run with the
+index lock held, or after its release with no teardown on a stop signal, or once per task of a
+batch. It is `run-test-gate.py`'s now, an observation of a task's measured run (that module's
+section says how). The short output a verb prints without `--verbose` keeps a warning naming
+the id it wrote, and every line opening with a lead in `TASK_WARNING_LEADS` - the
+gate-directory warning - since it is about that task's gate and names an entry rather than the
+id (`_decided_lines`).
 
 **`retarget <phaseId>` is the same verb one noun up** — a phase's gate, area, desired outcome,
 description or title, corrected after `/audit:init` or an ADO pull chose them. The title is

@@ -4254,12 +4254,70 @@ def _claimed_followers_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _gate_reach_row_cases(check):
+    """`grr`: the gate's reach, an observation of a task's run, as its row
+    keeps it - capped, every path and reason redacted, and written only when
+    the run read it, so a row from a run that never asked holds no key that a
+    reader could take for "every file reached"."""
+    plain = _harness.fixture_root("audit-evidence-reach-")
+    base = {"status": "passed", "failed": [], "steps": []}
+    ident = {"runId": "R1"}
+    ids = {"taskId": "P1.1", "phaseId": "P1"}
+    home = os.path.join(plain, "secret-home")
+    many = [{"path": "docs/f%d.md" % (i,), "why": "no suite reads it"}
+            for i in range(M.MAX_PATHS + 5)]
+    reach = {"gate": ["python3 tests/test_m.py"],
+             "gaps": [{"path": "CHANGELOG.md",
+                       "why": "the listing in %s/x exited 1" % (home,)}] + many}
+    try:
+        row = M.row_for(plain, dict(base, **{M.GATE_REACH_KEY: reach}), "task",
+                        ids, ident)
+        kept = row.get(M.GATE_REACH_KEY) or {}
+        gaps = kept.get("gaps") or []
+        check("grr1 row_for keeps the reach a run read: its gate and each gap "
+              "with its reason, the first gap first: %r"
+              % ((kept.get("gate"), gaps[:1]),),
+              M.GATE_REACH_KEY == "gateReach"
+              and kept.get("gate") == ["python3 tests/test_m.py"]
+              and gaps[:1] and gaps[0].get("path") == "CHANGELOG.md"
+              and "exited 1" in gaps[0].get("why", ""))
+        check("grr2 ...capped at MAX_PATHS gaps, and a reason naming a path "
+              "under the project keeps no absolute path: %r"
+              % ((len(gaps), gaps[0].get("why")),),
+              len(gaps) == M.MAX_PATHS
+              and plain not in json.dumps(kept))
+        quiet = M.row_for(plain, dict(base, **{M.GATE_REACH_KEY:
+                                              {"gate": ["g"], "gaps": []}}),
+                          "task", ids, ident)
+        check("grr3 an empty gap list is stored as one, the answer 'every "
+              "declared file reached': %r" % (quiet.get(M.GATE_REACH_KEY),),
+              quiet.get(M.GATE_REACH_KEY) == {"gate": ["g"], "gaps": []})
+        old = M.row_for(plain, dict(base), "task", ids, ident)
+        check("grr4 SECOND-DIRECTION CASE: a run that read no reach writes "
+              "neither key - a row that always carried one could not be told "
+              "from a run that asked: %r" % (sorted(old),),
+              M.GATE_REACH_KEY not in old
+              and M.GATE_REACH_NOT_ASKED_KEY not in old)
+        failed = M.row_for(plain, dict(base, **{
+            M.GATE_REACH_NOT_ASKED_KEY: "RuntimeError: broke in %s/y" % (home,)}),
+            "task", ids, ident)
+        said = failed.get(M.GATE_REACH_NOT_ASKED_KEY)
+        check("grr5 a reading that failed is kept as the sentence saying why, "
+              "redacted, beside no reach key: %r" % ((said, sorted(failed)),),
+              M.GATE_REACH_NOT_ASKED_KEY == "gateReachNotAsked"
+              and isinstance(said, str) and "broke in" in said
+              and plain not in said and M.GATE_REACH_KEY not in failed)
+    finally:
+        _harness.remove_tree(plain)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _claimed_followers_cases(check)
         _tree_key_cases(check)
         _banner_cases(check)
+        _harness.stage(check, "grr-block", _gate_reach_row_cases)
         _project_config_cases(check)
         _moment_reader_cases(check)
         _harness.stage(check, "rfg-block", _runnable_full_gate_cases)

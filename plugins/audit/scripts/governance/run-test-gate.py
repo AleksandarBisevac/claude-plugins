@@ -2553,22 +2553,24 @@ def task_changed_paths(tree, declared, own_tree, records=()):
                                               records)], None
 
 
-def _affected_facts(tree, meta, changed):
+def _affected_facts(tree, meta, changed, seen=None):
     """Every observation `_affected_tests.select` reads, measured in `tree` -
-    `_affected_tests.gather_facts`' answer, the gathering the gate-reach check
-    in `audit-task.py` asks too."""
-    return _affected.gather_facts(tree, meta, changed)
+    `_affected_tests.gather_facts`' answer, into `seen` when the caller hands
+    one in, so the gate-reach reading after it (`gate_reach`) reads the same
+    answers rather than asking again."""
+    return _affected.gather_facts(tree, meta, changed, seen=seen)
 
 
 def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands,
-                   records=()):
+                   records=(), seen=None):
     """`(steps, published, info)` - the steps that join a task's measured run,
     the manifest-published commands among them, and `{lines, suites, widen}`
     saying why. Nothing joins a gate that already carries the phase's wide one,
     no step joins whose suites a declared entry already runs unscoped, and a
     test-support change that entry covers does not widen to the phase gate
     (`_affected_tests.steps_for`). `records` is `member_records`' answer,
-    git-root-relative, left out of what a task's own tree changed."""
+    git-root-relative, left out of what a task's own tree changed; `seen` is
+    the gathering's shared answers (`_affected_facts`)."""
     meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
     build = meta.get("buildCommands")
     build = build if isinstance(build, dict) else {}
@@ -2590,7 +2592,7 @@ def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands,
                 "widen": "%s - the task's gate widens to the phase gate" % (why,)}
     else:
         own = _affected.gate_runs(names)
-        facts = _affected_facts(tree, meta, changed) if changed else {}
+        facts = _affected_facts(tree, meta, changed, seen) if changed else {}
         info = _affected.select(changed, meta, facts, exclude=own)
     steps, info = _affected.steps_for(info, phase, meta, tree, names)
     if info["widen"] is None:
@@ -2602,6 +2604,107 @@ def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands,
              for name, command in wide]
     return steps, [command for _name, command in wide], info
 
+
+# --- which declared files the run's suites reach ------------------------------
+# A PASSED GATE RUN IS EVIDENCE ONLY FOR THE FILES ITS SUITES READ. A gate whose
+# suites never open a document the task edits, or never import a tool it edits,
+# stays green whatever that file now says, and the task closes on a measurement
+# of nothing about it. So a task's measured run says which of the task's
+# declared files no suite of THAT RUN reaches - its own gate, and the affected
+# steps that joined it - printed beside the verdict and kept on the row it
+# records, where a reader of the evidence finds it.
+#
+# READ HERE AND NOWHERE ELSE. The manifest verbs used to read it, and a verb
+# that writes the plan then ran the project's listings: under the index lock,
+# or after it with no teardown on a stop signal, or once per task of a batch.
+# This run already gathers those facts for its affected steps, under the stop
+# signals it arms, so the reading costs it only the listings a declared file
+# needs asked alone (`_affected_tests.reach_answers`). It is advisory, so it
+# fails open: an exception in it is one line and leaves the verdict alone.
+GATE_REACH_LEAD = "gate reach: "
+# The line saying the reach was not read at all, and why: its own lead, so a
+# reader counting gaps never counts the advisory's own failure as one.
+GATE_REACH_NOT_ASKED_LEAD = "gate reach not asked: "
+
+
+def _declared_paths(task_files):
+    """The task's `files`, line suffix dropped, each once, in order."""
+    out = []
+    for entry in _declared_files(task_files):
+        path = _vocab._strip_line_suffix(entry).strip()
+        if path and path not in out:
+            out.append(path)
+    return out
+
+
+def _names_one_file(tree, path):
+    """Whether a `files` entry names one file the derivation can be asked
+    about: not a directory, by its trailing `/` or on disk. A `files` entry is
+    never a pattern - `_task_outputs.entry_is_pattern` is the one reading - so
+    `app/[slug]/page.tsx` is asked as the literal path it spells."""
+    return not (_touts.entry_is_pattern("files", path)
+                or path.endswith("/")
+                or os.path.isdir(os.path.join(tree, *path.split("/"))))
+
+
+def gate_reach(tree, manifest, phase_id, task_id, commands, extra, info, seen):
+    """`{gate, gaps}` - the steps this run carries and `[{path, why}]` for each
+    declared file no suite of them reaches; None when the task declares no
+    file. A directory is handed over unanswered and named as not asked.
+
+    What the run reaches is its declared entries, the suites the affected
+    steps added (`info`, `affected_steps`' answer, beside `extra`, its steps),
+    and - when the selection widened to the phase gate - the phase gate's own
+    entries. Each declared file is asked alone (`_affected_tests.reach_answers`)
+    over `seen`, the answers the run's affected gathering already holds; the
+    comparison is `_manifest_phases.gate_reach_gaps`."""
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    phase = _phase_by_id(manifest, phase_id) or {}
+    task = ([t for t in (phase.get("tasks") or [])
+             if isinstance(t, dict) and t.get("id") == task_id] or [{}])[0]
+    files = _declared_paths(task.get("files"))
+    if not files:
+        return None
+    info = info if isinstance(info, dict) else {}
+    names = [name for name, _command in commands]
+    entries = list(names)
+    joined = []
+    if extra and info.get("widen") is not None:
+        entries += [e for e in _mio.gate_entries(phase, None)[0]
+                    if e not in entries]
+    elif extra:
+        joined = [s.get("path") for s in info.get("suites") or []
+                  if isinstance(s, dict) and s.get("path")]
+    runs = _affected.gate_runs(entries)
+    runs += [p for p in joined if p not in runs]
+    asked = [p for p in files if p not in runs and _names_one_file(tree, p)]
+    answers = _affected.reach_answers(tree, meta, phase, entries, runs, asked,
+                                      seen)
+    return {"gate": names + [name for name, _command in extra],
+            "gaps": [{"path": path, "why": why} for path, why
+                     in _phases.gate_reach_gaps(files, runs, answers)]}
+
+
+def reach_or_why(*args):
+    """`(reach, why)` - `gate_reach(*args)`'s answer and None, or None and why
+    it could not be read. FAIL-OPEN: the reading is advisory and runs listing
+    commands a project supplies, so an exception in it is said in one line and
+    never turns the run that asked into an error. An interrupt is not an
+    exception here and still stops the run."""
+    try:
+        return gate_reach(*args), None
+    except Exception as exc:
+        return None, "%s: %s" % (type(exc).__name__, exc)
+
+
+def reach_lines(reach, why):
+    """The lines a task's run prints about its reach, beside the verdict: one
+    per gap, or the one line saying it was not asked and why."""
+    if why is not None:
+        return ["%s%s" % (GATE_REACH_NOT_ASKED_LEAD, why)]
+    return ["%s%s -- %s; a passed run of this gate is no evidence for it"
+            % (GATE_REACH_LEAD, gap["path"], gap["why"])
+            for gap in (reach or {}).get("gaps") or []]
 
 def affected_lines(info):
     """The lines a task-scope run prints about what joined its gate."""
@@ -5057,7 +5160,8 @@ _STATEMENT_OPENINGS = ("PHASE GATE RAN NO SUITE", "SAME SUITE COUNTED ONCE",
                        "NO CHECK RAN", "NO OVERLAP WITH THIS WORK",
                        "NARROWED sign-off", "evidence: NOT recorded",
                        "banners not recorded",
-                       "pointer:  NOT updated")
+                       "pointer:  NOT updated", GATE_REACH_LEAD,
+                       GATE_REACH_NOT_ASKED_LEAD)
 _ALONE = "machine: this run had the machine to itself"
 
 
@@ -5385,14 +5489,28 @@ def main(argv, out=print):
     # measured, never declared.
     published_extra = []
     affected_info = None
+    reach, reach_why = None, None
     # A task borrowing its phase's gate (`source == "phase"`) runs the wide gate
     # already, so it is not asked.
     if args.task is not None and not args.own and source == "task":
-        extra, published_extra, affected_info = affected_steps(
-            tree or project, tree is not None, manifest, args.phase, args.task,
-            commands, records=member_records(project, args.manifest, manifest,
-                                             args.phase, tree)
-            if tree is not None else ())
+        # ARMED AROUND THE GATHERING TOO: its listings are project commands in
+        # sessions of their own, so a SIGTERM with no handler would leave them
+        # running. Armed, a stop signal surfaces as an interrupt that tears each
+        # one down on its way out; nothing has run yet, so nothing is recorded.
+        seen = {}
+        previous = _arm_interrupt()
+        try:
+            extra, published_extra, affected_info = affected_steps(
+                tree or project, tree is not None, manifest, args.phase,
+                args.task, commands,
+                records=member_records(project, args.manifest, manifest,
+                                       args.phase, tree)
+                if tree is not None else (), seen=seen)
+            reach, reach_why = reach_or_why(tree or project, manifest,
+                                            args.phase, args.task, commands,
+                                            extra, affected_info, seen)
+        finally:
+            _disarm_interrupt(previous)
         commands = commands + extra
         if not args.as_json:
             for line in affected_lines(affected_info):
@@ -5570,6 +5688,12 @@ def main(argv, out=print):
     # compares so a `meta.buildCommands` edit after a green is a changed gate.
     if affected_info is not None:
         res["affected"] = affected_info
+    # THE REACH, AN OBSERVATION OF THIS RUN: on the result for `--json` and for
+    # the row `_record_run` writes, and printed beside the verdict below.
+    if reach is not None:
+        res[_ev.GATE_REACH_KEY] = reach
+    if reach_why is not None:
+        res[_ev.GATE_REACH_NOT_ASKED_KEY] = reach_why
     # A TASK RUN'S RED, READ AGAINST ITS BASE - measured runs only: a repeated
     # verdict already carries the reading its source run made. Advisory, so a
     # ledger that will not read is said in the basis rather than raised.
@@ -5633,6 +5757,11 @@ def main(argv, out=print):
     # is open, so it is derived rather than guessed. Printed before the table so
     # it is read with the verdict rather than after the reader has left.
     out("  covers:   %s" % (runtime_claim(manifest),))
+    # THE DECLARED FILES NO SUITE OF THIS RUN REACHES, with the verdict: a green
+    # beside one of these lines is no evidence for that file. Each opens a
+    # statement (`_STATEMENT_OPENINGS`), so the short form never clips it away.
+    for line in reach_lines(reach, reach_why):
+        out("  %s" % (line,))
     # BEFORE THE VERDICT, so the reader who wants every line never has to
     # scroll past a red banner to find where they are - and printed only
     # when the log was actually written, which is the shape every other

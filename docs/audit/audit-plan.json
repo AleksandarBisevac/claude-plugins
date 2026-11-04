@@ -1331,7 +1331,8 @@
       "P156.4",
       "P156.7",
       "P156.17-3st",
-      "P156.18-3st"
+      "P156.18-3st",
+      "P156.20-3st"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1432,7 +1433,8 @@
       "P155.11",
       "P155.18-gfj",
       "P155.35-gfj",
-      "P156.18-3st"
+      "P156.18-3st",
+      "P156.20-3st"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -1923,7 +1925,8 @@
       "P156.16-3st",
       "P156.17-3st",
       "P156.18-3st",
-      "P156.19-3st"
+      "P156.19-3st",
+      "P156.20-3st"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -3879,7 +3882,8 @@
       "P155.11",
       "P155.18-gfj",
       "P155.35-gfj",
-      "P156.18-3st"
+      "P156.18-3st",
+      "P156.20-3st"
     ],
     "plugins/audit/scripts/config/_help.py": [
       "P10.2",
@@ -4180,7 +4184,8 @@
       "P131.2",
       "P131.17-dau",
       "P148.6",
-      "P155.20-gfj"
+      "P155.20-gfj",
+      "P156.20-3st"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -4642,7 +4647,8 @@
       "P149.9-hwg",
       "P155.15",
       "P156.8-3st",
-      "P156.12-3st"
+      "P156.12-3st",
+      "P156.20-3st"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -4800,7 +4806,8 @@
       "P155.11",
       "P155.18-gfj",
       "P155.35-gfj",
-      "P156.18-3st"
+      "P156.18-3st",
+      "P156.20-3st"
     ],
     "plugins/audit/scripts/manifest/_commit_trail.py": [
       "P69.4-j6r",
@@ -5019,7 +5026,8 @@
       "P155.11",
       "P155.18-gfj",
       "P155.35-gfj",
-      "P156.18-3st"
+      "P156.18-3st",
+      "P156.20-3st"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -5285,7 +5293,8 @@
       "P156.14-3st",
       "P156.15-3st",
       "P156.17-3st",
-      "P156.18-3st"
+      "P156.18-3st",
+      "P156.20-3st"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -8436,7 +8445,8 @@
       "P131.2",
       "P155.15",
       "P156.8-3st",
-      "P156.12-3st"
+      "P156.12-3st",
+      "P156.20-3st"
     ],
     "tools/check-example-ledgers.py: a committed row whose status is not a schema enum member is a finding, and so is a passed verdict carrying a mutated tree": [
       "P32.10"
@@ -10787,7 +10797,8 @@
       "P156.10-3st",
       "P156.13-3st",
       "P156.16-3st",
-      "P156.19-3st"
+      "P156.19-3st",
+      "P156.20-3st"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11064,7 +11075,8 @@
       "P156.5",
       "P156.14-3st",
       "P156.12-3st",
-      "P156.18-3st"
+      "P156.18-3st",
+      "P156.20-3st"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
@@ -11490,7 +11502,8 @@
       "P153.5",
       "P155.15",
       "P156.12-3st",
-      "P156.19-3st"
+      "P156.19-3st",
+      "P156.20-3st"
     ],
     "plugins/audit/tests/test__affected_tests.py": [
       "P125.8",
@@ -11528,7 +11541,8 @@
       "P156.4",
       "P156.7",
       "P156.17-3st",
-      "P156.18-3st"
+      "P156.18-3st",
+      "P156.20-3st"
     ],
     "plugins/audit/hooks/hold-handback.py": [
       "P128.6-0h5"
@@ -11754,7 +11768,8 @@
       "P156.7",
       "P156.8-3st",
       "P156.12-3st",
-      "P156.15-3st"
+      "P156.15-3st",
+      "P156.20-3st"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -12004,7 +12019,8 @@
       "P156.7",
       "P156.8-3st",
       "P156.12-3st",
-      "P156.19-3st"
+      "P156.19-3st",
+      "P156.20-3st"
     ],
     "tests/test__areas.py": [
       "P131.1",
@@ -12015,7 +12031,8 @@
       "P155.11",
       "P155.18-gfj",
       "P155.35-gfj",
-      "P156.18-3st"
+      "P156.18-3st",
+      "P156.20-3st"
     ],
     "tests/test__claude_home.py": [
       "P131.1",
@@ -12065,7 +12082,8 @@
       "P155.11",
       "P155.18-gfj",
       "P155.35-gfj",
-      "P156.18-3st"
+      "P156.18-3st",
+      "P156.20-3st"
     ],
     "tests/test__demo_cast.py": [
       "P131.1",
@@ -12154,7 +12172,8 @@
       "P148.19-xpz",
       "P148.22-xpz",
       "P148.24-xpz",
-      "P155.20-gfj"
+      "P155.20-gfj",
+      "P156.20-3st"
     ],
     "tests/test__evidence_view.py": [
       "P131.1"
@@ -12257,7 +12276,8 @@
       "P156.4",
       "P156.5",
       "P156.14-3st",
-      "P156.18-3st"
+      "P156.18-3st",
+      "P156.20-3st"
     ],
     "tests/test__manifest_rules.py": [
       "P131.1",
@@ -12280,7 +12300,8 @@
       "P155.11",
       "P155.18-gfj",
       "P155.35-gfj",
-      "P156.18-3st"
+      "P156.18-3st",
+      "P156.20-3st"
     ],
     "tests/test__merge_install.py": [
       "P131.1"
@@ -12634,7 +12655,8 @@
       "P156.14-3st",
       "P156.15-3st",
       "P156.17-3st",
-      "P156.18-3st"
+      "P156.18-3st",
+      "P156.20-3st"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
@@ -12790,7 +12812,8 @@
       "P156.10-3st",
       "P156.13-3st",
       "P156.16-3st",
-      "P156.19-3st"
+      "P156.19-3st",
+      "P156.20-3st"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -12956,7 +12979,8 @@
       "P149.9-hwg",
       "P155.15",
       "P156.8-3st",
-      "P156.12-3st"
+      "P156.12-3st",
+      "P156.20-3st"
     ],
     "tests/test_set_priority.py": [
       "P131.1"
