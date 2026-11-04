@@ -1004,7 +1004,7 @@
     {
       "id": "P156",
       "title": "The carried low batch of 3.8.0",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P156.json"
     }
   ],

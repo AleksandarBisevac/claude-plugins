@@ -1,7 +1,7 @@
 {
   "id": "P156",
   "title": "The carried low batch of 3.8.0",
-  "status": "in_progress",
+  "status": "done",
   "description": "",
   "desiredOutcome": "Every low finding carried to BUG-33-gfj is fixed in the code, or answered with the evidence that nothing is left to change, and the bug closes before 3.8.0 is tagged",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "8c4bb8bd6de1e3750e17cee18fb5861dfb4a852a",
   "branch": "audit/p156-the-carried-low-batch-of-3-8-0",
-  "mergedAt": null,
+  "mergedAt": "2026-11-04T20:46:33Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -2249,5 +2249,6 @@
     "runId": "2026-11-04T20:37:08Z.27d9fc",
     "status": "passed",
     "at": "2026-11-04T20:37:08Z"
-  }
+  },
+  "mergedHead": "38074a16e258f2cc25b3f1ff6d2d2c8be772d84e"
 }
