@@ -13961,7 +13961,7 @@
     {
       "id": "BUG-33-gfj",
       "title": "P155 low review findings carried to the next release's low batch",
-      "status": "open",
+      "status": "fixed",
       "severity": "low",
       "reportedAt": "2026-11-03T13:49:45Z",
       "reportedBy": "orchestrator",
@@ -13972,7 +13972,7 @@
       "files": [],
       "taskId": null,
       "fixedIn": null,
-      "notes": null
+      "notes": "Phase P156 answered every finding carried here: P156.1-.10 fixed or answered each by id, grouped by area, and P156.11-.22 fixed what the five review rounds and the release-tier CI runs found in that work (P156-R1 to R30, every one resolved to its fixing task). P156 signed off and landed at 524e1d72."
     }
   ],
   "deferred": {
