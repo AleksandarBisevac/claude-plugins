@@ -102,15 +102,33 @@ def _is_pattern(text):
     return any(ch in text for ch in _task_outputs.PATTERN_CHARS)
 
 
-def _segments(entry):
-    """The entry as path segments, a trailing `**` standing for "and everything
-    under it": a `files` entry covers itself and its subtree (`covers`), and so
-    does an `outputs` entry spelled with a trailing `/` (`output_covers`)."""
+def _entry_is_pattern(entry):
+    """Whether the entry is read as a pattern at all. Only the `outputs` half
+    is: a `files` entry is a literal path (`covers` compares it as a plain
+    prefix), so `app/[slug]/page.tsx` there names one directory called `[slug]`
+    and not a character class - the dynamic-route layout of several web
+    frameworks spells real directories that way."""
     half, text = entry
-    segs = [s for s in text.split("/") if s != ""]
-    if half == "files" or text.endswith("/"):
-        return segs + ["**"]
-    return segs
+    return half == "outputs" and _is_pattern(text)
+
+
+# A segment is `(text, is_pattern)`, the flag decided by the half the entry
+# came from; `_ANY` is the one segment standing for any number of segments.
+_ANY = object()
+
+
+def _segments(entry):
+    """The entry as path segments, `_ANY` at the end standing for "and
+    everything under it": a `files` entry covers itself and its subtree
+    (`covers`), and so does an `outputs` entry spelled with a trailing `/`
+    (`output_covers`). A `files` segment is never a pattern, whatever
+    characters it holds; an `outputs` segment `**` is `_ANY`."""
+    half, text = entry
+    parts = [s for s in text.split("/") if s != ""]
+    if half == "files":
+        return [(s, False) for s in parts] + [_ANY]
+    segs = [_ANY if s == "**" else (s, _is_pattern(s)) for s in parts]
+    return segs + [_ANY] if text.endswith("/") else segs
 
 
 def _segment_meets(x, y):
@@ -120,21 +138,22 @@ def _segment_meets(x, y):
     two wildcard segments are taken to meet, because a wave that defers a task
     it need not costs a turn, and one that admits two writers of a path costs
     the integration."""
-    if _is_pattern(x) and _is_pattern(y):
+    (x_text, x_pat), (y_text, y_pat) = x, y
+    if x_pat and y_pat:
         return True
-    if _is_pattern(y):
-        return _task_outputs.output_covers(y, x)
-    if _is_pattern(x):
-        return _task_outputs.output_covers(x, y)
-    return x == y
+    if y_pat:
+        return _task_outputs.output_covers(y_text, x_text)
+    if x_pat:
+        return _task_outputs.output_covers(x_text, y_text)
+    return x_text == y_text
 
 
 def _meets(a_segs, b_segs):
-    """Whether some path is reached by both segment lists - `**` stands for any
-    number of segments, every other segment for exactly one."""
-    if a_segs and a_segs[0] == "**":
+    """Whether some path is reached by both segment lists - `_ANY` stands for
+    any number of segments, every other segment for exactly one."""
+    if a_segs and a_segs[0] is _ANY:
         return any(_meets(a_segs[1:], b_segs[i:]) for i in range(len(b_segs) + 1))
-    if b_segs and b_segs[0] == "**":
+    if b_segs and b_segs[0] is _ANY:
         return any(_meets(a_segs[i:], b_segs[1:]) for i in range(len(a_segs) + 1))
     if not a_segs or not b_segs:
         return not a_segs and not b_segs
@@ -156,9 +175,9 @@ def _named(x, y):
     literal is what both can touch), else the entry with more segments, else
     both, because two patterns of one depth name no single path."""
     xs, ys = x[1].rstrip("/"), y[1].rstrip("/")
-    if not _is_pattern(xs) and _reaches(y, xs):
+    if not _entry_is_pattern(x) and _reaches(y, xs):
         return [xs]
-    if not _is_pattern(ys) and _reaches(x, ys):
+    if not _entry_is_pattern(y) and _reaches(x, ys):
         return [ys]
     xn, yn = len(_segments(x)), len(_segments(y))
     if xn != yn:

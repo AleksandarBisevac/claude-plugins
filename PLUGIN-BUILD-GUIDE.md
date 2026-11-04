@@ -5173,9 +5173,13 @@ because `"auto"` is the caller's to resolve and a zero must not read as "run not
 `overlap(a, b)` is `None` or a record naming both tasks, the paths both reach and whether the
 overlap is mergeable; a lockfile among them (`is_non_mergeable`) makes it refused whatever else is
 shared. Whether an entry covers a path is `_task_outputs.covers` or `output_covers` and nowhere
-here; two patterns are asked segment by segment through `output_covers`, and two wildcard segments
-are taken to meet, so the reading errs toward deferring a task rather than admitting two writers of
-one path. Its cases are `tests/test__wave.py`.
+here. **Which half an entry came from decides whether it is a pattern**, not the characters it
+holds: a `files` entry is a literal path, so `app/[slug]/page.tsx` names a directory called
+`[slug]` and overlaps only itself and what lies under or above it, while only an `outputs` entry's
+segments holding `*`, `?` or `[` are patterns. Two entries are asked segment by segment, a pattern
+segment against a literal through `output_covers`, and two wildcard segments are taken to meet, so
+the reading errs toward deferring a task rather than admitting two writers of one path. Its cases
+are `tests/test__wave.py`.
 
 ### `plugins/audit/scripts/governance/_clause_coverage.py`
 Whether a writer answered every clause its task owes.

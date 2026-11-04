@@ -1911,7 +1911,10 @@
       "P156.3",
       "P156.8-3st",
       "P156.9-3st",
-      "P156.10-3st"
+      "P156.10-3st",
+      "P156.11-3st",
+      "P156.12-3st",
+      "P156.13-3st"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2991,7 +2994,8 @@
       "P155.32-gfj",
       "P155.34-gfj",
       "P155.45-gfj",
-      "P156.7"
+      "P156.7",
+      "P156.16-3st"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -3994,7 +3998,9 @@
       "P155.40-gfj",
       "P155.46-gfj",
       "P155.49-gfj",
-      "P156.3"
+      "P156.3",
+      "P156.13-3st",
+      "P156.16-3st"
     ],
     "plugins/audit/scripts/git/close-phase.py": [
       "P18.3",
@@ -4294,7 +4300,8 @@
       "P131.1",
       "P131.2",
       "P143.7-z9j",
-      "P153.1"
+      "P153.1",
+      "P156.12-3st"
     ],
     "plugins/audit/scripts/governance/_policy.py": [
       "P15.4",
@@ -4624,7 +4631,8 @@
       "P149.8-hwg",
       "P149.9-hwg",
       "P155.15",
-      "P156.8-3st"
+      "P156.8-3st",
+      "P156.12-3st"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -4920,7 +4928,8 @@
       "P148.23-xpz",
       "P149.4-hwg",
       "P156.4",
-      "P156.5"
+      "P156.5",
+      "P156.14-3st"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -5259,7 +5268,10 @@
       "P155.44-gfj",
       "P156.4",
       "P156.5",
-      "P156.8-3st"
+      "P156.8-3st",
+      "P156.12-3st",
+      "P156.14-3st",
+      "P156.15-3st"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -10757,7 +10769,9 @@
       "P156.1",
       "P156.2",
       "P156.3",
-      "P156.10-3st"
+      "P156.10-3st",
+      "P156.13-3st",
+      "P156.16-3st"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11031,7 +11045,8 @@
       "P155.19-gfj",
       "P155.44-gfj",
       "P156.4",
-      "P156.5"
+      "P156.5",
+      "P156.14-3st"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
@@ -11216,7 +11231,8 @@
       "P130.35-ywo",
       "P131.1",
       "P131.2",
-      "P156.9-3st"
+      "P156.9-3st",
+      "P156.11-3st"
     ],
     "plugins/audit/tests/test__wave.py": [
       "P124.1",
@@ -11452,7 +11468,8 @@
       "P143.1-6yq",
       "P143.2-6yq",
       "P153.5",
-      "P155.15"
+      "P155.15",
+      "P156.12-3st"
     ],
     "plugins/audit/tests/test__affected_tests.py": [
       "P125.8",
@@ -11712,7 +11729,9 @@
       "P155.50-gfj",
       "P156.4",
       "P156.7",
-      "P156.8-3st"
+      "P156.8-3st",
+      "P156.12-3st",
+      "P156.15-3st"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -11960,7 +11979,8 @@
       "P156.4",
       "P156.6",
       "P156.7",
-      "P156.8-3st"
+      "P156.8-3st",
+      "P156.12-3st"
     ],
     "tests/test__areas.py": [
       "P131.1",
@@ -12009,7 +12029,8 @@
       "P155.45-gfj",
       "P155.50-gfj",
       "P156.7",
-      "P156.4"
+      "P156.4",
+      "P156.16-3st"
     ],
     "tests/test__config_rules.py": [
       "P131.1",
@@ -12050,7 +12071,8 @@
       "P155.48-gfj",
       "P156.4",
       "P156.7",
-      "P156.8-3st"
+      "P156.8-3st",
+      "P156.15-3st"
     ],
     "tests/test__doctor_ado.py": [
       "P131.1"
@@ -12171,7 +12193,8 @@
     "tests/test__locks.py": [
       "P131.1",
       "P153.1",
-      "P153.2"
+      "P153.2",
+      "P156.12-3st"
     ],
     "tests/test__machine_paths.py": [
       "P131.1",
@@ -12205,7 +12228,8 @@
       "P155.18-gfj",
       "P155.35-gfj",
       "P156.4",
-      "P156.5"
+      "P156.5",
+      "P156.14-3st"
     ],
     "tests/test__manifest_rules.py": [
       "P131.1",
@@ -12454,7 +12478,8 @@
     ],
     "tests/test__wave.py": [
       "P131.1",
-      "P156.9-3st"
+      "P156.9-3st",
+      "P156.11-3st"
     ],
     "tests/test__worktrees.py": [
       "P131.1",
@@ -12470,7 +12495,9 @@
       "P155.40-gfj",
       "P155.46-gfj",
       "P155.49-gfj",
-      "P156.3"
+      "P156.3",
+      "P156.13-3st",
+      "P156.16-3st"
     ],
     "tests/test_ado_connect.py": [
       "P131.1"
@@ -12571,7 +12598,10 @@
       "P156.4",
       "P156.5",
       "P156.7",
-      "P156.8-3st"
+      "P156.8-3st",
+      "P156.12-3st",
+      "P156.14-3st",
+      "P156.15-3st"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
@@ -12724,7 +12754,9 @@
       "P156.1",
       "P156.2",
       "P156.3",
-      "P156.10-3st"
+      "P156.10-3st",
+      "P156.13-3st",
+      "P156.16-3st"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -12889,7 +12921,8 @@
       "P149.8-hwg",
       "P149.9-hwg",
       "P155.15",
-      "P156.8-3st"
+      "P156.8-3st",
+      "P156.12-3st"
     ],
     "tests/test_set_priority.py": [
       "P131.1"

@@ -84,6 +84,41 @@ def _outputs_cases(check):
           and lock is not None and lock["mergeable"] is False
           and lock["nonMergeable"] == ["web/pnpm-lock.yaml"])
 
+    # A `files` entry is a literal path, so the bracketed directory names of a
+    # dynamic-route layout are names, not character classes: a reading that
+    # took `[slug]` for a glob calls `app/[slug]/page.tsx` an overlap of
+    # `app/s/page.tsx` and of `app/[id]/page.tsx` and serialises all three.
+    routes = [_t("P1.1", "app/[slug]/page.tsx"), _t("P1.2", "app/[id]/page.tsx"),
+              _t("P1.3", "app/s/page.tsx"), _t("P1.4", "src/*.py"),
+              _t("P1.5", "src/b.py")]
+    pairs = [M.overlap(routes[i], routes[j])
+             for i in range(len(routes)) for j in range(i + 1, len(routes))]
+    together = M.select(routes, len(routes))
+    check("wp5 files entries are compared LITERALLY - three dynamic-route "
+          "tasks share one wave, and a files entry spelling a star covers no "
+          "sibling: %r %r" % (together, pairs),
+          together["wave"] == ["P1.1", "P1.2", "P1.3", "P1.4", "P1.5"]
+          and together["deferred"] == [] and pairs == [None] * len(pairs))
+
+    # Both twins of the literal reading: an outputs pattern is still a pattern
+    # over a bracketed files path, and the same bracketed literal in two tasks'
+    # files is still one path - a reading that stopped matching any segment
+    # holding a bracket goes red on the second half.
+    star = M.overlap(_o("P1.1", ["src/a.py"], ["app/*/page.tsx"]),
+                     _t("P1.2", "app/[slug]/page.tsx"))
+    deferred = M.select([_o("P1.1", ["src/a.py"], ["app/*/page.tsx"]),
+                         _t("P1.2", "app/[slug]/page.tsx")], 2)
+    same = M.overlap(_t("P1.1", "app/[slug]/page.tsx"),
+                     _t("P1.2", "app/[slug]/page.tsx"))
+    check("wp6 an outputs pattern still overlaps a files path it covers, "
+          "bracketed segment and all, and one bracketed literal in two tasks' "
+          "files is one shared path: %r %r %r" % (star, deferred, same),
+          star is not None and star["tasks"] == ["P1.1", "P1.2"]
+          and star["paths"] == ["app/[slug]/page.tsx"]
+          and deferred["wave"] == ["P1.1"]
+          and [d["id"] for d in deferred["deferred"]] == ["P1.2"]
+          and same is not None and same["paths"] == ["app/[slug]/page.tsx"])
+
 
 def _select_cases(check):
     two = [_t("P1.1", "src/a.py"), _t("P1.2", "src/b.py")]

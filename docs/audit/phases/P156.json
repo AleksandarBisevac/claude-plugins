@@ -23,7 +23,97 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P156-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_wave.py:101-130 (_is_pattern, _segments, _segment_meets), :170-177 (_shared); PLUGIN-BUILD-GUIDE.md:5175-5178",
+        "issue": "The wave's new segment matcher treats any segment holding *?[ as a wildcard even when it comes from a files entry, which is a literal path (_task_outputs.covers compares files as plain prefixes). Two tasks in different dynamic-route directories, a common Next.js/SvelteKit/Nuxt layout, are now reported as overlapping and serialised: overlap of files app/[slug]/page.tsx with app/[id]/page.tsx (and with app/s/page.tsx) returns an overlap at HEAD and none at base 8c4bb8bd; the deferral names paths no task shares, and the guide's sentence that covers decides is not what happens for files entries. No case has a files entry with a glob character.",
+        "resolution": "Treat a segment as a pattern only when it comes from the outputs half (segments carry an is-pattern flag, always false for files entries, compared literally); a case where the three dynamic-route tasks share one wave, and its twin where an outputs pattern app/*/page.tsx still overlaps files app/[slug]/page.tsx.",
+        "fixTask": "P156.11-3st"
+      },
+      {
+        "id": "P156-R2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:11142-11144 (restore_tree); plugins/audit/scripts/git/_worktrees.py:2345-2356 (_dropped)",
+        "issue": "restore_copy now settles a copy with nothing to put back and answers restored=None, which restore_tree maps to E_USAGE (exit 2) 'nothing restored', the same exit as a state naming no tree, so an orchestrator reading the exit cannot tell 'dropped, settled, run next' from 'nothing to act on'; un14/un15 never assert the verb's exit.",
+        "resolution": "Report the drop as its own outcome (a dropped field) and have restore_tree exit E_OK with a line saying the copy was dropped and next goes on, keeping E_USAGE for no copy standing; a drive-level case asserting the exit and text.",
+        "fixTask": "P156.13-3st"
+      },
+      {
+        "id": "P156-R3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py (no-phase-review-return stop)",
+        "issue": "The no-reviewer-return stop now prints the reviewer brief's submit block, but the no-phase-review-return stop still does not print the phase reviewer brief's, though the same helper would cover it.",
+        "resolution": "Route the phase-review stop through the same brief_submit helper, with a case.",
+        "fixTask": "P156.13-3st"
+      },
+      {
+        "id": "P156-R4",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:1859-2053 (_reach_shell/_reach_facts/_gate_reach), call sites :4813, :8425, :11356; plugins/audit/scripts/governance/_locks.py:141",
+        "issue": "The gate-reach check runs inside the manifest index lock (called from _locked_add, _locked_done and _locked_scope between acquire and release). Each call starts the project's listing commands, git ls-files and reads every .py in the tree: measured 5.5 s to 26.6 s per P156 task, where add and done held the lock well under a second before. Another index-lock taker (an executor's file-return in a parallel wave, the panel, another verb) waits WAIT_SECONDS = 5.0 for a live holder and is then refused. In add and scope the result is only printed, so the lock is held for nothing; in add it runs after the write, so an exception in this advisory path would report a successful add as an internal error.",
+        "resolution": "For add and scope compute reach after the lock is released, from the written plan. For done compute it before acquiring the lock from a pre-read, and write the note under the lock only if the task's files and gate are unchanged. Wrap the advisory call fail-open (a 'gate reach not asked: <why>' line). Add a case holding the lock across a slow listing stub and asserting a concurrent note is not refused.",
+        "fixTask": "P156.12-3st"
+      },
+      {
+        "id": "P156-R5",
+        "severity": "med",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:10084-10101 (_batch_task_args), :9852-9865 (_batch_tests_problems), :10031 (_cmd_batch_add)",
+        "issue": "add --from-file, the batch path /audit:phase add uses (commands/phase.md), hands tests.add, tests.gate, files and phase.testGate from the JSON straight to _build_task, never through read_list_flags or joined_entry_parts. Verified in a scratch repo: a batch task with tests.add ['tests/test_a.py,tests/test_b.py'] stores that one joined entry and adds the bogus path to files - the defect the shared reader was meant to close; a joined testGate or tests.gate in a batch only gets the validator's warning.",
+        "resolution": "Run each batch list field (files, tests.add, tests.gate, phase.testGate, dependsOn, blockedBy) through the same per-reading predicate in the batch problem checks, using joined_entry_parts with the plan's buildCommands keys for gates; refuse a joined value with the field path; add batch cases mirroring the flag refusal cases, and extend the argparse-walk case (or a sibling) to walk the batch keys too.",
+        "fixTask": "P156.14-3st"
+      },
+      {
+        "id": "P156-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:16571-16592 (_PAIR_PART, _part_names_file, _part_is_pair), :16651-16664 (_joined_refusal)",
+        "issue": "For free-text entries the each-part-is-an-entry predicates accept the tail of a sentence, so legitimate single entries are refused: `--tests-add \"tests/test_x.py: reads _config.py, _deps.py\"` and `--accept-open \"R1=threshold n=3, m=4 is fine\"` are refused, and the suggested repeated form would store a wrong entry.",
+        "resolution": "Tighten to whole-entry shapes: after a `<path>: <text>` part, a later part counts only if it also opens with `<path>:`; for accept-open and carried the key half must have the plan's finding-id shape. Allow cases for both probed values.",
+        "fixTask": "P156.14-3st"
+      },
+      {
+        "id": "P156-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:16667-16693 (read_list_flags, gate skip)",
+        "issue": "--gate-drop gets the joined-value refusal although it names an entry already held and stores nothing, so a legacy joined entry such as `lint,test` cannot be dropped (scope and retarget both refuse); the refusal says the value would be stored and suggests drops of entries the gate does not hold.",
+        "resolution": "Skip the joined check for a gate-drop value equal to an entry the gate holds (or leave gate_drop to _retarget_gate_now's held/not-held reading); a case dropping a legacy joined entry.",
+        "fixTask": "P156.14-3st"
+      },
+      {
+        "id": "P156-R8",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py:1859-1880 (_reach_shell), :1933-1975 (_reach_facts) vs plugins/audit/scripts/governance/run-test-gate.py _affected_facts/_shell",
+        "issue": "The gate-reach fact gathering is a second hand copy of run-test-gate's _affected_facts and has already drifted: plain subprocess.run with no process group (a timed-out listing's children outlive the verb) and different timeouts. A later change to the facts run-test-gate gathers silently changes only one answer.",
+        "resolution": "Move the fact gathering, shell runner with group teardown included, into one shared helper both may import per _deps.LAYERS; have run-test-gate's affected steps and the gate-reach check call it; delete the copy.",
+        "fixTask": "P156.12-3st"
+      },
+      {
+        "id": "P156-R9",
+        "severity": "low",
+        "file": "tools/lints/_deps.py:4140-4167 (_STEP_FORWARD_RE/_STEP_BACKWARD_RE); plugins/audit/scripts/manifest/audit-task.py:5292, :7798",
+        "issue": "The step-pointer lint matches only lowercase step/steps, so this codebase's uppercase docstring style escapes it, and two stale pointers survive: audit-task.py:5292 ('reference/orchestrator.md's STEP 2', the promote step is execute-task.md's step 2) and :7798 ('orchestrator.md's STEP 4 ... 4b ... 4c', which orchestrator.md does not hold). The lint's WHAT IT CANNOT SEE does not name case.",
+        "resolution": "Match the step word case-insensitively; repoint both pointers to reference/execute-task.md; an sp case with an uppercase STEP 4c pointer to a document lacking it.",
+        "fixTask": "P156.15-3st"
+      },
+      {
+        "id": "P156-R10",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py (wave tree records); tests/test_drive_phase.py wt2, wt4, wt6, wt6r",
+        "issue": "Release-tier CI run 41853969220 at 59e4a5f8 is red on every windows selftests leg: test_drive_phase wt2, wt4, wt6 and wt6r fail because the tree the drive records for a wave member, and dispatches in, is now '\\\\trees\\\\drive-wave-P1.1' where the tree verb handed back '/trees/drive-wave-P1.1'. The native spelling meant for messages reached the stored record, so on Windows the state no longer holds what the tree verb answered.",
+        "resolution": "Keep the tree verb's answer verbatim in every record and dispatch; apply the native spelling only where a path is shown to a human. Prove it under a Windows-shaped path module (ntpath) on posix so the case is red here before the fix.",
+        "fixTask": "P156.16-3st"
+      },
+      {
+        "id": "P156-R11",
+        "severity": "low",
+        "file": "tests/test__config.py st8; plugins/audit/hooks/_config.py (git place questions)",
+        "issue": "Release-tier CI run 41853969220 at 59e4a5f8: test__config st8 fails on the windows cp1252 leg. In a bare repository the timed-out first question is followed by a second ask with a 0.012 s remaining budget, which then times out too; on posix the same case is green.",
+        "resolution": "Find whether this is the case's timing assumption (a remaining budget a Windows git cannot meet) or the code asking again; fix whichever is wrong so the case holds on any runner, and say which it was.",
+        "fixTask": "P156.16-3st"
+      }
+    ],
+    "outcome": "[findings: 11 - 0 high, 4 med, 7 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -685,7 +775,7 @@
     {
       "id": "P156.10-3st",
       "title": "The drive names a reviewer return that was printed but never filed",
-      "status": "in_progress",
+      "status": "done",
       "description": "Carried from BUG-33-gfj (reviewer agents twice printed their return instead of running submit) and left by P156.7, which made the reviewer's last step explicit in the agent definition and brief but could not reach the drive. When the drive waits on a reviewer return that was never filed, its stop must say that no return was filed for that role and print the submit command the brief carries, rather than a generic no-return wording, so the orchestrator can tell an unfiled return from an agent still running. A case drives the no-reviewer-return stop and asserts the wording names the role and the submit command.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -710,20 +800,437 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "59e4a5f89f71",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: render_decision appends unfiled_submit_lines(pending, 'reviewer') for no-reviewer-return; the decision site in advance() now passes brief_submit(ctx, id, 'reviewer') as the decision's extra, which reads the reviewer brief written for the current start through `audit-lookup.py brief --read --role reviewer` and stores the last fenced sh block (submit_block_of) as pending['submit'], or pending['submitWhy'] naming why it could not be read. The stop's first line already says the reviewer was dispatched and filed no return for this start; under it the stop now prints 'A reviewer that printed its return object instead of running its submit block files it with the block its brief carries:' and the block verbatim, or 'The reviewer's submit command is not shown: <why>.' No new detection: the drive still holds only 'no return filed for that role at that start'. The command is read back from the brief, not recomposed, because audit-lookup.submit_command is its one home and an entry point may not load another. Module docstring's wave paragraph now says _wave.select keeps tasks apart on declared paths - files and honoured outputs - (confirmed in _wave.py select()/_declared(), which read both halves). PLUGIN-BUILD-GUIDE.md gains a paragraph under the drive's DECISIONS paragraph saying the same. Signal line and executor stop unchanged. Mutations (in a scratch copy of the tracked tree, never the shared tree): printing the block for every no-* decision -> ur3 red (112/114); removing the render lines -> ur1, ur2 red (112/114) and rv9b red (rv-block 11/12); restored -> 114/114 and 12/12. Commands run, all exit 0: `python3 tools/sweep-selftests.py tests/test_drive_phase.py` (1/1 files ok, 833 cases); sweep over the 25 suites that read or import drive-phase.py or PLUGIN-BUILD-GUIDE.md (test__affected_tests, test__config, test__deps, test__doctor_trail, test__filed_returns, test__help, test__invariants, test__output, test__panel_page, test__refs, test__proc_group, test__scoped_commit, test__runner_output, test_audit_task, test_detect_plan_skip, test_audit_lookup, test__worktrees, test_commit_task_work, test_audit_status, test_integrate_task, test_run_agent_session, test_run_test_gate, test_stamp_verification, test__output_lints, test__wave): 25/25 files ok, 5778 cases; after the last docstring rewrap `sweep-selftests.py tests/test_drive_phase.py tests/test__output_lints.py tests/test__deps.py tests/test__refs.py`: 4/4 files ok, 1589 cases; `python3 tools/gate-parity.py` exit 0; `python3 tools/measure-context.py --gate` GATE OK exit 0; ruff check and vermin -t=3.8- on both .py files exit 0. Dependants: plugins/audit/scripts/git/_worktrees.py and the importing suites (test__filed_returns, test__invariants, test__worktrees, test_audit_status, test_commit_task_work, test_detect_plan_skip) still correct - no existing name changed, only three functions added and one decision's printed text widened; all green in the sweep above. PLUGIN-BUILD-GUIDE.md's dependants (test__affected_tests, test__config, test__deps, test__doctor_trail, the evals and _doctor_hygiene basename readers) still correct - a paragraph added, no section or tree line moved; suites green. tests/test_drive_phase.py's dependants (.github/sweep-costs.json, ci.yml, tools/affected.py, tools/reach-diff.py, test__runner_output, test_run_test_gate, test_stamp_verification) still correct - no block or STAGES entry renamed; the new cases sit in the existing ux-block and rv-block. Left: no-phase-review-return's stop does not print the phase brief's submit block; the same helper would serve it, out of this task's text.",
+        "descriptive": "When a reviewer files no return, the drive's stop now prints the submit block that reviewer's brief carries (or why it cannot), so a printed-but-unfiled return can be filed."
       },
       "startedAt": "2026-11-04T14:43:10Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-04T15:03:05Z",
+      "verifiedBy": [
+        "ur1: no-reviewer-return renders the decide line naming the reviewer and the start, and the brief's submit block exactly once, read through `brief --read --role reviewer`",
+        "ur2: an unreadable brief is named as why the command is not shown, with the refusal kept and no command composed",
+        "ur3: twin - the executor's unfiled stop carries no reviewer submit command",
+        "ur4: submit_block_of takes the last fenced sh block, and None for none or an unclosed one",
+        "rv9b: end to end, a reviewer session ending in prose leaves a stop whose explain text prints the real reviewer brief's submit block once, ending on the quoted heredoc"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-04T15:03:02Z.5b05c8",
         "status": "passed",
         "at": "2026-11-04T15:03:02Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "59e4a5f89f71",
+        "at": "2026-11-04T15:03:05Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-04T14:58:11Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with 1 of 734 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rv9b (house FAIL): SELFTEST FAILED: 732/734 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      },
+      "notes": [
+        {
+          "at": "2026-11-04T15:03:05Z",
+          "text": "gate reach at close: a passed run of this task's gate (python3 tools/sweep-selftests.py tests/test_drive_phase.py) is no evidence for PLUGIN-BUILD-GUIDE.md (the affected-test derivation selects tests/test__deps.py, tests/test__refs.py for it, and the gate runs none of them)"
+        }
+      ]
+    },
+    {
+      "id": "P156.11-3st",
+      "title": "A wave compares files entries literally and only outputs as patterns",
+      "status": "in_progress",
+      "description": "Fix P156-R1 (docs/audit/phases/P156.json review.findings): files entries are literal paths, so a [slug] segment from files must not be read as a glob; only outputs patterns are patterns. Cases from the finding: three dynamic-route tasks share one wave; an outputs pattern still overlaps a matching files path. The guide sentence says what decides.",
+      "files": [
+        "plugins/audit/scripts/governance/_wave.py",
+        "tests/test__wave.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/_wave.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__wave.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__wave.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__wave.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-04T15:18:14Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-04T15:16:44Z",
+          "text": "scope: plugins/audit/scripts/governance/_wave.py, PLUGIN-BUILD-GUIDE.md, every path the finding(s) P156-R1 name"
+        },
+        {
+          "at": "2026-11-04T15:16:44Z",
+          "text": "scope: tests/test__wave.py, the suite that tests plugins/audit/scripts/governance/_wave.py (python: its import closure reaches plugins/audit/scripts/governance/_wave.py)"
+        },
+        {
+          "at": "2026-11-04T15:16:44Z",
+          "text": "no suite: PLUGIN-BUILD-GUIDE.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__affected_tests.py, tests/test__config.py, tests/test__deps.py, tests/test__doctor_trail.py, tests/test__output.py, tests/test__refs.py and 7 more"
+        }
+      ],
+      "fixes": [
+        "P156-R1"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-04T15:27:34Z.d16842",
+        "status": "passed",
+        "at": "2026-11-04T15:27:34Z"
       }
+    },
+    {
+      "id": "P156.12-3st",
+      "title": "The gate-reach check runs outside the index lock, fail-open, through the one shared fact gathering run-test-gate uses",
+      "status": "pending",
+      "description": "Fix P156-R4 and P156-R8 (docs/audit/phases/P156.json review.findings). R4: the gate-reach check runs listing commands, git ls-files and a tree read while the manifest index lock is held (measured up to tens of seconds), so other lock takers are refused after their wait. Move it out of the lock as the resolution says (add/scope after release from the written plan; done before acquiring, with the note written under the lock only if files and gate are unchanged), fail-open, with a case holding the lock across a slow listing stub. R8: the fact gathering is a hand copy of run-test-gate's, already drifted (no process-group teardown, different timeouts); move it into one shared helper both call (respect _deps.LAYERS), delete the copy.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_affected_tests.py",
+        "tests/test_audit_task.py",
+        "tests/test_run_test_gate.py",
+        "tests/test__affected_tests.py",
+        "tools/lints/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/_locks.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "tests/test_audit_task.py",
+        "tests/test__locks.py",
+        "tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_task.py",
+          "tests/test_run_test_gate.py",
+          "tests/test__affected_tests.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test_run_test_gate.py tests/test__affected_tests.py tests/test__locks.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-04T15:16:59Z",
+          "text": "scope: plugins/audit/scripts/manifest/audit-task.py, plugins/audit/scripts/governance/_locks.py, plugins/audit/scripts/governance/run-test-gate.py, every path the finding(s) P156-R4, P156-R8 name"
+        },
+        {
+          "at": "2026-11-04T15:16:59Z",
+          "text": "scope: tests/test_audit_task.py, the suite that tests plugins/audit/scripts/manifest/audit-task.py (python: its import closure reaches plugins/audit/scripts/manifest/audit-task.py)"
+        },
+        {
+          "at": "2026-11-04T15:16:59Z",
+          "text": "scope: tests/test__locks.py, the suite that tests plugins/audit/scripts/governance/_locks.py (python: its import closure reaches plugins/audit/scripts/governance/_locks.py)"
+        },
+        {
+          "at": "2026-11-04T15:16:59Z",
+          "text": "scope: tests/test_run_test_gate.py, the suite that tests plugins/audit/scripts/governance/run-test-gate.py (python: its import closure reaches plugins/audit/scripts/governance/run-test-gate.py)"
+        }
+      ],
+      "fixes": [
+        "P156-R4",
+        "P156-R8"
+      ]
+    },
+    {
+      "id": "P156.13-3st",
+      "title": "restore reports a dropped copy as its own settled outcome, and the phase-review stop prints its submit block",
+      "status": "pending",
+      "description": "Fix P156-R2 and P156-R3 (docs/audit/phases/P156.json review.findings). R2: restore_tree exits E_USAGE for a copy restore_copy just dropped; report the drop as its own outcome (exit 0, a line saying the copy was dropped and next goes on), keeping E_USAGE for no copy standing; a drive-level case asserting exit and text. R3: the no-phase-review-return stop goes through the same brief_submit helper the reviewer stop uses; a case.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/git/_worktrees.py",
+        "tests/test_drive_phase.py",
+        "tests/test__worktrees.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/git/_worktrees.py",
+        "tests/test_drive_phase.py",
+        "tests/test__worktrees.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py",
+          "tests/test__worktrees.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__worktrees.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-04T15:17:26Z",
+          "text": "scope: plugins/audit/scripts/governance/drive-phase.py, plugins/audit/scripts/git/_worktrees.py, every path the finding(s) P156-R2, P156-R3 name"
+        },
+        {
+          "at": "2026-11-04T15:17:26Z",
+          "text": "scope: tests/test_drive_phase.py, the suite that tests plugins/audit/scripts/governance/drive-phase.py (python: it hands drive-phase.py to a loader through a module constant)"
+        },
+        {
+          "at": "2026-11-04T15:17:26Z",
+          "text": "scope: tests/test__worktrees.py, the suite that tests plugins/audit/scripts/git/_worktrees.py (python: its import closure reaches plugins/audit/scripts/git/_worktrees.py)"
+        }
+      ],
+      "fixes": [
+        "P156-R2",
+        "P156-R3"
+      ]
+    },
+    {
+      "id": "P156.14-3st",
+      "title": "Every batch list field goes through the shared list reader, and the reader refuses only real joins",
+      "status": "pending",
+      "description": "Fix P156-R5, P156-R6 and P156-R7 (docs/audit/phases/P156.json review.findings). R5: add --from-file passes files, tests.add, tests.gate, phase.testGate, dependsOn and blockedBy to the task builder without the shared reader, so a joined entry is still stored; run each batch list field through the same per-reading predicate and extend the walk case to the batch keys. R6: the each-part-is-an-entry predicates refuse legitimate prose entries (a tests-add description with a comma, an accept-open reason with an `=`); tighten to whole-entry shapes with allow cases. R7: --gate-drop must be able to drop a legacy joined entry the gate holds; a case.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "tests/test_audit_task.py",
+        "tests/test__manifest_phases.py",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_task.py",
+          "tests/test__manifest_phases.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P156.12-3st"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-04T15:17:48Z",
+          "text": "scope: plugins/audit/scripts/manifest/audit-task.py, every path the finding(s) P156-R5, P156-R6, P156-R7 name"
+        },
+        {
+          "at": "2026-11-04T15:17:48Z",
+          "text": "scope: tests/test_audit_task.py, the suite that tests plugins/audit/scripts/manifest/audit-task.py (python: its import closure reaches plugins/audit/scripts/manifest/audit-task.py)"
+        },
+        {
+          "at": "2026-11-04T15:17:48Z",
+          "text": "the resolution of P156-R5 asks for a test, but names no test file and its directory shows no test convention to place one by; name the case with `scope --tests-mode tdd --tests-add \"<path>: <what it asserts>\"`"
+        },
+        {
+          "at": "2026-11-04T15:17:48Z",
+          "text": "no test runner in this task's gate for the test P156-R5 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py'], derived as narrowed to this task's tests.add paths, in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P156-R5",
+        "P156-R6",
+        "P156-R7"
+      ]
+    },
+    {
+      "id": "P156.15-3st",
+      "title": "The step-pointer lint reads the step word in any case, and the pointers it then finds are repointed",
+      "status": "pending",
+      "description": "Fix P156-R9 (docs/audit/phases/P156.json review.findings): match step/steps case-insensitively; repoint audit-task.py's uppercase STEP pointers (start and done docstrings) to reference/execute-task.md and any other pointer the widened lint then reports; an uppercase case that must be reported.",
+      "files": [
+        "tools/lints/_deps.py",
+        "tests/test__deps.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tools/lints/_deps.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test__deps.py",
+        "tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__deps.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__deps.py tests/test_audit_task.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P156.14-3st"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-04T15:18:01Z",
+          "text": "scope: tools/lints/_deps.py, plugins/audit/scripts/manifest/audit-task.py, every path the finding(s) P156-R9 name"
+        },
+        {
+          "at": "2026-11-04T15:18:01Z",
+          "text": "scope: tests/test__deps.py, the suite that tests tools/lints/_deps.py (python: its import closure reaches tools/lints/_deps.py)"
+        },
+        {
+          "at": "2026-11-04T15:18:01Z",
+          "text": "scope: tests/test_audit_task.py, the suite that tests plugins/audit/scripts/manifest/audit-task.py (python: its import closure reaches plugins/audit/scripts/manifest/audit-task.py)"
+        }
+      ],
+      "fixes": [
+        "P156-R9"
+      ]
+    },
+    {
+      "id": "P156.16-3st",
+      "title": "A tree the tree verb hands back is recorded verbatim on every platform, and st8 holds on a Windows runner",
+      "status": "pending",
+      "description": "Fix P156-R10 and P156-R11 (docs/audit/phases/P156.json review.findings), both from release-tier CI run 41853969220 at 59e4a5f8 on the windows legs. The failing case lines are copied in <scratchpad>/ci-p156-fails.txt (the orchestrator hands the path). R10: records and dispatch must hold the tree verb's answer verbatim; native spelling only where a human reads a path. R11: decide whether st8's timing assumption or the code is wrong on Windows and fix that one.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "plugins/audit/scripts/git/_worktrees.py",
+        "tests/test__worktrees.py",
+        "plugins/audit/hooks/_config.py",
+        "tests/test__config.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "tests/test__config.py",
+        "plugins/audit/hooks/_config.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py",
+          "tests/test__config.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__config.py tests/test__worktrees.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P156.13-3st"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-04T15:24:16Z",
+          "text": "scope: plugins/audit/scripts/governance/drive-phase.py, tests/test_drive_phase.py, tests/test__config.py, plugins/audit/hooks/_config.py, every path the finding(s) P156-R10, P156-R11 name"
+        },
+        {
+          "at": "2026-11-04T15:24:16Z",
+          "text": "scope: tests/test_drive_phase.py, the suite that tests plugins/audit/scripts/governance/drive-phase.py (python: it hands drive-phase.py to a loader through a module constant)"
+        },
+        {
+          "at": "2026-11-04T15:24:16Z",
+          "text": "scope: tests/test__config.py, the suite that tests plugins/audit/hooks/_config.py (python: its import closure reaches plugins/audit/hooks/_config.py)"
+        },
+        {
+          "at": "2026-11-04T15:24:16Z",
+          "text": "no test runner in this task's gate for the test P156-R10, P156-R11 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__config.py tests/test__worktrees.py'], derived as narrowed to this task's tests.add paths and the suite(s) its files declare (tests/test__worktrees.py), in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P156-R10",
+        "P156-R11"
+      ]
     }
   ],
   "reviewPerTask": "signals",
