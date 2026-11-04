@@ -157,7 +157,7 @@
     {
       "id": "P156.3",
       "title": "Worktree refusals name what they will do and the tree in its native spelling, and the first-site rule has a case",
-      "status": "in_progress",
+      "status": "done",
       "description": "Carried low findings P155-R23, P155-R60 and P155-R68 (docs/audit/phases/P155.json review.findings), plus one found outside any finding: the exit-code line of plugins/audit/commands/worktree.md omits exit 6 (E_SETUP in manage-worktrees.py) for task-add's failed setup. R23: restore_copy's two refusals say 'the next move drops it' while unsettled_stop stops before any move; say what actually happens next. R60: ut5's first-site rule needs a planted function with two sites and an ask between them, so mutating min to max goes red. R68: native_spelling for every refusal and drive stop that names a tree (manage-worktrees' dirty and undescribable refusals and the drive stops the finding lists), through the one helper. Answer each by id.",
       "files": [
         "plugins/audit/scripts/git/_worktrees.py",
@@ -191,19 +191,39 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "29a96a42e1b6",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "P155-R23 (restore_copy's two refusals saying 'the next move drops it'): fixed by the finding's resolution, not by rewording alone - a reworded refusal would describe a dead end, since unsettled_stop stops dispatch and integration over a standing copy before any move runs. _worktrees.restore_copy now settles both shapes the way _resume does: a copy with no index.json is dropped (new _dropped helper: restored None, the error saying the copy was dropped and the tree is settled; a drop that fails stays restored False with the copy kept); the copy of a move the marker recorded (base == end) goes to new _settle_recorded, which drops it when _newer_work over heads (end,) names nothing and otherwise keeps it naming every diverging path and saying no move, restore, dispatch or integration takes it down over newer work. The base-not-in-(start,end) refusal is unchanged. Cases un14 (no index.json dropped, tree_unsettled False after, no byte changed, HEAD at base), un15 (recorded move copy dropped, HEAD at head), un16 (over-fire twin: recorded move with newer work kept, a.txt and c.txt named, no byte changed, no 'next move' in the text). drive-phase restore_tree renders restored None as before ('nothing restored - <error>', E_USAGE), so the drop reads through it unchanged. P155-R60 (ut5's first-site and every-caller rules had no failing case): added ut6 (planted twice(): removal, tree_unsettled, second removal: named; its twin once() asking before both: not named) and ut7 (planted remover() with callers asks_first and asks_after: named; twin covered() whose two callers both ask first: not named). Proven by mutation of the scanner in a scratch exec of the test source (no file written): min to max turns ut6 red with ut5 and ut7 green; all to any turns ut7 red with ut5 and ut6 green - which also confirms the finding that ut5 alone could not tell them apart. These two cases pass on HEAD by construction because the scanner lives in the test file. P155-R68 (native_spelling only covered the unsettled family): manage-worktrees do_remove and do_task_remove now name the tree through _wt.native_spelling in every refusal naming a tree git listed - main-tree, standing-inside, not-described, dirty, and the other tasks' trees listed when none is this one's; argv and the removed field keep git's spelling. drive-phase add_tree records the tree verb's path through _worktrees.native_spelling, and every task tree the drive's state names later (wave trees, keptTrees, recuts) is that record or derived from it. Evidence for the drive half: task-add's answer was already os.path.abspath at both arms (do_task_add target, adopt_task_tree), and ntpath.abspath('C:/r/t') returns the backslash spelling (observed), so the stops the finding lists were already native in practice; add_tree now holds it whatever the verb returns. restore_copy's own messages naming the tree are spelled the same way. The finding's 'spell at the source (list_worktrees record)' was not taken: parse_list's documented contract is the path exactly as git printed it, read by modules outside this task's files (close-phase, integrate-task, panel, doctor, run-test-gate, stamp-verification), and the work order names the one helper at the refusal sites. Cases: test_manage_worktrees ns1 (windows-shaped listing, the one helper answering under ntpath for a C: path: five refusals all exit 1 and name the tree with backslashes, no forward-slash path), test_drive_phase ns1 in uy-block (git-spelled task-add answer recorded natively and submit_tree's tree-gone stop names it so). Outside any finding: plugins/audit/commands/worktree.md's exit-code line now lists 6 (E_SETUP = 6 in manage-worktrees.py, returned by provision for task-add's failed or timed-out setup; the next task-add adopts and runs the setup again, per su5a). PLUGIN-BUILD-GUIDE.md: the _worktrees section names ut6/ut7, un14-un16 and the native spelling of manage-worktrees refusals and add_tree (ns1 in each suite). Runs: the gate command exit 0 (3/3 files ok, 1084 cases); the 165 suites tools/affected.py lists for this diff through tools/sweep-selftests.py exit 0 (165/165 files ok, 16833 cases); test__refs 292/292, test__output_lints 182/182, test__deps 267/267, test__config 405/405; tools/gate-parity.py exit 0; ruff check over the six .py files exit 0; vermin -t=3.8- exit 0. Dependants: manage-worktrees.py - test__worktrees (loads it for ut1/ut2, still green), test_integrate_task (imports, green in the wide sweep), test_manage_worktrees (ns1 added), tools/affected.py (path only), PLUGIN-BUILD-GUIDE.md (updated), QUICKSTART.md (names the path only, no refusal text quoted), hooks/_config.py and require-plan.py (basename only, unchanged); worktree.md - its basename readers unchanged (name unchanged; test__refs green), CHANGELOG and docs/research unchanged; _worktrees.py - no public signature or return key changed, restore_copy is called only by drive-phase restore_tree, whose rendering of restored None is unchanged, and every importer's suite is green in the wide sweep; test__worktrees.py - new cases sit in existing blocks, _call_name/_cases/_selftest unchanged for test__affected_tests and affected.py; test_manage_worktrees.py - _g unchanged for test_drive_phase, unstaged suite; drive-phase.py - add_tree's return shape unchanged, every importer green in the wide sweep; test_drive_phase.py - no new STAGES block (ns1 joins uy-block), names read by reach-diff, run_test_gate, stamp_verification unchanged; PLUGIN-BUILD-GUIDE.md - no file added, enumeration and doc lints green (test__deps, test__config).",
+        "descriptive": "restore settles copies it has nothing to put back from instead of pointing at a move that never comes, ut5's first-site and every-caller rules each have a case that fails, worktree refusals and the drive's recorded trees use the native spelling, and worktree.md lists exit 6"
       },
       "startedAt": "2026-11-04T12:42:01Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-04T13:14:46Z",
+      "verifiedBy": [
+        "un14: restore drops a copy with no index.json and the tree reads settled",
+        "un15: restore drops the copy of a recorded move whose tree holds what the move left",
+        "un16: the same recorded-move copy over newer work is kept with the diverging paths named (over-fire twin)",
+        "ut6: a function asking between its first and second removal is named; its twin asking first is not",
+        "ut7: a remover with one caller asking after its call is named; its twin with both callers asking first is not",
+        "ns1 (test_manage_worktrees): remove and task-remove refusals name a git-listed windows tree in one native spelling",
+        "ns1 (test_drive_phase): add_tree records the tree verb's git-spelled path natively and the tree-gone stop names it so"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-04T13:14:42Z.8a9b01",
         "status": "passed",
         "at": "2026-11-04T13:14:42Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "29a96a42e1b6",
+        "at": "2026-11-04T13:14:46Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-04T13:08:01Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__worktrees.py tests/test_manage_worktrees.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with 5 of 75 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - un14 (house FAIL), un15 (house FAIL), un16 (house FAIL), ns1 (house FAIL), ns1 (house FAIL): SELFTEST FAILED: 74/75 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -332,7 +352,12 @@
       "startedAt": "2026-11-04T12:42:04Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-04T13:25:17Z.260c32",
+        "status": "passed",
+        "at": "2026-11-04T13:25:17Z"
+      }
     },
     {
       "id": "P156.6",

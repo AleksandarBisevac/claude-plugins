@@ -617,6 +617,20 @@ entry that is one token, no `meta.buildCommands` key, and a directory in the pro
 names nothing to run. A command that merely mentions a directory (`pytest tests/`) draws
 nothing. A warning, never a refusal.
 
+**A declared file the gate reaches no suite of is warned about**, on `add` and on a `scope`
+that moves `tests.gate` or `files`: one `WARNING: gate reach: <path> -- <why>` line per
+file, and `gateReach` (`{gate, gaps: [{path, why}]}`, null when the task declares no file
+or no gate entry measures it) under `--json`. A passed run of a gate is evidence only for
+the files its suites read, so a document no selected suite opens, or a tool no selected
+suite imports, would close on a measurement of nothing about it. The reading is the
+affected-test derivation's (`_affected_tests.select`, each file asked alone, over the
+recorded related listing, the import graph and the walks - the same observations
+`run-test-gate.py` gathers for a task's measured run); a file the gate runs itself, or one
+whose selection a declared unscoped call already runs, is reached. A directory or a
+pattern names no one file, so it is named as not asked. A warning, never a refusal: `done`
+records what is still open (below). A past task's recorded gate is what was run and is not
+rewritten.
+
 ### Subcommand: `start <taskId>`
 
 Promote a task to `in_progress` **without spawning anything**. This is the verb for the
@@ -963,6 +977,14 @@ closes anyway and is **journaled** as an `audit.verdict.close-overridden` row na
 the run and the reason; with `journal.enabled` false the close is refused, and a row that will
 not write rolls the close back. Given with nothing to go over, the flag closes, says it was not
 needed, and journals nothing.
+
+**The gate's reach is recorded at the close.** A close with `--commit` asks the same
+question `add` warns on (above) of the gate that measures the task, and a declared file it
+reaches no suite of goes into one dated `notes` entry - `gate reach at close: ...`, each
+file with why - written in the same write, journaled as a `notes` change, printed as the
+`WARNING: gate reach:` lines and carried as `gateReach` under `--json`. A close whose gate
+reaches every declared file writes no note. A `--no-change` close changed no file and is
+not asked.
 
 **A SHA git could not be asked about is written, not refused**, and the report says so:
 with no git on PATH, or in a **shallow** clone where the object is past the cut, a failed

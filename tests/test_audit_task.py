@@ -123,7 +123,9 @@ def _stderr_of(call, *args):
 # failing), dd (`start` refuses a task whose declared file has a reader it
 # neither declares nor waives, and `scope --files +a,b` adds to the held list),
 # gk (`scope --gate` keeps every held entry it was not told to drop, and the
-# success line prints the gate a task now holds).
+# success line prints the gate a task now holds), grt (a task's gate checked
+# to reach the files it declares: warned by `add` and `scope`, recorded by
+# `done`).
 def _at_kit(tmp):
     """The helpers every slice of the add-and-close cases builds on, each
     bound to `tmp`, the slice's own scratch directory.
@@ -6948,13 +6950,15 @@ def _close_cases(check):
               "others: `status`, `completedAt` and `commit` every time, the "
               "outcome halves and `verifiedBy` only when the caller passed them, "
               "and `intentCheck` for the answer a close against a commit now "
-              "always records. A row for an untouched field would claim a write "
+              "always records, and `notes` for the gate-reach note - this "
+              "fixture's gate, a key running `true`, reaches no suite of "
+              "`src/fresh.ts`. A row for an untouched field would claim a write "
               "that did not happen, which is the one thing a trail must never "
               "do: %r"
               % ([c["field"] for c in _pd_det["changes"]],),
               [c["field"] for c in _pd_det["changes"]]
               == ["status", "completedAt", "commit", "outcome.technical",
-                  "intentCheck"])
+                  "intentCheck", "notes"])
 
         # THE PHASE QUESTION, SETTLED AND CHECKABLE IN BOTH DIRECTIONS.
         projls, mpls = mk("dn-last", pd_fixture(last=True))
@@ -22907,6 +22911,154 @@ def _list_flag_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _gate_reach_cases(check):
+    """A task's gate is checked to reach the files the task declares.
+
+    A gate that selects no suite reading a file the task changes grades nothing
+    about that file, and a passed run of it read as evidence for the change: a
+    documentation edit graded by suites that never open the document, a tool's
+    edit graded by suites that never import it. `add` and `scope` warn when the
+    gate or the files are set, and `done` records the gap on the task.
+
+    THE FIXTURE TELLS THE READINGS APART. `src/m.py` is reached only through
+    `tests/test_m.py`'s import, so a check that read file names alone would
+    name it; `CHANGELOG.md` is reached only through the recorded related
+    listing's answer, so a check that skipped the listing would name it under a
+    gate that runs the suite the listing names.
+    """
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, _run_on_stdin, base_manifest, mk, _mk_empty, task_in, _pin, _unpin,
+     _PD_SHA, pd_fixture, _pd_repo, _git) = _at_kit(tmp)
+    listing = {"derived": {
+        "listing": {"related": "printf '%s\\n' tests/test_docs.py # {paths}"},
+        "verifiedOn": {"command": "echo v1", "answer": "v1"}}}
+    lead = "WARNING: gate reach: "
+    try:
+        def lay_out(proj):
+            for rel, text in (("src/m.py", "X = 1\n"),
+                              ("tests/test_m.py", "import m\n"),
+                              ("tests/test_docs.py", "\n"),
+                              ("CHANGELOG.md", "# log\n")):
+                path = os.path.join(proj, *rel.split("/"))
+                if not os.path.isdir(os.path.dirname(path)):
+                    os.makedirs(os.path.dirname(path))
+                with open(path, "w") as fh:
+                    fh.write(text)
+
+        def project(name, manifest=None, with_listing=False):
+            manifest = manifest or base_manifest()
+            if with_listing:
+                manifest["meta"]["phaseGate"] = json.loads(json.dumps(listing))
+            proj, mp = mk(name, manifest)
+            lay_out(proj)
+            return proj, mp
+
+        def reach_lines(txt):
+            return [ln for ln in txt.splitlines() if ln.startswith(lead)]
+
+        def add(proj, files, gate, extra=()):
+            return run(["add", "Reach", "--phase", "P2", "--project-dir", proj,
+                        "--tests-mode", "regression", "--files", files,
+                        "--gate", gate] + list(extra))
+
+        proj, _mp = project("gr-add")
+        code, txt = add(proj, "CHANGELOG.md,src/m.py,tests/test_m.py",
+                        "python3 tests/test_m.py")
+        lines = reach_lines(txt)
+        check("grt1 `add` warns once for each declared file its gate reaches "
+              "no suite of: the document no suite reads is named, the module "
+              "the gate's suite imports and the suite the gate runs are not: "
+              "%r" % ((code, lines),),
+              code == 0 and len(lines) == 1 and "CHANGELOG.md" in lines[0]
+              and "src/m.py" not in lines[0]
+              and "tests/test_m.py" not in lines[0].split(" -- ")[0])
+
+        proj, _mp = project("gr-add-json")
+        code, txt = add(proj, "CHANGELOG.md,src/m.py,tests/test_m.py",
+                        "python3 tests/test_m.py", ("--json",))
+        try:
+            reach = json.loads(txt).get("gateReach") or {}
+        except ValueError:
+            reach = {}
+        check("grt2 ...and `--json` carries the same answer as data, one gap "
+              "per path with its reason: %r" % ((code, reach),),
+              code == 0
+              and [g.get("path") for g in reach.get("gaps") or []]
+              == ["CHANGELOG.md"]
+              and all(g.get("why") for g in reach.get("gaps") or []))
+
+        proj, _mp = project("gr-listing-miss", with_listing=True)
+        code, txt = add(proj, "CHANGELOG.md,tests/test_m.py",
+                        "python3 tests/test_m.py")
+        lines = reach_lines(txt)
+        check("grt3 THE RECORDED RELATED LISTING IS READ: a document the "
+              "listing answers `tests/test_docs.py` for, under a gate that does "
+              "not run that suite, is named with the suite it would have "
+              "needed: %r" % ((code, lines),),
+              code == 0 and len(lines) == 1 and "CHANGELOG.md" in lines[0]
+              and "tests/test_docs.py" in lines[0])
+
+        proj, _mp = project("gr-listing-hit", with_listing=True)
+        code, txt = add(proj, "CHANGELOG.md,tests/test_docs.py",
+                        "python3 tests/test_docs.py")
+        check("grt4 SECOND-DIRECTION CASE: the same document under a gate that "
+              "runs the suite the listing names is reached, and nothing is "
+              "warned - a check that named every document would fail here: %r"
+              % ((code, reach_lines(txt)),),
+              code == 0 and reach_lines(txt) == [])
+
+        proj, mp = project("gr-scope")
+        code, txt = run(["scope", "P2.3", "--project-dir", proj,
+                         "--files", "src/m.py,CHANGELOG.md",
+                         "--tests-mode", "regression",
+                         "--gate", "python3 tests/test_m.py"])
+        lines = reach_lines(txt)
+        code2, txt2 = run(["scope", "P2.3", "--project-dir", proj,
+                           "--description", "Reach, described again"])
+        check("grt5 `scope` setting the gate and the files warns for the file "
+              "the gate reaches no suite of, and a scope that moves neither "
+              "says nothing about reach: %r" % ((code, lines, code2,
+                                                 reach_lines(txt2)),),
+              code == 0 and len(lines) == 1 and "CHANGELOG.md" in lines[0]
+              and code2 == 0 and reach_lines(txt2) == [])
+
+        def closing(name, files):
+            fx = pd_fixture()
+            node = fx["phases"][1]["tasks"][-1]
+            node["files"] = list(files)
+            node["tests"]["gate"] = ["python3 tests/test_m.py"]
+            fx["fileIndex"].pop("src/fresh.ts", None)
+            for rel in files:
+                fx["fileIndex"][rel] = ["P2.4"]
+            return project(name, fx)
+
+        proj, mp = closing("gr-done", ["CHANGELOG.md", "src/m.py",
+                                       "tests/test_m.py"])
+        code, txt = run(["done", "P2.4", "--project-dir", proj,
+                         "--commit", _PD_SHA] + _NOT_ASKED)
+        notes = (task_in(mp, "P2.4") or {}).get("notes") or []
+        said = [n.get("text", "") for n in notes if isinstance(n, dict)]
+        check("grt6 `done` RECORDS the gap: one dated note on the task names "
+              "the file its gate reached no suite of and not the ones it did, "
+              "and the close says so: %r" % ((code, said, reach_lines(txt)),),
+              code == 0 and len(said) == 1 and "CHANGELOG.md" in said[0]
+              and "src/m.py" not in said[0]
+              and isinstance(notes[0].get("at"), str)
+              and len(reach_lines(txt)) == 1)
+
+        proj, mp = closing("gr-done-quiet", ["src/m.py", "tests/test_m.py"])
+        code, txt = run(["done", "P2.4", "--project-dir", proj,
+                         "--commit", _PD_SHA] + _NOT_ASKED)
+        check("grt7 SECOND-DIRECTION CASE: a close whose gate reaches every "
+              "declared file writes no note and prints no reach line: %r"
+              % ((code, (task_in(mp, "P2.4") or {}).get("notes"),
+                  reach_lines(txt)),),
+              code == 0 and not (task_in(mp, "P2.4") or {}).get("notes")
+              and reach_lines(txt) == [])
+    finally:
+        _harness.remove_tree(tmp)
+
+
 STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("at3-block", "_flag_cases"), ("at4-block", "_start_cases"),
           ("at5-block", "_close_cases"), ("at6-block", "_group_cases"),
@@ -22938,7 +23090,8 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("ocg-block", "_tdd_gate_clear_cases"),
           ("dd-block", "_dependant_dispatch_cases"),
           ("gk-block", "_gate_keep_cases"),
-          ("lr-block", "_list_flag_cases"))
+          ("lr-block", "_list_flag_cases"),
+          ("grt-block", "_gate_reach_cases"))
 
 
 if __name__ == "__main__":

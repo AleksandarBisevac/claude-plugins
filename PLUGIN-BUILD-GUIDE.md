@@ -2424,7 +2424,10 @@ It stays one pass on purpose: splitting it per-question would visit every task f
 and would let two of them disagree about which objects were skipped as malformed.
 `joined_entry_parts(value, names_entry)` is the one reading of "several entries joined by
 commas" - two or more parts, each naming an entry on its own - shared by the joined-keys gate
-warning here and `audit-task.py`'s list-flag reader. Also the
+warning here and `audit-task.py`'s list-flag reader. `gate_reach_gaps(asked, runs, answers)`
+is the comparison `audit-task.py`'s gate-reach check makes: each declared path no suite the
+gate runs reaches, with the reason in the affected-test derivation's terms, and a path with
+no answer named as not asked rather than counted as reached. Also the
 per-phase rules a schema cannot express — a parallel-run `claim` left on a finished phase,
 an `area` that normalises to no tags at all, a `budgetUSD` of zero, and a phase marked done
 over tasks that are not **finished** (done *or* cancelled).
@@ -5858,6 +5861,20 @@ edit, as a dated note carrying `waives` — append-only, like the list. That is 
 `reference/orchestrator.md` prescribes for a plan-gate refusal, and until the shape rule
 replaced a pair of independent signal checks the task the remedy names failed the gate by
 construction.
+
+**A task's gate is checked to reach the files the task declares** (`_gate_reach`). A passed
+gate run is evidence only for the files its suites read, and a gate selecting no suite that
+opens a document, or imports a tool, the task edits closed on a measurement of nothing about
+that file. Each declared file goes through `_affected_tests.select` alone, over the
+observations `run-test-gate.py` gathers for a task's measured run - the recorded listings,
+the tree's suites, every Python source - with `_affected_tests.steps_for` answering whether
+a declared entry is the unscoped call that runs the selection, and
+`_manifest_phases.gate_reach_gaps` compares those answers with `_affected_tests.gate_runs`.
+The recorded listing runs once per file, side by side, and the import graph is walked only
+for a file the trusted listing does not already reach a gate-run suite for. `add` and a
+`scope` moving `tests.gate` or `files` print one `WARNING: gate reach:` line per gap and
+carry `gateReach` under `--json`; `done --commit` records the gaps as one dated note in the
+close's own write. A past task's recorded gate is never rewritten.
 
 **`retarget <phaseId>` is the same verb one noun up** — a phase's gate, area, desired outcome,
 description or title, corrected after `/audit:init` or an ADO pull chose them. The title is

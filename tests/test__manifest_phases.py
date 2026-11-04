@@ -1495,6 +1495,63 @@ def _cases(check):
           _of_ids == ["fb", "fe"] and M.open_findings({}) == []
           and M.SETTLED_STATUS == ("fixed", "accepted-open", "carried"))
 
+    # --- which of a task's files its gate reaches ----------------------------
+    # Each declared path beside the affected-test derivation's answer for it:
+    # the suites it selects, a widening it could not answer past, and whether a
+    # declared entry is the unscoped call that runs the selection. The gate runs
+    # `tests/test_a.py` and `tests/test_doc.py`. Each row's verdict differs, and
+    # the paths are chosen so a comparator that read the path's NAME (a document
+    # always a gap, a suite never one) would disagree with this one on a row.
+    _gr_runs = ["tests/test_a.py", "tests/test_doc.py"]
+    _gr_answers = {
+        "src/a.py": {"suites": ["tests/test_a.py"], "widen": None,
+                     "settled": False},
+        "src/b.py": {"suites": ["tests/test_b.py", "tests/test_c.py"],
+                     "widen": None, "settled": False},
+        "CHANGELOG.md": {"suites": ["tests/test_doc.py"], "widen": None,
+                         "settled": False},
+        "COMPATIBILITY.md": {"suites": [], "widen": None, "settled": False},
+        "tools/verify.sh": {"suites": [], "settled": False,
+                            "widen": "unrecognised: no arm reads tools/verify.sh"},
+        "tests/test_a.py": {"suites": [], "widen": None, "settled": False},
+        "tests/test_e.py": {"suites": ["tests/test_e.py"], "widen": None,
+                            "settled": True},
+        "tests/test_f.py": {"suites": [], "widen": None, "settled": False},
+    }
+    _gr_asked = ["src/a.py", "src/b.py", "CHANGELOG.md", "COMPATIBILITY.md",
+                 "tools/verify.sh", "tests/test_a.py", "tests/test_e.py",
+                 "tests/test_f.py", "src/unasked.py"]
+    _gr_gaps = M.gate_reach_gaps(_gr_asked, _gr_runs, _gr_answers)
+    _gr_paths = [p for p, _why in _gr_gaps]
+    _gr_why = dict(_gr_gaps)
+    check("gr1 a declared path is a gap exactly when no suite the gate runs is "
+          "one the derivation selects for it: a suite the gate runs, a selected "
+          "suite the gate runs and a selection a declared unscoped call runs "
+          "are reached - a document whose reading suite the gate runs included "
+          "- and the rest are named in declaration order, a suite the gate "
+          "does not run among them: %r" % (_gr_gaps,),
+          _gr_paths == ["src/b.py", "COMPATIBILITY.md", "tools/verify.sh",
+                        "tests/test_f.py", "src/unasked.py"])
+    check("gr2 each gap says why in the derivation's own terms: the suites it "
+          "selects that the gate does not run, no suite at all, the widening "
+          "reason verbatim, and a path it was never asked about named as "
+          "unasked rather than counted as reached: %r" % (_gr_why,),
+          "tests/test_b.py" in _gr_why.get("src/b.py", "")
+          and "tests/test_c.py" in _gr_why.get("src/b.py", "")
+          and "no suite" in _gr_why.get("COMPATIBILITY.md", "")
+          and "unrecognised: no arm reads tools/verify.sh"
+          in _gr_why.get("tools/verify.sh", "")
+          and "not asked" in _gr_why.get("src/unasked.py", ""))
+    # SECOND DIRECTION: a comparator that named every path, or every path but
+    # the ones the gate runs itself, fails here - every path below is reached.
+    _gr_quiet = M.gate_reach_gaps(
+        ["src/a.py", "CHANGELOG.md", "tests/test_a.py", "tests/test_e.py"],
+        _gr_runs, _gr_answers)
+    check("gr3 SECOND-DIRECTION CASE: a task whose every declared path is "
+          "reached gets no gap at all, and nothing asked gets nothing back: %r"
+          % ((_gr_quiet, M.gate_reach_gaps([], _gr_runs, _gr_answers)),),
+          _gr_quiet == [] and M.gate_reach_gaps([], _gr_runs, _gr_answers) == [])
+
     # --- what a derived gate's slot may be handed ---------------------------
     # Each path beside the kind it is and whether a suite-taking slot and a
     # source-taking slot take it. `jest.config.js` and `.eslintrc.js` carry a

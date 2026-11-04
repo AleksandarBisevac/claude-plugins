@@ -1597,6 +1597,56 @@ def own_gate_entries(manifest, phase, task):
     return kept
 
 
+# --- which of a task's files its gate reaches ----------------------------------
+def gate_reach_gaps(asked, runs, answers):
+    """`[(path, why)]` - each path of `asked`, in order, that no suite the gate
+    runs reaches, with the reason in the affected-test derivation's terms.
+
+    A PASSED GATE RUN IS EVIDENCE ONLY FOR WHAT ITS SUITES READ. A gate that
+    selects no suite opening a document, or none importing a tool, stays green
+    whatever the change to that file says, so a task closed on it records a
+    measurement of nothing about that file. This is the comparison only: the
+    reading of which suites reach a path is `_affected_tests.select`'s, made by
+    the caller, which hands it in.
+
+    `runs` is the paths the gate runs the cases of (`_affected_tests.gate_runs`).
+    `answers[path]` is the derivation's answer for that path alone:
+    `{suites, widen, settled}` - the suites it selects, the widening it could
+    not answer past, and whether a declared entry is the unscoped call that
+    runs every suite of the selection. A path is reached when the gate runs it
+    itself, when its selection is settled, or when the gate runs one of its
+    suites. A path with no answer is named as not asked, never counted as
+    reached: an empty reading is not a clean one.
+    """
+    runs = set(runs or ())
+    answers = answers if isinstance(answers, dict) else {}
+    gaps = []
+    for path in asked or []:
+        if path in runs:
+            continue
+        answer = answers.get(path)
+        if not isinstance(answer, dict):
+            gaps.append((path, "not asked: the affected-test derivation gave no "
+                               "answer for it, so nothing says a suite the gate "
+                               "runs reaches it"))
+            continue
+        suites = [s for s in answer.get("suites") or [] if isinstance(s, str)]
+        if answer.get("settled") or any(s in runs for s in suites):
+            continue
+        if answer.get("widen"):
+            gaps.append((path, "the affected-test derivation cannot say which "
+                               "suite reaches it: %s" % (answer["widen"],)))
+        elif suites:
+            gaps.append((path, "the affected-test derivation selects %s for it, "
+                               "and the gate runs none of them"
+                         % (", ".join(suites),)))
+        else:
+            gaps.append((path, "no suite reaches it by the affected-test "
+                               "derivation's reading - its recorded listing, "
+                               "its import graph and its walks"))
+    return gaps
+
+
 # One shell word as written: runs of unquoted non-space characters and whole
 # single- or double-quoted spans, so whitespace inside a quote does not end the
 # word. A backslash outside quotes is an ordinary character here -- see
