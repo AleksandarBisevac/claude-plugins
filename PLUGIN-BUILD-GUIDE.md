@@ -4965,9 +4965,15 @@ keeping's, the unsettled-tree, kept-tree and kept-marker stops, a wave's or a re
 HEAD, the writer's unreadable brief and unwritable resume prompt, and the submit-side tree and
 stamp stops word what they name - the task, the patch by its name, the pin, the verb - with no path in
 it, and hand every path, and every command spelled with one, to `paths_last`, which places them
-after (`sd14` under a long spaced root, `sd15` the formatter itself). Nothing checks that a new
-stop goes through it. A stop that relays a sentence another module wrote - a filed return's
-problem, a verb's own refusal - keeps that sentence's order.
+after (`sd14` under a long spaced root, `sd15` the formatter itself). `ps1` walks every
+`_stopped` call in the module and names one whose words read a path-like name without going
+through `paths_last` - directly or through a function every return of which is one - unless an
+excuse with its reason covers it; `ps2` pins that walk both ways on a planted module. The names it
+reads as path-like are the case's own list, so a path carried under another name passes it. A
+stop that relays a sentence another module wrote - a filed return's problem, a verb's own
+refusal - keeps that sentence's order; when the redo keeps its work beside a verb's stop,
+`relayed_beside` puts the keeping's named facts first and the verb's words whole after them
+(`kb1`).
 
 Before a wave opens, `hooks_width` asks `_doctor_setup.hooks_task_binding` whether the hooks
 Claude Code loads - the copy `installed_plugins.json` records and the live copies the hook run

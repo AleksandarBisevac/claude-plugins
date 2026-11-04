@@ -8390,6 +8390,35 @@ def _set_aside_cases(check):
           stop is None and standing
           and any("kept" in d and "its marker names P1.9, not P1.1 (" in d
                   for d in did))
+    # ta9's two over-fire twins: the "names X, not P" wording is for a marker
+    # this plugin wrote for another task. A tree with no marker at all, and a
+    # marker carrying another tool's createdBy beside a taskId, are kept with
+    # the plain "does not name" wording - a foreign record's taskId is not this
+    # plugin's naming of a task.
+    root_n, mpath_n, tree_n = _retire_fixture("tanomark")
+    os.remove(os.path.join(M._worktrees.admin_dir(tree_n),
+                           M._worktrees.PROVENANCE_FILE))
+    stop, did, standing = _retired(M, root_n, mpath_n, tree_n)
+    check("ta12 OVER-FIRE of ta9: retiring a member whose tree carries no "
+          "marker keeps the tree and says its marker does not name the task, "
+          "naming no other task: %r" % ((stop, did, standing),),
+          stop is None and standing
+          and any("kept" in d and "its marker does not name P1.1 (" in d
+                  for d in did)
+          and not any("its marker names" in d for d in did))
+    root_f, mpath_f, tree_f = _retire_fixture("taforeign")
+    M._worktrees.write_record(tree_f, {
+        "createdBy": "another-tool", "taskId": "P1.9", "phaseId": PHASE,
+        "base": _git_out(root_f, "rev-parse", "HEAD").strip()})
+    stop, did, standing = _retired(M, root_f, mpath_f, tree_f)
+    check("ta13 a member whose tree's marker was written by another tool, with "
+          "a taskId of its own, is kept with the plain wording: its marker does "
+          "not name the task, and it is never read as this plugin's marker for "
+          "the other task: %r" % ((stop, did, standing),),
+          stop is None and standing
+          and any("kept" in d and "its marker does not name P1.1 (" in d
+                  for d in did)
+          and not any("names P1.9" in d for d in did))
 
     # A tree a redo kept, clean and integrated, goes when the task is retired,
     # and its entry with it; the member's own tree too.
@@ -9099,8 +9128,11 @@ def _stray_review_run(M, prefix, stray, word):
             "landed": os.path.isfile(os.path.join(root, "notes.txt"))}
 
 
-# sd14's root: spaced, and long enough that every path in the redo stop runs
-# past the head a clip keeps - yet it has to be MADE on a windows runner.
+# sd14's root: spaced and nested, the shape a spaced, linked runner temp path
+# gives. What sd14 holds is ORDER - the task, the patch, the pin and the verb
+# before the root's first occurrence - so a path sits behind the named facts;
+# no case asserts a lower bound on the root's length or names a clip width it
+# must outrun. It still has to be MADE on a windows runner.
 # Every path the case creates must fit MAX_PATH there: the runner's temp
 # prefix (`_WIN_RUNNER_TEMP`, spelled as the windows cells print it), the
 # fixture directory, this root and the deepest path the drive writes below
@@ -9109,7 +9141,7 @@ def _stray_review_run(M, prefix, stray, word):
 # is red here and not only on windows. No component ends in a space: win32
 # trims one off the last component of a path and from no other, so makedirs
 # would create the parent without it and then fail to find the child under it.
-SD_LONG_ROOT = ("a spaced directory that runs long past a clip",
+SD_LONG_ROOT = ("a spaced directory that stands in for a root",
                 "and nests once more inside it")
 _WIN_RUNNER_TEMP = "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\sw-xxxxxxxx\\"
 _WIN_MAX_PATH = 260
@@ -9452,6 +9484,186 @@ def _scope_declared_cases(check):
           deepest and " " in SD_LONG_ROOT[0]
           and longest <= _WIN_MAX_PATH - 1 and trailing == [])
     _pin_under_patch_cases(check, M)
+    _stop_wording_cases(check, M)
+
+
+# A `_stopped` argument names a path when it reads one of these names, or a
+# subscript with one of these keys: the spellings the drive's paths travel
+# under. A stop that reads none of them carries no machine path.
+_PATH_NAMES = ("tree", "path", "kept", "patch", "root", "deep", "brief",
+               "prompt")
+_PATH_KEYS = ("path", "gitRoot", "project")
+# A stop that names a path and still does not route it through `paths_last`,
+# each with the reason its path cannot push the named words past a clip.
+_UNROUTED_ALLOWED = {
+    ("follow_red_gate", "follower['path']"):
+        "a follower's path is repo-relative, as the manifest names it, so no "
+        "machine prefix stands in front of the words after it",
+}
+
+
+def _subscript_key(node):
+    """The constant string key of subscript `node`, or None."""
+    sl = node.slice
+    if type(sl).__name__ == "Index":
+        sl = sl.value
+    return sl.value if isinstance(sl, ast.Constant) and isinstance(
+        sl.value, str) else None
+
+
+def _path_refs(node):
+    """The path-like references `node` reads, spelled `name` or
+    `base['key']`, sorted."""
+    refs = set()
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Name) and sub.id in _PATH_NAMES:
+            refs.add(sub.id)
+        elif isinstance(sub, ast.Subscript) and isinstance(sub.value, ast.Name):
+            key = _subscript_key(sub)
+            if key in _PATH_KEYS:
+                refs.add("%s[%r]" % (sub.value.id, key))
+    return sorted(refs)
+
+
+def _is_paths_last(node):
+    return (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id == "paths_last")
+
+
+def _paths_last_wrappers(tree):
+    """The names of the functions - module-level or nested - whose every
+    return hands back a `paths_last` call: calling one is routing through it.
+    A name defined twice counts only when every definition qualifies."""
+    defs = {}
+    for fn in ast.walk(tree):
+        if isinstance(fn, ast.FunctionDef):
+            own = [r for r in ast.walk(fn) if isinstance(r, ast.Return)]
+            defs.setdefault(fn.name, []).append(
+                bool(own) and all(_is_paths_last(r.value) for r in own))
+    return set(name for name, quals in defs.items() if all(quals))
+
+
+def _unrouted_stops(src, allowed):
+    """`(unrouted, stale)` over the module source `src`: every `_stopped`
+    call whose words name a path (`_path_refs`) and reach `paths_last` neither
+    directly nor through a wrapper, as `function:line refs`, less the
+    `(function, ref)` pairs `allowed` excuses; and each allowed pair that
+    excused no call, so an entry outliving its site is named too."""
+    tree = ast.parse(src)
+    wrappers = _paths_last_wrappers(tree)
+    used, unrouted = set(), []
+    for fn in ast.walk(tree):
+        if not isinstance(fn, ast.FunctionDef):
+            continue
+        for call in ast.walk(fn):
+            if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+                    and call.func.id == "_stopped" and len(call.args) > 1):
+                continue
+            words = call.args[1]
+            if _is_paths_last(words) or (
+                    isinstance(words, ast.Call)
+                    and isinstance(words.func, ast.Name)
+                    and words.func.id in wrappers):
+                continue
+            refs = [r for r in _path_refs(words) if (fn.name, r) not in allowed]
+            used.update((fn.name, r) for r in _path_refs(words)
+                        if (fn.name, r) in allowed)
+            if refs:
+                unrouted.append("%s:%d %s" % (fn.name, call.lineno,
+                                              ",".join(refs)))
+    stale = sorted("%s %s" % pair for pair in allowed if pair not in used)
+    return sorted(set(unrouted)), stale
+
+
+_PLANTED_STOPS = '''
+def bare(ctx, tree):
+    return _stopped(ctx, "the tree of P1.1 at %s is kept" % (tree,))
+def rooted(ctx, task):
+    return _stopped(ctx, "%s holds %s" % (ctx["gitRoot"], task["id"]))
+def routed(ctx, tree):
+    return _stopped(ctx, paths_last("the tree of P1.1 is kept", [("tree", tree)]))
+def wrapper(tree):
+    return paths_last("the tree of P1.1 is kept", [("tree", tree)])
+def wrapped(ctx, tree):
+    return _stopped(ctx, wrapper(tree))
+def pathless(ctx, task):
+    return _stopped(ctx, "%s is not pending" % (task["id"],))
+def excused(ctx, follower):
+    return _stopped(ctx, "the recipe for %s failed" % (follower["path"],))
+'''
+
+
+def _stop_wording_cases(check, M):
+    """The drive's stop texts: a blocked phase's ref said once, a verb's own
+    stop relayed after the keeping's named facts, and every stop that names
+    a path routing it through `paths_last` - held over the driver's source."""
+    blocked = {"phases": [
+        {"id": "P1", "status": "pending",
+         "tasks": [{"id": "P1.1", "status": "pending"}]},
+        {"id": "P2", "status": "pending", "blockedBy": ["P1"],
+         "tasks": [{"id": "P2.1", "status": "pending"},
+                   {"id": "P2.2", "status": "pending",
+                    "dependsOn": ["P2.1"]}]}]}
+    got = (M.not_ready_why(blocked, {"id": "P2.1", "status": "pending"}),
+           M.not_ready_why(blocked, {"id": "P2.2", "status": "pending"}))
+    check("nw1 a task whose phase waits on another names that phase's ref "
+          "once - the task's own entry already carries it, marked as the "
+          "phase's - and a task waiting on its own ref as well names both, "
+          "each once: %r" % (got,),
+          got == ("waits on P1 (phase)", "waits on P2.1, P1 (phase)"))
+
+    relay = getattr(M, "relayed_beside", None)
+    lead = "%s P1: stopped - " % (M.PREFIX,)
+    spaced = os.sep + os.sep.join(["a spaced directory that runs long"] * 12)
+    verb = ("manage-worktrees.py refused (exit 1); its own words follow\n"
+            "fatal: '%s' already exists\nthe rule a stop carries" % (spaced,))
+    named = ("the redo of P1.1 stopped once its old tree was kept: its work is "
+             "kept as P1.1.redo.patch and P1.1 is as it was")
+    ctx = {"phase": "P1", "stop": "stop-lock"}
+    said = (relay(ctx, (M.E_STOPPED, lead + verb), named,
+                  [("old tree", spaced), ("patch", spaced + "-P1.1.redo.patch")])
+            if relay is not None else (None, ""))
+    text = said[1]
+    first = text.find(spaced)
+    check("kb1 a verb's stop the redo relays beside its keeping leads with the "
+          "keeping's named facts - the task and the patch name before the "
+          "first path, so a head-keeping clip keeps them - then the verb's "
+          "words whole as the last clause, under one prefix, its exit code "
+          "and its kind as the verb left them: %r"
+          % ((said[0], first, text[:300], ctx.get("stop")),),
+          relay is not None and said[0] == M.E_STOPPED
+          and text.startswith(lead + named + " - ")
+          and first > text.find("P1.1.redo.patch") >= 0
+          and text.count(M.PREFIX) == 1
+          and text.endswith("verb said: " + verb)
+          and ctx.get("stop") == "stop-lock"
+          and "P1.1.redo.patch" in M.stop_basis(text)[:200])
+
+    with open(_loader.script_path("drive-phase.py"), "r", encoding="utf-8") as fh:
+        src = fh.read()
+    unrouted, stale = _unrouted_stops(src, _UNROUTED_ALLOWED)
+    beside = [fn for fn in ast.walk(ast.parse(src))
+              if isinstance(fn, ast.FunctionDef) and fn.name == "kept_beside"]
+    relays = [c for fn in beside for c in ast.walk(fn)
+              if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)
+              and c.func.id == "relayed_beside"]
+    check("ps1 every `_stopped` in the driver whose words name a path routes "
+          "them through `paths_last` - directly, or through a function every "
+          "return of which is one - or is excused with its reason, and no "
+          "excuse outlives its site; the redo's keeping relays a verb's stop "
+          "through `relayed_beside`: %r" % ((unrouted, stale, len(relays)),),
+          unrouted == [] and stale == [] and len(beside) == 1
+          and len(relays) == 1)
+    planted, planted_stale = _unrouted_stops(
+        _PLANTED_STOPS, {("excused", "follower['path']"): "repo-relative",
+                         ("gone", "tree"): "no such site"})
+    check("ps2 the walk is pinned both ways on a planted module: a stop "
+          "spelling a tree or the git root into its words is named; one "
+          "through paths_last, one through a wrapper of it, one naming no "
+          "path and one excused are not; an excuse naming no site is stale: "
+          "%r" % ((planted, planted_stale),),
+          [u.split(":")[0] for u in planted] == ["bare", "rooted"]
+          and planted_stale == ["gone tree"])
 
 
 def _stand_patch(M, root, mpath, task_id):

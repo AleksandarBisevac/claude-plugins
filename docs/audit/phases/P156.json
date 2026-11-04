@@ -93,7 +93,7 @@
     {
       "id": "P156.2",
       "title": "The drive's stop texts: one ref once, a foreign marker named as foreign, the kept-beside patch name inside the clip, every converted stop held to paths-last",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Carried low findings P155-R3, P155-R24, P155-R58, P155-R59 and P155-R75 (docs/audit/phases/P155.json review.findings), plus one found outside any finding: the unsettled_stop docstring in drive-phase.py still says ut5 names only a site reaching neither ask. R3: not_ready_why prints a blocked phase's ref twice ('waits on P9 (phase), P9'). R24: a case for the fallback wording and for a marker with a foreign createdBy, which must not read as this plugin's marker. R58: kept_beside's patch name must survive a head-keeping clip after a long relayed stop. R59: every stop converted to paths-last is held to it by a committed case (an AST walk over the _stopped calls), not only the serial redo_left branch. R75: the SD_LONG_ROOT comment names a clip width that a case asserts, or says only what is asserted. Answer each by id.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -118,16 +118,22 @@
       "dependsOn": [
         "P156.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-04T12:21:26Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-04T12:41:44Z.4f4594",
+        "status": "passed",
+        "at": "2026-11-04T12:41:44Z"
+      }
     },
     {
       "id": "P156.3",
@@ -177,7 +183,7 @@
     {
       "id": "P156.4",
       "title": "Every list flag of every audit-task verb reads one spelling: a comma-joined value is split or refused by one shared reader, never stored as one entry",
-      "status": "in_progress",
+      "status": "done",
       "description": "Carried low findings P155-R7, P155-R8, P155-R67 and P155-R73 (docs/audit/phases/P155.json review.findings), plus one found outside any finding: a fix task for a test-strengthening finding is created tdd with expectRedFirst although the red cannot be proved when the fix is in the test file. R73 is a class that recurred: `add --tests-add a.py,b.py` stores one entry 'a.py,b.py', and while this phase was being set up `add-phase --gate a,b,c` stored the nine gate keys as one entry (the validator only warned). The repair is one shared reader for every list-valued flag of every verb (--tests-add, --gate, --gate-add, --files, the id lists, add-phase's flags): split the same way everywhere, or refuse a value whose pieces name existing entries, never store the joined string; plus a case that walks the verbs' argparse definitions so a new list flag cannot bypass the reader. R7: the wide-gate warning must not prescribe a call that is refused without --replace. R8: --gate-add on a task with no gate of its own must not silently shrink the phase-derived gate to one entry (refuse, or seed from the entries that grade it), and the help text says which. R67: the close's evidence check must accept a files-[] task whose work is its own outputs. For the tdd item: choose the mode by where the fix lives, or make the brief say how red-first is shown for a test-file fix. Answer each by id.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -224,19 +230,38 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "66027d6e83ab",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "ATTEMPT 2, in the redo tree at base 0e8e669d. The attempt-1 change set was carried in staged (8 files; read_list_flags, _grading_gate, _leads_with_test, joined_entry_parts all present) and is unchanged. This attempt closes the two reds attempt 1 left in files it could not edit, now in scope: tests/test__config.py - the _FILES_ALONE_EXEMPT row (audit-task.py, _commit_touches) deleted, since _commit_touches now asks declared_git_rels with both halves and makes no files-half call; the _close_evidence_refusal row's reason reworded to say what that function still reads (declared_work and the attempt span) and that the closing commit's question is _commit_touches', through declared_git_rels. tools/lints/_deps.py - a GIT_PATH_BASE_EXEMPT row for audit-task.py:_commit_touches: its diff-tree paths are named from the checkout's top and handed whole to _config.declared_git_rels as its changed listing, the spelling it reads, and that function spells the files entries from the same top through plan_to_git. tests/test__deps.py needed no change. Before: dg8/dg9/dg10 red in test__config (402/405) and gb1 red in test__deps (266/267), both naming exactly these rows; after: sweep over test__config.py and test__deps.py exit 0, 2/2 files ok, 672 cases. FINDINGS BY ID (unchanged from attempt 1): P155-R73 fixed as a class - one reader, read_list_flags in _dispatch, over LIST_FLAG_READINGS, split for id/path lists (and signoff --accept, which stored a joined value), one entry per flag with a joined-value refusal for --tests-add, the gate flags, --waive, --accept-open and --carried, and list_flag_gaps holding the table to the parser both ways; P155-R7 fixed - the wide-gate warning prescribes --gate \"<command>\" --replace for narrowing and a bare --gate restating the phase entries for declaring; P155-R8 fixed by seeding - --gate-add/--gate-drop start from the phase testGate on a task with no gate of its own, a cleared gate is not seeded, the help says so; P155-R67 fixed - _commit_touches routes through declared_git_rels(only=task, changed=<commit paths>), now with both exemption tables agreeing; TDD ITEM fixed by mode - a fix task whose finding leads with a test file is regression with a mutation note. VERIFIED: the brief's gate command exit 0, 8/8 files ok, 2276 cases; the suites importing audit-task plus the lint suites (test_drive_phase, test_close_phase, test__invariants, test__doctor_trail, test_run_test_gate, test_full_gate, test_commit_task_work, test__output_lints, test__help, test__refs, test_validate_manifest, test_derive_phase_gate, test_repair_tests_add) exit 0, 13/13 files ok, 2929 cases; ruff all checks passed; vermin -t=3.8- no incompatibility; measure-context --gate no breach. DEPENDANTS: as in attempt 1 - only _commit_touches changed signature and its one caller is in audit-task; the two tables above were its other readers and are now in step.",
+        "descriptive": "One shared reader for every repeating audit-task flag, --gate-add keeps the phase gate, the wide-gate warning names --replace, outputs-only tasks can close, a test-led fix task is regression - and the exemption tables now agree with the outputs-aware close"
       },
       "startedAt": "2026-11-04T12:06:38Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-04T12:21:22Z",
+      "verifiedBy": [
+        "lr1-lr7: every repeating option has a LIST_FLAG_READINGS row and the walk fires on a planted flag and a stale row; every row driven with a joined value; joined --tests-add and --gate/--gate-add refused at the CLI before a write; comma-bearing prose and arguments kept; the split keeps +, empties and drops empty parts",
+        "gk12-gk14: --gate-add and --gate-drop start from the phase gate on a task with none; a cleared gate is not seeded",
+        "lo-ce7/lo-ce8: a files-[] task closes over a commit its outputs pattern covers, and is still refused over one it does not",
+        "bx14/bx15: a fix task whose finding leads with a test is regression with a mutation note; one leading with the source stays tdd",
+        "tg13: the wide-gate warning prescribes --replace for narrowing and a bare --gate for declaring",
+        "jp1: joined_entry_parts returns parts only when every comma part names an entry"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-04T12:21:19Z.840c80",
         "status": "passed",
         "at": "2026-11-04T12:21:19Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "66027d6e83ab",
+        "at": "2026-11-04T12:21:22Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-04T12:15:33Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py tests/test__scoped_commit.py tests/test__manifest_rules.py tests/_harness.py tests/test__affected_tests.py tests/test__runner_collects.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 with 5 of 1228 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - tg13 (house FAIL), lo-ce7 (house FAIL), bx14 (house FAIL), gk12 (house FAIL), gk13 (house FAIL): SELFTEST FAILED: 1223/1228 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {

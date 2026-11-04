@@ -4845,7 +4845,12 @@ def unsettled_stop(ctx, task, tree):
     tree - is settled, else the stop `unsettled_said` words: the reading
     (`_worktrees.tree_unsettled`) the drive's dispatch, resume and integration
     take before they act in a task tree. `ut5` in `tests/test__worktrees.py`
-    names a remover or a dispatch that reaches neither this nor that.
+    names a function that removes a worktree or opens a writer session in a
+    tree without asking whether the tree is settled - here, through
+    `_worktrees.tree_unsettled` or `_worktrees.refuse_unsettled` - earlier in
+    the source than that site, itself or through every caller it has earlier
+    than its call; one that asks only after the removal or the dispatch is
+    named too.
     A tree whose directory is gone is no stop here: nothing can run in it, the
     verb that would is the one to refuse it by name, and its retirement runs
     no removal that could reach the copy (`retire_member`)."""
@@ -5292,7 +5297,11 @@ def remove_task_tree(ctx, tree, marker, records=(), followers=(), carried=None):
         # The basis opens with the marker's absolute path, so under a long temp
         # or project path its clip cuts off the task the marker names - the one
         # fact a reader of the kept line needs - and that goes before it.
-        named = (mine.get("record") or {}).get("taskId")
+        # Only a marker this plugin wrote names a task of its: another tool's
+        # record keeps the plain wording, whatever taskId it carries.
+        rec = mine.get("record") or {}
+        named = (rec.get("taskId")
+                 if rec.get("createdBy") == _worktrees.PROVENANCE_MARK else None)
         said = ("names %s, not %s" % (named, marker)
                 if named and str(named) != str(marker)
                 else "does not name %s" % (marker,))
@@ -6633,16 +6642,17 @@ def recut_tree(ctx, state, task):
                 "nothing was recut, and its tree and %s are as they were"
                 % (task["id"], ref), [("why", why)]))
 
+    def keeping_said(where):
+        return ("the redo of %s stopped %s: its work is kept as %s and %s is as "
+                "it was, and no attempt is spent"
+                % (task["id"], where, os.path.basename(kept), ref))
+
     def keeping(where, placed):
-        return paths_last("the redo of %s stopped %s: its work is kept as %s and "
-                          "%s is as it was, and no attempt is spent"
-                          % (task["id"], where, os.path.basename(kept), ref),
-                          placed + [("patch", kept)])
+        return paths_last(keeping_said(where), placed + [("patch", kept)])
 
     def kept_beside(stop, where, placed):
-        # A verb's own stop keeps its kind and words; the keeping is added.
-        return stop if not work["patch"] else (stop[0], "%s\n%s" % (
-            stop[1], keeping(where, placed)))
+        return stop if not work["patch"] else relayed_beside(
+            ctx, stop, keeping_said(where), placed + [("patch", kept)])
     # What `undo_recut` puts back when the recut tree refuses the work: the
     # state and the old tree's marker as they stand before the keeping.
     before = json.loads(json.dumps(state))
@@ -7309,15 +7319,14 @@ def runnable_tasks(manifest, phase_id):
 
 def not_ready_why(manifest, task):
     """None when `task` is ready to start, else why not: it is not pending, or
-    the refs `_status_facts.unmet_refs` names for it or for its phase."""
+    the refs `_status_facts.unmet_refs` names for it, its phase's among them."""
     if task.get("id") in _status_facts.ready_tasks(manifest):
         return None
     if task.get("status") != "pending":
         return "it is %s, not pending" % (task.get("status") or "without a status",)
-    unmet = _status_facts.unmet_refs(manifest)
-    phase_id = next((ph.get("id") for ph, t in _mio.iter_tasks(manifest)
-                     if t.get("id") == task.get("id")), None)
-    waits = list(unmet.get(task.get("id")) or []) + list(unmet.get(phase_id) or [])
+    # A task's own entry already carries its phase's refs, each marked
+    # `(phase)`, so the phase's entry is not read again beside it.
+    waits = _status_facts.unmet_refs(manifest).get(task.get("id")) or []
     return "waits on %s" % (", ".join(waits) or "nothing the plan names",)
 
 
@@ -9973,10 +9982,28 @@ def paths_last(named, where):
     diagnostic prints a slice. A temp or project path is as long as the
     machine makes it - spaced and linked on a runner - so one in front of the
     named words pushes them past any of those cuts, and the reader is left
-    with a path and no task. Nothing checks that a new stop routes its paths
-    through here; `sd14` holds the redo stop to it under a long spaced root."""
+    with a path and no task. `ps1` in `tests/test_drive_phase.py` walks every
+    `_stopped` call of this module and names one whose words read a path-like
+    name without coming through here - directly, or through a function every
+    return of which is a call of this - unless an excuse with its reason
+    covers it; the names it reads as path-like are its own list, so a path
+    under another name passes it. `sd14` holds the redo stop to the order
+    under a long spaced root."""
     placed = ["%s: %s" % (label, text) for label, text in where if text]
     return "%s - %s" % (named, "; ".join(placed)) if placed else named
+
+
+def relayed_beside(ctx, stop, named, where):
+    """A verb's stop `(code, text)` with `named` and `where` put in front of
+    it: `named` leads, then each placed clause, then the verb's own words whole
+    as the last one, under the one stop prefix. The code is the verb's, and
+    `ctx["stop"]` - the kind the verb set - is not touched. A verb's stop can
+    open on a long path, so words added after it sit past a head-keeping clip
+    (`paths_last`)."""
+    code, text = stop
+    lead = "%s %s: stopped - " % (PREFIX, ctx["phase"])
+    said = text[len(lead):] if text.startswith(lead) else text
+    return code, lead + paths_last(named, list(where) + [("verb said", said)])
 
 
 def _stopped(ctx, why):
