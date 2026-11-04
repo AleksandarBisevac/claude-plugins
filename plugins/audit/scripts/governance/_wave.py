@@ -1,12 +1,13 @@
 """Which ready tasks may run together, and what an overlap between two is.
 
-A wave is a set of ready tasks whose declared `files` are provably disjoint, so
-each can be edited in a tree of its own and integrated afterwards. The proof is
-the declaration and nothing else: a task that declares no files cannot be shown
-disjoint from anything, so it runs alone. These are pure functions over task
-dicts (`id`, `files`) so the driver's wave step, the integration step and their
-tests all ask ONE rule; the question "do these two paths touch" is
-`_task_outputs.covers`, never re-spelled here.
+A wave is a set of ready tasks whose declared paths are provably disjoint, so
+each can be edited in a tree of its own and integrated afterwards. Declared means
+both halves a task writes through: its `files` and its honoured `outputs`
+patterns. The proof is the declaration and nothing else: a task that declares no
+files cannot be shown disjoint from anything, so it runs alone. These are pure
+functions over task dicts (`id`, `files`, `outputs`) so the driver's wave step,
+the integration step and their tests all ask ONE rule; whether an entry covers a
+path is `_task_outputs.covers` or `output_covers`, never re-spelled here.
 
 An overlap is graded, not just found. A file two tasks both edit can usually be
 merged per path; a lockfile cannot - two machine-written files merged by text
@@ -71,20 +72,108 @@ def is_non_mergeable(path):
 
 
 def _declared(task):
-    """The task's non-blank declared entries, bare, in a stable order."""
+    """The task's non-blank declared `files` entries, bare, in a stable order."""
     return sorted(set(b for b in (_bare(f) for f in (task.get("files") or [])
                                   if isinstance(f, str)) if b))
 
 
+# --- both halves of what a task declares -----------------------------------------
+# A task writes its `files` AND whatever its `outputs` patterns cover - the plan
+# gate opens both and the task commit stages both - so two tasks whose `files`
+# are disjoint can still write one path in two trees. Disjointness is therefore
+# read over both halves. The outputs half is the graded list every other reader
+# acts on (`_task_outputs.honoured`), so a pattern the rule refuses covers
+# nothing here either, and what a pattern reaches is `output_covers`.
+def _outputs(task):
+    """The task's honoured `outputs` patterns, separators read as `/`, in a
+    stable order."""
+    return sorted(set(str(p).replace("\\", "/").strip()
+                      for p in _task_outputs.honoured(task.get("outputs"))))
+
+
+def _entries(task):
+    """`[(half, spelling), ...]` - every path the task declares it may write:
+    its bare `files` entries, then its honoured `outputs` patterns."""
+    return ([("files", f) for f in _declared(task)]
+            + [("outputs", p) for p in _outputs(task)])
+
+
+def _is_pattern(text):
+    return any(ch in text for ch in _task_outputs.PATTERN_CHARS)
+
+
+def _segments(entry):
+    """The entry as path segments, a trailing `**` standing for "and everything
+    under it": a `files` entry covers itself and its subtree (`covers`), and so
+    does an `outputs` entry spelled with a trailing `/` (`output_covers`)."""
+    half, text = entry
+    segs = [s for s in text.split("/") if s != ""]
+    if half == "files" or text.endswith("/"):
+        return segs + ["**"]
+    return segs
+
+
+def _segment_meets(x, y):
+    """Whether one path segment can satisfy both spellings. Two literals meet
+    when equal; a literal meets a wildcard segment it matches - asked of
+    `output_covers` over the one segment, so the match is the shared rule's;
+    two wildcard segments are taken to meet, because a wave that defers a task
+    it need not costs a turn, and one that admits two writers of a path costs
+    the integration."""
+    if _is_pattern(x) and _is_pattern(y):
+        return True
+    if _is_pattern(y):
+        return _task_outputs.output_covers(y, x)
+    if _is_pattern(x):
+        return _task_outputs.output_covers(x, y)
+    return x == y
+
+
+def _meets(a_segs, b_segs):
+    """Whether some path is reached by both segment lists - `**` stands for any
+    number of segments, every other segment for exactly one."""
+    if a_segs and a_segs[0] == "**":
+        return any(_meets(a_segs[1:], b_segs[i:]) for i in range(len(b_segs) + 1))
+    if b_segs and b_segs[0] == "**":
+        return any(_meets(a_segs[i:], b_segs[1:]) for i in range(len(a_segs) + 1))
+    if not a_segs or not b_segs:
+        return not a_segs and not b_segs
+    return _segment_meets(a_segs[0], b_segs[0]) and _meets(a_segs[1:], b_segs[1:])
+
+
+def _reaches(entry, path):
+    """Whether a declared entry covers the literal `path`, by the shared rule
+    for its half."""
+    half, text = entry
+    if half == "files":
+        return _task_outputs.covers(text, path)
+    return _task_outputs.output_covers(text, path)
+
+
+def _named(x, y):
+    """What to report for two entries that meet: the MORE SPECIFIC one - a
+    literal the other reaches (the directory or the pattern covers it, so the
+    literal is what both can touch), else the entry with more segments, else
+    both, because two patterns of one depth name no single path."""
+    xs, ys = x[1].rstrip("/"), y[1].rstrip("/")
+    if not _is_pattern(xs) and _reaches(y, xs):
+        return [xs]
+    if not _is_pattern(ys) and _reaches(x, ys):
+        return [ys]
+    xn, yn = len(_segments(x)), len(_segments(y))
+    if xn != yn:
+        return [xs if xn > yn else ys]
+    return [xs, ys]
+
+
 def _shared(a_entries, b_entries):
-    """The paths both lists reach: for each overlapping pair the MORE SPECIFIC
-    entry (the longer one - the directory covers it, so the file is what both
-    can touch)."""
+    """The paths both lists reach: for each pair that meets, what `_named`
+    reports for it."""
     found = set()
     for x in a_entries:
         for y in b_entries:
-            if _task_outputs.covers(x, y) or _task_outputs.covers(y, x):
-                found.add(x if len(x) >= len(y) else y)
+            if _meets(_segments(x), _segments(y)):
+                found.update(_named(x, y))
     return sorted(found)
 
 
@@ -92,8 +181,11 @@ def overlap(a, b):
     """None when the two tasks share no declared path, else
     `{"tasks": [id, id], "paths": [...], "mergeable": bool, "nonMergeable":
     [...]}` with the ids in sorted order, so the argument order changes
-    nothing. A task declaring no files shares nothing it can name: None."""
-    paths = _shared(_declared(a), _declared(b))
+    nothing. Both halves are read - `files` and the honoured `outputs`
+    patterns - so a pattern reaching another task's file, or another task's
+    pattern, is an overlap. A task declaring nothing shares nothing it can
+    name: None."""
+    paths = _shared(_entries(a), _entries(b))
     if not paths:
         return None
     bad = [p for p in paths if is_non_mergeable(p)]
@@ -146,7 +238,8 @@ def select(tasks, width, red_at_base=None):
 
     `tasks` are the READY tasks in the order the caller wants them run (id
     order); this takes each in turn and adds it when the wave has room and its
-    files are disjoint from every task already chosen. A task with no declared
+    declared paths - `files` and honoured `outputs` - are disjoint from every
+    task already chosen (`overlap`). A task with no declared
     files is chosen only into an EMPTY wave and then closes it. A deferred task
     says why - `width`, `overlap` (with whom) or `undeclared` - so nothing is
     left out silently. `width` must be an integer of at least 1: 'auto' is

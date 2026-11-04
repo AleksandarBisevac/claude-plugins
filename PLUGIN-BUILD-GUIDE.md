@@ -197,7 +197,7 @@ claude-plugins/                           # this repo (personal, public)
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs; the one POSIX sh (and its PATH) every plan command runs under, or a refusal - never cmd.exe
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
           _clause_coverage.py             # the ONE numbering of a task's clauses (tests.add entries, then the description's Acceptance items) and whether a writer's last JSON object answers every one, citing a file the diff touches - a missing or unreadable object is a gap of every clause
-          _wave.py                        # which ready tasks may run together (declared files provably disjoint; an empty declaration runs alone) and what an overlap between two is - mergeable, or a lockfile that is not
+          _wave.py                        # which ready tasks may run together (declared files and outputs provably disjoint; an empty declaration runs alone) and what an overlap between two is - mergeable, or a lockfile that is not
           _verdict_binding.py             # the ONE rule for whether a recorded gate verdict binds the declared work now - a task commit's, a sign-off's, and whether `done` or close-phase may close over the newest verdict (one that no longer holds refuses)
           stamp-verification.py           # the CLI over it: take a stamp, or grade one - current / stale (naming the field) / unestablished; `red` proves a red-first in a throwaway tree
           run-agent-session.py            # one role (writer or reviewer) as a headless `claude -p` session in the task's tree - full model id, budget, prompt on stdin, own process group - printing the session id and the session's own total_cost_usd, or could-not-run naming the stream
@@ -5152,17 +5152,22 @@ paths, which is the stamp's `content` field alone. Its cases are
 ### `plugins/audit/scripts/governance/_wave.py`
 Which ready tasks may run together, and what an overlap between two is.
 
-Pure functions over task dicts (`id`, `files`), so the driver's wave step, the integration step and
-the tests ask one rule. `select(tasks, width)` takes the ready tasks in the order the caller wants
-them run and adds each one that fits the width and whose declared files are disjoint from those
-already chosen; it returns the wave and, for every task left out, why (`width`, `overlap` with whom,
+Pure functions over task dicts (`id`, `files`, `outputs`), so the driver's wave step, the
+integration step and the tests ask one rule. `select(tasks, width)` takes the ready tasks in the
+order the caller wants them run and adds each one that fits the width and whose declared paths are
+disjoint from those already chosen - both halves a task writes through, its `files` and its
+`outputs` patterns graded by `_task_outputs.honoured`, so two tasks with disjoint `files` whose
+patterns reach one path are not one wave, and a pattern the rule refuses covers nothing here
+either; it returns the wave and, for every task left out, why (`width`, `overlap` with whom,
 or `undeclared`). **A task declaring no files runs alone**: the declaration is the only proof of
 disjointness, and none was given. A width that is not an integer of at least 1 is a `ValueError`,
 because `"auto"` is the caller's to resolve and a zero must not read as "run nothing, successfully".
 `overlap(a, b)` is `None` or a record naming both tasks, the paths both reach and whether the
 overlap is mergeable; a lockfile among them (`is_non_mergeable`) makes it refused whatever else is
-shared. Whether two paths touch is `_task_outputs.covers` and nowhere here. Its cases are
-`tests/test__wave.py`.
+shared. Whether an entry covers a path is `_task_outputs.covers` or `output_covers` and nowhere
+here; two patterns are asked segment by segment through `output_covers`, and two wildcard segments
+are taken to meet, so the reading errs toward deferring a task rather than admitting two writers of
+one path. Its cases are `tests/test__wave.py`.
 
 ### `plugins/audit/scripts/governance/_clause_coverage.py`
 Whether a writer answered every clause its task owes.

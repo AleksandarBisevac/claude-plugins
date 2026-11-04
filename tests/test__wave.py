@@ -23,6 +23,68 @@ def _t(tid, *files):
     return {"id": tid, "files": list(files)}
 
 
+def _o(tid, files, outputs):
+    """A ready task declaring `outputs` patterns beside its `files`."""
+    return dict(_t(tid, *files), outputs=list(outputs))
+
+
+def _outputs_cases(check):
+    """Disjointness is read over BOTH halves of what a task declares: the
+    `files` it edits and the `outputs` patterns its run produces. Every fixture
+    keeps the two tasks' `files` disjoint, so a selector reading `files` alone
+    puts them in one wave and these cases go red."""
+    shared = M.select([_o("P1.1", ["src/a.py"], ["reports/*.json"]),
+                       _o("P1.2", ["src/b.py"], ["reports/run.json"])], 2)
+    check("wp1 two tasks with disjoint files whose outputs patterns overlap "
+          "are NOT one wave - the second is deferred as an overlap with the "
+          "first: %r" % (shared,),
+          shared["wave"] == ["P1.1"]
+          and [d["id"] for d in shared["deferred"]] == ["P1.2"]
+          and shared["deferred"][0]["reason"] == "overlap"
+          and shared["deferred"][0]["with"] == "P1.1")
+
+    against_files = M.select([_o("P1.1", ["src/a.py"], ["docs/gen/*.md"]),
+                              _t("P1.2", "docs/gen/index.md")], 2)
+    under_dir = M.select([_t("P1.1", "docs"),
+                          _o("P1.2", ["src/b.py"], ["docs/gen/*.md"])], 2)
+    check("wp2 an outputs pattern overlaps another task's files entry it "
+          "covers, and a files directory entry overlaps an outputs pattern "
+          "under it: %r %r" % (against_files, under_dir),
+          against_files["wave"] == ["P1.1"]
+          and against_files["deferred"][0]["id"] == "P1.2"
+          and under_dir["wave"] == ["P1.1"]
+          and under_dir["deferred"][0]["id"] == "P1.2")
+
+    # The over-fire twin: a reading that called every pair of outputs an
+    # overlap, or every pattern sharing a top directory, goes red here; and a
+    # pattern the shared rule refuses (it begins at the repository itself)
+    # covers nothing, so it may not defer anybody either.
+    apart = M.select([_o("P1.1", ["src/a.py"], ["reports/a/*.json"]),
+                      _o("P1.2", ["src/b.py"], ["reports/b/*.json"]),
+                      _o("P1.3", ["src/c.py"], ["reports/a/x.md"])], 3)
+    refused = M.select([_o("P1.1", ["src/a.py"], ["**/out.json"]),
+                        _o("P1.2", ["src/b.py"], ["reports/out.json"])], 2)
+    check("wp3 SECOND DIRECTION: outputs patterns that reach no common path, "
+          "and a pattern the shared rule refuses, keep disjoint-files tasks "
+          "in one wave: %r %r" % (apart, refused),
+          apart["wave"] == ["P1.1", "P1.2", "P1.3"] and apart["deferred"] == []
+          and refused["wave"] == ["P1.1", "P1.2"]
+          and refused["deferred"] == [])
+
+    hit = M.overlap(_o("P1.2", ["src/b.py"], ["reports/run.json"]),
+                    _o("P1.1", ["src/a.py"], ["reports/*.json"]))
+    lock = M.overlap(_o("P1.1", ["src/a.py"], ["web/*.yaml"]),
+                     _t("P1.2", "web/pnpm-lock.yaml"))
+    check("wp4 an outputs overlap NAMES BOTH TASKS in id order and the path "
+          "both reach (the literal the pattern covers), and a pattern "
+          "reaching a lockfile another task edits is non-mergeable: %r %r"
+          % (hit, lock),
+          hit is not None and hit["tasks"] == ["P1.1", "P1.2"]
+          and hit["paths"] == ["reports/run.json"] and hit["mergeable"] is True
+          and lock is not None and lock["mergeable"] is False
+          and lock["nonMergeable"] == ["web/pnpm-lock.yaml"])
+
+
 def _select_cases(check):
     two = [_t("P1.1", "src/a.py"), _t("P1.2", "src/b.py")]
     got = M.select(two, 2)
@@ -152,6 +214,7 @@ def _cases(check):
     _harness.stage(check, "ws", _select_cases)
     _harness.stage(check, "wb", _base_red_cases)
     _harness.stage(check, "wo", _overlap_cases)
+    _harness.stage(check, "wp", _outputs_cases)
 
 
 def _selftest():
