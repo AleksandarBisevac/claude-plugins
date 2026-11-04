@@ -326,7 +326,10 @@ def do_remove(git_root, manifest, phase_id, force=False, run=None, path=None,
     standing beside the tree (`_worktrees.refuse_unsettled`, forced or not), dirty,
     locked, standing in it - because those are about losing work rather than about
     whose work it is. `manifest_path` and `project` spell the restore verb the first
-    one names.
+    one names. Each refusal names the tree in the platform's own spelling
+    (`_worktrees.native_spelling`): git lists it with forward slashes on windows,
+    where a path the platform builds - the copy a refusal names beside it - is
+    spelled with backslashes.
     """
     fn = _wt._runner(run)
     listing = _wt.list_worktrees(git_root, run=run)
@@ -368,18 +371,18 @@ def do_remove(git_root, manifest, phase_id, force=False, run=None, path=None,
         release = _wt.main_tree_release(listing["trees"], branch, parent, tree)
         return E_FAIL, {
             "error": "%r is checked out in the MAIN worktree (%s), which is not a "
-                     "linked worktree and is never removed" % (branch,
-                                                               tree.get("path")),
+                     "linked worktree and is never removed"
+                     % (branch, _wt.native_spelling(tree.get("path"))),
             "remedy": "nothing to remove. To free the branch, from %s run %s%s"
                       % (release["from"],
                          ", then ".join("`%s`" % c for c in release["commands"]),
                          " - which %s" % (release["note"],)
                          if release["note"] else "")}
+    shown = _wt.native_spelling(tree.get("path"))
     standing = _wt.standing_in(listing["trees"], os.getcwd())
     if standing is not None and _wt.same_tree(standing.get("path"),
                                               tree.get("path")):
-        return E_FAIL, {"error": "this process is standing inside %s"
-                                 % (tree.get("path"),),
+        return E_FAIL, {"error": "this process is standing inside %s" % (shown,),
                         "remedy": "git does NOT ask this - it removes the caller's "
                                   "own directory, silently, exit 0. Run it from "
                                   "somewhere else"}
@@ -388,12 +391,11 @@ def do_remove(git_root, manifest, phase_id, force=False, run=None, path=None,
         return E_FAIL, held
     dirt = _wt.dirtiness(tree.get("path"), run=run)
     if dirt["dirty"] is None and not force:
-        return E_FAIL, {"error": "%s could not be described by git"
-                                 % (tree.get("path"),),
+        return E_FAIL, {"error": "%s could not be described by git" % (shown,),
                         "remedy": "an unanswered question is not a clean tree"}
     if dirt["dirty"] and not force:
         return E_FAIL, {"error": "%s holds uncommitted work: %s"
-                                 % (tree.get("path"), ", ".join(dirt["lines"])),
+                                 % (shown, ", ".join(dirt["lines"])),
                         "remedy": "commit it, or pass --force once you have read "
                                   "it. Removal also destroys IGNORED files - a "
                                   ".env or a node_modules under this path goes "
@@ -709,7 +711,8 @@ def do_task_remove(git_root, manifest, task_id, force=False, run=None,
     and a marker for another task is not ours to remove. The refusals are `remove`'s:
     a copy of the work standing beside the tree (`_worktrees.refuse_unsettled`,
     forced or not), dirty, unreadable, and the tree the process stands in.
-    `manifest_path` and `project` spell the restore verb that refusal names.
+    `manifest_path` and `project` spell the restore verb that refusal names. Each
+    names a tree as `remove`'s do, in the platform's own spelling.
     """
     fn = _wt._runner(run)
     if _find_task(manifest, task_id)[1] is None:
@@ -725,16 +728,17 @@ def do_task_remove(git_root, manifest, task_id, force=False, run=None,
         if prov["ours"] is True:
             tree = rec
         elif (prov["record"] or {}).get("taskId"):
-            others.append("%s (task %s)" % (rec.get("path"), prov["record"]["taskId"]))
+            others.append("%s (task %s)" % (_wt.native_spelling(rec.get("path")),
+                                            prov["record"]["taskId"]))
     if tree is None:
         return E_FAIL, {"error": "no worktree is marked for task %r" % (task_id,),
                         "remedy": "nothing to remove%s"
                                   % ("; task trees that exist belong to other tasks: "
                                      + ", ".join(others) if others else "")}
+    shown = _wt.native_spelling(tree.get("path"))
     standing = _wt.standing_in(listing["trees"], os.getcwd())
     if standing is not None and _wt.same_tree(standing.get("path"), tree.get("path")):
-        return E_FAIL, {"error": "this process is standing inside %s"
-                                 % (tree.get("path"),),
+        return E_FAIL, {"error": "this process is standing inside %s" % (shown,),
                         "remedy": "git does NOT ask this - it removes the caller's "
                                   "own directory, silently, exit 0. Run it from "
                                   "somewhere else"}
@@ -744,11 +748,11 @@ def do_task_remove(git_root, manifest, task_id, force=False, run=None,
         return E_FAIL, held
     dirt = _wt.dirtiness(tree.get("path"), run=run)
     if dirt["dirty"] is None and not force:
-        return E_FAIL, {"error": "%s could not be described by git" % (tree.get("path"),),
+        return E_FAIL, {"error": "%s could not be described by git" % (shown,),
                         "remedy": "an unanswered question is not a clean tree"}
     if dirt["dirty"] and not force:
         return E_FAIL, {"error": "%s holds uncommitted work: %s"
-                                 % (tree.get("path"), ", ".join(dirt["lines"])),
+                                 % (shown, ", ".join(dirt["lines"])),
                         "remedy": "integrate or commit it, or pass --force once you "
                                   "have read it. Removal also destroys IGNORED files"}
     argv = ["worktree", "remove"] + (["--force"] if force else []) + [tree.get("path")]

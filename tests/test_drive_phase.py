@@ -15151,8 +15151,54 @@ def _wave_unit_cases(check):
     _parked_rule_units(check, M)
     _tree_setup_units(check)
     _adopt_units(check)
+    _tree_spelling_units(check)
     _writer_off_units(check)
     _skill_units(check)
+
+
+def _tree_spelling_units(check):
+    """A tree the drive records is spelled the platform's one way, so every
+    stop naming it later names it so. Fed a windows-shaped answer from the tree
+    verb, as git spells a path there - forward slashes - and spelled under the
+    windows path rules on any platform, so the class is caught on posix too."""
+    import ntpath
+    M, why = _unit_driver("drive_phase_tree_spelling")
+    if M is None:
+        check("ns1 the driver loads", False, why)
+        return
+    made = json.dumps({"path": "C:/r/wt-P1.1", "base": "b" * 40,
+                       "setup": {"status": "none"}})
+    M.run_verb = lambda ctx, script, args, stdin=None, record=False: (0, made, "")
+    M.wave_row = lambda *args: None
+    M.recut_path = lambda ctx, state, task_id: (None, None)
+    M.tree_path = lambda ctx, task_id: None
+    real = M._worktrees.native_spelling
+
+    def spelled(path, flavour=None):
+        if isinstance(path, str) and path.startswith("C:"):
+            return real(path, ntpath)
+        return real(path, flavour)
+    state = {"wave": {"trees": {}, "base": "a" * 40}}
+    ctx = _step_ctx()
+    M._worktrees.native_spelling = spelled
+    try:
+        added = _caught(M.add_tree, ctx, state, {"id": "P1.1"})
+        M.wave_state = lambda ctx_, phase_: state["wave"]
+        gone = _caught(M.submit_tree, ctx, {"id": PHASE}, {"id": "P1.1"})
+    finally:
+        M._worktrees.native_spelling = real
+    native = "C:\\r\\wt-P1.1"
+    stop = gone[1] if isinstance(gone, tuple) and len(gone) == 2 else None
+    text = stop[1] if isinstance(stop, tuple) and len(stop) == 2 else ""
+    check("ns1 the tree the drive records from the tree verb's answer is spelled "
+          "natively - under the windows path rules a git-spelled answer is "
+          "recorded with backslashes - and the stop naming that tree later "
+          "names it so, with no forward slash in it: %r"
+          % ((added, state["wave"]["trees"], gone),),
+          added == (native, None)
+          and state["wave"]["trees"] == {"P1.1": native}
+          and native in text and "C:/" not in text
+          and ("tree for P1.1" in ctx["did"]))
 
 
 def _ci_held(closes):

@@ -2156,7 +2156,78 @@ def _unsettled_cases(check):
               "a.txt": b"the task's a\n", "n.txt": b"a file the task staged\n"}
           and status.get("n.txt") == "A ",
           repr((killed, copied, status)))
+    _restore_settles_cases(check)
     _touch_cases(check)
+
+
+def _restore_settles_cases(check):
+    """A copy the restore verb has nothing to put back from - one with no
+    `index.json`, so never whole, and one of a move the marker already
+    recorded, whose tree holds what the copy does - is settled by the verb
+    itself, the way the next move would settle it. A refusal pointing at the
+    next move leaves no way out: every dispatch and integration stops over a
+    standing copy before any move runs."""
+    rels = ("a.txt", "b.txt", "c.txt")
+    tree, base, _head, copy = _settle_tree("unsettled-restorepartial-")
+    os.mkdir(copy)
+    with open(os.path.join(copy, "0.bin"), "wb") as fh:
+        fh.write(b"a copy cut off before its index was written\n")
+    before = (_av_bytes(tree, rels), _av_status(tree))
+    dropped = _asked("restore_copy", tree, "T1")
+    after = _called(M.tree_unsettled, tree)
+    check("un14 a copy with no index.json - never whole, so nothing can be put "
+          "back from it - is dropped by the restore verb, said as that rather "
+          "than as a restore that ran or a refusal pointing at a later move: "
+          "nothing kept, the tree settled, no byte changed, HEAD at the base",
+          dropped.get("restored") is None and not dropped.get("kept")
+          and "dropped" in (dropped.get("error") or "")
+          and "next move" not in _said(dropped)
+          and not os.path.exists(copy)
+          and isinstance(after, dict) and after.get("unsettled") is False
+          and (_av_bytes(tree, rels), _av_status(tree)) == before
+          and _av_head(tree) == base,
+          repr((dropped, after)))
+
+    tree, base, head, copy = _settle_tree("unsettled-restorerecorded-")
+    _ok, first = _armed([_refusing_drop()], lambda: M.advance_task_tree(
+        tree, "T1", head))
+    before = (_av_bytes(tree, rels), _av_status(tree))
+    dropped = _asked("restore_copy", tree, "T1")
+    after = _called(M.tree_unsettled, tree)
+    check("un15 a copy of a move the marker already recorded, in a tree whose "
+          "work is as the copy holds it, is dropped by the restore verb: nothing "
+          "kept, the tree settled, HEAD at the head the move reached, no byte "
+          "changed, and no refusal pointing at a later move",
+          first.get("advanced") is True and first.get("kept") == copy
+          and dropped.get("restored") is None and not dropped.get("kept")
+          and "dropped" in (dropped.get("error") or "")
+          and "next move" not in _said(dropped)
+          and not os.path.exists(copy)
+          and isinstance(after, dict) and after.get("unsettled") is False
+          and (_av_bytes(tree, rels), _av_status(tree)) == before
+          and _av_head(tree) == head,
+          repr((first.get("kept"), dropped, after)))
+
+    tree, base, head, copy = _settle_tree("unsettled-restorerecnewer-")
+    _ok, first = _armed([_refusing_drop()], lambda: M.advance_task_tree(
+        tree, "T1", head))
+    _write_newer(tree)
+    before = (_av_bytes(tree, rels), _av_status(tree))
+    held = _asked("restore_copy", tree, "T1")
+    # The over-fire twin: a drop of every recorded move's copy would take the
+    # only record of the work the newer edits diverged from.
+    check("un16 ...and with newer work in that tree the copy is kept, the "
+          "diverging paths named, no byte changed - and the refusal does not "
+          "point at a later move, which stops over the same copy",
+          first.get("advanced") is True
+          and held.get("restored") is False and held.get("kept") == copy
+          and os.path.isdir(copy)
+          and "a.txt" in (held.get("error") or "")
+          and "c.txt" in (held.get("error") or "")
+          and "next move" not in _said(held)
+          and (_av_bytes(tree, rels), _av_status(tree)) == before
+          and _av_head(tree) == head,
+          repr((first.get("kept"), held)))
     _autocrlf_cases(check)
 
 
@@ -2442,6 +2513,43 @@ def _touch_cases(check):
                                   "planted.py:late_open (open_dispatch)",
                                   "planted.py:opened (open_dispatch)"],
           repr((unasked, stale, fixture)))
+
+    # A function's first site is the one the ask must precede: an ask between
+    # two removals is after the first, so the function is named - the twin a
+    # scanner reading its LAST site (or any later one) fails.
+    twice = ("def twice(t):\n    run(['worktree', 'remove', t])\n"
+             "    if tree_unsettled(t)['unsettled'] is not False:\n"
+             "        return\n    run(['worktree', 'remove', '--force', t])\n\n"
+             "def once(t):\n    if tree_unsettled(t)['unsettled'] is not False:\n"
+             "        return\n    run(['worktree', 'remove', t])\n"
+             "    run(['worktree', 'remove', '--force', t])\n")
+    named, _t = _touch_scan([("planted.py", twice)])
+    check("ut6 a function asking between its first removal and its second is "
+          "named - the ask must come before the FIRST site - and its twin "
+          "asking before both is not",
+          named == ["planted.py:twice (worktree remove, worktree remove)"],
+          repr(named))
+
+    # A remover reached through callers is covered only when EVERY caller asks
+    # first: one caller asking after its call leaves that path unasked - the
+    # twin a scanner reading any one caller fails.
+    callers = ("def remover(t):\n    run(['worktree', 'remove', t])\n\n"
+               "def asks_first(t):\n"
+               "    stop = refuse_unsettled(t, 'T1', 'm', 'p')\n"
+               "    return stop or remover(t)\n\n"
+               "def asks_after(t):\n    remover(t)\n"
+               "    return refuse_unsettled(t, 'T1', 'm', 'p')\n\n"
+               "def covered(t):\n    run(['worktree', 'remove', t])\n\n"
+               "def first_a(t):\n    stop = unsettled_stop(t)\n"
+               "    return stop or covered(t)\n\n"
+               "def first_b(t):\n    if tree_unsettled(t)['unsettled'] is not False:\n"
+               "        return\n    covered(t)\n")
+    named, _t = _touch_scan([("planted.py", callers)])
+    check("ut7 a remover with two callers, one asking before its call and one "
+          "after, is named - every caller must ask first - and its twin whose "
+          "two callers both ask first is not",
+          named == ["planted.py:remover (worktree remove)"],
+          repr(named))
     _spelling_cases(check)
 
 

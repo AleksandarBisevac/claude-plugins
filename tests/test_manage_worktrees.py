@@ -34,6 +34,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import contextlib
 import io
 import json
+import ntpath
 import os
 import subprocess
 import sys
@@ -123,8 +124,94 @@ def _cases(check):
         _task_cases(check, root)
         _advance_cases(check, root)
         _env_cases(check, root)
+        _spelling_cases(check, root)
     finally:
         _harness.remove_tree(root)
+
+
+# A windows-shaped listing, as git prints one there: forward slashes. Spelled
+# under the windows path rules on any platform, so the class - a refusal naming
+# the tree as git spelled it - is caught on posix too, where the two separators
+# never meet.
+WIN_LIST = ("worktree C:/r/repo\nHEAD aaa\nbranch refs/heads/dev\n\n"
+            "worktree C:/r/wt-p2\nHEAD bbb\nbranch refs/heads/audit/p2-two\n\n"
+            "worktree C:/r/wt-t\nHEAD ccc\ndetached\n\n"
+            "worktree C:/r/wt-u\nHEAD ddd\ndetached\n")
+
+
+def _windows_spelling():
+    """`(install, restore)`: the one spelling helper answering under the
+    windows path rules for a windows-shaped path, and as before for any other -
+    the admin directories the fake names are this machine's, and must still be
+    found on disk."""
+    real = M._wt.native_spelling
+
+    def spelled(path, flavour=None):
+        if isinstance(path, str) and path.startswith("C:"):
+            return real(path, ntpath)
+        return real(path, flavour)
+    return (lambda: setattr(M._wt, "native_spelling", spelled),
+            lambda: setattr(M._wt, "native_spelling", real))
+
+
+def _mark_task(root, name, task_id):
+    with open(os.path.join(root, name, M._wt.PROVENANCE_FILE), "w") as fh:
+        fh.write(json.dumps({"createdBy": M._wt.PROVENANCE_MARK,
+                             "taskId": task_id, "phaseId": "P1"}))
+
+
+def _one_spelling(text):
+    """Every windows path `text` names - a run from `C:` to the next space,
+    `(` or `,`, the punctuation closing its sentence taken off - and those
+    holding a forward slash, which a path spelled natively never does."""
+    paths, at = [], text.find("C:")
+    while at >= 0:
+        end = at
+        while end < len(text) and text[end] not in " (),":
+            end += 1
+        paths.append(text[at:end].rstrip(":;."))
+        at = text.find("C:", end)
+    return paths, [p for p in paths if "/" in p]
+
+
+def _spelling_cases(check, root):
+    install, restore = _windows_spelling()
+    said = {}
+    install()
+    try:
+        for label, status in (("dirty", (0, " M a.py\n", "")),
+                              ("undescribed", (128, "", "fatal: no\n"))):
+            run, calls = _fake({"status --porcelain": status}, listing=WIN_LIST,
+                               admin_root=root, ours=("C:/r/wt-p2",))
+            said["remove " + label] = M.do_remove("/repo", PLAN, "P2", run=run)
+            run, calls = _fake({"status --porcelain": status}, listing=WIN_LIST,
+                               admin_root=root, ours=("C:/r/wt-t", "C:/r/wt-u"))
+            _mark_task(root, "wt-t", "P1.1")
+            _mark_task(root, "wt-u", "P1.2")
+            said["task-remove " + label] = M.do_task_remove(
+                "/repo", TASK_PLAN, "P1.1", run=run)
+        run, calls = _fake({}, listing=WIN_LIST, admin_root=root,
+                           ours=("C:/r/wt-u",))
+        _mark_task(root, "wt-u", "P1.2")
+        said["task-remove others"] = M.do_task_remove("/repo", TASK_PLAN, "P1.1",
+                                                      run=run)
+    finally:
+        restore()
+    want = {"remove dirty": "C:\\r\\wt-p2", "remove undescribed": "C:\\r\\wt-p2",
+            "task-remove dirty": "C:\\r\\wt-t",
+            "task-remove undescribed": "C:\\r\\wt-t",
+            "task-remove others": "C:\\r\\wt-u"}
+    wrong = {}
+    for key, (code, ans) in sorted(said.items()):
+        paths, bad = _one_spelling(ans.get("error", "") + " " + ans.get("remedy", ""))
+        if code != M.E_FAIL or want[key] not in paths or bad:
+            wrong[key] = (code, paths, bad)
+    check("ns1 every refusal `remove` and `task-remove` say over a tree they will "
+          "not take down - dirty, not described by git, and the trees of other "
+          "tasks named when none is this one's - names it in one native spelling "
+          "under the windows path rules, never as git printed it, and every one "
+          "still refuses: %r" % (wrong,),
+          not wrong and len(said) == len(want))
 
 
 def _g(cwd, *argv):

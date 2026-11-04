@@ -2342,6 +2342,42 @@ def refuse_unsettled(tree, manifest, project, task_id=None, run=None,
                       % (restore_command(task_id, manifest, project),)}
 
 
+def _dropped(answer, copy, why):
+    """`answer` for a copy `restore_copy` had nothing to put back from: the
+    copy taken down (`_drop_copy`) and `restored` None, said as `why` and
+    the drop - or, when it will not come down, False with why not, the copy
+    kept."""
+    failed = _drop_copy(copy)
+    if failed:
+        return _with_kept(dict(answer, error="%s; %s, so it stays and nothing was "
+                                             "restored" % (why, failed)), copy)
+    return _with_kept(dict(answer, restored=None, error=(
+        "%s; the copy was dropped, so there is nothing to restore and the tree "
+        "is settled" % (why,))), copy)
+
+
+def _settle_recorded(fn, tree, copy, answer, meta, held, record):
+    """`restore_copy`'s answer for the copy of a move the marker already
+    recorded: nothing to put back once the tree holds what the move left -
+    HEAD at the commit it reached and every path as the copy or that commit
+    holds it (`_newer_work`) - so the copy is dropped; and kept, every
+    diverging path named, when the tree holds newer work, which the copy is
+    the one record of what it diverged from."""
+    start, end = meta.get("from"), meta.get("to") or ""
+    moved = "the copy at %s was taken for a move from %s to %s, which the marker " \
+            "recorded" % (copy, str(start)[:12], end[:12])
+    newer = _newer_work(fn, tree, meta, held, (end,), record)
+    if not newer:
+        return _dropped(answer, copy, "%s, and %s holds what that move left" % (
+            moved, native_spelling(tree)))
+    return _with_kept(dict(answer, error=(
+        "%s; %s holds what neither the copy nor that move accounts for: %s - "
+        "nothing was restored, and the copy stays until a human compares it with "
+        "the tree: no move, restore, dispatch or integration takes it down over "
+        "work newer than it" % (moved, native_spelling(tree), ", ".join(newer)))),
+        copy)
+
+
 def restore_copy(tree, task_id, is_record=None, run=None):
     """{"restored", "kept", "paths", "error"} - the work of the task tree
     `tree`, marked for `task_id`, put back from the copy a move left beside
@@ -2352,12 +2388,17 @@ def restore_copy(tree, task_id, is_record=None, run=None):
     names; a human runs it, and nothing runs it on its own.
 
     `restored` is True once the work is back and checked; None when no copy
-    stands beside the tree, so there was nothing to put back (a tombstone
-    alone is cleared); False beside why otherwise, the copy kept. Refused
-    before anything is written when the marker does not name `task_id` with
-    the base the copy was taken from - a move the marker recorded leaves a
-    copy that is the next move's to drop, not a restore's - when the copy
-    cannot be read, and when the restore would write over newer work: a path
+    stands beside the tree, or none it could put back from, so there was
+    nothing to put back: a tombstone alone is cleared, and a copy with no
+    `index.json` - cut short before its move began - or of a move the marker
+    already recorded, over a tree `_newer_work` finds nothing newer in, is
+    dropped, the way `_resume` settles both, since every dispatch and
+    integration stops over a standing copy before any move could. False
+    beside why otherwise, the copy kept. Refused before anything is written
+    when the marker does not name `task_id` with the base the copy was taken
+    from or the commit its move reached, when the copy cannot be read, when
+    a recorded move's tree holds work newer than its copy, and when the
+    restore would write over newer work: a path
     the copy does not hold that neither the copy nor its move accounts for
     (`_newer_work`), or a path it does hold whose bytes are none a killed move
     or undo can leave (`_held_moved_on`) - not the copy's, the base's or the
@@ -2368,10 +2409,11 @@ def restore_copy(tree, task_id, is_record=None, run=None):
     answer = {"restored": False, "kept": None, "paths": [], "error": None}
     if not copy:
         return dict(answer, error="git would not name the admin directory of %s, "
-                                  "so no copy beside it could be read" % (tree,))
+                                  "so no copy beside it could be read"
+                                  % (native_spelling(tree),))
     if not os.path.lexists(copy):
         said = ["no copy of the work stands beside %s, so there is nothing to "
-                "restore" % (tree,)]
+                "restore" % (native_spelling(tree),)]
         if os.path.lexists(copy + DROPPED):
             try:
                 shutil.rmtree(copy + DROPPED)
@@ -2385,12 +2427,12 @@ def restore_copy(tree, task_id, is_record=None, run=None):
     if mine.get("ours") is not True or not base:
         return _with_kept(dict(answer, error=(
             "%s carries no marker naming task %s with a base commit (%s); nothing "
-            "was restored" % (tree, task_id, mine.get("basis") or "no base"))), copy)
+            "was restored" % (native_spelling(tree), task_id,
+                              mine.get("basis") or "no base"))), copy)
     if not os.path.lexists(os.path.join(copy, COPY_INDEX)):
-        return _with_kept(dict(answer, error=(
+        return _dropped(answer, copy, (
             "the copy at %s has no %s: it was cut short before its move began, so "
-            "the tree still holds its work, and the next move drops it; nothing "
-            "was restored" % (copy, COPY_INDEX))), copy)
+            "the tree still holds its work" % (copy, COPY_INDEX)))
     try:
         held, meta, index_bytes = _read_copy(copy)
     except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -2399,18 +2441,18 @@ def restore_copy(tree, task_id, is_record=None, run=None):
                           copy)
     start, end = meta.get("from"), meta.get("to") or ""
     answer = dict(answer, paths=sorted(held))
-    if base != start:
+    if base not in (start, end):
         return _with_kept(dict(answer, error=(
             "the copy at %s was taken for a move from %s to %s and the marker "
-            "names %s - %s; nothing was restored"
-            % (copy, str(start)[:12], end[:12], base[:12],
-               "the move was recorded, and the next move drops the copy"
-               if base == end else "a base this copy was not taken at"))), copy)
+            "names %s - a base this copy was not taken at; nothing was restored"
+            % (copy, str(start)[:12], end[:12], base[:12]))), copy)
     record_of = is_record if is_record is not None else (lambda _rel: False)
     held_records = set(held) - set(meta.get("work") or [])
 
     def record(rel):
         return rel in held_records or record_of(rel)
+    if base != start:
+        return _settle_recorded(fn, tree, copy, answer, meta, held, record)
     heads = (start, end) if end else (start,)
     newer = [p for p in _newer_work(fn, tree, meta, held, heads, record)
              if p not in held] + _held_moved_on(fn, tree, held, heads)
@@ -2419,7 +2461,8 @@ def restore_copy(tree, task_id, is_record=None, run=None):
             "%s holds what neither the copy at %s nor the move from %s to %s "
             "accounts for: %s; a restore would write over it, so nothing was "
             "restored and the copy stays"
-            % (tree, copy, str(start)[:12], end[:12], ", ".join(newer)))), copy)
+            % (native_spelling(tree), copy, str(start)[:12], end[:12],
+               ", ".join(newer)))), copy)
     wrong = _undo(fn, tree, start, held, _index_path(fn, tree), index_bytes)
     if wrong:
         return _with_kept(dict(answer, error=(

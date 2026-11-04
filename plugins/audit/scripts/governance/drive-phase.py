@@ -4702,7 +4702,14 @@ def add_tree(ctx, state, task):
     complete is not recorded: the next step asks `task-add` again, which finds
     it by its marker and runs the setup again before anything is dispatched.
     Once a redo of the task has kept a tree, every tree cut for it goes to a
-    fresh path beside the first (`recut_path`), never where one stands."""
+    fresh path beside the first (`recut_path`), never where one stands.
+
+    The path is recorded in the platform's own spelling
+    (`_worktrees.native_spelling`), and every task tree the drive's state
+    names later - a wave's, a kept one, a recut beside it - is this record or
+    derived from it, so each stop naming one spells it the way the paths the
+    platform builds beside it are spelled, whatever spelling the verb's
+    answer carried."""
     wave = state["wave"]
     args = ["task-add", ctx["manifest"], task["id"], "--base", wave["base"],
             "--project", ctx["project"], "--json"]
@@ -4716,6 +4723,8 @@ def add_tree(ctx, state, task):
     except ValueError:
         made = {}
     path = made.get("path") if isinstance(made, dict) else None
+    if isinstance(path, str):
+        path = _worktrees.native_spelling(path)
     if code == SETUP_FAILED and path:
         return None, _stopped(ctx, "the tree of %s is made, and its setup did "
                               "not complete - could not run, not red, and no "

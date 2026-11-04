@@ -182,7 +182,10 @@ is the `--takeover` above, since no `/audit` command takes a user lock over.
 
 `0` it ran · `1` it could not (for `task-add`: a root inside the project, a base that is no commit, a non-empty target; for `task-remove`: no tree marked for the task, or a dirty one; for `remove` and `task-remove`, forced or not: a move's copy of the work or its tombstone beside the tree, with `drive-phase.py restore <taskId>` in the reason, or a tree whose git directory git will not name, whose reason names no command), and the reason names a path · `2` usage (an unknown task included) · `4` git could not be
 **asked** · `5` there was nothing to examine — which is **not** the same as "everything is clean",
-and must not be reported as if it were.
+and must not be reported as if it were · `6` `task-add` only: the tree is made and marked, and the
+declared `executor.worktreeSetup` failed or timed out in it — could-not-run, not a red, and no
+attempt is spent on it; the answer carries the setup's exit code, its duration and the tail of its
+output, and the next `task-add` adopts the tree and runs the setup again.
 
 ## After a phase signs off
 

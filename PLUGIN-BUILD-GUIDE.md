@@ -1144,7 +1144,9 @@ copy and names the restore verb instead (`ut3`), a verb that finds a tree kept o
 under `scripts/` and `hooks/` that removes a worktree or opens a writer session in a tree without
 calling the question earlier in its source than that site, itself or in every caller it has before
 the call to it - source order, not the path that runs, so an ask in a branch the removal never
-takes still reads as first. `integrate-task.py` run by hand is
+takes still reads as first. `ut6` holds the first site to be the one the ask precedes (a function
+asking between two removals is named) and `ut7` holds every caller to ask, not one (a remover
+whose second caller asks after its call is named). `integrate-task.py` run by hand is
 outside that reading - it removes nothing, and the drive asks before it calls it. It answers could-not-ask
 when git will not name the admin directory, never settled (`un2`), and clears the `.audit-*` temp
 files a hard kill left there once they are older than `STRAY_AGE_SECONDS`, leaving a
@@ -1159,8 +1161,12 @@ git index written back, and the copy dropped once the tree answers as it did bef
 (`un6`) - refused, with nothing written, over a path the copy does not account for (`un7`), over
 a held path whose bytes are none a killed move or undo can leave - not the copy's, the base's or
 the move's target's - so an edit made after the kill is never written over (`un9`, while a held
-path already holding the copy's bytes is restored over, `un10`), or a move the marker already
-recorded. Whether a moved path still holds a commit's bytes is asked by comparing the file's raw
+path already holding the copy's bytes is restored over, `un10`). A copy holding nothing to put
+back is settled by `restore` itself, the way the next move settles it, because every dispatch and
+integration stops over a standing copy before any move runs: one with no `index.json` is dropped
+(`un14`), and so is the copy of a move the marker already recorded once the tree holds what that
+move left (`un15`), while the same copy over newer work is kept with each diverging path named
+(`un16`). Whether a moved path still holds a commit's bytes is asked by comparing the file's raw
 bytes with what checkout itself writes there (`git cat-file --filters`, under the tree's own
 attributes and config), so a file differing only in its line endings is not read as the commit's
 and reset (`un5`), while a file a checkout wrote with CRLF under `core.autocrlf=true` is (`un11`) -
@@ -1173,8 +1179,11 @@ so a native join onto `admin_dir`'s raw answer named the copy as
 it. `admin_dir` returns its answer through `native_spelling` - the platform's alternative
 separator rewritten as its own, nothing collapsed or resolved, and a path left as written on
 posix, where a backslash is a character a name may hold - and `kept_where`, `refuse_unsettled`,
-`tree_unsettled` and the drive's `unsettled_said` and `unmarked_kept_stop` spell the tree they
-name the same way. `admin_dir` and `kept_where` take the path module as `flavour`, so `sp1` feeds
+`tree_unsettled`, `restore_copy` and the drive's `unsettled_said` and `unmarked_kept_stop` spell
+the tree they name the same way, and so do `manage-worktrees.py`'s `remove` and `task-remove` in
+every refusal naming a tree git listed (`ns1` in `tests/test_manage_worktrees.py`); the drive
+records each task tree it is handed through it (`add_tree`), so every later stop naming a tree
+its state holds spells it that way too (`ns1` in `tests/test_drive_phase.py`). `admin_dir` and `kept_where` take the path module as `flavour`, so `sp1` feeds
 the windows rules a forward-slash admin directory joined with a backslash on any platform and
 holds every path in the words to one spelling, with the posix twin leaving a backslash alone.
 What catches a new refusal that names a git-spelled path without passing it through
