@@ -6371,6 +6371,24 @@ def redo_left(ctx, state, task_id, tree):
                     "human has, and that may be its only copy" % (head, away),
                     [("lacking", _clip(why, 200)), ("tree", tree),
                      ("finish", apply_in(tree))])
+    if not pinned:
+        # No ref names the work commit any more, so there is nothing to read
+        # the tree against: the rule is the patch's own, never a comparison
+        # with refs that resolve to nothing.
+        return stop("%s: git apply --3way finishes from it in its tree only "
+                    "where the tree lacks the work, which could not be read, "
+                    "then %s, and next; that may be its only copy. With no pin "
+                    "to read the tree against, the patch alone tells: where git "
+                    "apply --reverse --check of it succeeds there, the tree "
+                    "already holds the work; a path the tree's HEAD moved may "
+                    "hold the work merged with the phase's change and answer "
+                    "neither that check nor git apply --check; there only a "
+                    "reading of the file tells"
+                    % (head, away),
+                    [("could not read", _clip(why, 200)), ("tree", tree),
+                     ("check", "cd %s && git apply --reverse --check %s" % (
+                         shlex.quote(tree), shlex.quote(kept))),
+                     ("finish", apply_in(tree))])
     return stop("%s: git apply --3way finishes from it in its tree only where "
                 "the tree lacks the work, which could not be read, then %s, and "
                 "next; that may be its only copy. A path the tree's HEAD did not "
@@ -6445,19 +6463,22 @@ def drop_redo_work(task_id, kept, git_root):
 
 def redo_pin_spent(status, patch_stands):
     """Whether a task's redo pin has nothing left to keep: its task is
-    terminal or blocked, or no patch of its stands. The pin exists so the
-    objects a kept patch names outlive a gc; with no patch it names nothing
-    anybody will apply, and a task no drive steps further never applies one."""
-    return status in _mio.TERMINAL or status == "blocked" or not patch_stands
+    terminal, or no patch of its stands. The pin exists so the objects a kept
+    patch names outlive a gc; with no patch it names nothing anybody will
+    apply, and a task no drive steps further never applies one. A blocked
+    task is not such a task - `unblock` hands it back to the drive, whose step
+    stops on the standing patch - so while its patch stands the pin stays."""
+    return status in _mio.TERMINAL or not patch_stands
 
 
 def settle_redo_pins(ctx):
     """Take down every redo pin of this phase's tasks that `redo_pin_spent`
     says is spent, each named on a did-line; one that will not go is named
     with why. Run at the end of every drive call, whichever path got the task
-    there: a close, a cancel or block by the verb, a block answered here, or a
-    redo stopped after its patch was taken away and before its pin went -
-    each left the pin behind when the one remover was the redo that held."""
+    there: a close, a cancel by the verb, a block - by the verb or answered
+    here - of a task whose patch is gone, or a redo stopped after its patch
+    was taken away and before its pin went - each left the pin behind when
+    the one remover was the redo that held."""
     code, out, _err = carry_git(ctx["gitRoot"], ["for-each-ref",
                                                  "--format=%(refname)", REDO_PIN_NS])
     if code != 0 or not out.strip():
@@ -9539,7 +9560,9 @@ def decline_answer(ctx, state, phase, name, reason):
     """A human's no to one of sign-off's decisions: their words are kept for
     the summary, the decision is dropped, and the green gate it was asked over
     is no longer reused. The drive goes on to any task still open - the remedy
-    a human added - and with none, stops naming how to add one."""
+    a human added, before or after answering: `drive_locked` takes a decline
+    sent to a decision set aside for that task here too - and with none, stops
+    naming how to add one."""
     state.setdefault("declined", []).append("%s: %s" % (name, reason))
     state.pop("phaseGate", None)
     write_state(ctx, state)
@@ -9800,6 +9823,18 @@ def drive_locked(ctx, state, answer, reason, fixes):
         "applies": lambda: pending_still_applies(ctx, manifest, pending),
         "moved": lambda: verdict_moved(ctx, pending)})
     if stale != "keep":
+        first = ([] if stale == "usage-moved" or pending.get("task")
+                 else runnable_tasks(manifest, ctx["phase"]))
+        # A human's no to a sign-off decision set aside for a task they added
+        # is still their no: it is taken as `decline` takes it, so the words
+        # reach the summary. One the decision would refuse - no words - is
+        # refused before the decision is dropped, so it is still there for the
+        # no with words.
+        declining = bool(first) and held == "decline"
+        refused = (answer_refusal(ctx, pending, held, reason, fixes)
+                   if declining else None)
+        if refused:
+            return E_USAGE, "%s %s: %s" % (PREFIX, ctx["phase"], refused)
         state.pop("pending", None)
         write_state(ctx, state)
         if stale == "usage-moved":
@@ -9808,16 +9843,21 @@ def drive_locked(ctx, state, answer, reason, fixes):
                              "answers nothing; next measures it again"
                              % (PREFIX, ctx["phase"], pending["decision"],
                                 pending["task"], held, answer))
-        first = [] if pending.get("task") else runnable_tasks(manifest, ctx["phase"])
         if first:
             aside = ("the %s decision is set aside: %s can run first, and "
                      "sign-off is asked again after" % (pending["decision"],
                                                        ", ".join(first[:3])))
-            if held is not None:
+            if held is not None and not declining:
                 return E_USAGE, "%s %s: %s, so --answer %s answers nothing; " \
                                 "next %s runs it" % (PREFIX, ctx["phase"], aside,
                                                      held, ctx["phase"])
             ctx["did"].append(aside)
+            if declining:
+                said = decline_answer(ctx, state, phase, pending["decision"],
+                                      reason)
+                if said is not None:
+                    return _as_result(said)
+                held = None
         answer = held
         pending = None
     if pending and pending["decision"] == "triage":

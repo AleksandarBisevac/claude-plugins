@@ -4726,9 +4726,12 @@ that list is the task's now (`scope_run_current`) - the step then measures and a
 is asked in two places. A decision with no task is one of sign-off's, raised only once every task
 is terminal, so `pending_still_applies` says it no longer applies while a task is runnable: the
 next `next` sets it aside with a did-line naming the task, runs that task, and asks sign-off again
-after it; an `--answer` sent to the set-aside decision is refused as answering nothing, and a task
-that cannot run - blocked, or waiting on a ref - leaves the decision printed as it was (`rf1`,
-`rf2`). A recorded wave's member that has not started is started only while it is ready
+after it (`rf1`); an `--answer` sent to the set-aside decision is refused as answering nothing, in
+the set-aside's own words naming the task (`rf12`), but for `decline`: a human's no is taken as
+`decline_answer` takes it - refused without words while the decision still stands, else the words
+kept for the summary and the drive gone on to the task they added (`rf13`-`rf15`). A task
+that cannot run - blocked, or waiting on a ref - leaves the decision printed as it was (`rf2`).
+A recorded wave's member that has not started is started only while it is ready
 (`step_member`, `not_ready_why`): one that gained a blocker after the wave opened is dropped from
 the wave with what it waits on, and the walk goes on with the rest (`rf8`, `rf9`). And `brief
 --role executor` writes the brief for a task in progress that no dispatch briefed - one started
@@ -4939,14 +4942,18 @@ where the tree lacks the work (`redo_held`): a redo stopped before the old tree 
 marker never rewritten - or once the recut tree held the work, leaves a tree an
 apply would fail over, and the stop says it holds the work (`ar6d`, `ar6e`); where the tree
 could not be read, it says how a path the head moved
-reads once merged and prescribes the apply only where the tree lacks the work (`ar6f`). Each
-remedy is a command naming the patch and the pin - the apply that finishes from the patch, and
-the removals that take both away. A serial step on a task whose patch stands is stopped the same
+reads once merged and prescribes the apply only where the tree lacks the work (`ar6f`); with the
+pin gone there is nothing to read the tree against, so the stop names no ref of the pin to
+compare with and gives the check the patch answers alone, `git apply --reverse --check` (`ar6g`).
+Each remedy is a command naming the patch and the pin while it stands - the apply that finishes
+from the patch, and the removals that take both away. A serial step on a task whose patch stands is stopped the same
 way, since a wave dropped since the redo leaves its member to the serial path, with the apply
 made in the phase tree (`sd12`). The pin itself is taken down at the end of every drive call once
-`redo_pin_spent` says it keeps nothing - its task done, cancelled or blocked, or no patch of its
-left - whichever path got it there (`settle_redo_pins`; `sd9`-`sd11`, and `sd13` for a pin a
-stop left once its patch was gone).
+`redo_pin_spent` says it keeps nothing - its task done or cancelled, whether or not its patch
+stands (`sd17`), or no patch of its left - whichever path got it there (`settle_redo_pins`;
+`sd9`-`sd11`, and `sd13` for a pin a stop left once its patch was gone). A blocked task is not
+terminal - `unblock` hands it back to a step that stops on its patch - so while its patch stands
+its pin stays (`sd18`).
 
 **A stop that carries paths names its facts first.** Every reader that shortens a stop keeps its
 head - the signal line's basis, the first line `--explain` cuts, a suite's diagnostic slice - and

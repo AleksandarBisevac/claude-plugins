@@ -8107,6 +8107,24 @@ def _recut_crash_cases(check, M):
           and "only where" in said_f and "printing nothing" not in said_f
           and "moved" in said_f and _kept_named(root_d, said_f))
 
+    # The pin gone while the patch stands: the tree cannot be read against a
+    # commit no ref names, so the stop compares against nothing the pin named -
+    # neither the pin nor its parent - and hands the human a check the patch
+    # answers alone.
+    pin_a = M.redo_pin("P1.1")
+    _harness.git(root_a, "update-ref", "-d", pin_a)
+    code_g, said_g = _next(M, root_a, mpath_a)
+    check("ar6g a stop over a patch whose pin is gone names no ref of the pin to "
+          "compare against, offers no removal of it, and gives the check the "
+          "patch answers alone: %r" % ((code_g, _redo_pins(root_a),
+                                         said_g[-700:]),),
+          code_g != 0 and _redo_pins(root_a) == [] and _kept_named(root_a, said_g)
+          and (pin_a + "^") not in said_g
+          and ("as %s holds it" % (pin_a,)) not in said_g
+          and ("update-ref -d %s" % (pin_a,)) not in said_g
+          and "git apply --reverse --check" in said_g
+          and len(_rows_of(root_a, mpath_a, "P1.1")) == rows_a)
+
     # A carried path the head never moved must read in the recut tree as the
     # work held it; one that does not stops the redo by name, the patch kept.
     def scribbling(where, argv, env=None, stdin=None):
@@ -9433,6 +9451,60 @@ def _scope_declared_cases(check):
                                     trailing),),
           deepest and " " in SD_LONG_ROOT[0]
           and longest <= _WIN_MAX_PATH - 1 and trailing == [])
+    _pin_under_patch_cases(check, M)
+
+
+def _stand_patch(M, root, mpath, task_id):
+    """An empty redo patch for `task_id` where a redo leaves one: its path."""
+    patch = M.redo_patch(_drive_ctx(root, mpath), task_id)
+    if not os.path.isdir(os.path.dirname(patch)):
+        os.makedirs(os.path.dirname(patch))
+    with open(patch, "wb") as fh:
+        fh.write(b"")
+    return patch
+
+
+def _pin_under_patch_cases(check, M):
+    """The pin of a task whose patch still stands: gone once the task is
+    terminal, kept while it is only blocked - a blocked task comes back through
+    `unblock`, and the pin is the second copy of what the patch names."""
+    # The status arm deciding alone: with the patch standing, the patch's
+    # absence cannot be what takes the pin, so a reading that drops the pin
+    # only when no patch stands keeps it here.
+    root, mpath = _repo("sd-pin-cancel-patch", task_ids=TASKS[:2],
+                        per_task="phase")
+    patch = _stand_patch(M, root, mpath, "P1.2")
+    _pin_redo(M, root, "P1.2")
+    with _Env(root):
+        ccode, cout = _verb(root, "audit-task.py", [
+            "cancel", "P1.2", mpath, "--project-dir", root, "--reason",
+            "not wanted"])
+    _next(M, root, mpath)
+    check("sd17 a cancelled task's pin is gone though its patch still stands - "
+          "the terminal status decides, not the patch: %r"
+          % ((ccode, cout[-200:], tasks_of(mpath)["P1.2"].get("status"),
+              os.path.isfile(patch), _redo_pins(root)),),
+          ccode == 0 and tasks_of(mpath)["P1.2"].get("status") == "cancelled"
+          and os.path.isfile(patch) and _redo_pins(root) == [])
+    # Blocked is not terminal. The twin of sd11, which blocks a task with no
+    # patch and sees the pin go: here the patch stands, so the pin stays.
+    root, mpath = _repo("sd-pin-block-patch", task_ids=TASKS[:2],
+                        per_task="phase")
+    patch = _stand_patch(M, root, mpath, "P1.2")
+    _pin_redo(M, root, "P1.2")
+    with _Env(root):
+        bcode, bout = _verb(root, "audit-task.py", [
+            "block", "P1.2", mpath, "--project-dir", root, "--reason",
+            "waits on a vendor answer"])
+    _next(M, root, mpath)
+    check("sd18 a blocked task whose patch still stands keeps its pin - blocked "
+          "comes back through unblock, and the pin keeps the objects the patch "
+          "names: %r" % ((bcode, bout[-200:],
+                          tasks_of(mpath)["P1.2"].get("status"),
+                          os.path.isfile(patch), _redo_pins(root)),),
+          bcode == 0 and tasks_of(mpath)["P1.2"].get("status") == "blocked"
+          and os.path.isfile(patch)
+          and _redo_pins(root) == [M.redo_pin("P1.2")])
 
 
 # --- the signal: one line per step, the full text behind --explain ----------
@@ -11249,16 +11321,19 @@ def _e2e_decline(check, M):
           and code == 0 and instruction(text) == DONE and words in summary)
 
 
+def _booting(plan):
+    """`meta.runtimeBoot` over the fixture's `src`, which every task touches:
+    sign-off asks the boot before its verdict."""
+    plan["meta"]["runtimeBoot"] = {"appRootPath": "src",
+                                   "launch": "open the app",
+                                   "verify": "the home screen renders"}
+
+
 def _e2e_boot(check, M):
     """`meta.runtimeBoot`, when the phase touched its app root, is a human's
     answer before the verdict: booted, or not reachable and not signed off."""
     root, mpath = _repo("boot", task_ids=TASKS[:1], per_task="phase")
-
-    def booting(plan):
-        plan["meta"]["runtimeBoot"] = {"appRootPath": "src",
-                                       "launch": "open the app",
-                                       "verify": "the home screen renders"}
-    _commit_plan(root, mpath, booting, "boot")
+    _commit_plan(root, mpath, _booting, "boot")
     run = drive(M, root, mpath, answer=_stop_at_other)
     last = run["prints"][-1][1]
     check("rb1 a phase that touched meta.runtimeBoot.appRootPath stops before "
@@ -15854,6 +15929,7 @@ def _skill_units(check):
 # it is before it is printed or walked.
 def _ready_first_cases(check):
     _rf_triage_dispatch(check)
+    _rf_set_aside_answers(check)
     _rf_leave(check)
     _rf_offer_agrees(check)
     _rf_wave_drop(check)
@@ -15903,6 +15979,81 @@ def _rf_triage_dispatch(check):
                             _rf_signal_verb(again)),),
           bcode == 0 and code == 0
           and _rf_signal_verb(again) == ("review", PHASE))
+
+
+_RF_DECLINE_WHY = "the human: no - the app crashes on launch"
+
+
+def _rf_set_aside_answers(check):
+    """An answer sent to a sign-off decision set aside for a task added since:
+    `sign-off` is refused by the set-aside's own words and nothing is driven,
+    while `decline` keeps the human's words for the summary and the drive goes
+    on to the task they added."""
+    M, why = _load("drive_phase_set_aside")
+    if M is None:
+        check("rf12 the driver loads", False, why)
+        return
+    root, mpath = _repo("rf-aside-signoff", task_ids=TASKS[:1], per_task="phase")
+    run = drive(M, root, mpath, answer=None)
+    added = _add_task(root, mpath)
+    code, said = _next(M, root, mpath, "--answer", "sign-off", "--reason",
+                       SUMMARY)
+    state = _drive_state(root)
+    # Without the set-aside's own refusal the answer reaches the advance
+    # route, which signs nothing at once but drives the added task on: exit 0
+    # and a dispatch. The other refusal, "no decision is pending", would also
+    # exit 2, so the case asks for the set-aside's words naming the task.
+    check("rf12 --answer sign-off sent to a triage set aside for a task added "
+          "since is refused naming that task and the set-aside, the triage is "
+          "dropped, the task is not driven and nothing is signed off: %r"
+          % ((run["steps"][-1:], added, code, said[-400:],
+              sorted(state), tasks_of(mpath).get(added, {}).get("status")),),
+          run["steps"][-1:] == [TRIAGE] and code == M.E_USAGE
+          and added in said and "set aside" in said
+          and "no decision is pending" not in said
+          and "pending" not in state and not _signed(mpath)
+          and tasks_of(mpath).get(added, {}).get("status") == "pending")
+
+    root, mpath = _repo("rf-aside-decline", task_ids=TASKS[:1], per_task="phase")
+    _commit_plan(root, mpath, _booting, "boot")
+    run = drive(M, root, mpath, answer=_stop_at_other)
+    added = _add_task(root, mpath)
+    bare, bsaid = _next(M, root, mpath, "--answer", "decline")
+    bstate = _drive_state(root)
+    # The no without words is refused, and refused before the decision is
+    # dropped: the human's next try, with words, still has it to decline.
+    check("rf13 --answer decline with no --reason, sent to a runtime-boot "
+          "decision set aside for an added task, is refused, records nothing, "
+          "and leaves the decision there for the no with words: %r"
+          % ((run["steps"][-1:], bare, bsaid[-300:], sorted(bstate)),),
+          run["steps"][-1:] == [("decide", "runtime-boot", None)]
+          and bare == M.E_USAGE and "--reason" in bsaid
+          and "declined" not in bstate
+          and (bstate.get("pending") or {}).get("decision") == "runtime-boot"
+          and tasks_of(mpath).get(added, {}).get("status") == "pending")
+    code, said = _next(M, root, mpath, "--answer", "decline", "--reason",
+                       _RF_DECLINE_WHY)
+    state = _drive_state(root)
+    check("rf14 --answer decline --reason on that set-aside decision keeps the "
+          "human's words, drops the decision and the held gate, and the drive "
+          "goes on to the task they added: %r"
+          % ((code, said[-400:], state.get("declined"), sorted(state)),),
+          code == 0 and instruction(said) == ("dispatch", "executor", added)
+          and state.get("declined") == ["runtime-boot: %s" % (_RF_DECLINE_WHY,)]
+          and "pending" not in state and "phaseGate" not in state)
+    _file_executor(root, mpath, added)
+
+    def booted(kind, text):
+        if kind[1] == "runtime-boot":
+            return ["--answer", "booted", "--reason", "booted; it launches now"]
+        return sign_off(kind, text)
+    after = drive(M, root, mpath, answer=booted)
+    summary = _phase_of(mpath).get("summary") or ""
+    check("rf15 ...and once the remedy closed and the boot was confirmed, the "
+          "phase signs off with the human's no in its summary: %r"
+          % ((after["steps"][-4:], summary[-300:]),),
+          after["steps"][-1] == DONE and _signed(mpath)
+          and _RF_DECLINE_WHY in summary)
 
 
 _RF_FINDINGS = [
