@@ -1856,7 +1856,8 @@ def _readiness_lines(waiting, tid):
 #
 # NONE OF IT RUNS WITH THE INDEX LOCK HELD. The listings can take tens of
 # seconds, and every other lock taker waits a bounded time and is then refused:
-# `add` and `scope` read the reach after release from the plan they wrote, and
+# `add`, `add --from-file` and `scope` read the reach after release from the
+# plan they wrote (a batch, of each task it wrote), and
 # `done` reads it before acquiring and records it only if the task still holds
 # the files and gate it was read of. It is advisory, so it fails open.
 GATE_REACH_LEAD = "WARNING: gate reach: "
@@ -1981,15 +1982,27 @@ def _reach_outside_lock(project, mpath, tid):
     plan they wrote. The listings it runs can take tens of seconds, and every
     other lock taker waits a bounded time and is then refused, so no part of
     it runs with the lock held."""
+    return _reach_each_outside_lock(project, mpath, [tid])[0][1:]
+
+
+def _reach_each_outside_lock(project, mpath, tids):
+    """`[(tid, reach, why)]` for each task of `tids`, from one read of the
+    plan at `mpath` taken after the index lock is released - the reading of
+    `_reach_outside_lock`, for the several tasks one batch wrote."""
     try:
         manifest = _mio.load_manifest(mpath)
     except Exception as exc:
-        return None, "the written plan could not be read back: %s: %s" % (
+        why = "the written plan could not be read back: %s: %s" % (
             type(exc).__name__, exc)
-    node, phase, refusal = _task_target(manifest, tid, "gate reach")
-    if refusal:
-        return None, "the written plan answers: %s" % (refusal,)
-    return _reach_or_why(project, manifest, phase, node)
+        return [(tid, None, why) for tid in tids]
+    out = []
+    for tid in tids:
+        node, phase, refusal = _task_target(manifest, tid, "gate reach")
+        if refusal:
+            out.append((tid, None, "the written plan answers: %s" % (refusal,)))
+        else:
+            out.append((tid,) + _reach_or_why(project, manifest, phase, node))
+    return out
 
 
 def _reach_ask(tid, mpath, payload):
@@ -2000,17 +2013,26 @@ def _reach_ask(tid, mpath, payload):
     return {"tid": tid, "mpath": mpath, "json": payload}
 
 
+def _reach_ask_each(tids, mpath, payload):
+    """`_reach_ask` for the several tasks `add --from-file` wrote: each is
+    read after release, and each line and `--json` answer names its task."""
+    return {"tids": list(tids), "mpath": mpath, "json": payload}
+
+
 def _reach_after_release(project, out, answer):
-    """The exit of a locked `add` or `scope`, after printing the reach of the
-    task it wrote, read from the written plan once the index lock is
-    released. `answer` is what `_under_lock` returned: an exit alone when the
-    body wrote nothing or moved nothing a reading compares, else
-    `(exit, ask)` with `ask` from `_reach_ask` (or None)."""
+    """The exit of a locked `add`, `add --from-file` or `scope`, after
+    printing the reach of each task it wrote, read from the written plan once
+    the index lock is released. `answer` is what `_under_lock` returned: an
+    exit alone when the body wrote nothing or moved nothing a reading
+    compares, else `(exit, ask)` with `ask` from `_reach_ask` or
+    `_reach_ask_each` (or None)."""
     if not isinstance(answer, tuple):
         return answer
     code, ask = answer
     if ask is None:
         return code
+    if "tids" in ask:
+        return _reach_each_after_release(project, out, code, ask)
     reach, why = _reach_outside_lock(project, ask["mpath"], ask["tid"])
     result = ask["json"]
     if result is not None:
@@ -2023,12 +2045,32 @@ def _reach_after_release(project, out, answer):
     return code
 
 
-def _reach_said(reach, why):
+def _reach_each_after_release(project, out, code, ask):
+    """`_reach_after_release` for a batch: under `--json` the answers keyed
+    by task id (`gateReach`, `gateReachNotAsked`), else each task's lines
+    with its id after the lead, since one batch prints several tasks'."""
+    read = _reach_each_outside_lock(project, ask["mpath"], ask["tids"])
+    result = ask["json"]
+    if result is not None:
+        result = dict(result,
+                      gateReach=dict((tid, _reach_key(reach))
+                                     for tid, reach, _why in read),
+                      gateReachNotAsked=dict((tid, why)
+                                             for tid, _reach, why in read))
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return code
+    for tid, reach, why in read:
+        for line in _reach_said(reach, why, "%s: " % (tid,)):
+            out(line)
+    return code
+
+
+def _reach_said(reach, why, label=""):
     """The lines `add` and `scope` print about the reading: one per gap, or
-    the one line saying it was not asked and why."""
+    the one line saying it was not asked and why; `label` follows the lead."""
     if why is not None:
-        return ["%s%s" % (GATE_REACH_NOT_ASKED_LEAD, why)]
-    return _reach_lines(reach)
+        return ["%s%s%s" % (GATE_REACH_NOT_ASKED_LEAD, label, why)]
+    return _reach_lines(reach, label)
 
 
 def _reach_scope(phase, task):
@@ -2080,10 +2122,11 @@ def _reach_key(reach):
             "gaps": [{"path": p, "why": why} for p, why in reach["gaps"]]}
 
 
-def _reach_lines(reach):
-    """One WARNING line per declared file the gate reaches no suite of."""
-    return ["%s%s -- %s; a passed run of this gate is no evidence for it"
-            % (GATE_REACH_LEAD, path, why)
+def _reach_lines(reach, label=""):
+    """One WARNING line per declared file the gate reaches no suite of,
+    `label` (a batch's `<id>: `) between the lead and the path."""
+    return ["%s%s%s -- %s; a passed run of this gate is no evidence for it"
+            % (GATE_REACH_LEAD, label, path, why)
             for path, why in (reach or {}).get("gaps") or []]
 
 
@@ -9837,14 +9880,15 @@ _RISKS = ("low", "med", "high")
 
 def batch_list_fields(flag_keys=None, phase_keys=None, readings=None):
     """`[(path, reading)]` - each list key of a batch that a flag taking
-    several values writes, beside that flag's `LIST_FLAG_READINGS` row: a
-    task key through `BATCH_FLAG_KEYS`, a `phase` key through
-    `PHASE_KEY_DESTS`. Derived from those tables rather than listed, so a
-    list flag gaining a batch key is read here with no second row to add;
-    the arguments stand in for the three tables."""
+    several values writes, beside that flag's `LIST_FLAG_READINGS` or
+    `CSV_FLAG_READINGS` row: a task key through `BATCH_FLAG_KEYS`, a `phase`
+    key through `PHASE_KEY_DESTS`. Derived from those tables rather than
+    listed, so a list flag gaining a batch key is read here with no second row
+    to add; the arguments stand in for the tables."""
     flag_keys = BATCH_FLAG_KEYS if flag_keys is None else flag_keys
     phase_keys = PHASE_KEY_DESTS if phase_keys is None else phase_keys
-    readings = LIST_FLAG_READINGS if readings is None else readings
+    readings = (dict(LIST_FLAG_READINGS, **CSV_FLAG_READINGS)
+                if readings is None else readings)
     rows = dict(("phase.%s" % (key,), readings[dest])
                 for key, dest in phase_keys if dest in readings)
     rows.update((path, readings[dest]) for dest, path in flag_keys.items()
@@ -9882,11 +9926,41 @@ def batch_gate_items(doc):
             for _field, item in _batch_list_items(doc, path)]
 
 
+def split_batch_items(doc):
+    """A copy of `doc` with each item at a `split` key split on its commas, as
+    the flag writing that key splits its value (`_split_csv`): `"files":
+    ["a.py,b.py"]` holds the two paths `--files a.py,b.py` writes. A list
+    holding anything but non-empty strings is left as it is, for the type
+    checks to name; a doc that is not an object is handed back unread."""
+    if not isinstance(doc, dict):
+        return doc
+    out = json.loads(json.dumps(doc))
+    for path, reading in batch_list_fields():
+        if reading != "split":
+            continue
+        head, _sep, rest = path.partition(".")
+        if head == "phase":
+            nodes = [out.get("phase")]
+        elif head == "tasks[]" and isinstance(out.get("tasks"), list):
+            nodes = out["tasks"]
+        else:
+            continue
+        keys = rest.split(".")
+        for node in nodes:
+            for key in keys[:-1]:
+                node = node.get(key) if isinstance(node, dict) else None
+            value = node.get(keys[-1]) if isinstance(node, dict) else None
+            if _is_text_list(value):
+                node[keys[-1]] = _split_csv(value)
+    return out
+
+
 def _batch_joined_problems(doc, build_keys):
     """A refusal per batch list item that reads as several entries of its
-    field (`joined_parts`, the list flags' own reading). The file's list is
-    the separator, so an item is one entry under every reading, a `split`
-    one included: the item is refused rather than split or stored whole."""
+    field (`joined_parts`, the list flags' own reading). `doc` is the one
+    `split_batch_items` handed on, so an item at a `split` key holds no comma
+    left to read; at every other key an entry may carry a comma of its own,
+    and the item is refused rather than split on a guess or stored whole."""
     out = []
     for path, reading in batch_list_fields():
         for field, item in _batch_list_items(doc, path):
@@ -10009,9 +10083,11 @@ def batch_problems(doc, build_keys=()):
     joined gate item may name.
 
     ALL OF THEM AT ONCE, because the file is the caller's to fix and one round
-    trip per fault is the cost the batch exists to remove."""
+    trip per fault is the cost the batch exists to remove. The doc is graded
+    as `split_batch_items` reads it, which is the doc `read_batch` hands on."""
     if not isinstance(doc, dict):
         return ["the file must hold one JSON object"]
+    doc = split_batch_items(doc)
     out = _unknown_keys(doc, BATCH_KEYS, "the file")
     if batch_appends(doc):
         # The request and its open choices belong to the phase's planning,
@@ -10088,11 +10164,13 @@ def read_batch(path, stream=None, keys_for=None):
     then None. An empty stdin is its own refusal: read as `{}` it would be
     graded as a batch missing every field, which names the wrong fault.
     `keys_for(doc)` answers the plan's `meta.buildCommands` keys for the
-    joined-gate reading; without it no gate item reads as joined keys."""
+    joined-gate reading; without it no gate item reads as joined keys. The
+    `doc` handed back has its `split` keys' items split (`split_batch_items`)."""
     doc, problem = (_batch_from_stdin(stream) if path == "-"
                     else _batch_from_file(path))
     if problem:
         return None, [problem]
+    doc = split_batch_items(doc)
     problems = batch_problems(doc, keys_for(doc) if keys_for else ())
     return (None, problems) if problems else (doc, [])
 
@@ -10148,10 +10226,9 @@ def _cmd_batch_add(args, out):
         for line in problems:
             out("  - " + line)
         return E_USAGE
-    return _under_lock(args, project, out,
-                       lambda config, mpath, seed=None: _locked_batch_add(
-                           args, project, config, mpath, doc, out, seed),
-                       create=True)
+    return _reach_after_release(project, out, _under_lock(
+        args, project, out, lambda config, mpath, seed=None: _locked_batch_add(
+            args, project, config, mpath, doc, out, seed), create=True))
 
 
 def _batch_phase_gate(spec, assembled):
@@ -10208,7 +10285,9 @@ def _locked_batch_add(args, project, config, mpath, doc, out, seed=None):
     allocate the phase - or find the one a `{"id": ...}` phase names - and
     every task, refuse before the first write, write once, validate once from
     disk, roll back on findings, journal, report. `seed` is the plan a project
-    with none starts from (see `_plan_or_seed`)."""
+    with none starts from (see `_plan_or_seed`). The gate-reach reading is NOT
+    among them: a written batch returns `(0, _reach_ask_each(...))` and the
+    reach of each task is read once the lock is released, as `add` does."""
     try:
         raw_index, assembled = _plan_or_seed(mpath, seed)
     except Exception as exc:
@@ -10246,12 +10325,13 @@ def _locked_batch_add(args, project, config, mpath, doc, out, seed=None):
             out(refusal)
             return E_USAGE
         gate, gate_basis = _batch_phase_gate(spec, assembled)
-        area = spec.get("area")
         phase = _build_phase(pid, spec["title"].strip(), {
             "description": spec.get("description") or "",
             "outcome": spec["desiredOutcome"],
             "blocked_by": spec.get("blockedBy") or [],
-            "area": [area] if isinstance(area, str) else (area or []),
+            # A bare tag string is split as `--area` splits it, as a list's
+            # items already were by `split_batch_items`.
+            "area": _split_csv(spec.get("area")),
             "review_skill": spec.get("reviewSkill"),
             "parent_branch": spec.get("parentBranch")}, gate)
         phase["request"] = doc["request"]
@@ -10342,8 +10422,9 @@ def _locked_batch_add(args, project, config, mpath, doc, out, seed=None):
                   "journaled": not unjournaled}
         result.update(project_basis_key(args))
         result.update(_index_dirty_key(index_note))
-        out(json.dumps(result, indent=2, sort_keys=True))
-        return 0
+        # Printed once the reach of every written task is read, with the
+        # lock released.
+        return 0, _reach_ask_each(ids, mpath, result)
     if appends:
         out("[audit-task] %s added to %s" % (", ".join(ids), pid))
         for task in phase["tasks"][first:]:
@@ -10368,7 +10449,7 @@ def _locked_batch_add(args, project, config, mpath, doc, out, seed=None):
     if warn_side:
         for line in _side_branch_warning(pid, side):
             out(line)
-    return 0
+    return 0, _reach_ask_each(ids, mpath, None)
 
 
 def _batch_dry_run_report(args, out, vm, assembled, phase, pid, ids, appends,
@@ -16688,17 +16769,20 @@ def option_dests(parser=None):
 #   a joined entry, and the drop is the way to remove it, so the value is
 #   passed as given and the door that holds the gate answers held or not held.
 #
-# `add --from-file` reads the same table: each list key of the batch carries
-# the reading of the flag that writes it (`batch_list_fields`), and a batch
-# item that reads as several entries is refused naming its field path - the
-# file's list is the separator, so no reading splits a batch item.
+# `add --from-file` reads the same table, and `CSV_FLAG_READINGS` beside it:
+# each list key of the batch carries the reading of the flag that writes it
+# (`batch_list_fields`). An item at a `split` key is split as its flag splits
+# it (`split_batch_items`), so `"files": ["a.py,b.py"]` is two paths as
+# `--files a.py,b.py` is; an item at any other key that reads as several
+# entries is refused naming its field path, never split and never stored whole.
 #
 # `list_flag_gaps` holds this table to the parser in both directions, and the
 # suite's `lr1` reports either gap by name, so a list option added later
 # cannot reach a door without a row. What that walk cannot see is a
 # single-value option whose value is a comma list (`--skills`, `--outputs`,
-# `--area`): argparse records nothing that tells such a value from prose, and
-# each of their readers calls `_split_csv` itself.
+# `--area`): argparse records nothing that tells such a value from prose, so
+# each of their readers calls `_split_csv` itself and their rows are
+# `CSV_FLAG_READINGS`, written by hand - nothing derives them from the parser.
 LIST_FLAG_READINGS = {
     "files": "split", "blocked_by": "split", "depends_on": "split",
     "verified_by": "split", "sources": "split", "phases": "split",
@@ -16709,6 +16793,7 @@ LIST_FLAG_READINGS = {
     "waive": "waiver",
     "accept_open": "pair", "carried": "pair",
 }
+CSV_FLAG_READINGS = {"skills": "split", "outputs": "split", "area": "split"}
 
 # The key half has the shape a plan's finding ids carry, `<phaseId>-<letters>
 # <n>`: the letters are wider than the `R` sign-off mints, because findings

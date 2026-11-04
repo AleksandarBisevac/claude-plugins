@@ -173,24 +173,30 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_affected_tests.py:1219-1222 (run_listing), :1268-1287 (prefetch_listings)",
         "issue": "Listings now run in their own session from worker threads and nothing arms an interrupt handler, so a Ctrl-C during add/scope/done waits until every listing finishes (measured 8.03 s for a sleep 8 listing, SIGINT at 1 s) and a hard kill leaves detached groups running; the comment says a listing's children never outlive the verb.",
-        "resolution": "On an interrupt in prefetch_listings tear down every started group (keep the handles, stop_and_drain each, shut the pool down), with a case sending SIGINT during a slow prefetch and asserting a prompt return.",
-        "fixTask": "P156.19-3st"
+        "resolution": "fixed in P156.19-3st (441d3601f81c): On an interrupt in prefetch_listings tear down every started group (keep the handles, stop_and_drain each, shut the pool down), with a case sending SIGINT during a slow prefetch and asserting a prompt return.",
+        "fixTask": "P156.19-3st",
+        "commit": "441d3601f81c",
+        "status": "fixed"
       },
       {
         "id": "P156-R17",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:292-306 (module docstring, Exit codes)",
         "issue": "restore now exits 0 when it drops a copy with nothing to put back; the usage text still defines restore's exit 0 only as work put back.",
-        "resolution": "Extend the exit-0 clause to the dropped-copy outcome.",
-        "fixTask": "P156.19-3st"
+        "resolution": "fixed in P156.19-3st (441d3601f81c): Extend the exit-0 clause to the dropped-copy outcome.",
+        "fixTask": "P156.19-3st",
+        "commit": "441d3601f81c",
+        "status": "fixed"
       },
       {
         "id": "P156-R18",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:11196-11198 (restore_tree restored and dropped lines)",
         "issue": "The restored and dropped lines put the recorded tree into shown text unconverted while the copy beside it is spelled natively, so on Windows one line uses two separators.",
-        "resolution": "Use shown_tree(tree) in both lines.",
-        "fixTask": "P156.19-3st"
+        "resolution": "fixed in P156.19-3st (441d3601f81c): Use shown_tree(tree) in both lines.",
+        "fixTask": "P156.19-3st",
+        "commit": "441d3601f81c",
+        "status": "fixed"
       },
       {
         "id": "P156-R19",
@@ -200,7 +206,7 @@
         "resolution": "Reproduce under the stress leg's conditions (tools/sweep-selftests.py --spaced --encoding cp1252 tests/test__affected_tests.py), find which half is wrong (the case's pid record under a spaced path, or the teardown), and fix that one so af38 holds on every leg."
       }
     ],
-    "outcome": "[findings: 19 - 0 high, 5 med, 14 low; 12 with a recorded fix commit]"
+    "outcome": "[findings: 19 - 0 high, 5 med, 14 low; 15 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1677,12 +1683,17 @@
         "P156-R14",
         "P156-R15"
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-04T18:18:27Z.8a0c49",
+        "status": "passed",
+        "at": "2026-11-04T18:18:27Z"
+      }
     },
     {
       "id": "P156.19-3st",
       "title": "A listing interrupted mid-prefetch is torn down at once, and restore's dropped outcome is documented and spelled for the reader",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix P156-R16, P156-R17 and P156-R18 (docs/audit/phases/P156.json review.findings): on an interrupt prefetch_listings stops every started listing group and returns promptly (a SIGINT case); drive-phase's usage text gives restore's exit 0 for a dropped copy; restore_tree's restored and dropped lines name the tree through shown_tree.",
       "files": [
         "plugins/audit/scripts/governance/_affected_tests.py",
@@ -1714,14 +1725,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "441d3601f81c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "R16: _affected_tests.run_listing reads a stop from a ContextVar (_LISTING_STOP) that prefetch_listings sets inside each worker call. When a stop is set, the wait polls communicate every _STOP_POLL_SECONDS. Once the stop is seen, the worker that reads the pipe tears the group down with _proc_group.stop_and_drain (no second reader races the drain) and returns exit 130; a listing whose stop came before Popen never starts. prefetch_listings now submits futures, waits in 0.1 s steps (a signal the kernel hands a worker thread wakes no blocked main thread), and on BaseException sets the stop, cancels the pending futures, shuts the pool down and re-raises. run_listing keeps its four positional arguments because the recorder stubs in tests/test_run_test_gate.py and tests/test_audit_task.py (outside this task's files) replace it with that shape - that is why it is a context variable and not an argument. R17: the drive-phase usage text's exit-0 clause for restore also names a dropped copy. R18: restore_tree's restored and dropped lines name the tree through shown_tree(tree). R19: af38 and the new af43 wrote the pid file through an unquoted path, so under a spaced TMPDIR the redirect went to another file and the case read no grandchild. The teardown itself was right (exit -15, ended at 1.0 s). Both now quote with shlex.quote. Build guide: the _affected_tests facts paragraph states the interrupt teardown. Runs: gate `python3 tools/sweep-selftests.py tests/test__affected_tests.py tests/test_drive_phase.py` exit 0, 2/2 files ok; `sweep-selftests.py --spaced --encoding cp1252 tests/test__affected_tests.py` exit 0 (51 cases), and --spaced and --encoding cp1252 alone each 1/1 ok; test_run_test_gate, test_audit_task, test__proc_group, test__deps, test__output_lints, test__config: 6/6 files ok, exit 0; test__gate_derive, test_derive_phase_gate, test__filed_returns: 3/3 ok, exit 0; tools/gate-parity.py exit 0; ruff and vermin -t=3.8- over the four changed .py exit 0. Dependants: run-test-gate.py and audit-task.py are still correct, since run_listing/prefetch_listings keep their signatures and their suites are green. test__gate_derive, test_derive_phase_gate and test__filed_returns are green. drive-phase importers are unaffected: on posix shown_tree is the identity, so the text is byte-identical, and test_drive_phase is green. PLUGIN-BUILD-GUIDE.md is changed as described. Incident: while probing the spaced-redirect hypothesis I ran `rm -rf` over the scratchpad entries `sp ace` and `sp`, and `sp ace` already existed with a file `tt` in it. I deleted something that was not mine.",
+        "descriptive": "An interrupted prefetch now stops every listing it started and returns at once. restore's dropped exit 0 is documented, its tree is spelled natively, and the af38 fixture survives a spaced TMPDIR."
       },
       "startedAt": "2026-11-04T17:42:10Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-04T18:13:37Z",
+      "verifiedBy": [
+        "af43: SIGINT sent once both listings started their grandchild; the prefetch raises KeyboardInterrupt within 4 s and no grandchild survives (skipped by name on platforms without process groups)",
+        "uv5: restore_tree's restored and dropped lines name the tree only through shown_tree (marking stub)",
+        "rx1: the usage text's exit-0 clause for restore names the dropped copy beside the work put back"
+      ],
       "notes": [
         {
           "at": "2026-11-04T17:41:23Z",
@@ -1734,6 +1749,10 @@
         {
           "at": "2026-11-04T17:41:23Z",
           "text": "scope: tests/test_drive_phase.py, the suite that tests plugins/audit/scripts/governance/drive-phase.py (python: it hands drive-phase.py to a loader through a module constant)"
+        },
+        {
+          "at": "2026-11-04T18:13:37Z",
+          "text": "gate reach at close: a passed run of this task's gate (python3 tools/sweep-selftests.py tests/test__affected_tests.py tests/test_drive_phase.py) is no evidence for PLUGIN-BUILD-GUIDE.md (the affected-test derivation selects tests/test__deps.py, tests/test__refs.py for it, and the gate runs none of them)"
         }
       ],
       "fixes": [
@@ -1746,6 +1765,18 @@
         "runId": "2026-11-04T18:13:27Z.cfea0f",
         "status": "passed",
         "at": "2026-11-04T18:13:27Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "441d3601f81c",
+        "at": "2026-11-04T18:13:37Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-04T18:08:25Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__affected_tests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with 3 of 842 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - af43 (house FAIL), uv5 (house FAIL), rx1 (house FAIL): SELFTEST FAILED: 840/842 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],

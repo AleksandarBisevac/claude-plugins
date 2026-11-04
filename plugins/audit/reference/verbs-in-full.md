@@ -624,7 +624,10 @@ nothing. A warning, never a refusal.
 **A declared file the gate reaches no suite of is warned about**, on `add` and on a `scope`
 that moves `tests.gate` or `files`: one `WARNING: gate reach: <path> -- <why>` line per
 file, and `gateReach` (`{gate, gaps: [{path, why}]}`, null when the task declares no file
-or no gate entry measures it) under `--json`. A passed run of a gate is evidence only for
+or no gate entry measures it) under `--json`. `add --from-file` reads every task it wrote
+(a `--dry-run` reads none): each line carries the task's id after the lead (`WARNING: gate
+reach: <id>: <path> -- <why>`), and `gateReach` and `gateReachNotAsked` are objects keyed
+by task id. A passed run of a gate is evidence only for
 the files its suites read, so a document no selected suite opens, or a tool no selected
 suite imports, would close on a measurement of nothing about it. The reading is the
 affected-test derivation's (`_affected_tests.select`, each file asked alone, over the
@@ -1906,10 +1909,13 @@ stdin; a batch that is not JSON or carries a key the batch does not read; a miss
 list, title, outcome or task list; a dependency neither the plan nor the batch holds,
 named; a task `key` that is already an id; a phase `id` that is live, reserved by a
 parked proposal, a task id, or stored in a shard file another phase occupies; a list
-item that reads as several entries joined by commas, in any list key a repeating flag
-writes (`tasks[0].tests.add`, `phase.testGate`) — each read the way its flag is and named
-by its field path, since the list itself is the separator; and any
-other `audit-task.py add` flag beside `--from-file`.
+item that reads as several entries joined by commas, in a list key whose flag takes one
+entry per value (`tasks[0].tests.add`, `tasks[0].tests.gate`, `phase.testGate`), named by
+its field path; and any other `audit-task.py add` flag beside `--from-file`. Each list key
+is read the way the flag writing it reads its value, so an item at an id or path key
+(`files`, `outputs`, `skills`, `dependsOn`, `blockedBy`, `fixes`, `phase.blockedBy`,
+`phase.area`) is not refused for a comma but split on it, as `--files a,b` is two paths;
+`phase.area` written as one string is split too.
 
 **Which branch are you on? Phases are minted on the development branch.** A phase id is
 a branch name, a lock name and a shard name, so two phase branches that each added a

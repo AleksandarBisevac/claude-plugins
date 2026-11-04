@@ -665,6 +665,18 @@ depending on an implementation:
   something that used to take effect now does not: a pipeline that forced the removal is a
   pipeline that now stops. The repair is `drive-phase.py restore <taskId>`, which puts the work
   back and drops the copy, after which the removal runs as before; the verb is additive,
+- **a value joined by commas where a flag takes one entry — and it changed.** The
+  `audit-task.py` flags whose entries may carry a comma of their own (`--tests-add`,
+  `--gate`, `--gate-add`, `--gate-set`, `--waive`, `--accept-open`, `--carried`) used to store
+  a value such as `--tests-add a.py,b.py` as the one entry `a.py,b.py` and exit 0. A value
+  whose every comma part reads as a whole entry now **exits 2**, writing nothing and naming
+  the spelling with one flag per entry; `add --from-file` (`/audit:phase add`) refuses the
+  same item at the keys those flags write (`tasks[].tests.add`, `tasks[].tests.gate`,
+  `phase.testGate`), naming its field path. A `--tests-add` or `--gate` value stored that way
+  named nothing - a path no file has, a gate command no shell can find - but a pipeline that
+  wrote one is a pipeline that now stops, and the repair is one flag, or one batch item, per
+  entry. The id and path lists did not move: `--files a,b` and a batch's `"files": ["a,b"]`
+  are two paths, and a comma inside an entry is kept,
 - `plugins/audit/reference/orchestrator.md` and the prose the model reads,
 - every path under `plugins/audit/scripts/` — the plugin's own modules move, and
   `CHANGELOG.md` is where a move is recorded,

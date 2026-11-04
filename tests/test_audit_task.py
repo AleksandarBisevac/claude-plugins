@@ -15458,7 +15458,11 @@ def _batch_cases(check):
           "of its own: %r" % (txt,),
           txt.startswith("[audit-task] phase P2 added with P2.1, P2.2")
           and "written: docs/audit/audit-plan.json" in txt.splitlines()[0]
-          and [ln for ln in txt.splitlines()[1:]]
+          # The reach lines are the batch's warnings about the tasks it wrote
+          # (this fixture's gate runs `true`, which reaches no suite); the
+          # grt block owns them.
+          and [ln for ln in txt.splitlines()[1:]
+               if not ln.startswith(M.GATE_REACH_LEAD)]
           == ["gate: test (from meta.buildCommands)"])
 
     proj, mpath = project("sharded", sharded=True)
@@ -23001,7 +23005,9 @@ def _list_flag_cases(check):
         want = {"tasks[].files": "split", "tasks[].tests.add": "tests-add",
                 "tasks[].tests.gate": "gate", "phase.testGate": "gate",
                 "tasks[].dependsOn": "split", "tasks[].blockedBy": "split",
-                "phase.blockedBy": "split"}
+                "phase.blockedBy": "split", "tasks[].fixes": "split",
+                "tasks[].outputs": "split", "tasks[].skills": "split",
+                "phase.area": "split"}
         planted = dict(M.batch_list_fields(
             flag_keys=dict(M.BATCH_FLAG_KEYS, extra_list="tasks[].extra"),
             readings=dict(M.LIST_FLAG_READINGS, extra_list="split")))
@@ -23024,13 +23030,19 @@ def _list_flag_cases(check):
             joined, parts = _LR_SAMPLES[reading]
             shown = path.replace("tasks[]", "tasks[0]")
             problems = M.batch_problems(plant(path, joined), ("lint", "test"))
-            if not [p for p in problems
-                    if shown in p and all(part in p for part in parts)]:
+            named = [p for p in problems if shown in p]
+            if reading == "split":
+                # Split as its flag splits it: nothing is refused at the path.
+                if named:
+                    unread.append((path, reading, named))
+            elif not [p for p in named if all(part in p for part in parts)]:
                 unread.append((path, reading, problems))
         check("lb1 every list key of an `add --from-file` batch whose flag "
-              "takes several values carries its flag's reading, and a joined "
-              "value planted at each is refused naming its field path and "
-              "each part; a planted flag row reaches the walk too: %r"
+              "takes several values carries its flag's reading, outputs and "
+              "skills included; a joined value planted at a free-text key is "
+              "refused naming its field path and each part, and one planted "
+              "at a split key is not refused; a planted flag row reaches the "
+              "walk too: %r"
               % ((sorted(fields), unread, planted.get("tasks[].extra")),),
               all(fields.get(p) == r for p, r in want.items())
               and unread == []
@@ -23048,12 +23060,67 @@ def _list_flag_cases(check):
             json.dump(doc, fh)
         before = bytes_of(mp)
         code, txt = run(["add", "--from-file", path, "--project-dir", proj])
-        check("lb2 `add --from-file` refuses a joined tests.add, phase "
-              "testGate and dependsOn item, naming each field path, before "
-              "any write: %r" % ((code, txt[-700:]),),
+        check("lb2 `add --from-file` refuses a joined tests.add and phase "
+              "testGate item, naming each field path, before any write, and "
+              "does not name the joined dependsOn item, which its flag "
+              "splits: %r" % ((code, txt[-700:]),),
               code == M.E_USAGE and bytes_of(mp) == before
               and "tasks[0].tests.add" in txt and "phase.testGate" in txt
-              and "tasks[1].dependsOn" in txt)
+              and "tasks[1].dependsOn" not in txt)
+
+        # ---- a split key's joined item is split, as its flag splits it -------
+        # `--files a,b` writes two paths, so a batch item `a,b` at the key the
+        # flag writes is two paths too - the reading a batch's `files` had
+        # before the free-text keys were taught to refuse a join - and an id
+        # list resolves each part, a task key included.
+        proj, mp = mk("lb-split", base_manifest())
+        doc = _batch_doc()
+        doc["tasks"][0]["files"] = ["src/a.py,src/b.py"]
+        doc["tasks"][0]["outputs"] = ["dist/a.js,dist/b.js"]
+        doc["tasks"][1]["dependsOn"] = ["sum,P1.1"]
+        path = os.path.join(proj, "batch.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh)
+        code, txt = run(["add", "--from-file", path, "--project-dir", proj])
+        written = _mio.load_manifest(mp)
+        new = [p for p in written["phases"] if p.get("title") == "Exact refunds"]
+        tasks = (new[0].get("tasks") if new else None) or [{}, {}]
+        first = tasks[0].get("id")
+        check("lb4 a joined files, outputs and dependsOn item of a batch is "
+              "split the way `--files`, `--outputs` and `--depends-on` split "
+              "it: the task holds each part as its own entry, the file index "
+              "names each path, and the dependency resolves each part: %r"
+              % ((code, txt[-500:], [(t.get("files"), t.get("outputs"),
+                                       t.get("dependsOn")) for t in tasks]),),
+              code == 0 and len(new) == 1
+              and (tasks[0].get("files") or [])[:2] == ["src/a.py", "src/b.py"]
+              and "src/a.py,src/b.py" not in (tasks[0].get("files") or [])
+              and tasks[0].get("outputs") == ["dist/a.js", "dist/b.js"]
+              and first is not None
+              and sorted(tasks[1].get("dependsOn") or []) == sorted(
+                  [first, "P1.1"])
+              and written["fileIndex"].get("src/a.py") == [first]
+              and written["fileIndex"].get("src/b.py") == [first])
+
+        # `--area ui,api` writes two tags; the batch's `phase.area` takes a
+        # bare tag string or a list, and both forms are read the same way.
+        areas = []
+        for name, area in (("lb-area-str", "ui,api"),
+                           ("lb-area-list", ["ui,api"])):
+            proj, mp = mk(name, base_manifest())
+            doc = _batch_doc()
+            doc["phase"]["area"] = area
+            path = os.path.join(proj, "batch.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(doc, fh)
+            code, txt = run(["add", "--from-file", path, "--project-dir", proj])
+            new = [p for p in _mio.load_manifest(mp)["phases"]
+                   if p.get("title") == "Exact refunds"]
+            areas.append((code, new[0].get("area") if new else txt[-300:]))
+        check("lb5 a batch's `phase.area` joined by commas - a bare string or "
+              "a list item - is written as the tags `--area` splits it into: "
+              "%r" % (areas,),
+              areas == [(0, ["ui", "api"]), (0, ["ui", "api"])])
 
         proj, mp = mk("lb-prose", keyed)
         doc = _batch_doc()
@@ -23462,6 +23529,89 @@ def _gate_reach_cases(check):
               "entry rather than the id - a gate entry that is a directory - "
               "is kept by the short output too: %r" % ((code, txt),),
               code == 0 and len(dirs) == 1 and "'tests'" in dirs[0])
+
+        # ---- `add --from-file` asks the reach of each task it wrote ----------
+        # The batch is the path `/audit:phase add` writes through, so a gate
+        # that reaches no suite of a declared file is warned there as it is by
+        # a single `add`. One task has the gap and one has none, so a reading
+        # that warned for every task, or for none, is told apart.
+        def reach_batch_file(proj):
+            doc = {"request": "Reach in a batch.", "openChoices": [],
+                   "phase": {"title": "Reach batch",
+                             "desiredOutcome": "every gate reaches its files"},
+                   "tasks": [
+                       {"key": "gap", "title": "the gap",
+                        "files": ["CHANGELOG.md", "src/m.py",
+                                  "tests/test_m.py"],
+                        "tests": {"mode": "regression",
+                                  "gate": ["python3 tests/test_m.py"]}},
+                       {"title": "reached", "files": ["src/m.py",
+                                                      "tests/test_m.py"],
+                        "tests": {"mode": "regression",
+                                  "gate": ["python3 tests/test_m.py"]}}]}
+            path = os.path.join(proj, "reach-batch.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(doc, fh)
+            return path
+
+        def batch_ids(mp):
+            for ph in _mio.load_manifest(mp).get("phases") or []:
+                if ph.get("title") == "Reach batch":
+                    return [t.get("id") for t in ph.get("tasks") or []]
+            return []
+
+        proj, mp = project("gr-batch")
+        code, txt = run(["add", "--from-file", reach_batch_file(proj),
+                         "--project-dir", proj])
+        ids = batch_ids(mp)
+        lines = reach_lines(txt)
+        check("grt19 `add --from-file` warns once for the written task whose "
+              "gate reaches no suite of a declared file, naming that task and "
+              "the document, and not for the task whose gate reaches every "
+              "file: %r" % ((code, ids, lines, txt[-400:]),),
+              code == 0 and len(ids) == 2 and len(lines) == 1
+              and "CHANGELOG.md" in lines[0] and ids[0] in lines[0]
+              and ids[1] not in lines[0] and "src/m.py" not in lines[0])
+
+        proj, mp = project("gr-batch-json")
+        code, txt = run(["add", "--from-file", reach_batch_file(proj),
+                         "--project-dir", proj, "--json"])
+        try:
+            body = json.loads(txt)
+        except ValueError:
+            body = {}
+        ids = batch_ids(mp)
+        reach = body.get("gateReach") if isinstance(body, dict) else None
+        reach = reach if isinstance(reach, dict) else {}
+        check("grt20 ...and `--json` carries the reach per written task as "
+              "data: the gap task's one gap with its reason, the reached "
+              "task's none: %r" % ((code, ids, reach),),
+              code == 0 and len(ids) == 2
+              and [g.get("path") for g in
+                   (reach.get(ids[0]) or {}).get("gaps") or []]
+              == ["CHANGELOG.md"]
+              and all(g.get("why") for g in
+                      (reach.get(ids[0]) or {}).get("gaps") or [])
+              and ids[1] in reach
+              and not (reach.get(ids[1]) or {}).get("gaps"))
+
+        proj, mp = slow_project("gr-slow-batch")
+        proc, started = caught(proj, ["add", "--from-file",
+                                      reach_batch_file(proj)])
+        try:
+            ncode, ntxt = run(["note", "P2.3", "--project-dir", proj,
+                               "--text", "taken while the batch asked its "
+                               "reach"])
+        finally:
+            bcode, btxt = let_go(proj, proc)
+        check("grt21 a note taken while `add --from-file` is inside its reach "
+              "reading is not refused - the reach runs after the batch's lock "
+              "is released - and the batch still warns for the gap: %r"
+              % ((started, ncode, ntxt[-200:], bcode,
+                  reach_lines(btxt) or btxt[-600:]),),
+              started and ncode == 0 and bcode == 0
+              and len(reach_lines(btxt)) == 1
+              and "CHANGELOG.md" in reach_lines(btxt)[0])
     finally:
         _harness.remove_tree(tmp)
 

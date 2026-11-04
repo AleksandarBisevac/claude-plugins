@@ -50,7 +50,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   the tree's suites, the Python imports - and compared with what the gate runs. An `add` or a
   `scope` that sets the gate or the files prints one `WARNING: gate reach: <path> -- <why>` line
   per file the gate reaches no suite of, short output included, and its `--json` result carries
-  the same answer as `gateReach`; `done` records the gap on the task as one dated note. The
+  the same answer as `gateReach`; `done` records the gap on the task as one dated note. `add
+  --from-file` (the write `/audit:phase add` makes) reads each task it wrote and prints `WARNING:
+  gate reach: <id>: <path> -- <why>`, its `--json` result carrying `gateReach` and
+  `gateReachNotAsked` keyed by task id; a `--dry-run` reads none. The
   reading runs with the index lock released, so another verb taken meanwhile is not refused, and
   a close whose task's files or gate changed while it read records nothing and says so. It is
   advisory: a reading that fails leaves the write standing and prints `WARNING: gate reach not
@@ -200,9 +203,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   entry a plan stored joined before the reader existed can still be dropped; a value the gate
   does not hold is refused by the drop itself, and one joining entries the gate holds separately
   is refused naming one `--gate-drop` per entry. `add --from-file` reads each list key of the
-  batch the way the flag that writes it does, and refuses a batch item that reads as several
-  entries before any write, naming its field path (`tasks[0].tests.add`, `phase.testGate`): the
-  file's list is the separator, so no batch item is split.
+  batch the way the flag that writes it does: an item at an id or path key (`files`, `outputs`,
+  `skills`, `dependsOn`, `blockedBy`, `fixes`, `phase.blockedBy`, `phase.area`) is split on its
+  commas as its flag splits them, and an item at a key whose flag takes
+  one entry (`tasks[0].tests.add`, `tasks[0].tests.gate`, `phase.testGate`) that reads as
+  several entries is refused before any write, naming its field path. `phase.area` written as
+  one string is split the same way, as `--area` splits it.
 - **A fix task whose finding leads with a test file is `regression`, not `tdd`.** That finding
   is a fix to the test, so a red run - the strengthened test over HEAD's code - has nothing to
   go red against; the task's note says to show the red by mutation.

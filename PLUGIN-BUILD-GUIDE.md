@@ -5814,12 +5814,15 @@ legacy joined entry stays droppable and `_retarget_gate_now` answers held or not
 of the second kind whose every comma part reads as a WHOLE entry (`joined_parts`, over
 `_manifest_phases.joined_entry_parts`, the predicate the validator's joined-keys warning reads
 too) is refused, naming the repeated spelling, never split on a guess and never stored whole.
-`add --from-file` asks the same `joined_parts` of every batch list key a list flag writes
-(`batch_list_fields`, derived from `BATCH_FLAG_KEYS` and `PHASE_KEY_DESTS`) and refuses a joined
-item by its field path. `list_flag_gaps` holds the table to the
+`add --from-file` reads every batch list key a list flag writes the way that flag does
+(`batch_list_fields`, derived from `BATCH_FLAG_KEYS` and `PHASE_KEY_DESTS`): an item at a
+`split` key is split on its commas (`split_batch_items`, before any check reads the batch), and
+an item at any other key that `joined_parts` reads as several entries is refused by its field
+path. `list_flag_gaps` holds the table to the
 parser in both directions, which the suite's `lr1` asserts, so a repeating option added later
 cannot reach a door unread; a single-value option holding a comma list (`--skills`, `--outputs`,
-`--area`) is outside that walk and its readers split it themselves. `scope --gate-add` and
+`--area`) is outside that walk and its readers split it themselves, so its batch reading is a
+hand-written row of `CSV_FLAG_READINGS`, which the suite's `lb1` holds to the batch keys. `scope --gate-add` and
 `--gate-drop` start from the gate that grades the task (`_grading_gate`): the phase's `testGate`
 when the task declares none, unless the task's gate was cleared on purpose.
 
@@ -5948,7 +5951,9 @@ dated note in the close's own write. A past task's recorded gate is never rewrit
 **None of the reading runs with the index lock held.** Its listings can take tens of seconds,
 and every other lock taker waits a bounded time and is then refused. `add` and `scope` read
 the reach once the lock is released, from the plan they wrote, holding a `--json` payload
-back so the reading joins it as one object. `done` reads it before taking the lock and
+back so the reading joins it as one object. `add --from-file` does the same for every task it
+wrote (`_reach_ask_each`, one read of the written plan): each line carries the task's id after
+the lead, and `gateReach` and `gateReachNotAsked` are keyed by task id. `done` reads it before taking the lock and
 records the note only if the task still declares the files and gate that reading was of,
 else prints `WARNING: gate reach not recorded:` and writes none. The reading is advisory and
 fails open: an exception in it is one `WARNING: gate reach not asked: <why>` line
