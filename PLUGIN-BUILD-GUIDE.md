@@ -4040,7 +4040,10 @@ through `run_listing()` (the plan's node preamble and shell, stderr folded in, i
 group torn down by `_proc_group.stop_and_drain` on timeout, under `LISTING_TIMEOUT_SECONDS`
 and `GIT_TIMEOUT_SECONDS`), the tree's files are git's (`tree_files()`), and a `seen` dict
 carries what several gatherings over one tree ask once; `prefetch_listings()` runs a list of
-paths' listings side by side into it. And the selection widens rather than
+paths' listings side by side into it, and an interrupt landing while it waits stops every
+listing it started - each group torn down by `stop_and_drain` in the worker reading it, a
+listing not yet started never started - before the interrupt goes on (`af43`). And the
+selection widens rather than
 returning an empty selection: a listing that exits non-zero, a version mismatch,
 a `.py` change with no sources read, a changed path no arm reads, a changed file
 under a test directory that no arm selected (test support every suite may lean

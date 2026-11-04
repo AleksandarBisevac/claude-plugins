@@ -292,7 +292,8 @@ Usage:
 Exit codes:
   0  an instruction was printed - dispatch, decide or done; or, for `submit`,
      the return was filed; for `brief` and `--explain`, the text was printed;
-     for `restore`, the task tree's work was put back from its copy
+     for `restore`, the task tree's work was put back from its copy, or a
+     copy holding nothing to put back was dropped and the tree is settled
   1  a verb refused, or a filed return will not read: the drive stopped and the
      words that stopped it are printed; for `submit`, the return was refused and
      nothing was written; for `restore`, the work was not put back and the copy
@@ -11187,7 +11188,7 @@ def restore_tree(ctx, task_id):
     if said["restored"] is True:
         code, text = E_OK, ("%s %s: the work of %s put back into %s from its copy "
                             "(%s)%s; `next` goes on from here" % (
-                                PREFIX, ctx["phase"], task_id, tree,
+                                PREFIX, ctx["phase"], task_id, shown_tree(tree),
                                 ", ".join(said["paths"]) or "no path",
                                 " - %s" % (said["error"],) if said["error"] else ""))
     elif said.get("dropped") is True:
@@ -11195,7 +11196,8 @@ def restore_tree(ctx, task_id):
         # never the usage exit a state with no copy to act on answers with.
         code, text = E_OK, ("%s %s: the copy beside %s was dropped - %s; "
                             "`next` goes on from here" % (
-                                PREFIX, ctx["phase"], tree, said["error"]))
+                                PREFIX, ctx["phase"], shown_tree(tree),
+                                said["error"]))
     elif said["restored"] is None:
         code, text = E_USAGE, "%s %s: nothing restored - %s" % (
             PREFIX, ctx["phase"], said["error"])

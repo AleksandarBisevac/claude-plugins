@@ -7068,8 +7068,51 @@ def _unsettled_verb_cases(check):
               % ((said, M.E_USAGE),),
               [s[0] for s in said] == [M.E_USAGE, M.E_USAGE] == [2, 2]
               and all("nothing restored" in s[1] for s in said))
+
+        # The tree each settled outcome names is the shown spelling, the one
+        # the copy beside it is written in, so a Windows line never carries two
+        # separators. A marking spelling tells the converted name from the
+        # recorded one, which on this platform are the same bytes.
+        real_shown, real_restore = M.shown_tree, M._worktrees.restore_copy
+        outcomes = (
+            {"restored": True, "paths": ["src/a.txt"], "error": None},
+            {"restored": None, "dropped": True,
+             "error": "fixture: the copy held nothing to put back"})
+        lines = []
+        M.shown_tree = lambda path: "<shown %s>" % (path,)
+        try:
+            for said_one in outcomes:
+                M._worktrees.restore_copy = (
+                    lambda t, k, is_record=None, _s=said_one: dict(_s))
+                lines.append(M.restore_tree(ctx, "P1.1"))
+        finally:
+            M.shown_tree, M._worktrees.restore_copy = real_shown, real_restore
+        shown = "<shown %s>" % (tree,)
+        check("uv5 the restored line and the dropped line each name the tree "
+              "through its shown spelling, every time they name it: %r"
+              % (lines,),
+              [ln[0] for ln in lines] == [M.E_OK, M.E_OK]
+              and "put back into" in lines[0][1] and "dropped" in lines[1][1]
+              and all(ln[1].count(shown) == 1 and ln[1].count(tree) == 1
+                      for ln in lines))
     finally:
         _harness.remove_tree(base)
+    _usage_restore_exit_cases(check, M)
+
+
+def _usage_restore_exit_cases(check, M):
+    """The usage text's exit codes give `restore` an exit 0 for each outcome
+    the verb answers 0 with: work put back, and a copy dropped with nothing in
+    it to put back."""
+    doc = M.__doc__ or ""
+    codes = doc.split("Exit codes:", 1)[-1]
+    zero = re.search(r"\n  0  (.*?)\n  1  ", codes, re.S)
+    clause = " ".join(zero.group(1).split()) if zero else ""
+    restore = clause.split("for `restore`", 1)[-1] if "for `restore`" in clause \
+        else ""
+    check("rx1 the usage text's exit 0 for `restore` names the dropped copy "
+          "beside the work put back: %r" % (clause,),
+          "put back" in restore and "dropped" in restore)
 
 
 # A file a member and the phase both edit, on lines a three-way apply tells

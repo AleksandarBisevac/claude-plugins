@@ -20,6 +20,7 @@ can say which of them a source change reaches.
 
 import os
 import re
+import shlex
 import sys
 
 import _harness                                   # sets sys.path for scripts/ + hooks/
@@ -766,8 +767,10 @@ def _gather_cases(check):
         if hasattr(os, "killpg"):
             pid_file = os.path.join(tree, "grandchild.pid")
             started = time.time()
+            # Quoted: a temp directory with a space in it otherwise sends the
+            # pid to another file and leaves the case nothing to look for.
             res = M.run_listing(tree, {}, "sleep 30 & echo $! > %s; wait"
-                                % (pid_file,), 1)
+                                % (shlex.quote(pid_file),), 1)
             took = time.time() - started
             try:
                 with open(pid_file) as fh:
@@ -869,10 +872,107 @@ def _gather_cases(check):
         shutil.rmtree(tree, ignore_errors=True)
 
 
+def _pid_alive(pid):
+    """Whether `pid` names a live process that is not a zombie, asked of `ps`
+    so a pid this process did not start is still readable."""
+    import subprocess
+    got = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
+                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    state = got.stdout.decode("utf-8", "replace").strip()
+    return got.returncode == 0 and bool(state) and not state.startswith("Z")
+
+
+def _pids_in(path):
+    """The pids one per line in `path`, or [] while it is not written yet."""
+    try:
+        with open(path) as fh:
+            return [int(ln) for ln in fh.read().split() if ln.strip().isdigit()]
+    except OSError:
+        return []
+
+
+def _interrupt_cases(check):
+    """`af43`: an interrupt landing while a prefetch waits on its listings.
+    Every listing runs in a session of its own, so the interrupt the terminal
+    sends the verb's group never reaches one; the prefetch is what has to stop
+    them. Each listing starts a background grandchild that would outlive a
+    teardown of the shell alone, and a slow one, so a prefetch that waited the
+    listings out reads as a late return rather than as a pass."""
+    if not hasattr(os, "killpg"):
+        _harness.skip(check, "af43 an interrupted prefetch stops every listing",
+                      "posix", "no process groups or SIGINT delivery here")
+        return
+    import shutil
+    import signal
+    import tempfile
+    import threading
+    import time
+    tree = tempfile.mkdtemp(prefix="affected-interrupt-")
+    pid_file = os.path.join(tree, "grandchildren.pid")
+    paths = ["docs/a.md", "src/a.py"]
+    meta = {"phaseGate": {"derived": {"listing": {
+        "related": "sleep 6 & echo $! >> %s; wait # {paths}"
+                   % (shlex.quote(pid_file),)}}}}
+    stop = threading.Event()
+
+    def interrupt():
+        # Sent once every listing has started its grandchild, so the case
+        # judges a teardown of started groups and never a race with a start.
+        deadline = time.time() + 5
+        while not stop.is_set() and time.time() < deadline:
+            if len(_pids_in(pid_file)) >= len(paths):
+                break
+            time.sleep(0.05)
+        if not stop.is_set():
+            os.kill(os.getpid(), signal.SIGINT)
+    previous = signal.signal(signal.SIGINT, signal.default_int_handler)
+    sender = threading.Thread(target=interrupt)
+    raised, took = None, None
+    try:
+        started = time.time()
+        try:
+            sender.start()
+            M.prefetch_listings(tree, meta, paths, {"files": []})
+        except KeyboardInterrupt:
+            raised = "KeyboardInterrupt"
+        took = time.time() - started
+        stop.set()
+        sender.join()
+        pids = _pids_in(pid_file)
+        deadline = time.time() + 2
+        alive = [p for p in pids if _pid_alive(p)]
+        while alive and time.time() < deadline:
+            time.sleep(0.1)
+            alive = [p for p in alive if _pid_alive(p)]
+        check("af43 an interrupt during a prefetch stops every listing it "
+              "started - no grandchild survives it - and the call gives the "
+              "interrupt back near when it landed rather than when the "
+              "listings would have ended: %r"
+              % ((raised, round(took, 1), pids, alive),),
+              raised == "KeyboardInterrupt" and len(pids) == len(paths)
+              and not alive and took < 4)
+    except KeyboardInterrupt:
+        stop.set()
+        check("af43 an interrupt during a prefetch stops every listing it "
+              "started: the interrupt landed outside the prefetch", False)
+    finally:
+        stop.set()
+        if sender.is_alive():
+            sender.join()
+        signal.signal(signal.SIGINT, previous)
+        for pid in _pids_in(pid_file):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+        shutil.rmtree(tree, ignore_errors=True)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _gather_cases(check)
+        _interrupt_cases(check)
     return _harness.run(body)
 
 

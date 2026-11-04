@@ -1,0 +1,33 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__affected_tests.py tests/test_drive_phase.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-04T18:08:25Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__affected_tests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with 3 of 842 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - af43 (house FAIL), uv5 (house FAIL), rx1 (house FAIL): SELFTEST FAILED: 840/842 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "R16: _affected_tests.run_listing reads a stop from a ContextVar (_LISTING_STOP) that prefetch_listings sets inside each worker call. When a stop is set, the wait polls communicate every _STOP_POLL_SECONDS. Once the stop is seen, the worker that reads the pipe tears the group down with _proc_group.stop_and_drain (no second reader races the drain) and returns exit 130; a listing whose stop came before Popen never starts. prefetch_listings now submits futures, waits in 0.1 s steps (a signal the kernel hands a worker thread wakes no blocked main thread), and on BaseException sets the stop, cancels the pending futures, shuts the pool down and re-raises. run_listing keeps its four positional arguments because the recorder stubs in tests/test_run_test_gate.py and tests/test_audit_task.py (outside this task's files) replace it with that shape - that is why it is a context variable and not an argument. R17: the drive-phase usage text's exit-0 clause for restore also names a dropped copy. R18: restore_tree's restored and dropped lines name the tree through shown_tree(tree). R19: af38 and the new af43 wrote the pid file through an unquoted path, so under a spaced TMPDIR the redirect went to another file and the case read no grandchild. The teardown itself was right (exit -15, ended at 1.0 s). Both now quote with shlex.quote. Build guide: the _affected_tests facts paragraph states the interrupt teardown. Runs: gate `python3 tools/sweep-selftests.py tests/test__affected_tests.py tests/test_drive_phase.py` exit 0, 2/2 files ok; `sweep-selftests.py --spaced --encoding cp1252 tests/test__affected_tests.py` exit 0 (51 cases), and --spaced and --encoding cp1252 alone each 1/1 ok; test_run_test_gate, test_audit_task, test__proc_group, test__deps, test__output_lints, test__config: 6/6 files ok, exit 0; test__gate_derive, test_derive_phase_gate, test__filed_returns: 3/3 ok, exit 0; tools/gate-parity.py exit 0; ruff and vermin -t=3.8- over the four changed .py exit 0. Dependants: run-test-gate.py and audit-task.py are still correct, since run_listing/prefetch_listings keep their signatures and their suites are green. test__gate_derive, test_derive_phase_gate and test__filed_returns are green. drive-phase importers are unaffected: on posix shown_tree is the identity, so the text is byte-identical, and test_drive_phase is green. PLUGIN-BUILD-GUIDE.md is changed as described. Incident: while probing the spaced-redirect hypothesis I ran `rm -rf` over the scratchpad entries `sp ace` and `sp`, and `sp ace` already existed with a file `tt` in it. I deleted something that was not mine.",
+    "descriptive": "An interrupted prefetch now stops every listing it started and returns at once. restore's dropped exit 0 is documented, its tree is spelled natively, and the af38 fixture survives a spaced TMPDIR."
+  },
+  "testsAdded": [
+    "af43: SIGINT sent once both listings started their grandchild; the prefetch raises KeyboardInterrupt within 4 s and no grandchild survives (skipped by name on platforms without process groups)",
+    "uv5: restore_tree's restored and dropped lines name the tree only through shown_tree (marking stub)",
+    "rx1: the usage text's exit-0 clause for restore names the dropped copy beside the work put back"
+  ],
+  "casesAdded": [
+    [
+      "af43"
+    ],
+    [
+      "uv5",
+      "rx1"
+    ]
+  ],
+  "claims": "claims:\n1 _affected_tests.py run_listing poll loop + prefetch_listings except BaseException branch do what the new docstrings say; drive-phase.py restore_tree both lines call shown_tree; usage text exit-0 clause\n2 af43 red before fix (took 6.0) then green (took 0.1); uv5/rx1 red then green; af38 red under --spaced on base fixture, green quoted; af39-af42 stay green (over-fire direction: an un-interrupted prefetch still returns every answer)\n3 grep 'echo $!' in the suite: 2 hits (af38, af43) both quoted; grep of raw-tree format sites in drive-phase: 10 outside restore_tree left, other verbs and command text, out of this finding\n4 n/a - no rule to an agent\n5 af43 timing measured twice (0.1 s plain, green under spaced+cp1252); bound is 4 s against a 6 s listing\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:f9fa3f131e96d30fcae511cb5860b1c9af3e10f33bc5374f77037d0df55fddf8\",\"dirtyDigest\":\"sha256:f5c76545d78d6af38edd94b964f6a8cbf2628adc08750ec98ae3aef8144ebd94\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"52468113b94a2ab7\",\"plugins/audit/scripts/governance/_affected_tests.py\":\"6e24ab746b96f329\",\"plugins/audit/scripts/governance/drive-phase.py\":\"5deb6e5e783d0ce3\",\"tests/test__affected_tests.py\":\"c6ac7b2090f99434\",\"tests/test_drive_phase.py\":\"688899ece25a06ab\"},\"head\":\"ef099080\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/governance/_affected_tests.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test__affected_tests.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:a21ed71526fa92c32d7ef4d015712204c5f043f4b608f6effb52f0efe0749aef\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

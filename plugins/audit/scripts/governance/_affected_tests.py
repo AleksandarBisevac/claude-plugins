@@ -45,11 +45,14 @@ said, so a full-sweep key does not run the same suites again beside it.
 
 import ast
 import concurrent.futures
+import contextvars
 import os
 import posixpath
 import shlex
 import subprocess
 import sys
+import threading
+import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -1183,6 +1186,28 @@ PREFETCH_WORKERS = 8
 # listing answers with: the shell's own words for "not run" and "timed out".
 _COULD_NOT_RUN_EXIT = 127
 _TIMED_OUT_EXIT = 124
+# The shell's own exit for a command an interrupt stopped (128 + SIGINT).
+_INTERRUPTED_EXIT = 130
+# How often a listing run under a stop, and the prefetch waiting on its
+# listings, look up from the wait to read the stop and any interrupt.
+_STOP_POLL_SECONDS = 0.1
+# The stop a listing runs under, set by `prefetch_listings` inside each of its
+# worker calls. A worker thread never receives an interrupt - only the main
+# thread does - and a listing runs in a session of its own, so the terminal's
+# interrupt never reaches its group either: this is how the prefetch reaches a
+# listing it started. A context variable rather than an argument because
+# `run_listing`'s four arguments are the seam every caller's recorder replaces.
+_LISTING_STOP = contextvars.ContextVar("audit_listing_stop", default=None)
+
+
+def _stopped(stop):
+    return stop is not None and stop.is_set()
+
+
+def _interrupted(text):
+    return {"exit": _INTERRUPTED_EXIT,
+            "output": "%sstopped: the verb running this listing was interrupted"
+                      % ("%s\n" % (text,) if text else "",)}
 
 
 def run_listing(project, meta, command, timeout):
@@ -1191,24 +1216,43 @@ def run_listing(project, meta, command, timeout):
     and one that outlived its bound exit 124 (or the exit its stopped root
     gave), each with the output saying so, so no reader takes either for an
     answer: `_ran` and `_gate_derive.version_facts` read anything but 0 as no
-    answer."""
+    answer. Run under a stop (`_LISTING_STOP`), the wait looks up at the stop
+    every `_STOP_POLL_SECONDS`, and a stop seen is the group torn down and
+    exit 130 - or no start at all, when the stop came first."""
     meta = meta if isinstance(meta, dict) else {}
+    stop = _LISTING_STOP.get()
     wrapped = _evidence_io.resolved_commands(
         {"meta": {"nodePreamble": meta.get("nodePreamble")}}, [command])[0][1]
     argv, env, refusal = _proc_group.shell_invocation(wrapped)
     if argv is None:
         return {"exit": _COULD_NOT_RUN_EXIT,
                 "output": "could not run: %s" % (refusal,)}
+    if _stopped(stop):
+        return _interrupted("")
     kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.STDOUT}
     kwargs.update(_proc_group.group_kwargs())
     try:
         proc = subprocess.Popen(argv, cwd=project, env=env, **kwargs)
     except Exception as exc:
         return {"exit": _COULD_NOT_RUN_EXIT, "output": "could not run: %s" % (exc,)}
+    deadline = time.monotonic() + timeout
     try:
-        out, _err = proc.communicate(timeout=timeout)
-        return {"exit": proc.returncode,
-                "output": (out or b"").decode("utf-8", "replace")}
+        while True:
+            left = deadline - time.monotonic()
+            try:
+                # Retrying `communicate` after its timeout loses no output.
+                out, _err = proc.communicate(timeout=max(0, left) if stop is None
+                                             else max(0, min(left, _STOP_POLL_SECONDS)))
+                return {"exit": proc.returncode,
+                        "output": (out or b"").decode("utf-8", "replace")}
+            except subprocess.TimeoutExpired:
+                if _stopped(stop):
+                    # Torn down in the thread that reads the pipe, so the
+                    # drain never races a second reader of it.
+                    return _interrupted(_proc_group.stop_and_drain(proc)[0])
+                if time.monotonic() < deadline:
+                    continue
+                raise
     except subprocess.TimeoutExpired:
         text, _confirmed = _proc_group.stop_and_drain(proc)
         code = proc.returncode if proc.returncode not in (None, 0) \
@@ -1269,7 +1313,15 @@ def prefetch_listings(project, meta, paths, seen, workers=PREFETCH_WORKERS):
     """Run each recorded listing for each of `paths` ALONE, side by side, into
     `seen` - the answers a later `gather_facts([path], seen=seen)` reads
     instead of running. A project's listing can take seconds a path, and the
-    paths do not wait on one another."""
+    paths do not wait on one another.
+
+    AN INTERRUPT STOPS THEM ALL. It reaches the main thread alone, and each
+    listing runs in a session of its own, so on its way out the prefetch sets
+    the stop every listing runs under (`_LISTING_STOP`): each started group is
+    torn down by `_proc_group.stop_and_drain` in the worker reading it, a
+    listing not yet started never starts, and the pool is shut down before the
+    interrupt goes on. The wait looks up every `_STOP_POLL_SECONDS` because a
+    signal the kernel hands a worker thread wakes no blocked main thread."""
     ran = seen.setdefault("listings", {})
     commands = sorted(set(
         _gate_derive.listing_command(template, [path])
@@ -1277,12 +1329,32 @@ def prefetch_listings(project, meta, paths, seen, workers=PREFETCH_WORKERS):
         for path in paths) - set(ran))
     if not commands:
         return
-    with concurrent.futures.ThreadPoolExecutor(
-            max_workers=max(1, min(workers, len(commands)))) as pool:
-        answers = dict(zip(commands, pool.map(
-            lambda cmd: run_listing(project, meta, cmd, LISTING_TIMEOUT_SECONDS),
-            commands)))
-    for command, res in answers.items():
+    stop = threading.Event()
+
+    def under_stop(cmd):
+        token = _LISTING_STOP.set(stop)
+        try:
+            return run_listing(project, meta, cmd, LISTING_TIMEOUT_SECONDS)
+        finally:
+            _LISTING_STOP.reset(token)
+    pool = concurrent.futures.ThreadPoolExecutor(
+        max_workers=max(1, min(workers, len(commands))))
+    futures = []
+    try:
+        futures = [pool.submit(under_stop, cmd) for cmd in commands]
+        pending = set(futures)
+        while pending:
+            _done, pending = concurrent.futures.wait(
+                pending, timeout=_STOP_POLL_SECONDS)
+        answers = [(cmd, fut.result()) for cmd, fut in zip(commands, futures)]
+    except BaseException:
+        stop.set()
+        for fut in futures:
+            fut.cancel()
+        raise
+    finally:
+        pool.shutdown(wait=True)
+    for command, res in answers:
         ran[command] = dict(_gate_derive.listing_fact(res), command=command)
 
 
