@@ -200,7 +200,10 @@
         "tools/sweep-selftests.py",
         "plugins/audit/scripts/governance/stamp-verification.py",
         "tests/test__runner_collects.py",
-        "tests/test_stamp_verification.py"
+        "tests/test_stamp_verification.py",
+        "tests/test__config.py",
+        "tools/lints/_deps.py",
+        "tests/test__deps.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -219,17 +222,22 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-11-04T11:24:56Z",
+      "startedAt": "2026-11-04T12:06:38Z",
       "completedAt": null,
       "verifiedBy": [],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-04T12:21:19Z.840c80",
+        "status": "passed",
+        "at": "2026-11-04T12:21:19Z"
+      }
     },
     {
       "id": "P156.5",
@@ -277,7 +285,7 @@
     {
       "id": "P156.6",
       "title": "The maintainer tools' carried lows: plan-window's evidence boundary, a skipped Windows case named, affected's DEV_FILES rule, status suites green in a direct run",
-      "status": "in_progress",
+      "status": "done",
       "description": "Carried low findings P155-R50 and P155-R71 (docs/audit/phases/P155.json review.findings), plus two found outside any finding. R50: plan-window's docstring says it reads evidence with the renderer's reader and boundary, but render-report also passes full_run, which needs git; make the two agree or make the docstring state the boundary. R71: on Windows gate-parity's lw cases return after skipping lw5 alone, so lw5w disappears with no line; every skipped case is named. tools/affected.py prints 'NO RULE HERE MATCHES IT' for a tool listed in DEV_FILES; a DEV_FILES tool gets its own answer. tests/test_audit_status.py sl1-sl3 fail in a direct run outside the isolating sweep (green under the sweep); find what they lean on from the environment and make them self-contained. Answer each by id.",
       "files": [
         "tools/plan-window.py",
@@ -313,19 +321,39 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0e8e669df2a7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "P155-R50 (tools/plan-window.py): fixed by stating and printing the boundary rather than claiming it away. evidence()'s docstring now says it is the renderer's reading through the same reader and boundary minus the third place: render-report also passes full_run, a per-merged-phase verdict that asks git whether a full run's head contains the merge, and neither the snapshot nor the window is a checkout. New uncompared_third_place(manifest) returns the merged phases (_evidence_io.merged_phase) when the plan declares a runnable full gate (_evidence_io.full_gate_commands), [] otherwise; build() returns it as 'uncompared' (read off the window's assembled plan) and main() prints one line, before the drift branch: 'live plan window: the third-place verdict of N merged phase(s) is not compared (ids) - it asks git ...'. Exit codes unchanged. The module docstring says the same. Why not 'compare fullRun too': computing full_run on the snapshot answers UNKNOWN on both sides (no git under the scratch root), so a comparison would agree vacuously and repeat the finding's false agreement; a real comparison needs the source checkout's git root with the snapshot's rows, and the one resolution of that lives in render-report.py's _full_run_block, which hardwires one project for both and is outside this task's files. The same claim in tools/gate-parity.py _evidence_of's docstring was narrowed the same way. Tests: pw24 (plan with meta.fullGate and P1/P7 stamped merged -> exit 0, exactly one third-place line, '2 merged phase(s)', both ids, 'git'); pw25 twin (the same merged phases, no full gate -> no line). In-memory mutations (scratchpad probe, no file touched): uncompared -> [] makes pw24 red (24/25); predicate dropped (every merged phase named) makes pw25 red (24/25); control 25/25. P155-R71 (tools/gate-parity.py): the drive-named branch now skips every id in _LW_RUN_HALF = ('lw5','lw5w') with the same reason. New lw6 (via _live_window_skip_parity_cases, which replaces the direct call in _cases) runs the spelling cases for real, recording ids, then runs them again with a splitdrive stand-in forcing the skip branch into a pure recorder, and asserts the two id lists are equal and cover _LW_RUN_HALF; on a drive-reading platform lw6 is itself named skipped (the posix legs hold it). Observed here: running ['lw4','lw5','lw5w'] == skipping ['lw4','lw5','lw5w']. In-memory mutation _LW_RUN_HALF=('lw5',) -> lw6 False; control True. The other two skip sites in gate-parity (vsh5, vsh12) skip one case each and return nothing after, so they leave no id unnamed. The shell-None path still fails lw5 and returns before lw5w; that is a red case, so the suite is loud there, and it was left as is. DEV_FILES (tools/affected.py): a MIGRATED tool whose suite is found is now 'answered', and the gap line is written only for a tools/ file with no answer (elif not answered, was elif not own). New a10e reads _output_lints.DEV_FILES and asserts each tool selects its own suite and is never also told 'NO RULE HERE MATCHES IT'. It was red before the fix: 60/61, all three tools wrong. a10f is the over-fire twin: tools/redfirst.sh is still told the gap line. 61/61 after. `affected --files tools/plan-window.py` now prints only the suite line. a10c already existed, so the new ids are a10e and a10f. sl1-sl3 (tests/test_audit_status.py): the in-process half ran M.main with the live session's CLAUDE_CODE_SESSION_ID, so audit-status printed an 'orchestrator context: ...' line, while _cli's child had every CLAUDE* variable dropped. The sweep drops them for both sides, which is why the cases were green there. Fix: one predicate _session_var() shared by _cli and a new _main_loop_env() context manager, which strips those variables from os.environ for the block and restores them. _entry_views() computes the in-process side under it. New sl5 plants CLAUDE_CODE_SESSION_ID (_planted_session) and asserts the product sees it (orchestrator_context is not the no-session answer). sl6 asserts that, with the id planted, the in-process --short and bare renders equal _cli's byte for byte and carry no context line. That holds the comparison under the sweep too. Before the fix, sl6 was red with the context line in p_held. After: a direct run is 411/411, exit 0. Gates run in the task tree (<home>/dev/audit-plugin/claude-plugins-P156.6): the brief's sweep command -> '6/6 files ok, 1073 cases', exit 0; tools/sweep-selftests.py over tests/test__deps.py tests/test__output_lints.py tests/test__refs.py tools/affected.py tools/gate-parity.py -> 5/5 ok, exit 0; after the last docstring edit gate-parity + _refs + _output_lints -> 3/3 ok, exit 0; ruff check on the five edited files -> exit 0; vermin -t=3.8- on them -> exit 0; tools/prove-gates.py --list -> exit 0. Edited: tools/plan-window.py, tests/test_plan_window.py, tools/gate-parity.py, tools/affected.py, tests/test_audit_status.py. Declared but not edited: tools/prove-gates.py, tests/_harness.py, tests/test__affected_tests.py, tools/sweep-selftests.py, plugins/audit/scripts/governance/stamp-verification.py, tests/test__runner_collects.py, tests/test_stamp_verification.py, PLUGIN-BUILD-GUIDE.md. The affected cases went into tools/affected.py's own _cases, where that tool's cases live, not into test__affected_tests.py, which covers the plugin's _affected_tests module. TDD note: the plan-window implementation was read before pw24 was drafted, because the design depended on what the reader can answer; pw24 was still run red before the fix. DEPENDANTS: tools/affected.py's (.github/sweep-costs.json, test__affected_tests.py, test__gate_derive.py, test__refs.py, test_derive_phase_gate.py, bench-hooks.py, lints/_refs.py, measure-affected-miss.py, prove-gates.py's _call_name/reach_graph/_rel): still correct. No name, signature or selection changed; only one reason line is no longer emitted for a DEV_FILES tool, and a grep for 'NO RULE HERE' over the tree finds it only in tools/affected.py and in the audit record. test__affected_tests.py ran green in the gate. tests/test_audit_status.py's (sweep-costs, audit-status.py, affected.py, _live_copy.py, test__status_facts.py via _cases/_fixture/_selftest): still correct. _fixture, _cases and _selftest are unchanged; the new helpers are private to the suite. tools/plan-window.py's (test_plan_window.py, verify.sh, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md:79, gate-parity.py, _output_lints.py via _words): still correct. evidence(), disagreements(), _words and the exit codes are unchanged; build() gained one key; verify.sh's comment and CONTRIBUTING.md:508 claim no third-place comparison; the guide's tree line ('both evidence readings from one snapshot') still holds. On this repo's plan (no meta.fullGate) the new line is never printed: lw1 and lw2 green, 0 disagreements over 691 tasks. tests/test_plan_window.py's (gate-parity.py, plan-window.py, verify.sh, CONTRIBUTING.md): still correct, since _write_project only gained keyword arguments that default to the old behaviour. tools/gate-parity.py's (ci.yml, verify.sh's _live_window_cases, _areas.py, test_audit_task.py, affected.py, bench-hooks.py, _output_lints.py, measure-affected-miss.py and the rest): still correct. _live_window_cases is unchanged and still called; _live_window_spelling_cases gained an optional argument and is now called through _live_window_skip_parity_cases; prove-gates.py --list exit 0; gate-parity 128/128. tools/prove-gates.py, tests/_harness.py, tools/sweep-selftests.py, stamp-verification.py, test__runner_collects.py, test_stamp_verification.py, PLUGIN-BUILD-GUIDE.md: not edited, and none pins a string changed here. The four suites among them ran green in the gate.",
+        "descriptive": "plan-window now names the merged phases whose third-place verdict it does not compare, gate-parity names lw5w beside lw5 when it skips, affected stops calling a DEV_FILES tool unmatched, and sl1-sl3 pass in a direct run because both sides read one environment"
       },
       "startedAt": "2026-11-04T11:25:15Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-04T11:59:00Z",
+      "verifiedBy": [
+        "pw24: with a runnable meta.fullGate and kept merged phases, plan-window exits 0 and prints exactly one line naming those phases' third-place verdict as not compared, with the git reason",
+        "pw25: the same merged phases with no full gate declared get no such line (the over-say twin)",
+        "sl5: a planted CLAUDE_CODE_SESSION_ID reaches audit-status's context reading, so sl6 can fail",
+        "sl6: with the session id planted, the in-process --short and bare renders equal the main-loop command's output byte for byte",
+        "a10e (tools/affected.py): every DEV_FILES tool selects its own suite and is never also told no rule matches it",
+        "a10f (tools/affected.py): a tools/ file no arm reads still gets the gap line",
+        "lw6 (tools/gate-parity.py): the skip branch of the spelling cases names every case id the running branch reports"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-04T11:58:57Z.99089e",
         "status": "passed",
         "at": "2026-11-04T11:58:57Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "0e8e669df2a7",
+        "at": "2026-11-04T11:59:00Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-04T11:48:20Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_plan_window.py tests/test_audit_status.py tests/_harness.py tests/test__affected_tests.py tests/test__runner_collects.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 with 1 of 25 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pw24 (house FAIL): SELFTEST FAILED: 24/25 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -343,17 +371,18 @@
         "tests/test__config.py",
         "plugins/audit/hooks/_config.py",
         "plugins/audit/agents/audit-reviewer.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "tools/lints/_deps.py",
+        "tests/test__deps.py"
       ],
       "tests": {
         "mode": "tdd",
         "add": [
-          "tests/test_audit_lookup.py",
-          "tests/test__config.py"
+          "tests/test__deps.py"
         ],
         "expectRedFirst": true,
         "gate": [
-          "python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test__config.py tests/test_audit_task.py"
+          "python3 tools/sweep-selftests.py tests/test__deps.py tests/test_audit_lookup.py tests/test_audit_task.py tests/test__config.py"
         ],
         "gateBasis": "tests.add"
       },

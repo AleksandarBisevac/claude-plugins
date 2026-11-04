@@ -200,6 +200,26 @@ def _check_review(phase, pwhere, warnings):
 _gate_entries = _mio.declared_gate_entries
 
 
+def joined_entry_parts(value, names_entry):
+    """The parts of `value` when it is several entries joined by commas, else
+    None.
+
+    Several means two or more comma parts, and EVERY part, stripped, is one
+    `names_entry` accepts on its own. A comma that belongs to an entry - an
+    argument (`eslint a.ts,b.ts`), a sentence - leaves a part that names
+    nothing, so the value is one entry; so is a value with an empty part,
+    which is no list anybody spelled. The one reading of the shape for the
+    validator's joined-key warning below and for `audit-task.py`'s list-flag
+    reader, which refuses such a value rather than storing it whole.
+    """
+    if not isinstance(value, str) or "," not in value:
+        return None
+    parts = [p.strip() for p in value.split(",")]
+    if len(parts) < 2 or not all(p and names_entry(p) for p in parts):
+        return None
+    return parts
+
+
 def _comma_joined_gate(entries, build_keys, where, field):
     """Warnings for gate entries that are several `buildCommands` keys joined
     by commas into one string.
@@ -207,15 +227,16 @@ def _comma_joined_gate(entries, build_keys, where, field):
     The runner resolves an entry through `meta.buildCommands` WHOLE, so
     `"lint,test"` is not two keys - it is one shell command, which no shell
     can find. Named only when the entry is not itself a key and EVERY part of
-    it is one: a literal command may carry a comma (`eslint a.ts,b.ts`), and
-    an entry only part of which names a key is not this spelling.
+    it is one (`joined_entry_parts`): a literal command may carry a comma
+    (`eslint a.ts,b.ts`), and an entry only part of which names a key is not
+    this spelling.
     """
     out = []
     for entry in entries:
-        if entry in build_keys or "," not in entry:
+        if entry in build_keys:
             continue
-        parts = [p.strip() for p in entry.split(",")]
-        if all(p and p in build_keys for p in parts):
+        parts = joined_entry_parts(entry, lambda p: p in build_keys)
+        if parts:
             out.append(_output.finding(
                 "phases.comma_joined_gate.joined-keys",
                 "%s: %s entry %r is %d buildCommands keys joined by commas "
@@ -1984,10 +2005,13 @@ def _walk_phases(phases, build_keys=()):
                 w.append("%s: tests.gate is its phase's testGate verbatim - the "
                          "wide gate, re-run on every attempt of this task "
                          "instead of once at sign-off, and %s. Narrow it to the "
-                         "paths this task names, or - where the wide gate IS the "
-                         "answer here - say so in a way this check reads: both "
-                         "go through `/audit:task scope <id> --gate "
-                         "\"<command>\"`, which records who chose the list"
+                         "paths this task names with `/audit:task scope <id> "
+                         "--gate \"<command>\" --replace` - a narrowed list "
+                         "leaves out entries the task holds, which `scope` "
+                         "refuses without it - or, where the wide gate IS the "
+                         "answer here, declare it with `/audit:task scope <id> "
+                         "--gate \"<each entry of the phase gate>\"`, which "
+                         "drops nothing; either records who chose the list"
                          % (twhere,
                             ("nothing on the task records which derivation "
                              "produced it" if gate_basis is None

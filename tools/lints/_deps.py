@@ -2025,6 +2025,12 @@ GIT_PATH_BASE_EXEMPT = (
      "that same top through plan_to_git and returns the listed paths its "
      "outputs patterns cover in that listing's own spelling; no plan entry "
      "is compared in another spelling"),
+    ("audit-task.py", "_commit_touches",
+     "the closing commit's paths, which git diff-tree names from the "
+     "checkout's top, are handed whole to _config.declared_git_rels as its "
+     "changed listing, the spelling that function reads; it spells the "
+     "task's files entries from that same top through plan_to_git, so no "
+     "plan entry is compared in another spelling"),
     ("drive-phase.py", "_seed_from_index",
      "copies one tree's index entries into a scratch index of that same tree; "
      "the paths pass from git to git unread"),

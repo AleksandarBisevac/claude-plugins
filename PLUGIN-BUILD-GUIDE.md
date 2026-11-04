@@ -2412,7 +2412,10 @@ the way. `_walk_phases` visits each object once and returns a five-key **index**
 (`phase_ids`, `task_ids`, `task_by_id`, `task_files`, `bug_links`) that every check in
 `_manifest_crossrefs` then reads — naming that index is what let the walk be cut out at all.
 It stays one pass on purpose: splitting it per-question would visit every task four times
-and would let two of them disagree about which objects were skipped as malformed. Also the
+and would let two of them disagree about which objects were skipped as malformed.
+`joined_entry_parts(value, names_entry)` is the one reading of "several entries joined by
+commas" - two or more parts, each naming an entry on its own - shared by the joined-keys gate
+warning here and `audit-task.py`'s list-flag reader. Also the
 per-phase rules a schema cannot express — a parallel-run `claim` left on a finished phase,
 an `area` that normalises to no tags at all, a `budgetUSD` of zero, and a phase marked done
 over tasks that are not **finished** (done *or* cancelled).
@@ -5722,6 +5725,19 @@ the explicit JSON-null opt-out (v0.37 B1); a held lock prints audit-lock's own m
 suite, its cases in the file they test — makes the task `regression` and says why in a note
 (`_inline_suite_discipline`); `scope` gives the same default to a task whose mode is absent or
 `gate-only`, and leaves one somebody made `tdd` alone.
+
+**Every option that repeats is read once, by `read_list_flags`, before any verb's door.**
+`LIST_FLAG_READINGS` gives each such option a reading: `split` for the id and path lists, where
+a comma separates entries, and a one-entry-per-flag reading for `--tests-add`, the gate flags,
+`--waive`, `--accept-open` and `--carried`, whose entries may carry a comma of their own. A value
+of the second kind whose every comma part reads as an entry - `_manifest_phases.joined_entry_parts`,
+the predicate the validator's joined-keys warning reads too - is refused, naming the repeated
+spelling, never split on a guess and never stored whole. `list_flag_gaps` holds the table to the
+parser in both directions, which the suite's `lr1` asserts, so a repeating option added later
+cannot reach a door unread; a single-value option holding a comma list (`--skills`, `--outputs`,
+`--area`) is outside that walk and its readers split it themselves. `scope --gate-add` and
+`--gate-drop` start from the gate that grades the task (`_grading_gate`): the phase's `testGate`
+when the task declares none, unless the task's gate was cleared on purpose.
 
 **`add-phase "<title>" --outcome "<…>"` is the same discipline one noun up** — the writer
 behind `/audit:phase add`, and the answer to the one thing nothing in this tree could do:

@@ -112,7 +112,9 @@ with `/audit:bug add` first.
 `--tests-mode`, `--blocked-by` and `--depends-on` all keep the old refusal; `--files` and
 `--tests-add` may only grow, and `tests.gate` may be replaced outright - it is read forwards only.
 A `--gate` list leaving out an entry the task holds is refused without `--replace`; `--gate-add`
-appends. The success line prints the gate the task now holds.
+appends - to the phase's `testGate` on a task with no gate of its own. The success line prints
+the gate the task now holds. `--gate*`, `--tests-add` and `--waive` take one entry per flag: a
+value whose every comma part reads as an entry is refused, naming the repeated spelling.
 
 ## Subcommand: `move <taskId> --to <phaseId>`
 

@@ -171,8 +171,30 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   held. The case ids it binds come from the run that printed them. `add` defaults a task whose
   only `tests.add` entries are support modules to `regression`, and an explicit `--tests-mode tdd`
   over that shape is kept with a note saying why.
+- **Every `audit-task.py` flag that repeats is read by one reader, so a comma means one thing
+  per flag.** The id and path lists (`--files`, `--blocked-by`, `--depends-on`, `--verified-by`,
+  `--fixes`, `--introduces`, `--sources`, `--phases`, and now `signoff --accept`) split on
+  commas. `--tests-add`, `--gate`, `--gate-add`, `--gate-drop`, `--gate-set`, `--waive`,
+  `--accept-open` and `--carried` take one entry per flag: a value whose every comma part reads
+  as an entry (a file, a `meta.buildCommands` key, a waiver, a `<findingId>=<text>` pair) is
+  refused before any write, naming the repeated spelling. It used to be stored as one entry -
+  `add --tests-add a.py,b.py` wrote the path `a.py,b.py`, and `add-phase --gate a,b,c` one gate
+  command no shell can find. A comma inside an entry is kept.
+- **A fix task whose finding leads with a test file is `regression`, not `tdd`.** That finding
+  is a fix to the test, so a red run - the strengthened test over HEAD's code - has nothing to
+  go red against; the task's note says to show the red by mutation.
 
 ### Fixed
+- **`scope --gate-add` on a task with no gate of its own keeps the phase gate that grades it.**
+  It wrote the added entry alone, so the gate measuring the task shrank to it; it now appends
+  to the phase's `testGate` entries, and `--gate-drop` drops from them. A gate cleared on
+  purpose is not seeded.
+- **The wide-gate warning prescribes a call `scope` accepts.** Narrowing takes
+  `--gate "<command>" --replace`; declaring the wide gate restates the phase's entries.
+- **A task whose work is its own `outputs` can close.** The close's evidence check read the
+  task's `files` alone, so a `files: []` task with an `outputs` pattern was refused as carrying
+  no change over the commit that held its work; it now reads both halves, as the task commit
+  does.
 - **HEAD is read one way.** An empty loose ref file - left by a crash - is asked of git instead of
   being answered from a packed ref it no longer agrees with, and `/audit:doctor` and the brief's
   lookup read HEAD as the commit verbs do. A pathspec the batch matcher cannot reproduce - a

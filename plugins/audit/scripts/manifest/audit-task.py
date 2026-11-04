@@ -4121,6 +4121,21 @@ def _fix_clauses(by_finding, suites):
     return clauses, bare
 
 
+def _leads_with_test(by_finding):
+    """Whether every finding's `file` text LEADS with a test file - the first
+    path it names, where a reviewer puts the defect.
+
+    WHERE THE FIX LIVES CHOOSES THE MODE. A finding that a case passes
+    without the fix is a fix to that case: the red-first helper lays the
+    task's test files over HEAD's code, and HEAD's code is the code the fix
+    leaves alone, so a strengthened test passes there and the red cannot be
+    shown that way. The lead and not every path, because such a finding
+    names the source the case drives beside it, and reading every path would
+    turn each fix whose source is named first into regression too."""
+    return bool(by_finding) and all(
+        f.get("paths") and _fr.is_test_path(f["paths"][0]) for f in by_finding)
+
+
 def _fix_task_args(args, targets, project, fixes, records=()):
     """`(args, notes)` for a task fixing the findings `targets` (`fixes`, their
     ids): `args` copied, widened onto every path the findings name, with the
@@ -4129,7 +4144,9 @@ def _fix_task_args(args, targets, project, fixes, records=()):
 
     A FIX TASK IS SCOPED FROM ITS FINDINGS. A finding naming a test file that
     does not exist yet, or whose resolution says to add a test, is a red-first
-    task with that file as its case. Otherwise the mode is the one a bug's fix
+    task with that file as its case. One whose `file` text leads with a test
+    file is a fix to that test (`_leads_with_test`) and is regression, its red
+    shown by mutation. Otherwise the mode is the one a bug's fix
     task is given (`_paths_discipline`): regression when every path is a test,
     else tdd - a fix task used to default to gate-only, and a finding asking
     for a new test was handed a gate that could not run it. Gate-only is the
@@ -4197,6 +4214,17 @@ def _fix_task_args(args, targets, project, fixes, records=()):
         args.tests_mode = "tdd"
         notes.append("tdd, not gate-only: %s is a test the finding(s) ask for "
                      "that does not exist yet" % ", ".join(scope["newTests"]))
+    elif args.tests_mode is None and _leads_with_test(scope["byFinding"]):
+        args.tests_mode = "regression"
+        notes.append(
+            "regression, not tdd: %s lead%s with the test file %s, so the fix "
+            "lives in the test - a red run lays the strengthened test over "
+            "HEAD's code, which the fix does not change, so it has nothing to "
+            "go red against; show the red by mutation - break the line the "
+            "case covers, watch it fail, restore"
+            % (", ".join(fixes), "s" if len(fixes) == 1 else "",
+               ", ".join(sorted(set(f["paths"][0]
+                                    for f in scope["byFinding"])))))
     elif args.tests_mode is None and sources and len(documents) == len(sources):
         args.tests_mode = "gate-only"
         notes.append(
@@ -7431,16 +7459,25 @@ def _uncommitted_leftovers(project, config, mpath, raw_index, git_root, plan,
     return left, changes["during"], changes["basis"], changes["pluginOwned"]
 
 
-def _commit_touches(project, git_root, task, sha):
-    """Whether commit `sha` changes any file `task` declares - None when git
-    will not list what it changed."""
+def _commit_touches(project, git_root, plan, task, sha):
+    """Whether commit `sha` changes anything `task` declares - None when git
+    will not list what it changed.
+
+    BOTH HALVES OF WHAT THE TASK DECLARES, through the commit's own reading
+    (`_config.declared_git_rels`, `only` this task, over the paths the commit
+    changed): its `files`, and each changed path its honoured `outputs`
+    patterns cover. Read off `files` alone, a task whose work is its own
+    outputs - `files: []` and a pattern - was refused here as carrying no
+    change over the very commit the task commit had staged as its work."""
     code, listed = _git_answer(git_root, "diff-tree", "--no-commit-id",
                                "--name-only", "-r", "-z", "--root", sha)
     if code != 0:
         return None
-    mine = _declared_rels(project, git_root, task)
-    return any(_touts.covers(rel, path) for path in (listed or "").split("\0")
-               if path.strip() for rel in mine)
+    changed = [path for path in (listed or "").split("\0") if path.strip()]
+    hc = _loader.load_hooks_config(modname="audit__config")
+    mine = hc.declared_git_rels(plan, project, git_root, also=[task.get("id")],
+                                only=task.get("id"), changed=changed)
+    return any(_touts.covers(rel, path) for path in changed for rel in mine)
 
 
 def _filing_rows(project, config, mpath):
@@ -7478,7 +7515,11 @@ def _close_evidence_refusal(project, mpath, git_root, task, sha, verified,
         return mismatch
     _text, executor, _problem, _unchecked = _fr.read_filed_return_checked(
         path, rows, project)
-    changed = _commit_touches(project, git_root, task, sha) if verified else None
+    plan = (attempt or {}).get("plan")
+    if plan is None and verified:
+        plan = _mio.load_manifest(mpath)
+    changed = (_commit_touches(project, git_root, plan, task, sha)
+               if verified else None)
     work = (_scoped_commit.declared_work(task, project, git_root,
                                          attempt["records"])
             if attempt and verified else [])
@@ -10353,6 +10394,27 @@ def _held_gate(node):
     return list((tests.get("gate") if isinstance(tests, dict) else None) or [])
 
 
+def _grading_gate(node, phase):
+    """`(entries, source)` - the gate a `scope` gate flag keeps or changes:
+    the task's own stored list, or, when it declares none, the phase's
+    `testGate` entries that grade it (`_mio.gate_entries`, `source`
+    `"phase"`).
+
+    THE STORED LIST ALONE LOST THE PHASE'S ENTRIES. A task with no gate of its
+    own is measured by its phase's, so `--gate-add Y` read off the empty
+    stored list wrote `[Y]` and the gate grading the task shrank to one
+    entry, under a flag documented as keeping every entry. Read off this,
+    `--gate-add` appends to the phase's entries and `--gate-drop` drops from
+    them; `--gate` writes the task's own list whole, which is why its
+    refusal (`_scope_gate_refusal`) reads the stored list instead. A gate
+    CLEARED on purpose is the task's own empty answer, so nothing is seeded
+    over it."""
+    entries, source = _mio.gate_entries(phase, node)
+    if source == "phase" and entries:
+        return list(entries), "phase"
+    return _held_gate(node), "task"
+
+
 def _gate_added(args, held):
     """The `--gate-add` entries a write appends: each one once, in the order
     given, and none the task already holds - so an add of a held entry moves
@@ -10383,6 +10445,12 @@ def _scope_gate_refusal(args, tid, node):
     the other four as `_retarget_gate_contradiction` refuses two of those; and
     `--replace` qualifies `--gate` alone, so a call carrying it with no
     `--gate` is refused rather than read as meaning something else.
+
+    THE HELD ENTRIES ARE THE STORED LIST, on purpose and unlike `--gate-add`'s
+    start (`_grading_gate`). `--gate` writes the task's own gate whole, and on
+    a task declaring none that is the first declaration of one - the call
+    `scope` exists for on an imported task - so there is no entry it holds to
+    drop; the success line prints the list the task holds afterwards.
     """
     passed = _scope_gate_flags(args)
     if args.gate_add and len(passed) > 1:
@@ -10708,7 +10776,11 @@ def _locked_scope(args, project, config, mpath, tid, out):
     # defect in the writer, which is the half that makes it hard to read.
     # An add whose every entry is already held writes nothing, the basis
     # included: the gate already reads the way the call asks.
-    added = _gate_added(args, was_gate)
+    # `--gate-add` and `--gate-drop` start from the gate grading the task, which
+    # is its phase's when it declares none (`_grading_gate`); `was_gate` stays
+    # the stored list, which is what the journal row's `from` records.
+    grading = _grading_gate(node, phase)[0]
+    added = _gate_added(args, grading)
     gate_writes = bool(args.gate or args.gate_clear
                        or args.gate_set is not None or args.gate_drop or added)
     tests_writes = (args.tests_mode is not None or bool(args.tests_add)
@@ -10800,10 +10872,10 @@ def _locked_scope(args, project, config, mpath, tid, out):
             companions = []
     if gate_writes:
         if added:
-            now_gate, gate_refusal = was_gate + added, None
+            now_gate, gate_refusal = grading + added, None
         else:
             now_gate, gate_refusal = _retarget_gate_now(
-                args, was_gate, "this task's tests.gate")
+                args, grading, "this task's tests.gate")
         if gate_refusal:
             out(gate_refusal)
             return E_USAGE
@@ -15774,6 +15846,15 @@ def _list_help(what, example, empties=True):
                else ""))
 
 
+def _entry_help(lead):
+    """The `--help` text of a list flag taking one entry per flag: its entries
+    may carry a comma of their own, so a comma splits nothing, and a value
+    whose every comma part reads as an entry is refused (`read_list_flags`)."""
+    return ("%s; one entry per flag, repeat it for several - a value whose "
+            "every comma-joined part reads as an entry on its own is refused, "
+            "never stored as one" % (lead,))
+
+
 def build_parser():
     """The parser, reachable without starting a process.
 
@@ -15834,9 +15915,10 @@ def build_parser():
     # declaration; recorded as a dated note. Repeatable, one value per flag.
     p.add_argument("--waive", action="append", default=None,
                    metavar="PATH: WHY",
-                   help="scope: `<path>: <why this task's change cannot reach "
-                        "it>` - a reader `start` names that the task will not "
-                        "edit; the flag may repeat")
+                   help=_entry_help(
+                       "scope: `<path>: <why this task's change cannot reach "
+                       "it>` - a reader `start` names that the task will not "
+                       "edit"))
     p.add_argument("--risk", choices=["low", "med", "high"], default=None)
     p.add_argument("--blocked-by", dest="blocked_by", action="append", default=None,
                    help=_list_help("task, phase or decision ids",
@@ -15865,8 +15947,13 @@ def build_parser():
     p.add_argument("--tests-mode", dest="tests_mode",
                    choices=["tdd", "regression", "gate-only"], default=None)
     p.add_argument("--tests-add", dest="tests_add", action="append",
-                   default=None)
-    p.add_argument("--gate", action="append", default=None)
+                   default=None,
+                   help=_entry_help("add, scope: a `<path>: <what it asserts>` "
+                                    "entry"))
+    p.add_argument("--gate", action="append", default=None,
+                   help=_entry_help("add, add-phase, retarget, scope: a gate "
+                                    "entry - a meta.buildCommands key or a "
+                                    "command"))
     # `retarget` AND `scope`, for the SAME reason: `--gate` REPLACES on both a
     # phase and a task, and the gap is that no VALUE of it spells "none" -
     # `--gate ""` writes a gate holding an empty command, which is a gate that
@@ -15894,16 +15981,22 @@ def build_parser():
     # stands (a manifest written before the flag, and again after it).
     p.add_argument("--gate-drop", dest="gate_drop", action="append",
                    default=None,
-                   help="retarget, scope: drop one gate entry (repeatable)")
+                   help=_entry_help("retarget, scope: drop one gate entry"))
     p.add_argument("--gate-set", dest="gate_set", nargs="*", default=None,
-                   help="retarget, scope: replace the gate with these entries")
+                   help="retarget, scope: replace the gate with these entries, "
+                        "one per word - a word whose every comma-joined part "
+                        "is a meta.buildCommands key is refused, never stored "
+                        "as one")
     # `scope` only. The way to grow a task's gate without restating it: a lone
     # `--gate` that leaves out an entry the task holds is refused unless
     # `--replace` says the drop is meant (`_scope_gate_refusal`).
     p.add_argument("--gate-add", dest="gate_add", action="append",
                    default=None,
-                   help="scope: append a gate entry, keeping every entry the "
-                        "task holds (repeatable)")
+                   help=_entry_help(
+                       "scope: append a gate entry, keeping every entry of the "
+                       "gate that grades the task - a task with no gate of its "
+                       "own starts from its phase's testGate, and one whose "
+                       "gate was cleared from nothing"))
     p.add_argument("--project-dir", dest="project_dir", default=None)
     p.add_argument("--reason", default=None, help=_PROSE_HELP)
     p.add_argument("--verdict", default=None, choices=list(_mio.SIGNOFF_VERDICTS),
@@ -15916,18 +16009,20 @@ def build_parser():
     p.add_argument("--plan", action="store_true", default=False,
                    help="signoff: print what a group sign-off owes, write nothing")
     p.add_argument("--accept", action="append", default=None, metavar="SHA",
-                   help="signoff: a commit on a group's branch no member records, "
-                        "taken into its review; needs --reason")
+                   help="signoff: " + _list_help(
+                       "commits on a group's branch no member records, taken "
+                       "into its review; needs --reason", "--accept a1b2c3,d4e5f6",
+                       empties=False))
     p.add_argument("--bind", action="store_true", default=False,
                    help="signoff: record a group's branch and baseRef, nothing else")
     p.add_argument("--accept-open", dest="accept_open", action="append",
                    default=None, metavar="FINDING=REASON",
-                   help="signoff: leave an open finding open, on the human's "
-                        "recorded reason (repeatable)")
+                   help=_entry_help("signoff: leave an open finding open, on "
+                                    "the human's recorded reason"))
     p.add_argument("--carried", action="append", default=None,
                    metavar="FINDING=ID",
-                   help="signoff: an open finding now carried by this bug or "
-                        "task of the plan (repeatable)")
+                   help=_entry_help("signoff: an open finding now carried by "
+                                    "this bug or task of the plan"))
     p.add_argument("--no-evidence-reason", dest="no_evidence_reason", default=None,
                    metavar="TEXT", help=_PROSE_HELP)
     # add-phase only. `--id` rather than a positional: the title is the
@@ -16172,6 +16267,190 @@ def option_dests(parser=None):
         longest = [f for f in action.option_strings if f.startswith("--")]
         out[action.dest] = longest[0] if longest else action.option_strings[0]
     return out
+
+
+# --- the list flags: one reader for every option taking several values -------
+# A list flag's value joined by commas used to mean two things across the flags
+# of one verb: `--files a,b` read as two paths, while `--tests-add a.py,b.py`
+# stored the one entry `a.py,b.py` and `--gate a,b,c` stored three build keys as
+# one shell command. So every option taking several values has a row here
+# naming how its values are read, and `_dispatch` hands each of them to
+# `read_list_flags` before any verb's door runs:
+#
+# - `split`: identifiers and paths, which carry no comma of their own, so the
+#   comma separates entries - `_split_csv`'s reading, applied once, here.
+# - every other reading: one entry per flag, because an entry may carry a comma
+#   of its own (a command's argument, a sentence). A value whose every comma
+#   part reads as an entry of that flag (`_phases.joined_entry_parts`) is
+#   refused, naming the spelling once per entry - never split on a guess, and
+#   never stored whole.
+#
+# `list_flag_gaps` holds this table to the parser in both directions, and the
+# suite's `lr1` reports either gap by name, so a list option added later
+# cannot reach a door without a row. What that walk cannot see is a
+# single-value option whose value is a comma list (`--skills`, `--outputs`,
+# `--area`): argparse records nothing that tells such a value from prose, and
+# each of their readers calls `_split_csv` itself.
+LIST_FLAG_READINGS = {
+    "files": "split", "blocked_by": "split", "depends_on": "split",
+    "verified_by": "split", "sources": "split", "phases": "split",
+    "fixes": "split", "introduces": "split", "accept": "split",
+    "tests_add": "tests-add",
+    "gate": "gate", "gate_add": "gate", "gate_drop": "gate",
+    "gate_set": "gate",
+    "waive": "waiver",
+    "accept_open": "pair", "carried": "pair",
+}
+
+_PAIR_PART = re.compile(r"\A[^\s=,]+=\S")
+
+
+def _part_names_file(part, _keys):
+    """A `tests.add` part naming a file, in the field's own reading."""
+    return _rules.tests_add_path(part) is not None
+
+
+def _part_is_key(part, keys):
+    """A gate part that is a `meta.buildCommands` key."""
+    return part in keys
+
+
+def _part_is_waiver(part, _keys):
+    """A `--waive` part of the `<path>: <why>` shape, its path one word."""
+    match = _WAIVER.match(part)
+    return bool(match) and not re.search(r"\s", match.group(1).strip())
+
+
+def _part_is_pair(part, _keys):
+    """A `<findingId>=<text>` part."""
+    return bool(_PAIR_PART.match(part))
+
+
+# reading -> (the part predicate, what a part that passes it is)
+_ENTRY_READINGS = {
+    "tests-add": (_part_names_file, "each part names a file"),
+    "gate": (_part_is_key, "each part is a meta.buildCommands key"),
+    "waiver": (_part_is_waiver, "each part is a `<path>: <why>` waiver"),
+    "pair": (_part_is_pair, "each part is a `<findingId>=<text>` pair"),
+}
+
+
+def _takes_several(action):
+    """Whether argparse collects several values for this option."""
+    if not action.option_strings:
+        return False
+    if type(action).__name__ in ("_AppendAction", "_ExtendAction"):
+        return True
+    nargs = action.nargs
+    return nargs in ("*", "+") or (isinstance(nargs, int) and nargs > 1)
+
+
+def list_flag_gaps(parser=None, readings=None):
+    """`{"unread": [flag], "stale": [dest]}` - the options taking several
+    values that `readings` (`LIST_FLAG_READINGS` by default) has no row for,
+    and the rows naming no such option. Both empty is the table and the
+    parser agreeing; either list non-empty is a list flag the shared reader
+    would not see, or a row reading nothing."""
+    readings = LIST_FLAG_READINGS if readings is None else readings
+    parser = parser or build_parser()
+    spelled = option_dests(parser)
+    several = dict((a.dest, spelled.get(a.dest, a.dest))
+                   for a in getattr(parser, "_actions", ())
+                   if _takes_several(a))
+    return {"unread": sorted(flag for dest, flag in several.items()
+                             if dest not in readings),
+            "stale": sorted(dest for dest in readings if dest not in several)}
+
+
+def _split_list_values(values):
+    """`--files a,b`'s reading of one list option's values: each value split
+    on commas, an empty part dropped. A `+` opening a value opens each of its
+    parts that carries no operator of its own, which is `_files_delta`'s
+    reading of an additive value - a part opening with `+` or `-` keeps it,
+    so the `--files` refusals still name what was typed - and a value
+    yielding no part is kept as given: `--depends-on ""` is how a field is
+    emptied, and its readers ask for the value, not for a part of it."""
+    out = []
+    for value in values:
+        text = value.strip() if isinstance(value, str) else None
+        lead = "+" if text and text.startswith("+") else ""
+        parts = _split_csv(text[1:] if lead else text) if text else []
+        if not parts:
+            out.append(value)
+            continue
+        out.extend(p if p.startswith(("+", "-")) else lead + p for p in parts)
+    return out
+
+
+def _joined_refusal(dest, reading, value, parts):
+    """The refusal for a one-entry-per-flag value that reads as several."""
+    parser = build_parser()
+    flag = option_dests(parser).get(dest, dest)
+    action = next((a for a in parser._actions if a.dest == dest), None)
+    if action is not None and action.nargs in ("*", "+"):
+        spelled = "%s %s" % (flag, " ".join(shlex.quote(p) for p in parts))
+    else:
+        spelled = " ".join("%s %s" % (flag, shlex.quote(p)) for p in parts)
+    return ("[audit-task] %s takes one entry per flag, and %r reads as %d "
+            "entries joined by commas (%s) - a comma joins nothing here, so "
+            "the value would be stored as one entry. Pass each entry on its "
+            "own: %s. Nothing written."
+            % (flag, value, len(parts), _ENTRY_READINGS[reading][1], spelled))
+
+
+def read_list_flags(args, build_keys=()):
+    """`({dest: values}, refusal)` - every list option `args` carries, read
+    through its `LIST_FLAG_READINGS` row: a `split` row's values split, any
+    other row's values as given. `refusal` is the line for the first value
+    that reads as several entries of a one-entry-per-flag option, and None
+    when there is none. `build_keys` are the plan's `meta.buildCommands`
+    keys, the entries a gate part may name. `args` is not changed; the
+    caller sets what comes back."""
+    values = {}
+    for dest, reading in sorted(LIST_FLAG_READINGS.items()):
+        raw = getattr(args, dest, None)
+        if raw is None:
+            continue
+        raw = list(raw) if isinstance(raw, (list, tuple)) else [raw]
+        if reading == "split":
+            values[dest] = _split_list_values(raw)
+            continue
+        names = _ENTRY_READINGS[reading][0]
+        for value in raw:
+            if reading == "gate" and value in build_keys:
+                continue
+            parts = _phases.joined_entry_parts(
+                value, lambda part: names(part, build_keys))
+            if parts:
+                return values, _joined_refusal(dest, reading, value, parts)
+        values[dest] = raw
+    return values, None
+
+
+def _gate_build_keys(args):
+    """The plan's `meta.buildCommands` keys when a gate flag's value holds a
+    comma, else `()` with no read at all.
+
+    READ BEFORE THE LOCK AND FOR ONE QUESTION, whether a gate value is keys
+    joined by commas; the verb's door reads the plan again under the lock
+    for everything it writes. A plan this cannot read gives `()`, so no gate
+    value reads as joined keys - the door that follows refuses a missing or
+    broken plan in its own words."""
+    gate_values = [v for dest, reading in LIST_FLAG_READINGS.items()
+                   if reading == "gate"
+                   for v in (getattr(args, dest, None) or [])]
+    if not any("," in str(v) for v in gate_values):
+        return ()
+    try:
+        project = _resolve_project(args)
+        config = _panel_write.read_config(project)
+        mpath = (os.path.abspath(args.manifest) if args.manifest
+                 else _panel_write._manifest_path(project, config))
+        meta = _mio.load_manifest(mpath).get("meta") or {}
+    except Exception:
+        return ()
+    keys = meta.get("buildCommands") if isinstance(meta, dict) else None
+    return tuple(sorted(keys)) if isinstance(keys, dict) else ()
 
 
 def phase_flag_map(parser=None):
@@ -16461,6 +16740,16 @@ def _dispatch(args, argv, out):
     # BEFORE the machine-path door below: a manifest `--gate-set` swallowed is
     # an absolute path on a good day, and would be refused there as a gate.
     _manifest_beside_gate_set(args)
+    # EVERY LIST OPTION, READ ONCE AND HERE, before any door: after the
+    # manifest `--gate-set` swallowed is handed back, so a plan path is never
+    # read as a gate value, and before the doors, which then see the values
+    # as the one reader left them (`LIST_FLAG_READINGS`).
+    values, refusal = read_list_flags(args, _gate_build_keys(args))
+    if refusal:
+        out(refusal)
+        return E_USAGE
+    for dest, value in values.items():
+        setattr(args, dest, value)
     stop = resolve_briefs(args, out)
     if stop is None:
         stop = resolve_verbatim_values(args, out)

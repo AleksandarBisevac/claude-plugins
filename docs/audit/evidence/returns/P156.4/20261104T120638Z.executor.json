@@ -1,0 +1,52 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py tests/test__scoped_commit.py tests/test__manifest_rules.py tests/_harness.py tests/test__affected_tests.py tests/test__runner_collects.py tests/test_stamp_verification.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test__config.py tests/test__deps.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_close_phase.py tests/test__invariants.py tests/test__doctor_trail.py tests/test_run_test_gate.py tests/test_full_gate.py tests/test_commit_task_work.py tests/test__output_lints.py tests/test__help.py tests/test__refs.py tests/test_validate_manifest.py tests/test_derive_phase_gate.py tests/test_repair_tests_add.py": "pass",
+    "ruff check plugins/audit tools tests .claude/hooks": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-04T12:15:33Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py tests/test__scoped_commit.py tests/test__manifest_rules.py tests/_harness.py tests/test__affected_tests.py tests/test__runner_collects.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 with 5 of 1228 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - tg13 (house FAIL), lo-ce7 (house FAIL), bx14 (house FAIL), gk12 (house FAIL), gk13 (house FAIL): SELFTEST FAILED: 1223/1228 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "ATTEMPT 2, in the redo tree at base 0e8e669d. The attempt-1 change set was carried in staged (8 files; read_list_flags, _grading_gate, _leads_with_test, joined_entry_parts all present) and is unchanged. This attempt closes the two reds attempt 1 left in files it could not edit, now in scope: tests/test__config.py - the _FILES_ALONE_EXEMPT row (audit-task.py, _commit_touches) deleted, since _commit_touches now asks declared_git_rels with both halves and makes no files-half call; the _close_evidence_refusal row's reason reworded to say what that function still reads (declared_work and the attempt span) and that the closing commit's question is _commit_touches', through declared_git_rels. tools/lints/_deps.py - a GIT_PATH_BASE_EXEMPT row for audit-task.py:_commit_touches: its diff-tree paths are named from the checkout's top and handed whole to _config.declared_git_rels as its changed listing, the spelling it reads, and that function spells the files entries from the same top through plan_to_git. tests/test__deps.py needed no change. Before: dg8/dg9/dg10 red in test__config (402/405) and gb1 red in test__deps (266/267), both naming exactly these rows; after: sweep over test__config.py and test__deps.py exit 0, 2/2 files ok, 672 cases. FINDINGS BY ID (unchanged from attempt 1): P155-R73 fixed as a class - one reader, read_list_flags in _dispatch, over LIST_FLAG_READINGS, split for id/path lists (and signoff --accept, which stored a joined value), one entry per flag with a joined-value refusal for --tests-add, the gate flags, --waive, --accept-open and --carried, and list_flag_gaps holding the table to the parser both ways; P155-R7 fixed - the wide-gate warning prescribes --gate \"<command>\" --replace for narrowing and a bare --gate restating the phase entries for declaring; P155-R8 fixed by seeding - --gate-add/--gate-drop start from the phase testGate on a task with no gate of its own, a cleared gate is not seeded, the help says so; P155-R67 fixed - _commit_touches routes through declared_git_rels(only=task, changed=<commit paths>), now with both exemption tables agreeing; TDD ITEM fixed by mode - a fix task whose finding leads with a test file is regression with a mutation note. VERIFIED: the brief's gate command exit 0, 8/8 files ok, 2276 cases; the suites importing audit-task plus the lint suites (test_drive_phase, test_close_phase, test__invariants, test__doctor_trail, test_run_test_gate, test_full_gate, test_commit_task_work, test__output_lints, test__help, test__refs, test_validate_manifest, test_derive_phase_gate, test_repair_tests_add) exit 0, 13/13 files ok, 2929 cases; ruff all checks passed; vermin -t=3.8- no incompatibility; measure-context --gate no breach. DEPENDANTS: as in attempt 1 - only _commit_touches changed signature and its one caller is in audit-task; the two tables above were its other readers and are now in step.",
+    "descriptive": "One shared reader for every repeating audit-task flag, --gate-add keeps the phase gate, the wide-gate warning names --replace, outputs-only tasks can close, a test-led fix task is regression - and the exemption tables now agree with the outputs-aware close"
+  },
+  "testsAdded": [
+    "lr1-lr7: every repeating option has a LIST_FLAG_READINGS row and the walk fires on a planted flag and a stale row; every row driven with a joined value; joined --tests-add and --gate/--gate-add refused at the CLI before a write; comma-bearing prose and arguments kept; the split keeps +, empties and drops empty parts",
+    "gk12-gk14: --gate-add and --gate-drop start from the phase gate on a task with none; a cleared gate is not seeded",
+    "lo-ce7/lo-ce8: a files-[] task closes over a commit its outputs pattern covers, and is still refused over one it does not",
+    "bx14/bx15: a fix task whose finding leads with a test is regression with a mutation note; one leading with the source stays tdd",
+    "tg13: the wide-gate warning prescribes --replace for narrowing and a bare --gate for declaring",
+    "jp1: joined_entry_parts returns parts only when every comma part names an entry"
+  ],
+  "casesAdded": [
+    [
+      "lr1",
+      "lr2",
+      "lr3",
+      "lr4",
+      "lr5",
+      "lr6",
+      "lr7",
+      "gk12",
+      "gk13",
+      "gk14",
+      "lo-ce7",
+      "lo-ce8",
+      "bx14",
+      "bx15"
+    ],
+    [
+      "tg13",
+      "jp1"
+    ]
+  ],
+  "claims": "claims:\n1 audit-task.py read_list_flags is called in _dispatch before the doors; _grading_gate feeds _gate_added/_retarget_gate_now in _locked_scope; _commit_touches calls declared_git_rels(only=task); _leads_with_test branch in _fix_task_args; the new _deps.py row and the reworded test__config row describe exactly those calls\n2 joined_entry_parts all->any in a throwaway copy -> jp1, gw3, lr6 red; _dispatch reader call removed -> lr4, lr5 red; lr2 plants an unread flag and a stale row; the exemption rows: without them gb1 and dg8-dg10 were red (attempt 1), with them green\n3 class: lr1 holds every multi-value option to the table both ways; the joined-spelling grep found one other hit (drive-phase --accept-open prose), left because its second part is prose; store options with comma lists left, stated in the code comment\n4 the one-entry rule is enforced by read_list_flags in _dispatch and the table by list_flag_gaps/lr1, named in the code comment and the guide\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:7673d0de1432154d0f7f2270a0deaad39c60261f058f40937c467a6186a8559f\",\"dirtyDigest\":\"sha256:62dafae3cb7e0add348a62f20046c9dd672fe0d9d0de2623d27c77d04452be70\",\"dirtyPaths\":{\"tests/test__config.py\":\"18fc0ffc3a438e5c\",\"tools/lints/_deps.py\":\"94daf72c8f87ba2f\"},\"head\":\"0e8e669d\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/commands/phase.md\",\"plugins/audit/commands/task.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/governance/_scoped_commit.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/scripts/manifest/_manifest_phases.py\",\"plugins/audit/scripts/manifest/_manifest_rules.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"tests/_harness.py\",\"tests/test__affected_tests.py\",\"tests/test__config.py\",\"tests/test__deps.py\",\"tests/test__manifest_phases.py\",\"tests/test__manifest_rules.py\",\"tests/test__runner_collects.py\",\"tests/test__scoped_commit.py\",\"tests/test_audit_task.py\",\"tests/test_stamp_verification.py\",\"tools/lints/_deps.py\",\"tools/prove-gates.py\",\"tools/release.py\",\"tools/sweep-selftests.py\"],\"scopeDigest\":\"sha256:e9ad3a68d577b0a3a9636a7270103035e2b9f8a5cf1d5469fda6d88b6f5f2f3c\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

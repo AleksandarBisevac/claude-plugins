@@ -4645,11 +4645,6 @@ _FILES_ALONE_EXEMPT = (
      "hold dirt another attempted task also enumerates - whose unfinished "
      "work a file holds, asked before any run makes the path a pattern "
      "would cover, never whether a change is declared"),
-    ("audit-task.py", "_commit_touches", False,
-     "the close-evidence refusal asks whether the closing commit changes one "
-     "of the task's enumerated `files`, beside declared_work and attempt_span "
-     "over the same list, and its sentence names those files; a task whose "
-     "work is outputs alone is refused there, the gap this row names"),
     ("audit-task.py", "_no_change_moves", False,
      "a no-change close's evidence: whether any enumerated `files` entry "
      "moved since the start; a pattern names no path until a run makes one, "
@@ -4684,8 +4679,10 @@ _FILES_ALONE_EXEMPT = (
     ("audit-task.py", "_answered_readers", False, _IMPACT),
     ("audit-task.py", "_locked_start", False, _IMPACT),
     ("audit-task.py", "_close_evidence_refusal", False,
-     _WORK_NAMES + "the close refuses a commit changing none of them, the "
-     "`_commit_touches` row's gap"),
+     _WORK_NAMES + "the attempt's span asks which earlier commit changed one "
+     "of them; whether the closing commit itself changes what the task "
+     "declares is _commit_touches' question, asked through "
+     "declared_git_rels with both halves"),
     ("audit-task.py", "_locked_scope", False,
      "the scope verb edits the enumerated `files` list itself: the impact "
      "check over the widened entries, and the `fileIndex` rows the released "

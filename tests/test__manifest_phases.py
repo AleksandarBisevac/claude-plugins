@@ -624,6 +624,43 @@ def _cases(check):
           % ([x[:70] for x in _tg_vw],),
           _tg_vf == []
           and len([x for x in _tg_vw if "testGate verbatim" in x]) == 1)
+    # The two routes the line offers go through `scope --gate`, which refuses a
+    # list leaving out a held entry unless `--replace` says the drop is meant.
+    # A narrowed list leaves out held entries by definition, so the narrowing
+    # route has to carry `--replace`; declaring the wide gate as the answer
+    # restates the same list, drops nothing, and takes a bare `--gate`.
+    _tg_route = _tg_walk(_TG_WIDE, list(_TG_WIDE))[1]
+    _tg_line = _tg_route[0] if len(_tg_route) == 1 else ""
+    check("tg13 the narrowing route the line prescribes is the call `scope` "
+          "accepts - `--gate \"<command>\" --replace` - and the declaring "
+          "route restates the phase's entries with a bare `--gate`, so "
+          "neither is a call the verb refuses: %r" % (_tg_route,),
+          "--gate \"<command>\" --replace" in _tg_line
+          and "--gate \"<each entry of the phase gate>\"" in _tg_line
+          and _tg_line.count("--replace") == 1)
+
+    # --- jp: a value that is several entries joined by commas ----------------
+    # One predicate for the validator's joined-key warning and the verb's
+    # list-flag reader: the value holds two or more comma parts and EVERY part
+    # names an entry on its own. A literal comma inside an entry - an
+    # argument, or prose - leaves a part that names none.
+    _jp_keys = ("lint", "test")
+    _jp_rows = [
+        ("lint,test", ["lint", "test"]),
+        (" lint , test ", ["lint", "test"]),
+        ("lint,tset", None),
+        ("lint", None),
+        ("eslint a.ts,b.ts", None),
+        ("lint,,test", None),
+        ("", None),
+    ]
+    _jp_bad = [(v, want, M.joined_entry_parts(v, lambda p: p in _jp_keys))
+               for v, want in _jp_rows
+               if M.joined_entry_parts(v, lambda p: p in _jp_keys) != want]
+    check("jp1 `joined_entry_parts` returns the parts only when every comma "
+          "part names an entry - a typo part, a lone entry, an argument "
+          "carrying a comma, an empty part and an empty value all return "
+          "None; rows that disagree: %r" % (_jp_bad,), _jp_bad == [])
 
     # --- tr: what a ONE-SHOT REPAIR may do to an entry written before the rule --
     # The finding above refuses, and a refusal with no migration behind it

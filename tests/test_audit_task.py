@@ -16583,6 +16583,38 @@ def _close_evidence_cases(check, project, task, write, close, read, git):
           "`not-attempted` red-first beside a real change is no refusal: %r"
           % ((code, text[-500:]),), code == 0)
 
+    # A TASK WHOSE WORK IS ITS OWN OUTPUTS declares no `files` and an
+    # `outputs` pattern; the commit's reading counts a changed path the
+    # pattern covers as declared, so the close asks the same question.
+    def outputs_task():
+        return task("P1.1", [], outputs=["reports/**"])
+
+    proj, mpath = project("ce-outputs", [outputs_task()])
+    file_executor(proj, mpath)
+    write(proj, "reports/run.md", "the report\n")
+    git(proj, "add", "-A", "--", "reports")
+    git(proj, "commit", "-q", "-m", "the task's own output")
+    code, text = close(proj)
+    check("lo-ce7 ALLOW: a files-[] task whose commit changes a path its own "
+          "`outputs` pattern covers closes over a `not-attempted` return - the "
+          "close reads both halves of what the task declares: %r"
+          % ((code, text[-700:]),), code == 0)
+
+    # SECOND DIRECTION: the same task over a commit its pattern does not
+    # cover still refuses - an outputs reading that took any change as the
+    # task's would pass here.
+    proj, mpath = project("ce-outputs-off", [outputs_task()])
+    file_executor(proj, mpath)
+    write(proj, "src/b.ts", "not this task's output\n")
+    commit(proj, "touches nothing the task declares")
+    before = read(mpath)
+    code, text = close(proj)
+    check("lo-ce8 SECOND-DIRECTION CASE: the same files-[] task over a commit "
+          "no `outputs` pattern of its covers is refused as before: %r"
+          % ((code, text[-700:]),),
+          code == M.E_USAGE and "not-attempted" in text
+          and read(mpath) == before)
+
     _since_start_cases(check, project, task, write, close, read, commit)
 
 
@@ -20164,6 +20196,36 @@ def _batch_fix_cases(check):
               and (mode_f.get("mode"), mode_f.get("expectRedFirst")) == ("tdd", False)
               and (mode_p.get("mode"), mode_p.get("expectRedFirst")) == ("tdd", True)
               and note not in txt_f and note in txt_p)
+
+        # WHERE THE FIX LIVES: a finding whose `file` LEADS with a test - the
+        # case that passes without the fix - is a fix to that test, so a red
+        # run laying the strengthened test over HEAD's code has no code
+        # change to go red against. The same finding leading with the source
+        # is a fix there, which a red run can show; a rule that read every
+        # path rather than the lead would make both regression, and one that
+        # read none would make both tdd.
+        def lead_mode(name, file_text):
+            proj, mpath = project(name, [
+                {"id": "P1-R1", "severity": "low", "file": file_text,
+                 "issue": "the case passes without the fix",
+                 "resolution": "Require the case to fail when the bound moves"}])
+            code, txt = _cli_in(["add", "fix it", "--phase", "P1", "--fixes",
+                                 "P1-R1"], proj, "")
+            node = state(mpath)[0].get("P1.2") or {}
+            tests = node.get("tests") or {}
+            notes = " ".join(n.get("text", "") for n in node.get("notes") or [])
+            return code, tests.get("mode"), tests.get("expectRedFirst"), notes
+
+        got = lead_mode("lead-test", "tests/test_a.py:5 (the case); src/a.py")
+        check("bx14 a fix task whose finding leads with a test file is "
+              "regression with expectRedFirst false, and its note names the "
+              "test and says the red is shown by mutation: %r" % (got,),
+              got[0] == 0 and got[1:3] == ("regression", False)
+              and "tests/test_a.py" in got[3] and "mutation" in got[3])
+        got = lead_mode("lead-source", "src/a.py:5; tests/test_a.py")
+        check("bx15 SECOND-DIRECTION CASE: the same finding leading with the "
+              "source file stays tdd: %r" % (got,),
+              got[0] == 0 and got[1] == "tdd")
     finally:
         _harness.remove_tree(root)
 
@@ -22638,6 +22700,209 @@ def _gate_keep_cases(check):
               and holds(["b"]) in (success_line(txt_r, "P2.3") or "")
               and success_line(txt_n, "P2.3") is not None
               and "tests.gate now holds" not in txt_n)
+
+        # A TASK DECLARING NO GATE OF ITS OWN IS GRADED BY ITS PHASE'S, so
+        # the gate it holds is the phase's two entries and not the empty
+        # stored list. The fixture phase gate holds two entries neither call
+        # writes, so a write that started from the stored list (`[vitest]`),
+        # one that seeded from the phase, and a refusal each leave a list
+        # this group tells apart.
+        def phase_graded():
+            m = base_manifest()
+            m["meta"]["buildCommands"]["lint"] = "true"
+            m["phases"][1]["testGate"] = ["test", "lint"]
+            m["phases"][1]["tasks"][1]["tests"] = {
+                "mode": "gate-only", "expectRedFirst": False, "add": []}
+            return m
+
+        proj, mp = mk("gk-phase-add", phase_graded())
+        code, txt = run(["scope", "P2.3", "--gate-add", "vitest",
+                         "--project-dir", proj])
+        want = ["test", "lint", "vitest"]
+        check("gk12 `--gate-add vitest` on a task with no gate of its own keeps "
+              "the phase gate that grades it - the write starts from the "
+              "phase's entries, never from the empty stored list - and the "
+              "success line prints the whole gate: %r"
+              % ((code, gate_of(mp, "P2.3"), txt[-300:]),),
+              code == 0 and gate_of(mp, "P2.3") == want
+              and holds(want) in (success_line(txt, "P2.3") or ""))
+
+        # `--gate-drop` is the other flag that keeps what it is not told to
+        # drop, so it reads the same gate: dropping `lint` from the phase's
+        # two entries leaves `test`, where the stored list held nothing to
+        # drop and the call was refused as naming an entry the gate lacks.
+        proj, mp = mk("gk-phase-drop", phase_graded())
+        code, txt = run(["scope", "P2.3", "--gate-drop", "lint",
+                         "--project-dir", proj])
+        check("gk13 `--gate-drop lint` on that task drops from the phase gate "
+              "that grades it and keeps the rest: %r"
+              % ((code, gate_of(mp, "P2.3"), txt[-300:]),),
+              code == 0 and gate_of(mp, "P2.3") == ["test"]
+              and holds(["test"]) in (success_line(txt, "P2.3") or ""))
+
+        # SECOND DIRECTION: a gate CLEARED on purpose is the task's own empty
+        # answer, so there is nothing to seed from - a seed read off the
+        # phase whatever the basis would write the phase's entries back over
+        # a clearing somebody chose.
+        cleared = phase_graded()
+        cleared["phases"][1]["tasks"][1]["tests"] = {
+            "mode": "gate-only", "expectRedFirst": False, "add": [],
+            "gate": [], "gateBasis": "cleared"}
+        proj, mp = mk("gk-cleared", cleared)
+        code, txt = run(["scope", "P2.3", "--gate-add", "vitest",
+                         "--project-dir", proj])
+        check("gk14 SECOND-DIRECTION CASE: `--gate-add vitest` on a task whose "
+              "gate was cleared on purpose writes `[vitest]` alone - the "
+              "cleared gate is the task's own, and the phase's entries do not "
+              "come back: %r" % ((code, gate_of(mp, "P2.3"), txt[-300:]),),
+              code == 0 and gate_of(mp, "P2.3") == ["vitest"])
+    finally:
+        _harness.remove_tree(tmp)
+
+
+def _lr_args(argv=("add",)):
+    """A namespace as the verb's own parser fills it, every list flag absent."""
+    return M.build_parser().parse_args(list(argv))
+
+
+# A comma-joined value of each reading the shared reader knows, with the parts
+# a joined value carries. A reading added to the table with no row here fails
+# `lr3` by name rather than passing unread.
+_LR_SAMPLES = {
+    "split": ("P2.1,P2.3", ["P2.1", "P2.3"]),
+    "tests-add": ("tests/a.py,tests/b.py", ["tests/a.py", "tests/b.py"]),
+    "gate": ("lint,test", ["lint", "test"]),
+    "waiver": ("src/a.py: it cannot reach it,src/b.py: nor this",
+               ["src/a.py: it cannot reach it", "src/b.py: nor this"]),
+    "pair": ("P1-R1=BUG-1,P1-R2=BUG-2", ["P1-R1=BUG-1", "P1-R2=BUG-2"]),
+}
+
+
+def _list_flag_cases(check):
+    """Every flag that takes several values is read by ONE reader.
+
+    A value of a list flag joined by commas meant two things across the flags
+    of one verb: `--files a,b` was two paths while `--tests-add a.py,b.py`
+    stored the one entry `a.py,b.py`, and `add-phase --gate a,b,c` stored the
+    three build keys as one shell command. The reader splits the flags whose
+    values are identifiers or paths, and refuses a value of the other flags -
+    whose entries may carry a comma of their own - when every part of it
+    reads as an entry; it never stores the joined string. `lr1`/`lr2` are the
+    half that keeps a new list flag from bypassing it.
+    """
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, _run_on_stdin, base_manifest, mk, _mk_empty, _task_in, _pin, _unpin,
+     _PD_SHA, _pd_fixture, _pd_repo, _git) = _at_kit(tmp)
+
+    def bytes_of(mp):
+        with open(mp, "rb") as fh:
+            return fh.read()
+
+    try:
+        gaps = M.list_flag_gaps()
+        check("lr1 every option of the verb's parser taking several values "
+              "(`append`, `extend` or an `nargs`) has a row in "
+              "LIST_FLAG_READINGS, and every row names such an option: %r"
+              % (gaps,),
+              gaps == {"unread": [], "stale": []}
+              and set(["files", "tests_add", "gate", "gate_add", "gate_drop",
+                       "gate_set", "blocked_by", "depends_on"])
+              <= set(M.LIST_FLAG_READINGS))
+
+        planted = M.build_parser()
+        planted.add_argument("--extra-list", dest="extra_list",
+                             action="append", default=None)
+        planted_gaps = M.list_flag_gaps(
+            planted, dict(M.LIST_FLAG_READINGS, ghost_list="split"))
+        check("lr2 THE WALK CAN FIRE: a planted `append` flag with no row is "
+              "reported unread, and a row naming no option is reported "
+              "stale: %r" % (planted_gaps,),
+              planted_gaps["unread"] == ["--extra-list"]
+              and planted_gaps["stale"] == ["ghost_list"])
+
+        bad = []
+        flags = M.option_dests()
+        for dest, reading in sorted(M.LIST_FLAG_READINGS.items()):
+            if reading not in _LR_SAMPLES:
+                bad.append((dest, reading, "no sample for this reading"))
+                continue
+            joined, parts = _LR_SAMPLES[reading]
+            ns = _lr_args()
+            setattr(ns, dest, [joined])
+            values, refusal = M.read_list_flags(ns, build_keys=("lint", "test"))
+            if reading == "split":
+                if refusal is not None or values.get(dest) != parts:
+                    bad.append((dest, reading, values.get(dest), refusal))
+            elif refusal is None or flags[dest] not in refusal \
+                    or not all(p in refusal for p in parts) \
+                    or joined in (values.get(dest) or []):
+                bad.append((dest, reading, values.get(dest), refusal))
+        check("lr3 every row, driven through the reader with a comma-joined "
+              "value: a `split` row returns the parts, every other row refuses "
+              "the value naming its flag and each part, and none returns the "
+              "joined string; rows that did not: %r" % (bad,),
+              bad == [] and len(M.LIST_FLAG_READINGS) > 0)
+
+        proj, mp = mk("lr-tests-add", base_manifest())
+        before = bytes_of(mp)
+        code, txt = run(["add", "Joined", "--phase", "P2", "--tests-add",
+                         "tests/a.py,tests/b.py", "--project-dir", proj])
+        check("lr4 `add --tests-add tests/a.py,tests/b.py` is refused before "
+              "any write, and the refusal spells the flag once per entry: %r"
+              % ((code, txt[-400:]),),
+              code == M.E_USAGE and bytes_of(mp) == before
+              and "--tests-add tests/a.py --tests-add tests/b.py" in txt)
+
+        keyed = base_manifest()
+        keyed["meta"]["buildCommands"]["lint"] = "true"
+        proj, mp = mk("lr-gate", keyed)
+        before = bytes_of(mp)
+        code, txt = run(["add-phase", "Keys", "--outcome", "o", "--gate",
+                         "lint,test", "--project-dir", proj])
+        code_s, txt_s = run(["scope", "P2.3", "--gate-add", "lint,test",
+                             "--project-dir", proj])
+        check("lr5 `add-phase --gate lint,test` and `scope --gate-add "
+              "lint,test` - each part a buildCommands key - are refused "
+              "before any write, each naming the per-entry spelling: %r"
+              % ((code, txt[-300:], code_s, txt_s[-300:]),),
+              code == M.E_USAGE and code_s == M.E_USAGE
+              and bytes_of(mp) == before
+              and "--gate lint --gate test" in txt
+              and "--gate-add lint --gate-add test" in txt_s)
+
+        # SECOND DIRECTION: an entry whose comma belongs to it. A reader that
+        # split or refused on any comma would fail both.
+        prose = "tests/a.py: asserts x, y and z"
+        proj, mp = mk("lr-prose", base_manifest())
+        code, txt = run(["add", "Prose", "--phase", "P2", "--tests-add", prose,
+                         "--project-dir", proj])
+        added = [t for t in _mio.tasks_by_id(_mio.load_manifest(mp)).values()
+                 if t.get("title") == "Prose"]
+        ns = _lr_args()
+        ns.gate = ["eslint a.ts,b.ts"]
+        values, refusal = M.read_list_flags(ns, build_keys=("lint", "test"))
+        check("lr6 SECOND-DIRECTION CASE: a tests.add entry whose prose holds "
+              "a comma lands as ONE entry, and a gate command carrying a comma "
+              "inside an argument is kept whole: %r"
+              % ((code, txt[-200:], [(t.get("tests") or {}).get("add")
+                                     for t in added], values, refusal),),
+              code == 0 and len(added) == 1
+              and (added[0].get("tests") or {}).get("add") == [prose]
+              and refusal is None and values.get("gate") == ["eslint a.ts,b.ts"])
+
+        ns = _lr_args(("scope",))
+        ns.files = ["+src/a.ts,src/b.ts"]
+        ns.blocked_by = [""]
+        ns.verified_by = ["t_a,,t_b"]
+        values, refusal = M.read_list_flags(ns)
+        check("lr7 the split keeps what each reader relied on: a `+` opening a "
+              "`--files` value opens each part, an empty value still empties "
+              "the field, and an empty part between commas is dropped: %r"
+              % ((values, refusal),),
+              refusal is None
+              and values.get("files") == ["+src/a.ts", "+src/b.ts"]
+              and values.get("blocked_by") == [""]
+              and values.get("verified_by") == ["t_a", "t_b"])
     finally:
         _harness.remove_tree(tmp)
 
@@ -22672,7 +22937,8 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("sh-block", "_start_head_cases"),
           ("ocg-block", "_tdd_gate_clear_cases"),
           ("dd-block", "_dependant_dispatch_cases"),
-          ("gk-block", "_gate_keep_cases"))
+          ("gk-block", "_gate_keep_cases"),
+          ("lr-block", "_list_flag_cases"))
 
 
 if __name__ == "__main__":

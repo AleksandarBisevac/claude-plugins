@@ -311,6 +311,19 @@ per add is the class of error the script exists to delete.
      `--files` and `done --verified-by` also REPEAT, and every value is still split on
      commas: `--depends-on P2.1 --depends-on P2.2` and `--depends-on P2.1,P2.2` are the
      same list. `--help` says so on each flag, with an example.
+   - **Every flag that repeats is read by one reader**, before any verb runs
+     (`LIST_FLAG_READINGS` in `audit-task.py`). The id and path lists above, `--fixes`,
+     `--introduces`, `--sources`, `--phases` and `signoff --accept` split on commas. The
+     flags whose entries may carry a comma of their own — `--tests-add`, `--gate`,
+     `--gate-add`, `--gate-drop`, `--gate-set`, `--waive`, `--accept-open`, `--carried` —
+     take one entry per flag, and a value whose every comma part reads as an entry of
+     that flag (a file for `--tests-add`, a `meta.buildCommands` key for a gate flag) is
+     refused before any write, naming the repeated spelling: `--tests-add a.py,b.py` used
+     to store the one entry `a.py,b.py`, and `add-phase --gate a,b,c` one shell command
+     no shell can find. A comma inside an entry (`"tests/a.py: x, y"`, `"eslint
+     a.ts,b.ts"`) leaves a part that names nothing, so the value is kept whole. The suite
+     walks the parser's options, so a repeating flag added without a row is reported by
+     name.
 3. **Run it** (Bash) — the brief on **stdin**, which is the only form a shell
    cannot rewrite:
    ```bash
@@ -353,7 +366,11 @@ names — a comma list, `X.tsx:4 and Y.tsx:71`, a line range with a comma inside
 once each and without the line suffix. A finding that names a test file that does not exist
 yet, or whose resolution asks for a test and whose directory shows where tests live (it
 already holds a `.test.` or `.spec.` file), makes the task `tdd` with that file in
-`tests.add`. Otherwise the mode is the one `--bug` derives: `regression`, with the reason
+`tests.add`. A finding whose `file` text **leads** with a test file — the case that passes
+without the fix, with the source it drives named after it — is a fix to that test, and the
+task is `regression` with a note saying the red is shown by mutation: the red-first helper
+lays the strengthened test over HEAD's code, which the fix does not change. Otherwise the
+mode is the one `--bug` derives: `regression`, with the reason
 in a task note, when every path the findings name is a test file, else `tdd`. `gate-only`
 is a default only where the findings owe no case on their own evidence — every file a
 document no test covers, or every resolution saying outright "no code change" — and a
@@ -1297,7 +1314,12 @@ leaves out a held entry is refused, naming the entries it would drop, unless `--
 says the drop is meant; `--gate-add Y` appends instead, writing an entry the task already
 holds no second time (that call writes nothing). A `--gate` list naming every held entry
 drops nothing and lands as spelled. `--gate-add` beside any other gate flag, and
-`--replace` with no `--gate`, are refused. Whenever a gate flag was passed, the success
+`--replace` with no `--gate`, are refused. **`--gate-add` and `--gate-drop` start from the
+gate that grades the task**: on a task with no gate of its own that is its phase's
+`testGate`, so `--gate-add Y` writes the phase's entries and `Y`, where it used to write
+`[Y]` and shrink the gate under a flag spelled as keeping it. A gate cleared on purpose is
+the task's own empty answer and is not seeded. A lone `--gate` on such a task is its first
+declaration of a gate of its own and lands as spelled. Whenever a gate flag was passed, the success
 line ends `tests.gate now holds [...]`, and `--json` carries the same list as
 `gateNowHolds`.
 
