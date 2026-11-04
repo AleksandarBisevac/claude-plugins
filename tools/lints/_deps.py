@@ -4147,7 +4147,10 @@ def register_citation_violations(repo_root=None, table=None):
 # reference keeps a preflight list and a resume list - so a pointer whose number
 # lands in the wrong list of a document holding it is no finding here. Which list
 # a sentence means is the author's to read; this reads only that the number is
-# somewhere to land.
+# somewhere to land. The step word is read in any case; the words joining a
+# pointer - `of`, and the `and`/`or` of a list - only in lowercase, so a
+# capitalised `OF` makes no pointer and a capitalised `AND` ends a list at the
+# step before it.
 #
 # A STEP IS WHAT THE DOCUMENT NUMBERS, read off its own markup: a numbered
 # heading (`## 5.`, `### 3.5`, and both numbers of a heading naming two), a
@@ -4164,12 +4167,17 @@ _STEP_LIST = (r"%s(?:(?:\s*,\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+)%s)*"
 # that joins two halves of a string literal.
 _STEP_SEP = r"(?:\s|#|//|\*|\")+"
 _STEP_DOC = r"(?<![\w./-])((?:[\w.-]+/)*[\w-]+\.md)"
+# The word in any case, and only the word: docstrings here capitalise it for
+# emphasis as often as not, so a lowercase-only reader left those pointers
+# unread. The step token keeps its lowercase letter, the only letter
+# `_md_steps` reads a document as numbering.
+_STEP_WORD = r"(?i:steps?)"
 _STEP_FORWARD_RE = re.compile(
-    r"%s`?(?:'s)?,?%s(steps?)%s(%s)" % (_STEP_DOC, _STEP_SEP, _STEP_SEP,
-                                         _STEP_LIST))
+    r"%s`?(?:'s)?,?%s(%s)%s(%s)" % (_STEP_DOC, _STEP_SEP, _STEP_WORD,
+                                     _STEP_SEP, _STEP_LIST))
 _STEP_BACKWARD_RE = re.compile(
-    r"\b(steps?)%s(%s)%sof%s`?%s" % (_STEP_SEP, _STEP_LIST, _STEP_SEP,
-                                     _STEP_SEP, _STEP_DOC))
+    r"\b(%s)%s(%s)%sof%s`?%s" % (_STEP_WORD, _STEP_SEP, _STEP_LIST,
+                                 _STEP_SEP, _STEP_SEP, _STEP_DOC))
 _STEP_ITEM_RE = re.compile(_STEP_ITEM)
 _STEP_PARTS_RE = re.compile(r"(\d+(?:\.\d+)?)([a-z]?)")
 _STEP_HEADING_RE = re.compile(r"^#{1,6}\s+(\d.*)$")

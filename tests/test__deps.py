@@ -4460,6 +4460,23 @@ def _step_pointer_cases(check):
               (5, "guide.md", "3b"), (5, "guide.md", "5.1"),
               (6, "guide.md", "1a"), (6, "guide.md", "1b"),
               (6, "guide.md", "1c"), (7, "guide.md", "2")])
+    # The word is read in any case: a docstring here writes it in capitals as
+    # often as not, and a reader that knew only the lowercase spelling let
+    # those pointers rot unread. The last line is the over-fire guard - a
+    # capitalised step with no document beside it is still no pointer.
+    _sp_up_word = _SP_WORD.upper()
+    _sp_upper = M._step_pointers("\n".join((
+        "the `guide.md`'s %s %s, possessive" % (_sp_up_word, "4c"),
+        "and %s, a list" % _sp("guide.md", "3 and 5.1", _sp_up_word + "S"),
+        "the retry %s 2 of `guide.md` prescribes" % _SP_WORD.capitalize(),
+        "guide.md, and %s 3 of the run: no pointer at all" % _sp_up_word,
+    )))
+    check("sp2c the step word is read in ANY case - capitals, plural capitals "
+          "and a capitalised `Step N of <doc>` - while a capitalised step with "
+          "no document beside it is still no pointer: %r" % (_sp_upper,),
+          _sp_upper == [
+              (1, "guide.md", "4c"), (2, "guide.md", "3"),
+              (2, "guide.md", "5.1"), (3, "guide.md", "2")])
 
     _sp_root = tempfile.mkdtemp(prefix="audit-deps-sp-")
     try:
@@ -4506,6 +4523,37 @@ def _step_pointer_cases(check):
                    if h[0] == "CHANGELOG.md"])
     finally:
         shutil.rmtree(_sp_root, ignore_errors=True)
+
+    _sp_up_root = tempfile.mkdtemp(prefix="audit-deps-sp-up-")
+    try:
+        os.makedirs(os.path.join(_sp_up_root, "reference"))
+        _sp_up_files = {
+            ".gitignore": "__pycache__/\n",
+            "reference/guide.md": _SP_GUIDE,
+            "upper.py": "\n".join((
+                '"""Module doc."""',
+                "",
+                "def f():",
+                '    """Held, in capitals: `%s`.' % _sp(
+                    "reference/guide.md", "2b", _sp_up_word),
+                "",
+                "    Not held, in capitals: the `guide.md`'s %s 4c." % _sp_up_word,
+                '    """',
+                "    return 1", "")),
+        }
+        for _rel, _body in _sp_up_files.items():
+            with open(os.path.join(_sp_up_root, _rel.replace("/", os.sep)), "w",
+                      encoding="utf-8") as fh:
+                fh.write(_body)
+        _sp_up_hits = M.step_pointer_violations(_sp_up_root)
+        _sp_up_keys = sorted((r, ln, p.lower()) for r, ln, p, _why in _sp_up_hits)
+        check("sp3c END TO END in capitals: a docstring's `STEP 4c` pointer to a "
+              "document holding no step 4c is convicted, and the held capitalised "
+              "pointer beside it is quiet: %r" % (_sp_up_hits,),
+              _sp_up_keys == [
+                  ("upper.py", 6, "guide.md %s 4c" % _SP_WORD)])
+    finally:
+        shutil.rmtree(_sp_up_root, ignore_errors=True)
 
     _sp_real = M.step_pointer_violations()
     check("sp5 THE GATE: no pointer anywhere in the real tree names a step its "

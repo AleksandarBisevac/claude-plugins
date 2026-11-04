@@ -1784,8 +1784,8 @@ at once did not. `state_write_sites()` prints the corpus the rule judged. A meth
 on a string or a path is not the `os` module's and is not read — the allow row in
 `tools/prove-gates.py` holds that line.
 `step_pointer_violations()` reads every pointer to a numbered step of a document — the document
-named before or after the word, a comma list, a lettered range, a pointer wrapped across a comment
-line — in every `.md`, `.py` and script this repo keeps, and fails one naming a step the document
+named before or after the word, the word in any case (docstrings here capitalise it), a comma
+list, a lettered range, a pointer wrapped across a comment line — in every `.md`, `.py` and script this repo keeps, and fails one naming a step the document
 does not number, or a document no kept `.md` has the name of. A document's steps are read off its
 own markup (`_md_steps`): numbered headings, top-level list items, the letters nested under one,
 and `<heading>.<item>` under an integer heading. It cannot tell which of two lists a number

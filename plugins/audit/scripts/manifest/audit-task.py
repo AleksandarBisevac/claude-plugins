@@ -5303,19 +5303,19 @@ def _attempt_ceiling(task):
 def _start_task(task, now):
     """Promote one task to running; returns the three values it held before.
 
-    THE FIELDS ARE `reference/orchestrator.md`'s STEP 2 VERBATIM -- *Set
-    `task.status = "in_progress"`, `task.startedAt = <ISO now>`,
-    `task.attempts += 1`* -- because this verb exists to BE that Edit. A writer
-    that stamped anything the prescribed Edit does not would make two records of
-    one run disagree depending on which route promoted the task.
+    THE FIELDS ARE THE ONES `reference/execute-task.md`'s STEP 2 NAMES -- it
+    sets `task.status = "in_progress"`, stamps `startedAt`, and does
+    `task.attempts += 1` -- because this verb is the promotion that step
+    prescribes in place of a hand edit. A writer that stamped anything the step
+    does not name would make two records of one run disagree depending on which
+    route promoted the task.
 
-    `startedAt` IS RE-STAMPED ON A RE-START, which is what step 2 says and
-    therefore what the hand edit does today. It is not self-evidently the right
-    field semantics -- the usage `window` attribution reads
-    `startedAt`/`completedAt` as the task's whole lifetime, so a re-stamp narrows
-    the window a previous attempt sat in -- but that is a question about the
-    prescription, and answering it differently here in silence is how one field
-    comes to mean two things.
+    `startedAt` IS RE-STAMPED ON A RE-START, which is what step 2 says the
+    promotion does. It is not self-evidently the right field semantics -- the
+    usage `window` attribution reads `startedAt`/`completedAt` as the task's
+    whole lifetime, so a re-stamp narrows the window a previous attempt sat in --
+    but that is a question about the prescription, and answering it differently
+    here in silence is how one field comes to mean two things.
 
     THE STAMP IS `_filed_returns.next_start_at`'s, not `now` as read: a start's
     `startedAt` is its identity to every place that keys by start, at
@@ -7809,13 +7809,13 @@ def _done_task(task, now, commit, descriptive, technical, verified, intent,
                intent_return=None):
     """Close one task; returns the values it held before.
 
-    THE FIELDS ARE `reference/orchestrator.md`'s STEP 4 VERBATIM -- 4b's *Set
-    `task.status = "done"`, `task.completedAt = <ISO now>`, fill `task.outcome` and
-    `task.verifiedBy`* and 4c's *Capture the SHA ... and write it into
-    `task.commit`* -- because this verb exists to BE those two Edits. `_start_task`
-    states the rule one verb over: a writer that stamped anything the prescribed
-    Edit does not would make two records of one run disagree depending on which
-    route closed the task.
+    THE FIELDS ARE THE ONES `reference/execute-task.md`'s STEP 4 NAMES -- 4b's
+    `task.status = "done"`, `completedAt`, `outcome` and `verifiedBy`, and 4c's
+    SHA the commit script printed, written into `task.commit` -- because this
+    verb is the one close those two letters prescribe in place of a hand edit.
+    `_start_task` states the rule one verb over: a writer that stamped anything
+    the step does not name would make two records of one run disagree depending
+    on which route closed the task.
 
     `completedAt` AND `commit` ARE WRITTEN UNCONDITIONALLY, which the terminal
     refusal in `_locked_done` is what makes safe: the only task reaching here is an

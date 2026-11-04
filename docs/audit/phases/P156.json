@@ -69,24 +69,30 @@
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py:10084-10101 (_batch_task_args), :9852-9865 (_batch_tests_problems), :10031 (_cmd_batch_add)",
         "issue": "add --from-file, the batch path /audit:phase add uses (commands/phase.md), hands tests.add, tests.gate, files and phase.testGate from the JSON straight to _build_task, never through read_list_flags or joined_entry_parts. Verified in a scratch repo: a batch task with tests.add ['tests/test_a.py,tests/test_b.py'] stores that one joined entry and adds the bogus path to files - the defect the shared reader was meant to close; a joined testGate or tests.gate in a batch only gets the validator's warning.",
-        "resolution": "Run each batch list field (files, tests.add, tests.gate, phase.testGate, dependsOn, blockedBy) through the same per-reading predicate in the batch problem checks, using joined_entry_parts with the plan's buildCommands keys for gates; refuse a joined value with the field path; add batch cases mirroring the flag refusal cases, and extend the argparse-walk case (or a sibling) to walk the batch keys too.",
-        "fixTask": "P156.14-3st"
+        "resolution": "fixed in P156.14-3st (36deecd80070): Run each batch list field (files, tests.add, tests.gate, phase.testGate, dependsOn, blockedBy) through the same per-reading predicate in the batch problem checks, using joined_entry_parts with the plan's buildCommands keys for gates; refuse a joined value with the field path; add batch cases mirroring the flag refusal cases, and extend the argparse-walk case (or a sibling) to walk the batch keys too.",
+        "fixTask": "P156.14-3st",
+        "commit": "36deecd80070",
+        "status": "fixed"
       },
       {
         "id": "P156-R6",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py:16571-16592 (_PAIR_PART, _part_names_file, _part_is_pair), :16651-16664 (_joined_refusal)",
         "issue": "For free-text entries the each-part-is-an-entry predicates accept the tail of a sentence, so legitimate single entries are refused: `--tests-add \"tests/test_x.py: reads _config.py, _deps.py\"` and `--accept-open \"R1=threshold n=3, m=4 is fine\"` are refused, and the suggested repeated form would store a wrong entry.",
-        "resolution": "Tighten to whole-entry shapes: after a `<path>: <text>` part, a later part counts only if it also opens with `<path>:`; for accept-open and carried the key half must have the plan's finding-id shape. Allow cases for both probed values.",
-        "fixTask": "P156.14-3st"
+        "resolution": "fixed in P156.14-3st (36deecd80070): Tighten to whole-entry shapes: after a `<path>: <text>` part, a later part counts only if it also opens with `<path>:`; for accept-open and carried the key half must have the plan's finding-id shape. Allow cases for both probed values.",
+        "fixTask": "P156.14-3st",
+        "commit": "36deecd80070",
+        "status": "fixed"
       },
       {
         "id": "P156-R7",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py:16667-16693 (read_list_flags, gate skip)",
         "issue": "--gate-drop gets the joined-value refusal although it names an entry already held and stores nothing, so a legacy joined entry such as `lint,test` cannot be dropped (scope and retarget both refuse); the refusal says the value would be stored and suggests drops of entries the gate does not hold.",
-        "resolution": "Skip the joined check for a gate-drop value equal to an entry the gate holds (or leave gate_drop to _retarget_gate_now's held/not-held reading); a case dropping a legacy joined entry.",
-        "fixTask": "P156.14-3st"
+        "resolution": "fixed in P156.14-3st (36deecd80070): Skip the joined check for a gate-drop value equal to an entry the gate holds (or leave gate_drop to _retarget_gate_now's held/not-held reading); a case dropping a legacy joined entry.",
+        "fixTask": "P156.14-3st",
+        "commit": "36deecd80070",
+        "status": "fixed"
       },
       {
         "id": "P156-R8",
@@ -131,7 +137,7 @@
         "fixTask": "P156.17-3st"
       }
     ],
-    "outcome": "[findings: 12 - 0 high, 4 med, 8 low; 5 with a recorded fix commit]"
+    "outcome": "[findings: 12 - 0 high, 4 med, 8 low; 8 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1162,7 +1168,7 @@
     {
       "id": "P156.14-3st",
       "title": "Every batch list field goes through the shared list reader, and the reader refuses only real joins",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix P156-R5, P156-R6 and P156-R7 (docs/audit/phases/P156.json review.findings). R5: add --from-file passes files, tests.add, tests.gate, phase.testGate, dependsOn and blockedBy to the task builder without the shared reader, so a joined entry is still stored; run each batch list field through the same per-reading predicate and extend the walk case to the batch keys. R6: the each-part-is-an-entry predicates refuse legitimate prose entries (a tests-add description with a comma, an accept-open reason with an `=`); tighten to whole-entry shapes with allow cases. R7: --gate-drop must be able to drop a legacy joined entry the gate holds; a case.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1195,14 +1201,23 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "36deecd80070",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py: the per-part predicates became whole-value readings (_ENTRY_READINGS maps reading -> joined-parts function); new joined_parts(reading, value, build_keys) is the one answer read_list_flags and the batch both ask. R6: tests-add reads through the new _manifest_phases.joined_tests_add_parts (each part a whole entry: once a part is `<path>: <text>`, a later part must open with `<path>:`); pair keys must have the finding-id shape `<x>-<letters><n>` (measured over every review finding id in docs/audit, examples and tests: all fit; the R-only `_FINDING_ID` would have missed hand-recorded T/S ids); waiver paths must name a file (tests_add_path). Tightening only narrows what is refused, so nothing legal before the phase is refused now. R7: gate_drop gets a new reading `held` (values as given, never refused at read); _retarget_gate_now's not-held refusal now appends the per-entry spelling via _held_drop_spelling when the value joins entries the gate holds; --gate-drop help no longer claims the refusal. R5: batch_list_fields() derives [(path, reading)] from BATCH_FLAG_KEYS + PHASE_KEY_DESTS + LIST_FLAG_READINGS (tasks[].files/dependsOn/blockedBy/fixes split, tasks[].tests.add tests-add, tasks[].tests.gate and phase.testGate gate, phase.blockedBy split); _batch_joined_problems refuses any item reading as several entries under its field's reading, named by field path (tasks[0].tests.add); batch_problems(doc, build_keys) and read_batch(..., keys_for) take the plan's buildCommands keys through _gate_build_keys(args, batch_gate_items(doc)), read only when a gate item holds a comma. Docs: PLUGIN-BUILD-GUIDE.md (_manifest_phases and audit-task sections) and verbs-in-full.md (list-flag paragraph, --gate-drop, the batch refusal list). Tests: lr3 gains the `held` branch and _LR_SAMPLES a held row; new lr8-lr11, lb1-lb3 in tests/test_audit_task.py (lr-block 14/14), jp2 in tests/test__manifest_phases.py (146/146). Mutations, each in a throwaway copy of the tree under the scratchpad (never in the task tree): gate_drop back to `gate` -> lr10 red; pair regex loosened -> lr8; waiver one-word -> lr8; batch check removed -> lb1, lb2; build keys not passed to the batch -> lb2; held hint off -> lr11; described rule removed -> jp2 + lr8; over-fire (any comma joins) -> lr6, lr8, lb3; all restored by discarding the copy. Gates: brief gate `python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py` exit 0 (2/2 files ok, 1400 cases); full `python3 tools/sweep-selftests.py` exit 0 (195/195 files ok, 18434 cases, coverage clean); `python3 tools/gate-parity.py` exit 0; `python3 tools/measure-context.py --gate` exit 0 (GATE OK); ruff and vermin -t=3.8- on the four .py files exit 0. Dependants: full-gate.py, run-test-gate.py, _affected_tests.py, _gate_derive.py, _scoped_commit.py, derive-phase-gate.py, drive-phase.py, _manifest_rules.py still correct - they use names this change does not touch (joined_entry_parts unchanged, _is_list_operator, gate_entry_commands untouched); their suites and every importer suite (test__invariants, test_close_phase, test_commit_task_work, test__scoped_commit, test__doctor_trail, test__filed_returns, test__config, test__deps, test__output_lints, test_drive_phase, test_repair_tests_add, test__manifest_rules) pass in the full sweep. PLUGIN-BUILD-GUIDE.md and verbs-in-full.md changed as above; their readers (test__deps doc lints, test__areas, test__manifest_vocab) pass. CHANGELOG.md (not in my files) still lists --gate-drop among the flags refusing a joined value at read; the effect still holds for a value joining held entries (refused by the drop with the per-entry spelling), but the sentence is now loose - left for the orchestrator.",
+        "descriptive": "add --from-file now refuses a joined list item by its field path through the same reading the flags use, the joined check no longer refuses prose entries, and --gate-drop can drop a legacy joined gate entry"
       },
       "startedAt": "2026-11-04T16:07:17Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-04T16:39:22Z",
+      "verifiedBy": [
+        "lr8 allow case: a tests.add description naming a file after a comma, accept-open/carried reasons holding `=` after a comma, a waiver reason holding `word:` - each one entry",
+        "lr9 second direction: described tests.add entries, pairs keyed by any-letter finding ids, file-naming waivers joined are still refused",
+        "lr10 retarget and scope --gate-drop lint,test drop a legacy joined gate entry",
+        "lr11 --gate-drop lint,test on a gate holding them apart is refused naming --gate-drop lint --gate-drop test, nothing written",
+        "lb1 every batch list key carries its flag's reading and a planted joined item at each is refused naming its field path; a planted flag row reaches the derivation",
+        "lb2 add --from-file refuses joined tests.add, phase.testGate and dependsOn items by field path before any write",
+        "lb3 batch prose with commas and a gate command whose argument holds a comma are written as given",
+        "jp2 joined_tests_add_parts reads several entries only when each part is a whole entry"
+      ],
       "notes": [
         {
           "at": "2026-11-04T15:17:48Z",
@@ -1219,6 +1234,10 @@
         {
           "at": "2026-11-04T15:17:48Z",
           "text": "no test runner in this task's gate for the test P156-R5 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py'], derived as narrowed to this task's tests.add paths, in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        },
+        {
+          "at": "2026-11-04T16:39:22Z",
+          "text": "gate reach at close: a passed run of this task's gate (python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py) is no evidence for PLUGIN-BUILD-GUIDE.md (the affected-test derivation selects tests/test__deps.py, tests/test__refs.py for it, and the gate runs none of them)"
         }
       ],
       "fixes": [
@@ -1231,12 +1250,24 @@
         "runId": "2026-11-04T16:39:12Z.39a8ab",
         "status": "passed",
         "at": "2026-11-04T16:39:12Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "36deecd80070",
+        "at": "2026-11-04T16:39:22Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-04T16:32:01Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py` in a throwaway tree at HEAD exited 1 with 2 of 1252 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - lr8 (house FAIL), lr10 (house FAIL): SELFTEST FAILED: 1249/1252 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P156.15-3st",
       "title": "The step-pointer lint reads the step word in any case, and the pointers it then finds are repointed",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix P156-R9 (docs/audit/phases/P156.json review.findings): match step/steps case-insensitively; repoint audit-task.py's uppercase STEP pointers (start and done docstrings) to reference/execute-task.md and any other pointer the widened lint then reports; an uppercase case that must be reported.",
       "files": [
         "tools/lints/_deps.py",
@@ -1245,7 +1276,8 @@
         "tools/lints/_deps.py",
         "plugins/audit/scripts/manifest/audit-task.py",
         "tests/test__deps.py",
-        "tests/test_audit_task.py"
+        "tests/test_audit_task.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1265,14 +1297,14 @@
       "dependsOn": [
         "P156.14-3st"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-04T16:39:44Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1291,12 +1323,18 @@
       ],
       "fixes": [
         "P156-R9"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-04T17:02:58Z.a6ac10",
+        "status": "passed",
+        "at": "2026-11-04T17:02:58Z"
+      }
     },
     {
       "id": "P156.16-3st",
       "title": "A tree the tree verb hands back is recorded verbatim on every platform, and st8 holds on a Windows runner",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix P156-R10 and P156-R11 (docs/audit/phases/P156.json review.findings), both from release-tier CI run 41853969220 at 59e4a5f8 on the windows legs. The failing case lines are copied in <scratchpad>/ci-p156-fails.txt (the orchestrator hands the path). R10: records and dispatch must hold the tree verb's answer verbatim; native spelling only where a human reads a path. R11: decide whether st8's timing assumption or the code is wrong on Windows and fix that one.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1308,7 +1346,8 @@
         "plugins/audit/scripts/governance/drive-phase.py",
         "tests/test_drive_phase.py",
         "tests/test__config.py",
-        "plugins/audit/hooks/_config.py"
+        "plugins/audit/hooks/_config.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1329,14 +1368,14 @@
       "dependsOn": [
         "P156.13-3st"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-04T16:39:57Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1364,7 +1403,8 @@
       "fixes": [
         "P156-R10",
         "P156-R11"
-      ]
+      ],
+      "reviewPerTask": "signals"
     },
     {
       "id": "P156.17-3st",
@@ -1416,6 +1456,10 @@
         {
           "at": "2026-11-04T16:34:28Z",
           "text": "Also owed (CHANGELOG.md now declared): the Unreleased entry for the shared list reader still lists --gate-drop among the flags that refuse a joined value when read; a gate-drop value now passes the reader unchanged so a legacy joined entry can be dropped, and a value joining entries held separately is refused by the drop itself - say that."
+        },
+        {
+          "at": "2026-11-04T16:55:27Z",
+          "text": "Also owed: an audit-task.py comment says 'WHICH PUTS THE CALL AT THE END OF STEP 4c, after git rev-parse HEAD' with no document named; name reference/execute-task.md if step 4c is still where the call sits, or say what it is now."
         }
       ],
       "fixes": [
