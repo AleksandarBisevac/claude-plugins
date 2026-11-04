@@ -4501,9 +4501,15 @@ def _status_listing_cases(check):
 
 # The readers of "declared" whose answers must agree with the plan gate's:
 # (file, function, how many calls of the shared predicate it makes at least).
+# A fixed list, so a reader that never called the predicate is not here: dg8's
+# derived reach is what asks the rest.
 _DECLARED_READERS = (("commit-task-work.py", "owned_rels", 1),
                      ("drive-phase.py", "submit_strays", 2),
-                     ("audit-task.py", "_uncommitted_leftovers", 1))
+                     ("drive-phase.py", "head_move", 1),
+                     ("audit-task.py", "_uncommitted_leftovers", 1),
+                     ("audit-task.py", "_commit_touches", 1),
+                     ("integrate-task.py", "undeclared_paths", 1),
+                     ("_invariants.py", "commit_scope", 1))
 
 # What the empty-`changed` pin reads, and what it cannot see - the wording the
 # predicate's docstring and the guide each carry (dg11).
@@ -4512,8 +4518,13 @@ _PIN_READS = ("an empty literal, an `or` fallback ending in one, or a "
 _PIN_BLIND = "a listing bound to a name earlier, or a `tree` git will not list"
 
 # The `files` half of "declared", answered on its own. A function whose
-# return carries one of these answers is one too, derived rather than listed
-# (`_files_half_reach`), so a reader is followed out to its callers.
+# return carries one of these answers is one too (`_files_half_reach`), so a
+# reader is followed out to its callers. The reach is derived through the
+# fixed name lists below - what puts an entry to a question
+# (`_ENTRY_MATCHERS`), what carries a value (`_CARRIERS`, `_CARRYING_METHODS`)
+# and what spells one (`_SPELLINGS`) - so a value passing through a function
+# of a module's own outside them is lost: `_wave._declared` spells each entry
+# with its own `_bare`, so `_wave.overlap` and its callers are not reached.
 _FILES_HALF_SEEDS = ("declared_task_map", "_declared_rels")
 # Planted readers of the shapes a listed pin missed (dg14), each of which a
 # derived reach must name: a direct match, a reader through the excused

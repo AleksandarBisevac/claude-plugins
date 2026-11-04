@@ -16206,9 +16206,10 @@ def _no_change_moved_cases(check):
 
 def _leftover_cases(check):
     """`done --commit` is a claim that the task's work is in that commit. The
-    commit step stages the task's declared files and the changed paths its own
-    honoured `outputs` cover and nothing else, so a covered change left in the
-    tree - or any change at all of a task that declares none - is work the
+    commit step stages, of the work, the task's declared files and the changed
+    paths its own honoured `outputs` cover and nothing else - beside them only
+    the records (`commit-task-work.stage_targets`) - so a covered change left in
+    the tree - or any change at all of a task that declares none - is work the
     close would record as landed while it sits outside it. `start` refuses a
     task that names no files, so the second case cannot be made on purpose."""
     import subprocess

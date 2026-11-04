@@ -4105,9 +4105,11 @@ def declared_git_rels(manifest, project, git_root, also=(), only=None,
     question - a matcher handed a raw entry, a membership test over raw
     entries, a raw value handed to a parameter that reaches a matcher, or a
     call of a function whose return carries such an answer, so a caller of
-    an excused owner is reached too - carries a row with its reason, the
-    reach derived rather than listed; a row naming no such call is reported
-    as well."""
+    an excused owner is reached too - carries a row with its reason; a row
+    naming no such call is reported as well. That reach is derived through
+    fixed lists of the names that match, carry and spell an entry, so a
+    value passing through a helper of a module's own outside them is not
+    followed."""
     rels = (plan_to_git(entry, git_root, project)
             for entry, rows in declared_task_map(manifest, also).items()
             if only is None or any(str(r.get("taskId")) == str(only)

@@ -131,8 +131,13 @@ that; the rest rests on you).
 **`intent` is not a finding**: the wrong half of a divergence may be the code, the
 description or the claim, so it is its own key, and `verdict` stays about the CODE.
 
-**Your last act is one call:** the `drive-phase.py submit` command your brief prints
-under *Your return*, run as printed - in `mode: phase` its `--head` and `--shown`
-included, with `"tasks": []` when no task is owed - the object on stdin. A phase return
-missing its brief's `--shown` is refused. It refuses a wrong shape writing nothing, and
-files once.
+**Your last act is one call:** the block your brief ends on, as printed (`mode: phase`:
+with its `--shown`, `"tasks": []` if none is owed), the object on stdin; it files once:
+
+```sh
+drive-phase.py submit <as your brief prints it> <<'AUDIT_RETURN'
+<the return object, as JSON>
+AUDIT_RETURN
+```
+
+Printing the return object as your reply files nothing.

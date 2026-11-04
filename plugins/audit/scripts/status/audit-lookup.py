@@ -817,10 +817,13 @@ def dependants_listing(ctx, task):
 # module does, so the paragraph about it is wrong until it is rewritten. The
 # brief names each such heading, with its line and whether its document is
 # declared, so the executor sees the edit before making it rather than at
-# submit. A heading counts when it names the declared path in full or its
-# basename standing alone - a basename after a directory is some other file's
-# path. Headings are `_impact`'s reading (ATX, outside a fence), so this section
-# and the owed `section` reader agree on what a heading is.
+# submit. A heading counts where it names the module (`heading_words`): the
+# declared path in full, a directory spelled with its slash, or a basename
+# standing alone when no other tracked file carries it - a basename after a
+# directory is some other file's path, and one two files share, or a
+# directory's last component, is an ordinary word in a heading. Headings are
+# `_impact`'s reading (ATX, outside a fence), so this section and the owed
+# `section` reader agree on what a heading is.
 DOCUMENTED_TITLE = "Where your files are documented"
 DOCUMENTED_SCOPE = ("A listed document your task does not declare is outside "
                     "your scope. "
@@ -832,12 +835,29 @@ DOCUMENTED_SCOPE = ("A listed document your task does not declare is outside "
 _MARKDOWN_GLOBS = ("*.md", "*.markdown")
 
 
+def heading_words(path, tracked):
+    """The spellings by which a heading names the declared `path`, given every
+    tracked file's path: a directory (files tracked under it, none at it) by
+    its path with the slash, so neither its last component as a word nor a
+    file under it counts; anything else by its path in full, and by its
+    basename alone only when that basename is this tracked file's and no
+    other's."""
+    if path not in tracked and any(t.startswith(path + "/") for t in tracked):
+        return [path + "/"]
+    name = posixpath.basename(path)
+    owners = [t for t in tracked if posixpath.basename(t) == name]
+    if name != path and owners == [path]:
+        return [path, name]
+    return [path]
+
+
 def documented_rows(top, paths, exclude=(), git=None, read=None):
     """`(rows, error)` - one `{"path", "doc", "line", "heading"}` per Markdown
-    heading of a tracked document naming a declared git path, in declared
-    order then document then line; `rows` None beside why when git would not
-    search. One `git grep` finds the documents holding any basename; only
-    those are read."""
+    heading of a tracked document naming a declared git path by one of its
+    `heading_words`, in declared order then document then line; `rows` None
+    beside why when git would not search. One `git grep` finds the documents
+    holding any basename; only those are read, and only then is git asked
+    which files it tracks."""
     run = git if git is not None else _impact.run_git
     read = read if read is not None else _impact._read_text
     declared = [_impact._norm(p) for p in paths]
@@ -854,11 +874,17 @@ def documented_rows(top, paths, exclude=(), git=None, read=None):
     if error is not None:
         return None, error
     docs = sorted(set(_impact._norm(d) for d in out.split("\0") if d.strip()))
+    if not docs:
+        return [], None
+    code, out, err = run(["ls-files", "-z"], top)
+    if code != 0:
+        return None, ((err.strip().splitlines() or [""])[0]
+                      or "git ls-files exited %s" % (code,))
+    tracked = set(_impact._norm(t) for t in out.split("\0") if t.strip())
     heads = dict((doc, _impact._headings(read(top, doc))) for doc in docs)
     rows = []
     for path in declared:
-        words = (_impact._path_word(path),
-                 _impact._path_word(posixpath.basename(path)))
+        words = [_impact._path_word(w) for w in heading_words(path, tracked)]
         rows += [{"path": path, "doc": doc, "line": number,
                   "heading": text.strip()}
                  for doc in docs if doc != path
@@ -1105,6 +1131,12 @@ RETURN_DELIMITER = "AUDIT_RETURN"
 RETURN_ON_STDIN = ("Put the return object in place of the middle line and run "
                    "the block as it stands - the object goes on the command's "
                    "stdin and nothing is written to disk")
+# A sub-agent that reaches the end of its brief on a sentence has printed its
+# return as a final message and filed nothing, so every brief ENDS on its
+# submit block and says this before it. `_deps.submit_ending_drift` reads this
+# constant and holds each agent definition filing through `submit` to carry
+# the same words after its own block.
+PRINTED_FILES_NOTHING = "Printing the return object as your reply files nothing."
 
 
 def absolute_manifest(project, manifest, path=os.path):
@@ -1117,14 +1149,20 @@ def absolute_manifest(project, manifest, path=os.path):
 
 def submit_command(ctx, node_id, role, tail="", in_tree=False):
     """The resolved `drive-phase.py submit` an agent's last act runs, as a
-    fenced block carrying the return on stdin in a quoted heredoc. A task in a
-    tree of its own gets the phase tree's manifest spelled absolutely, and a
-    line saying the command runs from the project: its own tree holds a
-    committed copy of the relative path, with the task still pending."""
+    fenced block carrying the return on stdin in a quoted heredoc, the fence
+    the last line. A task in a tree of its own gets the phase tree's manifest
+    spelled absolutely, and a line before the block saying the command runs
+    from the project: its own tree holds a committed copy of the relative
+    path, with the task still pending."""
     manifest = ctx["manifest"]
     if in_tree:
         manifest = absolute_manifest(ctx["project"], manifest)
-    block = [
+    block = []
+    if in_tree:
+        block.append("Run this command from the project (%s), not from your "
+                     "tree: the plan it files against is the project's."
+                     % (ctx["project"],))
+    block += [
         "```sh",
         "%s submit %s --role %s %s --project-dir %s%s <<'%s'" % (
             _script(ctx, "governance/drive-phase.py"), node_id, role,
@@ -1132,10 +1170,6 @@ def submit_command(ctx, node_id, role, tail="", in_tree=False):
         "<the return object, as JSON>",
         RETURN_DELIMITER,
         "```"]
-    if in_tree:
-        block.append("Run this command from the project (%s), not from your "
-                     "tree: the plan it files against is the project's."
-                     % (ctx["project"],))
     return "\n".join(block)
 
 
@@ -1160,7 +1194,9 @@ def executor_submit_lines(manifest, phase, task, ctx):
     A task that owes a red-first proof (`_filed_returns.owes_red_first`) owes the
     test command after `--`; it is printed resolved when a gate entry names a
     `tests.add` file, and asked for when none does. A tdd task whose stored
-    `expectRedFirst` is false owes none, and `submit` files its `redFirst`."""
+    `expectRedFirst` is false owes none, and `submit` files its `redFirst`.
+    What the command is owed comes first and the block last, so the brief
+    ends on the command to run."""
     tid = str(task.get("id"))
     tdd = _fr.owes_red_first(task)
     cmd = red_command(manifest, phase, task) if tdd else None
@@ -1182,9 +1218,9 @@ def executor_submit_lines(manifest, phase, task, ctx):
         tail, note = "", [
             "Add `-- <test command>` to prove a regression test red in a "
             "throwaway tree; without it the `redFirst` you wrote is filed."]
-    return ([submit_command(ctx, tid, "executor", tail,
-                            wave_tree(ctx, phase, task)[0] is not None)]
-            + note)
+    return note + [PRINTED_FILES_NOTHING,
+                   submit_command(ctx, tid, "executor", tail,
+                                  wave_tree(ctx, phase, task)[0] is not None)]
 
 
 def _top(ctx):
@@ -1492,7 +1528,7 @@ def compose_reviewer_brief(manifest, phase, task, ctx, filed):
     lines += [""] + _fr.claim_section(task, filed[1]).split("\n")
     lines += _section("Your return", [
         "File the return object agents/audit-reviewer.md declares - your one "
-        "write. %s:" % (RETURN_ON_STDIN,),
+        "write. %s. %s" % (RETURN_ON_STDIN, PRINTED_FILES_NOTHING),
         submit_command(ctx, tid, "reviewer", "", tree is not None)])
     return lines
 
@@ -1865,8 +1901,8 @@ def phase_closing_lines(ctx, parts, shown, owed, slice_of=None):
             "None: no task here is owed its three answers by this review."])
         lines += _section("Your return", [
             "File the return object agents/audit-reviewer.md declares, with "
-            "`\"tasks\": []` - the verb writes it once for this head. %s:"
-            % (RETURN_ON_STDIN,),
+            "`\"tasks\": []` - the verb writes it once for this head. %s. %s"
+            % (RETURN_ON_STDIN, PRINTED_FILES_NOTHING),
             file_cmd if head else
             "The head could not be read (%s), so there is no head to file "
             "under: run this brief again where git answers." % (head_why,)])
@@ -1880,8 +1916,8 @@ def phase_closing_lines(ctx, parts, shown, owed, slice_of=None):
     lines += _section("Your return", [
         "File the return object agents/audit-reviewer.md declares, with one "
         "`tasks` entry per task owed above - the verb refuses a return that "
-        "leaves one out, and writes it once for this head. %s:"
-        % (RETURN_ON_STDIN,),
+        "leaves one out, and writes it once for this head. %s. %s"
+        % (RETURN_ON_STDIN, PRINTED_FILES_NOTHING),
         file_cmd if head else
         "The head could not be read (%s), so there is no head to file under: "
         "run this brief again where git answers." % (head_why,)])

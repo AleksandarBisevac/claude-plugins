@@ -949,11 +949,13 @@ def _brief_cases(check):
           "red steps: not read" in text2 and "run-red" in text2.split(
               "red steps: not read")[1].splitlines()[0])
     cut = text3.split("## Your return - the submit block\n", 1)[-1]
-    check("bf3c the submit block is the FIRST thing in the closing submit "
-          "section, and the brief's last section: %r" % (cut[:200],),
-          cut.startswith("```sh\n") and "submit P1.1 --role executor" in cut
-          .split("```", 2)[1]
-          and cut.count("\n## ") == 0)
+    check("bf3c the submit block is the LAST thing in the closing submit "
+          "section, what the command is owed said before it, and that section "
+          "the brief's last: %r" % (cut[-300:],),
+          cut.rstrip().endswith("```") and "submit P1.1 --role executor" in cut
+          .rstrip()[:-3].rsplit("```sh", 1)[-1]
+          and cut.count("\n## ") == 0
+          and cut.index("narrow it to your cases") < cut.index("```sh"))
 
     # ---- the retry section quotes the operator's own `--reason` -------------
     # `drive-phase.py` keys the reason it recorded to the attempt it belongs
@@ -1293,6 +1295,33 @@ def _brief_cases(check):
           % (_bf_submits,),
           _bf_submits == {"executor": 1, "reviewer": 1, "phase-owed": 1,
                           "phase-unowed": 1})
+
+    # THE LAST THING READ IS THE COMMAND TO RUN. A reviewer that reached the
+    # end of its brief on a sentence printed its return as a final message,
+    # which files nothing; so every brief ends on its submit block - the last
+    # non-blank line closes the fence that opened on the submit - and says,
+    # before that block, that a printed return files nothing.
+    def ending(text):
+        lines = [ln for ln in text.splitlines() if ln.strip()]
+        fences = [i for i, ln in enumerate(lines) if ln.startswith("```")]
+        last_open = fences[-2] if len(fences) >= 2 else None
+        return {"endsOnFence": bool(lines) and lines[-1] == "```",
+                "fenceIsSubmit": last_open is not None and any(
+                    "drive-phase.py\" submit" in ln
+                    for ln in lines[last_open:len(lines) - 1]),
+                "printedFilesNothing": text.count(warning) if warning else 0}
+    warning = getattr(M, "PRINTED_FILES_NOTHING", None)
+    _bf_endings = dict((name, ending(t)) for name, t in (
+        ("executor", text), ("reviewer", rtext), ("phase-owed", ptext6),
+        ("phase-unowed", ptext7)))
+    check("bf70 every brief that files a return ENDS on its submit block - the "
+          "last non-blank line closes the fence the submit opens - so the last "
+          "thing an agent reads is the command it must run: %r" % (_bf_endings,),
+          all(e["endsOnFence"] and e["fenceIsSubmit"]
+              for e in _bf_endings.values()))
+    check("bf71 and every one of them says ONCE that a return printed as the "
+          "final message files nothing: %r" % (_bf_endings,),
+          all(e["printedFilesNothing"] == 1 for e in _bf_endings.values()))
 
     # A GREEN RUN THAT DID NOT MEASURE THE WORK. The gate exits 0 and still
     # prints NO OVERLAP or TREE CHANGED; the row keeps what those banners rest
@@ -2586,6 +2615,20 @@ _GD_GUIDE = [
     "",                                          # 20
 ]
 _GD_README = ["# Readme", "", "## `tests/test_refund.py`", ""]
+_GD_GENERIC = [
+    "# Guide",                                   # 1
+    "",                                          # 2
+    "## Adding tests",                           # 3  a word, not the directory
+    "",                                          # 4
+    "### `tests/`",                              # 5  match, the directory
+    "",                                          # 6
+    "### `README.md`",                           # 7  two tracked files share it
+    "",                                          # 8
+    "### `docs/README.md`",                      # 9  match, the path in full
+    "",                                          # 10
+    "### `tests/test_refund.py`",                # 11 another file's path
+    "",                                          # 12
+]
 _GD_TITLE = "Where your files are documented"
 
 
@@ -2684,6 +2727,45 @@ def _guide_section_cases(check):
           ncode == M.E_OK and nbody is not None and len(nbody) == 1
           and not nbody[0].startswith("- ") and "heading" in nbody[0])
 
+    # A HEADING COUNTS WHERE IT NAMES THE MODULE. A basename two tracked files
+    # share, and a directory's last component, are ordinary words in a heading:
+    # matched alone they would list a row per heading of every document.
+    generic = _bf_manifest()
+    generic["phases"][0]["tasks"][0]["files"] = ["docs/README.md", "tests"]
+    generic["fileIndex"] = {"docs/README.md": ["P1.1"], "tests": ["P1.1"]}
+    g_files = dict(_DI_FILES)
+    g_files["README.md"] = "# Readme\n"
+    g_files["docs/README.md"] = "# Docs\n"
+    g_files["docs/GUIDE.md"] = "\n".join(_GD_GENERIC)
+    proj_g, mpath_g = _di_project(root, "gd-generic", generic, g_files)
+    gcode, gtext = _di_brief(proj_g, mpath_g, "executor")
+    grows = [ln for ln in (_gd_section(gtext) or []) if ln.startswith("- ")]
+    g_at = sorted((ln.split(":", 1)[0][2:],
+                   int(ln.split("docs/GUIDE.md:", 1)[1].split()[0]))
+                  for ln in grows if "docs/GUIDE.md:" in ln)
+    check("gd9 a declared README.md whose basename another tracked file shares, "
+          "and a declared directory, are listed only where a heading names "
+          "them - the nested path in full, the directory spelled as one with "
+          "its slash - and never for 'Adding tests', a bare `README.md` or "
+          "another file's path under the directory: code=%r %r"
+          % (gcode, grows),
+          gcode == M.E_OK and g_at == [("docs/README.md", 9), ("tests", 5)]
+          and len(grows) == 2)
+
+    shared = dict(files)
+    shared["lib/refund.py"] = "def other():\n    return 0\n"
+    proj_s, mpath_s = _di_project(root, "gd-shared", _bf_manifest(), shared)
+    scode, stext = _di_brief(proj_s, mpath_s, "executor")
+    s_at = sorted(int(ln.split("docs/GUIDE.md:", 1)[1].split()[0])
+                  for ln in (_gd_section(stext) or [])
+                  if ln.startswith("- src/refund.py:") and "docs/GUIDE.md:" in ln)
+    check("gd10 THE BASENAME ARM'S OWN READING: once lib/refund.py is tracked "
+          "too, the heading naming `refund.py` alone (GUIDE.md:17) names no one "
+          "module and is no longer listed, while the two naming src/refund.py "
+          "in full stay - gd1 is this case's other direction: code=%r %r"
+          % (scode, s_at),
+          scode == M.E_OK and s_at == [5, 19])
+
     def broken(argv, cwd):
         return 128, "", "fatal: not a git repository\n"
 
@@ -2697,6 +2779,17 @@ def _guide_section_cases(check):
           % (failed, empty),
           failed == (None, "fatal: not a git repository")
           and empty == ([], None))
+
+    def unlisted(argv, cwd):
+        if argv[:1] == ["ls-files"]:
+            return 128, "", "fatal: index file corrupt\n"
+        return M._impact.run_git(argv, cwd)
+
+    no_list = M.documented_rows(proj, ["src/refund.py"], git=unlisted)
+    check("gd11 documents found but the tracked files unlisted is an error "
+          "naming git's reason, never rows matched without knowing which "
+          "basenames are shared: %r" % (no_list,),
+          no_list == (None, "fatal: index file corrupt"))
     _harness.remove_tree(root)
 
 

@@ -1070,6 +1070,12 @@ TABLE = (
  # copy gains a field the command-side copy has never heard of.
  ("explorer_contract_drift", "plugins/audit/agents/audit-explorer.md", "after",
   '"suggestedTests": ["...", ...], ', '"confidence": "0-1", ', DEP, "ec1"),
+ # A filing agent's definition loses the sentence after its submit block that
+ # says a printed return files nothing - the ending a reviewer that printed its
+ # return instead of filing it was missing - so the shipped reviewer convicts.
+ ("submit_ending_drift", "plugins/audit/agents/audit-reviewer.md", "replace",
+  "Printing the return object as your reply files nothing.",
+  "Then hand the object back.", DEP, "ae1"),
  # TWO WAYS, because the lint has two ways to stop being true. First the
  # document: the state commit's paragraph reverts to the wording an earlier
  # writer's paragraph shipped with, which is the historical bug and encodes no
@@ -1838,6 +1844,13 @@ ALLOW = (
  ("schema_vocab_drift", L + "_help_lints.py", "replace",
   "def vocab_sets(mod=None):",
   "def vocab_sets(mod=None):\n    return {'KNOWN_GHOST': ()}", MVO, "mv18"),
+ # This lint's over-fire. Only a heading after the filing block is a section
+ # past it; read every later line as one and the warning sentence itself
+ # convicts, so the definition ending on the block and the warning - `ae6`'s
+ # quiet twin - is named.
+ ("submit_ending_drift", L + "_deps.py", "replace",
+  '    heads = [ln for ln in rest if ln.startswith("#")]',
+  '    heads = [ln for ln in rest if ln.strip()]', DEP, "ae6"),
  # This lint's over-fire. The field/value split is structural: the value half of a
  # `key: value` pair is consumed first so a value that happens to be
  # identifier-shaped cannot be read as a field name. Reverse the regex to

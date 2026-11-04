@@ -217,6 +217,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   dropped on every drive call once the task is terminal, blocked or has no patch standing.
 - **A kept task tree's refusal names the task its marker records** before the clipped reason, so
   a long temporary or project path no longer hides which task the marker names.
+- **Every brief that files a return ends on its submit block, and so does the reviewer's agent
+  definition.** What the command is owed is said before the block, with the sentence that a
+  return printed as the final message files nothing; the reviewer's definition, which closed
+  on a sentence about the submit, now ends on the command and that sentence. A lint holds every
+  agent definition naming `drive-phase.py submit` to that ending.
+- **The executor brief's documented-headings section lists a heading only where it names the
+  file.** A basename two tracked files share (`README.md`), a declared directory's last
+  component and another file's path under that directory no longer each add a row per heading;
+  a directory is named by its path with the slash.
 
 ## [3.7.0]
 

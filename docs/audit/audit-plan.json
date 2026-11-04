@@ -1029,7 +1029,8 @@
       "P153.20-34e",
       "P155.5",
       "P155.3",
-      "P155.29-gfj"
+      "P155.29-gfj",
+      "P156.7"
     ],
     ".claude/hooks/require-claim-block.py": [
       "P37.2",
@@ -4720,7 +4721,8 @@
       "P155.40-gfj",
       "P155.44-gfj",
       "P156.4",
-      "P156.6"
+      "P156.6",
+      "P156.7"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -8689,7 +8691,8 @@
       "P155.40-gfj",
       "P155.44-gfj",
       "P156.4",
-      "P156.6"
+      "P156.6",
+      "P156.7"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -8774,7 +8777,8 @@
       "P155.40-gfj",
       "P155.44-gfj",
       "P156.4",
-      "P156.6"
+      "P156.6",
+      "P156.7"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -11462,7 +11466,8 @@
       "P155.35-gfj",
       "P155.43-gfj",
       "P155.48-gfj",
-      "P156.4"
+      "P156.4",
+      "P156.7"
     ],
     "plugins/audit/hooks/hold-handback.py": [
       "P128.6-0h5"
@@ -11873,7 +11878,8 @@
       "P155.40-gfj",
       "P155.44-gfj",
       "P156.4",
-      "P156.6"
+      "P156.6",
+      "P156.7"
     ],
     "tests/fixtures/pricing-page-2026-10-10.md": [
       "P131.1"
@@ -11929,7 +11935,8 @@
       "P155.40-gfj",
       "P155.44-gfj",
       "P156.4",
-      "P156.6"
+      "P156.6",
+      "P156.7"
     ],
     "tests/test__areas.py": [
       "P131.1",
@@ -12319,7 +12326,8 @@
       "P155.40-gfj",
       "P155.44-gfj",
       "P156.4",
-      "P156.6"
+      "P156.6",
+      "P156.7"
     ],
     "tests/test__runner_output.py": [
       "P131.1",
@@ -12907,7 +12915,8 @@
       "P155.40-gfj",
       "P155.44-gfj",
       "P156.4",
-      "P156.6"
+      "P156.6",
+      "P156.7"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",

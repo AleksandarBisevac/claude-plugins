@@ -717,7 +717,9 @@ the live plan without `/audit:propose materialize`.
    description noting `imported from ADO — scope files/tests before running`,
    which names a real verb: `/audit:task scope <taskId> --files a,b`. It did not
    always — for a release that instruction had no executor, and an imported phase
-   ran with `fileIndex` empty and the plan gate therefore inert. Orphan
+   ran with its tasks holding `files: []`, so the plan gate had no declared path to
+   open an edit by: it reads a running task's `files` and graded `outputs`, never a
+   `fileIndex` row. Orphan
    sprint tasks (no selected parent) group under one final proposal. Revalidate.
 
    **The synthesized phase's `testGate` comes from the manifest or is EMPTY. Never

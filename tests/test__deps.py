@@ -1582,6 +1582,87 @@ def _guide_cases(check):
               rec_collisions == [])
     finally:
         shutil.rmtree(rec, ignore_errors=True)
+    _agent_ending_cases(check)
+
+
+# An agent definition that files its return through `submit`, written to hold
+# the ending a sub-agent must reach: the filing block last, the warning that a
+# printed return files nothing after it, and no section past them.
+_AE_BLOCK = ("```sh\n"
+             "drive-phase.py submit <id> --role reviewer <<'AUDIT_RETURN'\n"
+             "<the return object, as JSON>\n"
+             "AUDIT_RETURN\n"
+             "```\n")
+
+
+def _agent_ending_cases(check):
+    """Every agent definition whose return `drive-phase.py submit` files ends
+    on that command, so a sub-agent's last read is the step it must take."""
+    real = M.submit_ending_drift()
+    check("ae1 every shipped agent definition that files its return through "
+          "`drive-phase.py submit` ends on that command - its last fenced "
+          "block is the submit, no section follows it, and it says a printed "
+          "return files nothing: %r" % (real,), real == [])
+    named = M.submit_filing_agents()
+    check("ae2 the rule reads at least the executor's and the reviewer's "
+          "definitions - a walk finding no filing agent is no verdict: %r"
+          % (named,),
+          "audit-executor.md" in named and "audit-reviewer.md" in named
+          and "audit-explorer.md" not in named)
+
+    tmp = tempfile.mkdtemp(prefix="audit-deps-ending-")
+    try:
+        def agents(**docs):
+            where = os.path.join(tmp, "agents-%d" % (len(os.listdir(tmp)),))
+            os.makedirs(where)
+            for name, text in docs.items():
+                with open(os.path.join(where, name + ".md"), "w",
+                          encoding="utf-8") as fh:
+                    fh.write(text)
+            return where
+
+        warning = M.printed_files_nothing()
+        check("ae8 the warning is read from the brief writer's own constant, "
+              "one home for both surfaces: %r" % (warning,),
+              isinstance(warning, str) and "files nothing" in warning)
+        tail = "\n%s\n" % (warning,)
+        prose = agents(
+            ending=("# Agent\n\nRules.\n\n**Your last act:** run the "
+                    "`drive-phase.py submit` command your brief prints.\n"))
+        check("ae3 a definition naming the submit only in a sentence - no "
+              "block carrying the command - is named: %r"
+              % (M.submit_ending_drift(prose),),
+              [p for _n, p in M.submit_ending_drift(prose)
+               if "no fenced block" in p] != [])
+        after = agents(
+            ending="# Agent\n\n" + _AE_BLOCK + tail + "\n## Return format\n\n"
+                   "{}\n")
+        check("ae4 a section after the filing block is named - the block is "
+              "not the end: %r" % (M.submit_ending_drift(after),),
+              [p for _n, p in M.submit_ending_drift(after)
+               if "after" in p] != [])
+        unwarned = agents(ending="# Agent\n\n" + _AE_BLOCK)
+        check("ae5 a filing block with no word that a printed return files "
+              "nothing is named: %r" % (M.submit_ending_drift(unwarned),),
+              [p for _n, p in M.submit_ending_drift(unwarned)
+               if "files nothing" in p] != [])
+        good = agents(ending="# Agent\n\nRules.\n\n" + _AE_BLOCK + tail,
+                      other="# Explorer\n\nReturns a JSON array.\n")
+        check("ae6 THE ALLOW TWIN: a definition ending on the block and the "
+              "warning is quiet, and one that never names the submit is not "
+              "read at all: %r" % (M.submit_ending_drift(good),),
+              M.submit_ending_drift(good) == []
+              and M.submit_filing_agents(good) == ["ending.md"])
+        empty = agents(other="# Explorer\n\nReturns a JSON array.\n")
+        missing = os.path.join(tmp, "no-such-dir")
+        check("ae7 a directory holding no filing agent, and one that cannot be "
+              "read, are each a finding - never an empty, agreeing answer: "
+              "%r / %r" % (M.submit_ending_drift(empty),
+                           M.submit_ending_drift(missing)),
+              len(M.submit_ending_drift(empty)) == 1
+              and len(M.submit_ending_drift(missing)) == 1)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _boundary_cases(check):

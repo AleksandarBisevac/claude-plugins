@@ -313,7 +313,7 @@
     {
       "id": "P156.5",
       "title": "A task's recorded gate is checked to reach the files it changes",
-      "status": "in_progress",
+      "status": "done",
       "description": "Carried low findings P155-R26, P155-R32 and P155-R57 (docs/audit/phases/P155.json review.findings) are three instances of one class: a task's recorded tests.gate selects no suite that reads or runs the files the task changed (CHANGELOG/COMPATIBILITY edits graded by four suites that never open them; a verify.sh/gate-parity change graded by suites that never import it), so a passed gate run is no evidence for the change. The repair is one mechanism, not three answers: when a gate is declared or a task closes, the files the task declares (or changes) are compared with what the gate's selected suites reach, through the same reading the affected-test derivation uses, and a file no selected suite reaches is named (warning at scope time, the close records it). Past tasks' recorded gates are the record of what was run and are not rewritten; say so for each of the three findings. Answer each by id.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -344,19 +344,34 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0cd62833b3e9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "ONE mechanism, built on the affected-test derivation's own reading. plugins/audit/scripts/manifest/_manifest_phases.py: new pure gate_reach_gaps(asked, runs, answers) - [(path, why)] for each declared path no suite the gate runs reaches; reached = the gate runs it, its selection is settled by a declared unscoped call, or a selected suite is one the gate runs; a path with no answer is named 'not asked', never counted reached. plugins/audit/scripts/manifest/audit-task.py: new section 'which of a task's files its gate reaches' - _gate_reach(project, manifest, phase, task) asks _affected_tests.select for each declared file alone over the observations run-test-gate.py gathers (recorded listings + version check, the tree's suites, every Python source; _reach_facts mirrors run-test-gate._affected_facts), _affected_tests.steps_for for the unscoped-call settlement, _affected_tests.gate_runs for what the gate runs, then gate_reach_gaps. Cost bound: listing commands for all files run side by side (ThreadPoolExecutor, GATE_REACH_WORKERS), and the import graph is walked only for a file the trusted related listing does not already reach a gate-run suite for (_related_reach, using _affected_tests' own trust reading). Wired: add prints one 'WARNING: gate reach: <path> -- <why>' line per gap and carries gateReach under --json; scope does the same only when the call moved tests.gate or files; done --commit appends one dated {at, text} note ('gate reach at close: ...') in the close's own write, journals it as a notes change row, prints the lines and carries gateReach; a --no-change close is not asked. Docs: reference/verbs-in-full.md (add/scope warning paragraph, done recording paragraph), PLUGIN-BUILD-GUIDE.md (_manifest_phases and audit-task sections). Tests: tests/test__manifest_phases.py gr1-gr3; tests/test_audit_task.py new staged block grt-block (_gate_reach_cases, grt1-grt7, added to STAGES); pd9c's expected changes list now includes 'notes' (its fixture gate, a key running true, reaches no suite of src/fresh.ts, so the close writes the note - the case's subject, fields written and no others, holds). Mutations, each in a scratch copy of the tree with __pycache__ purged: listing not read -> grt3, grt4 red; no Python sources -> grt1, grt2, grt5, grt6, grt7 red; note not written -> grt6 red; gaps never -> grt1, grt2, grt3, grt5, grt6 red; every path a gap -> gr1, gr3 red; scope always asks -> grt5 red; unanswered counted reached -> gr1, gr2 red; settled ignored -> gr1, gr3 red. Runs: brief gate `python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py` exit 0 (2/2 files ok, 1386 cases); full `python3 tools/sweep-selftests.py` in the task tree exit 0 (195/195 files ok, 18374 cases; covers test__config, test__deps, test__output_lints, test__refs, test_drive_phase, test_close_phase, test__invariants, test_run_test_gate, test_commit_task_work and every other reader); ruff check on the four .py exit clean; vermin -t=3.8- no violations. No validator warning was added, so the repo's own plan validates as before. FINDINGS, each asked of its task's recorded gate in this repo's plan (_gate_reach over the live plan, the task tree as project): P155-R26 - P155.18-gfj's gate (the four-suite sweep) names CHANGELOG.md and COMPATIBILITY.md ('the affected-test derivation selects tests/test__deps.py, tests/test__refs.py for it, and the gate runs none of them'), and also tools/release.py and PLUGIN-BUILD-GUIDE.md. P155-R32 - P155.24-gfj's gate names tools/verify.sh ('selects tests/test__refs.py, tools/gate-parity.py for it, and the gate runs none of them') and PLUGIN-BUILD-GUIDE.md. P155-R57 - tools/gate-parity.py is NOT named under the same task's gate: the recorded related listing (python3 tools/affected.py --list-related tools/gate-parity.py) answers tests/test__affected_tests.py and tests/test_stamp_verification.py among others, both of which that gate runs, so by the derivation's reading the gate reaches the file; the finding's reading (no gate suite imports or names it) disagrees with the listing, and the listing is tools/affected.py, outside this task's files - not changed here; the class is still caught for that task through tools/verify.sh. For all three: the past tasks' recorded tests.gate is the record of what was run and is not rewritten; the mechanism warns and records going forward. Timing in this repo, measured twice about ten minutes apart on the live tree: P155.18-gfj 10.7s then 17.1s, P155.24-gfj 6.1s then 8.8s, P156.5 5.8s then 7.1s (the second run beside other load); most of it is the project's own listing, about 6.5s per .py path when run alone. Not done, outside the stated surfaces: add --from-file (batch) and retarget (a phase gate) do not run the check; run-test-gate._affected_facts and audit-task._reach_facts gather the same observations in two places - one shared gatherer would need run-test-gate.py, which is outside this task's files. Dependants: full-gate.py, run-test-gate.py and the suites importing audit-task.py - still correct, no existing name or signature changed (new names only), all green in the full sweep; _manifest_phases.py's importers (_affected_tests, _gate_derive, _scoped_commit, derive-phase-gate, drive-phase, run-test-gate, _manifest_rules, audit-task) - still correct, one function added, nothing changed; tests/test_audit_task.py's importers (test_commit_task_work uses _attempt_cases etc., unchanged) and its path readers (sweep-selftests' staged runner, tools/affected.py, .github/sweep-costs.json: the new grt-block has no recorded cost, so the sweep weighs it by the suite's figure over its blocks; ps-block green) - still correct; tests/test__manifest_phases.py's readers (test__filed_returns, test__manifest_rules, test_repair_tests_add import its helpers, unchanged) - still correct; verbs-in-full.md and PLUGIN-BUILD-GUIDE.md readers (_areas, test__areas, test__manifest_vocab, test__deps, test__refs, test__doctor_trail, the enumeration lint) - green in the full sweep; no heading added. No file outside the declared files was edited.",
+        "descriptive": "A task's gate is now checked to reach the files the task declares, through the affected-test derivation's own reading: add and scope warn per unreached file, and done records the gap as a dated note."
       },
       "startedAt": "2026-11-04T12:42:04Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-04T13:25:21Z",
+      "verifiedBy": [
+        "tests/test__manifest_phases.py gr1-gr3: gate_reach_gaps names exactly the unreached declared paths in order (a suite the gate runs, a selected suite it runs and a settled selection are reached), says why in the derivation's terms (selected suites, no suite, the widening verbatim, not asked), and names nothing when every path is reached (second direction)",
+        "tests/test_audit_task.py grt1-grt7 (new grt-block): add warns once per unreached file and not for a module reached through its suite's import; --json carries gateReach; the recorded related listing is read (a document named with the listing's suite, and quiet under a gate running that suite - second direction); scope warns when it moves the gate or files and is silent when it moves neither; done records one dated note naming only the unreached file and prints it; a close whose gate reaches every file writes no note (second direction)"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-04T13:25:17Z.260c32",
         "status": "passed",
         "at": "2026-11-04T13:25:17Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "0cd62833b3e9",
+        "at": "2026-11-04T13:25:21Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-04T13:15:24Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py` in a throwaway tree at HEAD exited 1 with 6 of 1241 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pd9c (house FAIL), grt1 (house FAIL), grt2 (house FAIL), grt3 (house FAIL), grt5 (house FAIL), grt6 (house FAIL): SELFTEST FAILED: 1235/1241 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -436,7 +451,7 @@
     {
       "id": "P156.7",
       "title": "The documents' and records' carried lows: lookup's documented rows, step 4c's staging list, the sync copy of the fileIndex claim, the declared pin's reach, and the reviewer's submit",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Carried low findings P155-R27, P155-R30, P155-R45, P155-R61 and P155-R66 (docs/audit/phases/P155.json review.findings), plus one found outside any finding. R27: audit-lookup's documented_rows is unbounded and its basename-alone arm matches any heading naming a generic basename or a directory's last component; bound it or match a heading only where it names the module, and fix the guide paragraph. R30: PLUGIN-BUILD-GUIDE says a task commit stages 'exactly the four things step 4c allows' while step 4c in reference/orchestrator.md still allows declared files only, and tests/test_audit_task.py's prose near the commit cases says the same old thing; make all three say what the code stages. R45: BUG-31-z9j's P143 findings were resolved to their fixing tasks after the finding was filed (commit 8c4bb8bd); verify that nothing remains and answer with that evidence. R61: plugins/audit/commands/sync.md still carries the false fileIndex-made-the-gate-inert claim; correct it as the other copies were. R66: the declared pin's 'derived rather than listed' overstates it; either reach _wave's readers, integrate-task's undeclared_paths and _invariants' commit_scope, or state the fixed lists honestly. Outside any finding: reviewer agents printed their return instead of running submit; make the reviewer's last step impossible to miss (the agent definition and the brief end on the submit command) and, if the drive can see an unfiled reviewer return, name it. Answer each by id.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -450,7 +465,16 @@
         "plugins/audit/agents/audit-reviewer.md",
         "CHANGELOG.md",
         "tools/lints/_deps.py",
-        "tests/test__deps.py"
+        "tests/test__deps.py",
+        ".claude/hooks/guard-uncommitted.py",
+        "tools/prove-gates.py",
+        "tools/release.py",
+        "tests/_harness.py",
+        "tests/test__affected_tests.py",
+        "tools/sweep-selftests.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test__runner_collects.py",
+        "tests/test_stamp_verification.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -459,7 +483,7 @@
         ],
         "expectRedFirst": true,
         "gate": [
-          "python3 tools/sweep-selftests.py tests/test__deps.py tests/test_audit_lookup.py tests/test_audit_task.py tests/test__config.py"
+          "python3 tools/sweep-selftests.py tests/test__deps.py tests/test_audit_lookup.py tests/test_audit_task.py tests/test__config.py tests/_harness.py tests/test__affected_tests.py tests/test__runner_collects.py tests/test_stamp_verification.py"
         ],
         "gateBasis": "tests.add"
       },
@@ -470,16 +494,22 @@
       "dependsOn": [
         "P156.5"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-04T13:26:13Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-04T13:58:12Z.d708e2",
+        "status": "passed",
+        "at": "2026-11-04T13:58:12Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

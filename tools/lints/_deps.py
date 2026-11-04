@@ -2025,6 +2025,11 @@ GIT_PATH_BASE_EXEMPT = (
      "that same top through plan_to_git and returns the listed paths its "
      "outputs patterns cover in that listing's own spelling; no plan entry "
      "is compared in another spelling"),
+    ("audit-lookup.py", "documented_rows",
+     "git ls-files runs at the checkout's top and its paths are compared only "
+     "with the declared entries _dependant_scope already spelled from that "
+     "same top through plan_to_git - to tell a directory from a file and a "
+     "basename one tracked file holds from one several share"),
     ("audit-task.py", "_commit_touches",
      "the closing commit's paths, which git diff-tree names from the "
      "checkout's top, are handed whole to _config.declared_git_rels as its "
@@ -3010,6 +3015,132 @@ def explorer_contract_drift(agent_path=None, init_path=None):
         out.append((agent_label, "missing field(s) %s that %s's return contract "
                     "carries" % (", ".join(only_init), init_label)))
     return out
+
+
+# --- submit_ending_drift: an agent that files through submit ends on it ------------
+# A sub-agent's return reaches the drive only through `drive-phase.py submit`; a
+# return printed as the final message is read by nobody. Reviewers did exactly
+# that while their definition closed on a sentence ABOUT the submit with no
+# command in it, so the rule is about where the definition ends: its last fenced
+# block carries the submit, no heading or further block follows it, and after it
+# the definition says - in the brief writer's own words, read from
+# `audit-lookup.py`'s `PRINTED_FILES_NOTHING` so the two surfaces share one
+# home - that a printed return files nothing. Which agents file through submit
+# is derived from the text: every definition naming the command.
+_SUBMIT_COMMAND = "drive-phase.py submit"
+_BRIEF_WRITER = ("status", "audit-lookup.py")
+_PRINTED_CONSTANT = "PRINTED_FILES_NOTHING"
+
+
+def printed_files_nothing(writer_path=None):
+    """The brief writer's `PRINTED_FILES_NOTHING` string literal, or None when
+    the file cannot be read or assigns no such string at module level."""
+    path = writer_path if writer_path is not None else os.path.join(
+        _output.SCRIPTS_DIR, *_BRIEF_WRITER)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+    except (OSError, UnicodeDecodeError, SyntaxError):
+        return None
+    for node in tree.body:
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id == _PRINTED_CONSTANT
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)):
+            return node.value.value
+    return None
+
+
+def _agents_dir(path=None):
+    return path if path is not None else os.path.join(_output.PLUGIN_ROOT,
+                                                      "agents")
+
+
+def _agent_texts(agents_dir):
+    """`([(basename, text)], problem)` - every `.md` definition, sorted; the
+    problem when the directory or a file cannot be read."""
+    try:
+        names = sorted(n for n in os.listdir(agents_dir) if n.endswith(".md"))
+    except OSError as exc:
+        return [], "unreadable: %s" % (exc,)
+    out = []
+    for name in names:
+        try:
+            with open(os.path.join(agents_dir, name), "r",
+                      encoding="utf-8") as fh:
+                out.append((name, fh.read()))
+        except (OSError, UnicodeDecodeError) as exc:
+            return out, "%s unreadable: %s" % (name, exc)
+    return out, None
+
+
+def submit_filing_agents(agents_dir=None):
+    """The basenames of the agent definitions naming `drive-phase.py submit` -
+    the ones whose return the submit files - sorted."""
+    texts, _problem = _agent_texts(_agents_dir(agents_dir))
+    return [name for name, text in texts if _SUBMIT_COMMAND in text]
+
+
+def _fences(lines):
+    """`[(open, close)]` line indices of each fenced block, in order; an
+    unclosed fence runs to the end."""
+    spans, start = [], None
+    for i, line in enumerate(lines):
+        if not line.startswith("```"):
+            continue
+        if start is None:
+            start = i
+        else:
+            spans.append((start, i))
+            start = None
+    if start is not None:
+        spans.append((start, len(lines) - 1))
+    return spans
+
+
+def _ending_problems(text, warning):
+    """The problems with how one filing definition ends, in words."""
+    lines = text.splitlines()
+    spans = _fences(lines)
+    if not spans or not any(_SUBMIT_COMMAND in ln
+                            for ln in lines[spans[-1][0]:spans[-1][1] + 1]):
+        return ["names `%s` but its last fenced block does not carry it - no "
+                "fenced block hands the sub-agent the command to run"
+                % (_SUBMIT_COMMAND,)]
+    rest = lines[spans[-1][1] + 1:]
+    found = []
+    heads = [ln for ln in rest if ln.startswith("#")]
+    if heads:
+        found.append("a section comes after the filing block (%r), so the "
+                     "definition does not end on it" % (heads[0],))
+    if warning not in "\n".join(rest):
+        found.append("no sentence after the filing block says a printed "
+                     "return files nothing (%r)" % (warning,))
+    return found
+
+
+def submit_ending_drift(agents_dir=None, writer_path=None):
+    """[(file, problem), ...] - each agent definition that files its return
+    through `drive-phase.py submit` and does not end on that command.
+
+    FAILS LOUDLY on a directory that cannot be read, a brief writer whose
+    warning cannot be read, and a directory where no definition names the
+    submit: each is one finding, never an empty, agreeing answer."""
+    texts, problem = _agent_texts(_agents_dir(agents_dir))
+    if problem is not None:
+        return [(_agents_dir(agents_dir), problem)]
+    warning = printed_files_nothing(writer_path)
+    if warning is None:
+        return [(writer_path or "/".join(_BRIEF_WRITER),
+                 "assigns no `%s` string, so the warning a filing agent "
+                 "must carry cannot be read" % (_PRINTED_CONSTANT,))]
+    filing = [(name, text) for name, text in texts if _SUBMIT_COMMAND in text]
+    if not filing:
+        return [(_agents_dir(agents_dir), "no agent definition names `%s`, so "
+                 "the rule read nothing" % (_SUBMIT_COMMAND,))]
+    return [(name, p) for name, text in filing
+            for p in _ending_problems(text, warning)]
 
 
 # --- commit_spelling_drift: every governance writer's guide paragraph vs its code --

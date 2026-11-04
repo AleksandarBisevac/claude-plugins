@@ -614,9 +614,13 @@ path loads nothing from `scripts/`; its text is read by `porcelain_z_paths`, the
 `_scoped_commit.status_paths` loads from there too, `dg12`, `dg13`). `dg4` in
 `tests/test__config.py` reports by name a call under `hooks/` or `scripts/` handing it, as
 `changed`, an empty literal, an `or` fallback ending in one, or a conditional with one as a
-branch, and any reader its `_DECLARED_READERS` names that stops reaching it; it cannot see a
+branch, and any reader its `_DECLARED_READERS` names that stops reaching it — a fixed list of
+the predicate's callers, the commit, the drive's submit and HEAD check, the close, integration
+and the commit-scope invariant; it cannot see a
 listing bound to a name earlier, or a `tree` git will not list. `dg8` holds the rest of the
-class as a rule whose reach is derived rather than listed (`_files_half_reach`): a function
+class as a rule whose reach is derived (`_files_half_reach`) through fixed lists of the names
+that match, carry and spell an entry (`_ENTRY_MATCHERS`, `_CARRIERS`, `_CARRYING_METHODS`,
+`_SPELLINGS`): a function
 reading a task's `files` for a declared question — a matcher (`covers`, `covering_key`,
 `plan_to_git`) handed a raw entry first, `x in <raw entries>`, a matcher written by hand
 (`x == <raw entry>` with `x` neither raw nor a literal, `x.startswith(<raw entry>)`), a raw value
@@ -630,7 +634,8 @@ reported (`dg9`, `dg10`; `dg14` names planted readers of the direct, `declared_w
 and integration shapes, and `dg15` holds their quiet twins; `dg16` names a planted hand-written
 matcher, the shape the drive's `head_move` had before it asked `declared_git_rels`, and `dg17`
 holds its quiet twins). It cannot see a `files` value
-carried through a call it does not know to carry one, a parameter reaching a matcher only
+carried through a call it does not know to carry one — `_wave._declared` spells each entry with
+its own `_bare`, so `_wave.overlap` is not reached — a parameter reaching a matcher only
 through such a call, a membership test or a hand-written comparison, an answer handed on as an
 argument rather than returned, an inequality, or an attribute call it cannot place when more
 than one file defines the name. The
@@ -3520,20 +3525,25 @@ reviewer's verdict is the check.
 
 The executor's brief also carries `Where your files are documented` (`documented_lines`): one
 row per Markdown heading of a tracked document that names a declared file — by its path in
-full, or by its basename standing alone, as in a heading listing sibling modules after the
-first one's path — with the document's line, the heading as written and whether that document
-is among the task's files. The section of this guide describing a module is the edit an
+full, a directory by its path with the slash, or a file by its basename standing alone, as in a
+heading listing sibling modules after the first one's path, when no other tracked file carries
+that basename (`heading_words`) — with the document's line, the heading as written and whether
+that document is among the task's files. The section of this guide describing a module is the edit an
 executor most often makes outside its files, and before this section the brief named the module
 but not the paragraph about it, so the out-of-scope edit surfaced only at `submit`. One
 `git grep` over the `.md`/`.markdown` files finds the documents holding a declared basename, the
-plan's own directory left out; only those are read, and a heading is `_impact._headings`' reading
-(ATX, outside a fence), the one `_impact.owed` grades a `section` reader by. A basename after a
-directory is another file's path and does not count. When any row's document is undeclared, one
+plan's own directory left out; only those are read, `git ls-files` then says which basenames are
+shared, and a heading is `_impact._headings`' reading (ATX, outside a fence), the one
+`_impact.owed` grades a `section` reader by. A basename after a directory is another file's path
+and does not count; a basename two tracked files share (`README.md`), a directory's last
+component (`tests` in "Adding tests") and another file's path under a declared directory are
+ordinary words in a heading and do not count either. When any row's document is undeclared, one
 closing line says that edit is outside the task's scope and names `submit_strays`, which
 compares the attempt's changed paths with the task's files at filing. Nothing found is one line
-saying what was searched; a `git grep` that fails is said, never read as nothing found. The rows
-are not budgeted: a module rarely has more than one heading, so the section grows with the
-task's `Files` list, which the brief already prints whole.
+saying what was searched; a `git grep` or `git ls-files` that fails is said, never read as
+nothing found. The rows are not budgeted: each is a heading naming one declared file by a
+spelling only that file carries, so the section grows with the headings that name a task's
+files, not with every heading that uses a common word.
 
 ### `plugins/audit/scripts/status/_impact.py`
 Who, among a repository's tracked files, reads a file a task is about to change — the reader
@@ -4136,12 +4146,13 @@ commits, each with its own allow-list in a function of its own (`stage_targets`,
 a shared builder taking a flag would be one function holding both safety properties.
 
 **Why it exists.** The successful task commit was the one git operation this plugin described in
-prose and did not script. `reference/orchestrator.md` step 4c spells the staging list, the
-pathspec, the message shape and the exclusions in a paragraph the model reads at the end of every
-task, under time pressure, after the work is already done — and what a paragraph gets in that
-position is generalisation. Four scope breaches on one program came from widening two words of it:
-a file "obviously" part of the change, a sibling the editor had also touched, the shared index
-because the phase file was allowed. Prose cannot refuse; this can.
+prose and did not script. Step 4c — `reference/orchestrator.md`'s then,
+`reference/execute-task.md`'s now — spelled the staging list, the pathspec, the message shape and
+the exclusions in a paragraph the model read at the end of every task, under time pressure, after
+the work was already done — and what a paragraph gets in that position is generalisation. Four
+scope breaches on one program came from widening two words of it: a file "obviously" part of the
+change, a sibling the editor had also touched, the shared index because the phase file was
+allowed. Prose cannot refuse; this can.
 
 **What a task commit stages.** Exactly these, each named in the output (`stage_targets`):
 the task's own `files` (a `:line-range` suffix stripped, because git has never heard of one) with
@@ -5052,7 +5063,7 @@ that reaches `_evidence_io` and nothing else. `--selftest`.
 
 ### `plugins/audit/scripts/governance/record-risk-confirmation.py`
 `record-risk-confirmation.py <manifest> <phaseId> --confirm-high-risk "<their words>"` —
-**the human's answer to `orchestrator.md` step 4a, given before the run instead of during it.**
+**the human's answer to `reference/execute-task.md` step 4a, given before the run instead of during it.**
 `--project` names the directory holding `.claude/` and the journal, `--json` prints the answer.
 Exit 0 recorded, 1 NOT recorded (the journal is off, or the append did not land), 2 usage —
 including a phase with no open high-risk task.
