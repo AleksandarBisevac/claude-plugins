@@ -98,18 +98,12 @@ def _entries(task):
             + [("outputs", p) for p in _outputs(task)])
 
 
-def _is_pattern(text):
-    return any(ch in text for ch in _task_outputs.PATTERN_CHARS)
-
-
 def _entry_is_pattern(entry):
-    """Whether the entry is read as a pattern at all. Only the `outputs` half
-    is: a `files` entry is a literal path (`covers` compares it as a plain
-    prefix), so `app/[slug]/page.tsx` there names one directory called `[slug]`
-    and not a character class - the dynamic-route layout of several web
-    frameworks spells real directories that way."""
+    """Whether the `(half, spelling)` entry is read as a pattern at all -
+    `_task_outputs.entry_is_pattern`'s answer, the one reading every reader of
+    a declared entry asks: only an `outputs` entry can be one."""
     half, text = entry
-    return half == "outputs" and _is_pattern(text)
+    return _task_outputs.entry_is_pattern(half, text)
 
 
 # A segment is `(text, is_pattern)`, the flag decided by the half the entry
@@ -127,7 +121,8 @@ def _segments(entry):
     parts = [s for s in text.split("/") if s != ""]
     if half == "files":
         return [(s, False) for s in parts] + [_ANY]
-    segs = [_ANY if s == "**" else (s, _is_pattern(s)) for s in parts]
+    segs = [_ANY if s == "**" else (s, _task_outputs.entry_is_pattern(half, s))
+            for s in parts]
     return segs + [_ANY] if text.endswith("/") else segs
 
 

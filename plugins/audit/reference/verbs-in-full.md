@@ -624,12 +624,17 @@ or no gate entry measures it) under `--json`. A passed run of a gate is evidence
 the files its suites read, so a document no selected suite opens, or a tool no selected
 suite imports, would close on a measurement of nothing about it. The reading is the
 affected-test derivation's (`_affected_tests.select`, each file asked alone, over the
-recorded related listing, the import graph and the walks - the same observations
-`run-test-gate.py` gathers for a task's measured run); a file the gate runs itself, or one
-whose selection a declared unscoped call already runs, is reached. A directory or a
-pattern names no one file, so it is named as not asked. A warning, never a refusal: `done`
-records what is still open (below). A past task's recorded gate is what was run and is not
-rewritten.
+recorded related listing, the import graph and the walks - gathered by
+`_affected_tests.gather_facts`, the one gathering `run-test-gate.py`'s measured run reads
+too); a file the gate runs itself, or one whose selection a declared unscoped call already
+runs, is reached. A `files` entry is a literal path whatever characters it holds, so
+`app/[slug]/page.tsx` is asked; a directory names no one file, so it is named as not asked.
+The reading runs once the index lock is released, from the plan just written - its
+listings can take tens of seconds, and another lock taker would be refused while it ran.
+It fails open: when the reading itself fails, one `WARNING: gate reach not asked: <why>`
+line says so (`gateReachNotAsked` under `--json`) and the verb's exit is unchanged. A
+warning, never a refusal: `done` records what is still open (below). A past task's
+recorded gate is what was run and is not rewritten.
 
 ### Subcommand: `start <taskId>`
 
@@ -984,7 +989,11 @@ reaches no suite of goes into one dated `notes` entry - `gate reach at close: ..
 file with why - written in the same write, journaled as a `notes` change, printed as the
 `WARNING: gate reach:` lines and carried as `gateReach` under `--json`. A close whose gate
 reaches every declared file writes no note. A `--no-change` close changed no file and is
-not asked.
+not asked. The reach is read BEFORE the close takes the index lock, so its listings never
+hold the lock, and the note is written under it only if the task still declares the files
+and gate that reading was of; when either changed in between, no note is written and
+`WARNING: gate reach not recorded: <why>` says so (`gateReachNotRecorded` under `--json`,
+which also carries a reading that failed, as `WARNING: gate reach not asked: <why>`).
 
 **A SHA git could not be asked about is written, not refused**, and the report says so:
 with no git on PATH, or in a **shallow** clone where the object is past the cut, a failed

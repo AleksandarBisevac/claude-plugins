@@ -1,0 +1,56 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test_run_test_gate.py tests/test__affected_tests.py tests/test__locks.py tests/test__deps.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-04T16:01:15Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test_run_test_gate.py tests/test__affected_tests.py tests/test__locks.py tests/test__deps.py` in a throwaway tree at HEAD exited 1 with 4 of 14 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - grt8 (house FAIL), grt10 (house FAIL), grt11 (house FAIL), grt12 (house FAIL): SELFTEST FAILED: 13/14 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "R8: one fact gathering in _affected_tests.py's new last section: run_listing (plan node preamble + shell, stderr folded, _proc_group group kwargs, stop_and_drain on timeout; exit 127 could-not-run, 124 timed-out), tree_files, prefetch_listings, gather_facts(project, meta, changed, seen=None, sources=True), LISTING_TIMEOUT_SECONDS / GIT_TIMEOUT_SECONDS; module docstring now says the selection is pure and the gathering is that section. run-test-gate.py _affected_facts delegates to it; its AFFECTED_* constants and unused _gate_derive import removed. audit-task.py's copy (_reach_shell, _reach_tree_files, _reach_sources, _prefetch_listings, _reach_facts, GATE_REACH_TIMEOUT_SECONDS, GATE_REACH_WORKERS, _PATTERN_CHARS) deleted; _gate_reach calls the shared gathering (tree list: git's, else _tracked_files). Edges allowed by _deps.LAYERS (_affected_tests L6 -> _proc_group L4, _loader L1). R4: add and scope return (0, _reach_ask(...)) from the locked body and _reach_after_release reads the reach from the written plan after release (a --json payload held back so it is one object); done reads it before acquiring (_reach_before_lock) and _reach_held writes the note under the lock only if files and gate entries are unchanged, else 'WARNING: gate reach not recorded:' (gateReachNotRecorded); _reach_or_why fails open as 'WARNING: gate reach not asked: <why>' (gateReachNotAsked). _plan_location factored out of _under_lock. Pattern class: _task_outputs.entry_is_pattern(half, entry) is the one reading (only an outputs entry can be a pattern), asked by _wave._entry_is_pattern, _wave._segments and audit-task._names_one_file; _wave's local _is_pattern deleted (_doctor_hygiene's _is_pattern left: it reads hygiene rows, not declared entries). Docs: PLUGIN-BUILD-GUIDE.md (_affected_tests section, gate-reach paragraphs, tree line, module map matched to `_deps.py --render`), reference/verbs-in-full.md (add/scope reach passage and done's reach passage), _deps.py layer comments. Tests: grt8-grt13, shf1-shf2, af38-af42, to6; test_run_test_gate _shared_facts_cases reads M._affected._gate_derive. Mutations in a throwaway copy: scope compare dropped -> grt12 red; compare forced 'changed' -> grt6 red; directory rule dropped -> grt9 red; fail-open narrowed -> grt10 red; group kwargs removed -> af38 red; seen cache ignored -> af40, af42 red; entry_is_pattern ignores the half -> to6, grt8 red. Runs: brief gate plus test__areas, test__manifest_vocab, test__output_lints, test__help_lints, test__refs: 10/10 files ok, 2996 cases, exit 0; 45 dependant suites (wave, task_outputs, proc_group, derive_phase_gate, gate_derive, config, invariants, close_phase, drive_phase, integrate_task, full_gate, commit_task_work, filed_returns, stamp_verification, hooks, require_plan and others): 45/45 ok, 7494 cases, exit 0; tools/gate-parity.py exit 0; tools/measure-context.py --gate exit 0 (GATE OK); ruff clean; vermin minimum 3.8. Dependants: full-gate.py and run-test-gate.py use no changed audit-task signature; test_derive_phase_gate's gate_runner._affected_facts kept as a delegate; test__proc_group pgc6 holds because run-test-gate._shell is untouched and still calls stop_and_drain; integrate-task.py and drive-phase.py (via _wave) see an identical predicate (test__wave 21/21); tools/affected.py and test__gate_derive use test__affected_tests' unchanged _cases; the rest are covered by the sweeps above.",
+    "descriptive": "The gate-reach check no longer holds the manifest index lock, fails open, reads a bracketed files entry as a literal path, and gathers its facts through the one helper run-test-gate's affected steps use."
+  },
+  "testsAdded": [
+    "grt8 a files entry holding [ is asked as a literal path and reached via the listing",
+    "grt9 a directory entry is still named not asked (second direction)",
+    "grt10 an exception in the reach reading leaves add written, exit 0, with a not-asked line",
+    "grt11 a note taken while add is inside a slow listing is not refused",
+    "grt12 a scope widening files while done reads its reach is not refused, and done records no note and says so",
+    "grt13 the reach runs its listings through _affected_tests.run_listing and no copied helper remains",
+    "shf1 run-test-gate's affected facts are the shared gathering's",
+    "shf2 under the shared limits, with no second copy of them in run-test-gate",
+    "af38 a timed-out listing's background grandchild is stopped",
+    "af39 a listing runs with the node preamble, stderr folded, exit kept",
+    "af40 one seen runs each command once",
+    "af41 the gathered facts are the ones select reads",
+    "af42 a prefetch fills seen and the gathering reads it",
+    "to6 only an outputs entry can be a pattern"
+  ],
+  "casesAdded": [
+    [
+      "grt8",
+      "grt9",
+      "grt10",
+      "grt11",
+      "grt12",
+      "grt13"
+    ],
+    [
+      "shf1",
+      "shf2"
+    ],
+    [
+      "af38",
+      "af39",
+      "af40",
+      "af41",
+      "af42"
+    ]
+  ],
+  "claims": "claims:\n1 audit-task.py _reach_after_release/_reach_before_lock/_reach_held/_reach_or_why with cmd_add/cmd_scope/cmd_done do what the guide paragraph, the verbs-in-full.md passages and the section comment say; _affected_tests.gather_facts/run_listing match its rewritten docstring\n2 mutations in a throwaway copy: grt12, grt6 (over-fire), grt9, grt10, af38, af40/af42, to6/grt8 each red; HEAD red via the helper; real tree green\n3 grep _is_pattern: _wave (deleted), _doctor_hygiene (left: hygiene rows, not declared entries); grep for the copied helper names: none left outside _affected_tests\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded; 'tens of seconds' is the finding's measurement\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:70bfc599e0372d8770fca17c5faa8231d12c9ac09890eb7e1d9cf46b4ed10605\",\"dirtyDigest\":\"sha256:c114af3edf3c651f7e0759956e7e44c447e8714b3da1e21b0817264b2738c979\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"12bbcfca31c6ebab\",\"plugins/audit/reference/verbs-in-full.md\":\"e518d05bf80a9d06\",\"plugins/audit/scripts/governance/_affected_tests.py\":\"37b2041ff39348cd\",\"plugins/audit/scripts/governance/_wave.py\":\"9737249296a5b992\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"96351828876d2209\",\"plugins/audit/scripts/manifest/_task_outputs.py\":\"e5543438ecdaa378\",\"plugins/audit/scripts/manifest/audit-task.py\":\"25df3fb176b33a2b\",\"tests/test__affected_tests.py\":\"394bd790284e5b0c\",\"tests/test__task_outputs.py\":\"8156c2691d434d55\",\"tests/test_audit_task.py\":\"33d0b82c2ffa2a26\",\"tests/test_run_test_gate.py\":\"24a9ac7b6fb3af0c\",\"tools/lints/_deps.py\":\"1846153b37bbd430\"},\"head\":\"ec36e9ab\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/governance/_affected_tests.py\",\"plugins/audit/scripts/governance/_locks.py\",\"plugins/audit/scripts/governance/_wave.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/scripts/manifest/_task_outputs.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"tests/test__affected_tests.py\",\"tests/test__deps.py\",\"tests/test__locks.py\",\"tests/test__task_outputs.py\",\"tests/test__wave.py\",\"tests/test_audit_task.py\",\"tests/test_run_test_gate.py\",\"tools/check-example-ledgers.py\",\"tools/lints/_deps.py\"],\"scopeDigest\":\"sha256:9690bf05daaf730484252df65f9266cab2de3781de7200c43d005cca2c6eb438\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

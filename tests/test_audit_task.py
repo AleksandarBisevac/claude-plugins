@@ -23056,6 +23056,180 @@ def _gate_reach_cases(check):
                   reach_lines(txt)),),
               code == 0 and not (task_in(mp, "P2.4") or {}).get("notes")
               and reach_lines(txt) == [])
+
+        # ---- a files entry is a literal path, whatever characters it holds ----
+        # The dynamic-route layout of several web frameworks names real
+        # directories `[slug]`; read as a pattern, the entry was handed over
+        # unanswered and named "not asked" under a gate that does reach it.
+        proj, _mp = project("gr-bracket", with_listing=True)
+        code, txt = add(proj, "app/[slug]/page.tsx,tests/test_docs.py",
+                        "python3 tests/test_docs.py")
+        check("grt8 a `files` entry holding `[` is asked as the literal path it "
+              "names: the listing answers a suite the gate runs, so it is "
+              "reached and nothing is warned: %r" % ((code, reach_lines(txt)),),
+              code == 0 and reach_lines(txt) == [])
+
+        proj, _mp = project("gr-dir-entry", with_listing=True)
+        os.makedirs(os.path.join(proj, "app"))
+        code, txt = add(proj, "app/,tests/test_docs.py",
+                        "python3 tests/test_docs.py")
+        lines = reach_lines(txt)
+        check("grt9 SECOND-DIRECTION CASE: a directory entry still names no one "
+              "file, so it is handed over unanswered and named as not asked - "
+              "a reading that asked every entry would answer it here: %r"
+              % ((code, lines),),
+              code == 0 and len(lines) == 1 and "app/" in lines[0]
+              and "not asked" in lines[0])
+
+        # ---- the advisory check fails open ------------------------------------
+        proj, mp = project("gr-fail-open")
+        real_reach = M._gate_reach
+
+        def broken(*_a, **_k):
+            raise RuntimeError("the reach reading broke")
+        M._gate_reach = broken
+        try:
+            code, txt = add(proj, "CHANGELOG.md,tests/test_m.py",
+                            "python3 tests/test_m.py")
+        finally:
+            M._gate_reach = real_reach
+        not_asked = [ln for ln in txt.splitlines()
+                     if ln.startswith("WARNING: gate reach not asked: ")]
+        check("grt10 an exception in the reach reading does not turn a written "
+              "`add` into an error: the task stands, the exit is 0, and one "
+              "line says the reach was not asked and why: %r"
+              % ((code, not_asked, bool(task_in(mp, "P2.3"))),),
+              code == 0 and task_in(mp, "P2.3") is not None
+              and len(not_asked) == 1
+              and "the reach reading broke" in not_asked[0])
+
+        # ---- the reach is asked with the index lock released ------------------
+        # A listing that blocks until the case lets it go, and only the FIRST
+        # time it is run: the verb under test is caught inside its reach
+        # reading while another verb takes the lock, and every listing the
+        # other verb runs answers at once. The wait is bounded so a case that
+        # never lets go still ends.
+        slow = ("if mkdir .slow-held 2>/dev/null; then : > .slow-started; "
+                "i=0; while [ ! -f .slow-go ] && [ $i -lt 400 ]; do sleep 0.1; "
+                "i=$((i+1)); done; fi; printf '%s\\n' tests/test_docs.py "
+                "# {paths}")
+
+        def slow_project(name, manifest=None):
+            manifest = manifest or base_manifest()
+            manifest["meta"]["phaseGate"] = {"derived": {
+                "listing": {"related": slow},
+                "verifiedOn": {"command": "echo v1", "answer": "v1"}}}
+            proj, mp = mk(name, manifest)
+            lay_out(proj)
+            return proj, mp
+
+        def caught(proj, argv):
+            """The verb started as a process, and the moment its listing
+            began: `(proc, started)`."""
+            env = dict((k, v) for k, v in os.environ.items()
+                       if not k.startswith("CLAUDE")
+                       and k != "AUDIT_LOCK_TOKENS")
+            proc = subprocess.Popen(
+                [sys.executable, _loader.script_path("audit-task.py")] + argv
+                # The long form: the terse one keeps only the lines naming
+                # the id it wrote, and a reach line names a path.
+                + ["--project-dir", proj, "--verbose"],
+                cwd=proj, env=env, stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT)
+            began = os.path.join(proj, ".slow-started")
+            deadline = time.time() + 60
+            while not os.path.exists(began) and proc.poll() is None \
+                    and time.time() < deadline:
+                time.sleep(0.05)
+            return proc, os.path.exists(began)
+
+        def let_go(proj, proc):
+            with open(os.path.join(proj, ".slow-go"), "w"):
+                pass
+            try:
+                text = proc.communicate(timeout=120)[0]
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                text = proc.communicate()[0]
+            return proc.returncode, text.decode("utf-8", "replace")
+
+        proj, mp = slow_project("gr-slow-add")
+        proc, started = caught(proj, [
+            "add", "Slow", "--phase", "P2", "--tests-mode", "regression",
+            "--files", "CHANGELOG.md,tests/test_m.py",
+            "--gate", "python3 tests/test_m.py"])
+        try:
+            ncode, ntxt = run(["note", "P2.3", "--project-dir", proj,
+                               "--text", "taken while the add asked its reach"])
+        finally:
+            acode, atxt = let_go(proj, proc)
+        check("grt11 a note taken while `add` is inside its reach reading is not "
+              "refused - the reach runs with the index lock released - and the "
+              "add still warns for the file its gate reaches no suite of: %r"
+              % ((started, ncode, ntxt[-200:], acode,
+                  reach_lines(atxt) or atxt[-600:]),),
+              started and ncode == 0 and acode == 0
+              and len(reach_lines(atxt)) == 1
+              and "CHANGELOG.md" in reach_lines(atxt)[0])
+
+        fx = pd_fixture()
+        node = fx["phases"][1]["tasks"][-1]
+        node["files"] = ["CHANGELOG.md", "tests/test_m.py"]
+        node["tests"]["gate"] = ["python3 tests/test_m.py"]
+        fx["fileIndex"].pop("src/fresh.ts", None)
+        for rel in node["files"]:
+            fx["fileIndex"][rel] = ["P2.4"]
+        proj, mp = slow_project("gr-slow-done", fx)
+        proc, started = caught(proj, ["done", "P2.4", "--commit", _PD_SHA]
+                               + _NOT_ASKED)
+        try:
+            scode, stxt = run(["scope", "P2.4", "--project-dir", proj,
+                               "--files", "+src/m.py"])
+        finally:
+            dcode, dtxt = let_go(proj, proc)
+        notes = [n.get("text", "") for n in
+                 (task_in(mp, "P2.4") or {}).get("notes") or []
+                 if isinstance(n, dict)]
+        check("grt12 a scope widening the files while `done` asks its reach is "
+              "not refused, and the close then records no reach note for a "
+              "scope it did not measure - it says so instead: %r"
+              % ((started, scode, stxt[-200:], dcode,
+                  [n for n in notes if n.startswith("gate reach at close")],
+                  [ln for ln in dtxt.splitlines() if "gate reach" in ln]),),
+              started and scode == 0 and dcode == 0
+              and (task_in(mp, "P2.4") or {}).get("status") == "done"
+              and not [n for n in notes if n.startswith("gate reach at close")]
+              and any(ln.startswith("WARNING: gate reach not recorded: ")
+                      for ln in dtxt.splitlines()))
+
+        # ---- the facts are gathered by the one shared helper ------------------
+        proj, _mp = project("gr-shared", with_listing=True)
+        asked = []
+        real_run = M._affected.run_listing
+
+        def recorded(project_dir, meta, command, timeout):
+            asked.append(command)
+            if command == "echo v1":
+                return {"exit": 0, "output": "v1\n"}
+            return {"exit": 0, "output": "tests/test_docs.py\n"}
+        M._affected.run_listing = recorded
+        try:
+            code, txt = add(proj, "CHANGELOG.md,tests/test_docs.py",
+                            "python3 tests/test_docs.py")
+        finally:
+            M._affected.run_listing = real_run
+        check("grt13 the reach reading runs its listings through "
+              "`_affected_tests.run_listing`, the runner run-test-gate's "
+              "affected steps use, and keeps no runner of its own: %r"
+              % ((code, asked, reach_lines(txt),
+                  [n for n in ("_reach_shell", "_reach_facts",
+                               "_reach_tree_files", "_prefetch_listings")
+                   if hasattr(M, n)]),),
+              code == 0 and any("CHANGELOG.md" in c for c in asked)
+              and reach_lines(txt) == []
+              and not [n for n in ("_reach_shell", "_reach_facts",
+                                   "_reach_tree_files", "_prefetch_listings")
+                       if hasattr(M, n)])
     finally:
         _harness.remove_tree(tmp)
 

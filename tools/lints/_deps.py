@@ -354,8 +354,9 @@ LAYERS = (
     ("_panel_ui", "_report_html", "_report_ui",
      # `_proc_group` runs one child tree so it can be stopped WHOLE, and turns a
      # stop signal into an exception so a caller's `finally` runs. Here because
-     # three entry points - `run-test-gate`, `stamp-verification` and
-     # `derive-phase-gate` - need the same teardown, and a second copy is a second
+     # the entry points `run-test-gate`, `stamp-verification` and
+     # `derive-phase-gate`, and `_affected_tests`' listing runner, need the same
+     # teardown, and a second copy is a second
      # answer to "is it stopped". It reaches `_locks` for the one rule on whether
      # a process still runs, which is why it sits above that module.
      "_proc_group",
@@ -612,8 +613,11 @@ LAYERS = (
      "_panel_usage",
      # `_affected_tests` (which suites a task's change can break) asks
      # `_gate_derive` for the coupling arm, the e2e reading of a path and the
-     # path-scoped shape, so it sits one layer above it. Its callers are entry
-     # points and add no edge that moves it.
+     # path-scoped shape, so it sits one layer above it. It also holds the one
+     # gathering of the facts that selection reads, which runs each listing
+     # through `_proc_group` (lower still) so both of its callers -
+     # `run-test-gate` and `audit-task`, entry points that add no edge that
+     # moves it - measure through one runner.
      "_affected_tests"),
     # `_report_md` (render_html's Markdown twin) and `_report_page` (the whole
     # document) are the report's answer to the same question `_panel_page`

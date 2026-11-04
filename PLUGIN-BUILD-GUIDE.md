@@ -179,7 +179,7 @@ claude-plugins/                           # this repo (personal, public)
           _journal_io.py                  # the audit trail: row shape, hash chain, read/append/verify
           _evidence_io.py                 # the test-evidence record: where it lives, what a row may say, and the chain over it
           _gate_derive.py                 # the gate helpers' one home (is_shared_key/path_scoped_sibling/repointed) and a pure derive() for a phase's sign-off gate
-          _affected_tests.py              # which suites a task's change can break, by arm (related listing, Python imports, tree walks, e2e listing, e2e widening) - pure; run-test-gate adds them to a task's run
+          _affected_tests.py              # which suites a task's change can break, by arm (related listing, Python imports, tree walks, e2e listing, e2e widening) - a pure selection, plus the one gathering of the facts it reads; run-test-gate adds them to a task's run, audit-task's gate-reach check asks the same
           audit-journal.py                # the CLI over both records: append/verify/show/archive, plus merge and sessions
           _invariants.py                  # the orchestrator's rules, re-derived from git + shard + journal + ledger
           verify-invariants.py            # the CLI over it: one phase or --all, breach = exit 1
@@ -395,7 +395,7 @@ L5:
   usage_ledger -> _manifest_io, _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
 
 L6:
-  _affected_tests -> _evidence_io, _gate_derive, _manifest_phases, _output
+  _affected_tests -> _evidence_io, _gate_derive, _loader, _manifest_phases, _output, _proc_group
   _doctor_completions -> _commit_trail, _doctor_report, _evidence_io, _journal_io, _manifest_vocab, _output
   _doctor_policy -> _branch, _claude_home, _doctor_report, _manifest_io, _output, _skill_places, _worktrees
   _doctor_setup -> _claude_home, _config_rules, _doctor_report, _manifest_rules, _manifest_vocab, _merge_install, _output, _status_facts, _warning_groups
@@ -463,7 +463,7 @@ L9:
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
   run-agent-session -> _claude_home, _help, _manifest_io, _output, _proc_group, _skill_places
-  run-test-gate -> _affected_tests, _claude_home, _evidence_io, _fmt, _gate_derive, _invariants, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _task_outputs, _tree_stamp, _worktrees
+  run-test-gate -> _affected_tests, _claude_home, _evidence_io, _fmt, _invariants, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _task_outputs, _tree_stamp, _worktrees
   set-priority -> _claude_home, _manifest_io, _output, _panel_write, _priority, _warning_groups
   stamp-verification -> _claude_home, _evidence_io, _filed_returns, _invariants, _locks, _manifest_io, _output, _proc_group, _runner_output, _task_outputs, _tree_stamp, _worktrees
   validate-config -> _config_rules, _output
@@ -4025,7 +4025,15 @@ runs (`gate_runs()`) is the paths its entries hand their program, never the
 program a path-scoped call names: `tools/sweep-selftests.py` handed `tests/x.py`
 does not run the sweep's own cases, so a sweep that walks `tests/` still joins.
 
-It is PURE: the caller gathers every observation once. And it widens rather than
+The selection is PURE: every observation arrives in `facts`. The gathering that fills
+`facts` is this module's last section, `gather_facts()`, asked by both of the selection's
+callers - `run-test-gate.py`'s affected steps and `audit-task.py`'s gate-reach check - so the
+two measure one set of facts the one way: each recorded listing and the version command run
+through `run_listing()` (the plan's node preamble and shell, stderr folded in, its process
+group torn down by `_proc_group.stop_and_drain` on timeout, under `LISTING_TIMEOUT_SECONDS`
+and `GIT_TIMEOUT_SECONDS`), the tree's files are git's (`tree_files()`), and a `seen` dict
+carries what several gatherings over one tree ask once; `prefetch_listings()` runs a list of
+paths' listings side by side into it. And the selection widens rather than
 returning an empty selection: a listing that exits non-zero, a version mismatch,
 a `.py` change with no sources read, a changed path no arm reads, a changed file
 under a test directory that no arm selected (test support every suite may lean
@@ -5904,15 +5912,28 @@ construction.
 gate run is evidence only for the files its suites read, and a gate selecting no suite that
 opens a document, or imports a tool, the task edits closed on a measurement of nothing about
 that file. Each declared file goes through `_affected_tests.select` alone, over the
-observations `run-test-gate.py` gathers for a task's measured run - the recorded listings,
-the tree's suites, every Python source - with `_affected_tests.steps_for` answering whether
+observations `_affected_tests.gather_facts` gathers for `run-test-gate.py`'s measured run
+too - the recorded listings, the tree's suites, every Python source - with
+`_affected_tests.steps_for` answering whether
 a declared entry is the unscoped call that runs the selection, and
 `_manifest_phases.gate_reach_gaps` compares those answers with `_affected_tests.gate_runs`.
 The recorded listing runs once per file, side by side, and the import graph is walked only
-for a file the trusted listing does not already reach a gate-run suite for. `add` and a
-`scope` moving `tests.gate` or `files` print one `WARNING: gate reach:` line per gap and
-carry `gateReach` under `--json`; `done --commit` records the gaps as one dated note in the
-close's own write. A past task's recorded gate is never rewritten.
+for a file the trusted listing does not already reach a gate-run suite for. A `files` entry
+is a literal path whatever characters it holds (`_task_outputs.entry_is_pattern`, the one
+reading `_wave` asks too), so `app/[slug]/page.tsx` is asked; a directory is named as not
+asked. `add` and a `scope` moving `tests.gate` or `files` print one `WARNING: gate reach:`
+line per gap and carry `gateReach` under `--json`; `done --commit` records the gaps as one
+dated note in the close's own write. A past task's recorded gate is never rewritten.
+
+**None of the reading runs with the index lock held.** Its listings can take tens of seconds,
+and every other lock taker waits a bounded time and is then refused. `add` and `scope` read
+the reach once the lock is released, from the plan they wrote, holding a `--json` payload
+back so the reading joins it as one object. `done` reads it before taking the lock and
+records the note only if the task still declares the files and gate that reading was of,
+else prints `WARNING: gate reach not recorded:` and writes none. The reading is advisory and
+fails open: an exception in it is one `WARNING: gate reach not asked: <why>` line
+(under `--json`, `gateReachNotAsked` for `add` and `scope`, `gateReachNotRecorded` for
+`done`), never an error for the verb that asked.
 
 **`retarget <phaseId>` is the same verb one noun up** — a phase's gate, area, desired outcome,
 description or title, corrected after `/audit:init` or an ADO pull chose them. The title is

@@ -10578,7 +10578,7 @@ def _shared_facts_cases(check):
     `_gate_derive`'s helpers (a sentinel patched into the helper reaches both).
     """
     dpg = _loader.load_script("derive-phase-gate.py", "rtg_dpg")
-    gd = M._gate_derive
+    gd = M._affected._gate_derive
     tree = tempfile.mkdtemp()
     try:
         derived = {"listing": {"all": "printf 'a.t\\nb.t\\n'",
@@ -10610,6 +10610,54 @@ def _shared_facts_cases(check):
           pick(a) == pick(b)
           and pick(a) == ("v9", ["a.t", "#src/x y.py", "a.t", "#src/z.py"])
           and pick(sa) == pick(sb) == ("SENTINEL", ["SENTINEL"]))
+
+
+def _shared_runner_cases(check):
+    """`shf`: the facts a task's affected steps read are gathered by
+    `_affected_tests`, the helper the gate-reach check in `audit-task.py`
+    calls too - a recorder put in place of its runner hears every listing and
+    the version command, each under the shared bound for its kind."""
+    tree = tempfile.mkdtemp()
+    heard = []
+    real = M._affected.run_listing
+
+    def recorded(project, meta, command, timeout):
+        heard.append((project, command, timeout))
+        if command == "echo v9":
+            return {"exit": 0, "output": "v9\n"}
+        return {"exit": 0, "output": "tests/test_heard.py\n"}
+    try:
+        meta = {"phaseGate": {"derived": {
+            "listing": {"related": "printf 'never run\\n' # {paths}"},
+            "verifiedOn": {"command": "echo v9", "answer": "v9"}}}}
+        M._affected.run_listing = recorded
+        try:
+            facts = M._affected_facts(tree, meta, ["src/a.md"])
+        finally:
+            M._affected.run_listing = real
+    finally:
+        shutil.rmtree(tree, ignore_errors=True)
+    bounds = dict((command, timeout) for _p, command, timeout in heard)
+    check("shf1 run-test-gate's affected facts are `_affected_tests`' "
+          "gathering: its runner hears the version command and the related "
+          "listing, in the gate's tree, and the listing's answer is the fact "
+          "read: %r" % ((heard, facts.get("related")),),
+          [c for _p, c, _t in heard][:1] == ["echo v9"]
+          and any("src/a.md" in c for _p, c, _t in heard)
+          and all(p == tree for p, _c, _t in heard)
+          and (facts.get("related") or {}).get("paths")
+          == ["tests/test_heard.py"])
+    check("shf2 ...each under the one bound the shared module holds for its "
+          "kind, and run-test-gate keeps no second copy of either: %r"
+          % ((bounds, [n for n in ("AFFECTED_LISTING_TIMEOUT_SECONDS",
+                                   "AFFECTED_GIT_TIMEOUT_SECONDS")
+                       if hasattr(M, n)]),),
+          bounds.get("echo v9") == M._affected.GIT_TIMEOUT_SECONDS
+          and [t for c, t in bounds.items() if "src/a.md" in c]
+          == [M._affected.LISTING_TIMEOUT_SECONDS]
+          and not [n for n in ("AFFECTED_LISTING_TIMEOUT_SECONDS",
+                               "AFFECTED_GIT_TIMEOUT_SECONDS")
+                   if hasattr(M, n)])
 
 
 def _follower_cases(check):
@@ -11147,6 +11195,7 @@ def _selftest():
         _harness.stage(check, "gtf-block", _foreign_status_cases)
         _harness.stage(check, "gtd-block", _task_bug_definition_cases)
         _shared_facts_cases(check)
+        _shared_runner_cases(check)
         _harness.stage(check, "fo-block", _follower_cases)
         _harness.stage(check, "br-block", _base_red_cases)
         _cases(check)

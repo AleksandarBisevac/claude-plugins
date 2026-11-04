@@ -80,6 +80,21 @@ PATTERN_CHARS = "*?["
 ROOT_HEADS = ("", ".", "..", "**")
 
 
+def entry_is_pattern(half, entry):
+    """Whether a declared entry is read as a pattern at all: only an `outputs`
+    entry can be, and one is when it holds a wildcard character.
+
+    A `files` ENTRY IS A LITERAL PATH whatever characters it holds - `covers`
+    compares it as a plain prefix - so `app/[slug]/page.tsx` there names one
+    directory called `[slug]` and not a character class: the dynamic-route
+    layout of several web frameworks spells real directories that way. Every
+    reader asking "is this entry a pattern" asks it here, with the half the
+    entry came from, so no reader can take a `files` entry for a glob.
+    """
+    return half == "outputs" and any(ch in str(entry or "")
+                                     for ch in PATTERN_CHARS)
+
+
 def output_pattern_problem(pattern):
     """Why this `outputs` entry may not be honoured, or None when it may be.
 

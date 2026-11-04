@@ -160,10 +160,10 @@ import _status_facts  # noqa: E402  (CLOSED_BUG: the one reading of "not open", 
 import _panel_write  # noqa: E402  (project_of_manifest: the project a named manifest is in)
 import _runner_output as _ro  # noqa: E402  (every reading of what a test runner
 #                                         printed: its summary, its failure lines)
-import _gate_derive  # noqa: E402  (version_facts/listing_fact: the one reading of a listing run, shared with derive-phase-gate)
 import _affected_tests as _affected  # noqa: E402  (which suites a task's change
-#                                     can break, by which arm - pure; this file
-#                                     gathers its observations and runs them)
+#                                     can break, by which arm, and the one
+#                                     gathering of what that reads; this file
+#                                     runs the steps its answer names)
 import _invariants  # noqa: E402  (record_rels/is_record_path: the one definition of
 #                                  which paths are the plan's records, shared with
 #                                  integrate-task, audit-task and commit-task-work)
@@ -2486,19 +2486,16 @@ def own_gate_of(manifest, phase_id, task_id):
 # --- what else a task's change can break --------------------------------------
 # A task's own gate runs the tests it wrote; a change another task's test
 # imports breaks that test with the task's gate green. `_affected_tests` picks
-# the suites; this gathers what it reads - the changed paths, the recorded
-# listings' answers, the sources - and turns its answer into steps. The phase's
-# sign-off gate is not touched here: the wide gate still runs once per phase.
-AFFECTED_LISTING_TIMEOUT_SECONDS = 120
-AFFECTED_GIT_TIMEOUT_SECONDS = 30
-
-
+# the suites and gathers what it reads - the recorded listings' answers, the
+# tree's suites, the sources - under its own bounds; this reads the changed
+# paths and turns its answer into steps. The phase's sign-off gate is not
+# touched here: the wide gate still runs once per phase.
 def _git_text(tree, args):
     """git's stdout in `tree`, or None when it could not answer."""
     try:
         proc = subprocess.run(["git", "-C", tree] + args, stdout=subprocess.PIPE,
                               stderr=subprocess.DEVNULL,
-                              timeout=AFFECTED_GIT_TIMEOUT_SECONDS)
+                              timeout=_affected.GIT_TIMEOUT_SECONDS)
     except (OSError, subprocess.SubprocessError):
         return None
     return proc.stdout.decode("utf-8", "replace") if proc.returncode == 0 else None
@@ -2557,56 +2554,10 @@ def task_changed_paths(tree, declared, own_tree, records=()):
 
 
 def _affected_facts(tree, meta, changed):
-    """Every observation `_affected_tests.select` reads, measured in `tree`."""
-    facts = {}
-    wrap = {"meta": {"nodePreamble": meta.get("nodePreamble")}}
-
-    def run(command, timeout):
-        code, text, _f = _shell(tree, _ev.resolved_commands(wrap, [command])[0][1],
-                                timeout=timeout)
-        return {"exit": code, "output": text}
-
-    templates = _affected.listing_templates(meta)
-    gate = meta.get("phaseGate") if isinstance(meta.get("phaseGate"), dict) else {}
-    derived = gate.get("derived") if isinstance(gate.get("derived"), dict) else {}
-    # The all-runners listing is asked only when a suite changed: it is what
-    # the walk arm reads its runners from, and nothing else here reads it.
-    edited = _affected.changed_suites(changed)
-    every = _affected.all_template(meta) if edited else None
-    if "related" in templates or every:
-        facts.update(_gate_derive.version_facts(
-            derived, lambda cmd: run(cmd, AFFECTED_GIT_TIMEOUT_SECONDS)))
-    for key, template in sorted(templates.items()):
-        command = _gate_derive.listing_command(template, changed)
-        facts[key] = dict(_gate_derive.listing_fact(
-            run(command, AFFECTED_LISTING_TIMEOUT_SECONDS)), command=command)
-    if every:
-        facts["all"] = dict(_gate_derive.listing_fact(
-            run(every, AFFECTED_LISTING_TIMEOUT_SECONDS)), command=every)
-    listed = _git_text(tree, ["ls-files", "-z", "--cached", "--others",
-                              "--exclude-standard"])
-    # Printed from its cwd, `tree`, which stands where the project does - the
-    # spelling `changed` and the plan's suites carry; said so to the pair.
-    hc = _loader.load_hooks_config(modname="audit__config")
-    files = [hc.git_to_plan(p, tree, tree, cwd=tree)
-             for p in (listed or "").split("\0") if p]
-    facts["suites"] = [p for p in files if _phases.is_suite_path(p)]
-    # A changed suite is read for the walk arm whatever its language: the
-    # lints that walk it are Python whether or not it is.
-    if (edited or any(p.endswith(".py") for p in changed)) \
-            and listed is not None:
-        sources = {}
-        for path in files:
-            if not path.endswith(".py"):
-                continue
-            try:
-                with open(os.path.join(tree, path), encoding="utf-8",
-                          errors="replace") as fh:
-                    sources[path] = fh.read()
-            except OSError:
-                continue
-        facts["pySources"] = sources
-    return facts
+    """Every observation `_affected_tests.select` reads, measured in `tree` -
+    `_affected_tests.gather_facts`' answer, the gathering the gate-reach check
+    in `audit-task.py` asks too."""
+    return _affected.gather_facts(tree, meta, changed)
 
 
 def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands,

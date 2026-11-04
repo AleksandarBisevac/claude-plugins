@@ -5271,7 +5271,8 @@
       "P156.8-3st",
       "P156.12-3st",
       "P156.14-3st",
-      "P156.15-3st"
+      "P156.15-3st",
+      "P156.17-3st"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -8421,7 +8422,8 @@
       "P130.9",
       "P131.2",
       "P155.15",
-      "P156.8-3st"
+      "P156.8-3st",
+      "P156.12-3st"
     ],
     "tools/check-example-ledgers.py: a committed row whose status is not a schema enum member is a finding, and so is a passed verdict carrying a mutated tree": [
       "P32.10"
@@ -11046,7 +11048,8 @@
       "P155.44-gfj",
       "P156.4",
       "P156.5",
-      "P156.14-3st"
+      "P156.14-3st",
+      "P156.12-3st"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
@@ -11075,7 +11078,8 @@
       "P122.1",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P156.12-3st"
     ],
     "plugins/audit/tests/test__task_outputs.py": [
       "P122.1",
@@ -11232,7 +11236,8 @@
       "P131.1",
       "P131.2",
       "P156.9-3st",
-      "P156.11-3st"
+      "P156.11-3st",
+      "P156.12-3st"
     ],
     "plugins/audit/tests/test__wave.py": [
       "P124.1",
@@ -12072,7 +12077,8 @@
       "P156.4",
       "P156.7",
       "P156.8-3st",
-      "P156.15-3st"
+      "P156.15-3st",
+      "P156.12-3st"
     ],
     "tests/test__doctor_ado.py": [
       "P131.1"
@@ -12418,7 +12424,8 @@
       "P131.1"
     ],
     "tests/test__task_outputs.py": [
-      "P131.1"
+      "P131.1",
+      "P156.12-3st"
     ],
     "tests/test__tree_stamp.py": [
       "P131.1",
@@ -12479,7 +12486,8 @@
     "tests/test__wave.py": [
       "P131.1",
       "P156.9-3st",
-      "P156.11-3st"
+      "P156.11-3st",
+      "P156.12-3st"
     ],
     "tests/test__worktrees.py": [
       "P131.1",
@@ -12601,7 +12609,8 @@
       "P156.8-3st",
       "P156.12-3st",
       "P156.14-3st",
-      "P156.15-3st"
+      "P156.15-3st",
+      "P156.17-3st"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"

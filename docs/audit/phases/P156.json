@@ -29,8 +29,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/_wave.py:101-130 (_is_pattern, _segments, _segment_meets), :170-177 (_shared); PLUGIN-BUILD-GUIDE.md:5175-5178",
         "issue": "The wave's new segment matcher treats any segment holding *?[ as a wildcard even when it comes from a files entry, which is a literal path (_task_outputs.covers compares files as plain prefixes). Two tasks in different dynamic-route directories, a common Next.js/SvelteKit/Nuxt layout, are now reported as overlapping and serialised: overlap of files app/[slug]/page.tsx with app/[id]/page.tsx (and with app/s/page.tsx) returns an overlap at HEAD and none at base 8c4bb8bd; the deferral names paths no task shares, and the guide's sentence that covers decides is not what happens for files entries. No case has a files entry with a glob character.",
-        "resolution": "Treat a segment as a pattern only when it comes from the outputs half (segments carry an is-pattern flag, always false for files entries, compared literally); a case where the three dynamic-route tasks share one wave, and its twin where an outputs pattern app/*/page.tsx still overlaps files app/[slug]/page.tsx.",
-        "fixTask": "P156.11-3st"
+        "resolution": "fixed in P156.11-3st (ec36e9abf7dd): Treat a segment as a pattern only when it comes from the outputs half (segments carry an is-pattern flag, always false for files entries, compared literally); a case where the three dynamic-route tasks share one wave, and its twin where an outputs pattern app/*/page.tsx still overlaps files app/[slug]/page.tsx.",
+        "fixTask": "P156.11-3st",
+        "commit": "ec36e9abf7dd",
+        "status": "fixed"
       },
       {
         "id": "P156-R2",
@@ -111,9 +113,17 @@
         "issue": "Release-tier CI run 41853969220 at 59e4a5f8: test__config st8 fails on the windows cp1252 leg. In a bare repository the timed-out first question is followed by a second ask with a 0.012 s remaining budget, which then times out too; on posix the same case is green.",
         "resolution": "Find whether this is the case's timing assumption (a remaining budget a Windows git cannot meet) or the code asking again; fix whichever is wrong so the case holds on any runner, and say which it was.",
         "fixTask": "P156.16-3st"
+      },
+      {
+        "id": "P156-R12",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/audit-task.py (success_line / _decided_lines, the short output)",
+        "issue": "Without --verbose the short output keeps only warnings naming the written task id, so every WARNING: gate reach: line (it names a path) is dropped and an operator running add, scope or done from the command line never sees a reach warning; the suites pass --verbose to see them.",
+        "resolution": "Keep every warning the verb itself raised about the task it wrote in the short output (or say in the clipped line that warnings were held back and how to print them), with a case running add without --verbose.",
+        "fixTask": "P156.17-3st"
       }
     ],
-    "outcome": "[findings: 11 - 0 high, 4 med, 7 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 12 - 0 high, 4 med, 8 low; 1 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -842,7 +852,7 @@
     {
       "id": "P156.11-3st",
       "title": "A wave compares files entries literally and only outputs as patterns",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix P156-R1 (docs/audit/phases/P156.json review.findings): files entries are literal paths, so a [slug] segment from files must not be read as a glob; only outputs patterns are patterns. Cases from the finding: three dynamic-route tasks share one wave; an outputs pattern still overlaps a matching files path. The guide sentence says what decides.",
       "files": [
         "plugins/audit/scripts/governance/_wave.py",
@@ -870,14 +880,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ec36e9abf7dd",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/scripts/governance/_wave.py: segments are now (text, is_pattern) tuples whose flag the entry's half decides - a files entry's segments are always literal (False), an outputs segment is a pattern only when it holds a PATTERN_CHARS character, and the any-depth marker is a dedicated sentinel _ANY rather than the string '**', so a files segment spelled '**' is literal too. _segment_meets reads the flags; _named asks the new _entry_is_pattern(entry) instead of _is_pattern(text). tests/test__wave.py: wp5 (three dynamic-route files tasks app/[slug], app/[id], app/s plus a files entry src/*.py beside src/b.py - one wave of five, every pairwise overlap None) and wp6 (outputs app/*/page.tsx still overlaps files app/[slug]/page.tsx, naming that path, and defers it in select; the same bracketed literal in two tasks' files is one shared path). PLUGIN-BUILD-GUIDE.md _wave.py section: the sentence now says the half an entry came from decides whether it is a pattern, not its characters. Evidence: before the fix 20/21 with wp5 red; after, python3 tools/sweep-selftests.py tests/test__wave.py exit 0, 21 cases. Mutation probes run by monkeypatch in a separate process (shared tree untouched): bracketed segments never meet -> wp6 FAIL, 20/21, exit 1; segments flagged by characters regardless of half (the original defect) -> wp5 FAIL, 20/21, exit 1. Dependant suites python3 tools/sweep-selftests.py tests/test__config.py tests/test__deps.py tests/test__output_lints.py tests/test_drive_phase.py tests/test__affected_tests.py tests/test__doctor_trail.py tests/test__doctor_hygiene.py exit 0, 7/7 files ok; python3 tools/gate-parity.py exit 0; ruff check on both .py exit 0; vermin -t=3.8- exit 0. Dependants: integrate-task.py imports is_non_mergeable, unchanged - still correct; drive-phase.py imports select/overlap/fixes_red_at_base/base_red_first, signatures and return shapes unchanged, test_drive_phase.py green - still correct; tests/test__wave.py changed as above; PLUGIN-BUILD-GUIDE.md changed (the one sentence) and still names base_red_first/is_non_mergeable correctly; .claude/skills/VENDORED.md and CHANGELOG.md use the word overlap generically, not this function's behaviour - unchanged; .github/sweep-costs.json holds a cost figure for test__wave.py, still a single-file 0.2s suite - unchanged; the remaining guide dependants are the suites listed above, all green. Class sweep: grep -rn 'PATTERN_CHARS|\"*?[\"|_is_pattern' over scripts/ and hooks/ - _task_outputs.py:118 and :190 read the outputs half (correct, left); _doctor_hygiene.py:126-573 read the plugin's own _PANEL_FILES rows, not files entries (left); audit-task.py:1856 and :2022-2024 _names_one_file treats a files entry holding '[' as a pattern, so gate reach is never asked about a dynamic-route file - SAME CLASS, outside this task's files, left unfixed for the orchestrator to file.",
+        "descriptive": "A wave no longer serialises tasks in different dynamic-route directories: files entries are compared as literal paths, and only outputs patterns are patterns."
       },
       "startedAt": "2026-11-04T15:18:14Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-04T15:27:38Z",
+      "verifiedBy": [
+        "wp5: files entries compared literally - three dynamic-route tasks and a star-spelled files entry share one wave, every pairwise overlap None",
+        "wp6: an outputs pattern still overlaps a bracketed files path it covers, and one bracketed literal shared by two tasks' files is one shared path"
+      ],
       "notes": [
         {
           "at": "2026-11-04T15:16:44Z",
@@ -890,6 +903,10 @@
         {
           "at": "2026-11-04T15:16:44Z",
           "text": "no suite: PLUGIN-BUILD-GUIDE.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__affected_tests.py, tests/test__config.py, tests/test__deps.py, tests/test__doctor_trail.py, tests/test__output.py, tests/test__refs.py and 7 more"
+        },
+        {
+          "at": "2026-11-04T15:27:38Z",
+          "text": "gate reach at close: a passed run of this task's gate (python3 tools/sweep-selftests.py tests/test__wave.py) is no evidence for PLUGIN-BUILD-GUIDE.md (the affected-test derivation selects tests/test__deps.py, tests/test__refs.py for it, and the gate runs none of them)"
         }
       ],
       "fixes": [
@@ -900,12 +917,24 @@
         "runId": "2026-11-04T15:27:34Z.d16842",
         "status": "passed",
         "at": "2026-11-04T15:27:34Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "ec36e9abf7dd",
+        "at": "2026-11-04T15:27:38Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-04T15:22:50Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__wave.py` in a throwaway tree at HEAD exited 1 with 1 of 21 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - wp5 (house FAIL): SELFTEST FAILED: 20/21 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P156.12-3st",
       "title": "The gate-reach check runs outside the index lock, fail-open, through the one shared fact gathering run-test-gate uses",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fix P156-R4 and P156-R8 (docs/audit/phases/P156.json review.findings). R4: the gate-reach check runs listing commands, git ls-files and a tree read while the manifest index lock is held (measured up to tens of seconds), so other lock takers are refused after their wait. Move it out of the lock as the resolution says (add/scope after release from the written plan; done before acquiring, with the note written under the lock only if files and gate are unchanged), fail-open, with a case holding the lock across a slow listing stub. R8: the fact gathering is a hand copy of run-test-gate's, already drifted (no process-group teardown, different timeouts); move it into one shared helper both call (respect _deps.LAYERS), delete the copy.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -916,12 +945,15 @@
         "tests/test__affected_tests.py",
         "tools/lints/_deps.py",
         "PLUGIN-BUILD-GUIDE.md",
-        "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/scripts/governance/_locks.py",
-        "plugins/audit/scripts/governance/run-test-gate.py",
-        "tests/test_audit_task.py",
         "tests/test__locks.py",
-        "tests/test_run_test_gate.py"
+        "tests/test__deps.py",
+        "tools/check-example-ledgers.py",
+        "plugins/audit/scripts/governance/_wave.py",
+        "tests/test__wave.py",
+        "plugins/audit/scripts/manifest/_task_outputs.py",
+        "tests/test__task_outputs.py",
+        "plugins/audit/reference/verbs-in-full.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -932,7 +964,7 @@
         ],
         "expectRedFirst": true,
         "gate": [
-          "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test_run_test_gate.py tests/test__affected_tests.py tests/test__locks.py"
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test_run_test_gate.py tests/test__affected_tests.py tests/test__locks.py tests/test__deps.py"
         ],
         "gateBasis": "tests.add"
       },
@@ -941,14 +973,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-04T15:28:09Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -972,7 +1004,13 @@
       "fixes": [
         "P156-R4",
         "P156-R8"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-04T16:06:19Z.36f3ac",
+        "status": "passed",
+        "at": "2026-11-04T16:06:19Z"
+      }
     },
     {
       "id": "P156.13-3st",
@@ -1230,6 +1268,59 @@
       "fixes": [
         "P156-R10",
         "P156-R11"
+      ]
+    },
+    {
+      "id": "P156.17-3st",
+      "title": "The short output of a task verb keeps the warnings it raised about the task it wrote",
+      "status": "pending",
+      "description": "Fix P156-R12 (docs/audit/phases/P156.json review.findings): the short output drops every warning that does not name the task id, so gate-reach warnings never reach an operator without --verbose.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_audit_task.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_audit_task.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_task.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P156.15-3st"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-04T15:56:07Z",
+          "text": "scope: plugins/audit/scripts/manifest/audit-task.py, every path the finding(s) P156-R12 name"
+        },
+        {
+          "at": "2026-11-04T15:56:07Z",
+          "text": "scope: tests/test_audit_task.py, the suite that tests plugins/audit/scripts/manifest/audit-task.py (python: its import closure reaches plugins/audit/scripts/manifest/audit-task.py)"
+        }
+      ],
+      "fixes": [
+        "P156-R12"
       ]
     }
   ],

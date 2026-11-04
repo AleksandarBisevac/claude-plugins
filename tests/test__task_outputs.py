@@ -86,6 +86,19 @@ def _cases(check):
           repr((M.output_pattern_problem("docs\\audit\\**"),
                 M.output_pattern_problem("..\\x\\**"))))
 
+    # --- which declared entry is a pattern at all --------------------------------
+    readings = [(half, text, M.entry_is_pattern(half, text))
+                for half, text in (("files", "app/[slug]/page.tsx"),
+                                   ("files", "src/*.py"),
+                                   ("outputs", "docs/*.md"),
+                                   ("outputs", "docs/[ab].md"),
+                                   ("outputs", "docs/plain.md"))]
+    check("to6 only an `outputs` entry can be a pattern: a `files` entry holding "
+          "`[` or `*` is the literal path it spells (a dynamic-route directory "
+          "is named that way), an `outputs` entry with a wildcard is one, and "
+          "an `outputs` entry with none is a literal too: %r" % (readings,),
+          [r[2] for r in readings] == [False, False, True, True, False])
+
     # --- what an honoured pattern reaches --------------------------------------
     check("tc1 `**` spans directories",
           M.output_covers("docs/**", "docs/a/b/c.md")

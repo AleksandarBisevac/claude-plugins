@@ -2,11 +2,13 @@
 """
 The cases for `_affected_tests.py` -- which suites a task's change can break.
 
-Every case outside `_dogfood_cases` builds its `facts` BY HAND: the module is
-pure, so a related listing's answer, the Python sources and the tree's suite
-files are dicts and strings here, never a subprocess or a checkout. The cases in
-`_dogfood_cases` make claims about this repository's own listings, sources and
-plan, so they read them. `af`-prefixed cases.
+Every case outside `_dogfood_cases` and `_gather_cases` builds its `facts` BY
+HAND: the selection is pure, so a related listing's answer, the Python sources
+and the tree's suite files are dicts and strings here, never a subprocess or a
+checkout. The cases in `_dogfood_cases` make claims about this repository's own
+listings, sources and plan, so they read them; the cases in `_gather_cases` are
+about the gathering that measures those facts, so they run listing commands in
+a scratch tree. `af`-prefixed cases.
 
 The four headline cases are the four ways the selection has to be right: a
 recorded listing naming the test a move broke (the testbed's own regression),
@@ -751,8 +753,127 @@ def _dogfood_cases(check):
           and set(scanners) <= swept)
 
 
+def _gather_cases(check):
+    """`af38`-`af42`: the one gathering of the facts `select` reads, and the
+    runner under it. These are the cases that shell out: the subject is what a
+    listing command does when it is run, so each one runs."""
+    import shutil
+    import subprocess
+    import tempfile
+    import time
+    tree = tempfile.mkdtemp(prefix="affected-gather-")
+    try:
+        if hasattr(os, "killpg"):
+            pid_file = os.path.join(tree, "grandchild.pid")
+            started = time.time()
+            res = M.run_listing(tree, {}, "sleep 30 & echo $! > %s; wait"
+                                % (pid_file,), 1)
+            took = time.time() - started
+            try:
+                with open(pid_file) as fh:
+                    grandchild = int(fh.read().strip())
+            except (OSError, ValueError):
+                grandchild = None
+            alive = grandchild is not None
+            deadline = time.time() + 5
+            while alive and time.time() < deadline:
+                gone = subprocess.run(["ps", "-o", "stat=", "-p",
+                                       str(grandchild)],
+                                      stdout=subprocess.PIPE,
+                                      stderr=subprocess.DEVNULL)
+                state = gone.stdout.decode("utf-8", "replace").strip()
+                alive = gone.returncode == 0 and state and not \
+                    state.startswith("Z")
+                if alive:
+                    time.sleep(0.1)
+            check("af38 a listing that outlives its bound is torn down WHOLE: "
+                  "the grandchild it started in the background is gone, the "
+                  "answer is no exit 0, and the wait ended near the bound "
+                  "rather than at the grandchild's end: %r"
+                  % ((res, grandchild, alive, round(took, 1)),),
+                  grandchild is not None and not alive
+                  and res.get("exit") not in (0, None) and took < 20)
+        else:
+            _harness.skip(check, "af38 a timed-out listing torn down whole",
+                          "posix", "no process groups on this platform")
+
+        res = M.run_listing(tree, {"nodePreamble": "PRE=said"},
+                            "printf '%s\\n' \"$PRE\"; echo err >&2; exit 3", 10)
+        check("af39 a listing runs the way a plan command runs: the plan's "
+              "node preamble in front, stderr folded into the output, and its "
+              "own exit kept: %r" % (res,),
+              res.get("exit") == 3
+              and sorted(res.get("output", "").split()) == ["err", "said"])
+
+        for rel in ("tests/test_a.py", "src/a.py", "docs/a.md"):
+            path = os.path.join(tree, *rel.split("/"))
+            if not os.path.isdir(os.path.dirname(path)):
+                os.makedirs(os.path.dirname(path))
+            with open(path, "w") as fh:
+                fh.write("import a\n" if rel.endswith(".py") else "# a\n")
+        # A checkout, so the gathering's own file list is git's answer: the
+        # fresh gathering below is handed no list and reads the tree itself.
+        subprocess.run(["git", "init", "-q", tree], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL)
+        meta = {"phaseGate": {"derived": {
+            "listing": {"related": "printf '%s\\n' tests/test_a.py # {paths}"},
+            "verifiedOn": {"command": "echo v1", "answer": "v1"}}}}
+        heard = []
+        real = M.run_listing
+
+        def counted(project, meta_, command, timeout):
+            heard.append(command)
+            return real(project, meta_, command, timeout)
+        M.run_listing = counted
+        try:
+            seen = {"files": ["tests/test_a.py", "src/a.py", "docs/a.md"]}
+            first = M.gather_facts(tree, meta, ["docs/a.md"], seen=seen,
+                                   sources=False)
+            again = M.gather_facts(tree, meta, ["docs/a.md"], seen=seen)
+            fresh = M.gather_facts(tree, meta, ["src/a.py"])
+        finally:
+            M.run_listing = real
+        check("af40 one `seen` asks each command once: two gatherings of one "
+              "path ran the version command and its listing a single time, "
+              "and a fresh gathering asks again: %r" % (heard,),
+              heard.count("echo v1") == 2
+              and len([c for c in heard if "docs/a.md" in c]) == 1
+              and len([c for c in heard if "src/a.py" in c]) == 1)
+        check("af41 the facts are the ones `select` reads: the listing's "
+              "paths, the tree's suites off the file list a caller handed in, "
+              "the version answer, and Python sources only for a Python "
+              "change: %r" % ((first, sorted(fresh)),),
+              (first.get("related") or {}).get("paths") == ["tests/test_a.py"]
+              and first.get("suites") == ["tests/test_a.py"]
+              and first.get("versionAnswer") == "v1"
+              and "pySources" not in first and "pySources" not in again
+              and "src/a.py" in (fresh.get("pySources") or {})
+              and M.select(["src/a.py"], meta, fresh)["widen"] is None)
+
+        seen = {"files": []}
+        M.run_listing = counted
+        del heard[:]
+        try:
+            M.prefetch_listings(tree, meta, ["docs/a.md", "src/a.py"], seen)
+            M.gather_facts(tree, meta, ["docs/a.md"], seen=seen, sources=False)
+        finally:
+            M.run_listing = real
+        check("af42 a prefetch runs each path's listing into `seen`, and the "
+              "gathering after it reads them rather than running them again: "
+              "%r" % (heard,),
+              len([c for c in heard if "docs/a.md" in c]) == 1
+              and len([c for c in heard if "src/a.py" in c]) == 1
+              and sorted(seen.get("listings") or {}) == sorted(
+                  c for c in heard if "{" not in c and "echo v1" != c))
+    finally:
+        shutil.rmtree(tree, ignore_errors=True)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _gather_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

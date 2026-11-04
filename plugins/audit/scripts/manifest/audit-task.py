@@ -352,7 +352,6 @@ Stdlib only, Python 3.8 compatible.
 """
 import argparse
 import ast
-import concurrent.futures
 import json
 import os
 import pathlib
@@ -1842,130 +1841,25 @@ def _readiness_lines(waiting, tid):
 # was run and is never rewritten by this.
 #
 # THE READING IS THE AFFECTED-TEST DERIVATION'S, asked rather than re-written.
-# Each declared file goes through `_affected_tests.select` alone, over the same
-# observations `run-test-gate.py` gathers for a task's measured run - the
-# recorded listings and their version check, the tree's suites, every Python
-# source - and `_affected_tests.steps_for` says whether a declared entry is the
-# unscoped call that runs the selection. The comparison with what the gate runs
+# Each declared file goes through `_affected_tests.select` alone, over the
+# observations `_affected_tests.gather_facts` gathers - the one gathering
+# `run-test-gate.py`'s measured run reads too: the recorded listings and their
+# version check, the tree's suites, every Python source - and
+# `_affected_tests.steps_for` says whether a declared entry is the unscoped call
+# that runs the selection. The comparison with what the gate runs
 # (`_affected_tests.gate_runs`) is `_manifest_phases.gate_reach_gaps`.
-GATE_REACH_TIMEOUT_SECONDS = 120
-# How many listing commands run at once; each is a process of its own.
-GATE_REACH_WORKERS = 8
+#
+# NONE OF IT RUNS WITH THE INDEX LOCK HELD. The listings can take tens of
+# seconds, and every other lock taker waits a bounded time and is then refused:
+# `add` and `scope` read the reach after release from the plan they wrote, and
+# `done` reads it before acquiring and records it only if the task still holds
+# the files and gate it was read of. It is advisory, so it fails open.
 GATE_REACH_LEAD = "WARNING: gate reach: "
-# A `files` entry the derivation is not asked about: it names no one file.
-_PATTERN_CHARS = ("*", "?", "[")
-
-
-def _reach_shell(project, meta, command):
-    """`{exit, output}` for `command` run in `project` the way a plan command
-    runs - `meta.nodePreamble` in front, the plan's shell, stderr folded into
-    the output as `run-test-gate.py` folds it. A command that could not start
-    or did not finish has no exit a listing answers with."""
-    wrapped = _evidence_io.resolved_commands(
-        {"meta": {"nodePreamble": meta.get("nodePreamble")}}, [command])[0][1]
-    argv, env, refusal = _proc_group.shell_invocation(wrapped)
-    if argv is None:
-        return {"exit": None, "output": refusal or ""}
-    try:
-        done = subprocess.run(argv, cwd=project, env=env, stdout=subprocess.PIPE,
-                              stderr=subprocess.STDOUT,
-                              timeout=GATE_REACH_TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired:
-        return {"exit": None, "output": "did not finish within %ds"
-                % (GATE_REACH_TIMEOUT_SECONDS,)}
-    except OSError as exc:
-        return {"exit": None, "output": "could not be started: %s" % (exc,)}
-    return {"exit": done.returncode,
-            "output": done.stdout.decode("utf-8", "replace")}
-
-
-def _reach_tree_files(project):
-    """The project's files, tracked and untracked-but-not-ignored, as plan
-    paths - the listing `run-test-gate.py` reads the suites and the sources
-    from - else `_tracked_files`' answer where git cannot give one."""
-    try:
-        done = subprocess.run(["git", "-C", project, "ls-files", "-z", "--cached",
-                               "--others", "--exclude-standard"],
-                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                              timeout=GATE_REACH_TIMEOUT_SECONDS)
-    except (OSError, subprocess.TimeoutExpired):
-        done = None
-    if done is None or done.returncode != 0 or not done.stdout:
-        return _tracked_files(project)
-    # `ls-files` prints from its cwd, the project: said so to the pair.
-    hc = _loader.load_hooks_config(modname="audit__config")
-    found = [hc.git_to_plan(p, project, project, cwd=project)
-             for p in done.stdout.decode("utf-8", "replace").split("\0") if p]
-    return [p for p in found if p]
-
-
-def _reach_sources(project, files):
-    """`{path: text}` for every `.py` of `files` that can be read."""
-    sources = {}
-    for rel in files:
-        if rel.endswith(".py"):
-            text = _read_text(project, rel)
-            if text is not None:
-                sources[rel] = text
-    return sources
-
-
-def _prefetch_listings(project, meta, paths, seen):
-    """Run each recorded listing for each of `paths` alone, side by side, into
-    `seen` - the commands `_reach_facts` then reads instead of running. A
-    project's listing can take seconds a path, and the paths do not wait on
-    one another."""
-    ran = seen.setdefault("listings", {})
-    commands = sorted(set(
-        _gate_derive.listing_command(template, [path])
-        for template in _affected.listing_templates(meta).values()
-        for path in paths) - set(ran))
-    if not commands:
-        return
-    with concurrent.futures.ThreadPoolExecutor(
-            max_workers=min(GATE_REACH_WORKERS, len(commands))) as pool:
-        done = dict(zip(commands, pool.map(
-            lambda cmd: _reach_shell(project, meta, cmd), commands)))
-    for command, res in done.items():
-        ran[command] = dict(_gate_derive.listing_fact(res), command=command)
-
-
-def _reach_facts(project, meta, path, seen, sources=True):
-    """Every observation `_affected_tests.select` reads about `path` alone,
-    the Python sources only when `sources` asks for them. `seen` carries what
-    one call asks once: the version answer, each listing command's answer,
-    the tree's files and its Python sources."""
-    gate = meta.get("phaseGate") if isinstance(meta.get("phaseGate"), dict) else {}
-    derived = gate.get("derived") if isinstance(gate.get("derived"), dict) else {}
-    templates = _affected.listing_templates(meta)
-    edited = _affected.changed_suites([path])
-    every = _affected.all_template(meta) if edited else None
-    facts = {}
-    if "related" in templates or every:
-        if "version" not in seen:
-            seen["version"] = _gate_derive.version_facts(
-                derived, lambda cmd: _reach_shell(project, meta, cmd))
-        facts.update(seen["version"])
-    ran = seen.setdefault("listings", {})
-    for key, template in sorted(templates.items()):
-        command = _gate_derive.listing_command(template, [path])
-        if command not in ran:
-            ran[command] = dict(_gate_derive.listing_fact(
-                _reach_shell(project, meta, command)), command=command)
-        facts[key] = ran[command]
-    if every:
-        if "all" not in seen:
-            seen["all"] = dict(_gate_derive.listing_fact(
-                _reach_shell(project, meta, every)), command=every)
-        facts["all"] = seen["all"]
-    if "files" not in seen:
-        seen["files"] = _reach_tree_files(project)
-    facts["suites"] = [p for p in seen["files"] if _phases.is_suite_path(p)]
-    if sources and (edited or path.endswith(".py")):
-        if "sources" not in seen:
-            seen["sources"] = _reach_sources(project, seen["files"])
-        facts["pySources"] = seen["sources"]
-    return facts
+# The line saying the reach was not read at all, and why. Its own lead, so a
+# reader counting gaps never counts the advisory's own failure as one.
+GATE_REACH_NOT_ASKED_LEAD = "WARNING: gate reach not asked: "
+# The line `done` prints when its reading no longer describes the task.
+GATE_REACH_NOT_RECORDED_LEAD = "WARNING: gate reach not recorded: "
 
 
 def _related_reach(meta, facts, runs):
@@ -1988,11 +1882,14 @@ def _reach_answer(project, meta, phase, entries, runs, path, seen):
     Walking every Python source of a large tree costs seconds a path, and a
     path the trusted related listing already reaches a gate-run suite for is
     reached whatever the graph adds; only the rest pay for `select` whole."""
-    early = _reach_facts(project, meta, path, seen, sources=False)
+    early = _affected.gather_facts(project, meta, [path], seen=seen,
+                                   sources=False)
     listed = _related_reach(meta, early, runs)
     if listed:
         return {"suites": listed, "widen": None, "settled": False}
-    info = _affected.select([path], meta, _reach_facts(project, meta, path, seen)
+    info = _affected.select([path], meta,
+                            _affected.gather_facts(project, meta, [path],
+                                                   seen=seen)
                             if path.endswith(".py")
                             or _affected.changed_suites([path]) else early)
     picked = [s.get("path") for s in (info.get("suites") or info.get("selected")
@@ -2020,7 +1917,12 @@ def _declared_paths(task):
 
 
 def _names_one_file(project, path):
-    return not (any(c in path for c in _PATTERN_CHARS) or path.endswith("/")
+    """Whether a `files` entry names one file the derivation can be asked
+    about: not a directory, by its trailing `/` or on disk. A `files` entry is
+    never a pattern - `_task_outputs.entry_is_pattern` is the one reading - so
+    `app/[slug]/page.tsx` is asked as the literal path it spells."""
+    return not (_touts.entry_is_pattern("files", path)
+                or path.endswith("/")
                 or os.path.isdir(os.path.join(project, *path.split("/"))))
 
 
@@ -2028,21 +1930,135 @@ def _gate_reach(project, manifest, phase, task):
     """`{gate, gaps}` - the entries measuring `task` and `[(path, why)]` for
     each declared file they reach no suite of; None when the task declares no
     file or no gate entry measures it, so there is nothing to compare. A
-    directory or a pattern is handed over unanswered and named as not asked."""
+    directory is handed over unanswered and named as not asked.
+
+    The facts are `_affected_tests.gather_facts`', the gathering
+    `run-test-gate.py`'s affected steps read, asked one declared file at a
+    time over one `seen`; the tree's file list is git's, else `_tracked_files`'
+    walk for a project that is no checkout."""
     entries, _source = _mio.gate_entries(phase, task)
     files = _declared_paths(task)
     if not entries or not files:
         return None
     meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
     runs = _affected.gate_runs(entries)
-    seen, answers = {}, {}
+    seen = {"files": _affected.tree_files(project) or _tracked_files(project)}
+    answers = {}
     asked = [p for p in files if p not in runs and _names_one_file(project, p)]
-    _prefetch_listings(project, meta, asked, seen)
+    _affected.prefetch_listings(project, meta, asked, seen)
     for path in asked:
         answers[path] = _reach_answer(project, meta, phase, entries, runs, path,
                                       seen)
     return {"gate": list(entries),
             "gaps": _phases.gate_reach_gaps(files, runs, answers)}
+
+
+def _reach_or_why(project, manifest, phase, task):
+    """`(reach, why)` - `_gate_reach`'s answer and None, or None and why it
+    could not be read. FAIL-OPEN: the reading is advisory and runs listing
+    commands a project supplies, so an exception in it is said in one line and
+    never turns the verb that asked into an error."""
+    try:
+        return _gate_reach(project, manifest, phase, task), None
+    except Exception as exc:
+        return None, "%s: %s" % (type(exc).__name__, exc)
+
+
+def _reach_outside_lock(project, mpath, tid):
+    """`(reach, why)` for task `tid` as the plan at `mpath` now holds it - the
+    reading `add` and `scope` take AFTER the index lock is released, from the
+    plan they wrote. The listings it runs can take tens of seconds, and every
+    other lock taker waits a bounded time and is then refused, so no part of
+    it runs with the lock held."""
+    try:
+        manifest = _mio.load_manifest(mpath)
+    except Exception as exc:
+        return None, "the written plan could not be read back: %s: %s" % (
+            type(exc).__name__, exc)
+    node, phase, refusal = _task_target(manifest, tid, "gate reach")
+    if refusal:
+        return None, "the written plan answers: %s" % (refusal,)
+    return _reach_or_why(project, manifest, phase, node)
+
+
+def _reach_ask(tid, mpath, payload):
+    """What a locked `add` or `scope` hands back beside its exit for the
+    reading taken after release: the task, the plan it was written to, and
+    the `--json` payload held back so the reading joins it as one object
+    (None for the human report, already printed)."""
+    return {"tid": tid, "mpath": mpath, "json": payload}
+
+
+def _reach_after_release(project, out, answer):
+    """The exit of a locked `add` or `scope`, after printing the reach of the
+    task it wrote, read from the written plan once the index lock is
+    released. `answer` is what `_under_lock` returned: an exit alone when the
+    body wrote nothing or moved nothing a reading compares, else
+    `(exit, ask)` with `ask` from `_reach_ask` (or None)."""
+    if not isinstance(answer, tuple):
+        return answer
+    code, ask = answer
+    if ask is None:
+        return code
+    reach, why = _reach_outside_lock(project, ask["mpath"], ask["tid"])
+    result = ask["json"]
+    if result is not None:
+        result = dict(result, gateReach=_reach_key(reach),
+                      gateReachNotAsked=why)
+        out(json.dumps(result, indent=2, sort_keys=True))
+        return code
+    for line in _reach_said(reach, why):
+        out(line)
+    return code
+
+
+def _reach_said(reach, why):
+    """The lines `add` and `scope` print about the reading: one per gap, or
+    the one line saying it was not asked and why."""
+    if why is not None:
+        return ["%s%s" % (GATE_REACH_NOT_ASKED_LEAD, why)]
+    return _reach_lines(reach)
+
+
+def _reach_scope(phase, task):
+    """What a reach reading is a reading OF: the task's declared files and the
+    gate entries measuring it. `done` takes its reading before the lock and
+    records it only when the task still holds the same pair under it."""
+    return (_declared_paths(task), list(_mio.gate_entries(phase, task)[0]))
+
+
+def _reach_before_lock(args, project, tid):
+    """`{scope, reach, why}` for task `tid` from a read of the plan taken
+    BEFORE `done` acquires the index lock, so the listings run with it free;
+    `{why}` alone when the plan could not be read or holds no such task - the
+    locked body then refuses the close, or says the reading was not taken."""
+    try:
+        _config, mpath = _plan_location(args, project)
+        manifest = _mio.load_manifest(mpath)
+    except Exception as exc:
+        return {"why": "the plan could not be read before the lock was taken: "
+                       "%s: %s" % (type(exc).__name__, exc)}
+    node, phase, refusal = _task_target(manifest, tid, "done")
+    if refusal:
+        return {"why": "the plan read before the lock answers: %s" % (refusal,)}
+    reach, why = _reach_or_why(project, manifest, phase, node)
+    return {"scope": _reach_scope(phase, node), "reach": reach, "why": why}
+
+
+def _reach_held(before, phase, node):
+    """`(reach, line)` `done` records under the lock: the reading taken before
+    it when the task still declares the files and gate that reading was of,
+    and no line; else no reading and the line saying why. A close never
+    records a gap measured against a scope the task no longer holds, nor stays
+    silent about not recording one."""
+    if before.get("why") is not None:
+        return None, "%s%s" % (GATE_REACH_NOT_ASKED_LEAD, before["why"])
+    if before["scope"] != _reach_scope(phase, node):
+        return None, ("%sthe task's files or gate changed while its reach was "
+                      "read, so that reading describes a scope it no longer "
+                      "holds and no note is written from it"
+                      % (GATE_REACH_NOT_RECORDED_LEAD,))
+    return before["reach"], None
 
 
 def _reach_key(reach):
@@ -4614,7 +4630,9 @@ def _fixes_targets(assembled, phase, fixes, files, project, records=()):
 
 def _locked_add(args, project, config, mpath, title, out):
     """Everything between acquire and release: read, allocate, mutate, write,
-    validate-from-disk, roll back on findings, journal, report."""
+    validate-from-disk, roll back on findings, journal, report. The gate-reach
+    reading is NOT among them: a written add returns `(0, _reach_ask(...))` and
+    the reading is taken once the lock is released (`_reach_after_release`)."""
     try:
         raw_index = _mio.read_json(mpath)
         assembled = _mio.load_manifest(mpath)
@@ -4810,7 +4828,6 @@ def _locked_add(args, project, config, mpath, title, out):
     jres = _journal_add(project, config, mpath, task_id, phase_id, title,
                         healed, _companion_basis(companions))
     waiting = _waiting_on(assembled, task)
-    reach = _gate_reach(project, assembled, phase, task)
     index_note = _index_dirty_note(written, mpath, project, phase_id)
     git_root = os.path.abspath(os.path.join(project,
                                             (config or {}).get("gitRoot") or "."))
@@ -4842,15 +4859,14 @@ def _locked_add(args, project, config, mpath, title, out):
                   "companionNotes": companion_notes,
                   "gateDirectories": _gate_directory_notes(
                       project, task["tests"]["gate"], assembled.get("meta")),
-                  "gateReach": _reach_key(reach),
                   "ready": not waiting, "waitingOn": waiting}
         result.update(jres)
         result.update(stdin_notes_key(args))
         result.update(project_basis_key(args))
         result.update(_index_dirty_key(index_note))
         result.update(_phase_branch_key(branch_note))
-        out(json.dumps(result, indent=2, sort_keys=True))
-        return 0
+        # Printed once the reach is read, with the lock released.
+        return 0, _reach_ask(task_id, mpath, result)
     out("[audit-task] %s added to %s -- %s" % (task_id, phase_id, title))
     for pb in phase_basis:
         out("  phase: %s -- of the running %s, the one whose branch %s is checked out"
@@ -4869,8 +4885,6 @@ def _locked_add(args, project, config, mpath, title, out):
            else "none", gate_basis))
     for line in _gate_directory_notes(project, task["tests"]["gate"],
                                       assembled.get("meta")):
-        out(line)
-    for line in _reach_lines(reach):
         out(line)
     if task["tests"]["expectRedFirst"] and not task["tests"]["add"]:
         # The stored expectation, not the mode: a fix task born tdd with no case
@@ -4924,7 +4938,7 @@ def _locked_add(args, project, config, mpath, title, out):
         out(branch_note)
     for line in _readiness_lines(waiting, task_id):
         out(line)
-    return 0
+    return 0, _reach_ask(task_id, mpath, None)
 
 
 def _dry_run_report(args, out, vm, assembled, task, phase_id, gate_basis, missing,
@@ -8177,7 +8191,7 @@ def _still_open(phase):
             if isinstance(t, dict) and t.get("status") not in _mio.TERMINAL]
 
 
-def _locked_done(args, project, config, mpath, tid, out):
+def _locked_done(args, project, config, mpath, tid, out, before):
     """Close one task, under the lock, with a row and a revalidation -- the path
     every mutating verb in this file takes.
 
@@ -8422,8 +8436,10 @@ def _locked_done(args, project, config, mpath, tid, out):
     # THE GAP IS RECORDED IN THIS WRITE, as a dated note: the close is the last
     # moment the plan says what its gate was taken as evidence for. A no-change
     # close changed no file, so there is no change for a gate to have missed.
-    reach = (_gate_reach(project, assembled, phase, node)
-             if no_change is None else None)
+    # The reading was taken before the lock (`cmd_done`), and is recorded only
+    # when the task still holds the files and gate it was read of.
+    reach, reach_line = ((None, None) if no_change is not None or before is None
+                         else _reach_held(before, phase, node))
     if reach is not None and reach["gaps"]:
         entry = {"at": now, "text": _reach_note(reach)}
         node["notes"] = list(node.get("notes") or []) + [entry]
@@ -8507,6 +8523,9 @@ def _locked_done(args, project, config, mpath, tid, out):
                   "phaseStatus": _mio.effective_phase_status(phase),
                   "gate": _gate_key(gate, refused, override),
                   "gateReach": _reach_key(reach),
+                  # The line saying no reading is recorded, and why - None when
+                  # one is, or when a no-change close asked none.
+                  "gateReachNotRecorded": reach_line,
                   # Each return this close read with no filing row to compare
                   # it against - an empty list is every one checked or none read.
                   "returnsUnchecked": unchecked,
@@ -8524,7 +8543,7 @@ def _locked_done(args, project, config, mpath, tid, out):
     out("  completedAt %s" % (node.get("completedAt"),))
     for line in _gate_lines(gate, refused, override):
         out(line)
-    for line in _reach_lines(reach):
+    for line in _reach_lines(reach) + ([reach_line] if reach_line else []):
         out(line)
     if reach is not None and reach["gaps"]:
         out("  recorded on %s as a dated note" % (tid,))
@@ -10484,6 +10503,15 @@ def _park_phase(args, project, config, mpath, raw_index, assembled, phase, side,
 
 
 # --- the doors ------------------------------------------------------------------
+def _plan_location(args, project):
+    """`(config, manifest path)` - the project's config and the plan a verb
+    reads: `--manifest` when given, else the config's `manifestPath`. One
+    reading for the locked body and for a read a verb takes before the lock."""
+    config = _panel_write.read_config(project)
+    return config, (os.path.abspath(args.manifest) if args.manifest
+                    else _panel_write._manifest_path(project, config))
+
+
 def _under_lock(args, project, out, body, must_exist=True, create=False):
     """Config, manifest path, the index lock, `body`, release.
 
@@ -10522,9 +10550,7 @@ def _under_lock(args, project, out, body, must_exist=True, create=False):
     args.project_basis = _panel_write.standing_elsewhere(resolve_basis(args))
     if args.project_basis["note"] and not args.as_json:
         out(args.project_basis["note"])
-    config = _panel_write.read_config(project)
-    mpath = (os.path.abspath(args.manifest) if args.manifest
-             else _panel_write._manifest_path(project, config))
+    config, mpath = _plan_location(args, project)
     exists = os.path.isfile(mpath)
     creating = create and must_exist and not exists
     if must_exist and not exists and not creating:
@@ -11352,10 +11378,9 @@ def _locked_scope(args, project, config, mpath, tid, out):
     # name read the same as one that meant to until the list itself was shown.
     held_now = _held_gate(node) if _scope_gate_flags(args) else None
     # Asked only when the call moved what it compares: a rescope of the
-    # description leaves the gate's reach where the last one left it.
-    reach = (_gate_reach(project, assembled, phase, node)
-             if any(row["field"] in ("tests.gate", "files") for row in changes)
-             else None)
+    # description leaves the gate's reach where the last one left it. Asked
+    # once the lock is released, from the written plan (`_reach_after_release`).
+    ask_reach = any(row["field"] in ("tests.gate", "files") for row in changes)
     if args.as_json:
         result = {"ok": True, "id": tid, "phase": phase_id,
                   "changes": changes, "written": written,
@@ -11381,7 +11406,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
                   "testsAddNamingNoFile": list(unnamed_add),
                   "companions": companions, "companionNotes": companion_notes,
                   "testsModeNote": mode_note,
-                  "gateReach": _reach_key(reach),
+                  "gateReach": None, "gateReachNotAsked": None,
                   "ready": not waiting, "waitingOn": waiting}
         result.update(jres)
         result.update(stdin_notes_key(args))
@@ -11390,6 +11415,9 @@ def _locked_scope(args, project, config, mpath, tid, out):
         result.update(_phase_branch_key(branch_note))
         if held_now is not None:
             result["gateNowHolds"] = held_now
+        if ask_reach:
+            # Printed once the reach is read, with the lock released.
+            return 0, _reach_ask(tid, mpath, result)
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] %s scoped in %s%s"
@@ -11462,8 +11490,6 @@ def _locked_scope(args, project, config, mpath, tid, out):
         for line in _gate_directory_notes(project, (node.get("tests") or {})
                                           .get("gate"), assembled.get("meta")):
             out(line)
-    for line in _reach_lines(reach):
-        out(line)
     unnamed_note = _unnamed_add_note(unnamed_add)
     if unnamed_note:
         # BEFORE the index lines, because it is about what did NOT reach the
@@ -11508,7 +11534,7 @@ def _locked_scope(args, project, config, mpath, tid, out):
         out(index_note)
     if branch_note:
         out(branch_note)
-    return 0
+    return 0, (_reach_ask(tid, mpath, None) if ask_reach else None)
 
 
 _EMPTY_GATE_REFUSAL = ("[audit-task] an empty gate is --gate-clear, which says "
@@ -11821,9 +11847,9 @@ def cmd_scope(args, out):
     if not tid:
         out("[audit-task] scope needs a task id")
         return E_USAGE
-    return _under_lock(args, project, out,
-                       lambda config, mpath: _locked_scope(
-                           args, project, config, mpath, tid, out))
+    return _reach_after_release(project, out, _under_lock(
+        args, project, out, lambda config, mpath: _locked_scope(
+            args, project, config, mpath, tid, out)))
 
 
 def cmd_start(args, out):
@@ -11932,9 +11958,15 @@ def cmd_done(args, out):
     if refusal:
         _refuse_on_stderr(args, out, refusal)
         return E_USAGE
+    # THE REACH IS READ BEFORE THE LOCK IS TAKEN: its listings can run for tens
+    # of seconds, and every other lock taker waits a bounded time and is then
+    # refused. The locked body records it only if the task still holds the
+    # files and gate it was read of (`_reach_held`). A no-change close changed
+    # no file, so it asks nothing.
+    before = None if args.no_change else _reach_before_lock(args, project, tid)
     return _under_lock(args, project, out,
                        lambda config, mpath: _locked_done(
-                           args, project, config, mpath, tid, out))
+                           args, project, config, mpath, tid, out, before))
 
 
 def _done_flags_refusal(args):
@@ -12030,9 +12062,9 @@ def cmd_add(args, out):
     if not title:
         out("[audit-task] add needs a non-empty title")
         return E_USAGE
-    return _under_lock(args, project, out,
-                       lambda config, mpath: _locked_add(
-                           args, project, config, mpath, title, out))
+    return _reach_after_release(project, out, _under_lock(
+        args, project, out, lambda config, mpath: _locked_add(
+            args, project, config, mpath, title, out)))
 
 
 # --- signoff: the record a phase's `done` is derived from --------------------------

@@ -21,9 +21,13 @@ e2e runner's changed listing (`listing.e2eChanged`) when one is recorded; and,
 when the project has e2e specs that no recorded listing can see, every one of
 them.
 
-PURE. Every observation -- a listing's exit and output, the version answer,
-the Python sources, the tree's suite files -- arrives in `facts`, gathered once
-by the caller (`run-test-gate.py`). Nothing here shells out or reads a file.
+THE SELECTION IS PURE. Every observation -- a listing's exit and output, the
+version answer, the Python sources, the tree's suite files -- arrives in
+`facts`, and nothing the selection calls shells out or reads a file. The
+gathering that fills `facts` is the last section of this file (`gather_facts`),
+held apart from the selection and asked by both callers - `run-test-gate.py`'s
+affected steps and `audit-task.py`'s gate-reach check - so the two measure one
+set of facts the one way.
 
 WIDEN, NEVER EMPTY. A listing that cannot answer, a version that does not
 match, a `.py` change with no sources to graph, a changed path no arm reads,
@@ -40,9 +44,11 @@ said, so a full-sweep key does not run the same suites again beside it.
 """
 
 import ast
+import concurrent.futures
 import os
 import posixpath
 import shlex
+import subprocess
 import sys
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -72,7 +78,11 @@ import _gate_derive                  # noqa: E402  (the e2e reading of a path, t
 #                                       path-scoped shape and its re-pointing:
 #                                       asked, not copied)
 import _evidence_io                  # noqa: E402  (DERIVED_STEP_PREFIX: the name a
-#                                       row's measured-not-declared steps carry)
+#                                       row's measured-not-declared steps carry,
+#                                       and a plan command's node preamble)
+import _loader                       # noqa: E402  (git's paths read as plan paths)
+import _proc_group                   # noqa: E402  (a listing's shell, its process
+#                                       group, and the teardown of the group)
 
 ARMS = ("related", "python", "walk", "e2e-changed", "e2e-widening")
 # Prose is not app source: a change to these alone reaches no spec.
@@ -1152,6 +1162,173 @@ def _support_settled(support, phase, meta, project, task_entries, build,
             "does not widen to the phase gate: the task's gate entry `%s` runs "
             "`%s`, the same call with no path, which runs every suite that "
             "leans on it" % (", ".join(support), entry, build.get(entry, entry)))
+
+
+# --- gathering the facts the selection reads --------------------------------------
+# THE ONE PLACE THAT MEASURES. Everything above reads `facts` and nothing else;
+# this is what fills it, for both of the callers that ask the selection a
+# question: `run-test-gate.py`'s affected steps, over a task's whole change, and
+# `audit-task.py`'s gate-reach check, over one declared file at a time. They
+# were two hand copies once and had drifted - one ran a listing with no process
+# group, so a timed-out listing's children outlived the verb, and the two ran
+# under different bounds - so a change to the facts one gathered changed only
+# one of the two answers. A listing runs the way a plan command runs: the
+# plan's node preamble in front, the plan's shell, stderr folded into the
+# output, and on timeout its whole tree stopped by `_proc_group.stop_and_drain`.
+LISTING_TIMEOUT_SECONDS = 120
+GIT_TIMEOUT_SECONDS = 30
+# How many listing commands `prefetch_listings` runs at once; each is a process.
+PREFETCH_WORKERS = 8
+# The exits a listing that gave no verdict carries, kept apart from any exit a
+# listing answers with: the shell's own words for "not run" and "timed out".
+_COULD_NOT_RUN_EXIT = 127
+_TIMED_OUT_EXIT = 124
+
+
+def run_listing(project, meta, command, timeout):
+    """`{exit, output}` for one listing (or version) command run in `project`
+    under `timeout` seconds. A command that could not start answers exit 127
+    and one that outlived its bound exit 124 (or the exit its stopped root
+    gave), each with the output saying so, so no reader takes either for an
+    answer: `_ran` and `_gate_derive.version_facts` read anything but 0 as no
+    answer."""
+    meta = meta if isinstance(meta, dict) else {}
+    wrapped = _evidence_io.resolved_commands(
+        {"meta": {"nodePreamble": meta.get("nodePreamble")}}, [command])[0][1]
+    argv, env, refusal = _proc_group.shell_invocation(wrapped)
+    if argv is None:
+        return {"exit": _COULD_NOT_RUN_EXIT,
+                "output": "could not run: %s" % (refusal,)}
+    kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.STDOUT}
+    kwargs.update(_proc_group.group_kwargs())
+    try:
+        proc = subprocess.Popen(argv, cwd=project, env=env, **kwargs)
+    except Exception as exc:
+        return {"exit": _COULD_NOT_RUN_EXIT, "output": "could not run: %s" % (exc,)}
+    try:
+        out, _err = proc.communicate(timeout=timeout)
+        return {"exit": proc.returncode,
+                "output": (out or b"").decode("utf-8", "replace")}
+    except subprocess.TimeoutExpired:
+        text, _confirmed = _proc_group.stop_and_drain(proc)
+        code = proc.returncode if proc.returncode not in (None, 0) \
+            else _TIMED_OUT_EXIT
+        return {"exit": code,
+                "output": "%s\ndid not finish within %ss" % (text, timeout)}
+    except BaseException:
+        # An interrupt lands here too, and the group goes before it leaves: a
+        # listing's children must not outlive the verb that started them.
+        _proc_group.stop_and_drain(proc)
+        raise
+
+
+def tree_files(project):
+    """The project's files, tracked and untracked-but-not-ignored, as plan
+    paths; None when git cannot list them."""
+    try:
+        done = subprocess.run(["git", "-C", project, "ls-files", "-z", "--cached",
+                               "--others", "--exclude-standard"],
+                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                              timeout=GIT_TIMEOUT_SECONDS)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    # `ls-files` prints from its cwd, the project, which is where the plan's
+    # paths are spelled from: said so to the pair.
+    hc = _loader.load_hooks_config(modname="audit__config")
+    found = [hc.git_to_plan(p, project, project, cwd=project)
+             for p in done.stdout.decode("utf-8", "replace").split("\0") if p]
+    return [p for p in found if p]
+
+
+def _python_sources(project, files):
+    """`{path: text}` for every `.py` of `files` that can be read."""
+    sources = {}
+    for path in files:
+        if not path.endswith(".py"):
+            continue
+        try:
+            with open(os.path.join(project, *path.split("/")), encoding="utf-8",
+                      errors="replace") as fh:
+                sources[path] = fh.read()
+        except OSError:
+            continue
+    return sources
+
+
+def _listing_into(ran, project, meta, command):
+    if command not in ran:
+        ran[command] = dict(_gate_derive.listing_fact(
+            run_listing(project, meta, command, LISTING_TIMEOUT_SECONDS)),
+            command=command)
+    return ran[command]
+
+
+def prefetch_listings(project, meta, paths, seen, workers=PREFETCH_WORKERS):
+    """Run each recorded listing for each of `paths` ALONE, side by side, into
+    `seen` - the answers a later `gather_facts([path], seen=seen)` reads
+    instead of running. A project's listing can take seconds a path, and the
+    paths do not wait on one another."""
+    ran = seen.setdefault("listings", {})
+    commands = sorted(set(
+        _gate_derive.listing_command(template, [path])
+        for template in listing_templates(meta).values()
+        for path in paths) - set(ran))
+    if not commands:
+        return
+    with concurrent.futures.ThreadPoolExecutor(
+            max_workers=max(1, min(workers, len(commands)))) as pool:
+        answers = dict(zip(commands, pool.map(
+            lambda cmd: run_listing(project, meta, cmd, LISTING_TIMEOUT_SECONDS),
+            commands)))
+    for command, res in answers.items():
+        ran[command] = dict(_gate_derive.listing_fact(res), command=command)
+
+
+def gather_facts(project, meta, changed, seen=None, sources=True):
+    """Every observation `select` reads about `changed`, measured in `project`.
+
+    `seen` carries what several gatherings over one tree ask once: the version
+    answer, each listing command's answer, the tree's files and its Python
+    sources. A caller with its own reading of the tree's files - a project that
+    is no checkout - hands it in as `seen["files"]`; otherwise git's answer is
+    read, and a tree git cannot list has no suites and no sources. `sources`
+    False leaves the Python sources out, for a caller asking first whether the
+    listing alone settles the question."""
+    meta = meta if isinstance(meta, dict) else {}
+    seen = {} if seen is None else seen
+    derived = _derived(meta)
+    templates = listing_templates(meta)
+    # The all-runners listing is asked only when a suite changed: it is what
+    # the walk arm reads its runners from, and nothing else here reads it.
+    edited = changed_suites(changed)
+    every = all_template(meta) if edited else None
+    facts = {}
+    if "related" in templates or every:
+        if "version" not in seen:
+            seen["version"] = _gate_derive.version_facts(
+                derived, lambda cmd: run_listing(project, meta, cmd,
+                                                 GIT_TIMEOUT_SECONDS))
+        facts.update(seen["version"])
+    ran = seen.setdefault("listings", {})
+    for key, template in sorted(templates.items()):
+        facts[key] = _listing_into(ran, project, meta,
+                                   _gate_derive.listing_command(template, changed))
+    if every:
+        facts["all"] = _listing_into(ran, project, meta, every)
+    if "files" not in seen:
+        seen["files"] = tree_files(project)
+    files = seen["files"]
+    facts["suites"] = [p for p in files or [] if _phases.is_suite_path(p)]
+    # A changed suite is read for the walk arm whatever its language: the
+    # lints that walk it are Python whether or not it is.
+    if sources and files is not None \
+            and (edited or any(p.endswith(".py") for p in changed or [])):
+        if "sources" not in seen:
+            seen["sources"] = _python_sources(project, files)
+        facts["pySources"] = seen["sources"]
+    return facts
 
 
 # --- cli ------------------------------------------------------------------------
