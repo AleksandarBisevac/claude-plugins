@@ -4374,6 +4374,146 @@ def _ix_dict_cases(check):
         shutil.rmtree(_ix_root, ignore_errors=True)
 
 
+# --- sp: a pointer to a numbered step names a step its document holds -----------
+# Every pointer these fixtures hold is BUILT by `_sp`, never written out: the lint
+# reads this file too, and a fixture pointer spelled as a literal would be a
+# pointer into a document the real tree does not keep - which the scan reports,
+# correctly, against this suite.
+_SP_WORD = "st" + "ep"
+
+
+def _sp(doc, steps, word=_SP_WORD):
+    """`<doc> step <steps>` - one pointer, assembled so the source holds none."""
+    return "%s %s %s" % (doc, word, steps)
+
+
+def _sp_of(steps, doc):
+    """`step <steps> of <doc>` - the other word order a pointer is written in."""
+    return "%s %s of %s" % (_SP_WORD, steps, doc)
+
+
+_SP_GUIDE = (
+    "# Guide\n"
+    "\n"
+    "## Do the thing\n"
+    "\n"
+    "1. a. First half.\n"
+    "   b.–c. Second half, one item for two letters.\n"
+    "2. **Second.**\n"
+    "     a. sub a\n"
+    "     b. sub b\n"
+    "3. Third.\n"
+    "4b. A late insert with no plain 4 before it.\n"
+    "\n"
+    "```bash\n"
+    "7. not a step - it sits in a fence\n"
+    "```\n"
+    "\n"
+    "## 5. Synthesis\n"
+    "\n"
+    "1. one\n"
+    "2. two\n")
+
+_SP_HEADED = (
+    "## 0. Preflight\n"
+    "### 1. Transport, and 2. identity\n"
+    "### 3.5 Workspace\n"
+    "## Notes\n"
+    "1. only\n")
+
+
+def _step_pointer_cases(check):
+    """Which steps a document holds, which pointers a text carries, and the
+    lint that joins the two over a derived tree."""
+    check("sp1 a document's steps are its top-level list items, the letters "
+          "nested under one (a lettered range included), a lettered top-level "
+          "item WITHOUT the plain number, and `<heading>.<item>` under a "
+          "numbered heading - while a list inside a fence is code, not a step, "
+          "and no letter or number the document never wrote is invented: %r"
+          % (sorted(M._md_steps(_SP_GUIDE)),),
+          M._md_steps(_SP_GUIDE) == frozenset(
+              ("1", "1a", "1b", "1c", "2", "2a", "2b", "3", "4b", "5",
+               "5.1", "5.2")))
+    check("sp1b a numbered HEADING is a step, two of them in one heading "
+          "included, and a decimal heading is held whole: %r"
+          % (sorted(M._md_steps(_SP_HEADED)),),
+          M._md_steps(_SP_HEADED) == frozenset(("0", "1", "2", "3.5")))
+    _sp_text = "\n".join((
+        "see `%s` for it" % _sp("reference/guide.md", "2b"),
+        "the `guide.md`'s %s %s, possessive" % (_SP_WORD, "4c"),
+        "# read `guide.md`",
+        "# %s 9 first, wrapped onto a comment line" % _SP_WORD,
+        "and %s, a list" % _sp("guide.md", "3, 3b and 5.1", _SP_WORD + "s"),
+        "and %s, a range" % _sp("guide.md", "1a–1c", _SP_WORD + "s"),
+        "the retry %s prescribes" % _sp_of("2", "`guide.md`"),
+        "guide.md, and %s 3 of the run: no pointer at all" % _SP_WORD,
+    ))
+    _sp_found = M._step_pointers(_sp_text)
+    check("sp2 every shape a pointer is written in is read, at the line its "
+          "document is named on - backticked, possessive, wrapped across a "
+          "comment leader, a comma list, a lettered range expanded letter by "
+          "letter, and the `step N of <doc>` order - while a step number with "
+          "no document beside it is no pointer: %r" % (_sp_found,),
+          _sp_found == [
+              (1, "reference/guide.md", "2b"), (2, "guide.md", "4c"),
+              (3, "guide.md", "9"), (5, "guide.md", "3"),
+              (5, "guide.md", "3b"), (5, "guide.md", "5.1"),
+              (6, "guide.md", "1a"), (6, "guide.md", "1b"),
+              (6, "guide.md", "1c"), (7, "guide.md", "2")])
+
+    _sp_root = tempfile.mkdtemp(prefix="audit-deps-sp-")
+    try:
+        os.makedirs(os.path.join(_sp_root, "reference"))
+        _sp_files = {
+            ".gitignore": "__pycache__/\n",
+            "reference/guide.md": _SP_GUIDE,
+            "mod.py": "\n".join((
+                '"""Module doc."""',
+                "# held: `%s`" % _sp("reference/guide.md", "2b"),
+                "# not held: `%s`" % _sp("guide.md", "2c"),
+                "# no such document: `%s`" % _sp("nowhere.md", "1"),
+                "X = 1", "")),
+            "notes.md": "`guide.md`\n%s 9 wrapped, and not held\n" % _SP_WORD,
+            "CHANGELOG.md": "- shipped: `%s` at the time\n" % _sp("guide.md", "8"),
+        }
+        for _rel, _body in _sp_files.items():
+            with open(os.path.join(_sp_root, _rel.replace("/", os.sep)), "w",
+                      encoding="utf-8") as fh:
+                fh.write(_body)
+        _sp_hits = M.step_pointer_violations(_sp_root)
+        _sp_keys = sorted((r, ln, p) for r, ln, p, _why in _sp_hits)
+        check("sp3 END TO END: the derived walk convicts the pointer to a step "
+              "its document does not hold, in a module comment and wrapped in a "
+              "document, and the pointer naming no document this tree keeps - "
+              "and NOTHING ELSE, so the held pointer is quiet: %r" % (_sp_hits,),
+              _sp_keys == [
+                  ("mod.py", 3, "guide.md %s 2c" % _SP_WORD),
+                  ("mod.py", 4, "nowhere.md %s 1" % _SP_WORD),
+                  ("notes.md", 1, "guide.md %s 9" % _SP_WORD)])
+        _sp_why = dict(((r, ln), w) for r, ln, _p, w in _sp_hits)
+        check("sp3b each finding says what is wrong with it in words a reader "
+              "can act on - the document's path and that it holds no such step, "
+              "or that no kept document has the name: %r" % (_sp_why,),
+              "reference/guide.md" in _sp_why.get(("mod.py", 3), "")
+              and "holds no" in _sp_why.get(("mod.py", 3), "")
+              and "no document" in _sp_why.get(("mod.py", 4), ""))
+        check("sp4 the scan's own exemption rows hold: released history in "
+              "`CHANGELOG.md` was true of the release that shipped it, so its "
+              "pointer is not convicted - while the same tree read with NO rows "
+              "does convict it, so the quiet is the table's and not a blind spot",
+              not [h for h in _sp_hits if h[0] == "CHANGELOG.md"]
+              and [h for h in M.step_pointer_violations(_sp_root, ())
+                   if h[0] == "CHANGELOG.md"])
+    finally:
+        shutil.rmtree(_sp_root, ignore_errors=True)
+
+    _sp_real = M.step_pointer_violations()
+    check("sp5 THE GATE: no pointer anywhere in the real tree names a step its "
+          "document does not hold, or a document the tree does not keep: %r"
+          % (_sp_real,),
+          _sp_real == [])
+
+
 STAGES = (
     ("dg-graph", "_layer_graph_cases"),
     ("dg-guide", "_guide_cases"),
@@ -4386,6 +4526,7 @@ STAGES = (
     ("dg-dict-key", "_dict_key_cases"),
     ("dg-writer", "_writer_cases"),
     ("dg-git-path-base", "_git_path_base_cases"),
+    ("dg-step-pointer", "_step_pointer_cases"),
 )
 
 

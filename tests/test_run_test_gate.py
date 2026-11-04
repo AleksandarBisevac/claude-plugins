@@ -2057,7 +2057,7 @@ def _cases(check):
     # `_STEP_WORDS` held `pre-commit` and nothing else, so jest, vitest, mocha
     # and pytest all answered "not knowable" to "how many ran" -- which made the
     # `NO CHECK RAN` branch, and the whole "gates could NOT run" distinction
-    # `orchestrator.md` step 4c prescribes, unreachable for every real test
+    # `execute-task.md` step 4 prescribes, unreachable for every real test
     # runner. Measured live: `mongodb-memory-server` could not bind a port in a
     # sandbox, the suite died at exit 48 with no test executed, and the ledger
     # recorded GATE RED with the task's name on it.
@@ -2995,7 +2995,7 @@ def _cases(check):
     # to end on a scratch project, the SECOND run of this gate was excused by
     # the FIRST run's own bookkeeping: the manifest pointer, the evidence ledger
     # and the journal are dirty, undeclared by any task, and incapable of
-    # failing a typecheck. `reference/orchestrator.md` step 2 makes that the
+    # failing a typecheck. `reference/execute-task.md` step 2 makes that the
     # normal state rather than an accident - it edits the phase's manifest file
     # before the executor is spawned - so a rule reading tree state alone
     # excuses every red that measured nothing and ua4 becomes unreachable in the

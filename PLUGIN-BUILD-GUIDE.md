@@ -1099,7 +1099,7 @@ to keep at zero new entries.
 ### `plugins/audit/scripts/git/_worktrees.py`
 Which worktrees this repository has, whose phase each one is, and what may be reaped. The
 worktree/branch half of the pipeline was prose until this module: `commands/worktree.md` composed
-a path and recorded it nowhere, and `reference/orchestrator.md` steps 5c–5e were git commands the
+a path and recorded it nowhere, and `reference/phase-signoff.md` steps 5c–5e were git commands the
 model typed. Nothing could enumerate what had been created, so nothing could clean it up.
 
 **Git is the registry, not the manifest.** A `phase.worktree` field would be a second source of
@@ -1780,6 +1780,16 @@ a temp name of their own, which is what a fixed `<target>.tmp` shared between tw
 at once did not. `state_write_sites()` prints the corpus the rule judged. A method of the same name
 on a string or a path is not the `os` module's and is not read — the allow row in
 `tools/prove-gates.py` holds that line.
+`step_pointer_violations()` reads every pointer to a numbered step of a document — the document
+named before or after the word, a comma list, a lettered range, a pointer wrapped across a comment
+line — in every `.md`, `.py` and script this repo keeps, and fails one naming a step the document
+does not number, or a document no kept `.md` has the name of. A document's steps are read off its
+own markup (`_md_steps`): numbered headings, top-level list items, the letters nested under one,
+and `<heading>.<item>` under an integer heading. It cannot tell which of two lists a number
+was meant for, so a pointer landing in the wrong list of a document that holds the number passes;
+`STEP_POINTER_SCAN_EXEMPT` carries this scan's own reasons for leaving released and dated history
+alone. The task-execution steps moving out of `reference/orchestrator.md` into
+`reference/execute-task.md` while every pointer kept the old name is what it was built against.
 **One walk per scope, module and file.** The default-tree scans (`_scan_edges`,
 `config_key_reads`) are memoised per process; inside one scan, a fact a scope, a module or a file
 answers on its own is computed once into an index and looked up, never re-derived per question:

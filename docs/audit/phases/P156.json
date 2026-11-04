@@ -451,7 +451,7 @@
     {
       "id": "P156.7",
       "title": "The documents' and records' carried lows: lookup's documented rows, step 4c's staging list, the sync copy of the fileIndex claim, the declared pin's reach, and the reviewer's submit",
-      "status": "in_progress",
+      "status": "done",
       "description": "Carried low findings P155-R27, P155-R30, P155-R45, P155-R61 and P155-R66 (docs/audit/phases/P155.json review.findings), plus one found outside any finding. R27: audit-lookup's documented_rows is unbounded and its basename-alone arm matches any heading naming a generic basename or a directory's last component; bound it or match a heading only where it names the module, and fix the guide paragraph. R30: PLUGIN-BUILD-GUIDE says a task commit stages 'exactly the four things step 4c allows' while step 4c in reference/orchestrator.md still allows declared files only, and tests/test_audit_task.py's prose near the commit cases says the same old thing; make all three say what the code stages. R45: BUG-31-z9j's P143 findings were resolved to their fixing tasks after the finding was filed (commit 8c4bb8bd); verify that nothing remains and answer with that evidence. R61: plugins/audit/commands/sync.md still carries the false fileIndex-made-the-gate-inert claim; correct it as the other copies were. R66: the declared pin's 'derived rather than listed' overstates it; either reach _wave's readers, integrate-task's undeclared_paths and _invariants' commit_scope, or state the fixed lists honestly. Outside any finding: reviewer agents printed their return instead of running submit; make the reviewer's last step impossible to miss (the agent definition and the brief end on the submit command) and, if the drive can see an unfiled reviewer return, name it. Answer each by id.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -496,20 +496,179 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3d02a322b9a3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "FINDINGS BY ID. P155-R27 FIXED: audit-lookup.py gains heading_words(path, tracked): a declared directory (files tracked under it, none at it) is matched only spelled with its slash; a file by its full path, and by its basename alone only when no other tracked file carries that basename. documented_rows asks `git ls-files -z` at the checkout top only after the grep found documents (so git's nothing-matched exit stays the empty answer, gd8), and a failing ls-files is an error naming git's reason (gd11). New gd9 (declared docs/README.md beside a tracked root README.md, and a declared directory `tests`: only GUIDE.md:9 and :5 listed, never 'Adding tests', a bare `README.md` or `tests/test_refund.py`), gd10 (lib/refund.py tracked too: the bare `refund.py` heading :17 drops, :5 and :19 stay; gd1 is its other direction), gd11. In-memory mutations through the suite's own _guide_section_cases: basename arm never -> gd1, gd4, gd5, gd7, gd9 red; directory slash dropped -> gd9 red; control -> none red. The guide paragraph (PLUGIN-BUILD-GUIDE.md, audit-lookup section) now states the rule and why the rows are unbudgeted, instead of 'a module rarely has more than one heading'. tools/lints/_deps.py gains a GIT_PATH_BASE_EXEMPT row for audit-lookup.py:documented_rows (gb1/gb2 named it otherwise): ls-files runs at the top and is compared only with entries _dependant_scope spelled from that top through plan_to_git. P155-R30 ANSWERED, partly already fixed: 297a0f6a (P155.29-gfj) had already replaced the guide's 'Exactly the four things step 4c allows' with 'Exactly these ... (stage_targets)', and step 4c - which lives in reference/execute-task.md, not orchestrator.md (orchestrator.md has no step 4c; `grep -n 4c plugins/audit/reference/orchestrator.md` is empty) - already names the honoured outputs. Fixed here: the guide's present-tense 'reference/orchestrator.md step 4c spells the staging list' is now history naming execute-task.md as the home, the guide's 'orchestrator.md step 4a' now names reference/execute-task.md step 4a, and test_audit_task.py _leftover_cases' docstring says the commit stages, of the work, the declared files and honoured outputs, beside them only the records (stage_targets). Left, outside this task's files: execute-task.md step 4c omits the owned part of the manifest index the commit also stages; the same stale 'orchestrator.md step 4c/4a/2/5c-5e' pointer in commit-task-work.py:6 and :934, _invariants.py:393 (an OUTPUT string, 'what orchestrator.md step 4c allows'), run-test-gate.py:266 and :503, record-risk-confirmation.py:7, close-phase.py:4; the guide's 'orchestrator.md steps 5c-5e were git commands' is past-tense history and was left. orchestrator.md was not edited (its context ceiling stands at 61996/62000). P155-R45 VERIFIED, nothing to change but one figure: BUG-31-z9j's repro (`python3 -c ... P143.json ... not f.get('fixTask')`) prints [] exit 0; all 22 P143 findings carry status fixed, a fixTask and a commit, and `git merge-base --is-ancestor <commit> HEAD` holds for each of the 14 distinct commits; P143-R4's resolution now records its reason ('Have the orchestrator carry the file ...; no code change', fixTask P155.15, commit 7b94157c1c3d). Not re-done: the 20-commit measure-affected-miss run - P155.15 recorded it stopping on its 120-minute budget after 17 of 20 commits, measured once; nothing here re-measured it. P155-R61 FIXED: plugins/audit/commands/sync.md now says the imported phase ran with its tasks holding `files: []`, so the plan gate had no declared path to open an edit by - it reads a running task's files and graded outputs, never a fileIndex row. Class grep `git grep -n -i -E 'gate (was |therefore |is )?inert|fileIndex.{0,40}empty|empty.{0,30}fileIndex'`: 7 hits - sync.md fixed; CHANGELOG.md:4110-4114 left (a published release entry, history, as P155.44 left it); CHANGELOG.md:3047 is about worktrees, not fileIndex; PLUGIN-BUILD-GUIDE.md:6152, docs/research/benchmark-feature-design.md:98, _manifest_phases.py:1755, test__manifest_rules.py:919, test_audit_task.py:8170 describe fileIndex as data, correct; plugins/audit/commands/init.md:737 '(its fileIndex is empty)' explains the deny tier by fileIndex and is outside this task's files - reported, not edited. P155-R66 FIXED BY NARROWING plus the readers: tests/test__config.py _DECLARED_READERS gains integrate-task.py:undeclared_paths, _invariants.py:commit_scope, drive-phase.py:head_move and audit-task.py:_commit_touches (every current caller of declared_git_rels; probe: real -> [], predicate call renamed in integrate-task -> [('integrate-task.py','undeclared_paths',0)], in _invariants -> [('_invariants.py','commit_scope',0)]). 'derived rather than listed' is gone from test__config.py's comment, _config.declared_git_rels' docstring and the guide: each now says the reach is derived through fixed name lists (_ENTRY_MATCHERS, _CARRIERS, _CARRYING_METHODS, _SPELLINGS) and names the miss - _wave._declared spells entries with its own _bare, so _wave.overlap is not reached (probe: no _wave reading in _files_half_reach; adding _bare to _SPELLINGS alone still reaches none, because _declared returns raw entries rather than an answer). Observation, not fixed (_wave.py is outside the files): a wave's disjointness reads files alone, so two tasks whose outputs patterns overlap could share a wave. OUTSIDE ANY FINDING FIXED: audit-lookup.py PRINTED_FILES_NOTHING ('Printing the return object as your reply files nothing.'); every brief now ends on its submit block - the executor's owed-command note and the in-tree 'Run this command from the project' line moved before the block, the reviewer and phase briefs carry the sentence before theirs. bf70/bf71 hold all four briefs (executor, task reviewer, phase owed, phase unowed); bf3c was rewritten from 'the block is FIRST in the section' to 'LAST, the note before it', since the task asks the brief to end on the command. agents/audit-reviewer.md now ends on a fenced submit block and the sentence; measure-context --gate exit 0, reviewer 6994/7000 (the old 'A phase return missing its --shown is refused' and 'refuses a wrong shape' clauses were dropped to fit; the verb still enforces both). New lint _deps.submit_ending_drift (+ printed_files_nothing, submit_filing_agents): every agent definition naming `drive-phase.py submit` must have that command in its last fenced block, no heading after it, and the brief writer's PRINTED_FILES_NOTHING (read from audit-lookup.py's AST, one home) after it; an unreadable directory, an unreadable constant and a directory with no filing agent are each a finding. Cases ae1-ae8 in test__deps.py (called from _guide_cases, no new stage). tools/prove-gates.py rows: red (reviewer's sentence replaced -> ae1) and allow (any later non-blank line read as a section -> ae6); `python3 tools/prove-gates.py --only submit_ending_drift` exit 0, '1 of 1 gates proven red', '1 of 1 guards proven to stay quiet'. Not done, outside the files: drive-phase.py naming an unfiled reviewer return. CHANGELOG [Unreleased] Fixed gains two entries. EXEMPTION ROWS NOTED FOR THIS TASK: done by P156.4; test__config.py 405/405 and test__deps.py 275/275 green in the gate below. RUNS: the brief's gate command exit 0, '8/8 files ok, 2717 cases' (first run red only in test_audit_task.py's --shown card pin after the reviewer rewrite; the paragraph now names --shown; rerun green); readers sweep test__output_lints, test__refs, test__filed_returns, test__doctor_trail, test__doctor_hygiene, test_commit_task_work, tools/prove-gates.py exit 0 '7/7 files ok, 1094 cases'; reviewer-definition readers test_audit_task, test__refs, test_drive_phase, test_run_agent_session, test__deps exit 0 '5/5 files ok, 2706 cases'; ruff check on the eight edited .py exit 0; vermin -t=3.8- on six exit 0; prove-gates --list exit 0. DEPENDANTS: audit-lookup.py's importers (test__filed_returns, test_audit_lookup, test_drive_phase) and name users (_brief_context, _dependant_scope, _diff_lines, _render_human) - still correct, no signature changed; only documented_rows' matching, submit_command's line order and the Your return texts changed, all suites green above. orchestrator.md's readers - unchanged file. test_audit_task.py's readers (test_commit_task_work, test__filed_returns, sweep-costs.json, affected.py) - only a docstring changed, green. sync.md's readers (docs/ado-connector.md, _ado_* by basename) - one sentence changed, no name. test__config.py's readers - table rows added and a comment, green. _config.py's 72 readers - docstring only. _deps.py's readers (test__deps, prove-gates, evals by import) - new functions and one exemption row, green. guard-uncommitted.py, release.py, sweep-selftests.py, stamp-verification.py, _harness.py, test__affected_tests.py, test__runner_collects.py, test_stamp_verification.py - not edited; the suites among them green in the gate. PROCESS NOTE: under tdd, documented_rows and the agent files were read before the cases were drafted (the design of the rule needed the matcher's shape); the cases were drafted before heading_words, PRINTED_FILES_NOTHING and the lint existed, and run red first.",
+        "descriptive": "Briefs and the reviewer's definition end on the submit command with a lint holding agent definitions to it; documented-heading rows match only spellings that name one file; the sync fileIndex claim, the declared pin's overstated reach and the guide's step-4c pointers are corrected; R45 verified closed."
       },
       "startedAt": "2026-11-04T13:26:13Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-04T13:58:16Z",
+      "verifiedBy": [
+        "tests/test__deps.py ae1-ae8: submit_ending_drift over the shipped agents (ae1), the filing set read (ae2), a sentence-only ending, a section after the block, a missing warning (ae3-ae5), the quiet twin (ae6), empty and unreadable directories (ae7), the warning read from the brief writer's constant (ae8)",
+        "tests/test_audit_lookup.py gd9-gd11: generic basename and directory entries listed only where named, the basename arm off once a second file carries it, ls-files failure an error",
+        "tests/test_audit_lookup.py bf70/bf71: every filing brief ends on its submit block and says once that a printed return files nothing; bf3c rewritten to the block-last order"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-04T13:58:12Z.d708e2",
         "status": "passed",
         "at": "2026-11-04T13:58:12Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "3d02a322b9a3",
+        "at": "2026-11-04T13:58:16Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-04T13:53:19Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__deps.py tests/test_audit_lookup.py tests/test_audit_task.py tests/test__config.py tests/_harness.py tests/test__affected_tests.py tests/test__runner_collects.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 with 6 of 159 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - gd9 (house FAIL), gd10 (house FAIL), gd11 (house FAIL), bf3c (house FAIL), bf70 (house FAIL), bf71 (house FAIL): SELFTEST FAILED: 153/159 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P156.8-3st",
+      "title": "Every pointer to a numbered step of a reference document names a step that document holds, held by a lint",
+      "status": "in_progress",
+      "description": "Found by P156.7's executor outside its files, and a class rather than an instance: the task-execution steps moved from reference/orchestrator.md to reference/execute-task.md, but code, tests and docs still say \"orchestrator.md step 4c\" (commit-task-work.py, _invariants.py including an output string, run-test-gate.py, record-risk-confirmation.py, close-phase.py, audit-task.py, check-git-pipeline.py, the guide and the suites that quote them). The repair is a lint in tools/lints/_deps.py that reads every \"<reference doc> step N\" pointer in the tracked tree and fails one naming a step the document does not hold, plus pointing every existing pointer at the document that holds the step. Also: reference/execute-task.md step 4c does not mention that the task commit also stages the phase's own part of the manifest index - say what the code stages; and commands/init.md (the deny-tier sentence) still explains the tier through an empty fileIndex, corrected as the other copies were. The lint goes through prove-gates' derivation like every lint (a red case and an allow case).",
+      "files": [
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/scripts/governance/record-risk-confirmation.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test__invariants.py",
+        "tests/test_audit_task.py",
+        "tests/test_run_test_gate.py",
+        "tools/check-git-pipeline.py",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/commands/init.md",
+        "tools/lints/_deps.py",
+        "tests/test__deps.py",
+        ".claude/hooks/guard-uncommitted.py",
+        "tests/test_close_phase.py",
+        "tests/test_commit_task_work.py",
+        "tests/test_record_risk_confirmation.py",
+        "tools/check-example-ledgers.py",
+        "tools/prove-gates.py",
+        "tests/_harness.py",
+        "tests/test__affected_tests.py",
+        "tools/sweep-selftests.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test__runner_collects.py",
+        "tests/test_stamp_verification.py",
+        "tools/gate-parity.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__deps.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__deps.py tests/test__invariants.py tests/test_audit_task.py tests/test_run_test_gate.py tests/test_close_phase.py tests/test_commit_task_work.py tests/test_record_risk_confirmation.py tests/_harness.py tests/test__affected_tests.py tests/test__runner_collects.py tests/test_stamp_verification.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-04T14:00:18Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-04T14:31:07Z.52fe6e",
+        "status": "passed",
+        "at": "2026-11-04T14:31:07Z"
+      }
+    },
+    {
+      "id": "P156.9-3st",
+      "title": "Wave disjointness reads a task's outputs as well as its files",
+      "status": "pending",
+      "description": "Found by P156.7's executor outside its files: _wave's disjointness check reads a task's files only, so two tasks whose declared outputs patterns overlap can be put in one wave and write the same path in two trees. Read outputs through the same shared reading of declared paths the other readers use, with a case where two tasks with disjoint files and overlapping outputs are not put in one wave.",
+      "files": [
+        "plugins/audit/scripts/governance/_wave.py",
+        "tests/test__wave.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__wave.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__wave.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P156.10-3st",
+      "title": "The drive names a reviewer return that was printed but never filed",
+      "status": "pending",
+      "description": "Carried from BUG-33-gfj (reviewer agents twice printed their return instead of running submit) and left by P156.7, which made the reviewer's last step explicit in the agent definition and brief but could not reach the drive. When the drive waits on a reviewer return that was never filed, its stop must say that no return was filed for that role and print the submit command the brief carries, rather than a generic no-return wording, so the orchestrator can tell an unfiled return from an agent still running. A case drives the no-reviewer-return stop and asserts the wording names the role and the submit command.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "reviewPerTask": "signals",

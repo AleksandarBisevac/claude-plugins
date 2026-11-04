@@ -6,7 +6,7 @@ Every case here runs against a REAL git repository built in a temp directory, no
 against a fake `git` that returns what the assertion wants. That is deliberate and
 it is the whole reason this file is long: the module's claims are claims about what
 git records, and a fake would encode the assumption rather than the behaviour. The
-fixtures build a phase branch, commit two tasks the way `orchestrator.md` step 4c
+fixtures build a phase branch, commit two tasks the way `execute-task.md` step 4c
 says to, and then break exactly one thing per case.
 
 WHAT EACH CASE HAD TO PROVE, and why the pairs exist. A check that has only been

@@ -3,7 +3,7 @@
 or, with `--state`, a phase's record and none of its work.
 
 WHY THIS EXISTS. The successful task commit was the one git operation this plugin
-described in prose and did not script. `reference/orchestrator.md` step 4c spells
+described in prose and did not script. `reference/execute-task.md` step 4c spells
 the staging list, the pathspec, the message shape and the exclusions in a
 paragraph the model reads at the end of every task, under time pressure, after
 the work is already done - and what a paragraph gets in that position is
@@ -931,7 +931,7 @@ def message_parts(task_id, subject, manifest, models=()):
     plugin has no ground to require a block a project may not ask for.
 
     THE TYPE IS THE MANIFEST'S AND THE SCOPE IS THE TASK ID, which is the shape
-    `orchestrator.md` step 4c already prescribes and the shape `/audit:doctor`
+    `execute-task.md` step 4c already prescribes and the shape `/audit:doctor`
     and every reader of a log expects of implementation work. Its two siblings fix
     both halves to literals instead, because their whole point is to be tellable
     apart from a task commit at a glance; this is the class they are being told

@@ -595,6 +595,13 @@ TABLE = (
   "def register_citation_violations(repo_root=None, table=None):",
   "def register_citation_violations(repo_root=None, table=None):\n    return []",
   DEP, "rc15"),
+ # A pointer into a numbered step of a document, convicted by nothing: a
+ # version reporting no finding reads exactly like a tree whose every pointer
+ # lands, and `sp3` is the fixture tree holding two that do not.
+ ("step_pointer_violations", L + "_deps.py", "replace",
+  "def step_pointer_violations(repo_root=None, table=None):",
+  "def step_pointer_violations(repo_root=None, table=None):\n    return []",
+  DEP, "sp3"),
  # TWO CONSTRAINTS, and this row has now lost each of them once. The target must
  # be a file the rule APPLIES to (>= `_deps._NAV_MIN_LINES`) AND one carrying
  # EXACTLY the minimum non-selftest markers the rule allows (2), because `drop`
@@ -1459,6 +1466,12 @@ ALLOW = (
  ("register_citation_violations", L + "_deps.py", "replace",
   "        if before.endswith(_LIVE_GATE_MARKER):\n            continue",
   "        if False:\n            continue", DEP, "rc2"),
+ # The step-pointer scan's own exemption rows, ignored: a released changelog
+ # entry naming the step its release changed would be convicted for a
+ # renumbering that came after it, and `sp4` holds that entry quiet.
+ ("step_pointer_violations", L + "_deps.py", "replace",
+  "    rows = STEP_POINTER_SCAN_EXEMPT if table is None else table",
+  "    rows = ()", DEP, "sp4"),
  # A byte-for-byte comparison that stops honouring the fence's trailing newline
  # reports drift on a guide that is exactly right, which is the direction a
  # regenerate-and-commit instruction cannot fix.

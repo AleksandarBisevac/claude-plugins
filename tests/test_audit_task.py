@@ -4971,7 +4971,7 @@ def _start_cases(check):
         _pr_after_map = pr_map(projpr)
         tpr = task_in(mppr, "P2.4")
         check("pr1 a pending task in a RUNNING phase is promoted: the fields "
-              "are `reference/orchestrator.md` step 2's, and nothing else on "
+              "are `reference/execute-task.md` step 2's, and nothing else on "
               "the task moved - %r"
               % ((code, tpr.get("status"), tpr.get("attempts"),
                   bool(tpr.get("startedAt"))),),
@@ -5355,8 +5355,8 @@ def _start_cases(check):
 
         # ALLOW TWINS. A ready task starts as it always did, with no `mode` on
         # its row - the case that goes red if the exception were recorded on
-        # every start - and a task already in_progress is the RETRY of
-        # `reference/orchestrator.md` step 4, which must not need `--force`
+        # every start - and a task already in_progress is the RETRY that
+        # `reference/execute-task.md` step 4 sends back, which must not need `--force`
         # even while its references are unmet, or the retry path would be lost.
         _prrproj, _prrmp = mk("st-ready-allow", pr_fixture())
         _prrc, _prrt = run(["start", "P2.4", "--project-dir", _prrproj])
@@ -6693,7 +6693,7 @@ def _close_cases(check):
                              "--verified-by", "t_double_charge, t_refund"]
                             + _NOT_ASKED)
         tpd = task_in(mppd, "P2.4")
-        check("pd1 a started task closes with `reference/orchestrator.md` step "
+        check("pd1 a started task closes with `reference/execute-task.md` step "
               "4's OWN fields and nothing besides - 4b's status and stamp, 4c's "
               "SHA - and the fields it was not told about are untouched: %r"
               % ((codepd, tpd.get("status"), tpd.get("commit"),

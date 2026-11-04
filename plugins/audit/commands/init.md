@@ -731,11 +731,12 @@ written moments earlier, so on a fresh init it is noise and safe to delete.
 **Parked (any):** a proposal table (`PROP-id — reserved phase — title — tasks`)
 and the handoff: `/audit:propose list`, then
 `/audit:propose materialize <id>|--all`. Add one note when everything was
-parked: *the plan gate stays in its advisory (warn) tier until a phase is
-materialized and running — same as any idle manifest; with `planGate: "deny"`
-(or legacy `enforce: true`) an
-empty-phases manifest denies out-of-plan edits (its fileIndex is empty), so
-materialize a phase before starting fix work.*
+parked: *the plan gate stays in its advisory (warn) tier while the manifest
+holds no phase, and denies past the free file as soon as one is materialized,
+running or not; with `planGate: "deny"` (or legacy `enforce: true`) the deny
+tier is pinned, and an empty-phases manifest has no task whose `files` could
+cover an edit - the gate reads a running task's `files` and graded `outputs`,
+never a `fileIndex` row - so materialize a phase before starting fix work.*
 
 When areas were registered, list them (`tag — root — reviewer`) and say which phases carry which
 tag; `/audit:doctor` will warn about any root that is not a directory.

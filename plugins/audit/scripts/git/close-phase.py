@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Land a signed-off phase on its parent branch, or say exactly why it did not.
 
-WHY THIS EXISTS. `reference/orchestrator.md` steps 5c-5e were prose the model
+WHY THIS EXISTS. `reference/phase-signoff.md` steps 5c-5e were prose the model
 executed: `git switch <parent>`, `git merge --ff-only <branch>`, and "optionally
 clean up: `git branch -d <branch>`". Three measured facts make that prose wrong
 rather than merely informal.

@@ -1030,7 +1030,8 @@
       "P155.5",
       "P155.3",
       "P155.29-gfj",
-      "P156.7"
+      "P156.7",
+      "P156.8-3st"
     ],
     ".claude/hooks/require-claim-block.py": [
       "P37.2",
@@ -1907,7 +1908,10 @@
       "P156.5",
       "P156.6",
       "P156.7",
-      "P156.3"
+      "P156.3",
+      "P156.8-3st",
+      "P156.9-3st",
+      "P156.10-3st"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2567,7 +2571,8 @@
       "P131.13",
       "P132.3",
       "P148.10-xpz",
-      "P148.21-xpz"
+      "P148.21-xpz",
+      "P156.8-3st"
     ],
     "plugins/audit/commands/layout.md": [
       "P57.1",
@@ -3354,7 +3359,8 @@
       "P142.1",
       "P148.5",
       "P155.11",
-      "P155.29-gfj"
+      "P155.29-gfj",
+      "P156.8-3st"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -3483,7 +3489,8 @@
       "P155.3",
       "P155.11",
       "P155.29-gfj",
-      "P156.7"
+      "P156.7",
+      "P156.8-3st"
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
@@ -4046,7 +4053,8 @@
       "P130.40-ywo",
       "P131.1",
       "P131.2",
-      "P142.1"
+      "P142.1",
+      "P156.8-3st"
     ],
     "plugins/audit/scripts/git/manage-worktrees.py": [
       "P18.4",
@@ -4194,7 +4202,8 @@
       "P131.1",
       "P131.2",
       "P142.1",
-      "P155.34-gfj"
+      "P155.34-gfj",
+      "P156.8-3st"
     ],
     "plugins/audit/scripts/governance/_journal_io.py": [
       "P29.3",
@@ -4505,7 +4514,8 @@
       "P155.11",
       "P155.19-gfj",
       "P155.23-gfj",
-      "P155.29-gfj"
+      "P155.29-gfj",
+      "P156.8-3st"
     ],
     "plugins/audit/scripts/governance/record-risk-confirmation.py": [
       "P42.6",
@@ -4515,7 +4525,8 @@
       "P125.42-0h5",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P156.8-3st"
     ],
     "plugins/audit/scripts/governance/run-test-gate.py": [
       "P22.1",
@@ -4612,7 +4623,8 @@
       "P149.6-hwg",
       "P149.8-hwg",
       "P149.9-hwg",
-      "P155.15"
+      "P155.15",
+      "P156.8-3st"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -4722,7 +4734,8 @@
       "P155.44-gfj",
       "P156.4",
       "P156.6",
-      "P156.7"
+      "P156.7",
+      "P156.8-3st"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -5245,7 +5258,8 @@
       "P155.35-gfj",
       "P155.44-gfj",
       "P156.4",
-      "P156.5"
+      "P156.5",
+      "P156.8-3st"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -8394,7 +8408,8 @@
       "P103.13-xi3",
       "P130.9",
       "P131.2",
-      "P155.15"
+      "P155.15",
+      "P156.8-3st"
     ],
     "tools/check-example-ledgers.py: a committed row whose status is not a schema enum member is a finding, and so is a passed verdict carrying a mutated tree": [
       "P32.10"
@@ -8428,7 +8443,8 @@
       "P128.56-izt",
       "P130.22-ywo",
       "P130.37-ywo",
-      "P142.1"
+      "P142.1",
+      "P156.8-3st"
     ],
     "tools/check-prohibitions.py": [
       "P32.8",
@@ -8545,7 +8561,8 @@
       "P155.31-gfj",
       "P155.33-gfj",
       "P155.39-gfj",
-      "P156.6"
+      "P156.6",
+      "P156.8-3st"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -8692,7 +8709,8 @@
       "P155.44-gfj",
       "P156.4",
       "P156.6",
-      "P156.7"
+      "P156.7",
+      "P156.8-3st"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -8778,7 +8796,8 @@
       "P155.44-gfj",
       "P156.4",
       "P156.6",
-      "P156.7"
+      "P156.7",
+      "P156.8-3st"
     ],
     "tools/ui-tests/evidence-badge.test.mjs": [
       "P32.7",
@@ -10737,7 +10756,8 @@
       "P155.50-gfj",
       "P156.1",
       "P156.2",
-      "P156.3"
+      "P156.3",
+      "P156.10-3st"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11195,7 +11215,8 @@
       "P130.8",
       "P130.35-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P156.9-3st"
     ],
     "plugins/audit/tests/test__wave.py": [
       "P124.1",
@@ -11690,7 +11711,8 @@
       "P155.48-gfj",
       "P155.50-gfj",
       "P156.4",
-      "P156.7"
+      "P156.7",
+      "P156.8-3st"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -11879,7 +11901,8 @@
       "P155.44-gfj",
       "P156.4",
       "P156.6",
-      "P156.7"
+      "P156.7",
+      "P156.8-3st"
     ],
     "tests/fixtures/pricing-page-2026-10-10.md": [
       "P131.1"
@@ -11936,7 +11959,8 @@
       "P155.44-gfj",
       "P156.4",
       "P156.6",
-      "P156.7"
+      "P156.7",
+      "P156.8-3st"
     ],
     "tests/test__areas.py": [
       "P131.1",
@@ -12025,7 +12049,8 @@
       "P155.44-gfj",
       "P155.48-gfj",
       "P156.4",
-      "P156.7"
+      "P156.7",
+      "P156.8-3st"
     ],
     "tests/test__doctor_ado.py": [
       "P131.1"
@@ -12123,7 +12148,8 @@
     "tests/test__invariants.py": [
       "P131.1",
       "P142.1",
-      "P155.34-gfj"
+      "P155.34-gfj",
+      "P156.8-3st"
     ],
     "tests/test__journal_io.py": [
       "P131.1",
@@ -12327,7 +12353,8 @@
       "P155.44-gfj",
       "P156.4",
       "P156.6",
-      "P156.7"
+      "P156.7",
+      "P156.8-3st"
     ],
     "tests/test__runner_output.py": [
       "P131.1",
@@ -12426,7 +12453,8 @@
       "P148.11-xpz"
     ],
     "tests/test__wave.py": [
-      "P131.1"
+      "P131.1",
+      "P156.9-3st"
     ],
     "tests/test__worktrees.py": [
       "P131.1",
@@ -12542,7 +12570,8 @@
       "P155.44-gfj",
       "P156.4",
       "P156.5",
-      "P156.7"
+      "P156.7",
+      "P156.8-3st"
     ],
     "tests/test_audit_usage.py": [
       "P131.1"
@@ -12554,7 +12583,8 @@
       "P131.1"
     ],
     "tests/test_close_phase.py": [
-      "P131.1"
+      "P131.1",
+      "P156.8-3st"
     ],
     "tests/test_commit_audit_state.py": [
       "P131.1",
@@ -12581,7 +12611,8 @@
       "P155.11",
       "P155.19-gfj",
       "P155.23-gfj",
-      "P155.29-gfj"
+      "P155.29-gfj",
+      "P156.8-3st"
     ],
     "tests/test_derive_phase_gate.py": [
       "P131.1",
@@ -12692,7 +12723,8 @@
       "P155.51-gfj",
       "P156.1",
       "P156.2",
-      "P156.3"
+      "P156.3",
+      "P156.10-3st"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -12811,7 +12843,8 @@
       "P131.1"
     ],
     "tests/test_record_risk_confirmation.py": [
-      "P131.1"
+      "P131.1",
+      "P156.8-3st"
     ],
     "tests/test_remind_tdd.py": [
       "P131.1"
@@ -12855,7 +12888,8 @@
       "P149.6-hwg",
       "P149.8-hwg",
       "P149.9-hwg",
-      "P155.15"
+      "P155.15",
+      "P156.8-3st"
     ],
     "tests/test_set_priority.py": [
       "P131.1"
@@ -12916,7 +12950,8 @@
       "P155.44-gfj",
       "P156.4",
       "P156.6",
-      "P156.7"
+      "P156.7",
+      "P156.8-3st"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",

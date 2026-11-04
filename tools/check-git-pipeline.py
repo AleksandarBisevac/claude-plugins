@@ -1188,7 +1188,7 @@ def check_close_phase_from_worktree(fx):
     """THE ONE THE OLD PROSE COULD NOT DO. Sign-off inside a linked worktree, with
     the development branch checked out in the main tree.
 
-    `reference/orchestrator.md` step 5c said `git switch <parent>`, and from here
+    `reference/phase-signoff.md` step 5c said `git switch <parent>`, and from here
     that is `fatal: '<parent>' is already used by worktree at '<main tree>'`, exit
     128 - so the documented sign-off was unavailable on exactly the runs
     `/audit:worktree` recommends. This asserts the merge LANDS, and asserts the old

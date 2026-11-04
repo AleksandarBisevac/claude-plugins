@@ -4,7 +4,7 @@ record-risk-confirmation.py -- the human's answer to the high-risk gate, given B
 the run instead of during it, bounded to the tasks it can honestly cover and written
 into the hash-chained trail in the operator's own words.
 
-WHY THIS EXISTS. `reference/orchestrator.md` step 4a says a `risk: "high"` task stops
+WHY THIS EXISTS. `reference/execute-task.md` step 4a says a `risk: "high"` task stops
 and asks the human before its commit, always. An operator running the pipeline
 unattended has high-risk tasks and nobody at the keyboard: asking parks the run until
 somebody comes back, so the run instruction itself gets treated as the confirmation and

@@ -263,7 +263,7 @@ _STEP_WORDS = {
 }
 
 # ...AND THE TABLE ABOVE WAS ONE ENTRY WIDE, WHICH MADE A DOCUMENTED RULE
-# UNREACHABLE. `reference/orchestrator.md` step 4c asks a caller to tell
+# UNREACHABLE. `reference/execute-task.md` step 4 asks a caller to tell
 # "the gates ran and failed" apart from "the gates could NOT run: missing command,
 # runner crash before tests, zero tests collected" -- and every real test runner
 # answered `None` to "how many ran", so the zero that distinction turns on could
@@ -500,7 +500,7 @@ def unattributable_failure(failed, ran_total, before, owns, named):
     second run of the same gate was excused by the FIRST run's own bookkeeping -
     the manifest pointer, the evidence ledger and the journal, none of which a
     task declares and none of which can fail a typecheck. That is not a corner
-    either: `reference/orchestrator.md` step 2 edits the phase's manifest file
+    either: `reference/execute-task.md` step 2 edits the phase's manifest file
     (`status`, `attempts`, `startedAt`) before the executor is spawned, so the
     plan's own state is dirty and undeclared at EVERY gate run in the real
     workflow, and a rule reading tree state alone would excuse every red that
@@ -1508,7 +1508,7 @@ def counts_basis(steps, shared):
 def never_started(exit_code, ran, outcome):
     """Whether a non-zero step never got as far as running a check.
 
-    `orchestrator.md` step 4c has always drawn this line -- "gates could NOT run
+    `execute-task.md` step 4 has always drawn this line -- "gates could NOT run
     ... zero tests collected where `tests.add` expects some -> this is NOT the
     task's failure" -- and nothing implemented it, so a runner that died before
     its first test was recorded as a red suite with the task's name on the row.

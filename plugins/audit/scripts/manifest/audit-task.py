@@ -6787,7 +6787,7 @@ def _locked_start(args, project, config, mpath, tid, out):
     carries a commit that was graded against the scope it holds.
 
     A RE-START IS NOT REFUSED AND NOT IDEMPOTENT, WHICH IS THE DECISION.
-    `attempts` counts SPAWNS, not states. `reference/orchestrator.md`'s step 4
+    `attempts` counts SPAWNS, not states. `reference/execute-task.md`'s step 4
     leaves a task `in_progress` when its gates run red and sends it back through
     step 2, so a second call on an already-running task IS that retry rather than
     a repeat of the first call. Refusing it would leave the retry path with no
@@ -7113,7 +7113,7 @@ def _locked_start(args, project, config, mpath, tid, out):
         return 0
     if was["status"] == "in_progress":
         out("[audit-task] %s RE-STARTED in %s -- it was already in_progress, so "
-            "this is the retry step 2 of reference/orchestrator.md prescribes, "
+            "this is the retry step 2 of reference/execute-task.md prescribes, "
             "and it spends an attempt" % (tid, phase_id))
     else:
         out("[audit-task] %s started in %s -- was %s" % (tid, phase_id,
@@ -7443,7 +7443,7 @@ def _file_once_report(args, project, path, tid, role, text, out, keyed):
 
 # --- done: the close the record is made of ---------------------------------------
 # `start` gave the promotion a verb and the close still had none, so
-# `reference/orchestrator.md`'s step 4 stayed two hand Edits: 4b's status and
+# `reference/execute-task.md`'s step 4 stayed two hand Edits: 4b's status and
 # completion stamp, 4c's SHA. Measured here: one run wrote a task's completion into
 # the phase shard AND the manifest index, a later `git reset --hard` reverted the
 # index, the shard turned out never to have carried the marks at all, and the record
@@ -7945,7 +7945,7 @@ def _journal_done(project, config, mpath, task_id, phase_id, was, task,
 
     NOT `task.complete`. That action and `task.commit` are DERIVED by
     `hooks/journal-writes.py` from the write itself, and `reference/
-    orchestrator.md` step 4c forbids appending them by hand -- two writers means
+    execute-task.md` step 4c forbids appending them by hand -- two writers means
     duplicate rows and a doctor whose completion count is no longer a count. This
     row is the verb's own, the way `task.start` and `task.cancel` are, and it is
     the only record of the close on a machine where that hook never runs.
@@ -16311,8 +16311,8 @@ def build_parser():
     # place.
     p.add_argument("--descriptive", default=None, metavar="TEXT", help=_PROSE_HELP)
     p.add_argument("--technical", default=None, metavar="TEXT", help=_PROSE_HELP)
-    # `verifiedBy`: the test names this task added, the field `reference/
-    # orchestrator.md` step 4b fills beside the outcome. A comma list of names for
+    # `verifiedBy`: the test names this task added, the field the close in
+    # `reference/execute-task.md` step 4c fills beside the outcome. A comma list of names for
     # `--blocked-by`'s reason, and `--verified-by ""` empties it for the same one.
     p.add_argument("--verified-by", dest="verified_by", action="append",
                    default=None,

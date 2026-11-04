@@ -4129,6 +4129,254 @@ def register_citation_violations(repo_root=None, table=None):
     return out
 
 
+# --- step pointers: a numbered step a pointer names is one its document holds ---
+# A procedure document numbers its steps, and code, suites and other documents
+# point into it by number. When a document's steps moved into a document of
+# their own, every pointer kept naming the old one - in module docstrings, in
+# comments, in a suite's quoted prose and in a string a verb prints - and
+# nothing compared a pointer with the document it names, so each one still read
+# as an instruction while sending its reader to a step that was not there.
+#
+# WHAT IT CANNOT SEE. It asks whether the named document HOLDS a step of that
+# number, not whether the step is the one the sentence means. A document keeping
+# more than one numbered list holds each number once per list - the orchestrator
+# reference keeps a preflight list and a resume list - so a pointer whose number
+# lands in the wrong list of a document holding it is no finding here. Which list
+# a sentence means is the author's to read; this reads only that the number is
+# somewhere to land.
+#
+# A STEP IS WHAT THE DOCUMENT NUMBERS, read off its own markup: a numbered
+# heading (`## 5.`, `### 3.5`, and both numbers of a heading naming two), a
+# top-level list item (`2.`, and `2a.` as its own step without the plain
+# number), a lettered item nested under one (`a.`, and a lettered range `b.-c.`
+# as every letter in it), and `<heading>.<item>` for a list under an integer
+# heading. A fenced block is code and numbers nothing.
+_STEP_TOKEN = r"\d+(?:\.\d+)?[a-z]?(?![A-Za-z0-9])"
+_STEP_ITEM = r"%s(?:\s*[–-]\s*%s)?" % (_STEP_TOKEN, _STEP_TOKEN)
+_STEP_LIST = (r"%s(?:(?:\s*,\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+)%s)*"
+              % (_STEP_ITEM, _STEP_ITEM))
+# Between the document and the word, and between the word and the number, prose
+# may wrap: a newline, the comment leader the next line opens with, the quote
+# that joins two halves of a string literal.
+_STEP_SEP = r"(?:\s|#|//|\*|\")+"
+_STEP_DOC = r"(?<![\w./-])((?:[\w.-]+/)*[\w-]+\.md)"
+_STEP_FORWARD_RE = re.compile(
+    r"%s`?(?:'s)?,?%s(steps?)%s(%s)" % (_STEP_DOC, _STEP_SEP, _STEP_SEP,
+                                         _STEP_LIST))
+_STEP_BACKWARD_RE = re.compile(
+    r"\b(steps?)%s(%s)%sof%s`?%s" % (_STEP_SEP, _STEP_LIST, _STEP_SEP,
+                                     _STEP_SEP, _STEP_DOC))
+_STEP_ITEM_RE = re.compile(_STEP_ITEM)
+_STEP_PARTS_RE = re.compile(r"(\d+(?:\.\d+)?)([a-z]?)")
+_STEP_HEADING_RE = re.compile(r"^#{1,6}\s+(\d.*)$")
+_STEP_HEADING_NUM_RE = re.compile(r"(?:^|,?\s+and\s+)(\d+(?:\.\d+)?)\.?(?=\s|$)")
+_STEP_TOP_RE = re.compile(r"^(\d+)([a-z]?)\.\s")
+_STEP_LETTER_RE = re.compile(r"\s*([a-z])\.(?:\s*[–-]\s*([a-z])\.)?\s")
+_STEP_FENCE_RE = re.compile(r"^\s*(```|~~~)")
+
+# Read as whole text in each: a pointer is a pointer wherever it sits, comment,
+# string or prose. `.html` and `.json` are not read - what this tree keeps of
+# them is rendered from a plan or recorded by a run, and a plan's task text
+# quotes pointers as the defect it records.
+_STEP_SCAN_EXTS = (".md", ".py", ".sh", ".js", ".mjs", ".yml", ".yaml", ".toml")
+
+# A ROW HERE HOLDS FOR THIS SCAN, in its own words, for the same reason the
+# citation scan keeps its own table rather than borrowing another scan's.
+STEP_POINTER_SCAN_EXEMPT = (
+    ("CHANGELOG.md",
+     "released history: an entry naming the step a release changed was true of "
+     "the document that release shipped, and renumbering that document later "
+     "does not make the entry wrong about its own release - rewriting a shipped "
+     "entry to keep this scan quiet is worse than the scan"),
+    ("docs/research/",
+     "dated investigations: each names the components it measured as they stood "
+     "the day it measured them, so a step it points at is a reading of that "
+     "day's document and not an instruction to today's reader"),
+    ("docs/design/",
+     "dated design records: they describe the tree as it was at the decision, "
+     "so a pointer in one is history in the same way a past tense is"),
+    ("docs/audit/audit-report.md",
+     "rendered from the plan on every report, and the plan's task text is where "
+     "a stale pointer is legitimately quoted - as the defect a task records. It "
+     "is gitignored as a FILE, so without this row the verdict would move with "
+     "whether anybody had rendered a report in this checkout"),
+)
+
+
+def _step_range(first, last):
+    """Every step a written range spans: each letter of `5c-5e`, each number of
+    `3-5`, and the two endpoints alone when they share no prefix to count on."""
+    a = _STEP_PARTS_RE.match(first)
+    b = _STEP_PARTS_RE.match(last)
+    if a.group(1) == b.group(1) and a.group(2) and b.group(2) \
+            and a.group(2) <= b.group(2):
+        return ["%s%s" % (a.group(1), chr(c))
+                for c in range(ord(a.group(2)), ord(b.group(2)) + 1)]
+    if first.isdigit() and last.isdigit() and int(first) <= int(last):
+        return [str(n) for n in range(int(first), int(last) + 1)]
+    return [first, last]
+
+
+def _steps_written(listed):
+    """The steps one written list names, in order: `3, 3b and 5` is three."""
+    out = []
+    for item in _STEP_ITEM_RE.finditer(listed):
+        ends = re.split(r"\s*[–-]\s*", item.group(0))
+        out.extend(_step_range(ends[0], ends[-1]) if len(ends) == 2 else ends)
+    return out
+
+
+def _step_pointers(text):
+    """[(lineno, document as written, step)] -- every numbered-step pointer in
+    `text`, in the order written. The line is the one the document is named on
+    for `<doc> step N`, and the one the word opens on for `step N of <doc>`."""
+    found = []
+    for m in _STEP_FORWARD_RE.finditer(text):
+        line = text.count("\n", 0, m.start(1)) + 1
+        found.extend((m.start(1), line, m.group(1), s)
+                     for s in _steps_written(m.group(3)))
+    for m in _STEP_BACKWARD_RE.finditer(text):
+        line = text.count("\n", 0, m.start(1)) + 1
+        found.extend((m.start(1), line, m.group(3), s)
+                     for s in _steps_written(m.group(2)))
+    return [(line, doc, step) for _pos, line, doc, step
+            in sorted(found, key=lambda f: f[0])]
+
+
+def _letters(match):
+    """The letters one lettered item names - one, or every letter of a range."""
+    first = match.group(1)
+    last = match.group(2) or first
+    return [chr(c) for c in range(ord(first), ord(last) + 1)]
+
+
+def _md_steps(text):
+    """frozenset of every step token a markdown document numbers.
+
+    The comment above `_STEP_TOKEN` says what counts. A lettered item belongs to
+    the plain top-level item it sits under; a column-0 line that is neither ends
+    that list, so a later indented `a.` is not credited to it.
+    """
+    held = set()
+    in_fence = False
+    heading = None
+    current = None
+    for line in text.split("\n"):
+        if _STEP_FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if line.startswith("#"):
+            current = None
+            heading = None
+            hit = _STEP_HEADING_RE.match(line)
+            if hit is not None:
+                nums = [n.group(1) for n in
+                        _STEP_HEADING_NUM_RE.finditer(hit.group(1))]
+                held.update(nums)
+                if nums and nums[0].isdigit():
+                    heading = nums[0]
+            continue
+        top = _STEP_TOP_RE.match(line)
+        if top is not None:
+            num, letter = top.group(1), top.group(2)
+            if letter:
+                held.add(num + letter)
+                current = None
+                continue
+            held.add(num)
+            if heading is not None:
+                held.add("%s.%s" % (heading, num))
+            current = num
+            inline = _STEP_LETTER_RE.match(line, top.end() - 1)
+            if inline is not None:
+                held.update(num + c for c in _letters(inline))
+            continue
+        if line[:1] and not line[:1].isspace():
+            current = None
+            continue
+        nested = _STEP_LETTER_RE.match(line)
+        if current is not None and nested is not None and line[:1].isspace():
+            held.update(current + c for c in _letters(nested))
+    return frozenset(held)
+
+
+def _step_document(name, documents):
+    """The one kept document a pointer's name resolves to, or None with why.
+
+    A name matches a path it equals or ends (after a `/`), so a pointer may say
+    `execute-task.md` or `reference/execute-task.md`. None and several are both
+    reported: a pointer the reader cannot follow is the defect, whichever way.
+    """
+    hits = [rel for rel in documents
+            if rel == name or rel.endswith("/" + name)]
+    if len(hits) == 1:
+        return hits[0], None
+    if not hits:
+        return None, "names no document this tree keeps"
+    return None, "is ambiguous - it names each of %s" % (", ".join(sorted(hits)),)
+
+
+def step_pointer_violations(repo_root=None, table=None):
+    """[(rel, lineno, pointer, why)] -- a pointer to a numbered step its
+    document does not hold, or to a document this tree does not keep.
+
+    The file set is this scan's own `STEP_POINTER_SCAN_EXEMPT` over the shared
+    derived walk; the documents a pointer may name are every `.md` that walk
+    lists, exempted or not, since a released entry is still a document a live
+    pointer can name. `table` is overridable for the case proving the rows are
+    what keeps history quiet.
+
+    A file or document that cannot be read is NAMED, never skipped: "nothing to
+    report" must not also mean "could not look".
+    """
+    root = repo_root if repo_root is not None else _output.REPO_ROOT
+    rows = STEP_POINTER_SCAN_EXEMPT if table is None else table
+    scan = _output_lints.prose_scan_set(_STEP_SCAN_EXTS, root, rows)
+    if scan["problem"] is not None:
+        return [(".gitignore", 0, "", scan["problem"])]
+    documents = [rel for rel in list(scan["paths"]) + list(scan["exempted"])
+                 if rel.endswith(".md")]
+    texts = {}
+
+    def read(rel):
+        if rel not in texts:
+            path = os.path.join(root, rel.replace("/", os.sep))
+            try:
+                with io.open(path, "r", encoding="utf-8") as fh:
+                    texts[rel] = fh.read()
+            except (OSError, UnicodeDecodeError) as exc:
+                texts[rel] = exc
+        return texts[rel]
+
+    steps = {}
+    out = []
+    for rel in scan["paths"]:
+        text = read(rel)
+        if not isinstance(text, str):
+            out.append((rel, 0, "", "<unreadable: %s>" % (text,)))
+            continue
+        for lineno, name, step in _step_pointers(text):
+            pointer = "%s step %s" % (name, step)
+            target, why = _step_document(name, documents)
+            if target is None:
+                out.append((rel, lineno, pointer, why))
+                continue
+            if target not in steps:
+                body = read(target)
+                steps[target] = (_md_steps(body) if isinstance(body, str)
+                                 else body)
+            held = steps[target]
+            if not isinstance(held, frozenset):
+                out.append((rel, lineno, pointer,
+                            "%s cannot be read: %s" % (target, held)))
+            elif step not in held:
+                out.append((rel, lineno, pointer,
+                            "%s holds no step %s" % (target, step)))
+    return out
+
+
 def _guide_file_blocks(section2):
     """{heading line: block text} for every `### ` block of the guide's
     file-by-file section. `{}` when there is no such section."""

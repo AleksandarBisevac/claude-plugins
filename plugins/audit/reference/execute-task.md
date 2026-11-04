@@ -635,7 +635,11 @@ verb writes and refuses, and what the run commands leave behind, is
             <manifestPath> <taskId> --project <projectDir> --subject "<short subject>"
         ```
         It stages the task's own `files` and the changed paths its own honoured `outputs` patterns
-        cover, the phase's manifest file, the journal and the evidence, commits them with an
+        cover, the phase's manifest file, the journal and the evidence — and, when the shard moves
+        something the phase owns of the manifest index (its tasks' `fileIndex` rows, a bug link,
+        its stub), the parent's index with that part derived from the shard, printing an
+        `index: carried` line saying why (*The index rides with the shard it names*, below) —
+        commits them with an
         explicit pathspec, and **names any staged path outside that list
         instead of sweeping it in**. Read the exit code: **0** it committed (the SHA is printed) or
         there was nothing to commit and it said which; **1** git refused (a commit hook, or a
