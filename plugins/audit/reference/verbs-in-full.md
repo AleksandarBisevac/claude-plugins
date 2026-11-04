@@ -625,7 +625,10 @@ nothing. A warning, never a refusal.
 starts a project command. That reading is the gate's own run: `run-test-gate.py --task`
 asks it of the affected-test derivation over the facts it gathers for its affected steps,
 prints a `gate reach: <path> -- <why>` line beside the verdict for each declared file no
-suite of the run reaches, and records the answer on its evidence row as `gateReach`.
+suite of the run reaches, and records the answer on its evidence row as `gateReach`. It is
+read only for a task with a `tests.gate` of its own - a task measured by its phase's gate
+runs the wide gate already - never under `--own`, the run an executor iterates with, and
+only on a measured run: a repeated verdict runs nothing and reads no reach.
 
 ### Subcommand: `start <taskId>`
 

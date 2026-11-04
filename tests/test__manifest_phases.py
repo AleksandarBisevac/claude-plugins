@@ -1547,8 +1547,9 @@ def _cases(check):
                  "tools/verify.sh", "tests/test_a.py", "tests/test_e.py",
                  "tests/test_f.py", "src/unasked.py"]
     _gr_gaps = M.gate_reach_gaps(_gr_asked, _gr_runs, _gr_answers)
-    _gr_paths = [p for p, _why in _gr_gaps]
-    _gr_why = dict(_gr_gaps)
+    _gr_paths = [g.get("path") for g in _gr_gaps]
+    _gr_why = dict((g.get("path"), g.get("why")) for g in _gr_gaps)
+    _gr_suites = dict((g.get("path"), g.get("suites")) for g in _gr_gaps)
     check("gr1 a declared path is a gap exactly when no suite the gate runs is "
           "one the derivation selects for it: a suite the gate runs, a selected "
           "suite the gate runs and a selection a declared unscoped call runs "
@@ -1558,11 +1559,14 @@ def _cases(check):
           _gr_paths == ["src/b.py", "COMPATIBILITY.md", "tools/verify.sh",
                         "tests/test_f.py", "src/unasked.py"])
     check("gr2 each gap says why in the derivation's own terms: the suites it "
-          "selects that the gate does not run, no suite at all, the widening "
-          "reason verbatim, and a path it was never asked about named as "
-          "unasked rather than counted as reached: %r" % (_gr_why,),
-          "tests/test_b.py" in _gr_why.get("src/b.py", "")
-          and "tests/test_c.py" in _gr_why.get("src/b.py", "")
+          "selects that the gate does not run - as a list beside the reason, "
+          "never joined into it - no suite at all, the widening reason "
+          "verbatim, and a path it was never asked about named as unasked "
+          "rather than counted as reached: %r" % ((_gr_why, _gr_suites),),
+          _gr_suites.get("src/b.py") == ["tests/test_b.py", "tests/test_c.py"]
+          and "tests/test_b.py" not in _gr_why.get("src/b.py", "")
+          and "selects" in _gr_why.get("src/b.py", "")
+          and _gr_suites.get("COMPATIBILITY.md") == []
           and "no suite" in _gr_why.get("COMPATIBILITY.md", "")
           and "unrecognised: no arm reads tools/verify.sh"
           in _gr_why.get("tools/verify.sh", "")
@@ -1576,6 +1580,20 @@ def _cases(check):
           "reached gets no gap at all, and nothing asked gets nothing back: %r"
           % ((_gr_quiet, M.gate_reach_gaps([], _gr_runs, _gr_answers)),),
           _gr_quiet == [] and M.gate_reach_gaps([], _gr_runs, _gr_answers) == [])
+    # The reason's length is the sentence's, not the selection's: a wide phase
+    # selecting a great many suites for one file says the same reason as a
+    # narrow one, and the suites travel as the list a writer can cap.
+    _gr_many = ["tests/test_w%03d.py" % (i,) for i in range(300)]
+    _gr_wide = M.gate_reach_gaps(
+        ["src/w.py"], _gr_runs,
+        {"src/w.py": {"suites": _gr_many, "widen": None, "settled": False}})
+    check("gr4 a gap's reason does not grow with the suites it selects - the "
+          "same sentence for a wide selection as for a narrow one, every "
+          "suite in the list beside it: %r"
+          % ([(g.get("why"), len(g.get("suites") or [])) for g in _gr_wide],),
+          len(_gr_wide) == 1
+          and _gr_wide[0].get("why") == _gr_why.get("src/b.py")
+          and _gr_wide[0].get("suites") == _gr_many)
 
     # --- what a derived gate's slot may be handed ---------------------------
     # Each path beside the kind it is and whether a suite-taking slot and a

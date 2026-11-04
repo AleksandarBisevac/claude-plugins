@@ -767,25 +767,56 @@ _FOLLOWER_LINE = re.compile(r"^\s*%s (.*?)\s*$" % (FOLLOWER_MARK,), re.M)
 
 
 # --- which declared files a task's run reached --------------------------------
-# The keys a row carries `run-test-gate.gate_reach`'s observation under: the
-# steps the run carried and `[{path, why}]` for each declared file no suite of
-# them reaches, or the sentence saying the reading failed. The reading is the
-# gate's; this is what a committed row keeps of it.
+# The keys a row carries `run-test-gate.gate_reach`'s observation under:
+# `{gaps: [{path, why, suites}]}` for each declared file no suite of the run
+# reaches, or the sentence saying the reading failed. The reading is the gate's;
+# this is what a committed row keeps of it.
+#
+# EVERY FIELD OF IT IS BOUNDED, for the reason `MAX_FAILING` states: a row is
+# hash-chained, so an unbounded field is a row of unbounded size. The gaps and
+# each gap's suites are path lists, cut at `MAX_PATHS` with the cut counted
+# beside the list (`gapsDropped`, `suitesDropped`); each path is redacted as
+# `_paths` redacts one; each reason goes through `redacted_text`, which bounds
+# it. The run's step names are not copied onto it: `steps[].name` holds them.
 GATE_REACH_KEY = "gateReach"
 GATE_REACH_NOT_ASKED_KEY = "gateReachNotAsked"
 
 
-def _gate_reach(project, reach):
-    """The row's copy of a run's reach: the gate's step names, capped at
-    `MAX_STEPS`, and its gaps capped at `MAX_PATHS`, each path and reason
-    redacted as a basis is. None for a shape that is not the reading's."""
+def _dropped(value):
+    """A cut count a caller already took - a non-negative int, else 0."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return max(0, value)
+
+
+def _reach_gap(project, gap):
+    """One gap as a row keeps it - see `gate_reach_record`."""
+    suites = [str(s) for s in gap.get("suites") or []]
+    out = {"path": repo_relative_or_token(project, str(gap.get("path") or "")),
+           "why": redacted_text(project, str(gap.get("why") or "")),
+           "suites": [repo_relative_or_token(project, s)
+                      for s in suites[:MAX_PATHS]]}
+    dropped = (_dropped(gap.get("suitesDropped"))
+               + max(0, len(suites) - MAX_PATHS))
+    if dropped:
+        out["suitesDropped"] = dropped
+    return out
+
+
+def gate_reach_record(project, reach):
+    """A run's reach in the bounded shape a row keeps; None for a shape that is
+    not the reading's. ONE SHAPE FOR EVERY READER: `run-test-gate` puts this on
+    the result `--json` prints, and `row_for` takes it again as the backstop
+    for a caller that did not, which changes nothing it already bounded."""
     if not isinstance(reach, dict):
         return None
     gaps = [g for g in reach.get("gaps") or [] if isinstance(g, dict)]
-    return {"gate": [str(n) for n in (reach.get("gate") or [])][:MAX_STEPS],
-            "gaps": [{"path": redacted_paths(project, str(g.get("path") or "")),
-                      "why": redacted_paths(project, str(g.get("why") or ""))}
-                     for g in gaps[:MAX_PATHS]]}
+    out = {"gaps": [_reach_gap(project, g) for g in gaps[:MAX_PATHS]]}
+    dropped = (_dropped(reach.get("gapsDropped"))
+               + max(0, len(gaps) - MAX_PATHS))
+    if dropped:
+        out["gapsDropped"] = dropped
+    return out
 
 # --- a red read against its base ---------------------------------------------
 # The key a row carries `run-test-gate.base_red`'s reading under, and the fields
@@ -1061,11 +1092,11 @@ def row_for(project, result, scope, ids, identity, published=None):
     # or why that was not read. Written only when the run read it, so a row
     # from a run that never asked holds no key a reader could take for "every
     # file reached" - `[]` gaps is that answer, recorded.
-    reach = _gate_reach(project, result.get(GATE_REACH_KEY))
+    reach = gate_reach_record(project, result.get(GATE_REACH_KEY))
     if reach is not None:
         row[GATE_REACH_KEY] = reach
     if result.get(GATE_REACH_NOT_ASKED_KEY) is not None:
-        row[GATE_REACH_NOT_ASKED_KEY] = redacted_paths(
+        row[GATE_REACH_NOT_ASKED_KEY] = redacted_text(
             project, str(result[GATE_REACH_NOT_ASKED_KEY]))
     # THE MUTES THAT EXCUSED A FAILING STEP. The step itself keeps its exit and
     # its failing names, so without this a `passed` beside a red step would be

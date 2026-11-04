@@ -2448,8 +2448,9 @@ warning here and `audit-task.py`'s list-flag reader; `joined_tests_add_parts(val
 `tests.add` reading, where each part has to be a whole entry, so a bare file name after a
 described `<path>: <text>` part is that part's prose rather than a second entry. `gate_reach_gaps(asked, runs, answers)`
 is the comparison `run-test-gate.py`'s gate-reach reading makes: each declared path no suite the
-run carries reaches, with the reason in the affected-test derivation's terms, and a path with
-no answer named as not asked rather than counted as reached. Also the
+run carries reaches, as `{path, why, suites}` - the reason in the affected-test derivation's
+terms and the suites it selects as a list beside it, never joined into the reason - and a path
+with no answer named as not asked rather than counted as reached. Also the
 per-phase rules a schema cannot express — a parallel-run `claim` left on a finished phase,
 an `area` that normalises to no tags at all, a `budgetUSD` of zero, and a phase marked done
 over tasks that are not **finished** (done *or* cancelled).
@@ -4523,12 +4524,20 @@ of `_affected_tests.reach_answers` alone, over the `seen` the run's affected gat
 filled, and `_manifest_phases.gate_reach_gaps` compares the answers with `_affected_tests.gate_runs`.
 A `files` entry is a literal path whatever characters it holds (`_task_outputs.entry_is_pattern`),
 so `app/[slug]/page.tsx` is asked; a directory is named as not asked. Each gap prints one
-`gate reach: <path> -- <why>` line under `covers:`, and the result and the evidence row carry
-`gateReach` (`{gate, gaps: [{path, why}]}`). The reading is advisory and fails open (`reach_or_why`):
+`gate reach: <path> -- <why>: <suites>` line under `covers:`, and the result and the evidence row
+carry `gateReach` (`{gaps: [{path, why, suites}]}`) in `_evidence_io.gate_reach_record`'s bounded
+shape: the gaps and each gap's suites cut at `MAX_PATHS` with the cut counted (`gapsDropped`,
+`suitesDropped`), every reason through `redacted_text`, and no copy of the step names `steps`
+already holds. The printed lines are bounded the same way (`reach_lines`): at most `MAX_PATHS`
+gap lines and one `gate reach cut:` line counting the rest, a gap's suites named until
+`SAMPLE_BUDGET` is spent. The reading is advisory and fails open (`reach_or_why`):
 an exception in it is one `gate reach not asked: <why>` line, `gateReachNotAsked` on the row, and
-the verdict stands. Both leads are in `_STATEMENT_OPENINGS`, so the short form never clips one
-away. The gathering and the reading run with `arm_interrupt` installed, so a SIGTERM surfaces as
-the interrupt that tears every listing's group down.
+the verdict stands. Every reach lead is in `_STATEMENT_OPENINGS`, so the short form never clips one
+away. It is read only on a measured run - after the reuse lookup, so a repeated verdict starts no
+listing - and never under `--own`. The gathering and the reading run with `arm_interrupt`
+installed, so a SIGTERM surfaces as the interrupt that tears every listing's group down, and
+`stopped_before_run` turns that interrupt into one `GATE CANCELLED:` line naming the signal and a
+stopped run's exit, with nothing recorded.
 
 ### `plugins/audit/scripts/governance/record-outside-run.py`
 `record-outside-run.py <manifest> --label TEXT --started <ISO> [--ended <ISO> | --duration-ms N]

@@ -10858,6 +10858,116 @@ def _gate_reach_cases(check):
               and "the reach reading broke" in not_asked[0]
               and "the reach reading broke"
               in str(row_b.get("gateReachNotAsked")))
+
+        # A READING THE SIZE A WIDE PHASE PRODUCES: one gap whose derivation
+        # selects far more suites than a line can name, a reason far past a
+        # value's bound, and more gaps than a row keeps. The reading is faked so
+        # the size is the fixture's; the bound is the printer's and the row's.
+        cap = M._ev.MAX_PATHS
+        limit = M._ev._journal_io.MAX_VALUE_CHARS
+        wide = ["tests/test_s%03d.py" % (i,) for i in range(cap + 160)]
+
+        def huge(*_a, **_k):
+            return {"gaps": [{"path": "CHANGELOG.md", "why": "selects " * 600,
+                              "suites": wide}]
+                    + [{"path": "docs/g%d.md" % (i,), "why": "no suite",
+                        "suites": []} for i in range(cap + 5)]}
+        M.gate_reach = huge
+        try:
+            code_h, lines_h, row_h = run("P1.1", ("--no-reuse",))
+        finally:
+            M.gate_reach = real_reach
+        said_h = reach_lines(lines_h)
+        cut_h = [ln.strip() for ln in lines_h
+                 if ln.strip().startswith("gate reach cut: ")]
+        kept_h = row_h.get("gateReach") or {}
+        first_h = (kept_h.get("gaps") or [{}])[0]
+        # Counted, not found: the suites the first line names, and the tail
+        # that must account for every one it did not - the whole selection,
+        # not the part a row keeps.
+        shown_h = said_h[0].count("tests/test_s") if said_h else 0
+        check("grh9 EVERY REACH FIELD IS BOUNDED: the printed gap lines stop at "
+              "MAX_PATHS and one line counts the rest, the first line names "
+              "only the suites a sample's budget holds and says how many it "
+              "left out, and the row keeps a capped suite list and a bounded "
+              "reason - where the unbounded reading joined every suite: %r"
+              % ((len(said_h), cut_h, len(said_h[0]) if said_h else None,
+                  len(first_h.get("suites") or []),
+                  first_h.get("suitesDropped"), len(first_h.get("why") or "")),),
+              len(said_h) == cap and len(cut_h) == 1
+              and " 6 more " in cut_h[0]
+              and said_h and "CHANGELOG.md" in said_h[0]
+              and len(said_h[0]) < (len(lead) + len("CHANGELOG.md") + limit
+                                    + M.SAMPLE_BUDGET + 200)
+              and 0 < shown_h < len(wide)
+              and ("and %d more" % (len(wide) - shown_h,)) in said_h[0]
+              and len(first_h.get("suites") or []) == cap
+              and first_h.get("suitesDropped") == len(wide) - cap
+              and 0 < len(first_h.get("why") or "") <= limit
+              and "gate" not in kept_h)
+
+        # A REPEAT RUNS NOTHING, SO IT READS NO REACH: the reading's listings
+        # are a measured run's cost alone. Counted through the function the
+        # run calls, so a reading moved anywhere before the reuse lookup is
+        # seen here.
+        calls = []
+
+        def counted(*a, **k):
+            calls.append(1)
+            return real_reach(*a, **k)
+        M.gate_reach = counted
+        try:
+            run("P1.2", ("--no-reuse",))
+            measured_calls = len(calls)
+            code_r, lines_r, row_r = run("P1.2")
+        finally:
+            M.gate_reach = real_reach
+        repeated = any("GATE VERDICT REUSED" in ln for ln in lines_r)
+        check("grh10 a repeated verdict starts no reach reading and records "
+              "none, while the measured run before it read it once - a "
+              "reading that ran whatever the verdict would be counted twice "
+              "here: %r" % ((measured_calls, len(calls), repeated,
+                             "gateReach" in row_r),),
+              measured_calls == 1 and len(calls) == 1 and repeated
+              and "gateReach" not in row_r)
+
+        # A STOP DURING EITHER ARMED WINDOW BEFORE THE MEASUREMENT: the
+        # affected gathering, then the reach reading. The armed handler raises
+        # the interrupt naming its signal (`_proc_group.raiser`); raised here
+        # directly after checking it is armed, so no real signal can kill the
+        # suite on a platform whose SIGTERM is a termination.
+        def stopped(*_a, **_k):
+            if signal.getsignal(signal.SIGTERM) in (signal.SIG_DFL, None,
+                                                    before):
+                raise RuntimeError("the stop signal was not armed here")
+            raise KeyboardInterrupt("SIGTERM")
+        outcomes = []
+        for owner, name in ((M, "affected_steps"), (M, "gate_reach")):
+            real_fn = getattr(owner, name)
+            setattr(owner, name, stopped)
+            rows_before = len(_recorded_rows(evidence))
+            got = []
+            try:
+                code_s = M.main([mpath, "P1", "--task", "P1.1",
+                                 "--project-dir", root, "--record",
+                                 "--no-reuse"], out=got.append)
+            except BaseException as exc:
+                code_s = "raised %s(%s)" % (type(exc).__name__, exc)
+            finally:
+                setattr(owner, name, real_fn)
+            told = [ln for ln in got if "SIGTERM" in ln]
+            outcomes.append((name, code_s, told,
+                             len(_recorded_rows(evidence)) - rows_before,
+                             signal.getsignal(signal.SIGTERM) == before))
+        check("grh11 a stop during the gathering or the reach reading ends the "
+              "run as a stop does - exit 1, one line naming the signal and "
+              "saying nothing was run or recorded, no row, the handler given "
+              "back - rather than a traceback: %r" % (outcomes,),
+              all(code_s == M.E_FAIL and len(told) == 1
+                  and "nothing was run" in told[0]
+                  and "nothing was recorded" in told[0]
+                  and added == 0 and restored
+                  for _n, code_s, told, added, restored in outcomes))
     finally:
         _harness.remove_tree(root)
 

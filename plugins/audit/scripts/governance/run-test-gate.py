@@ -2619,12 +2619,17 @@ def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands,
 # or after it with no teardown on a stop signal, or once per task of a batch.
 # This run already gathers those facts for its affected steps, under the stop
 # signals it arms, so the reading costs it only the listings a declared file
-# needs asked alone (`_affected_tests.reach_answers`). It is advisory, so it
-# fails open: an exception in it is one line and leaves the verdict alone.
+# needs asked alone (`_affected_tests.reach_answers`). It is read for a task
+# with a gate of its own, never under `--own`, and only on a measured run - a
+# repeated verdict observes nothing. It is advisory, so it fails open: an
+# exception in it is one line and leaves the verdict alone.
 GATE_REACH_LEAD = "gate reach: "
 # The line saying the reach was not read at all, and why: its own lead, so a
 # reader counting gaps never counts the advisory's own failure as one.
 GATE_REACH_NOT_ASKED_LEAD = "gate reach not asked: "
+# The line counting the gaps past the ones printed: its own lead for the same
+# reason, so a reader counting gap lines counts only gaps.
+GATE_REACH_CUT_LEAD = "gate reach cut: "
 
 
 def _declared_paths(task_files):
@@ -2648,9 +2653,10 @@ def _names_one_file(tree, path):
 
 
 def gate_reach(tree, manifest, phase_id, task_id, commands, extra, info, seen):
-    """`{gate, gaps}` - the steps this run carries and `[{path, why}]` for each
-    declared file no suite of them reaches; None when the task declares no
-    file. A directory is handed over unanswered and named as not asked.
+    """`{gaps}` - `[{path, why, suites}]` for each declared file no suite of the
+    steps this run carries reaches; None when the task declares no file. A
+    directory is handed over unanswered and named as not asked. The step names
+    are not repeated here: the run's own steps carry them.
 
     What the run reaches is its declared entries, the suites the affected
     steps added (`info`, `affected_steps`' answer, beside `extra`, its steps),
@@ -2680,9 +2686,7 @@ def gate_reach(tree, manifest, phase_id, task_id, commands, extra, info, seen):
     asked = [p for p in files if p not in runs and _names_one_file(tree, p)]
     answers = _affected.reach_answers(tree, meta, phase, entries, runs, asked,
                                       seen)
-    return {"gate": names + [name for name, _command in extra],
-            "gaps": [{"path": path, "why": why} for path, why
-                     in _phases.gate_reach_gaps(files, runs, answers)]}
+    return {"gaps": _phases.gate_reach_gaps(files, runs, answers)}
 
 
 def reach_or_why(*args):
@@ -2697,14 +2701,49 @@ def reach_or_why(*args):
         return None, "%s: %s" % (type(exc).__name__, exc)
 
 
-def reach_lines(reach, why):
+def stopped_before_run(exc, say):
+    """`E_FAIL`, after one line naming the stop that ended a task's run in the
+    armed windows before its first step - the affected gathering and the reach
+    reading. `run_gate` turns a stop during the steps into a `cancelled` result
+    and a row; here no step has run, so there is nothing to record, and the line
+    says so rather than ending in a traceback. The exit is a stopped run's."""
+    say("[run-test-gate] GATE CANCELLED: %s stopped this run before its first "
+        "step - nothing was run and nothing was recorded"
+        % (str(exc) or UNNAMED_SIGNAL,))
+    return E_FAIL
+
+
+def reach_lines(project, reach, why):
     """The lines a task's run prints about its reach, beside the verdict: one
-    per gap, or the one line saying it was not asked and why."""
+    per gap, or the one line saying it was not asked and why.
+
+    BOUNDED AS THE ROW IS (`_evidence_io.gate_reach_record`): at most
+    `MAX_PATHS` gap lines and one counting the rest, each path and reason
+    through `redacted_text`, and a gap's suites named until `SAMPLE_BUDGET` is
+    spent, with how many were not - counted over the whole selection, which
+    this reads rather than the row's capped list."""
     if why is not None:
-        return ["%s%s" % (GATE_REACH_NOT_ASKED_LEAD, why)]
-    return ["%s%s -- %s; a passed run of this gate is no evidence for it"
-            % (GATE_REACH_LEAD, gap["path"], gap["why"])
-            for gap in (reach or {}).get("gaps") or []]
+        return ["%s%s" % (GATE_REACH_NOT_ASKED_LEAD,
+                          _ev.redacted_text(project, str(why)))]
+    gaps = [g for g in (reach or {}).get("gaps") or [] if isinstance(g, dict)]
+    lines = []
+    for gap in gaps[:_ev.MAX_PATHS]:
+        suites = [str(s) for s in gap.get("suites") or []]
+        named = (": %s" % (_output.some_of(suites, SAMPLE_BUDGET),)
+                 if suites else "")
+        lines.append("%s%s -- %s%s; a passed run of this gate is no evidence "
+                     "for it" % (GATE_REACH_LEAD,
+                                 _ev.redacted_text(project,
+                                                   str(gap.get("path") or "")),
+                                 _ev.redacted_text(project,
+                                                   str(gap.get("why") or "")),
+                                 named))
+    if len(gaps) > _ev.MAX_PATHS:
+        lines.append("%s%d more declared files no suite of this run reaches "
+                     "are not printed; `--json` and the row keep the first %d"
+                     % (GATE_REACH_CUT_LEAD, len(gaps) - _ev.MAX_PATHS,
+                        _ev.MAX_PATHS))
+    return lines
 
 def affected_lines(info):
     """The lines a task-scope run prints about what joined its gate."""
@@ -5161,7 +5200,7 @@ _STATEMENT_OPENINGS = ("PHASE GATE RAN NO SUITE", "SAME SUITE COUNTED ONCE",
                        "NARROWED sign-off", "evidence: NOT recorded",
                        "banners not recorded",
                        "pointer:  NOT updated", GATE_REACH_LEAD,
-                       GATE_REACH_NOT_ASKED_LEAD)
+                       GATE_REACH_NOT_ASKED_LEAD, GATE_REACH_CUT_LEAD)
 _ALONE = "machine: this run had the machine to itself"
 
 
@@ -5490,13 +5529,17 @@ def main(argv, out=print):
     published_extra = []
     affected_info = None
     reach, reach_why = None, None
+    # What the reach reading is handed, once the gathering has run; None when
+    # this run reads no reach at all.
+    reach_args = None
     # A task borrowing its phase's gate (`source == "phase"`) runs the wide gate
     # already, so it is not asked.
     if args.task is not None and not args.own and source == "task":
         # ARMED AROUND THE GATHERING TOO: its listings are project commands in
         # sessions of their own, so a SIGTERM with no handler would leave them
         # running. Armed, a stop signal surfaces as an interrupt that tears each
-        # one down on its way out; nothing has run yet, so nothing is recorded.
+        # one down on its way out; nothing has run yet, so nothing is recorded,
+        # and the stop is said as that (`stopped_before_run`).
         seen = {}
         previous = _arm_interrupt()
         try:
@@ -5506,11 +5549,13 @@ def main(argv, out=print):
                 records=member_records(project, args.manifest, manifest,
                                        args.phase, tree)
                 if tree is not None else (), seen=seen)
-            reach, reach_why = reach_or_why(tree or project, manifest,
-                                            args.phase, args.task, commands,
-                                            extra, affected_info, seen)
+        except KeyboardInterrupt as exc:
+            return stopped_before_run(
+                exc, _say_on_stderr if args.as_json else out)
         finally:
             _disarm_interrupt(previous)
+        reach_args = (tree or project, manifest, args.phase, args.task,
+                      commands, extra, affected_info, seen)
         commands = commands + extra
         if not args.as_json:
             for line in affected_lines(affected_info):
@@ -5595,6 +5640,16 @@ def main(argv, out=print):
         # a second Ctrl-C should be free to stop a session that is already stopping.
         previous = _arm_interrupt()
         try:
+            # THE REACH IS READ HERE, ON A MEASURED RUN ALONE: a repeat runs
+            # nothing, so it observes nothing and starts none of the listings
+            # the reading may need. Read before the first step, inside the same
+            # armed window, so a stop during it is a stop before anything ran.
+            if reach_args is not None:
+                try:
+                    reach, reach_why = reach_or_why(*reach_args)
+                except KeyboardInterrupt as exc:
+                    return stopped_before_run(
+                        exc, _say_on_stderr if args.as_json else out)
             res = run_gate(tree or project, commands, owns=owns,
                            timeout=args.timeout,
                            recorded=_ev.recorded_paths(project,
@@ -5689,9 +5744,10 @@ def main(argv, out=print):
     if affected_info is not None:
         res["affected"] = affected_info
     # THE REACH, AN OBSERVATION OF THIS RUN: on the result for `--json` and for
-    # the row `_record_run` writes, and printed beside the verdict below.
+    # the row `_record_run` writes in the row's bounded shape, and printed
+    # beside the verdict below from the whole reading, bounded as it prints.
     if reach is not None:
-        res[_ev.GATE_REACH_KEY] = reach
+        res[_ev.GATE_REACH_KEY] = _ev.gate_reach_record(project, reach)
     if reach_why is not None:
         res[_ev.GATE_REACH_NOT_ASKED_KEY] = reach_why
     # A TASK RUN'S RED, READ AGAINST ITS BASE - measured runs only: a repeated
@@ -5760,7 +5816,7 @@ def main(argv, out=print):
     # THE DECLARED FILES NO SUITE OF THIS RUN REACHES, with the verdict: a green
     # beside one of these lines is no evidence for that file. Each opens a
     # statement (`_STATEMENT_OPENINGS`), so the short form never clips it away.
-    for line in reach_lines(reach, reach_why):
+    for line in reach_lines(project, reach, reach_why):
         out("  %s" % (line,))
     # BEFORE THE VERDICT, so the reader who wants every line never has to
     # scroll past a red banner to find where they are - and printed only

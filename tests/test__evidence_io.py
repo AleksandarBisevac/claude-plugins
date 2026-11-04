@@ -4258,7 +4258,12 @@ def _gate_reach_row_cases(check):
     """`grr`: the gate's reach, an observation of a task's run, as its row
     keeps it - capped, every path and reason redacted, and written only when
     the run read it, so a row from a run that never asked holds no key that a
-    reader could take for "every file reached"."""
+    reader could take for "every file reached".
+
+    EVERY FIELD IS BOUNDED, because the row is hash-chained: a gap's suites are
+    a path list cut at `MAX_PATHS` with the cut counted, its reason goes
+    through the bounded text redactor, and the run's step names are not copied
+    a second time - `steps[].name` already holds them."""
     plain = _harness.fixture_root("audit-evidence-reach-")
     base = {"status": "passed", "failed": [], "steps": []}
     ident = {"runId": "R1"}
@@ -4274,11 +4279,9 @@ def _gate_reach_row_cases(check):
                         ids, ident)
         kept = row.get(M.GATE_REACH_KEY) or {}
         gaps = kept.get("gaps") or []
-        check("grr1 row_for keeps the reach a run read: its gate and each gap "
-              "with its reason, the first gap first: %r"
-              % ((kept.get("gate"), gaps[:1]),),
+        check("grr1 row_for keeps the reach a run read: each gap with its "
+              "reason, the first gap first: %r" % (gaps[:1],),
               M.GATE_REACH_KEY == "gateReach"
-              and kept.get("gate") == ["python3 tests/test_m.py"]
               and gaps[:1] and gaps[0].get("path") == "CHANGELOG.md"
               and "exited 1" in gaps[0].get("why", ""))
         check("grr2 ...capped at MAX_PATHS gaps, and a reason naming a path "
@@ -4291,7 +4294,7 @@ def _gate_reach_row_cases(check):
                           "task", ids, ident)
         check("grr3 an empty gap list is stored as one, the answer 'every "
               "declared file reached': %r" % (quiet.get(M.GATE_REACH_KEY),),
-              quiet.get(M.GATE_REACH_KEY) == {"gate": ["g"], "gaps": []})
+              quiet.get(M.GATE_REACH_KEY) == {"gaps": []})
         old = M.row_for(plain, dict(base), "task", ids, ident)
         check("grr4 SECOND-DIRECTION CASE: a run that read no reach writes "
               "neither key - a row that always carried one could not be told "
@@ -4307,6 +4310,54 @@ def _gate_reach_row_cases(check):
               M.GATE_REACH_NOT_ASKED_KEY == "gateReachNotAsked"
               and isinstance(said, str) and "broke in" in said
               and plain not in said and M.GATE_REACH_KEY not in failed)
+
+        # A reading the size a wide phase produces: one gap whose derivation
+        # selects far more suites than any path list keeps, a reason far past a
+        # value's bound, more gaps than a row keeps, and a step-name list that
+        # repeats what `steps` already says. Before the bound, the reason joined
+        # every suite and the row grew with the phase.
+        limit = M._journal_io.MAX_VALUE_CHARS
+        wide = ["tests/test_s%03d.py" % (i,) for i in range(M.MAX_PATHS + 25)]
+        inside = os.path.join(plain, "tests", "test_inside.py")
+        long_reach = {
+            "gate": ["step %d" % (i,) for i in range(M.MAX_STEPS)],
+            "gaps": [{"path": "CHANGELOG.md", "why": "selects " * 600,
+                      "suites": [inside] + wide}]
+            + [{"path": "docs/g%d.md" % (i,), "why": "no suite",
+                "suites": []} for i in range(M.MAX_PATHS + 3)]}
+        big = M.row_for(plain, dict(base, **{M.GATE_REACH_KEY: long_reach}),
+                        "task", ids, ident)
+        bkept = big.get(M.GATE_REACH_KEY) or {}
+        bgaps = bkept.get("gaps") or []
+        first = bgaps[0] if bgaps else {}
+        check("grr6 a gap's suites are kept as a path list cut at MAX_PATHS "
+              "with the cut counted beside it, each one repo-relative, and its "
+              "reason is held to a value's bound however long it came in: %r"
+              % ((len(first.get("suites") or []), first.get("suitesDropped"),
+                  (first.get("suites") or [None])[0],
+                  len(first.get("why") or "")),),
+              len(first.get("suites") or []) == M.MAX_PATHS
+              and first.get("suitesDropped") == 26
+              and (first.get("suites") or [None])[0] == "tests/test_inside.py"
+              and 0 < len(first.get("why") or "") <= limit
+              and all(len(g.get("why") or "") <= limit for g in bgaps))
+        check("grr7 ...the gaps past MAX_PATHS are counted rather than "
+              "silently cut, and the run's step names are not copied onto the "
+              "reach - `steps` already holds them: %r"
+              % ((len(bgaps), bkept.get("gapsDropped"), sorted(bkept)),),
+              len(bgaps) == M.MAX_PATHS and bkept.get("gapsDropped") == 4
+              and sorted(bkept) == ["gaps", "gapsDropped"]
+              # Bounded twice is bounded once: the runner bounds the reading
+              # for `--json` and `row_for` bounds it again, so a second pass
+              # that re-counted a cut or lost one would show here.
+              and M.gate_reach_record(plain, bkept) == bkept)
+        long_why = M.row_for(plain, dict(base, **{
+            M.GATE_REACH_NOT_ASKED_KEY: "RuntimeError: " + "x" * 4000}),
+            "task", ids, ident).get(M.GATE_REACH_NOT_ASKED_KEY)
+        check("grr8 ...and the sentence saying the reading failed is held to "
+              "the same bound: %r" % (len(long_why or ""),),
+              isinstance(long_why, str) and 0 < len(long_why) <= limit
+              and long_why.startswith("RuntimeError: "))
     finally:
         _harness.remove_tree(plain)
 

@@ -1627,8 +1627,14 @@ def own_gate_entries(manifest, phase, task):
 
 # --- which of a task's files its gate reaches ----------------------------------
 def gate_reach_gaps(asked, runs, answers):
-    """`[(path, why)]` - each path of `asked`, in order, that no suite the gate
-    runs reaches, with the reason in the affected-test derivation's terms.
+    """`[{path, why, suites}]` - each path of `asked`, in order, that no suite
+    the gate runs reaches, with the reason in the affected-test derivation's
+    terms and the suites it selects for that path, none of which the gate runs.
+
+    THE SUITES ARE A LIST AND NEVER PART OF THE REASON. A wide phase selects a
+    great many suites for one file, and a reason that joined them grew with the
+    phase; as a list, the writer that keeps it caps it the way it caps every
+    path list, and the reason stays one sentence whatever the selection.
 
     A PASSED GATE RUN IS EVIDENCE ONLY FOR WHAT ITS SUITES READ. A gate that
     selects no suite opening a document, or none importing a tool, stays green
@@ -1654,25 +1660,33 @@ def gate_reach_gaps(asked, runs, answers):
             continue
         answer = answers.get(path)
         if not isinstance(answer, dict):
-            gaps.append((path, "not asked: the affected-test derivation gave no "
-                               "answer for it, so nothing says a suite the gate "
-                               "runs reaches it"))
+            gaps.append(_reach_gap(path, "not asked: the affected-test "
+                                         "derivation gave no answer for it, so "
+                                         "nothing says a suite the gate runs "
+                                         "reaches it", []))
             continue
         suites = [s for s in answer.get("suites") or [] if isinstance(s, str)]
         if answer.get("settled") or any(s in runs for s in suites):
             continue
         if answer.get("widen"):
-            gaps.append((path, "the affected-test derivation cannot say which "
-                               "suite reaches it: %s" % (answer["widen"],)))
+            gaps.append(_reach_gap(path, "the affected-test derivation cannot "
+                                         "say which suite reaches it: %s"
+                                   % (answer["widen"],), suites))
         elif suites:
-            gaps.append((path, "the affected-test derivation selects %s for it, "
-                               "and the gate runs none of them"
-                         % (", ".join(suites),)))
+            gaps.append(_reach_gap(path, "the affected-test derivation selects "
+                                         "suites for it, and the gate runs none "
+                                         "of them", suites))
         else:
-            gaps.append((path, "no suite reaches it by the affected-test "
-                               "derivation's reading - its recorded listing, "
-                               "its import graph and its walks"))
+            gaps.append(_reach_gap(path, "no suite reaches it by the "
+                                         "affected-test derivation's reading - "
+                                         "its recorded listing, its import "
+                                         "graph and its walks", []))
     return gaps
+
+
+def _reach_gap(path, why, suites):
+    """One gap of `gate_reach_gaps`, in the shape every reader of it takes."""
+    return {"path": path, "why": why, "suites": list(suites)}
 
 
 # One shell word as written: runs of unquoted non-space characters and whole

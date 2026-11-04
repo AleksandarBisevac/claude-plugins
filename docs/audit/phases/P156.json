@@ -219,43 +219,85 @@
         "severity": "med",
         "file": "plugins/audit/scripts/manifest/audit-task.py:1941-1961 (_gate_reach), :1988-2005, :2048-2065; plugins/audit/scripts/governance/drive-phase.py:8295-8327 (add_fix_tasks)",
         "issue": "The batch reads the gate reach one task at a time from scratch (git ls-files, listings, import graph each time): measured 50.6 s for seven tasks, 5.9-10.5 s each. The drive's --answer fix path calls add --from-file --json and reads only tasks, so it pays this on every triage and drops gateReach; under --json the new task ids print only after the reading, so a caller timing out loses the ids of a write that landed.",
-        "resolution": "See the redesign: the manifest verbs stop reading the reach; it is read where the gate's affected facts are already gathered.",
-        "fixTask": "P156.20-3st"
+        "resolution": "fixed in P156.20-3st (ca6b6bd6ab61): See the redesign: the manifest verbs stop reading the reach; it is read where the gate's affected facts are already gathered.",
+        "fixTask": "P156.20-3st",
+        "commit": "ca6b6bd6ab61",
+        "status": "fixed"
       },
       {
         "id": "P156-R21",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_affected_tests.py:1260-1265; plugins/audit/scripts/manifest/audit-task.py (reach paths arm no signal handler)",
         "issue": "A SIGTERM to add, scope or done kills Python without teardown, and each listing started in its own session keeps running (probed: exit 143, grandchild alive); the comment says a listing's children never outlive the verb.",
-        "resolution": "Moot once the verbs no longer start listings; the comment states the teardown the remaining callers have.",
-        "fixTask": "P156.20-3st"
+        "resolution": "fixed in P156.20-3st (ca6b6bd6ab61): Moot once the verbs no longer start listings; the comment states the teardown the remaining callers have.",
+        "fixTask": "P156.20-3st",
+        "commit": "ca6b6bd6ab61",
+        "status": "fixed"
       },
       {
         "id": "P156-R22",
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/audit-task.py:9929-9955 (split_batch_items), :10052-10055, :10115, :10349; COMPATIBILITY.md:678-679",
         "issue": "A batch task key containing a comma, referenced whole from dependsOn, was accepted at 8c4bb8bd and is now refused (exit 0 to 2) because the reference is split before keys resolve; COMPATIBILITY says the id and path lists did not move.",
-        "resolution": "Resolve an item matching a batch key whole before splitting it, so the old batch keeps working.",
-        "fixTask": "P156.20-3st"
+        "resolution": "fixed in P156.20-3st (ca6b6bd6ab61): Resolve an item matching a batch key whole before splitting it, so the old batch keeps working.",
+        "fixTask": "P156.20-3st",
+        "commit": "ca6b6bd6ab61",
+        "status": "fixed"
       },
       {
         "id": "P156-R23",
         "severity": "low",
         "file": "CHANGELOG.md:33-34 (restore entry)",
         "issue": "The CHANGELOG lists restore's exit 0 only as restored, omitting the dropped-copy outcome the usage text and guide now state.",
-        "resolution": "Extend the exit-0 clause to the dropped copy.",
-        "fixTask": "P156.20-3st"
+        "resolution": "fixed in P156.20-3st (ca6b6bd6ab61): Extend the exit-0 clause to the dropped copy.",
+        "fixTask": "P156.20-3st",
+        "commit": "ca6b6bd6ab61",
+        "status": "fixed"
       },
       {
         "id": "P156-R24",
         "severity": "low",
         "file": "COMPATIBILITY.md:678-679",
         "issue": "The new entry attaches 'a comma inside an entry is kept' to the id and path lists, where every comma splits; it is true only of the one-entry flags.",
-        "resolution": "Move the clause to the one-entry-flag sentence; the id/path sentence says only that they split.",
-        "fixTask": "P156.20-3st"
+        "resolution": "fixed in P156.20-3st (ca6b6bd6ab61): Move the clause to the one-entry-flag sentence; the id/path sentence says only that they split.",
+        "fixTask": "P156.20-3st",
+        "commit": "ca6b6bd6ab61",
+        "status": "fixed"
+      },
+      {
+        "id": "P156-R25",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py:778-788 (_gate_reach); plugins/audit/scripts/manifest/_manifest_phases.py:1667-1670 (gate_reach_gaps); plugins/audit/scripts/governance/run-test-gate.py:2682-2685, 2700-2707",
+        "issue": "The gateReach row keys cap the number of gaps but not each gap's length: the why joins every selected suite (measured 5,533 characters for one gap) and redacted_paths does not bound, so a committed hash-chained row can reach hundreds of KB, which _evidence_io's own rule against unbounded fields forbids; gateReach.gate repeats every step name already on steps[].name (5,321 of a 9,177-character row on P156.20-3st's own row); the printed line is unbounded too.",
+        "resolution": "Store the selected suites as a list capped like every path list, pass the sentence through the bounded text redactor, drop gate from the row (or keep only the declared entry names), clip the printed line the same way; a case with a long suite list that fails while the field is unbounded.",
+        "fixTask": "P156.21-3st"
+      },
+      {
+        "id": "P156-R26",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:5492-5513 (reach read before the reuse lookup)",
+        "issue": "The reach is read before the reuse lookup, so a repeated verdict, which runs nothing, still pays the per-file listings (measured 24.0 s, 18 listings on P156.20-3st); CHANGELOG and comments say a measured run.",
+        "resolution": "Read the reach only on a measured run, or carry the prior row's reading onto a repeat, so a repeat starts no listing.",
+        "fixTask": "P156.21-3st"
+      },
+      {
+        "id": "P156-R27",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:5496-5513",
+        "issue": "A stop during the armed gathering or reach reading ends in a Python traceback and exit 130 even for SIGTERM, with no line naming the stop, where the run_gate window turns the same interrupt into a named cancelled outcome.",
+        "resolution": "Catch the interrupt around the armed block in main, print one line naming the signal and saying nothing was run or recorded, and exit as the run does for a stop; a case pinning line and exit.",
+        "fixTask": "P156.21-3st"
+      },
+      {
+        "id": "P156-R28",
+        "severity": "low",
+        "file": "plugins/audit/reference/verbs-in-full.md:624-628; CHANGELOG.md:42-51",
+        "issue": "The documents say run-test-gate --task reads the reach unconditionally; the code reads it only for a task with a gate of its own and never under --own, the run an executor iterates with.",
+        "resolution": "State both conditions in verbs-in-full and CHANGELOG.",
+        "fixTask": "P156.21-3st"
       }
     ],
-    "outcome": "[findings: 24 - 0 high, 6 med, 18 low; 19 with a recorded fix commit]"
+    "outcome": "[findings: 28 - 0 high, 7 med, 21 low; 24 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1855,7 +1897,7 @@
     {
       "id": "P156.20-3st",
       "title": "The gate reach is read where the gate's affected facts are already gathered, and the manifest verbs start no project command",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix P156-R20 to P156-R24 (docs/audit/phases/P156.json review.findings). The gate-reach check added this phase lives in the manifest verbs (add, add --from-file, scope, done), and every review round has found a new defect of that one placement: the index lock held across project listings (R4), a second copy of the fact gathering (R8), warnings dropped from the short output (R12), the batch not warned (R15), an interrupt not tearing listings down (R16), the batch paying the reading per task on every triage (R20), a SIGTERM leaving listings running (R21). The redesign removes the class rather than patching an eighth instance: a verb that writes the manifest starts no project command. The reach is read once, by run-test-gate when it runs a task's gate, from the affected facts it already gathers for that gate (the shared _affected_tests gathering, with its group teardown and the interrupt handling run-test-gate already arms), and it is recorded as an observation of that gate run - which declared files no suite the gate selects reaches - printed beside the verdict and kept in the evidence row, where the close and the drive read it. Delete the verb-side reading (_gate_reach and its outside-lock/after-release/before-lock helpers, the batch reading, the gateReach/gateReachNotAsked keys); keep entry_is_pattern and the shared gathering. Cases: a verb with a gate reaching nothing starts no listing (count run_listing calls: zero); a task gate whose suites reach none of a declared file names it in the gate's output and evidence. R22: a batch reference matching a batch key whole resolves before it is split, so a comma-holding key keeps working as it did at the base. R23: CHANGELOG's restore exit 0 includes the dropped copy. R24: COMPATIBILITY.md's comma clause belongs to the one-entry flags. CHANGELOG, verbs-in-full and the guide say where the reach is read now, and that the verbs no longer read it.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -1902,14 +1944,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ca6b6bd6ab61",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Gate reach moved from the manifest verbs to run-test-gate's task-gate run. audit-task.py: deleted _gate_reach, every _reach_* helper, _related_reach, _declared_paths, _names_one_file, the GATE_REACH* leads, the gateReach/gateReachNotAsked/gateReachNotRecorded keys, the done-time note and _locked_done's before argument; add, add --from-file, scope and done return to plain exits; TASK_WARNING_LEADS keeps the gate-directory lead. _affected_tests.py: new section related_reach/path_reach/reach_answers (per declared file, over the shared seen, prefetch_listings kept); comments now state SIGTERM tears a listing down only where the caller armed it. run-test-gate.py: affected_steps/_affected_facts take a shared seen; new gate_reach/reach_or_why/reach_lines; the affected gathering and reach reading run under arm_interrupt; one 'gate reach: <path> -- <why>' line per gap under covers:, a 'gate reach not asked: <why>' line on failure (fail-open), both leads in _STATEMENT_OPENINGS; res carries gateReach/gateReachNotAsked. _evidence_io.py: GATE_REACH_KEY, GATE_REACH_NOT_ASKED_KEY, _gate_reach; row_for writes them only when present, gate capped at MAX_STEPS, gaps at MAX_PATHS, paths and reasons through redacted_paths. R22: split_batch_items keeps a dependsOn/blockedBy item matching a batch key whole (BATCH_KEY_REFERENCES, _batch_keys) and _batch_joined_problems does not refuse it. R23: CHANGELOG restore exit 0 includes the dropped copy. R24: COMPATIBILITY comma clause moved to the one-entry flags, id/path sentence says they split on every comma. Docs: CHANGELOG gate-reach entry rewritten (read by run-test-gate --task, verbs read none), verbs-in-full.md and PLUGIN-BUILD-GUIDE.md (audit-task, run-test-gate, _affected_tests, _manifest_phases sections and the tree line) say where it is read; tools/lints/_deps.py LAYERS comment for _affected_tests updated. Tests: test_audit_task grt1-grt8 replace the old block (zero run_listing/gather_facts/tree_files calls for add, add --json, scope, done, add --from-file; grt6 proves the recorder live), lb6; pd9c and fb2 back to their pre-reach form; test_run_test_gate grh1-grh8; sl fixture's declared file is now the script its gate runs (the old fixture's gate reached nothing, so it now correctly prints a gap); test__evidence_io grr1-grr5. Consumers checked: grep for row keys over plugins, tools, tests finds no allow-list, schema or report/panel reader enumerating evidence-row keys, so nothing pins or rejects gateReach. Runs: brief gate exit 0, 8/8 files ok; full sweep exit 0, 195/195 files ok; gate-parity exit 0; measure-context --gate exit 0 GATE OK; ruff clean.",
+        "descriptive": "A verb that writes the manifest starts no project command; a task's gate run now says, beside its verdict and on its evidence row, which declared files no suite of that run reaches."
       },
       "startedAt": "2026-11-04T18:34:52Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-04T19:17:50Z",
+      "verifiedBy": [
+        "grh1-grh8: a task gate's run names the declared file no suite reaches in output, row and --json, not the reached ones; joined affected suites count; short form keeps the line; listings run with stop signals armed; reading fails open",
+        "grt1-grt6: add, add --json, scope, done and add --from-file start no listing and gather no fact, with a live-recorder second direction",
+        "lb6: a batch dependsOn item that is a comma-holding task key resolves whole",
+        "grr1-grr5 (test__evidence_io): row_for keeps the reach capped and redacted, empty gaps as [], neither key when not read, the failure sentence redacted"
+      ],
       "notes": [
         {
           "at": "2026-11-04T18:34:04Z",
@@ -1934,6 +1981,10 @@
         {
           "at": "2026-11-04T18:34:04Z",
           "text": "no suite: CHANGELOG.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__deps.py, tests/test__manifest_phases.py, tests/test__output.py, tests/test__panel_settings.py, tests/test__refs.py, tests/test_audit_task.py and 4 more"
+        },
+        {
+          "at": "2026-11-04T19:17:50Z",
+          "text": "gate reach at close: a passed run of this task's gate (python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_audit_task.py tests/test__affected_tests.py tests/test_drive_phase.py tests/test__manifest_phases.py tests/test__branch.py tests/test__config_rules.py tests/test__manifest_vocab.py) is no evidence for PLUGIN-BUILD-GUIDE.md (the affected-test derivation selects tests/test__deps.py, tests/test__refs.py for it, and the gate runs none of them); CHANGELOG.md (the affected-test derivation selects tests/test__deps.py, tests/test__refs.py for it, and the gate runs none of them); COMPATIBILITY.md (the affected-test derivation selects tests/test__deps.py, tests/test__refs.py for it, and the gate runs none of them); tools/release.py (the affected-test derivation selects .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, tests/test__config.py, tests/test__evidence_io.py, tests/test__refs.py, tests/test_stamp_verification.py, tools/release.py for it, and the gate runs none of them)"
         }
       ],
       "fixes": [
@@ -1948,6 +1999,110 @@
         "runId": "2026-11-04T19:17:23Z.2931bb",
         "status": "passed",
         "at": "2026-11-04T19:17:23Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "ca6b6bd6ab61",
+        "at": "2026-11-04T19:17:50Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-04T19:12:29Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_audit_task.py tests/test__affected_tests.py tests/test_drive_phase.py tests/test__manifest_phases.py tests/test__branch.py tests/test__config_rules.py tests/test__manifest_vocab.py` in a throwaway tree at HEAD exited 1 with 15 of 591 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pd9c (house FAIL), fb2 (house FAIL), lb6 (house FAIL), grt1 (house FAIL), grt2 (house FAIL), grt3 (house FAIL), grt4 (house FAIL), grt5 (house FAIL) and 7 more: SELFTEST FAILED: 583/591 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P156.21-3st",
+      "title": "The gate-reach record is bounded, read only on a measured run, stops by name, and its conditions are documented",
+      "status": "in_progress",
+      "description": "Fix P156-R25,P156-R26,P156-R27,P156-R28 (docs/audit/phases/P156.json review.findings): bound every gateReach field in the row and in the printed line (suites as a capped list, the sentence through the bounded text redactor, no repeated step names); read the reach only on a measured run so a repeated verdict starts no listing; a stop during the armed gathering prints one line naming the signal and exits as a stop does; verbs-in-full and CHANGELOG state that the reach is read for a task with a gate of its own and not under --own.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "tests/test__evidence_io.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "tests/test__manifest_phases.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "tests/test_run_test_gate.py",
+        "plugins/audit/reference/verbs-in-full.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/reference/verbs-in-full.md",
+        "CHANGELOG.md",
+        "tests/test__evidence_io.py",
+        "tests/test__manifest_phases.py",
+        "tests/test_run_test_gate.py",
+        "tools/check-example-ledgers.py",
+        "tools/release.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__evidence_io.py",
+          "tests/test_run_test_gate.py"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_run_test_gate.py tests/test__manifest_phases.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-04T19:26:44Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-04T19:26:27Z",
+          "text": "scope: plugins/audit/scripts/governance/_evidence_io.py, plugins/audit/scripts/manifest/_manifest_phases.py, plugins/audit/scripts/governance/run-test-gate.py, plugins/audit/reference/verbs-in-full.md, CHANGELOG.md, every path the finding(s) P156-R25, P156-R26, P156-R27, P156-R28 name"
+        },
+        {
+          "at": "2026-11-04T19:26:27Z",
+          "text": "scope: tests/test__evidence_io.py, the suite that tests plugins/audit/scripts/governance/_evidence_io.py (python: its import closure reaches plugins/audit/scripts/governance/_evidence_io.py)"
+        },
+        {
+          "at": "2026-11-04T19:26:27Z",
+          "text": "scope: tests/test__manifest_phases.py, the suite that tests plugins/audit/scripts/manifest/_manifest_phases.py (python: its import closure reaches plugins/audit/scripts/manifest/_manifest_phases.py)"
+        },
+        {
+          "at": "2026-11-04T19:26:27Z",
+          "text": "scope: tests/test_run_test_gate.py, the suite that tests plugins/audit/scripts/governance/run-test-gate.py (python: its import closure reaches plugins/audit/scripts/governance/run-test-gate.py)"
+        },
+        {
+          "at": "2026-11-04T19:26:27Z",
+          "text": "no suite: plugins/audit/reference/verbs-in-full.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/manifest/_areas.py, tests/test__manifest_vocab.py, tests/test_audit_task.py"
+        },
+        {
+          "at": "2026-11-04T19:26:27Z",
+          "text": "no suite: CHANGELOG.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__deps.py, tests/test__evidence_io.py, tests/test__manifest_phases.py, tests/test__output.py, tests/test__panel_settings.py, tests/test__refs.py and 6 more"
+        }
+      ],
+      "fixes": [
+        "P156-R25",
+        "P156-R26",
+        "P156-R27",
+        "P156-R28"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-04T19:59:17Z.e124e9",
+        "status": "passed",
+        "at": "2026-11-04T19:59:17Z"
       }
     }
   ],
