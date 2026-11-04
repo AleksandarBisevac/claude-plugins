@@ -4749,6 +4749,14 @@ its options; an option it does not offer, or one that records a reason given non
 commit with nothing in it, a reviewer answer only a human settles, a phase with no ready task,
 and the decisions sign-off adds, below.
 
+**A reviewer that filed nothing is told apart by what the stop prints, not by a guess.** The
+drive records no difference between a reviewer agent still working and one that printed its
+return object as a reply, so `no-reviewer-return` says what it holds - the reviewer filed no return
+for this start - and prints the submit block that reviewer's brief carries, read back from the
+brief through `audit-lookup.py brief --read` (`brief_submit`) rather than composed a second time
+here. A brief that cannot be read is named as the reason the block is missing, never replaced
+by a command the drive spelled itself (`ur1`-`ur4`, `rv9b`).
+
 **A scope change is closed only over a run of the scope.** A filing stamped under another file
 list is the `scope-changed` decision, and before it is printed the drive measures the gate
 under the list the task holds now (`scope_gate`, `--no-reuse`): the commit binds the run's

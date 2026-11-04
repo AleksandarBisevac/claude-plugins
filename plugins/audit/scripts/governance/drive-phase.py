@@ -76,9 +76,10 @@ tasks never share it; `next_task` is the one place the serial choice is made.
 
 SEVERAL AT ONCE ONLY IN TREES OF THEIR OWN - A WAVE. `executor.waveWidth` above 1
 (an int, or `auto`: the core count less two) lets `next` open a wave when no task
-is in progress and `_wave.select` picks two or more ready tasks with disjoint
-declared files. Each member is started and given a detached worktree at the
-phase HEAD (`manage-worktrees.py task-add`), and one print dispatches every
+is in progress and `_wave.select` picks two or more ready tasks whose declared
+paths - their `files` and their honoured `outputs` patterns - are disjoint, so
+two tasks whose outputs overlap are kept apart as two whose files do. Each
+member is started and given a detached worktree at the phase HEAD (`manage-worktrees.py task-add`), and one print dispatches every
 member's executor together. Each `next` walks the members in id order through
 the same `advance`, with the gate measured in the member's tree (`run-test-gate.py
 --tree`) and its stamp graded there; before the close, `integrate-task.py`
@@ -1600,6 +1601,8 @@ def render_decision(ctx, pending):
     lines = step_text("decide-%s" % (name,), task=pending.get("task"),
                       phase=ctx["phase"], why=pending.get("why") or "",
                       run=verdict_said(pending))
+    if name == "no-reviewer-return":
+        lines += unfiled_submit_lines(pending, "reviewer")
     if options:
         lines.append(ANSWER_LINE % {
             "phase": ctx["phase"], "options": "|".join(options),
@@ -1609,6 +1612,56 @@ def render_decision(ctx, pending):
         "decide-%s" % (name,), subject, "%s: %s" % (name, pending.get("why") or ""),
         answer_command(ctx, options, needs) if options
         else explain_command(ctx, subject)))
+
+
+# --- the submit block an unfiled return is owed ------------------------------------
+# A dispatched agent that ends on its return object printed as a reply has filed
+# nothing, and from the drive's side that is the same absence as an agent still
+# working: all it holds is that no return is filed for the role at this start.
+# So the stop says that, and prints the command the agent's brief carries -
+# read back from the brief the drive wrote, never composed again here, since
+# the brief is the one home of that command (`audit-lookup.submit_command`)
+# and an entry point may not load another.
+def submit_block_of(text):
+    """The last fenced `sh` block in a brief's text, fences included, or None:
+    every brief ends on its submit block."""
+    lines = (text or "").splitlines()
+    opens = [i for i, line in enumerate(lines) if line.strip() == "```sh"]
+    if not opens:
+        return None
+    body = lines[opens[-1]:]
+    ends = [i for i, line in enumerate(body) if i and line.strip() == "```"]
+    return body[:ends[0] + 1] if ends else None
+
+
+def brief_submit(ctx, task_id, role):
+    """The decision fields naming `role`'s submit command for `task_id`'s
+    current start: `{"submit": lines}` read off its brief through
+    `audit-lookup.py brief --read`, or `{"submitWhy": why}` when the brief
+    could not be read or holds no block - the gap said, never filled."""
+    code, said, err = run_verb(ctx, "audit-lookup.py", [
+        ctx["manifest"], "brief", task_id, "--role", role, "--read",
+        "--project", ctx["project"]])
+    if code != 0:
+        return {"submitWhy": _clip("its brief could not be read (%s)" % (
+            (err or said).strip() or "exit %d" % (code,),), 200)}
+    block = submit_block_of(said)
+    if block is None:
+        return {"submitWhy": "its brief holds no submit block"}
+    return {"submit": block}
+
+
+def unfiled_submit_lines(pending, role):
+    """The lines a no-<role>-return stop adds below its line, which already
+    says no return is filed for the role at this start: the submit block the
+    brief carries, or why that block is not shown."""
+    block = pending.get("submit")
+    if not block:
+        return ["The %s's submit command is not shown: %s." % (
+            role, pending.get("submitWhy") or "the decision recorded none")]
+    return ["A %s that printed its return object instead of running its "
+            "submit block files it with the block its brief carries:" % (role,)
+            ] + list(block)
 
 
 # Words that make a gate entry a test run, for the entries `entry_collector` cannot
@@ -4427,7 +4480,8 @@ def advance(ctx, state, manifest, phase, task, tree=None):
         review_turn, _none = _advance_plan("reviewer", _reviewer_facts(
             state, task, due, reviewer, True))
         if review_turn == "no-reviewer-return":
-            return decision(ctx, state, "no-reviewer-return", task, "")
+            return decision(ctx, state, "no-reviewer-return", task, "",
+                            brief_submit(ctx, task["id"], "reviewer"))
     # THE RECORDED GATE RUNS ONCE PER START, BEFORE THE REVIEWER OR THE CLOSE,
     # whatever the key: a task whose review is carried to the phase still owes
     # the measurement its close and its commit are bound to - and again, past a

@@ -2489,6 +2489,19 @@ def _reviewer_stream_branch_cases(check, M, bindir, log):
           % ((code, line),),
           code == 0 and "no-reviewer-return" in line
           and not os.path.exists(_filed_path(mpath, "P1.1", "reviewer")))
+    _c, waiting = _explain_of(M, root, mpath, "P1.1")
+    rows = waiting.splitlines()
+    command = [ln for ln in rows if " submit P1.1 --role reviewer " in ln]
+    check("rv9b that stop, as the drive recorded it, names the reviewer and "
+          "prints the submit block the reviewer brief written for this start "
+          "carries, once: %r" % (waiting[-900:],),
+          bool(rows) and rows[0] == ("decide no-reviewer-return P1.1: the "
+                                     "reviewer was dispatched and filed no "
+                                     "return for this start")
+          and len(command) == 1
+          and command[0].endswith("<<'AUDIT_RETURN'")
+          and "--project-dir %s" % (root,) in command[0]
+          and rows.count("AUDIT_RETURN") == 1)
     # AN OBJECT SUBMIT REFUSES: no verdict, so the shape check stops it.
     root, mpath, _line = _reviewer_dispatch(M, bindir, log)
     _c, block = _explain_of(M, root, mpath, "P1.1")
@@ -13017,6 +13030,7 @@ def _steps_unit_cases(check):
     _refusal_units(check)
     _rerun_units(check)
     _resume_units(check)
+    _unfiled_reviewer_units(check)
     _retry_reason_units(check)
     _gate_mark_units(check)
     _stored_red_units(check)
@@ -13272,6 +13286,77 @@ def _resume_units(check):
     check("rs5 THE TWIN: `retry` still re-starts the task through the verb that "
           "spends one attempt: %r" % (_scripts(calls),),
           _scripts(calls) == [("audit-task.py", "start")])
+
+
+def _unfiled_reviewer_units(check):
+    """A reviewer dispatched and never filed is a stop that names the role and
+    prints the submit command the reviewer's brief carries - the block read off
+    the brief, composed by the brief's own writer - so the orchestrator can
+    file a return the agent printed instead of running it."""
+    M, _w = _unit_driver("drive_phase_unfiled_reviewer")
+    lookup = _loader.load_script("audit-lookup.py", "lookup_unfiled_reviewer",
+                                 cache=False)
+    lctx = {"manifest": "audit-plan.json", "project": "/nowhere",
+            "plugin": "/plugin"}
+    block = lookup.submit_command(lctx, "P1.1", "reviewer")
+    brief = "\n".join(["# Brief for P1.1 (reviewer, mode: task)", "",
+                       "```sh", "an earlier block, not the last one", "```",
+                       "", "## Your return", lookup.PRINTED_FILES_NOTHING,
+                       block, ""])
+    asked = []
+
+    def read_brief(ctx, script, args, stdin=None, record=False):
+        asked.append((script, list(args)))
+        return 0, brief, ""
+    M.run_verb = read_brief
+    extra = M.brief_submit(_step_ctx(), "P1.1", "reviewer")
+    pending = dict({"decision": "no-reviewer-return", "task": "P1.1",
+                    "start": "20261021T100000Z", "why": ""}, **extra)
+    text = _text_of(M.render_decision(_step_ctx(), pending))
+    lines = text.splitlines()
+    submit = [ln for ln in lines if " submit P1.1 --role reviewer " in ln]
+    check("ur1 a reviewer dispatched and never filed is a decision that names "
+          "the role and the start it filed nothing for, and prints the "
+          "reviewer brief's submit block exactly once, as the brief carries "
+          "it: %r" % ((asked, text),),
+          bool(lines)
+          and lines[0].startswith("decide no-reviewer-return P1.1: ")
+          and "the reviewer was dispatched and filed no return for this "
+          "start" in lines[0]
+          and len(submit) == 1
+          and block in text
+          and "an earlier block" not in text
+          and [a[1][a[1].index("--role") + 1] for a in asked] == ["reviewer"]
+          and all("--read" in a[1] for a in asked))
+
+    def refuse_brief(ctx, script, args, stdin=None, record=False):
+        return 2, "", "no reviewer brief for P1.1's current start"
+    M.run_verb = refuse_brief
+    gone = dict(pending)
+    gone.pop("submit")
+    gone.update(M.brief_submit(_step_ctx(), "P1.1", "reviewer"))
+    said = _text_of(M.render_decision(_step_ctx(), gone))
+    check("ur2 a brief that cannot be read is said as the reason the command is "
+          "not shown, with the refusal kept - never a command composed in its "
+          "place: %r" % (said,),
+          said.startswith("decide no-reviewer-return P1.1: the reviewer was "
+                          "dispatched and filed no return for this start")
+          and "no reviewer brief for P1.1's current start" in said
+          and "--role reviewer" not in said and "AUDIT_RETURN" not in said)
+    executor = _text_of(M.render_decision(
+        _step_ctx(), dict(pending, decision="no-executor-return")))
+    # THE TWIN, for a mutation that prints the stored block under every role:
+    # the executor's stop keeps its own wording and never the reviewer's block.
+    check("ur3 THE TWIN: the executor's unfiled stop names the executor and "
+          "carries no reviewer submit command: %r" % (executor,),
+          "the executor was dispatched" in executor
+          and "--role reviewer" not in executor)
+    check("ur4 the block is the LAST fenced sh block of the text, fences "
+          "included; a text holding none, or an unclosed one, is None: %r"
+          % ((M.submit_block_of(brief),),),
+          M.submit_block_of(brief) == block.splitlines()
+          and M.submit_block_of("no block here") is None
+          and M.submit_block_of("```sh\nopen") is None)
 
 
 def _retry_reason_units(check):

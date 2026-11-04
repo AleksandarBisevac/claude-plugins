@@ -619,7 +619,7 @@
     {
       "id": "P156.9-3st",
       "title": "Wave disjointness reads a task's outputs as well as its files",
-      "status": "in_progress",
+      "status": "done",
       "description": "Found by P156.7's executor outside its files: _wave's disjointness check reads a task's files only, so two tasks whose declared outputs patterns overlap can be put in one wave and write the same path in two trees. Read outputs through the same shared reading of declared paths the other readers use, with a case where two tasks with disjoint files and overlapping outputs are not put in one wave.",
       "files": [
         "plugins/audit/scripts/governance/_wave.py",
@@ -644,25 +644,48 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "376f652e1ecf",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/scripts/governance/_wave.py: overlap() and therefore select() now read both halves of what a task declares - its bare `files` entries (`_declared`, unchanged) and its `outputs` patterns graded by `_task_outputs.honoured`, the grading every other reader of the outputs half applies (`_config.declared_outputs` calls the same function), so a refused pattern covers nothing here either. New helpers _outputs, _entries, _segments, _segment_meets, _meets, _reaches, _named. A files entry is read as itself plus its subtree (`covers`), an outputs entry by `output_covers`; two entries meet when some path satisfies both, segment by segment, with `**` standing for any number of segments, a literal segment against a wildcard one asked of `_task_outputs.output_covers`, and two wildcard segments taken to meet (conservative: defer rather than admit two writers). The reported path is the literal the other entry reaches, else the entry with more segments, else both. files-vs-files behaviour unchanged (w1-w7c all pass). Module and select() docstrings now say both halves. tests/test__wave.py: new stage `wp` with wp1 (overlapping outputs, disjoint files -> deferred as overlap), wp2 (outputs pattern vs a files entry it covers, and a files directory vs a pattern under it), wp3 (second direction: patterns reaching no common path, and a refused pattern, stay one wave), wp4 (the overlap record names both tasks in id order, the covered literal, and a pattern reaching another task's lockfile is non-mergeable). PLUGIN-BUILD-GUIDE.md: the `_wave.py` tree line and section now say files and outputs. Mutations run in a separate process by monkeypatching (shared tree untouched): files-only _entries -> wp1/wp2/wp4 red 16/19; _segment_meets always True -> wp3 plus w1/w3b/w4/ws9/w5/w5c/wp4 red 11/19; ungraded outputs -> wp3 red 18/19. Commands and exits: `python3 tools/sweep-selftests.py tests/test__wave.py` exit 0, 19 cases; sweep over tests/test__affected_tests.py test__config.py test__doctor_trail.py test__deps.py test__help.py test__output.py test__output_lints.py test__panel_page.py test__refs.py test__wave.py test_drive_phase.py test_integrate_task.py test_run_agent_session.py test_run_test_gate.py exit 0, '14/14 files ok, 3556 cases'; `python3 tools/gate-parity.py` exit 0; ruff check on both .py exit 0; vermin -t=3.8- on both exit 0. Dependants: plugins/audit/scripts/governance/drive-phase.py - still correct: it hands select() whole task dicts from `_tasks(phase)` (line 6991), so `outputs` reaches it; its docstring near line 79 says select picks tasks 'with disjoint declared files', now narrower than the rule (files and outputs) - outside my files, not edited. plugins/audit/scripts/git/integrate-task.py - still correct: it calls only is_non_mergeable, unchanged. tests/test__wave.py - changed (the cases above). PLUGIN-BUILD-GUIDE.md - changed (tree line and section); its sentence near line 637 that `_wave._declared` spells entries with its own `_bare` so `_wave.overlap` is not reached is still true: test__config dg8 PASS with readers list not including any _wave function, and the same holds for the comment above `_FILES_HALF_SEEDS` in tests/test__config.py. .github/sweep-costs.json - still correct: test__wave.py is not a staged suite (sweep printed 0 staged suites), so the new `wp` stage needs no block figure. .claude/skills/VENDORED.md and CHANGELOG.md mention `overlap` as a word, not this function's contract - unaffected; no CHANGELOG entry was written (not in my files). The other PLUGIN-BUILD-GUIDE dependants (evals case.yaml, _doctor_hygiene.py, test__affected_tests.py, test__config.py, test__deps.py, test__doctor_trail.py) read the guide by basename; their suites are green in the sweep above.",
+        "descriptive": "A wave no longer puts together two tasks whose declared outputs patterns can write the same path, even when their files are disjoint."
       },
       "startedAt": "2026-11-04T14:31:38Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-04T14:43:03Z",
+      "verifiedBy": [
+        "wp1: two tasks with disjoint files and overlapping outputs patterns are not one wave",
+        "wp2: an outputs pattern overlaps a files entry it covers, and a files directory overlaps a pattern under it",
+        "wp3: second direction - outputs patterns reaching no common path, and a refused pattern, keep disjoint tasks in one wave",
+        "wp4: the outputs overlap record names both tasks, the covered literal, and a lockfile reached by a pattern is non-mergeable"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-04T14:43:00Z.010e24",
         "status": "passed",
         "at": "2026-11-04T14:43:00Z"
-      }
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "376f652e1ecf",
+        "at": "2026-11-04T14:43:03Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-04T14:38:16Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__wave.py` in a throwaway tree at HEAD exited 1 with 3 of 19 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - wp1 (house FAIL), wp2 (house FAIL), wp4 (house FAIL): SELFTEST FAILED: 16/19 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      },
+      "notes": [
+        {
+          "at": "2026-11-04T14:43:03Z",
+          "text": "gate reach at close: a passed run of this task's gate (python3 tools/sweep-selftests.py tests/test__wave.py) is no evidence for PLUGIN-BUILD-GUIDE.md (the affected-test derivation selects tests/test__deps.py, tests/test__refs.py for it, and the gate runs none of them)"
+        }
+      ]
     },
     {
       "id": "P156.10-3st",
       "title": "The drive names a reviewer return that was printed but never filed",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Carried from BUG-33-gfj (reviewer agents twice printed their return instead of running submit) and left by P156.7, which made the reviewer's last step explicit in the agent definition and brief but could not reach the drive. When the drive waits on a reviewer return that was never filed, its stop must say that no return was filed for that role and print the submit command the brief carries, rather than a generic no-return wording, so the orchestrator can tell an unfiled return from an agent still running. A case drives the no-reviewer-return stop and asserts the wording names the role and the submit command.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -685,16 +708,22 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-04T14:43:10Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-04T15:03:02Z.5b05c8",
+        "status": "passed",
+        "at": "2026-11-04T15:03:02Z"
+      }
     }
   ],
   "reviewPerTask": "signals",
