@@ -223,6 +223,12 @@ def fixture_root(prefix):
     points `GIT_CONFIG_GLOBAL` elsewhere for its own git. The caller's own pairs
     in that protocol are dropped first, so the runner's set is the whole of it.
 
+    AND PATH OPENS WITH THE RUNNER'S SHADOW DIRECTORY: a refusing `claude`, `gh`
+    and `az` (a sh script, or a `.cmd` on windows), each recording the call beside
+    itself, so a suite that runs one with no stub of its own is named red even when
+    it swallowed the refusal. A fixture here that needs one of them puts a stub of
+    its own on a directory ahead of the shadow on PATH, as the session suites do.
+
     This function is only the easy way to be clean.
     """
     root = tempfile.mkdtemp(prefix=prefix)

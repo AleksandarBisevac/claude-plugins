@@ -308,6 +308,19 @@ elsewhere for its own git. The file is checked back afterwards like a planted on
 a suite's `git config --global` now writes there. The caller's own pairs in that protocol
 are dropped first, so the runner's set is the whole of it.
 
+AND NO CHILD REACHES THE OPERATOR'S CLI THROUGH PATH. A redirected HOME does not stop a
+suite starting the real `claude`: PATH still names it, and a test helper that ran a printed
+session command with no stub installed started a real, billed session. So every child's
+PATH opens with a directory of the runner's own, one per child, holding a refusing script
+under `claude`, `gh` and `az` - a POSIX sh script, or a `.cmd` on windows, where
+`shutil.which` finds it through PATHEXT. The script records the call beside itself, says on
+stderr that the sweep refused it, and exits non-zero; the RECORD is what reddens the suite,
+by name and in words of its own ("ran a CLI the sweep shadows"), so a suite that swallowed
+the refusal and printed its contract is still caught. A suite that needs one of these puts
+a stub of its own ahead of the shadow on PATH, and that stub wins the lookup; the shadow
+records a call, never a lookup. `shadow_env()` in the runner carries the reasoning for the
+`gh` and `az` rows and the windows lookup the `.cmd` form does not cover.
+
 AND THIS PASSAGE IS NOT CHECKED AGAINST THE RUNNER. A lint once read the runner's own
 constants and failed when a family it pins was named by none of the documents that describe
 the isolation (this passage, CLAUDE.md's Tests section, and the docstring beside

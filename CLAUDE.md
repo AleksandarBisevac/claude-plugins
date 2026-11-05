@@ -278,7 +278,12 @@ starts leaves a detached housekeeping run working in a fixture it is about to re
 unless the suite points `GIT_CONFIG_GLOBAL` elsewhere for its own git, which then reads what
 the suite chose. The file sits outside every watched directory and is checked back like their
 planted files, because a suite's `git config --global` now writes there. The caller's own pairs
-in that protocol are dropped first, so the runner's set is the whole of it. **The working directory and
+in that protocol are dropped first, so the runner's set is the whole of it. And PATH opens with
+a runner-owned directory of refusing `claude`, `gh` and `az` scripts, because a redirected HOME
+does not stop a child starting the operator's real CLI: a call is recorded and names the suite
+red even when the suite swallowed the refusal, and a suite that needs one puts a stub of its own
+ahead of it on PATH. `shadow_env()` in the runner says why `gh` and `az` are there and which
+windows lookup the `.cmd` form does not cover. **The working directory and
 the home directory are the watched pair**, each holding one file the suite did not put
 there, and a suite is red if anything was added to either — or, the destructive half a
 strays-only check would call spotless, if that planted file was deleted or rewritten.

@@ -592,6 +592,114 @@ def git_global_debris(root):
             scratch_debris(root, GIT_GLOBAL_CONFIG_NAME, GIT_GLOBAL_CONFIG)]
 
 
+# --- the CLIs a child must not reach through PATH -------------------------------
+# A REDIRECTED HOME DOES NOT STOP A CHILD STARTING THE OPERATOR'S CLAUDE. PATH still
+# names the real one, and a test helper that ran a printed session command with no
+# stub of its own installed started a real, billed session that ran for minutes.
+# So every child's PATH opens with a directory of this runner's holding a refusing
+# script under each name below: it records the call beside itself, says on stderr
+# that the sweep refused it, and exits non-zero. The record, not the exit, is what
+# makes the suite red - a suite that swallowed the refusal and printed its contract
+# is still named.
+#
+# A SUITE THAT NEEDS ONE PUTS A STUB OF ITS OWN AHEAD OF THIS, by prepending its
+# directory to PATH the way the session suites do; that stub wins the lookup and the
+# shadow records nothing, because it records a call and never a lookup.
+#
+# `gh` AND `az` ARE SHADOWED FOR THE SAME REASON, not because a suite reaches them
+# today: every suite that touches either injects its runner or replaces the lookup,
+# and so did every suite near `claude` until a helper did not. `gh` dispatches CI
+# runs on the operator's account and `az` writes into whatever home it resolves.
+#
+# THE PLATFORM'S FORM ONLY: a POSIX sh script, and a `.cmd` on windows, where
+# `shutil.which` finds it through PATHEXT. Neither runs anything it would look up on
+# PATH, so the refusal does not depend on what else the child's PATH holds. A suite
+# that builds a PATH of its own WITHOUT this directory reaches whatever that PATH
+# names; the shadow covers what a child inherits, not what it replaces. The `.cmd` form
+# records the arguments through cmd's own `%*`, which reads a bare redirection
+# character in an argument as cmd syntax; an argument holding a space is quoted by
+# the caller and passes intact. A windows lookup that is not PATHEXT-aware - a bare
+# `CreateProcess` of the name - skips a `.cmd` and is not covered by this.
+SHADOWED_CLIS = ("claude", "gh", "az")
+SHADOW_CHANNEL = "shadowed CLI"
+SHADOW_RECORD = "calls"
+SHADOW_EXIT = 97
+SHADOW_MARK = "refused by tools/sweep-selftests.py"
+_SHADOW_FINDING_RE = re.compile(r"^(?:block [^,]*, )?%s: " % (re.escape(SHADOW_CHANNEL),))
+
+
+def shadow_refusal(name):
+    """The line a shadowed CLI prints: who refused it, and what to do instead."""
+    return ("%s: %s, which puts this first on every child's PATH so no suite "
+            "reaches the operator's real %s - a suite that needs one installs a "
+            "stub of its own ahead of it" % (name, SHADOW_MARK, name))
+
+
+def shadow_scripts(os_name=None):
+    """`{file name: bytes}` of the refusing script for every shadowed CLI, in the
+    form `os_name` (default: this host's) resolves through PATH."""
+    nt = (os.name if os_name is None else os_name) == "nt"
+    out = {}
+    for name in SHADOWED_CLIS:
+        if nt:
+            out[name + ".cmd"] = (
+                "@echo off\r\n"
+                '>>"%~dp0' + SHADOW_RECORD + '" echo ' + name + " %*\r\n"
+                "echo " + shadow_refusal(name) + " 1>&2\r\n"
+                "exit /b %d\r\n" % (SHADOW_EXIT,)).encode("utf-8")
+        else:
+            out[name] = (
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"" + name + ' $*" >> "${0%/*}/'
+                + SHADOW_RECORD + '"\n'
+                'echo "' + shadow_refusal(name) + '" >&2\n'
+                "exit %d\n" % (SHADOW_EXIT,)).encode("utf-8")
+    return out
+
+
+def shadow_env(root, path, os_name=None):
+    """`PATH` opening with `root`, after writing every shadow script into it.
+
+    `root` is a directory this runner allocated for one child alone, so the record
+    `shadow_debris` reads back is that child's calls and nobody else's. `path` is
+    the PATH the child would otherwise have inherited; with none, the platform's
+    default search path follows the shadow, as it would have followed nothing.
+    """
+    for name, body in sorted(shadow_scripts(os_name).items()):
+        target = os.path.join(root, name)
+        write_file(target, body)
+        os.chmod(target, 0o755)
+    rest = os.defpath if path is None else path
+    return {"PATH": root + os.pathsep + rest if rest else root}
+
+
+def shadow_debris(root):
+    """Every distinct call a child made to a shadowed CLI, each finding naming
+    the channel and the command line, with a count when it repeated."""
+    try:
+        with io.open(os.path.join(root, SHADOW_RECORD), "rb") as fh:
+            body = fh.read()
+    except FileNotFoundError:
+        return []
+    except OSError as exc:
+        return ["%s: its record is unreadable afterwards: %s" % (SHADOW_CHANNEL, exc)]
+    calls = [line.strip() for line in
+             body.decode("utf-8", "replace").splitlines() if line.strip()]
+    seen = []
+    for call in calls:
+        if call not in seen:
+            seen.append(call)
+    return ["%s: ran `%s` from PATH%s" % (
+        SHADOW_CHANNEL, call,
+        "" if calls.count(call) == 1 else " (%d times)" % (calls.count(call),))
+        for call in seen]
+
+
+def is_shadow_finding(finding):
+    """True when `finding` reports a call to a shadowed CLI, a block's included."""
+    return bool(_SHADOW_FINDING_RE.match(finding))
+
+
 def scratch_debris(root, sentinel=SENTINEL, expected=SENTINEL_BYTES):
     """What a run left in, took from, or rewrote about its scratch directory.
 
@@ -1285,7 +1393,9 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     system config and its guessed identity,
     so a suite sees what a bare runner shows it. `GIT_CONFIG_GLOBAL` names a
     file of this runner's in a directory of its own, the one switch a local
-    push's receiving side still reads, and the file is checked back afterwards. `environ` is the caller's
+    push's receiving side still reads, and the file is checked back afterwards.
+    PATH opens with a directory of refusing `claude`, `gh` and `az` scripts of this
+    runner's (`shadow_env`), and what they recorded is read back as a finding. `environ` is the caller's
     environment, threaded rather than read so a case can plant a session variable
     without writing to the process's own.
 
@@ -1339,6 +1449,10 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     gitconf = tempfile.mkdtemp(prefix="sg-")
     owned.append(gitconf)
     env.update(git_global_env(gitconf))
+    # PER CHILD as well, so a recorded call is this child's and no sibling's.
+    shadow = tempfile.mkdtemp(prefix="sc-")
+    owned.append(shadow)
+    env.update(shadow_env(shadow, env.get("PATH")))
     for root in (scratch, home):
         write_file(os.path.join(root, SENTINEL), SENTINEL_BYTES)
     argv = [interpreter, os.path.join(repo, rel_path), "--selftest"] + list(extra)
@@ -1364,7 +1478,8 @@ def run_one(rel_path, repo=None, encoding=None, timeout=DEFAULT_TIMEOUT,
     seconds = time.monotonic() - began
     # MEASURED BEFORE THE REMOVAL, so what the child left is read rather than
     # inferred from a cleanup that may itself have failed.
-    debris = child_debris(scratch, home) + git_global_debris(gitconf)
+    debris = (child_debris(scratch, home) + git_global_debris(gitconf)
+              + shadow_debris(shadow))
     # THE COPY OF THE REMOVAL HELPER, not a plain `rmtree`. A child that built a
     # git fixture in here left loose objects that windows will not unlink, and the
     # plain call - which every caller spells `ignore_errors=True` - would leave the
@@ -1396,6 +1511,19 @@ def cases_in(output):
     return int(found[-1][0])
 
 
+def _reasons(head, wrote, reached):
+    """One red row's why: `head` first, then what the run wrote outside its
+    fixtures, then which shadowed CLIs it ran, joined in that order."""
+    parts = list(head)
+    if wrote:
+        parts.append("wrote outside the fixtures it makes for itself: %s"
+                     % ("; ".join(wrote),))
+    if reached:
+        parts.append("ran a CLI the sweep shadows instead of a stub of its own: %s"
+                     % ("; ".join(reached),))
+    return "; and ".join(parts)
+
+
 def grade(rel_path, code, output, debris=()):
     """The verdict for one run, as a pure function of what the run produced.
 
@@ -1421,6 +1549,8 @@ def grade(rel_path, code, output, debris=()):
         is not accused of the cwd and home fixtures its kill left - those are the
         kill's, not the suite's - but a write into the checkout's `.claude/` is
         still named, because no kill produces one.
+      * a run that RAN A SHADOWED CLI (`shadow_env`) is red the same way, under
+        its own words, killed or not: the call is the suite's, never the kill's.
       * every file must exit 0 AND print the contract. This is the rule
         `verify.sh` did not have, and the reason a suite could be deleted from a
         file without anything going red locally.
@@ -1436,23 +1566,20 @@ def grade(rel_path, code, output, debris=()):
         return {"path": rel_path, "ok": ok, "why": why, "cases": cases,
                 "output": output}
 
+    # A CALL TO A SHADOWED CLI IS NOT A WRITE, so it is worded apart: "wrote
+    # outside its fixtures" would send the reader looking for a leaked file.
+    reached = [f for f in debris if is_shadow_finding(f)]
+    wrote = [f for f in debris if not is_shadow_finding(f)]
     if code is None:
         # The kill litters the cwd and the home it was handed, and only those: no
-        # kill writes into the checkout's `.claude/`, so that channel's findings
-        # are still the suite's and are named beside why it never finished.
-        checkout = [f for f in debris if f.startswith(CLAUDE_CHANNEL + ": ")]
-        if checkout:
-            return row(False, "%s; and wrote outside the fixtures it makes for "
-                              "itself: %s" % (output, "; ".join(checkout)))
-        return row(False, output)
-    if code != 0 and debris:
-        return row(False, "exited %d; and wrote outside the fixtures it makes for "
-                          "itself: %s" % (code, "; ".join(debris)))
-    if code != 0:
-        return row(False, "exited %d" % (code,))
-    if debris:
-        return row(False, "wrote outside the fixtures it makes for itself: %s"
-                          % ("; ".join(debris),))
+        # kill writes into the checkout's `.claude/` or calls a shadowed CLI, so
+        # those findings are still the suite's and are named beside why it never
+        # finished.
+        checkout = [f for f in wrote if f.startswith(CLAUDE_CHANNEL + ": ")]
+        return row(False, _reasons([output], checkout, reached))
+    if code != 0 or wrote or reached:
+        return row(False, _reasons(["exited %d" % (code,)] if code != 0 else [],
+                                   wrote, reached))
     claimed = cases_in(output)
     if claimed is None:
         return row(False, "no --selftest (every test and tool the sweep runs must "
@@ -3784,6 +3911,165 @@ def _block_cost_cases(check):
           and sd_twice == {"a": 2})
 
 
+# The fixture never starts a `claude` it did not recognise: it reads the head of
+# whatever PATH resolves and runs it only when that head carries the shadow's
+# refusal and the file is a few lines long. On a tree where the runner shadows
+# nothing, PATH names the operator's real CLI, which is the red these cases are
+# for - and running it to prove so would start a real session.
+_SHADOW_CHILD = (
+    "import os, shutil, subprocess, sys\n"
+    "found = shutil.which('claude')\n"
+    "head = b''\n"
+    "if found and os.path.getsize(found) < 4096:\n"
+    "    with open(found, 'rb') as fh:\n"
+    "        head = fh.read()\n"
+    "if b'refused by tools/sweep-selftests.py' not in head:\n"
+    "    sys.stdout.write('REACHED=%s\\n' % (found,))\n"
+    "    sys.exit(3)\n"
+    "ran = subprocess.run([found, '--version'], stdout=subprocess.PIPE,\n"
+    "                     stderr=subprocess.STDOUT)\n"
+    "sys.stdout.write('CODE=%d\\n' % ran.returncode)\n"
+    "sys.stdout.write('SAID=%s\\n' % ran.stdout.decode('utf-8', 'replace')\n"
+    "                 .replace('\\r', ' ').replace('\\n', ' '))\n"
+    "sys.stdout.write('fixture: 1/1 cases passed\\n')\n")
+
+# ...and the child that installs a stub of its own ahead of the shadow, the way
+# the suites that need a `claude` do: the platform's form only, on a directory it
+# puts first. It reports what its INHERITED PATH resolved before the prepend, so
+# the case can tell "the stub won over the shadow" from "there was no shadow".
+_OWN_STUB_CHILD = (
+    "import os, shutil, subprocess, sys, tempfile\n"
+    "first = shutil.which('claude')\n"
+    "head = b''\n"
+    "if first and os.path.getsize(first) < 4096:\n"
+    "    with open(first, 'rb') as fh:\n"
+    "        head = fh.read()\n"
+    "sys.stdout.write('SHADOW_FIRST=%d\\n'\n"
+    "                 % (b'refused by tools/sweep-selftests.py' in head))\n"
+    "root = tempfile.mkdtemp(prefix='own-stub-')\n"
+    "try:\n"
+    "    bindir = os.path.join(root, 'bin')\n"
+    "    os.makedirs(bindir)\n"
+    "    if os.name == 'nt':\n"
+    "        with open(os.path.join(bindir, 'claude.cmd'), 'w') as fh:\n"
+    "            fh.write('@echo OWN-STUB %*\\r\\n')\n"
+    "    else:\n"
+    "        stub = os.path.join(bindir, 'claude')\n"
+    "        with open(stub, 'w') as fh:\n"
+    "            fh.write('#!/bin/sh\\necho OWN-STUB \"$@\"\\n')\n"
+    "        os.chmod(stub, 0o755)\n"
+    "    path = bindir + os.pathsep + os.environ.get('PATH', '')\n"
+    "    found = shutil.which('claude', path=path)\n"
+    "    ran = subprocess.run([found, '--version'], stdout=subprocess.PIPE,\n"
+    "                         stderr=subprocess.STDOUT,\n"
+    "                         env=dict(os.environ, PATH=path))\n"
+    "    sys.stdout.write('OWN=%d\\n' % (os.path.dirname(found) == bindir))\n"
+    "    sys.stdout.write('CODE=%d\\n' % ran.returncode)\n"
+    "    sys.stdout.write('SAID=%s\\n' % ran.stdout.decode('utf-8', 'replace')\n"
+    "                     .strip())\n"
+    "finally:\n"
+    "    shutil.rmtree(root, ignore_errors=True)\n"
+    "sys.stdout.write('fixture: 1/1 cases passed\\n')\n")
+
+
+def _said(output):
+    """The `KEY=value` lines a shadow fixture printed, as a dict."""
+    return dict(line.split("=", 1) for line in (output or "").splitlines()
+                if "=" in line and line.split("=", 1)[0].isupper())
+
+
+def _claude_shadow_cases(check):
+    """No child reaches the operator's `claude` through PATH: the runner puts a
+    refusing one first, records that it was run, and names the suite; a suite
+    whose own stub sits ahead of it runs that stub and stays green."""
+    box = tempfile.mkdtemp(prefix="sweep-shadow-")
+    try:
+        bare, own = "no_stub_child", "own_stub_child"
+        write_file(os.path.join(box, bare), _SHADOW_CHILD)
+        write_file(os.path.join(box, own), _OWN_STUB_CHILD)
+
+        ran = run_one(bare, repo=box, timeout=60)
+        got = _said(ran["output"])
+        check("cs1 a child with no stub of its own that runs `claude --version` "
+              "resolves the runner's refusing shadow, not whatever PATH named "
+              "before - it exits non-zero and says it was refused by the sweep: "
+              "%r" % (ran["output"][-400:],),
+              ran["code"] == 0 and got.get("CODE") not in (None, "0")
+              and "sweep-selftests.py" in got.get("SAID", ""))
+        # The child exits 0 and prints its contract, so only the record of the
+        # call can make it red: a shadow that refuses but leaves no trace would
+        # let a suite that swallows the refusal pass.
+        g = grade(bare, ran["code"], ran["output"], ran["debris"])
+        check("cs2 ...and the run is RED for having called it even though the "
+              "child exited 0 with its contract, the finding naming the CLI and "
+              "the arguments it was given: %r / %r" % (ran["debris"], g),
+              ran["code"] == 0 and not g["ok"] and "claude" in (g["why"] or "")
+              and any("claude" in d and "--version" in d for d in ran["debris"]))
+
+        rows = sweep([bare, own], jobs=1, repo=box, timeout=60)
+        by = dict((r["path"], r) for r in rows)
+        check("cs3 sweep() reports that suite BY NAME as red for reaching the "
+              "shadowed CLI, while the suite beside it stays green: %r"
+              % ([(r["path"], r["ok"], r["why"]) for r in rows],),
+              len(rows) == 2 and bare in by and not by[bare]["ok"]
+              and "claude" in (by[bare]["why"] or "")
+              and own in by and by[own]["ok"])
+
+        ran_own = run_one(own, repo=box, timeout=60)
+        got_own = _said(ran_own["output"])
+        check("cs4 a child that puts a stub of its own ahead of the shadow runs "
+              "ITS stub (exit 0, the stub's own words) - and the PATH it "
+              "inherited resolved the shadow first, so the stub won over the "
+              "shadow rather than over nothing: %r" % (ran_own["output"][-400:],),
+              ran_own["code"] == 0 and got_own.get("SHADOW_FIRST") == "1"
+              and got_own.get("OWN") == "1" and got_own.get("CODE") == "0"
+              and "OWN-STUB" in got_own.get("SAID", ""))
+        # THE SECOND DIRECTION: a shadow that recorded every lookup, or a grade
+        # that fired on the shadow's presence, would turn every suite red. A
+        # child that resolved the shadow and ran only its own stub leaves no
+        # finding.
+        g_own = grade(own, ran_own["code"], ran_own["output"], ran_own["debris"])
+        check("cs5 ...and that run leaves NO finding and grades green, so the "
+              "shadow's record is of a call, not of a lookup: %r / %r"
+              % (ran_own["debris"], g_own),
+              ran_own["debris"] == [] and g_own["ok"])
+    finally:
+        remove_tree(box)
+
+    # A block's finding carries the block's prefix, and a killed block's run has
+    # no exit code: the call is named in both, under its own words, while a
+    # leaked file beside it keeps the words it always had.
+    _call = "block b1, %s: ran `claude -p x` from PATH" % (SHADOW_CHANNEL,)
+    _leak = "block b1, working directory: left behind: f"
+    g_kill = grade("tests/x", None, "did not finish within 9s", [_call, _leak])
+    g_both = grade("tests/x", 2, "", [_leak, _call])
+    check("cs6 a call recorded in a BLOCK is still a call: a killed run names it "
+          "beside why it never finished (and not the kill's leftover file), and "
+          "a run that exited non-zero names the code, the leak and the call, "
+          "each in its own words: %r / %r" % (g_kill["why"], g_both["why"]),
+          g_kill["why"] == "did not finish within 9s; and ran a CLI the sweep "
+                           "shadows instead of a stub of its own: " + _call
+          and g_both["why"] == "exited 2; and wrote outside the fixtures it "
+                               "makes for itself: " + _leak + "; and ran a CLI "
+                               "the sweep shadows instead of a stub of its own: "
+                               + _call)
+    # The windows form is asserted from any host: it is a function of the
+    # platform asked about, and the posix host is where most runs happen.
+    nt_forms, px_forms = shadow_scripts("nt"), shadow_scripts("posix")
+    check("cs7 every shadowed CLI has the platform's form - a `.cmd` that windows "
+          "finds through PATHEXT, a bare sh script elsewhere - and each records "
+          "the call beside itself, carries the refusal a fixture reads, and "
+          "exits with the shadow's own code: %r / %r"
+          % (sorted(nt_forms), sorted(px_forms)),
+          sorted(nt_forms) == sorted(n + ".cmd" for n in SHADOWED_CLIS)
+          and sorted(px_forms) == sorted(SHADOWED_CLIS)
+          and all(SHADOW_MARK.encode() in b and SHADOW_RECORD.encode() in b
+                  and (b"%d" % SHADOW_EXIT) in b
+                  for b in list(nt_forms.values()) + list(px_forms.values()))
+          and all(b"%~dp0" in b and b"\r\n" in b for b in nt_forms.values())
+          and all(b.startswith(b"#!/bin/sh\n") for b in px_forms.values()))
+
+
 def _encoding_subject_cases(check):
     """`--encoding-subjects`: which suites it keeps, read off what the pass sets,
     and the wiring that makes the run take the narrowing."""
@@ -3896,6 +4182,7 @@ def _cases(check):
     _claude_watch_cases(check)
     _child_text_cases(check)
     _encoding_subject_cases(check)
+    _claude_shadow_cases(check)
     import _harness
     _harness.stage(check, "bk-block", _block_cost_cases)
     live = "tests/test__output.py"
@@ -4527,12 +4814,19 @@ def _cases(check):
         # that hands the child an EMPTY environment, which would kill every suite
         # that shells out by name. It is also the one that fails when the filter
         # matches the prefix anywhere in a name rather than at its start.
-        check("x11 ...while everything else still reaches the child: PATH and a "
-              "name that merely contains the prefix pass through, and the cwd, "
-              "TMPDIR and home isolation are still in force (PATH identical: "
-              "%r): %r" % (_env.get("path") == os.environ.get("PATH"), _shown),
-              bool(_env) and _env.get("kept") == "kept"
-              and _env.get("path") == os.environ.get("PATH")
+        # PATH is the caller's whole, behind the one directory of shadowed CLIs
+        # the runner puts first (`shadow_env`): the caller's entries pass through
+        # in their order, and nothing but that one directory is added.
+        _path_parts = (_env.get("path") or "").split(os.pathsep, 1)
+        _path_kept = (len(_path_parts) == 2
+                      and _path_parts[1] == os.environ.get("PATH")
+                      and os.path.basename(_path_parts[0]).startswith("sc-"))
+        check("x11 ...while everything else still reaches the child: the caller's "
+              "PATH behind the runner's shadow directory and a name that merely "
+              "contains the prefix pass through, and the cwd, TMPDIR and home "
+              "isolation are still in force (PATH kept: %r): %r"
+              % (_path_kept, _shown),
+              bool(_env) and _env.get("kept") == "kept" and _path_kept
               and _env.get("tmp") == _env.get("cwd")
               and _env.get("home") not in (None, os.path.expanduser("~"),
                                            _env.get("cwd")))
