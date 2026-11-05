@@ -166,7 +166,11 @@ result printed, every path spelled as a committed row may say it
 (`note_sessions`); a note the verb refuses is said on the step and not asked
 again, since no step waits on a note. While the latest dispatch's record holds
 nothing the step is `wait-writer`: the session is running or was never
-started, and only the main loop knows which. A red task gate on a task with a
+started, and only the main loop knows which. The task gate is then no call
+inside `next` but a step of its own (`background_gate`): `dispatch-gate` prints
+the recorded gate run as a `run:` line for the background, `wait-gate` holds
+until a row of it exists, and the verdict is that row's, repeated rather than
+measured again. A red task gate on a task with a
 recorded session asks `gate-red-writer`, whose recommended `resume` sends the
 gate's failing lines to the latest session and spends no attempt; once
 `MAX_RESUME_ROUNDS` are spent the plain `gate-red` is asked, after a note naming
@@ -496,6 +500,16 @@ STEPS = {
                 "%(record)s yet",
         "rule": ("Started: wait for it to exit, then next. Not started: run the "
                  "run: line --explain prints, in the background.",)},
+    "dispatch-gate": {
+        "line": "dispatch run-test-gate.py --task %(task)s --record: the task "
+                "gate, measured in the background",
+        "rule": (WRITER_RULE,)},
+    "wait-gate": {
+        "line": "wait %(task)s: the gate launched %(since)s has recorded no run "
+                "for it yet",
+        "rule": ("Started: wait for it to exit, then next. Killed or not "
+                 "started: run the run: line --explain prints, in the "
+                 "background.",)},
     "dispatch-reviewer-session": {
         "line": "dispatch run-agent-session.py --role reviewer --task %(task)s "
                 "--model %(model)s prompt=%(prompt)s",
@@ -841,6 +855,7 @@ SIGNAL_VERBS = {
     "resume-writer": "dispatch", "decide-gate-red-writer": "judge",
     "decide-gate-red-base": "ask",
     "wait-writer": "wait", "decide-writer-committed": "ask",
+    "dispatch-gate": "dispatch", "wait-gate": "wait",
     "dispatch-reviewer-session": "dispatch", "wait-reviewer-session": "wait",
     "dispatch-validation": "dispatch", "wait-validation": "wait",
     "decide-head-moved": "judge", "decide-head-unknown": "judge",
@@ -2738,7 +2753,10 @@ def gate_red_decision(ctx, state, manifest, phase, task, text, tree=None):
     failing lines; past the last round, the plain gate-red, after a note on the
     task naming each resumed run. Every one carries the run it stands on
     (`verdict_taken`)."""
-    said = [ln for ln in (text or "").splitlines() if "GATE" in ln]
+    # A repeated verdict opens with the repeat's banner; the verdict is the line
+    # after it, and a background gate's red reaches here as a repeat every time.
+    said = [ln for ln in (text or "").splitlines()
+            if "GATE" in ln and not ln.startswith("GATE VERDICT REUSED")]
     reading = base_reading_for(ctx, state, phase, task, text, tree)
     why = ((said[0].strip() if said else "exit 1")[:80]
            + base_red_why(ctx, text, manifest, phase, task, reading))
@@ -3506,11 +3524,21 @@ def record_gate(ctx, phase, task, tree=None, no_reuse=False):
     in a tree of its own, and recorded in the project's ledger either way.
     `no_reuse` measures even where an earlier verdict on the same tree could be
     repeated: what a `rerun` asks for."""
+    return run_verb(ctx, "run-test-gate.py",
+                    gate_args(ctx, phase, task, tree, no_reuse))
+
+
+def gate_args(ctx, phase, task, tree=None, no_reuse=False, absolute=False):
+    """The arguments of the task's recorded gate run - one spelling for the
+    run the drive makes from the project and the command it hands the
+    orchestrator, whose shell may stand anywhere: `absolute` makes each path
+    absolute."""
     where = member_project(ctx, tree)
-    return run_verb(ctx, "run-test-gate.py", [
-        ctx["manifest"], phase["id"], "--task", task["id"], "--record",
-        "--project-dir", ctx["project"]] + (["--tree", where] if where else [])
-        + (["--no-reuse"] if no_reuse else []))
+    fix = os.path.abspath if absolute else (lambda path: path)
+    return ([fix(ctx["manifest"]), phase["id"], "--task", task["id"], "--record",
+             "--project-dir", fix(ctx["project"])]
+            + (["--tree", fix(where)] if where else [])
+            + (["--no-reuse"] if no_reuse else []))
 
 
 def task_gate(ctx, state, phase, task, tree=None):
@@ -4785,7 +4813,13 @@ def gate_step(ctx, state, manifest, phase, task, tree=None):
             stop = refresh_member_records(ctx, state, task, tree)
         if stop is not None:
             return stop
-    code, out, err = task_gate(ctx, state, phase, task, tree)
+    if writer_path_on(ctx):
+        said, measured = background_gate(ctx, state, phase, task, tree)
+        if said is not None:
+            return said
+        code, out, err = measured
+    else:
+        code, out, err = task_gate(ctx, state, phase, task, tree)
     if code == 1:
         followed, again = follow_red_gate(ctx, state, phase, task, out + err, tree)
         if followed is not None:
@@ -4807,6 +4841,110 @@ def gate_step(ctx, state, manifest, phase, task, tree=None):
     ctx["did"].append("gate %s green%s" % (task["id"], " (%s)" % (
         "; ".join(banners),) if banners else ""))
     return None
+
+
+# --- the task gate as a background step -----------------------------------------
+# A gate run inside `next` lives exactly as long as the orchestrator's Bash call
+# does, and the CLI moves a foreground call past its bound to the background and
+# then kills it: the measurement was lost and the next call took it again. So on
+# the writer path the gate is a step of its own. The first call prints it as a
+# dispatch whose `run:` line the orchestrator runs in the background, and marks
+# the launch with the task's ledger rows as they stood; a call before a new row
+# exists waits; a call after one repeats its verdict through `record_gate`, which
+# on the same tree content measures nothing (`GATE VERDICT REUSED`). The words a
+# row's `status` takes are `run-test-gate.py`'s, mirrored because an entry point
+# may not import another; `bg3`, `bg3g` and `bg4` drive the real verb on each.
+GATE_LAUNCH_KEY = "gateLaunched"
+GATE_REPEATABLE = ("passed", "failed")
+GATE_CANCELLED = "cancelled"
+
+
+def gate_said(ctx, task_id, argv):
+    """The dispatch of `task_id`'s recorded gate, its command whole as the
+    `run:` line `--explain` prints."""
+    command = " ".join(shlex.quote(word) for word in argv)
+    return instruction("dispatch", step_text("dispatch-gate", task=task_id),
+                       signal_of("dispatch-gate", task_id, "run-test-gate.py "
+                                 "--task %s --record, in the background"
+                                 % (task_id,), command, runs=[command]))
+
+
+def gate_wait_said(ctx, task_id, since, argv):
+    """The wait on a gate launched at `since` that has recorded no row yet,
+    with its command printed again as the `run:` line."""
+    command = " ".join(shlex.quote(word) for word in argv)
+    return instruction("wait", step_text("wait-gate", task=task_id, since=since),
+                       signal_of("wait-gate", task_id, "no gate row for %s since "
+                                 "%s" % (task_id, since),
+                                 "wait for the gate to exit, then next %s "
+                                 "--signal" % (drive_target(ctx),),
+                                 runs=[command]))
+
+
+def task_run_ids(ctx, task):
+    """`(ids, None)` - the run ids of `task`'s own ledger rows, oldest first -
+    or `(None, why)` when the ledger cannot be read: a ledger nobody read is
+    not one holding no run."""
+    try:
+        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+    except Exception as exc:                                   # noqa: BLE001
+        return None, "the evidence ledger could not be read (%s: %s)" % (
+            type(exc).__name__, exc)
+    return [(r.get("runId"), r.get("status")) for r in _evio.oldest_first(rows)
+            if _evio.subject_key(r) == ("task", task["id"])
+            and r.get("runId")], None
+
+
+def launch_gate(ctx, state, phase, task, tree, argv=None):
+    """Mark the launch of `task`'s gate - the moment, the command and the rows
+    the ledger held for it then - and print its dispatch. `argv` is a launch
+    printed again; a first one spends a `rerun` mark into `--no-reuse`."""
+    known, why = task_run_ids(ctx, task)
+    if why is not None:
+        return _stopped(ctx, why)
+    if argv is None:
+        argv = ["python3", _loader.script_path("run-test-gate.py")] + gate_args(
+            ctx, phase, task, tree, no_reuse=bool(_spend(state, "rerun", task)),
+            absolute=True)
+    _mark(state, GATE_LAUNCH_KEY, task, {
+        "at": _utc_stamp(), "argv": list(argv), "known": [i for i, _s in known]})
+    write_state(ctx, state)
+    return gate_said(ctx, task["id"], argv)
+
+
+def background_gate(ctx, state, phase, task, tree):
+    """`(print, None)` while the gate is to be launched or waited on, else
+    `(None, (code, out, err))` - the verdict of the row the launched run
+    recorded, repeated by `record_gate`. A cancelled row holds no verdict, so
+    the gate is launched again; a row of another word that no repeat may copy
+    is decided from as it stands, never measured again here."""
+    launched = _marked(state, GATE_LAUNCH_KEY, task)
+    if not isinstance(launched, dict):
+        return launch_gate(ctx, state, phase, task, tree), None
+    runs, why = task_run_ids(ctx, task)
+    if why is not None:
+        return _stopped(ctx, why), None
+    known = set(launched.get("known") or [])
+    new = [(i, status) for i, status in runs if i not in known]
+    if not new:
+        return gate_wait_said(ctx, task["id"], launched.get("at"),
+                              launched.get("argv") or []), None
+    run_id, status = new[-1]
+    if status == GATE_CANCELLED:
+        ctx["did"].append("gate %s run %s was cancelled before a verdict; "
+                          "launched again" % (task["id"], run_id))
+        return launch_gate(ctx, state, phase, task, tree,
+                           launched.get("argv")), None
+    _spend(state, GATE_LAUNCH_KEY, task)
+    write_state(ctx, state)
+    if status not in GATE_REPEATABLE:
+        return None, (1, "GATE RED: run %s recorded %s in the background\n"
+                      "  evidence: recorded %s\n" % (run_id, status, run_id), "")
+    code, out, err = record_gate(ctx, phase, task, tree)
+    if "GATE VERDICT REUSED" not in out + err:
+        ctx["did"].append("gate %s measured again inside next: run %s did not "
+                          "repeat on this tree" % (task["id"], run_id))
+    return None, (code, out, err)
 
 
 def gate_banners(text):

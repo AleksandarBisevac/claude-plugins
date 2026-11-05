@@ -13,8 +13,9 @@ agent, for a reader who asks, and for the commands outside the pipeline (`/audit
 `/audit:worktree`, `/audit:layout`) that still read it first. **Execute the task** and **Phase
 sign-off** are in `reference/execute-task.md` and `reference/phase-signoff.md`.
 A headless role run: `run-agent-session.py`; under `executor.writerModel` each writer and
-per-task reviewer runs through it (the drive, not the session, files the reviewer's return), and
-a red task gate its base does not share resumes the writer's session up to `MAX_RESUME_ROUNDS` times.
+per-task reviewer runs through it (the drive files the reviewer's return), the task gate is
+`dispatch-gate` (background Bash, read from its ledger row), and a red its base does not share
+resumes the session up to `MAX_RESUME_ROUNDS` times.
 
 ## At a glance
 
@@ -551,8 +552,7 @@ answer and not a miss.
 **`run` reads the evidence ledger, not the manifest or the journal — it is what a background
 gate's verdict is read back from.** A gate expected to outlast the Bash tool's foreground bound
 runs under `run_in_background`, so its own terminal may never be read to the end; the run
-records its row in the ledger **before** it prints anything (`--record`'s row write happens
-strictly after the measurement completes and strictly before the banner), so the verdict is
+records its row once the measurement completes and **before** its banner, so the verdict is
 never lost to a truncated terminal. Read it back with the `runId` the run's own `evidence:
 recorded <runId>` line named, or with `run latest --phase <id>` / `run latest --task <id>` when
 that id was not kept. **Never read a background gate's verdict off a truncated terminal** — the

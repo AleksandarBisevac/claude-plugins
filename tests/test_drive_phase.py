@@ -57,6 +57,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -828,13 +829,48 @@ def _writer_stub(where):
     return bindir
 
 
-def _signal_next(M, root, mpath, *extra):
+def _signal_raw(M, root, mpath, *extra):
     """`(code, line)` of one `next --signal`, the form every command runs."""
     with _Env(root):
         said = []
         code = M.main(["next", PHASE, mpath, "--project-dir", root, "--signal"]
                       + list(extra), out=said.append)
     return code, "\n".join(said)
+
+
+def _signal_steps(M, root, mpath, *extra):
+    """`_signal_raw`, with a task gate the drive dispatches played as the
+    orchestrator plays it - its `run:` line run to its end, then `next` again -
+    so a case about what follows the gate reads the step after it:
+    `(code, line, blocks)`, `blocks` the `--explain` text of each gate dispatch
+    played, which is where what the drive said before the gate now sits. The
+    `bg` cases read the dispatch itself, through `_signal_raw`."""
+    code, line = _signal_raw(M, root, mpath, *extra)
+    blocks = []
+    for _round in range(3):
+        head = (line or "").split(" | ", 1)[0].split()
+        if code != 0 or len(head) < 4 or head[2] != "dispatch" \
+                or "run-test-gate.py" not in line:
+            break
+        _c, block = _explain_of(M, root, mpath, head[3])
+        # A wave prints one run: line per member; only a print whose every
+        # run: line is a gate is played, so a session is never started here.
+        runs = [shlex.split(ln[len("run: "):]) for ln in block.splitlines()
+                if ln.startswith("run: ")]
+        if not runs or any(len(a) < 2 or os.path.basename(a[1]) != "run-test-gate.py"
+                           for a in runs):
+            break
+        blocks.append(block)
+        for argv in runs:
+            _play_gate(root, argv)
+        code, line = _signal_raw(M, root, mpath)
+    return code, line, blocks
+
+
+def _signal_next(M, root, mpath, *extra):
+    """`(code, line)` of `_signal_steps`."""
+    code, line, _blocks = _signal_steps(M, root, mpath, *extra)
+    return code, line
 
 
 def _explain_of(M, root, mpath, subject):
@@ -1261,6 +1297,202 @@ def _writer_round(M, root, mpath, bindir, log, cost, **play):
     return _signal_next(M, root, mpath)
 
 
+# --- the task gate as a background step -----------------------------------------
+# A gate the drive ran inside `next` lived as long as the orchestrator's Bash call
+# did, and the CLI moves a foreground call past its bound to the background and
+# kills it later: the measurement was lost and taken again. So on the writer path
+# the gate is a dispatch of its own, and the drive decides from the row it wrote.
+_BG_SLOW = '"%s" -c "import time; time.sleep(20)"' % (sys.executable,)
+
+
+def _signal_head(line):
+    """`(verb, subject)` of one signal line, or None when it is not one."""
+    words = (line or "").split(" | ", 1)[0].split()
+    return tuple(words[2:4]) if len(words) >= 4 and words[0] == "audit" else None
+
+
+def _play_gate(root, argv, timeout=120):
+    """Run a printed gate command as the orchestrator's background Bash does -
+    its interpreter word replaced by this one - to its end: `(code, output)`.
+
+    ONLY A GATE COMMAND IS RUN. A drive that printed some other `run:` line in
+    the gate's place - a session's - would have this start the real `claude`
+    on the machine, with no stub on its PATH and a real budget; that command
+    is refused here as `(None, why)`, which every case reads as a failure."""
+    if len(argv) < 2 or os.path.basename(argv[1]) != "run-test-gate.py":
+        return None, "not a gate command, so not run: %r" % (argv[:2],)
+    done = subprocess.run([sys.executable] + list(argv[1:]), cwd=root,
+                          capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", timeout=timeout)
+    return done.returncode, done.stdout + done.stderr
+
+
+def _measured_rows(root, mpath, task_id):
+    """The task's ledger rows that measured something - a repeat is not one."""
+    return [r for r in _rows_of(root, mpath, task_id)
+            if r.get(_evio.VERDICT_SOURCE) != _evio.REUSED]
+
+
+def _bg_writer_exited(M, prefix, gate):
+    """A one-task writer fixture whose session has run and exited, its next
+    step not yet taken: `(root, mpath, calls)`, `calls` every gate run the
+    drive makes from here."""
+    root, mpath = _repo(prefix, task_ids=TASKS[:1], gate=gate,
+                        executor=WRITER_EXECUTOR)
+    stubs = os.path.realpath(_harness.fixture_root("drive-bggate-stub-"))
+    bindir = _writer_stub(stubs)
+    _signal_raw(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    _play_session(root, _run_argv(block) or [], bindir,
+                  os.path.join(stubs, "runs.jsonl"), WRITER_COSTS[0],
+                  edit={"src/f1.txt": "changed by the writer\n"})
+    return root, mpath, _gate_calls(M)
+
+
+def _task_gate_runs(calls):
+    """The task-gate runs among `calls` (`_gate_calls`): a run of the gate at
+    the base (`--base-of`) answers another question, not this step's."""
+    return [(a, out) for a, out in calls if "--task" in a]
+
+
+def _background_gate_cases(check):
+    """On the writer path the drive runs no task gate inside `next`: it prints
+    the gate as a dispatch whose `run:` line the orchestrator runs in the
+    background, waits while no row has come of it, launches it again when the
+    row it left is a cancelled run, and decides from the row it recorded -
+    repeating that verdict, never measuring it a second time."""
+    M, why = _load("drive_phase_bggate")
+    if M is None:
+        check("bg1 the driver loads", False, why)
+        return
+    root, mpath, calls = _bg_writer_exited(M, "bggate", ("false",))
+    attempts = _attempts(mpath, "P1.1")
+    code, line = _signal_raw(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    argv = _run_argv(block) or []
+    rule = getattr(M, "WRITER_RULE", None)
+    check("bg1 next on a task whose writer has exited prints a gate dispatch whose "
+          "run: line is run-test-gate.py --task P1.1 --record on this project, "
+          "under the background rule once, and runs no gate inline: %r"
+          % ((code, line, block, calls),),
+          code == 0 and _signal_head(line) == ("dispatch", "P1.1")
+          and "run-test-gate.py" in line and not calls
+          and os.path.basename(argv[1] if len(argv) > 1 else "") == "run-test-gate.py"
+          and _flag(argv, "--task") == "P1.1" and "--record" in argv
+          and os.path.realpath(_flag(argv, "--project-dir") or "")
+          == os.path.realpath(root)
+          and isinstance(rule, str) and block.count(rule) == 1
+          and _attempts(mpath, "P1.1") == attempts)
+    code, line = _signal_raw(M, root, mpath)
+    _c, wait_block = _explain_of(M, root, mpath, "P1.1")
+    check("bg2 a next while the launched gate has recorded no row is a wait that "
+          "prints the same run: line again, and measures nothing itself: %r"
+          % ((code, line, wait_block, calls),),
+          code == 0 and _signal_head(line) == ("wait", "P1.1") and not calls
+          and argv and _run_argv(wait_block) == argv
+          and not _measured_rows(root, mpath, "P1.1"))
+    ran, said = _play_gate(root, argv)
+    code, line = _signal_raw(M, root, mpath)
+    check("bg3 the next call after the gate ran decides from its recorded row: "
+          "gate-red-writer, the drive's one gate call repeating that verdict, "
+          "and the ledger holding the one measurement the background run made: %r"
+          % ((ran, said[-300:], code, line, calls,
+              len(_measured_rows(root, mpath, "P1.1"))),),
+          ran == 1 and code == 0 and "gate-red-writer" in line
+          and [("GATE VERDICT REUSED" in o) for _a, o in _task_gate_runs(calls)] == [True]
+          and len(_measured_rows(root, mpath, "P1.1")) == 1)
+    green_root, green_mpath, green_calls = _bg_writer_exited(
+        M, "bggate-green", ("true",))
+    _code, first = _signal_raw(M, green_root, green_mpath)
+    _c, green_block = _explain_of(M, green_root, green_mpath, "P1.1")
+    ran, said = _play_gate(green_root, _run_argv(green_block) or [])
+    code, line = _signal_raw(M, green_root, green_mpath)
+    gated = (_drive_state(green_root).get("gated") or {}).get("P1.1") or {}
+    check("bg3g THE GREEN TWIN: a green background run is decided from too - the "
+          "drive goes on past the gate with its green marked, repeating the "
+          "verdict and measuring nothing: %r"
+          % ((first, ran, code, line, green_calls, gated),),
+          _signal_head(first) == ("dispatch", "P1.1") and ran == 0 and code == 0
+          and "run-test-gate.py" not in line
+          and _signal_head(line) != ("wait", "P1.1")
+          and bool(gated) and [("GATE VERDICT REUSED" in o)
+                               for _a, o in _task_gate_runs(green_calls)] == [True]
+          and len(_measured_rows(green_root, green_mpath, "P1.1")) == 1)
+    if not hasattr(os, "killpg"):
+        _harness.skip(check, "bg4 a gate killed mid-run", "a terminated gate "
+                      "cannot tear its step's process group down here",
+                      not hasattr(os, "killpg"))
+    else:
+        _background_kill_case(check, M)
+    _background_doc_case(check, M)
+
+
+def _background_kill_case(check, M):
+    """A gate stopped by SIGTERM while its step runs - the signal the CLI sends
+    a call past its bound - leaves no verdict, and the next call says so with
+    a wait or the dispatch again, never a measurement of its own."""
+    root, mpath, calls = _bg_writer_exited(M, "bggate-kill", (_BG_SLOW,))
+    _signal_raw(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    argv = _run_argv(block) or []
+    if len(argv) < 2 or os.path.basename(argv[1]) != "run-test-gate.py":
+        check("bg4 a gate killed mid-run: the step printed no gate command to "
+              "launch: %r" % ((argv[:2], block),), False)
+        return
+    proc = subprocess.Popen([sys.executable] + argv[1:], cwd=root,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    try:
+        time.sleep(3)
+        proc.send_signal(signal.SIGTERM)
+        killed = proc.communicate(timeout=60)[0].decode("utf-8", "replace")
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+    started = time.time()
+    code, line = _signal_raw(M, root, mpath)
+    took = time.time() - started
+    _c, after = _explain_of(M, root, mpath, "P1.1")
+    check("bg4 a gate killed mid-run by SIGTERM leaves the next call a wait or the "
+          "gate dispatch again, with the same run: line, and no gate measured "
+          "inside it: %r" % ((proc.returncode, killed[-300:], code, line, calls,
+                              round(took, 1)),),
+          code == 0 and _signal_head(line) in (("wait", "P1.1"), ("dispatch", "P1.1"))
+          and not calls and _run_argv(after) == argv and took < 15)
+
+
+def _background_doc_case(check, M):
+    """Every command doc that routes a `run:` line to background Bash covers
+    the gate dispatch without a byte of its own: the step is a `dispatch`,
+    prints its command as that one `run:` line, and carries `WRITER_RULE`."""
+    steps = getattr(M, "STEPS", {})
+    verbs = getattr(M, "SIGNAL_VERBS", {})
+    shown = os.path.join(_output.PLUGIN_ROOT, "commands")
+    docs = {}
+    for name in sorted(os.listdir(shown)):
+        if name.endswith(".md"):
+            with open(os.path.join(shown, name), "r", encoding="utf-8") as fh:
+                docs[name] = " ".join(fh.read().split())
+    describing = sorted(n for n, text in docs.items()
+                        if "`run:` line under `--explain`" in text)
+    lacking = [n for n in describing if "background Bash" not in docs[n]]
+    said = (M.gate_said({"phase": PHASE, "only": None}, "P1.1",
+                        ["python3", "run-test-gate.py", "--task", "P1.1"])
+            if hasattr(M, "gate_said") else {"lines": [], "signal": {}})
+    runs = (said.get("signal") or {}).get("runs") or []
+    check("bg5 every command doc that routes a dispatch's run: line to background "
+          "Bash covers the gate step - run.md, next.md and phase.md among them - "
+          "since the gate dispatch is a dispatch, prints one run: line and carries "
+          "WRITER_RULE: %r" % ((describing, lacking, verbs.get("dispatch-gate"),
+                                runs, said.get("lines")),),
+          set(["run.md", "next.md", "phase.md"]) <= set(describing) and not lacking
+          and verbs.get("dispatch-gate") == "dispatch"
+          and verbs.get("wait-gate") == "wait"
+          and M.WRITER_RULE in (steps.get("dispatch-gate") or {}).get("rule", ())
+          and runs == ["python3 run-test-gate.py --task P1.1"]
+          and said.get("lines", []).count(M.WRITER_RULE) == 1)
+
+
 def _writer_files_cases(check):
     """After a writer session the drive runs what `submit` ran for an executor:
     the red in a throwaway at HEAD on the session's uncommitted change, held
@@ -1420,7 +1652,8 @@ def _writer_scope_cases(check):
           applies is not None and applies.returncode == 0)
     project, config = _evio.project_config_for(mpath, root)
     runs = [r for r in _evio.read_rows(project, config)["rows"]
-            if isinstance(r, dict) and r.get("taskId") == "P1.1"]
+            if isinstance(r, dict) and r.get("taskId") == "P1.1"
+            and r.get(_evio.VERDICT_SOURCE) != _evio.REUSED]
     # The red for a set-aside that commits on the gate measured before it: the
     # ledger records no list of what a run read, so the gate is measured again.
     check("xs4 the gate is measured again on the tree the set-aside left: two "
@@ -2478,11 +2711,11 @@ def _rv_unread_then_next(M, bindir, log, between=None):
         between(root, mpath)
     calls, restore = _rv_gate_runs(M)
     try:
-        code, line = _signal_next(M, root, mpath)
+        code, line, before = _signal_steps(M, root, mpath)
     finally:
         restore()
     _c, block = _explain_of(M, root, mpath, "P1.1")
-    return code, line, calls, block
+    return code, line, calls, "\n".join(before + [block])
 
 
 def _reviewer_redispatch_gate_cases(check, M, bindir, log):
@@ -9980,6 +10213,12 @@ def _signal_corpus(M, mpath):
     out.append(("wait-writer", M.wait_said(
         ctx, "P125.55-0h5", ".claude/state/sessions/drive/P125.55-0h5."
         "20261014T182420Z.12.jsonl", session_argv), {}))
+    gate_argv = ["python3", "/a/long/plugin/path/" * 8 + "run-test-gate.py",
+                 "/a/long/manifest/path/plan.json", "P125", "--task", "P125.55-0h5",
+                 "--record", "--project-dir", "/a/long/project/path"]
+    out.append(("dispatch-gate", M.gate_said(ctx, "P125.55-0h5", gate_argv), {}))
+    out.append(("wait-gate", M.gate_wait_said(
+        ctx, "P125.55-0h5", "2026-10-14T18:24:20Z", gate_argv), {}))
     out.append(("dispatch-reviewer-session", M.writer_said(
         ctx, "P125.55-0h5", "claude-sonnet-4-5-20250929", brief,
         session_argv[:2] + ["--role", "reviewer", "--task", "P125.55-0h5"],
@@ -16962,6 +17201,7 @@ def _rf_verb_brief(check):
 
 STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("ws-block", "_writer_session_cases"),
+          ("bg-block", "_background_gate_cases"),
           ("rv-block", "_reviewer_session_cases"),
           ("pv-block", "_phase_validation_cases"),
           ("pv4-block", "_phase_cold_cases"),
@@ -18495,6 +18735,8 @@ def _base_measure_cases(check):
     root, mpath, log, line, block = _base_measure_repo(M, "base-k02", k02, k02)
     head = _git_out(root, "rev-parse", "HEAD").strip()
     task_rows, base_rows = _ledger_of(root)
+    # A repeat of a verdict is not the run a base reading is about.
+    task_rows = [r for r in task_rows if r.get(_evio.VERDICT_SOURCE) != _evio.REUSED]
     first = (task_rows[-1] if task_rows else {}).get(_evio.BASE_RED_KEY) or {}
     trees = [ln for ln in _git_out(root, "worktree", "list",
                                    "--porcelain").splitlines()

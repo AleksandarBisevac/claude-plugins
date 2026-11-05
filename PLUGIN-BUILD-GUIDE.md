@@ -4776,6 +4776,18 @@ instead of making its own. A stale stamp prints the fields that moved (`moved_fi
 comparison's own `fields`), so nothing is left for the model to look up; a comparison git could
 not answer says so and never reads as unchanged.
 
+**Under `executor.writerModel` the task gate is a step of its own, not a call inside `next`.** A
+gate run inside `next` lived exactly as long as the main loop's Bash call, which the CLI moves to
+the background past its foreground bound and later kills, so the measurement was lost and taken
+again. `background_gate` prints `dispatch-gate`, whose `run:` line is the command `gate_args`
+spells for `record_gate` too, under `WRITER_RULE`, and marks the launch with the task's ledger
+rows as they stood. A `next` before a new row exists is `wait-gate`, printing the same `run:`
+line; a new `cancelled` row - a gate stopped mid-run - launches it again; a `passed` or `failed`
+row is repeated through `record_gate`, which on the same tree content measures nothing (`GATE
+VERDICT REUSED`), and a row of any other word is decided from as recorded. The Agent path still
+runs the gate inside `next`, and so does the base measurement a red asks for. The `bg` cases in
+`tests/test_drive_phase.py` drive each arm against the real `run-test-gate.py`.
+
 **Deciding on facts: named planners, and no single `decide()`.** The drive's planners sit
 under `# --- deciding a step on facts ---`: `_advance_plan`
 (the points of one task's `advance` - writer, scope, reviewer, gate, risk, close),

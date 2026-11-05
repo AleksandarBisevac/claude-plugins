@@ -337,7 +337,7 @@
     {
       "id": "P157.5",
       "title": "The drive measures a red's base once and stops with red-at-base, not resume, when the base reproduces every failing case",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes F836. Root cause: every drive row in stage 2 k02/k03r has baseRed.verdict no-base (\"no run of this gate is recorded at base ... on a clean tree\"); no ledger row ever tested either base commit. At a27f8a56: base_red run-test-gate.py:596-641 only reads the ledger through _evidence_io.base_run 861-879 (same_head and tested_tree_clean); a task gate runs on HEAD plus the work, so its rows are dirty and no-base is the usual answer for any task. run-test-gate.py:5790-5797 computes base_reading only for failed measured --task runs; drive-phase.base_red_why 1319-1356 turns it into a clause; gate_red_decision 2535-2567 never branches on the verdict (gate-red-writer at 2549-2553, DECISIONS 732-735). Fix: on no-base/not-knowable, measure the red steps once per start in a detached worktree at HEAD (stamp-verification._build_throwaway 3286-3291 is the pattern) with `run-test-gate.py ... --record --tree <wt>` and no task id, then decide: base-only -> a new decision gate-red-base (block / rerun / owner commit over it with a reason, see base_red_lines 687-690) with a STEPS row and a DECISIONS entry. Compare by failing case per script (P157.2's reader), and by suite or case for derived steps - _base_step 560-572 matches by name and derived names carry suite lists (_affected_tests.py:1009, run-test-gate.py:2603). Stage-2 cost of this fault: 0.239 writer + 0.501 orchestrator over two runs.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -371,14 +371,18 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9d51bd4d7cc0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Attempt 2 fixes the red the drive's gate found in tests/test__worktrees.py ut5 (drive-phase.py:measure_base (worktree remove)): measure_base now asks the one shared question, _worktrees.tree_unsettled(path), in its finally block earlier in the source than its `git worktree remove --force --force`. It removes the base tree and its holder only when the answer is False. Any other answer keeps them, and the did-line says why ('its tree <holder> is kept: <why>'). A tree that was never built (worktree add failed) is neither asked about nor removed, and only the holder goes. No exemption was added: the question applies, because git names the throwaway tree's admin directory like any worktree's and no move ever ran in it, so it answers False. Verified: `python3 tests/test__worktrees.py --selftest` exit 0 (182/182, ut5 included); `python3 tests/test_drive_phase.py --selftest --stage bm-block` 4/4; `python3 tools/sweep-selftests.py` over tests/test_drive_phase.py tests/test_run_test_gate.py tests/test__evidence_io.py tests/test__refs.py tools/_suite.py, plus every suite under tests/ whose text names 'worktree remove' (test__worktrees, test_manage_worktrees, test_stamp_verification, test_close_phase, test_audit_status, test__config, test__journal_io, test__panel_write, test_audit_task; test_run_test_gate is already in the gate set): exit 0, '14/14 files ok, 5631 cases'; `python3 tools/measure-context.py --gate` GATE OK; ruff on drive-phase.py clean. Unchanged from attempt 1: why no-base was recorded - _evidence_io.base_run takes only a clean-tree row at the head, and every k02/k03r row was a task gate on HEAD plus the work (k02: '5 dirty path(s)'), so no base run ever existed. Fix as filed in attempt 1: _evidence_io BASE_SCOPE/BASE_OF_KEY (no pointer subject), derived_step_suites, step_runs_suite, base_run(suites=); run-test-gate base_red compared by failing case per script through P157.2's case lines (step_cases/_case_key/_same_case/_suite_at_base, CASES_CUT), derived steps matched by suite; `--base-of RUN_ID --tree DIR` reruns the red steps and records a base-scope row, then prints the reading again; drive-phase base_reading_for/measure_base/_base_in measure once per start in a detached tree outside the repo, and base-only gives the new decision gate-red-base (block|rerun, signal ask, no writer session); docs in PLUGIN-BUILD-GUIDE.md (module map regenerated) and orchestrator.md (within its byte ceiling). Dependants: as in attempt 1 - no removed names, and _base_step/_charge_step have no callers outside their file. The new ask leaves the _worktrees helpers unchanged. Left outside my files: plugins/audit/reference/execute-task.md:265 still says a red goes back to the session (gate-red-writer), which no longer covers gate-red-base.",
+        "descriptive": "A red task gate the ledger has no base run for now has its red steps measured once per start at HEAD in a throwaway tree, and its cases compared one by one. When the base fails every case, the task stops as gate-red-base instead of resuming the writer. The throwaway tree is removed only after the shared unsettled-tree question says no copy stands beside it."
       },
       "startedAt": "2026-11-05T12:40:44Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-05T12:55:52Z",
+      "verifiedBy": [
+        "tests/test_drive_phase.py bm-block: a no-base red records one clean base-scope run at HEAD with no task id and leaves no tree (bm1); a base reproducing every case returns gate-red-base, offers block|rerun, dispatches no writer, measures once (bm2); a green base and a partial base still return gate-red-writer (bm3); the k02/k03r-shaped red replays to gate-red-base with both suites charged to the base (bm4)",
+        "tests/test_run_test_gate.py brc-block: derived steps matched to the base by suite and case, not name (bc1, bc3); a suite red at base with an extra task case is the task's (bc2); a renamed green base step, or no step over the suite, is never base-only (bc4)",
+        "tests/test__evidence_io.py: base-scope rows have no subject (bsc1); derived_step_suites (bsc2); base_run found by a derived step's listed suite (bsc3)"
+      ],
       "notes": [
         {
           "at": "2026-11-05T12:02:41Z",
@@ -407,12 +411,24 @@
         "runId": "2026-11-05T12:55:48Z.da5552",
         "status": "passed",
         "at": "2026-11-05T12:55:48Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "9d51bd4d7cc0",
+        "at": "2026-11-05T12:55:52Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-05T12:50:08Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_run_test_gate.py tests/test__evidence_io.py tests/test__refs.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 11 of 613 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bsc1 (house FAIL), bsc2 (house FAIL), bsc3 (house FAIL), bm1 (house FAIL), bm2 (house FAIL), bm4 (house FAIL), bm3 (house FAIL), bc1 (house FAIL) and 3 more: SELFTEST FAILED: 609/613 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P157.6",
       "title": "The drive dispatches the task gate as a background step and decides from the recorded row, so the CLI's background-command limit cannot kill it into a second measurement",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes F838. In stage 2 k02 and k03r the orchestrator's `drive-phase.py next ... --task --signal` call carried no timeout and no run_in_background; the CLI moved it to the background after 120 s and killed it at about 708-720 s (durationMs 708384/708206), and the drive measured the whole gate again. At a27f8a56 the drive runs the task gate inline in gate_step 4573-4594 (task_gate 3311-3322, record_gate 3298-3308). Only the writer's run: line carries a background rule (WRITER_RULE drive-phase.py:475-476, held by sn4d ~10082). Mechanism: a dispatch step for the gate with a WRITER_RULE-shaped rule (every command already routes dispatch to background Bash; commands/phase.md has 2 B left under measure-context, so no command-doc bytes), the next call reuses the recorded verdict (reused_result ~2979, GATE VERDICT REUSED) - verify reuse holds on an identical tree digest - and a wait step for a launched gate with no row yet (like wait-writer 493-497). The CLI's 600 s cap is recorded at audit-task.py:5902 (_BASH_CALL_CAP_SECONDS).",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -439,16 +455,34 @@
         "P157.5"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-05T12:56:14Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-05T12:56:11Z",
+          "text": "quotes orchestrator.md's git-rule line, which a background gate dispatch does not touch",
+          "waives": ".claude/hooks/guard-uncommitted.py"
+        },
+        {
+          "at": "2026-11-05T12:56:12Z",
+          "text": "quotes orchestrator.md's '## Reporting' heading, which this task does not rename",
+          "waives": "tools/prove-gates.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-05T13:27:12Z.b0d86a",
+        "status": "passed",
+        "at": "2026-11-05T13:27:12Z"
+      }
     }
   ],
   "reviewPerTask": "signals",
