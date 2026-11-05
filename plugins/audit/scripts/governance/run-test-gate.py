@@ -557,8 +557,9 @@ def unattributable_failure(failed, ran_total, before, owns, named):
 BASE_RED_AT = "red at base too"
 BASE_RED_ONLY = "red only where the base is red"
 BASE_RED_INTRODUCED = "red the task introduced"
-# The basis `failing_lines` gives a list it cut at its bound: a case past the
-# cut is on no row, so the list is not every case that failed.
+# The basis `failing_lines` and `failing_suites` give a list they cut at its
+# bound: a case or a suite past the cut is on no row, so the list is not every
+# one that failed.
 CASES_CUT = "the rest are not carried"
 
 
@@ -599,6 +600,21 @@ def _case_key(line):
     return None, head, cut and head == text
 
 
+def _escaped(line):
+    """Whether a failing line is one of the house harness's fixed escape labels
+    (`_runner_output.HOUSE_ESCAPES`): a body or a block that raised, or a case
+    id given twice. The label is the same words whatever raised, so it names
+    no case, and two different crashes would match on it."""
+    _script, sep, label = str(line).partition(": FAIL ")
+    return bool(sep) and any(m in label for m in _ro.HOUSE_ESCAPES)
+
+
+def _suites_cut(step):
+    """Whether a step's failing suites were cut at their bound, so a suite past
+    the cut is on no row."""
+    return CASES_CUT in str(step.get("failingSuitesBasis") or "")
+
+
 def _same_case(one, other):
     """Whether two `_case_key`s name one case: the same script and name, or -
     where a row clipped one of them - the clipped name the head of the other."""
@@ -611,11 +627,13 @@ def _same_case(one, other):
 
 
 def step_cases(step):
-    """`{suite: set(case keys)}` - the failing cases a recorded step's lines
-    name, each under the suite it belongs to (None for a line no suite of the
-    step's claims), or None when the lines are not that list: the basis says
-    no runner named a case, the lines are a tail of output, or the list was
-    cut at its bound (`CASES_CUT`), so a case past the cut is on no row."""
+    """`{suite: {"cases": set(case keys), "escaped": bool}}` - the failing
+    cases a recorded step's lines name, each under the suite it belongs to
+    (None for a line no suite of the step's claims), and whether a line of the
+    suite was an escape label (`_escaped`), which is kept apart and never a
+    case; or None when the lines are not that list: the basis says no runner
+    named a case, the lines are a tail of output, or the list was cut at its
+    bound (`CASES_CUT`), so a case past the cut is on no row."""
     basis = str(step.get("failingBasis") or "")
     lines = step.get("failing") or []
     if not lines or _ev.NAMED_FAILING not in basis or CASES_CUT in basis:
@@ -626,7 +644,11 @@ def step_cases(step):
         key = _case_key(line)
         suite = key[0] if key[0] is not None else next(
             (p for p in suites if str(line).startswith(p)), None)
-        out.setdefault(suite, set()).add(key)
+        entry = out.setdefault(suite, {"cases": set(), "escaped": False})
+        if _escaped(line):
+            entry["escaped"] = True
+        else:
+            entry["cases"].add(key)
     return out
 
 
@@ -635,29 +657,47 @@ def _suite_at_base(suite, step, answering):
     suite `step` names as failing, against the base steps `answering` for it.
 
     The base is red on the suite only where an answering step's runner named
-    it failing; there the suite is the task's unless the base lines name every
-    case the task's lines name in it (`step_cases`), and where neither run's
-    lines are cases the two suite verdicts are all there is to compare. An
-    answering step that is green, or names other suites, ran it green; one red
-    with no suite named cannot say."""
+    it failing; there the suite is at base ONLY on case evidence: the base
+    lines name every case the task's lines name in it (`step_cases`). "At
+    base" stops the task with no writer session to look again, so every
+    reading that is not that evidence cannot say - two suite verdicts with no
+    case on either side (a jest suite's bare titles, a crash before any case),
+    a case list cut at its bound, a task's run that raised before its cases
+    ended (the escape label matches any other crash), and a base run that
+    raised before naming a case the task's names. An answering step that is
+    green, or names other suites, ran it green - unless it named only as many
+    suites as its row carries, or none at all, when it cannot say."""
     red = [st for st in answering if _ev._counts_as_failed(st)
            and suite in _ev.named_failing_suites([st])]
     if not red:
-        if any(_ev._counts_as_failed(st) and not _ev.named_failing_suites([st])
-               for st in answering):
+        failed = [st for st in answering if _ev._counts_as_failed(st)]
+        if any(not _ev.named_failing_suites([st]) for st in failed):
             return ("%s (red at base too, and the base run named no failing "
                     "suite)" % (suite,))
+        if any(_suites_cut(st) for st in failed):
+            return ("%s (the base run's failing suites were cut at their "
+                    "bound, so whether it was red there too is not known)"
+                    % (suite,))
         return "introduced"
     mine = (step_cases(step) or {}).get(suite)
     theirs = [(step_cases(st) or {}).get(suite) for st in red]
-    if mine is None and all(t is None for t in theirs):
-        return "at-base"
     if mine is None or any(t is None for t in theirs):
-        return ("%s (red at base too, and only one of the two runs named its "
-                "failing cases)" % (suite,))
-    seen = [key for keys in theirs for key in keys]
-    return ("at-base" if all(any(_same_case(key, at) for at in seen)
-                             for key in mine) else "introduced")
+        return ("%s (red at base too, and %s named its failing cases)"
+                % (suite, "neither of the two runs"
+                   if mine is None and all(t is None for t in theirs)
+                   else "only one of the two runs"))
+    if mine["escaped"]:
+        return ("%s (red at base too, and the task's run raised before its "
+                "cases ended; the escape label is the same words whatever "
+                "raised, so it matches no case)" % (suite,))
+    seen = [key for t in theirs for key in t["cases"]]
+    if all(any(_same_case(key, at) for at in seen) for key in mine["cases"]):
+        return "at-base"
+    if any(t["escaped"] for t in theirs):
+        return ("%s (red at base too, and the base run raised before its "
+                "cases ended, so a case it does not name may never have run "
+                "there)" % (suite,))
+    return "introduced"
 
 
 def _charge_step(step, base_steps):
@@ -672,7 +712,8 @@ def _charge_step(step, base_steps):
     (`_evidence_io.step_runs_suite`). A step whose runner named no suite is
     compared as a whole - introduced when the base step was green, NOT
     KNOWABLE when it was red too, because neither run says whether the same
-    thing failed."""
+    thing failed. A step whose suites were cut at their bound adds one
+    not-knowable entry for the suites past the cut, which no row carries."""
     named = _ev.named_failing_suites([step])
     same = _base_step(base_steps, step)
     if same is None and not (_ev.is_derived_step(step.get("name")) and named):
@@ -683,6 +724,10 @@ def _charge_step(step, base_steps):
         return [], [], ["%s (red at base too, and neither run named its failing "
                         "suites)" % (step["name"],)]
     at_base, introduced, unknown = [], [], []
+    if _suites_cut(step):
+        unknown.append("%s (its runner named more failing suites than the row "
+                       "carries, so a suite past the cut is compared with "
+                       "nothing)" % (step["name"],))
     for suite in named:
         answering = ([same] if same is not None else
                      [st for st in base_steps or []
@@ -1272,8 +1317,8 @@ def failing_suites(text):
     if len(kept) > _ev.MAX_PATHS:
         cut = kept[:_ev.MAX_PATHS]
         return cut, ("%d of the %d suite file(s) %s named as failing, read "
-                     "from %s; the rest are not carried"
-                     % (len(cut), len(kept), name, source))
+                     "from %s; %s"
+                     % (len(cut), len(kept), name, source, CASES_CUT))
     return kept, ("the %d suite file(s) %s named as failing, read from %s"
                  % (len(kept), name, source))
 

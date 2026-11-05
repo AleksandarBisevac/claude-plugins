@@ -440,7 +440,7 @@ L9:
   close-phase -> _branch, _claude_home, _config_rules, _evidence_io, _excerpt, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _scoped_commit, _tree_stamp, _utc_stamp, _verdict_binding, _worktrees
   commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_vocab, _output, _panel_write, _scoped_commit, _verdict_binding, usage_ledger
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _invariants, _loader, _machine_paths, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _utc_stamp
-  drive-phase -> _areas, _claude_home, _clause_coverage, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _gate_derive, _invariants, _journal_io, _loader, _manifest_io, _manifest_phases, _output, _proc_group, _runner_collects, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _tree_stamp, _verdict_binding, _wave, _worktrees
+  drive-phase -> _areas, _claude_home, _clause_coverage, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _gate_derive, _invariants, _journal_io, _loader, _locks, _manifest_io, _manifest_phases, _output, _proc_group, _runner_collects, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _tree_stamp, _verdict_binding, _wave, _worktrees
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
@@ -4581,13 +4581,18 @@ stopped run's exit, with nothing recorded.
 (`_evidence_io.base_run`). A suite is red at base too only when the base run's lines name every
 case the task run names in it (`step_cases`, `_case_key` - a house case by its script and id, a
 row's clipped label by its head), so a base red on other cases of the same suite charges the suite
-to the task. A derived step's name carries its suite list, so it is matched to the base by the
+to the task. Red at base too stops the task with no writer session, so it rests on case evidence
+alone (`_suite_at_base`): two suite verdicts whose lines name no case (a jest suite's bare titles,
+a file that died before printing one), a case list or a suite list cut at its bound (`CASES_CUT`),
+and a house escape label (`_escaped` - the same words whatever raised) each read as not
+comparable, which resumes the writer. A derived step's name carries its suite list, so it is
+matched to the base by the
 suites it ran (`_evidence_io.step_runs_suite`), never by its name. A task gate is never a base run
 - it runs on HEAD plus the work - so **`--base-of <runId>`** takes one: the red steps of that
 recorded run, by the names and commands its row keeps, run in `--tree` (a checkout of the base
 commit) with no task id, recorded under `_evidence_io.BASE_SCOPE` with no pointer, and the run read
-against its base again printed (`--json` for the drive). `bc1`-`bc4` drive the comparison; the
-drive's `bm` cases drive `--base-of`.
+against its base again printed (`--json` for the drive). `bc1`-`bc4` and `be1`-`be5` drive the
+comparison; the drive's `bm` and `bt` cases drive `--base-of`.
 
 ### `plugins/audit/scripts/governance/record-outside-run.py`
 `record-outside-run.py <manifest> --label TEXT --started <ISO> [--ended <ISO> | --duration-ms N]
@@ -4862,7 +4867,12 @@ the ready tasks' own gates, and only those steps' suites are read (`gate_step_na
 `run-test-gate.base_red` puts on the same question. `bb3` and `bb5` drive it. A red task gate
 whose reading has no comparable base run (`no-base`, `not-knowable`) has its base measured once
 per start (`base_reading_for`, `measure_base`): `run-test-gate.py --base-of` over the red run, in a
-detached tree at its HEAD built outside the repository and removed after; when the reading taken
+detached tree at its HEAD built outside the repository and removed after (`remove_base_tree`, through
+`_worktrees.tree_unsettled`). The run is held to `BASE_MEASURE_SECONDS` and a run stopped there reads
+`not-knowable`; the start's mark is written before it and names the tree, so a `next` killed during
+it measures no second time, and the next drive removes the tree it left (`sweep_base_trees`) unless
+the run the mark names is still alive. `bt1`-`bt4` drive the bound, the mark and the sweep. When the
+reading taken
 again is `base-only` the decision is `gate-red-base`, which sends no writer session and offers
 `block` and `rerun` - the owner's commit over the red is `commit-task-work.py --override-verdict`,
 their own act. `bm1`-`bm4` drive it. A recorded gate run while sibling executors edit the same tree measures their

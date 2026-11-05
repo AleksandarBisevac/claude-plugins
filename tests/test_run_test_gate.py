@@ -11525,6 +11525,146 @@ def _base_red_case_cases(check):
           and unrelated.get("atBase") == [])
 
 
+def _base_red_evidence_cases(check):
+    """A suite is red at base too only on CASE evidence both runs name: a red
+    whose lines name no case, a case list cut at its bound, a crash label the
+    harness prints with the same words whatever raised, and a suite list cut
+    at its bound each leave the base unable to say, never base-only - because
+    base-only stops the task with no writer session to look again."""
+    repo = _mini_repo("rtg-baseevid-")
+    head = "c0ffee34"
+    clean_digest, clean_basis = _tree_stamp.dirty_digest([])
+    suite = "tests/test_x.py"
+    escape_body = ("FAIL selftest body raised before reaching the end - every "
+                   "case after this point did NOT run (%s)")
+    escape_block = ("FAIL xb9 RAISED WHILE ITS CASES WERE BEING BUILT - the "
+                    "cases in THIS block did not run; every later block did (%s)")
+
+    def _res(steps):
+        outputs = dict(("cmd-%d" % (n,), (code, text))
+                       for n, (_name, text, code) in enumerate(steps))
+        return M.run_gate(repo, [(name, "cmd-%d" % (n,))
+                                 for n, (name, _t, _c) in enumerate(steps)],
+                          runner=_scripted(outputs))
+
+    def _read(task_steps, base_steps):
+        base = _ev_io.row_for(repo, _res(base_steps), "base", {"phaseId": "P1"},
+                              {"runId": "r-base", "ts": "2026-11-05T00:10:00Z"})
+        base["testedState"] = dict(base.get("testedState") or {}, head=head,
+                                   dirtyDigest=clean_digest,
+                                   dirtyBasis=clean_basis)
+        return M.base_red(_res(task_steps)["steps"], head, "P1.1", [base])
+
+    def _sweep_crash(path):
+        """A sweep red on `path` whose own output printed no case at all: the
+        file died on import, so the only line naming it is the sweep's own."""
+        return ("--- %s: exited 1 ---\nTraceback (most recent call last):\n"
+                "ImportError: cannot import name 'gone'\n\nFAIL  %s: exited 1\n"
+                "2/3 files ok, 0 migrated to tests/, %d cases\n"
+                % (path, path, 21))
+
+    def _unknown_only(found, names):
+        return (found is not None and found.get("run") == "r-base"
+                and found.get("atBase") == [] and found.get("introduced") == []
+                and found.get("verdict") == "not-knowable"
+                and len(found.get("unknown") or []) == len(names)
+                and all(any(n in u for u in found["unknown"]) for n in names))
+
+    jest_step = ("unit", JEST_CART_FAIL, 1)
+    many = ["FAIL mc%d a case the base fails too" % (n,)
+            for n in range(_ev_io.MAX_FAILING + 3)]
+    wide = dict(("tests/test_w%d.py" % (n,), ("FAIL wd%d a wide red" % (n,),))
+                for n in range(_ev_io.MAX_PATHS + 3))
+    try:
+        jest = _read([jest_step], [jest_step])
+        crash = _read([("selftests", _sweep_crash(suite), 1)],
+                      [("selftests", _sweep_crash(suite), 1)])
+        cut = _read([("selftests", sweep_red({suite: many}), 1)],
+                    [("selftests", sweep_red({suite: many}), 1)])
+        body = _read([("selftests", sweep_red(
+                          {suite: (escape_body % ("KeyError: 'task'"),)}), 1)],
+                     [("selftests", sweep_red(
+                          {suite: (escape_body % ("TypeError: base"),)}), 1)])
+        block = _read([("selftests", sweep_red(
+                           {suite: (escape_block % ("KeyError: 'task'"),)}), 1)],
+                      [("selftests", sweep_red(
+                           {suite: (escape_block % ("TypeError: base"),)}), 1)])
+        # The task's own case the base names too, beside a crash the task's
+        # run printed and the base's did not: the crash is the task's to
+        # explain, so the suite is not red at base on the case alone.
+        crashed_too = _read(
+            [("selftests", sweep_red({suite: (
+                "FAIL ab1 a case the base fails too",
+                escape_body % ("KeyError: 'task'",))}), 1)],
+            [("selftests", sweep_red({suite: (
+                "FAIL ab1 a case the base fails too",)}), 1)])
+        # A suite list cut at its bound always comes with a case list cut at
+        # its own, smaller bound, which be2 already refuses; so the cut suite
+        # list is read on a step whose cases were NOT cut, its suites and
+        # their basis taken from a real wide run, in each direction.
+        wide_basis = _res([("selftests", sweep_red(wide), 1)])["steps"][0].get(
+            "failingSuitesBasis")
+        one_case = _res([("selftests", sweep_red(
+            {suite: ("FAIL ab1 a case the base fails too",)}), 1)])["steps"][0]
+        other = "tests/test_y.py"
+        theirs_other = _res([("selftests", sweep_red(
+            {other: ("FAIL yy1 a case of another file",)}), 1)])["steps"][0]
+        cut_mine = M._charge_step(dict(one_case, failingSuitesBasis=wide_basis),
+                                  [one_case])
+        cut_theirs = M._charge_step(
+            one_case, [dict(theirs_other, failingSuitesBasis=wide_basis)])
+        whole_theirs = M._charge_step(one_case, [theirs_other])
+        # THE ALLOW CASE, for every narrowing above: the task's one case, which
+        # the base names too beside a crash of its own and a case of another
+        # id, is red at base - a reading that refused every suite would pass
+        # each case above and fail this one.
+        allow = _read(
+            [("selftests", sweep_red({suite: (
+                "FAIL ab1 a case the base fails too",)}), 1)],
+            [("selftests", sweep_red({suite: (
+                "FAIL ab1 a case the base fails too",
+                "FAIL ab2 another case the base alone fails",
+                escape_body % ("TypeError: base",))}), 1)])
+    finally:
+        _harness.remove_tree(repo)
+    check("be1 a suite red on both runs whose lines name no case on either "
+          "side - a jest suite's bare titles, a sweep file that died before "
+          "printing a case - is not red at base too: the two verdicts alone "
+          "cannot say the same thing failed: %r / %r" % (jest, crash),
+          _unknown_only(jest, ["src/cart.test.ts"])
+          and _unknown_only(crash, [suite]))
+    check("be2 a suite whose failing cases were cut at their bound on both "
+          "runs is not red at base too, since a case past the cut is on "
+          "neither row: %r" % (cut,),
+          _unknown_only(cut, [suite]))
+    check("be3 two runs whose only shared line is a fixed escape label - the "
+          "body raised before its end, a block raised while being built - are "
+          "not red at base too, whatever raised in each; nor is a task's case "
+          "the base names when the task's run also crashed and the base's did "
+          "not: %r / %r / %r" % (body, block, crashed_too),
+          _unknown_only(body, [suite]) and _unknown_only(block, [suite])
+          and _unknown_only(crashed_too, [suite]))
+    check("be4 failing suites cut at their bound are not-knowable past the "
+          "cut: the task's cut list leaves a suite it does not carry unread "
+          "beside the one red at base, and the base's cut list cannot say a "
+          "suite it does not carry was green there - the same base uncut "
+          "does (%r): %r / %r / %r"
+          % (wide_basis, cut_mine, cut_theirs, whole_theirs),
+          M.CASES_CUT in (wide_basis or "")
+          and cut_mine[0] == [suite] and cut_mine[1] == []
+          and len(cut_mine[2]) == 1 and "selftests" in cut_mine[2][0]
+          and cut_theirs[0] == [] and cut_theirs[1] == []
+          and len(cut_theirs[2]) == 1 and suite in cut_theirs[2][0]
+          and whole_theirs == ([], [suite], []))
+    check("be5 THE ALLOW CASE: a task case the base also names is red at base "
+          "too, and the verdict is base-only, beside a crash and another case "
+          "the base alone printed: %r" % (allow,),
+          allow is not None and allow.get("run") == "r-base"
+          and allow.get("atBase") == [suite] and allow.get("unknown") == []
+          and allow.get("introduced") == []
+          and allow.get("verdict") == "base-only")
+
+
 def _pytest_red(*suites):
     """pytest's own output for one failing test in each of `suites`."""
     return ("".join("FAILED %s::test_x - assert 0\n" % (s,) for s in suites)
@@ -11650,15 +11790,21 @@ def _base_red_cases(check):
                        swept["steps"][0].get("failingSuitesBasis"))
     finally:
         _harness.remove_tree(repo)
+    # The pair's tails name no case of the file red at both, so that file is
+    # not-knowable rather than red at base too: two suite verdicts are not
+    # evidence that the same case failed (`be1` holds the rule).
     check("bz2 a sweep step records the files the sweep's FAIL lines name as "
-          "its failingSuites, so the real pair of runs reads the file red at "
-          "both as red at base too and the other as the task's: %r / %r"
+          "its failingSuites, so the real pair of runs charges the file red "
+          "only in the task's run to the task, and reads the file red at both, "
+          "whose tails name no case, as not comparable: %r / %r"
           % (step_suites, replay),
           step_suites[0] == [refs, drive]
           and _ev_io.NAMED_FAILING in (step_suites[1] or "")
           and "sweep" in (step_suites[1] or "")
           and replay.get("run") == "2026-10-19T05:30:44Z.53629a"
-          and replay.get("atBase") == [drive]
+          and replay.get("atBase") == []
+          and len(replay.get("unknown") or []) == 1
+          and drive in replay["unknown"][0]
           and replay.get("introduced") == [refs]
           and replay.get("verdict") == "introduced")
     check("bz1 a task run red only on a suite its base run is also red on names "
@@ -11995,6 +12141,7 @@ def _selftest():
         _harness.stage(check, "fo-block", _follower_cases)
         _harness.stage(check, "br-block", _base_red_cases)
         _harness.stage(check, "brc-block", _base_red_case_cases)
+        _harness.stage(check, "bre-block", _base_red_evidence_cases)
         _cases(check)
         _harness.stage(check, "tr-block", _tree_cases)
         _harness.stage(check, "wt-block", _wave_tree_cases)

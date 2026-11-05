@@ -17540,6 +17540,7 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("np-block", "_nested_project_cases"),
           ("bb-block", "_base_red_drive_cases"),
           ("bm-block", "_base_measure_cases"),
+          ("bt-block", "_base_bound_cases"),
           ("tcc-block", "_committed_close_cases"),
           ("oc-block", "_own_commit_cases"),
           ("up-block", "_advance_plan_cases"),
@@ -18938,9 +18939,14 @@ def _base_red_drive_cases(check):
 # it finds - `task` once the writer changed src/f1.txt, `base` while the file
 # holds what HEAD holds - exiting 1 whenever that output names a red file.
 _BASE_GATE_SCRIPT = r'''
+import os
 import sys
+import time
 with open("src/f1.txt", encoding="utf-8") as fh:
     which = "base" if fh.read() == "v0\n" else "task"
+if which == "base" and os.path.exists("gate-out/sleep.txt"):
+    with open("gate-out/sleep.txt", encoding="utf-8") as fh:
+        time.sleep(float(fh.read()))
 with open("gate-out/%s.txt" % (which,), encoding="utf-8") as fh:
     text = fh.read()
 sys.stdout.write(text)
@@ -18948,17 +18954,23 @@ raise SystemExit(1 if "\nFAIL  " in "\n" + text else 0)
 '''
 
 
-def _base_measure_repo(M, prefix, base_text, task_text):
+def _base_measure_repo(M, prefix, base_text, task_text, sleep=None,
+                       play_gate=True):
     """A one-task writer fixture whose gate prints `task_text` over the writer's
-    work and `base_text` at HEAD, played up to the gate run after the writer's
-    session: `(root, mpath, log, line, block)` - `line` the `next` that ran
-    that gate, `block` the explain of the task after it."""
+    work and `base_text` at HEAD - after sleeping `sleep` seconds there, when
+    given - played up to the gate run after the writer's session: `(root,
+    mpath, log, line, block)` - `line` the `next` that ran that gate, `block`
+    the explain of the task after it; both None when `play_gate` is False and
+    the fixture stops before that `next`."""
     gate = '"%s" gate_k02.py' % (sys.executable.replace("\\", "/"),)
     root, mpath = _repo(prefix, task_ids=TASKS[:1], gate=(gate,),
                         executor=WRITER_EXECUTOR)
-    for rel, text in (("gate_k02.py", _BASE_GATE_SCRIPT),
-                      ("gate-out/base.txt", base_text),
-                      ("gate-out/task.txt", task_text)):
+    planted = (("gate_k02.py", _BASE_GATE_SCRIPT),
+               ("gate-out/base.txt", base_text),
+               ("gate-out/task.txt", task_text))
+    if sleep is not None:
+        planted += (("gate-out/sleep.txt", "%s" % (sleep,)),)
+    for rel, text in planted:
         path = os.path.join(root, *rel.split("/"))
         if not os.path.isdir(os.path.dirname(path)):
             os.makedirs(os.path.dirname(path))
@@ -18972,6 +18984,8 @@ def _base_measure_repo(M, prefix, base_text, task_text):
     _c, block = _explain_of(M, root, mpath, "P1.1")
     _play_session(root, _run_argv(block) or [], bindir, log, WRITER_COSTS[0],
                   edit={"src/f1.txt": "changed by the writer\n"})
+    if not play_gate:
+        return root, mpath, log, None, None
     _code, line = _signal_next(M, root, mpath)
     _c, block = _explain_of(M, root, mpath, "P1.1")
     return root, mpath, log, line, block
@@ -19078,6 +19092,192 @@ def _base_measure_cases(check):
           and "red the task introduced: %s" % (suites[0],) in some_block
           and len(some_base) == 1
           and _base_mark(some_root).get("verdict") == "introduced")
+
+
+def _base_trees(root):
+    """The worktrees git has registered for `root` whose directory sits under
+    a base-measurement holder (`audit-base-*`), as git prints them."""
+    return [ln.split(" ", 1)[1] for ln in _git_out(
+                root, "worktree", "list", "--porcelain").splitlines()
+            if ln.startswith("worktree ")
+            and os.path.basename(os.path.dirname(ln.split(" ", 1)[1]))
+            .startswith("audit-base-")]
+
+
+def _leave_base_tree(root, holder):
+    """The tree a measurement killed mid-run leaves: `holder/tree`, a detached
+    worktree of `root` at HEAD that git still has registered."""
+    if not os.path.isdir(holder):
+        os.makedirs(holder)
+    _harness.git(root, "worktree", "add", "--detach", "--quiet",
+                 os.path.join(holder, "tree"), "HEAD")
+
+
+def _base_bound_cases(check):
+    """The base measurement is bounded and leaves nothing a later drive pays
+    for: a base run past its bound is stopped and read as not knowable, so the
+    writer resumes; the start's mark is written BEFORE the run, so a `next`
+    killed during it is not followed by a second measurement; and the tree a
+    killed run left is removed at the next drive, through the shared removal
+    question, while a base tree no mark names - another run's - is left."""
+    M, why = _load("drive_phase_base_bound")
+    if M is None:
+        check("bt1 the driver loads", False, why)
+        return
+    import test_run_test_gate as _rtg_cases
+    k02 = _rtg_cases.sweep_red(_rtg_cases.K03R_FAILS)
+    # A base run sleeping far past the bound it is held to: unbounded, the
+    # case waits the whole sleep and then reads the base as base-only.
+    M.BASE_MEASURE_SECONDS = 3
+    root, mpath, _log, _line, _block = _base_measure_repo(
+        M, "base-slow", k02, k02, sleep=30, play_gate=False)
+    started = time.monotonic()
+    _code, slow = _signal_next(M, root, mpath)
+    took = time.monotonic() - started
+    _t, slow_base = _ledger_of(root)
+    slow_mark = _base_mark(root)
+    check("bt1 a base run past its bound is stopped there and read as not "
+          "knowable: the writer resumes, the start's mark says the run timed "
+          "out, the base run's only row says it was cancelled and holds no "
+          "step a later reading could take as the base, and no base tree is "
+          "left: %r"
+          % ((slow, round(took, 1), slow_mark, _base_trees(root),
+              [(r.get("status"), [(st.get("name"), st.get("exit"),
+                                   st.get("outcome"))
+                                  for st in r.get("steps") or []])
+               for r in slow_base]),),
+          "gate-red-writer" in slow and "gate-red-base" not in slow
+          and took < 20
+          and slow_mark.get("verdict") == "not-knowable"
+          and "timed out" in (slow_mark.get("said") or "")
+          and not slow_mark.get("tree")
+          and all(r.get("status") == "cancelled" and not r.get("steps")
+                  for r in slow_base)
+          and _base_trees(root) == [])
+
+    M2, why = _load("drive_phase_base_killed")
+    if M2 is None:
+        check("bt2 the driver loads", False, why)
+        return
+    root, mpath, _log, _line, _block = _base_measure_repo(
+        M2, "base-killed", k02, k02, play_gate=False)
+    base_runs = []
+
+    def _killed(*args, **kw):
+        # The kill lands while the base gate runs: whatever measures it.
+        raise KeyboardInterrupt("SIGTERM")
+
+    real_verb = M2.run_verb
+    real_bounded = getattr(M2, "run_verb_bounded", None)
+
+    def _verb(ctx, script, args, *rest, **kw):
+        if "--base-of" in list(args):
+            base_runs.append(list(args))
+            return _killed()
+        return real_verb(ctx, script, args, *rest, **kw)
+
+    def _bounded(ctx, script, args, *rest, **kw):
+        base_runs.append(list(args))
+        return _killed()
+
+    M2.run_verb = _verb
+    M2.run_verb_bounded = _bounded
+    killed = None
+    try:
+        _signal_next(M2, root, mpath)
+    except KeyboardInterrupt as exc:
+        killed = "%s" % (exc,)
+    mark = _base_mark(root)
+    holder = mark.get("tree") or ""
+    first_runs = len(base_runs)
+    # What a SIGTERM leaves, since no `finally` runs under it: the holder the
+    # mark names, its tree still registered - and beside it a base tree of
+    # another run, which no mark of this phase names.
+    leftover = bool(holder) and holder.startswith(
+        os.path.join(tempfile.gettempdir(), "audit-base-"))
+    if leftover:
+        _leave_base_tree(root, holder)
+    decoy = tempfile.mkdtemp(prefix="audit-base-")
+    _leave_base_tree(root, decoy)
+    asked = []
+    real_ask = M2._worktrees.tree_unsettled
+
+    def _ask(path, *rest, **kw):
+        asked.append(os.path.realpath(path))
+        return real_ask(path, *rest, **kw)
+
+    M2._worktrees.tree_unsettled = _ask
+    try:
+        try:
+            _code, after = _signal_next(M2, root, mpath)
+        except KeyboardInterrupt as exc:
+            # The base measured again, into the same kill.
+            after = "killed again: %s" % (exc,)
+        trees_after = _base_trees(root)
+    finally:
+        M2._worktrees.tree_unsettled = real_ask
+        M2.run_verb = real_verb
+        if real_bounded is not None:
+            M2.run_verb_bounded = real_bounded
+        # Not `_harness.git`: a drive that wrongly took this tree down already
+        # must fail its case, not raise out of the cleanup.
+        _git_out(root, "worktree", "remove", "--force", "--force",
+                 os.path.join(decoy, "tree"))
+        _harness.remove_tree(decoy)
+    _t, killed_base = _ledger_of(root)
+    check("bt2 the start's mark is written before the base run, so a next "
+          "killed during it leaves the mark naming its tree, and the next "
+          "drive measures no second time and resumes the writer: %r"
+          % ((killed, mark, first_runs, len(base_runs), after),),
+          killed == "SIGTERM" and first_runs == 1 and leftover
+          and len(base_runs) == 1 and killed_base == []
+          and "gate-red-writer" in after and "gate-red-base" not in after)
+    real_holder = os.path.realpath(holder) if holder else ""
+    check("bt3 a base tree a killed run left is removed at the next drive, "
+          "after the shared removal question was asked of it - its directory "
+          "and git's registration both gone - and a base tree no mark of the "
+          "phase names, another run's, is left where it is: %r"
+          % ((holder, asked, trees_after, os.path.exists(holder or "/-")),),
+          leftover and os.path.join(real_holder, "tree") in asked
+          and not os.path.exists(holder)
+          and not any(os.path.realpath(t).startswith(real_holder)
+                      for t in trees_after)
+          and any(os.path.realpath(t) == os.path.realpath(
+              os.path.join(decoy, "tree")) for t in trees_after))
+
+    # A mark still naming its tree while the run it records is alive - a
+    # `next` moved to the background, still measuring - is not a leftover.
+    state_file = _fr.drive_state_path(os.path.join(root, ".claude", "state"),
+                                      PHASE)
+    live = tempfile.mkdtemp(prefix="audit-base-")
+    _leave_base_tree(root, live)
+    runner = subprocess.Popen([sys.executable, "-c",
+                               "import time; time.sleep(60)"])
+    try:
+        with open(state_file, encoding="utf-8") as fh:
+            state = json.load(fh)
+        held = state["baseMeasured"]["P1.1"]["value"]
+        held.update(tree=live, pids=[runner.pid])
+        with open(state_file, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(state, fh)
+        _code, alive_said = _signal_next(M2, root, mpath)
+        live_trees = _base_trees(root)
+        live_mark = _base_mark(root)
+    finally:
+        runner.kill()
+        runner.wait()
+        # Not `_harness.git`: a drive that wrongly took this tree down already
+        # must fail its case, not raise out of the cleanup.
+        _git_out(root, "worktree", "remove", "--force", "--force",
+                 os.path.join(live, "tree"))
+        _harness.remove_tree(live)
+    check("bt4 THE TWIN: a base tree whose mark names a run still alive is "
+          "left in place and its mark kept, since that run may still be "
+          "measuring in it: %r"
+          % ((live_trees, live_mark, alive_said),),
+          any(os.path.realpath(t) == os.path.realpath(os.path.join(live, "tree"))
+              for t in live_trees)
+          and live_mark.get("tree") == live)
 
 
 def _next_text(M, root, mpath):

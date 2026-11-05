@@ -380,7 +380,8 @@ import _clause_coverage as _cc  # noqa: E402  (check: whether the writer answere
 import _scope_companions  # noqa: E402  (derive: the runner config a widen declares)
 import _worktrees  # noqa: E402  (read_provenance: whether a kept tree's marker names its task; advance_task_tree: a member's tree brought to the phase head)
 import _scoped_commit  # noqa: E402  (plugin_owned_rels: the one table of what the plugin owns under .claude/)
-import _proc_group  # noqa: E402  (shell_invocation, stop_and_drain: the lint probe run as one stoppable tree)
+import _proc_group  # noqa: E402  (shell_invocation, stop_and_drain: the lint probe and the base run as one stoppable tree)
+import _locks  # noqa: E402  (pid_alive: whether the run a base tree's mark names still runs)
 import _task_outputs  # noqa: E402  (covers: the one rule for whether a declared path covers a changed one)
 
 E_OK, E_STOPPED, E_USAGE = 0, 1, 2
@@ -1135,6 +1136,41 @@ def run_verb(ctx, script, args, stdin=None, record=False):
     err = _verb_text(done.stderr)
     ctx["log"].append((script, list(args), done.returncode, out + err))
     return done.returncode, out, err
+
+
+def run_verb_bounded(ctx, script, args, timeout, started=None):
+    """`(code, stdout, stderr, why)` of one verb run as `run_verb` runs it,
+    but as a process group held to `timeout` seconds: `why` is None for a run
+    that ended, else the sentence saying it timed out and its group was torn
+    down (`_proc_group.stop_and_drain`), with whatever it printed by then.
+    `started(pid)` is called once the process exists, before the wait, so a
+    caller can record who is running before anything can kill it. An
+    interrupt during the wait tears the group down before it surfaces, so the
+    verb never outlives the drive that started it there."""
+    cmd = [sys.executable, _loader.script_path(script)] + list(args)
+    env = dict(os.environ)
+    env["CLAUDE_PROJECT_DIR"] = ctx["project"]
+    kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE}
+    kwargs.update(_proc_group.group_kwargs())
+    proc = subprocess.Popen(cmd, cwd=ctx["project"], env=env, **kwargs)
+    if started is not None:
+        started(proc.pid)
+    try:
+        raw_out, raw_err = proc.communicate(timeout=timeout)
+        why = None
+    except subprocess.TimeoutExpired:
+        drained, confirmed = _proc_group.stop_and_drain(proc)
+        raw_out, raw_err = drained.encode("utf-8"), b""
+        why = ("timed out after %d s and its process group was %s" % (
+            timeout, "torn down" if confirmed
+            else "signalled, its teardown unconfirmed"))
+    except BaseException:
+        _proc_group.stop_and_drain(proc)
+        raise
+    code = proc.returncode if proc.returncode is not None else 124
+    out, err = _verb_text(raw_out), _verb_text(raw_err)
+    ctx["log"].append((script, list(args), code, out + err + (why or "")))
+    return code, out, err, why
 
 
 def _verb_text(raw):
@@ -2652,9 +2688,19 @@ def rerun_alongside(ctx, state, manifest, pending):
 # down again), and decides on the reading taken again over it. The tree is the
 # commit alone - no `executor.worktreeSetup`, no ignored dependency directory - so
 # a step needing those fails there differently, which reads as not reproduced.
+#
+# THE RUN IS BOUNDED, AND ITS MARK IS WRITTEN FIRST. It runs inside `next`, a
+# foreground command, so it is held to the foreground bound and a base run past
+# it is stopped and read as not knowable - the writer resumes, as with no base
+# at all. The start's mark is on disk before the run, naming the tree, so a
+# `next` killed during it does not measure again, and the tree a kill leaves
+# (no `finally` runs under SIGTERM) is removed at the next drive
+# (`sweep_base_trees`), through the same removal question the run's own
+# teardown asks.
 BASE_MEASURE_VERDICTS = ("no-base", "not-knowable")
 BASE_TREE_PREFIX = "audit-base-"
 BASE_MEASURED = "baseMeasured"
+BASE_MEASURE_SECONDS = _evio.FOREGROUND_BOUND_MS // 1000
 
 
 def base_measure_due(state, task, row):
@@ -2668,47 +2714,62 @@ def base_measure_due(state, task, row):
             and _marked(state, BASE_MEASURED, task) is None)
 
 
-def measure_base(ctx, phase, row, tree=None):
-    """`(reading, said)` - the red run `row` read against a run of its red steps
-    at its base, measured in a detached tree at that commit and recorded, and
-    the did-line saying what was done. `reading` is None, beside the reason,
-    when no base run could be taken: HEAD is no longer the run's head, the tree
-    could not be built outside the repository, or the run did not answer."""
+def measure_base(ctx, phase, row, tree=None, placed=None, started=None):
+    """`(reading, said, kept)` - the red run `row` read against a run of its
+    red steps at its base, measured in a detached tree at that commit and
+    recorded, the did-line saying what was done, and the holder of a tree the
+    teardown kept (None when nothing was kept). `reading` is None, beside the
+    reason, when no base run could be taken: HEAD is no longer the run's head,
+    the tree could not be built outside the repository, or the run did not
+    answer; a run stopped at `BASE_MEASURE_SECONDS` reads `not-knowable`.
+    `placed(holder)` is called once the holder exists and before any tree is
+    built in it, `started(pid)` once the run's process does, so the caller can
+    record both before anything can kill the run."""
     want = (row.get(_evio.BASE_RED_KEY) or {}).get("head")
     head = tree_head(ctx, tree)
     if not head or not _evio.same_head(head, want):
         return None, ("%s's base not measured: the red run was at %s and HEAD "
-                      "is %s now" % (row.get("taskId"), want, head or "unknown"))
+                      "is %s now" % (row.get("taskId"), want, head or "unknown")
+                      ), None
     holder = tempfile.mkdtemp(prefix=BASE_TREE_PREFIX)
-    path = os.path.join(holder, "tree")
-    kept = None
     try:
-        reading, said = _base_in(ctx, phase, row, head, holder, path)
+        if placed is not None:
+            placed(holder)
+        reading, said = _base_in(ctx, phase, row, head, holder, started)
     finally:
-        # THE ONE QUESTION every remover asks, asked of this tree too: nothing
-        # but this run ever stood in it, so a move's copy beside it would be a
-        # defect to keep in view, never work to delete. A tree that was never
-        # built has nothing to ask about or remove.
-        if os.path.isdir(path):
-            left = _worktrees.tree_unsettled(path)
-            if left["unsettled"] is not False:
-                kept = _clip(left["why"] or "", 300)
-        if kept is None:
-            # `--force` twice: git locks a tree it is still building, and a
-            # build cut short leaves that lock on a tree that is this run's own.
-            if os.path.isdir(path):
-                carry_git(ctx["gitRoot"], ["worktree", "remove", "--force",
-                                           "--force", path])
-            shutil.rmtree(holder, ignore_errors=True)
+        kept, left = remove_base_tree(ctx, holder)
     if kept is not None:
         said += "; its tree %s is kept: %s" % (holder, kept)
-    elif os.path.exists(holder):
+    elif left:
         said += "; its tree %s is left behind" % (holder,)
-    return reading, said
+    return reading, said, (holder if kept is not None else None)
 
 
-def _base_in(ctx, phase, row, head, holder, path):
-    """`measure_base`'s run itself, in the tree it builds at `path`."""
+def remove_base_tree(ctx, holder):
+    """`(kept, left)` - take a base measurement's tree down: `kept` the reason
+    a tree was not removed because the shared removal question said it is not
+    settled, `left` whether the holder is still on disk after the removal.
+
+    THE ONE QUESTION every remover asks, asked of this tree too: nothing but a
+    base run ever stood in it, so a move's copy beside it would be a defect to
+    keep in view, never work to delete. git's registration is removed even
+    when the directory is already gone, and a tree that was never registered
+    makes git refuse, which removes nothing."""
+    path = os.path.join(holder, "tree")
+    if os.path.isdir(path):
+        asked = _worktrees.tree_unsettled(path)
+        if asked["unsettled"] is not False:
+            return _clip(asked["why"] or "", 300), True
+    # `--force` twice: git locks a tree it is still building, and a build cut
+    # short leaves that lock on a tree that is this run's own.
+    carry_git(ctx["gitRoot"], ["worktree", "remove", "--force", "--force", path])
+    shutil.rmtree(holder, ignore_errors=True)
+    return None, os.path.exists(holder)
+
+
+def _base_in(ctx, phase, row, head, holder, started=None):
+    """`measure_base`'s run itself, in the tree it builds under `holder`."""
+    path = os.path.join(holder, "tree")
     if _worktrees.within_tree(ctx["gitRoot"], holder):
         return None, ("%s's base not measured: the temp directory %s is inside "
                       "the repository" % (row.get("taskId"), holder))
@@ -2717,10 +2778,17 @@ def _base_in(ctx, phase, row, head, holder, path):
     if code != 0:
         return None, ("%s's base not measured: git could not build a tree at %s "
                       "(%s)" % (row.get("taskId"), head[:8], err))
-    code, out, err = run_verb(ctx, "run-test-gate.py", [
+    code, out, err, timed_out = run_verb_bounded(ctx, "run-test-gate.py", [
         ctx["manifest"], phase["id"], "--base-of", row["runId"], "--record",
         "--json", "--project-dir", ctx["project"],
-        "--tree", member_project(ctx, path)])
+        "--tree", member_project(ctx, path)], BASE_MEASURE_SECONDS, started)
+    if timed_out is not None:
+        said = ("%s's base not measured: run-test-gate.py --base-of %s, so "
+                "whether the base is red too is not knowable"
+                % (row.get("taskId"), timed_out))
+        return {"run": None, "head": head, "task": None, "atBase": [],
+                "introduced": [], "unknown": [], "verdict": "not-knowable",
+                "basis": said}, said
     try:
         answer = json.loads(out)
     except ValueError:
@@ -2739,21 +2807,77 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
     """The base reading a red gate is decided on: the recorded run's own, or -
     when it has no comparable base run and none was measured for this start -
     the one `measure_base` takes, kept on the start's mark so a later red of
-    the same start reads its own row, which then finds that base run."""
+    the same start reads its own row, which then finds that base run.
+
+    The mark is written before the run and again as its tree and its process
+    come to exist, so a drive killed at any point leaves a mark that stops a
+    second measurement and names the tree for `sweep_base_trees`."""
     row = gate_row(ctx, text)
     reading = (row or {}).get(_evio.BASE_RED_KEY)
     if not base_measure_due(state, task, row):
         return reading if isinstance(reading, dict) else None
-    fresh, said = measure_base(ctx, phase, row, tree)
+    held = {"of": row.get("runId"), "said": "measuring", "verdict": None,
+            "run": None, "atBase": [], "introduced": [], "pids": [os.getpid()]}
+
+    def _keep(**changes):
+        held.update(changes)
+        _mark(state, BASE_MEASURED, task, dict(held))
+        write_state(ctx, state)
+
+    _keep()
+    fresh, said, kept = measure_base(
+        ctx, phase, row, tree, placed=lambda holder: _keep(tree=holder),
+        started=lambda pid: _keep(pids=held["pids"] + [pid]))
     ctx["did"].append(said)
-    _mark(state, BASE_MEASURED, task, {
-        "of": row.get("runId"), "said": said,
-        "verdict": (fresh or {}).get("verdict"),
-        "run": (fresh or {}).get("run"),
-        "atBase": list((fresh or {}).get("atBase") or []),
-        "introduced": list((fresh or {}).get("introduced") or [])})
-    write_state(ctx, state)
+    held.pop("tree", None)
+    held.pop("pids", None)
+    if kept is not None:
+        held["kept"] = kept
+    _keep(said=said, verdict=(fresh or {}).get("verdict"),
+          run=(fresh or {}).get("run"),
+          atBase=list((fresh or {}).get("atBase") or []),
+          introduced=list((fresh or {}).get("introduced") or []))
     return fresh if fresh is not None else reading
+
+
+def sweep_base_trees(ctx, state):
+    """Remove the base tree a killed drive of this phase left: a mark that
+    still names its tree was written by a measurement that never finished,
+    since a finished one drops the name. A tree whose recorded run is still
+    alive - another `next`, or the base run it started - is left and said;
+    any other is removed through `remove_base_tree`. A base tree no mark of
+    this phase names is another run's and is never touched. Each answer is a
+    did-line, and the marks are written once when any changed."""
+    marks = state.get(BASE_MEASURED) or {}
+    changed = False
+    for task_id in sorted(marks):
+        value = (marks[task_id] or {}).get("value")
+        holder = value.get("tree") if isinstance(value, dict) else None
+        if not holder:
+            continue
+        running = [pid for pid in value.get("pids") or []
+                   if pid != os.getpid() and _locks.pid_alive(pid) is not False]
+        if running:
+            ctx["did"].append("%s's base tree %s is left: the run that measured "
+                              "it may still be going (pid %s)" % (
+                                  task_id, holder,
+                                  ", ".join("%s" % (p,) for p in running)))
+            continue
+        kept, left = remove_base_tree(ctx, holder)
+        value = dict(value)
+        value.pop("tree", None)
+        value.pop("pids", None)
+        if kept is not None:
+            value["kept"] = holder
+            said = "kept: %s" % (kept,)
+        else:
+            said = "left behind" if left else "removed"
+        ctx["did"].append("%s's base tree %s, left by a drive stopped while it "
+                          "measured, %s" % (task_id, holder, said))
+        marks[task_id] = dict(marks[task_id], value=value)
+        changed = True
+    if changed:
+        write_state(ctx, state)
 
 
 def gate_red_decision(ctx, state, manifest, phase, task, text, tree=None):
@@ -10354,6 +10478,7 @@ def drive(ctx, answer=None, reason=None, fixes=()):
     if stop is not None:
         return stop
     try:
+        sweep_base_trees(ctx, state)
         code, said = drive_locked(ctx, state, answer, reason, fixes)
         settle_redo_pins(ctx)
     except ValueError as exc:

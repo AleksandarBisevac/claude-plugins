@@ -697,7 +697,7 @@
     {
       "id": "P157.9-mwz",
       "title": "A task's dependants include the documents that name what its files define: prose naming a decision, step or config key a declared file defines is listed, and the three stale passages found in this phase are corrected",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes F839, F840, F841 and their class. Three times in P157 a task's change left prose outside its declared files describing the old behaviour: tests/test__doctor_policy.py ~454 says the runner loads skills (P157.3 made it disclose them), plugins/audit/README.md's executor.phaseGateOnly default says every gate command is listed (P157.4 leaves a slow step to the drive), plugins/audit/reference/execute-task.md:265 says a recorded-gate red goes back to the session (P157.5 added gate-red-base; P157.6 made the gate a background dispatch). The brief's Who depends on this (status/_impact.py, rendered by audit-lookup.py) names readers by import, path and basename and names used elsewhere in code; it does not name a document that describes a declared file's behaviour by the names that file defines. Extend it to tracked prose: a decision, step or config key defined in a declared file and named in a tracked .md (or a comment) is a dependant, shown under the existing bound with the name it uses. Choose how a defined name is read (decision/step tables, config keys read) by measuring over this tree, and report how many prose dependants a typical brief gains - a section nobody reads is not a mechanism. Then correct the three passages.",
       "files": [
         "plugins/audit/scripts/status/_impact.py",
@@ -728,14 +728,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0bb2ad6700bf",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "status/_impact.py: dependants() now lists prose passages per declared file (result keys prose [{name,file,line}] and proseError), from ONE extra git grep per scan (-z -n -F over every backticked term). A file's terms: kebab-case string-literal dict keys (decision/step tables), dotted config keys the file spells (string or backticked in its own comments/docstrings) whose first segment is in the caller's config_roots, and its basename (counted in code comments only). A passage is a backticked span on a DOC_EXTS line or after a code line's comment marker (# for HASH_COMMENT_EXTS, // for JS); code strings and docstrings are not passages; suites (is_suite) define no terms; CHANGELOG/CHANGES/HISTORY hold no passage. render adds at most one line per declared file, '  named in prose (K of N files shown): file (`name`:line, ... +M more)', files naming the most distinct terms first (prose_files), PROSE_CAP files, PROSE_NAME_CAP names each; LINE_BUDGET and FILE_BUDGET unchanged. section/dependants/file_dependants take config_roots; file_dependants now delegates to dependants. audit-lookup.py passes CONFIG_ROOTS = sorted(_config_rules.KNOWN_ROOT) in dependant_lines and dependants_listing. Docstring, the comment above defined_terms and PLUGIN-BUILD-GUIDE's _impact.py and audit-lookup.py sections describe it. Three passages corrected: tests/test__doctor_policy.py comment (discloses name/description/checklist, Skill tool loads the body); plugins/audit/README.md executor.phaseGateOnly default cell (a step whose mean outlives _evidence_io.FOREGROUND_BOUND_MS is left to the drive's gate too); plugins/audit/reference/execute-task.md step 3 (background dispatch-gate/wait-gate for slow or unmeasured steps, gate-red-base when the base reproduces every failing case, gate-red-writer while a resume round is left, plain gate-red otherwise). README's '| step `decide-high-risk` |' row untouched. MEASUREMENT (scratch scripts, once, 2026-11-05, P157.1-.9 briefs via _impact.section with exclude docs/audit): candidate readings, files gaining prose per task: every kebab/dotted string literal as a term plus code comments 30-106 files; dict keys plus every backticked dotted name in own text 8-101; chosen reading 4-59 distinct prose files behind the section, of which the rendering shows 4-17 files on 3-8 added lines; section lines HEAD->now: .1 11->14, .2 19->24, .3 9->12, .4 9->12, .5 14->19, .6 6->9, .7 6->10, .8 14->19, .9 13->18 (LINE_BUDGET 24); declared files shown unchanged on every task; section chars 30457->39406 over the nine. Real-tree replays: P157.3 brief lists tests/test__doctor_policy.py (`run-agent-session.py`:454) under run-agent-session.py; P157.4 lists plugins/audit/README.md (`executor.phaseGateOnly`:709, ...) first under audit-lookup.py; P157.5/.6 list plugins/audit/reference/execute-task.md with 9 of drive-phase.py's names, but `gate-red-writer` falls in its '+6 more' at the PROSE_NAME_CAP cut. Tests: tests/test__impact.py pr1-pr11 added (pr1-pr3 the three replays, pr4 over-fire twins, pr5 no roots no config key, pr6 allow twin, pr7 one extra call, pr8 suite defines nothing, pr9 ranking, pr10 counted cut, pr11 refused scan is proseError); im7 bound widened to 2 per file + 1 and im8's call list gains the prose call. On HEAD's code the new cases fail by assertion (32/38 before the fix, TypeError on config_roots caught into an empty answer). Mutations by in-process monkeypatch, tree untouched: changelog read->pr4,pr9 red; suites define terms->pr8; code strings read->pr4,pr9; basename in docs->pr3,pr4; roots guessed->pr2,pr4,pr5; every kebab string->pr4,pr9; ranking reversed->pr9; own file listed->8 cases; no prose scan->pr1-3,6-9,11; cut not applied / silent cut->pr10,pr11; error swallowed->pr11. Commands and exit codes: tests/test__impact.py --selftest 42/42 exit 0; the gate's sweep command 7/7 files, 1063 cases, exit 0; test__output_lints 182/182, test__deps 284/284, test__refs 292/292, test__worktrees 182/182 each --selftest exit 0; tools/measure-context.py --gate exit 0; sweep over the importing suites test__evidence_io, test__filed_returns, test_audit_task, test_drive_phase 4/4 files 2579 cases exit 0; ruff exit 0; vermin -t=3.8- exit 0. Module map unchanged (no import edge added; only stdlib io and tokenize). DEPENDANTS: _impact.py - audit-task.py (import) still correct, uses only owed(), untouched; audit-lookup.py (import) changed, passes CONFIG_ROOTS; tests/test__impact.py and tests/test_audit_lookup.py (import) green; PLUGIN-BUILD-GUIDE.md (path) section updated; names _grep_error/_headings/_norm/_path_word unchanged. audit-lookup.py - test__evidence_io, test__filed_returns, test_audit_lookup, test_drive_phase (import) green under the sweep; PLUGIN-BUILD-GUIDE.md updated; docs/research/pipeline-cost-design.md (path) is a design record, still correct; schema and _clause_coverage.py (basename) unaffected. tests/test__doctor_policy.py - sweep-costs.json, _doctor_policy.py, tools/affected.py name its path, unaffected by a comment edit. plugins/audit/README.md - its path readers (_invariants, verify-invariants, _usage_economics, audit-usage, test__deps, test__output_lints, test__refs, affected.py): one table cell changed, the pinned decide-high-risk row untouched, the three lint suites green. execute-task.md - tools/prove-gates.py and the basename readers: git grep for the old and new step-3 text finds no pin outside test__impact's fixture. tests/test__impact.py and tests/test_audit_lookup.py readers (sweep-costs.json, affected.py, test_audit_task.py) unaffected. PLUGIN-BUILD-GUIDE.md basename readers unaffected (two paragraphs extended, test__deps' guide block green). OUTSIDE MY FILES, same stale claim, NOT edited: plugins/audit/schema/audit-config.schema.json:510 and plugins/audit/scripts/panel/_panel_settings.py:351 both still say the phaseGateOnly default lists every gate command for the writer; the mechanism cannot see either (a JSON description and a code string are not passages), as the module docstring's WHAT IT CANNOT SEE now says.",
+        "descriptive": "A brief's Who depends on this now lists the documents and code comments that name a decision, step or config key a declared file defines, with the name and line, inside the existing line budget; the three stale passages this phase left are corrected."
       },
       "startedAt": "2026-11-05T20:34:02Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-05T21:08:50Z",
+      "verifiedBy": [
+        "pr1-pr3: the three stale passages replayed in a fixture - a reference doc naming a driver's table key, a README row naming a config key a lookup module reads, a suite comment naming a runner's basename - each listed under the file whose change made it stale, with name and line",
+        "pr4: over-fire twins - suffixed or unquoted names, a non-key string, a dotted name outside the config roots, a backticked name in a code string, a document's basename mention, a changelog line and the file's own comment are not listed",
+        "pr5-pr11: no roots means no config key; a file with no term spends no line; one extra git call per scan; a suite defines nothing; ranking by distinct names; a counted cut; a refused scan surfaces as proseError",
+        "im7/im8 updated for the one extra prose call"
+      ],
       "notes": [
         {
           "at": "2026-11-05T20:34:01Z",
@@ -748,7 +753,160 @@
         "runId": "2026-11-05T21:08:46Z.bfca4d",
         "status": "passed",
         "at": "2026-11-05T21:08:46Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "0bb2ad6700bf",
+        "at": "2026-11-05T21:08:50Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-05T20:57:16Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__impact.py tests/test_audit_lookup.py tests/test__doctor_policy.py tests/test__output_lints.py tests/test__deps.py tests/test__refs.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 7 of 39 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - im8 (house FAIL), pr1 (house FAIL), pr2 (house FAIL), pr3 (house FAIL), pr4 (house FAIL), pr6 (house FAIL), pr8 (house FAIL): SELFTEST FAILED: 31/39 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P157.10-mwz",
+      "title": "Red at base is decided only on cases both runs name: a suite compared by verdict alone, a cut list, a crash with no case or a fixed escape label reads not-knowable and the writer resumes; the base measurement is bounded and leaves no tree behind",
+      "status": "in_progress",
+      "description": "Phase code review of P157. Since P157.5 a base-only reading stops the task as gate-red-base (no writer session), so the reading must rest on case evidence. At HEAD run-test-gate.py _suite_at_base returns at-base when step_cases is None on both sides - lines that name no case (jest bare titles from _jest_failure_name carry no path, so every jest suite lands here), a list cut at MAX_FAILING (CASES_CUT), a crash - comparing only the two suite verdicts. _case_key also keys the fixed HOUSE_ESCAPES labels (house_case_lines keeps them; the exception is on the detail line), so two different crashes match. named_failing_suites cut at MAX_PATHS is not treated as cut. Every one of these must read not-knowable, which resumes the writer as before P157.5; at-base stays where every task case is named by the base. In drive-phase measure_base/_base_in: run_verb runs the base gate inline with no timeout (subprocess.run), a SIGTERM skips the finally and leaks an audit-base-* tree plus its worktree registration, and the BASE_MEASURED mark is written after the run so every later next measures and leaks again. Bound it, mark first, and sweep a leftover base tree (through _worktrees.tree_unsettled, as test__worktrees ut5 requires). Moving the base run to the background is out of scope (register F843).",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/_runner_output.py",
+        "tests/test_run_test_gate.py",
+        "tests/test_drive_phase.py",
+        "tests/test__runner_output.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_test_gate.py: a suite red on both runs whose lines name no case on either side (a jest suite's bare titles, a crash) is not at-base (red-first: at-base today at run-test-gate.py _suite_at_base); both lists cut at their bound is not at-base; two runs whose only shared case is a fixed escape label (body raised before the end, a block raised while building) are not at-base; failingSuites cut at its bound is not-knowable; a task case the base also names is still at-base (allow case)",
+          "tests/test_drive_phase.py: measure_base runs under a timeout and a timed-out base is not-knowable; the mark is written before the run so a killed next does not measure again; a leftover audit-base-* tree from a killed run is removed through the shared removal question at the next drive"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_drive_phase.py tests/test__runner_output.py tests/test__worktrees.py tests/test__output_lints.py tests/test__deps.py tests/test__refs.py tools/_suite.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-05T21:17:38Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-05T21:17:37Z",
+          "text": "quotes run-test-gate's 'the work under test declares no files' message, which a case-evidence rule for red at base does not reword",
+          "waives": "tools/check-example-ledgers.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-05T22:03:49Z.a0500f",
+        "status": "passed",
+        "at": "2026-11-05T22:03:49Z"
+      }
+    },
+    {
+      "id": "P157.11-mwz",
+      "title": "The gate chooser weighs what the gate will run and reads every green word: an empty gate is green, the affected suites run-test-gate adds are in the estimate, a mean counts only runs that measured, and a read-back red names its red line",
+      "status": "pending",
+      "description": "Phase code review of P157 (commits 0cff7a57, e7f472c1). At HEAD: (1) GATE_REPEATABLE = (passed, failed), and an empty gate has no step names, so gate_mean_ms is None and the gate always goes to the background; run-test-gate records empty-gate and exits 0 (run-test-gate.py treats passed and EMPTY_GATE as green), but the read-back turns it into unrepeatable_red - a task with no gate burns attempts as gate-red, a phase with an empty testGate stops at sign-off. (2) chosen_task_gate weighs gate_step_names (declared entries) only, while run-test-gate appends the affected suites (commands = commands + extra), so a fast declared step plus a slow affected suite runs inline and the CLI kills it. (3) the means take every row's durations, aborted and cancelled ones included, biasing a slow gate fast. (4) integrate_member and red_gate_stop take the first line holding GATE, which on a read-back is the reuse banner (gate_red_decision was fixed for this; these two were not). One reading for what a gate will run, shared with run-test-gate's own step list rather than a second derivation.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "tests/test_drive_phase.py",
+        "tests/test__evidence_io.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a task with an empty gate read back from the background is green, not GATE RED (red-first: unrepeatable_red today, GATE_REPEATABLE holds passed and failed only), on the task, re-gate and sign-off paths; a fast declared step plus an affected suite with a slow or no recorded mean goes to the background (red-first: inline today); integrate_member and red_gate_stop name the red line, not the GATE VERDICT REUSED banner",
+          "tests/test__evidence_io.py: gate_mean_ms and step_mean_ms count only rows whose status is a measured verdict (passed or failed), not could-not-run, cancelled or timed-out rows"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__evidence_io.py tests/test_audit_lookup.py tests/test__output_lints.py tests/test__deps.py tests/test__refs.py tools/_suite.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P157.12-mwz",
+      "title": "The writer is always told to run its own tests, and the session notes read what the writer actually did: a gate whose every step is slow still lists the task's suites, a resumed writer is not warned of skills it invoked earlier, and the prose dependants skip file names",
+      "status": "pending",
+      "description": "Phase code review of P157 (commits 09683a97, 3b05120c, 0bb2ad67). At HEAD: (1) compose_writer_prompt: when every gate entry is slow, plain is empty and the brief says 'Before you finish ... - none declared' plus 'Do not run <cmd>' - the writer verifies nothing, not even the tests it adds, and 'none declared' is false. The task's own suites (tests.add paths) are what the writer should run. (2) run-agent-session invoked_skills reads only the round's fresh stream, and writer_argv passes the same --skill flags on --resume, so round 2 says the skills were never invoked though round 1 loaded them; and an empty stream returns [] (read as none) instead of an unknown reading. (3) _impact defined_terms: a dotted string whose first segment is a config root counts as a config key, so 'ci.yml' in _config_rules.py and _panel_settings.py makes CLAUDE.md, CONTRIBUTING.md, README and the build guide prose dependants of any task declaring either file.",
+      "files": [
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "tests/test_audit_lookup.py",
+        "plugins/audit/scripts/governance/run-agent-session.py",
+        "tests/test_run_agent_session.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "plugins/audit/scripts/status/_impact.py",
+        "tests/test__impact.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_lookup.py: a task whose only gate step is slow still gets a Before you finish line running the suites its tests.add names, and never 'none declared' while a command is declared (red-first: 'none declared' today)",
+          "tests/test_drive_phase.py: a resumed writer round does not report a declared skill as never invoked when an earlier round of the same task invoked it; a session with an empty or unreadable stream reports the skills reading as unknown, not none",
+          "tests/test__impact.py: a file-name string whose stem is a config root (ci.yml) is not a defined config key, so a file declaring it gains no flood of prose dependants"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test_run_agent_session.py tests/test_drive_phase.py tests/test__impact.py tests/test__output_lints.py tests/test__deps.py tests/test__refs.py tools/_suite.py",
+          "python3 tools/measure-context.py --gate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "reviewPerTask": "signals",
