@@ -22,10 +22,11 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [],
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "P157 cost phase: twelve tasks closed green - refused ps is a third answer, red excerpt is failing cases from one reader, skills disclosed not appended, slow steps left to the drive's gate, red at base decided on case evidence and bounded, every drive gate chosen by recorded mean (background past the bound), sweep shadows claude/gh/az, prose dependants in the brief; phase code review (four reviewers) med findings fixed in .10-.12, lows in register F845",
   "tasks": [
     {
       "id": "P157.1",
@@ -912,7 +913,7 @@
     {
       "id": "P157.12-mwz",
       "title": "The writer is always told to run its own tests, and the session notes read what the writer actually did: a gate whose every step is slow still lists the task's suites, a resumed writer is not warned of skills it invoked earlier, and the prose dependants skip file names",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase code review of P157 (commits 09683a97, 3b05120c, 0bb2ad67). At HEAD: (1) compose_writer_prompt: when every gate entry is slow, plain is empty and the brief says 'Before you finish ... - none declared' plus 'Do not run <cmd>' - the writer verifies nothing, not even the tests it adds, and 'none declared' is false. The task's own suites (tests.add paths) are what the writer should run. (2) run-agent-session invoked_skills reads only the round's fresh stream, and writer_argv passes the same --skill flags on --resume, so round 2 says the skills were never invoked though round 1 loaded them; and an empty stream returns [] (read as none) instead of an unknown reading. (3) _impact defined_terms: a dotted string whose first segment is a config root counts as a config key, so 'ci.yml' in _config_rules.py and _panel_settings.py makes CLAUDE.md, CONTRIBUTING.md, README and the build guide prose dependants of any task declaring either file.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -946,27 +947,54 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1100b5972344",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(1) status/audit-lookup.py: compose_writer_prompt still tells the writer to run the tests it adds when a slow gate step is left to the phase gate. A new own_suite_command cuts a slow step that names a tests.add file down to those suites: it keeps the step's runner and flags, keeps the interpreter's script, treats a '-m' module run as having no script, drops every other path, and does not cut a compound command. The line reads 'none declared' only when the gate declares no command; when every declared command is left to the phase gate it says NOTHING_IN_FOREGROUND. (2) governance/run-agent-session.py: invoked_skills returns None when the stream holds no event (empty, or only lines that do not parse), so write_record leaves out skillsInvoked. governance/drive-phase.py: new resumed_session(argv) and session_reading(prior, run, resumed). A resumed round's reading joins the earlier rounds of the SAME session id, taken from the dispatch's --resume word, with its own stream. A fresh dispatch reads its own stream alone. If an earlier round of that session has no reading, the result is unknown, and it says 'not recorded' when a skill is otherwise missing. uninvoked_skills reads 'carried', and note_sessions applies it. I chose union keyed by the resumed session id over 'say nothing': a resumed context IS the session it resumes, so an earlier round's calls are loaded. Keying by round instead would credit a fresh re-dispatch with calls its new context never made, which sk8 pins. (3) status/_impact.py: is_file_name and FILE_NAME_EXTS. A dotted name whose last segment is a file extension is no config key. On the tree (scratch script over every non-suite .py under plugins/audit/scripts and hooks with CONFIG_ROOTS), the only config-shaped term whose last segment is an extension is ci.yml (in _config_rules.py and _panel_settings.py). No leaf key in audit-config.schema.json is an extension word. P157 prose dependants, HEAD's _impact vs the working one, over the current tree: P157.7-mwz drops 6 ci.yml rows on tools/sweep-selftests.py (CLAUDE.md, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md, _config_rules.py, _impact.py). P157.9-mwz and P157.12-mwz each drop 6 ci.yml rows on _impact.py, which now names ci.yml in its own comment. Every other P157 task is unchanged, and no row was added anywhere. PLUGIN-BUILD-GUIDE.md: the audit-lookup section gains a writer-prompt paragraph; the run-agent-session paragraph states the empty-stream and resumed-round readings; the _impact paragraph states the file-name exclusion. Verified: gate sweep exit 0 (8/8 files ok), measure-context --gate exit 0, test__worktrees.py --selftest exit 0 (182/182), ruff on the changed files exit 0. Second-direction mutations, each in a throwaway git-archive export with copy-restore: union over every prior run -> sk7/sk8/sk8b red; is_file_name always True -> pr2/pr13 red; cut keeps every path -> ws8 red; foreground sentence with no gate -> ws10 red; invoked_skills always None -> ras27/44/64/65/68 red; '-m' branch removed -> ws11 red. Dependants: the importing suites of audit-lookup.py, drive-phase.py, run-agent-session.py and _impact.py are still correct, because no signature changed and only new names were added; their suites are in the green gate. The README rows on executor.phaseGateOnly, own-tests, executor.runsGate and review.perTask are still correct: this change touches only what the writer is told for a slow step, and the named-command sentence is unchanged. execute-task.md is still correct for the same reason. _config_rules.py:96 and test__doctor_policy.py:454 name run-agent-session.py's model-id refusal and skill loading, which this change does not touch. COMPATIBILITY.md executor.* rows are still correct: no config key changed. The schema and _clause_coverage.py basename mentions, plus the docs/research files, are history and design notes and still correct. PLUGIN-BUILD-GUIDE.md changed as stated. sweep-costs.json, affected.py and reach-diff.py read the suites' paths and names; none was renamed. Files outside my declared ones: none edited.",
+        "descriptive": "The writer is told to run its own suites even when every gate step is slow, a resumed writer round is no longer reported as never invoking skills an earlier round of the same session invoked, an empty stream reads as no skill reading, and a workflow file name is no longer read as a config key in the prose dependants."
       },
       "startedAt": "2026-11-05T22:41:38Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-05T23:19:02Z",
+      "verifiedBy": [
+        "test_audit_lookup ws8: a task whose only gate step is slow is told to run its tests.add suite through that step's runner, other suites cut, never 'none declared'",
+        "test_audit_lookup ws9: every step slow and none naming the task's suites -> the foreground sentence, not 'none declared'",
+        "test_audit_lookup ws10: over-fire twin, a task with no gate command still reads 'none declared'",
+        "test_audit_lookup ws11: own_suite_command drops a module run's first path, leaves compound and non-naming commands uncut",
+        "test_drive_phase sk7: a resumed round whose own stream calls no skill is not said to have never invoked what round one invoked",
+        "test_drive_phase sk8: over-fire twin, a fresh re-dispatch reads its own stream alone",
+        "test_drive_phase sk8b: a resumed round is met only by what its session did invoke",
+        "test_drive_phase sk9: an earlier round with no reading makes the resumed reading 'not recorded'",
+        "test_drive_phase sk10: an empty or unreadable stream, through the runner's reader and record, reads 'not recorded', never 'never invoked'",
+        "test_drive_phase sk11: over-fire twin, a stream with events and no Skill call is a reading of none",
+        "test__impact pr12: ci.yml is no config key, so a document naming it is no prose dependant",
+        "test__impact pr13: allow twin, ci.pushCarry beside it is still a key with its passage",
+        "test_run_agent_session ras67: an empty or unparseable stream reads None like an unreadable one",
+        "test_run_agent_session ras68: over-fire twin, a stream with an event and no Skill call reads []"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-05T23:18:58Z.c09133",
         "status": "passed",
         "at": "2026-11-05T23:18:58Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "1100b5972344",
+        "at": "2026-11-05T23:19:02Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-05T23:05:59Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test_run_agent_session.py tests/test_drive_phase.py tests/test__impact.py tests/test__output_lints.py tests/test__deps.py tests/test__refs.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 9 of 80 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pr12 (house FAIL), pr13 (house FAIL), ws8 (house FAIL), ws9 (house FAIL), sk7 (house FAIL), sk8b (house FAIL), sk9 (house FAIL), sk10 (house FAIL) and 1 more: SELFTEST FAILED: 79/80 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "988f3478-fc74-4a1e-a62b-7522b404c792",
-    "branch": "audit/p157-the-cost-phase-before-s2",
-    "at": "2026-11-05T10:02:23Z"
-  },
-  "startedAt": "2026-11-05T10:02:23Z"
+  "startedAt": "2026-11-05T10:02:23Z",
+  "testEvidence": {
+    "runId": "2026-11-05T23:39:39Z.234133",
+    "status": "passed",
+    "at": "2026-11-05T23:39:39Z"
+  }
 }
