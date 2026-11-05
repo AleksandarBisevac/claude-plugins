@@ -556,6 +556,13 @@ STEPS = {
     "follow-browser": {
         "line": "follow %(task)s: run `%(recipe)s` in %(tree)s, then next %(phase)s",
         "rule": ("It needs a browser: the orchestrator runs it, never an agent.",)},
+    "decide-gate-red-base": {
+        "line": "decide gate-red-base %(task)s: recorded gate red, every failing "
+                "case red at base too (%(why)s)%(run)s",
+        "rule": ("No writer session is sent: the base commit fails the same "
+                 "cases. block stops the task with the reason; rerun measures "
+                 "the gate again; the owner may commit over it with "
+                 "commit-task-work.py --override-verdict and a reason.",)},
     "decide-gate-red": {
         "line": "decide gate-red %(task)s: recorded gate red (%(why)s)%(run)s",
         "rule": ("rerun spends no attempt (GATE COULD NOT RUN); retry spends "
@@ -733,6 +740,9 @@ DECISIONS = {
     # A red gate on a task whose writer session is recorded, with a resume
     # round left: `resume` sends the failing lines to that session.
     "gate-red-writer": (("resume", "retry", "rerun", "block"), ("block",)),
+    # A red gate whose base commit fails every case it fails: no session can
+    # fix it, so none is offered; the owner's commit over it is their own act.
+    "gate-red-base": (("block", "rerun"), ("block",)),
     "no-executor-return": (("resume", "retry", "block"), ("block",)),
     # A writer session that committed the task's files past its dispatch:
     # nothing is filed until a human takes the commit out (`recheck`).
@@ -829,6 +839,7 @@ SIGNAL_VERBS = {
     "dispatch-wave": "dispatch", "dispatch-phase-review": "dispatch",
     "resume-executor": "dispatch", "dispatch-writer": "dispatch",
     "resume-writer": "dispatch", "decide-gate-red-writer": "judge",
+    "decide-gate-red-base": "ask",
     "wait-writer": "wait", "decide-writer-committed": "ask",
     "dispatch-reviewer-session": "dispatch", "wait-reviewer-session": "wait",
     "dispatch-validation": "dispatch", "wait-validation": "wait",
@@ -1316,21 +1327,24 @@ def red_at_base(ctx, task_ids=(), names=None):
     return _evio.named_failing_suites(steps), base.get("runId")
 
 
-def base_red_why(ctx, text, manifest, phase, task):
+def base_red_why(ctx, text, manifest, phase, task, reading=None):
     """The clause a gate-red decision adds about the task's base, off the row
-    the gate run says it recorded: the base run and what it charges to the
-    base, and the ready task that fixes a suite red there, to run first. ""
-    when the row carries no base reading. Clipped, because the decision is
-    printed whole into the main loop; the gate's own output and the row hold
-    the reading unclipped."""
-    found = _RUN_ID.search(text or "")
-    if not found:
-        return ""
-    try:
-        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
-    except Exception:                                          # noqa: BLE001
-        return ""
-    reading = (_evio.row_by_run(rows, found.group(1)) or {}).get(_evio.BASE_RED_KEY)
+    the gate run says it recorded - or off `reading`, a base reading taken
+    since (`base_reading_for`): the base run and what it charges to the base,
+    and the ready task that fixes a suite red there, to run first. "" when
+    there is no base reading. Clipped, because the decision is printed whole
+    into the main loop; the gate's own output and the row hold the reading
+    unclipped."""
+    if reading is None:
+        found = _RUN_ID.search(text or "")
+        if not found:
+            return ""
+        try:
+            rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+        except Exception:                                      # noqa: BLE001
+            return ""
+        reading = (_evio.row_by_run(rows, found.group(1)) or {}).get(
+            _evio.BASE_RED_KEY)
     if not isinstance(reading, dict):
         return ""
     if not reading.get("run"):
@@ -2437,7 +2451,7 @@ def resume_writer(ctx, state, task, pending, tree=None):
 # `regated`) carry the same record and are asked the same question
 # (`stored_green`), so no stored verdict is shown past a change of what its gate
 # resolves to or of the tree it was taken in.
-GATE_VERDICT_DECISIONS = ("gate-red", "gate-red-writer")
+GATE_VERDICT_DECISIONS = ("gate-red", "gate-red-writer", "gate-red-base")
 
 
 def verdict_taken(ctx, text, tree=None):
@@ -2602,15 +2616,135 @@ def rerun_alongside(ctx, state, manifest, pending):
     return reached
 
 
+# --- a red's base, measured once per start -----------------------------------------
+# A TASK GATE RUNS ON HEAD PLUS THE WORK, so its own row is never a run of the base
+# and a ledger of task runs answers `no-base` for every red: a red the base commit
+# carries for a reason no change of the task's touches - the host, say - went back
+# to the writer, who could not fix it. So the drive takes the base run the reading
+# lacks, once per start: the red steps of the recorded run, through
+# `run-test-gate.py --base-of`, in a detached tree at the run's HEAD (the throwaway
+# `stamp-verification` builds the same way, made outside the repository and taken
+# down again), and decides on the reading taken again over it. The tree is the
+# commit alone - no `executor.worktreeSetup`, no ignored dependency directory - so
+# a step needing those fails there differently, which reads as not reproduced.
+BASE_MEASURE_VERDICTS = ("no-base", "not-knowable")
+BASE_TREE_PREFIX = "audit-base-"
+BASE_MEASURED = "baseMeasured"
+
+
+def base_measure_due(state, task, row):
+    """Whether the red run `row` is to have its base measured: its reading has
+    no comparable base run, names the head it ran at, and no base was measured
+    for this start yet."""
+    reading = (row or {}).get(_evio.BASE_RED_KEY)
+    return (isinstance(reading, dict) and bool((row or {}).get("runId"))
+            and reading.get("verdict") in BASE_MEASURE_VERDICTS
+            and bool(reading.get("head"))
+            and _marked(state, BASE_MEASURED, task) is None)
+
+
+def measure_base(ctx, phase, row, tree=None):
+    """`(reading, said)` - the red run `row` read against a run of its red steps
+    at its base, measured in a detached tree at that commit and recorded, and
+    the did-line saying what was done. `reading` is None, beside the reason,
+    when no base run could be taken: HEAD is no longer the run's head, the tree
+    could not be built outside the repository, or the run did not answer."""
+    want = (row.get(_evio.BASE_RED_KEY) or {}).get("head")
+    head = tree_head(ctx, tree)
+    if not head or not _evio.same_head(head, want):
+        return None, ("%s's base not measured: the red run was at %s and HEAD "
+                      "is %s now" % (row.get("taskId"), want, head or "unknown"))
+    holder = tempfile.mkdtemp(prefix=BASE_TREE_PREFIX)
+    path = os.path.join(holder, "tree")
+    kept = None
+    try:
+        reading, said = _base_in(ctx, phase, row, head, holder, path)
+    finally:
+        # THE ONE QUESTION every remover asks, asked of this tree too: nothing
+        # but this run ever stood in it, so a move's copy beside it would be a
+        # defect to keep in view, never work to delete. A tree that was never
+        # built has nothing to ask about or remove.
+        if os.path.isdir(path):
+            left = _worktrees.tree_unsettled(path)
+            if left["unsettled"] is not False:
+                kept = _clip(left["why"] or "", 300)
+        if kept is None:
+            # `--force` twice: git locks a tree it is still building, and a
+            # build cut short leaves that lock on a tree that is this run's own.
+            if os.path.isdir(path):
+                carry_git(ctx["gitRoot"], ["worktree", "remove", "--force",
+                                           "--force", path])
+            shutil.rmtree(holder, ignore_errors=True)
+    if kept is not None:
+        said += "; its tree %s is kept: %s" % (holder, kept)
+    elif os.path.exists(holder):
+        said += "; its tree %s is left behind" % (holder,)
+    return reading, said
+
+
+def _base_in(ctx, phase, row, head, holder, path):
+    """`measure_base`'s run itself, in the tree it builds at `path`."""
+    if _worktrees.within_tree(ctx["gitRoot"], holder):
+        return None, ("%s's base not measured: the temp directory %s is inside "
+                      "the repository" % (row.get("taskId"), holder))
+    code, _out, err = carry_git(ctx["gitRoot"], [
+        "worktree", "add", "--detach", "--quiet", path, head])
+    if code != 0:
+        return None, ("%s's base not measured: git could not build a tree at %s "
+                      "(%s)" % (row.get("taskId"), head[:8], err))
+    code, out, err = run_verb(ctx, "run-test-gate.py", [
+        ctx["manifest"], phase["id"], "--base-of", row["runId"], "--record",
+        "--json", "--project-dir", ctx["project"],
+        "--tree", member_project(ctx, path)])
+    try:
+        answer = json.loads(out)
+    except ValueError:
+        answer = None
+    reading = (answer or {}).get(_evio.BASE_RED_KEY) \
+        if isinstance(answer, dict) else None
+    if code != E_OK or not isinstance(reading, dict):
+        return None, ("%s's base not measured: run-test-gate.py --base-of "
+                      "exited %d (%s)" % (row.get("taskId"), code,
+                                          _clip((err or out).strip(), 160)))
+    return reading, "%s's base measured at %s in run %s: %s" % (
+        row.get("taskId"), head[:8], answer.get("runId"), reading.get("verdict"))
+
+
+def base_reading_for(ctx, state, phase, task, text, tree=None):
+    """The base reading a red gate is decided on: the recorded run's own, or -
+    when it has no comparable base run and none was measured for this start -
+    the one `measure_base` takes, kept on the start's mark so a later red of
+    the same start reads its own row, which then finds that base run."""
+    row = gate_row(ctx, text)
+    reading = (row or {}).get(_evio.BASE_RED_KEY)
+    if not base_measure_due(state, task, row):
+        return reading if isinstance(reading, dict) else None
+    fresh, said = measure_base(ctx, phase, row, tree)
+    ctx["did"].append(said)
+    _mark(state, BASE_MEASURED, task, {
+        "of": row.get("runId"), "said": said,
+        "verdict": (fresh or {}).get("verdict"),
+        "run": (fresh or {}).get("run"),
+        "atBase": list((fresh or {}).get("atBase") or []),
+        "introduced": list((fresh or {}).get("introduced") or [])})
+    write_state(ctx, state)
+    return fresh if fresh is not None else reading
+
+
 def gate_red_decision(ctx, state, manifest, phase, task, text, tree=None):
-    """The decision a red task gate asks: resume of the recorded writer session
-    while a round is left, carrying the failing lines; past the last round, the
-    plain gate-red, after a note on the task naming each resumed run. Every one
-    carries the run it stands on (`verdict_taken`)."""
+    """The decision a red task gate asks: red at base (`gate-red-base`) when
+    the base commit fails every case it fails, so no session is sent; else
+    resume of the recorded writer session while a round is left, carrying the
+    failing lines; past the last round, the plain gate-red, after a note on the
+    task naming each resumed run. Every one carries the run it stands on
+    (`verdict_taken`)."""
     said = [ln for ln in (text or "").splitlines() if "GATE" in ln]
+    reading = base_reading_for(ctx, state, phase, task, text, tree)
     why = ((said[0].strip() if said else "exit 1")[:80]
-           + base_red_why(ctx, text, manifest, phase, task))
+           + base_red_why(ctx, text, manifest, phase, task, reading))
     verdict = {"verdict": verdict_taken(ctx, text, tree)}
+    if (reading or {}).get("verdict") == "base-only":
+        return decision(ctx, state, "gate-red-base", task, why, extra=verdict)
     session = recorded_session(state, task)
     if session is None:
         return decision(ctx, state, "gate-red", task, why, extra=verdict)

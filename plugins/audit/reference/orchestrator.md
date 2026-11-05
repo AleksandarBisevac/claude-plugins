@@ -14,7 +14,7 @@ agent, for a reader who asks, and for the commands outside the pipeline (`/audit
 sign-off** are in `reference/execute-task.md` and `reference/phase-signoff.md`.
 A headless role run: `run-agent-session.py`; under `executor.writerModel` each writer and
 per-task reviewer runs through it (the drive, not the session, files the reviewer's return), and
-a red task gate resumes the writer's session up to `drive-phase.py`'s `MAX_RESUME_ROUNDS` times.
+a red task gate its base does not share resumes the writer's session up to `MAX_RESUME_ROUNDS` times.
 
 ## At a glance
 

@@ -270,7 +270,7 @@
     {
       "id": "P157.4",
       "title": "The writer brief leaves a step whose measured mean outlives the Bash tool's foreground bound to the drive's gate, naming it once with its mean and run count, and keeps the task's own suites",
-      "status": "in_progress",
+      "status": "done",
       "description": "Stage 2: the writer ran the 6-7 minute sweep the drive runs again after the session; past the Bash tool's 120 s foreground bound the CLI backgrounds it and the writer polls - wait/poll 18 calls vs 5, +0.268, full-sweep calls 0.130 (ANALYSIS.md section 2C). At a27f8a56: audit-lookup.py:998-1039 compose_writer_prompt (left_to_phase_gate 941-952, \"Before you finish\" 1034), config at write_brief 2136-2142 via _config_rules.phase_gate_only_setting 307-321. Durations: _evidence_io._gate_cost_walk 1898-1918 (per step name). Add a pure `slow=()` parameter computed in write_brief; the bound is a named constant whose basis is the CLI's message \"did not complete within its 120s timeout and was moved to the background\" (stage 2 k02 orchestrator stream). A mean over one run is printed with its count. COMPATIBILITY.md: phaseGateOnly keeps being read. Do not read .github/sweep-costs.json (this repo's CI table, not a plugin source).",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -298,25 +298,46 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "09683a975537",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_evidence_io.step_mean_ms(rows, name) -> (mean_ms, measured) or None, off the one _gate_cost_walk. audit-lookup.py: FOREGROUND_BOUND_MS (120 s, the comment quotes the CLI message 'Command did not complete within its 120s timeout and was moved to the background' from the k02 orchestrator stream), outlives_foreground (strictly past), gate_step_readings(rows, entries) -> (name, mean_ms, runs) per gate entry with (name, None, 0) for unmeasured, foreground_bound_line(), UNMEASURED_NOTE; compose_writer_prompt(..., slow=()) moves a step past the bound onto the existing 'Do not run ...: left to the phase gate.' line once as 'cmd (mean N s over K run[s])' (also when phaseGateOnly names it), adds one bound line after it only when a slow step is named, and annotates a step with a reading but no measured run '(duration unmeasured)'; slow=() is byte-identical to before. write_brief --role writer reads the ledger (_evio.read_rows; an exception reads as no rows, so every step says unmeasured) and passes gate_step_readings over the task gate entries. phaseGateOnly is still read through _config_rules.phase_gate_only_setting, unchanged. The drive's own task gate is untouched: it runs tests.gate from the plan, and no script but audit-lookup.py reads compose_writer_prompt/left_to_phase_gate (grep over plugins/audit/scripts). Tests: test_audit_lookup.py new ws-block (ws1, ws1b, ws2, ws3, ws4, ws5, ws6, ws7) and wp12 updated (the fixture project has no ledger, so its expected prompt now carries the unmeasured reading; the check that stripping the note gives wp1's text was added); test__evidence_io.py smm1-smm3. Red on the pre-fix code observed in the shared tree before implementing: lookup 160/166 (ws1-ws6 FAIL), evidence 323/326 (smm1-smm3 FAIL). Gate after: python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test__evidence_io.py tools/_suite.py exit 0, 3/3 files ok (326 + 168 + 35 cases). Mutation probe in a scratch git-archive export (not the shared tree), each restored with __pycache__ purged: bound->False killed ws1/ws1b/ws4; '>' -> '>=' killed ws7; every measured step slow killed ws2/ws7/ws4; phaseGateOnly branch not elif killed ws1/ws5/ws4; plural always 's' killed ws4; no unmeasured note killed ws3; write_brief slow=() killed wp12/ws4; unmeasured note without a reading killed wp1/wp5/wp12-wp15; step_mean count 1 killed smm1; (0,0) for unmeasured killed smm2. ruff and vermin on the four files exit 0; house_style_violations() lists none for them. Live in-process composition against this repo's ledger for a task gating on 'selftests' prints 'Do not run python3 tools/sweep-selftests.py (mean 221 s over 1016 runs): left to the phase gate.' plus the bound line (no brief file written). Explored beyond the brief: read _evidence_io._gate_cost_walk and resolved_commands, and the ledger row shape in existing fixtures, before writing ws4, because the fixture needed the step name a ledger records. Not done, outside my files: plugins/audit/README.md:709's default column for executor.phaseGateOnly ('every gate command is listed for the writer to run') is no longer the whole truth - a measured slow step is now left out with the key unset; PLUGIN-BUILD-GUIDE.md (declared, last by P157.6) carries no writer-prompt description to update, so it was left. Observation, not verified: step means are by step name across every recorded row, so a 'selftests' step run narrowed and one run whole share one mean. Dependants: tests/test__filed_returns.py, tests/test_drive_phase.py - still correct, neither pins writer-prompt text (grep for 'Before you finish', compose_writer, 'left to the phase', 'unmeasured' finds nothing); tests/test_audit_lookup.py - changed by this task (ws-block, wp12); PLUGIN-BUILD-GUIDE.md, docs/research/pipeline-cost-design.md - still correct, they name the file and describe no prompt line; plugins/audit/schema/audit-plan.schema.json, _clause_coverage.py, drive-phase.py - still correct, basename mentions, and no signature they use changed (compose_writer_prompt gained a keyword with an empty default); _brief_context/_diff_lines/_render_human/_script - unchanged. tests/test_audit_lookup.py's dependants (.github/sweep-costs.json not read, per the brief; tools/affected.py uses _cases/_selftest, unchanged; execute-task.md, test_audit_task.py use _cli/_success_line_cases, unchanged). _evidence_io.py's dependants: one function added, nothing existing changed, so every importer is still correct. tests/test__evidence_io.py's dependants (test__doctor_trail.py, test_audit_status.py, tools/affected.py, tools/sweep-selftests.py) use _fs_row/_real_two_commits/_cases/_full_status_cases, unchanged.",
+        "descriptive": "The writer's prompt no longer asks it to run a gate step whose recorded mean is past the Bash tool's 120 s foreground bound; it names the step once with its mean and run count, and the drive's gate still runs it."
       },
       "startedAt": "2026-11-05T11:42:26Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-05T12:02:08Z",
+      "verifiedBy": [
+        "ws1/ws1b: a step measured above the bound leaves 'Before you finish', is named once on the leftover line with mean and run count, and the bound is stated once on the line after",
+        "ws2: a step measured under the bound stays unchanged",
+        "ws3: an unmeasured step stays and says duration unmeasured",
+        "ws4: brief --role writer reads a fixture ledger row's durationMs (one run, 400 s) into the prompt, 'over 1 run', lint stays",
+        "ws5: a slow step also named by phaseGateOnly is named once",
+        "ws6: slow=() gives wp1's bytes",
+        "ws7: allow twin - a mean at the bound stays and no bound line appears",
+        "smm1-smm3: step_mean_ms is the mean over measured runs with their count, None when unmeasured or absent, count 1 for one run"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-05T12:02:04Z.b9c37e",
         "status": "passed",
         "at": "2026-11-05T12:02:04Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "09683a975537",
+        "at": "2026-11-05T12:02:08Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-05T11:54:40Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test__evidence_io.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 7 of 164 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - smm1 (house FAIL), smm2 (house FAIL), smm3 (house FAIL), ws1 (house FAIL), ws2 (house FAIL), ws3 (house FAIL), ws5 (house FAIL): SELFTEST FAILED: 158/164 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P157.5",
       "title": "The drive measures a red's base once and stops with red-at-base, not resume, when the base reproduces every failing case",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes F836. Root cause: every drive row in stage 2 k02/k03r has baseRed.verdict no-base (\"no run of this gate is recorded at base ... on a clean tree\"); no ledger row ever tested either base commit. At a27f8a56: base_red run-test-gate.py:596-641 only reads the ledger through _evidence_io.base_run 861-879 (same_head and tested_tree_clean); a task gate runs on HEAD plus the work, so its rows are dirty and no-base is the usual answer for any task. run-test-gate.py:5790-5797 computes base_reading only for failed measured --task runs; drive-phase.base_red_why 1319-1356 turns it into a clause; gate_red_decision 2535-2567 never branches on the verdict (gate-red-writer at 2549-2553, DECISIONS 732-735). Fix: on no-base/not-knowable, measure the red steps once per start in a detached worktree at HEAD (stamp-verification._build_throwaway 3286-3291 is the pattern) with `run-test-gate.py ... --record --tree <wt>` and no task id, then decide: base-only -> a new decision gate-red-base (block / rerun / owner commit over it with a reason, see base_red_lines 687-690) with a STEPS row and a DECISIONS entry. Compare by failing case per script (P157.2's reader), and by suite or case for derived steps - _base_step 560-572 matches by name and derived names carry suite lists (_affected_tests.py:1009, run-test-gate.py:2603). Stage-2 cost of this fault: 0.239 writer + 0.501 orchestrator over two runs.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -325,7 +346,8 @@
         "tests/test_drive_phase.py",
         "tests/test_run_test_gate.py",
         "plugins/audit/reference/orchestrator.md",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__evidence_io.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -347,16 +369,45 @@
         "P157.2"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-05T12:40:44Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-05T12:02:41Z",
+          "reader": "tests/test__evidence_io.py",
+          "reads": "plugins/audit/scripts/governance/_evidence_io.py",
+          "text": "declared to answer a reading: tests/test__evidence_io.py reads plugins/audit/scripts/governance/_evidence_io.py - its own suite"
+        },
+        {
+          "at": "2026-11-05T12:02:42Z",
+          "text": "quotes run-test-gate's 'the work under test declares no files' message, which a red-at-base check does not reword",
+          "waives": "tools/check-example-ledgers.py"
+        },
+        {
+          "at": "2026-11-05T12:02:43Z",
+          "text": "quotes orchestrator.md's git-rule line, which a red-at-base stop does not touch",
+          "waives": ".claude/hooks/guard-uncommitted.py"
+        },
+        {
+          "at": "2026-11-05T12:02:44Z",
+          "text": "quotes orchestrator.md's '## Reporting' heading, which this task does not rename",
+          "waives": "tools/prove-gates.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-05T12:55:48Z.da5552",
+        "status": "passed",
+        "at": "2026-11-05T12:55:48Z"
+      }
     },
     {
       "id": "P157.6",

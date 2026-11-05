@@ -11385,6 +11385,146 @@ def _follower_cases(check):
         _harness.remove_tree(repo)
 
 
+# The case lines of a sandbox run whose two suites were red for the host's
+# reason, not the task's: each FAIL line verbatim from that run's sweep output,
+# under the paths those suites have in this tree. The passing line and every
+# tally around them are built here.
+K03R_LOCKS = "tests/test__locks.py"
+K03R_GATE = "tests/test_run_test_gate.py"
+K03R_FAILS = {
+    K03R_LOCKS: ("FAIL pz0 the fixture is an unreaped zombie the bare signal "
+                 "probe still sees (state '', kill(pid, 0) answered: success)",
+                 "FAIL pid_alive reads an unreaped zombie as gone and a live "
+                 "process as alive (zombie answered True, live answered True)"),
+    K03R_GATE: ("FAIL a torn-down group's grandchild is judged gone by one "
+                "deadline helper on the product's liveness rule, a zombie "
+                "counts as gone, and no suite reads a killed process's "
+                "liveness once after a fixed sleep (first_look=True "
+                "solo_gone=False product_pid_alive=True group_gone=False "
+                "self_gone=False offenders={})",)}
+
+
+def sweep_red(fails, passing=3):
+    """The selftest sweep's output for a run red on each file `fails` maps to
+    its FAIL lines: every file's output reprinted under its `--- <path>: <why>
+    ---` header, then the sweep's own FAIL line per file and its summary, which
+    counts `passing` more files as ok. Green - the summary alone - for an empty
+    `fails`."""
+    blocks, tail = [], []
+    for path in sorted(fails):
+        lines = list(fails[path])
+        blocks.append("--- %s: exited 1 ---\nPASS ok1 a case that passes\n%s\n"
+                      "SELFTEST FAILED: %d/%d cases passed\n"
+                      % (path, "\n".join(lines), 1, 1 + len(lines)))
+        tail.append("FAIL  %s: exited 1\n" % (path,))
+    files = len(fails) + passing
+    return "%s%s%d/%d files ok, %d migrated to tests/, %d cases\n" % (
+        "\n".join(blocks) + ("\n" if blocks else ""), "".join(tail),
+        passing, files, 0, 7 * files)
+
+
+def _base_red_case_cases(check):
+    """A red read against its base BY THE FAILING CASE, per script: a suite is
+    red at base only when the base run's lines name every case the task's run
+    names in it, and a derived step - whose name carries its suite list, so a
+    base run spells it differently or not at all - is matched to the base run
+    by its suites and cases, never by its name."""
+    repo = _mini_repo("rtg-basecase-")
+    head = "c0ffee12"
+    clean_digest, clean_basis = _tree_stamp.dirty_digest([])
+    other = "tests/test__output.py"
+    derived = "%spython: %s, %s" % (_ev_io.DERIVED_STEP_PREFIX, K03R_GATE, other)
+    derived_base = "%spython: %s" % (_ev_io.DERIVED_STEP_PREFIX, K03R_GATE)
+    extra_lock = dict(K03R_FAILS, **{K03R_LOCKS: K03R_FAILS[K03R_LOCKS] + (
+        "FAIL pz7 a case only the task's change turns red",)})
+    swapped = dict(K03R_FAILS, **{K03R_GATE: (
+        "FAIL zz9 another case of the same suite that fails at base",)})
+
+    def _res(steps):
+        """`run_gate`'s answer for `[(name, text, exit)]`, each step's runner
+        answering its own text."""
+        outputs = dict(("cmd-%d" % (n,), (code, text))
+                       for n, (_name, text, code) in enumerate(steps))
+        return M.run_gate(repo, [(name, "cmd-%d" % (n,))
+                                 for n, (name, _t, _c) in enumerate(steps)],
+                          runner=_scripted(outputs))
+
+    def _row(steps, run_id, task_id=None, scope="task"):
+        ids = {"phaseId": "P1"}
+        if task_id:
+            ids["taskId"] = task_id
+        row = _ev_io.row_for(repo, _res(steps), scope, ids,
+                             {"runId": run_id, "ts": "2026-11-02T00:10:00Z"})
+        row["testedState"] = dict(row.get("testedState") or {}, head=head,
+                                  dirtyDigest=clean_digest,
+                                  dirtyBasis=clean_basis)
+        return row
+
+    def _read(task_steps, base_steps):
+        task = _res(task_steps)
+        base = _row(base_steps, "r-base", scope="base")
+        return M.base_red(task["steps"], head, "P1.1", [base])
+
+    def _locks(fails):
+        return {K03R_LOCKS: fails[K03R_LOCKS]}
+
+    def _gate(fails):
+        return {K03R_GATE: fails[K03R_GATE]}
+
+    try:
+        # The task's run: the declared sweep red on one file, and a derived step
+        # over two suites red on the other. The base ran the declared sweep
+        # alone, red on both files with the very same cases.
+        task_steps = [("selftests", sweep_red(_locks(K03R_FAILS)), 1),
+                      (derived, sweep_red(_gate(K03R_FAILS), passing=1), 1)]
+        same = _read(task_steps, [("selftests", sweep_red(K03R_FAILS), 1)])
+        # The same base, its locks file one case short of the task's, its other
+        # file red on a different case than the task's derived step names.
+        more = _read([("selftests", sweep_red(_locks(extra_lock)), 1),
+                      (derived, sweep_red(_gate(K03R_FAILS), passing=1), 1)],
+                     [("selftests", sweep_red(dict(K03R_FAILS, **_gate(swapped))),
+                       1)])
+        # Only the derived step red, and the base's derived step spelled with a
+        # shorter suite list - its name no step of the task's run carries.
+        only = [(derived, sweep_red(_gate(K03R_FAILS), passing=1), 1)]
+        renamed = _read(only, [(derived_base, sweep_red(_gate(K03R_FAILS),
+                                                        passing=0), 1)])
+        green = _read(only, [(derived_base, sweep_red({}, passing=1), 0)])
+        # A base run of another check entirely: nothing in it ran the suite.
+        unrelated = _read(only, [("lint", "All checks passed!\n", 0)])
+        task_lines = _res(task_steps)["steps"][1].get("failing")
+    finally:
+        _harness.remove_tree(repo)
+    check("bc1 a derived step's red is matched to the base run by its suite and "
+          "its cases: a base that ran the declared sweep alone, red on the same "
+          "cases, reads as red at base too for both steps' suites, so the "
+          "verdict is base-only: %r / lines %r" % (same, task_lines),
+          same is not None and same.get("run") == "r-base"
+          and same.get("atBase") == [K03R_LOCKS, K03R_GATE]
+          and same.get("introduced") == [] and same.get("unknown") == []
+          and same.get("verdict") == "base-only")
+    check("bc2 a suite red at base is the task's when the task's run names a "
+          "case in it the base run does not - by case, per script, for a "
+          "declared and a derived step alike: %r" % (more,),
+          more is not None and more.get("run") == "r-base"
+          and more.get("introduced") == [K03R_LOCKS, K03R_GATE]
+          and more.get("verdict") == "introduced")
+    check("bc3 a base run whose derived step carries a name no step of the "
+          "task's run carries is still the base run, found by the suite it "
+          "ran: red on the same case it is red at base too: %r" % (renamed,),
+          renamed is not None and renamed.get("run") == "r-base"
+          and renamed.get("atBase") == [K03R_GATE]
+          and renamed.get("verdict") == "base-only")
+    check("bc4 THE TWIN: the same renamed base step GREEN charges the suite to "
+          "the task, and a base run that ran no step over the suite at all is "
+          "never base-only: %r / %r" % (green, unrelated),
+          green is not None and green.get("run") == "r-base"
+          and green.get("introduced") == [K03R_GATE]
+          and green.get("verdict") == "introduced"
+          and unrelated is not None and unrelated.get("verdict") != "base-only"
+          and unrelated.get("atBase") == [])
+
+
 def _pytest_red(*suites):
     """pytest's own output for one failing test in each of `suites`."""
     return ("".join("FAILED %s::test_x - assert 0\n" % (s,) for s in suites)
@@ -11854,6 +11994,7 @@ def _selftest():
         _harness.stage(check, "grh-block", _gate_reach_cases)
         _harness.stage(check, "fo-block", _follower_cases)
         _harness.stage(check, "br-block", _base_red_cases)
+        _harness.stage(check, "brc-block", _base_red_case_cases)
         _cases(check)
         _harness.stage(check, "tr-block", _tree_cases)
         _harness.stage(check, "wt-block", _wave_tree_cases)

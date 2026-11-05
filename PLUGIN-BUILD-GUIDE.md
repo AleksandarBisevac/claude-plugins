@@ -463,7 +463,7 @@ L9:
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
   run-agent-session -> _claude_home, _help, _manifest_io, _output, _proc_group, _skill_places
-  run-test-gate -> _affected_tests, _claude_home, _evidence_io, _fmt, _invariants, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _task_outputs, _tree_stamp, _worktrees
+  run-test-gate -> _affected_tests, _claude_home, _evidence_io, _fmt, _invariants, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _task_outputs, _tree_stamp, _worktrees
   set-priority -> _claude_home, _manifest_io, _output, _panel_write, _priority, _warning_groups
   stamp-verification -> _claude_home, _evidence_io, _filed_returns, _invariants, _locks, _manifest_io, _output, _proc_group, _runner_output, _task_outputs, _tree_stamp, _worktrees
   validate-config -> _config_rules, _output
@@ -3893,6 +3893,14 @@ as its own miss", which `full-gate.py`'s catch credit and `couple --caught`'s re
 Crediting a catch to a coupling is a different question — which coupled key a name fits — and
 both of those ask `resolve_named()` over the coupled keys directly.
 
+**A base run.** `base_run()` is the one reading of "the newest run that tested this commit
+itself": at that head, on a clean tree, by none of the excluded tasks, and running a step of the
+given names or - since a derived step's name carries its suite list (`derived_step_suites()`) - a
+step known to have run one of the given suites (`step_runs_suite()`). A row filed under
+`BASE_SCOPE` is a run of a task run's red steps at its base (`run-test-gate.py --base-of`), naming
+that run under `BASE_OF_KEY`; `subject_key()` gives it no subject, so no pointer is written or
+reconciled onto it.
+
 ### `plugins/audit/scripts/governance/_gate_derive.py`
 The gate helpers' one home, and a pure `derive()`.
 
@@ -4551,6 +4559,19 @@ installed, so a SIGTERM surfaces as the interrupt that tears every listing's gro
 `stopped_before_run` turns that interrupt into one `GATE CANCELLED:` line naming the signal and a
 stopped run's exit, with nothing recorded.
 
+**A red read against its base, by the failing case.** A failed `--task` run carries `baseRed`
+(`base_red`): its red steps against the newest run that tested the base commit itself
+(`_evidence_io.base_run`). A suite is red at base too only when the base run's lines name every
+case the task run names in it (`step_cases`, `_case_key` - a house case by its script and id, a
+row's clipped label by its head), so a base red on other cases of the same suite charges the suite
+to the task. A derived step's name carries its suite list, so it is matched to the base by the
+suites it ran (`_evidence_io.step_runs_suite`), never by its name. A task gate is never a base run
+- it runs on HEAD plus the work - so **`--base-of <runId>`** takes one: the red steps of that
+recorded run, by the names and commands its row keeps, run in `--tree` (a checkout of the base
+commit) with no task id, recorded under `_evidence_io.BASE_SCOPE` with no pointer, and the run read
+against its base again printed (`--json` for the drive). `bc1`-`bc4` drive the comparison; the
+drive's `bm` cases drive `--base-of`.
+
 ### `plugins/audit/scripts/governance/record-outside-run.py`
 `record-outside-run.py <manifest> --label TEXT --started <ISO> [--ended <ISO> | --duration-ms N]
 [--status passed|failed]` — **record a test suite that ran where this plugin could not see it.**
@@ -4800,7 +4821,13 @@ inherits that red until it lands. That run is `_evidence_io.base_run`'s: its tes
 clean (`tested_tree_clean`), so a task gate red on its own uncommitted work is not one, and it is
 no ready task's own run (`red_at_base`); with none recorded nothing is reordered. It is a run of
 the ready tasks' own gates, and only those steps' suites are read (`gate_step_names`) - the filter
-`run-test-gate.base_red` puts on the same question. `bb3` and `bb5` drive it. A recorded gate run while sibling executors edit the same tree measures their
+`run-test-gate.base_red` puts on the same question. `bb3` and `bb5` drive it. A red task gate
+whose reading has no comparable base run (`no-base`, `not-knowable`) has its base measured once
+per start (`base_reading_for`, `measure_base`): `run-test-gate.py --base-of` over the red run, in a
+detached tree at its HEAD built outside the repository and removed after; when the reading taken
+again is `base-only` the decision is `gate-red-base`, which sends no writer session and offers
+`block` and `rerun` - the owner's commit over the red is `commit-task-work.py --override-verdict`,
+their own act. `bm1`-`bm4` drive it. A recorded gate run while sibling executors edit the same tree measures their
 unfinished work, so the driver never has two tasks between dispatch and gate at once.
 
 **What the driver keeps.** `stateDir/drive/<phaseId>.json` holds what no verb records: which

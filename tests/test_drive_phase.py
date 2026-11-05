@@ -17013,6 +17013,7 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("sl-block", "_slice_cases"),
           ("np-block", "_nested_project_cases"),
           ("bb-block", "_base_red_drive_cases"),
+          ("bm-block", "_base_measure_cases"),
           ("tcc-block", "_committed_close_cases"),
           ("oc-block", "_own_commit_cases"),
           ("up-block", "_advance_plan_cases"),
@@ -18405,6 +18406,150 @@ def _base_red_drive_cases(check):
           said[0].startswith("; run P1.3 first; red at base too: %s" % (suite,))
           and "r-base" in said[0]
           and said[1] == "; no base run recorded" and said[2] == "")
+
+
+# The gate a base-measurement fixture runs: the sweep output kept for the tree
+# it finds - `task` once the writer changed src/f1.txt, `base` while the file
+# holds what HEAD holds - exiting 1 whenever that output names a red file.
+_BASE_GATE_SCRIPT = r'''
+import sys
+with open("src/f1.txt", encoding="utf-8") as fh:
+    which = "base" if fh.read() == "v0\n" else "task"
+with open("gate-out/%s.txt" % (which,), encoding="utf-8") as fh:
+    text = fh.read()
+sys.stdout.write(text)
+raise SystemExit(1 if "\nFAIL  " in "\n" + text else 0)
+'''
+
+
+def _base_measure_repo(M, prefix, base_text, task_text):
+    """A one-task writer fixture whose gate prints `task_text` over the writer's
+    work and `base_text` at HEAD, played up to the gate run after the writer's
+    session: `(root, mpath, log, line, block)` - `line` the `next` that ran
+    that gate, `block` the explain of the task after it."""
+    gate = '"%s" gate_k02.py' % (sys.executable.replace("\\", "/"),)
+    root, mpath = _repo(prefix, task_ids=TASKS[:1], gate=(gate,),
+                        executor=WRITER_EXECUTOR)
+    for rel, text in (("gate_k02.py", _BASE_GATE_SCRIPT),
+                      ("gate-out/base.txt", base_text),
+                      ("gate-out/task.txt", task_text)):
+        path = os.path.join(root, *rel.split("/"))
+        if not os.path.isdir(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path))
+        _write_lf(path, text)
+    for argv in (["add", "-A"], ["commit", "-qm", "the gate's outputs"]):
+        _harness.git(root, *argv)
+    stubs = os.path.realpath(_harness.fixture_root("drive-base-stub-"))
+    bindir = _writer_stub(stubs)
+    log = os.path.join(stubs, "runs.jsonl")
+    _signal_next(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    _play_session(root, _run_argv(block) or [], bindir, log, WRITER_COSTS[0],
+                  edit={"src/f1.txt": "changed by the writer\n"})
+    _code, line = _signal_next(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    return root, mpath, log, line, block
+
+
+# The scope a base run is recorded under and the key naming the run it measured
+# for, read off the recorder so these cases fail by assertion where it has none.
+_BASE_SCOPE = getattr(_evio, "BASE_SCOPE", "base")
+_BASE_OF_KEY = getattr(_evio, "BASE_OF_KEY", "baseOf")
+
+
+def _base_mark(root):
+    """The base reading the drive kept for P1.1's start, or {}."""
+    path = _fr.drive_state_path(os.path.join(root, ".claude", "state"), PHASE)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            state = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    marks = state.get("baseMeasured") or {}
+    return (marks.get("P1.1") or {}).get("value") or {}
+
+
+def _ledger_of(root):
+    """`(task rows, base rows)` of the fixture's evidence ledger."""
+    rows = _evio.read_rows(root)["rows"]
+    return ([r for r in rows if r.get("scope") == "task"],
+            [r for r in rows if r.get("scope") == _BASE_SCOPE])
+
+
+def _base_measure_cases(check):
+    """A red task gate the ledger has no base run for is measured at its base
+    once per start - the red steps, in a detached tree at HEAD, recorded with
+    no task id - and the reading taken again over that run decides: a base
+    reproducing every failing case stops the task as red at base, dispatching
+    no writer; a green base, or one reproducing only some cases, still goes
+    back to the writer. The k02 shape is a sandbox's two suites red for the
+    host's reason, each FAIL line the recorded run's own."""
+    M, why = _load("drive_phase_base_measure")
+    if M is None:
+        check("bm1 the driver loads", False, why)
+        return
+    import test_run_test_gate as _rtg_cases
+    fails = _rtg_cases.K03R_FAILS
+    k02 = _rtg_cases.sweep_red(fails)
+    suites = sorted(fails)
+    root, mpath, log, line, block = _base_measure_repo(M, "base-k02", k02, k02)
+    head = _git_out(root, "rev-parse", "HEAD").strip()
+    task_rows, base_rows = _ledger_of(root)
+    first = (task_rows[-1] if task_rows else {}).get(_evio.BASE_RED_KEY) or {}
+    trees = [ln for ln in _git_out(root, "worktree", "list",
+                                   "--porcelain").splitlines()
+             if ln.startswith("worktree ")]
+    check("bm1 a red task gate whose base verdict is no-base records ONE base "
+          "run: at HEAD, on a clean tree, with no task id, naming the task run "
+          "it measured; and the tree it was measured in is gone: %r"
+          % ((first, [(r.get("runId"), r.get("testedState"), r.get("taskId"),
+                       r.get(_BASE_OF_KEY)) for r in base_rows], trees),),
+          first.get("verdict") == "no-base" and len(base_rows) == 1
+          and _evio.same_head((base_rows[0].get("testedState") or {})
+                              .get("head"), head)
+          and _evio.tested_tree_clean(base_rows[0].get("testedState"))
+          and not base_rows[0].get("taskId")
+          and base_rows[0].get(_BASE_OF_KEY) == task_rows[-1].get("runId")
+          and len(trees) == 1)
+    again_code, again = _signal_next(M, root, mpath)
+    _t, base_after = _ledger_of(root)
+    check("bm2 a base reproducing every failing case returns gate-red-base, "
+          "which offers no resume, and a further next dispatches no writer "
+          "session and measures the base no second time: %r"
+          % ((line, block, again, len(_stub_runs(log)), len(base_after)),),
+          "gate-red-base" in line and "gate-red-writer" not in line
+          and "answer: next %s --answer block|rerun" % (PHASE,) in block
+          and "resume" not in block.split("answer:", 1)[-1].splitlines()[0]
+          and again_code == 0 and "gate-red-base" in again
+          and "run-agent-session.py" not in line + again
+          and len(_stub_runs(log)) == 1 and len(base_after) == 1)
+    measured = _base_mark(root)
+    check("bm4 the k02 sandbox-shaped red replays to gate-red-base: the reading "
+          "the drive took over the base run charges both suites to the base, "
+          "and the decision says red at base too: %r / %r" % (measured, block),
+          measured.get("verdict") == "base-only"
+          and measured.get("atBase") == suites
+          and measured.get("introduced") == []
+          and bool(base_rows) and measured.get("run") == base_rows[0].get("runId")
+          and "red at base too: %s" % (suites[0],) in block)
+
+    green_root, _gm, _gl, green, _gb = _base_measure_repo(
+        M, "base-green", _rtg_cases.sweep_red({}), k02)
+    _gt, green_base = _ledger_of(green_root)
+    some = {suites[0]: fails[suites[0]][:1]}
+    some_root, _sm, _sl, partial, some_block = _base_measure_repo(
+        M, "base-some", _rtg_cases.sweep_red(some), k02)
+    _st, some_base = _ledger_of(some_root)
+    check("bm3 THE TWIN: a base that is green, or that reproduces only some of "
+          "the failing cases, was measured once and still returns "
+          "gate-red-writer: %r" % ((green, len(green_base), some_block,
+                                    len(some_base)),),
+          "gate-red-writer" in green and "gate-red-base" not in green
+          and len(green_base) == 1
+          and "gate-red-writer" in partial and "gate-red-base" not in partial
+          and "red the task introduced: %s" % (suites[0],) in some_block
+          and len(some_base) == 1
+          and _base_mark(some_root).get("verdict") == "introduced")
 
 
 def _next_text(M, root, mpath):

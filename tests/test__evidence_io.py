@@ -4390,9 +4390,51 @@ def _gate_reach_row_cases(check):
         _harness.remove_tree(plain)
 
 
+def _base_scope_cases(check):
+    """A run of a task run's red steps at its base: no subject's evidence, and
+    found as a base by the suites a derived step ran, not by its name."""
+    base_scope = getattr(M, "BASE_SCOPE", None)
+    phase_row = {"runId": "r-phase", "ts": "2026-11-01T00:00:00Z",
+                 "scope": "phase", "phaseId": "P1"}
+    base_row = {"runId": "r-base", "ts": "2026-11-02T00:00:00Z",
+                "scope": base_scope, "phaseId": "P1"}
+    check("bsc1 a base-scope row is keyed under no subject, even carrying a "
+          "phaseId, so the newest phase row stays the phase's: %r"
+          % ((base_scope, M.subject_key(base_row)),),
+          base_scope is not None and M.subject_key(base_row) is None
+          and M.latest_by_subject([phase_row, base_row])
+          == {("phase", "P1"): phase_row})
+    suites_of = getattr(M, "derived_step_suites", lambda _n: None)
+    prefix = M.DERIVED_STEP_PREFIX
+    spelled = [suites_of("%spython: tests/a.py, tests/b.py" % (prefix,)),
+               suites_of("%sphase-gate: selftests" % (prefix,)),
+               suites_of("selftests")]
+    check("bsc2 a derived step's name is read for its suites, and the phase-gate "
+          "arm and a declared step list none: %r" % (spelled,),
+          spelled == [["tests/a.py", "tests/b.py"], [], []])
+    head = "c0ffee12"
+    clean = {"head": head, "dirtyDigest": M.CLEAN_DIRTY_DIGEST}
+    lists = {"runId": "r-lists", "ts": "2026-11-01T00:00:00Z",
+             "testedState": clean,
+             "steps": [{"name": "%spython: tests/a.py" % (prefix,), "exit": 0}]}
+    other = {"runId": "r-other", "ts": "2026-11-03T00:00:00Z",
+             "testedState": clean, "steps": [{"name": "lint", "exit": 0}]}
+    try:
+        found = M.base_run([lists, other], head, (), ["%spython: tests/a.py, "
+                                                      "tests/b.py" % (prefix,)],
+                           suites=["tests/a.py"])
+    except TypeError as exc:
+        found = "base_run takes no suites: %s" % (exc,)
+    check("bsc3 a base run is found by a suite its derived step's name lists, "
+          "under a name the asking run does not carry, and a newer run of no "
+          "step over that suite is passed over: %r" % (found,),
+          isinstance(found, dict) and found.get("runId") == "r-lists")
+
+
 def _selftest():
     def body(check):
         _cases(check)
+        _base_scope_cases(check)
         _claimed_followers_cases(check)
         _tree_key_cases(check)
         _banner_cases(check)

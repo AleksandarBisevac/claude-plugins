@@ -415,6 +415,24 @@ def is_derived_step(name):
     return isinstance(name, str) and name.startswith(DERIVED_STEP_PREFIX)
 
 
+# The arm a derived step widened to the phase gate is named under: its name
+# carries a gate entry after the colon, not a list of suites.
+DERIVED_PHASE_GATE_ARM = "phase-gate"
+
+
+def derived_step_suites(name):
+    """The suite paths a derived step's name lists after its arm - the
+    `<prefix><arm>: <suite>, <suite>` spelling `_affected_tests.steps_for`
+    writes - or [] for a declared step and for the phase-gate arm, whose name
+    carries a gate entry instead."""
+    if not is_derived_step(name):
+        return []
+    arm, sep, listed = name[len(DERIVED_STEP_PREFIX):].partition(": ")
+    if not sep or arm == DERIVED_PHASE_GATE_ARM:
+        return []
+    return [part.strip() for part in listed.split(", ") if part.strip()]
+
+
 def declared_steps(names, dropped=0):
     """`(declared, dropped)` - the step names in `names` that are the declared
     gate, and how many of the steps a row dropped for length were declared.
@@ -832,6 +850,14 @@ def gate_reach_record(project, reach):
 BASE_RED_KEY = "baseRed"
 _BASE_RED_WORDS = ("run", "head", "task", "verdict")
 
+# A run of a recorded task run's red steps at that run's base commit, in a tree
+# of its own (`run-test-gate.py --base-of`): its row is filed under this scope
+# and names the run it measured for under `BASE_OF_KEY`. It is no subject's
+# evidence - `subject_key` gives it none, so no pointer is ever written for it
+# or reconciled onto it - and it is read only as a base, by `base_run`.
+BASE_SCOPE = "base"
+BASE_OF_KEY = "baseOf"
+
 
 def same_head(one, other):
     """Two spellings of one commit: a short and a full sha agree on a prefix
@@ -858,7 +884,7 @@ def tested_tree_clean(state):
             and state.get("dirtyDigest") == CLEAN_DIRTY_DIGEST)
 
 
-def base_run(rows, head, exclude_tasks=(), names=None):
+def base_run(rows, head, exclude_tasks=(), names=None, suites=None):
     """The newest recorded run that tested commit `head` itself, or None when
     the ledger holds none.
 
@@ -867,16 +893,33 @@ def base_run(rows, head, exclude_tasks=(), names=None):
     tree was clean (`tested_tree_clean`) measured the commit. The runs of
     every task in `exclude_tasks` are passed over too - a task's own run is
     not independent evidence about its base - and, when `names` is given, so
-    is a run that ran no step of those names."""
+    is a run that ran no step of those names and no step over any of
+    `suites` (`step_runs_suite`): a derived step's name carries its suite
+    list, so a base run spells the same suites under another name."""
     wanted = None if names is None else set(names)
+    over = set(suites or ())
     skip = set(str(t) for t in exclude_tasks or ())
     return newest_row([
         row for row in rows or [] if isinstance(row, dict)
         and same_head((row.get("testedState") or {}).get("head"), head)
         and tested_tree_clean(row.get("testedState"))
         and str(row.get("taskId") or "") not in skip
-        and (wanted is None or any(isinstance(st, dict) and st.get("name") in wanted
-                                   for st in row.get("steps") or []))])
+        and (wanted is None or any(
+            isinstance(st, dict) and (st.get("name") in wanted or any(
+                step_runs_suite(st, suite) for suite in over))
+            for st in row.get("steps") or []))])
+
+
+def step_runs_suite(step, suite):
+    """Whether a recorded step is known to have run `suite`: its runner named
+    the suite as failing, or it is a derived step whose name lists it. A
+    declared step that names no such suite may have run it green or not at
+    all, and the row cannot say which."""
+    if not isinstance(step, dict):
+        return False
+    named = (NAMED_FAILING in (step.get("failingSuitesBasis") or "")
+             and suite in (step.get("failingSuites") or []))
+    return named or suite in derived_step_suites(step.get("name"))
 
 
 def _base_red(project, found):
@@ -1139,6 +1182,9 @@ def row_for(project, result, scope, ids, identity, published=None):
     # alone - which is what a member's copied pointer is checked against.
     if isinstance(result.get("groupWith"), list) and result["groupWith"]:
         row["groupWith"] = [str(p) for p in result["groupWith"]]
+    # THE TASK RUN A BASE RUN MEASURED FOR, on a `BASE_SCOPE` row alone.
+    if result.get(BASE_OF_KEY):
+        row[BASE_OF_KEY] = str(result[BASE_OF_KEY])
     # WHAT THE GATE WAS, resolved: a digest of every entry beside the command it
     # resolves to (`gate_digest`), so a reader can tell a gate whose entries kept
     # their names while `meta.buildCommands` changed what they run. Written only
@@ -2714,13 +2760,14 @@ def subject_key(row, aliases=None):
     `merge_targets`: whether two runs' order decides a pointer is a question
     about this key, so it has exactly one spelling. A task-scope row is keyed by
     its task, anything else by its phase, and a moved task's old id by the id it
-    holds now (`aliases`). None for a row missing the id its scope needs.
+    holds now (`aliases`). None for a row missing the id its scope needs, and
+    for a `BASE_SCOPE` row, which is no subject's evidence.
     """
     if not isinstance(row, dict):
         return None
     scope = row.get("scope")
     subject = row.get("taskId") if scope == "task" else row.get("phaseId")
-    if not scope or not subject:
+    if not scope or not subject or scope == BASE_SCOPE:
         return None
     key = (scope, str(subject))
     return (aliases or {}).get(key, key)

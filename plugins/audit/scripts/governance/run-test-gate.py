@@ -139,6 +139,7 @@ import _worktrees  # noqa: E402  (list_worktrees/read_provenance: the task's wav
 import _tree_stamp  # noqa: E402  (the ONE tree identity: porcelain + the three fields)
 import _proc_group  # noqa: E402  (a child tree stopped whole; a stop signal as an exception)
 import _evidence_io as _ev  # noqa: E402  (where a run is recorded, and the pointer)
+import _journal_io  # noqa: E402  (VALUE_TRUNCATED: the mark a row's clipped line ends in)
 import _manifest_io as _mio  # noqa: E402  (dual-format loader: single file OR shards)
 import _manifest_vocab as _vocab  # noqa: E402  (_strip_line_suffix: one reading of a
 #                                  `files` entry's `:line-range` suffix, shared with
@@ -556,13 +557,16 @@ def unattributable_failure(failed, ran_total, before, owns, named):
 BASE_RED_AT = "red at base too"
 BASE_RED_ONLY = "red only where the base is red"
 BASE_RED_INTRODUCED = "red the task introduced"
+# The basis `failing_lines` gives a list it cut at its bound: a case past the
+# cut is on no row, so the list is not every case that failed.
+CASES_CUT = "the rest are not carried"
 
 
-def _base_step(base, step):
-    """`base`'s step answering for `step`: the same name and, where both carry
-    the command verbatim, the same command - a renamed command is another
+def _base_step(base_steps, step):
+    """The base run's step answering for `step`: the same name and, where both
+    carry the command verbatim, the same command - a renamed command is another
     check, whatever its key."""
-    for st in base.get("steps") or []:
+    for st in base_steps or []:
         if not isinstance(st, dict) or st.get("name") != step.get("name"):
             continue
         if st.get("command") and step.get("command") \
@@ -572,32 +576,135 @@ def _base_step(base, step):
     return None
 
 
-def _charge_step(step, base_step):
-    """`(at_base, introduced, unknown)` for one red step against its base step.
+def _case_key(line):
+    """`(script, name, cut)` - what one failing line is compared by across two
+    runs. A house case, `<script>: FAIL <label>` as
+    `_runner_output.house_case_lines` writes it, is its script and its id - its
+    whole label where it leads with none - since a label carries values a
+    second run may print differently; any other runner's line is its text up
+    to the ` - ` that opens its reason. `cut` says the line is a row's, clipped
+    at a value's bound (`_journal_io.VALUE_TRUNCATED`), so its name is only the
+    head of the one the runner printed."""
+    text = str(line).strip()
+    cut = text.endswith(_journal_io.VALUE_TRUNCATED.strip())
+    if cut:
+        text = text[:-len(_journal_io.VALUE_TRUNCATED.strip())].rstrip()
+    script, sep, label = text.partition(": FAIL ")
+    if sep:
+        label = label.strip()
+        case_id = _ro.house_case_id(label)
+        return (script.strip(), case_id or label,
+                cut and case_id is None)
+    head = text.split(" - ", 1)[0].strip()
+    return None, head, cut and head == text
 
-    A suite counts as red at base only when BOTH runs' runners named it; a step
-    whose runner named no suite is compared as a whole - introduced when the
-    base step was green, NOT KNOWABLE when the base step was red too, because
-    neither run says whether the same thing failed."""
+
+def _same_case(one, other):
+    """Whether two `_case_key`s name one case: the same script and name, or -
+    where a row clipped one of them - the clipped name the head of the other."""
+    if one[0] != other[0]:
+        return False
+    if one[1] == other[1]:
+        return True
+    return ((one[2] and other[1].startswith(one[1]))
+            or (other[2] and one[1].startswith(other[1])))
+
+
+def step_cases(step):
+    """`{suite: set(case keys)}` - the failing cases a recorded step's lines
+    name, each under the suite it belongs to (None for a line no suite of the
+    step's claims), or None when the lines are not that list: the basis says
+    no runner named a case, the lines are a tail of output, or the list was
+    cut at its bound (`CASES_CUT`), so a case past the cut is on no row."""
+    basis = str(step.get("failingBasis") or "")
+    lines = step.get("failing") or []
+    if not lines or _ev.NAMED_FAILING not in basis or CASES_CUT in basis:
+        return None
+    suites = [str(p) for p in step.get("failingSuites") or []]
+    out = {}
+    for line in lines:
+        key = _case_key(line)
+        suite = key[0] if key[0] is not None else next(
+            (p for p in suites if str(line).startswith(p)), None)
+        out.setdefault(suite, set()).add(key)
+    return out
+
+
+def _suite_at_base(suite, step, answering):
+    """`"at-base"`, `"introduced"` or the reason the base cannot say, for one
+    suite `step` names as failing, against the base steps `answering` for it.
+
+    The base is red on the suite only where an answering step's runner named
+    it failing; there the suite is the task's unless the base lines name every
+    case the task's lines name in it (`step_cases`), and where neither run's
+    lines are cases the two suite verdicts are all there is to compare. An
+    answering step that is green, or names other suites, ran it green; one red
+    with no suite named cannot say."""
+    red = [st for st in answering if _ev._counts_as_failed(st)
+           and suite in _ev.named_failing_suites([st])]
+    if not red:
+        if any(_ev._counts_as_failed(st) and not _ev.named_failing_suites([st])
+               for st in answering):
+            return ("%s (red at base too, and the base run named no failing "
+                    "suite)" % (suite,))
+        return "introduced"
+    mine = (step_cases(step) or {}).get(suite)
+    theirs = [(step_cases(st) or {}).get(suite) for st in red]
+    if mine is None and all(t is None for t in theirs):
+        return "at-base"
+    if mine is None or any(t is None for t in theirs):
+        return ("%s (red at base too, and only one of the two runs named its "
+                "failing cases)" % (suite,))
+    seen = [key for keys in theirs for key in keys]
+    return ("at-base" if all(any(_same_case(key, at) for at in seen)
+                             for key in mine) else "introduced")
+
+
+def _charge_step(step, base_steps):
+    """`(at_base, introduced, unknown)` for one red step against the base run's
+    steps.
+
+    A declared step is answered by the base step of its name (`_base_step`). A
+    DERIVED step's name carries its suite list, so a base run spells the same
+    suites under another name or runs them under a declared step: each of its
+    suites is answered by the step of its own name when the base has one, else
+    by every base step known to have run that suite
+    (`_evidence_io.step_runs_suite`). A step whose runner named no suite is
+    compared as a whole - introduced when the base step was green, NOT
+    KNOWABLE when it was red too, because neither run says whether the same
+    thing failed."""
     named = _ev.named_failing_suites([step])
-    base_red = base_step is not None and _ev._counts_as_failed(base_step)
-    if base_step is None:
+    same = _base_step(base_steps, step)
+    if same is None and not (_ev.is_derived_step(step.get("name")) and named):
         return [], [], ["%s (the base run has no such step)" % (step["name"],)]
-    if not base_red:
-        return [], (named or [step["name"]]), []
     if not named:
+        if not _ev._counts_as_failed(same):
+            return [], [step["name"]], []
         return [], [], ["%s (red at base too, and neither run named its failing "
                         "suites)" % (step["name"],)]
-    at_base = _ev.named_failing_suites([base_step])
-    return ([s for s in named if s in at_base],
-            [s for s in named if s not in at_base], [])
+    at_base, introduced, unknown = [], [], []
+    for suite in named:
+        answering = ([same] if same is not None else
+                     [st for st in base_steps or []
+                      if _ev.step_runs_suite(st, suite)])
+        word = (_suite_at_base(suite, step, answering) if answering
+                else "%s (no step of the base run ran it)" % (suite,))
+        if word == "at-base":
+            at_base.append(suite)
+        elif word == "introduced":
+            introduced.append(suite)
+        else:
+            unknown.append(word)
+    return at_base, introduced, unknown
 
 
 def base_red(steps, head, task_id, rows):
     """`{"run", "head", "task", "atBase", "introduced", "unknown", "verdict",
     "basis"}` - this run's red steps read against the newest run recorded at
     its base commit `head` (`_evidence_io.base_run`: a run on a clean tree at
-    that commit, never one of `task_id`'s own).
+    that commit, never one of `task_id`'s own), BY THE FAILING CASE: a suite
+    is red at base too only when the base names every case this run names in
+    it (`_charge_step`).
 
     `verdict` is `base-only` when every red suite is red at base too,
     `introduced` when any red is the task's own, `not-knowable` when some red
@@ -614,15 +721,19 @@ def base_red(steps, head, task_id, rows):
         out["basis"] = ("git named no HEAD for this run, so no run at its base "
                         "commit can be looked up")
         return out
-    base = _ev.base_run(rows, head, [task_id], [st.get("name") for st in red])
+    suites = [suite for st in red if _ev.is_derived_step(st.get("name"))
+              for suite in _ev.named_failing_suites([st])]
+    base = _ev.base_run(rows, head, [task_id], [st.get("name") for st in red],
+                        suites=suites)
     if base is None:
         out["basis"] = ("no run of this gate is recorded at base %s on a clean "
                         "tree, so whether the base is red too is not known"
                         % (head,))
         return out
     out["run"], out["task"] = base.get("runId"), base.get("taskId")
+    base_steps = [st for st in base.get("steps") or [] if isinstance(st, dict)]
     for step in red:
-        at, mine, unknown = _charge_step(step, _base_step(base, step))
+        at, mine, unknown = _charge_step(step, base_steps)
         out["atBase"] += [s for s in at if s not in out["atBase"]]
         out["introduced"] += [s for s in mine if s not in out["introduced"]]
         out["unknown"] += unknown
@@ -1028,9 +1139,8 @@ def failing_lines(text, limit, step=None, command=None):
     if named:
         kept = named[:limit]
         if len(named) > len(kept):
-            return kept, ("%d of the %d check(s) %s named as failing; the "
-                          "rest are not carried"
-                          % (len(kept), len(named), who))
+            return kept, ("%d of the %d check(s) %s named as failing; %s"
+                          % (len(kept), len(named), who, CASES_CUT))
         return kept, ("the %d check(s) %s named as failing, read from its "
                       "own failure lines" % (len(kept), who))
     where = "no failing case readable from step %s" % (
@@ -2640,7 +2750,8 @@ def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands,
     wide, _left = split_not_commands(
         _resolved([e for e in phase_entries if e not in names], build,
                   meta.get("nodePreamble")), manifest)
-    steps = [("%sphase-gate: %s" % (_ev.DERIVED_STEP_PREFIX, name), command)
+    steps = [("%s%s: %s" % (_ev.DERIVED_STEP_PREFIX, _ev.DERIVED_PHASE_GATE_ARM,
+                            name), command)
              for name, command in wide]
     return steps, [command for _name, command in wide], info
 
@@ -5023,6 +5134,136 @@ def _write_own_log(manifest_path, project_dir, step_text):
     return str(path)
 
 
+# --- a red task run's base, measured ---------------------------------------------
+# A TASK GATE'S RED IS READ AGAINST A RUN THAT TESTED ITS BASE COMMIT, and a task
+# gate is never one: it runs on HEAD plus the work, so its row is dirty, and a
+# ledger holding only task runs answers `no-base` for every task. `--base-of
+# <runId>` takes the measurement that question lacks: the red steps of that
+# recorded run - their names and commands as its row keeps them - run again in
+# `--tree`, a checkout of the base commit, with no task id, and recorded under
+# `_evidence_io.BASE_SCOPE`, which no pointer is written for and no subject's
+# evidence is read from. What it answers is the run read against its base again
+# (`base_reading`), which a later run of the same task at that head finds too.
+def base_of_refusal(args, tree):
+    """Why `--base-of` refuses these arguments, or None."""
+    if args.task is not None:
+        return ("--base-of measures the base of a recorded task run and takes "
+                "no --task: the run it names is the task's, and the base run is "
+                "no task's")
+    for flag, given in (("--full", args.full), ("--own", args.own),
+                        ("--also", args.also), ("--reconcile", args.reconcile)):
+        if given:
+            return "--base-of is refused with %s" % (flag,)
+    if tree is None:
+        return ("--base-of needs --tree, a checkout of the base commit: the "
+                "project's own tree holds the task's work, so a run there is "
+                "not a run of the base")
+    return None
+
+
+def base_commands(row):
+    """`(commands, left)` - `(name, command)` for every red step of the recorded
+    `row` whose command it keeps verbatim, and the names of the red steps it
+    keeps only a digest of, which nothing can run again."""
+    commands, left = [], []
+    for step in row.get("steps") or []:
+        if not _ev._counts_as_failed(step):
+            continue
+        if isinstance(step.get("command"), str) and step["command"].strip():
+            commands.append((str(step.get("name")), step["command"]))
+        else:
+            left.append(str(step.get("name")))
+    return commands, left
+
+
+def _record_base_run(project, args, res, commands, out=print):
+    """Record a `BASE_SCOPE` row - no ids, no pointer, no evidence boundary, as
+    a full run is recorded (`_record_full_run`): it is no subject's evidence.
+    The commands are published already, since the row they were read off kept
+    them verbatim. The row, or None when it could not be stored."""
+    identity = {"runId": _ev.new_run_id(), "via": "cli",
+                "sessionId": os.environ.get("CLAUDE_CODE_SESSION_ID") or None,
+                "attempt": None, _ev.STARTED_KEY: res.get("startedAt")}
+    try:
+        recorded = _ev.record(project, res, _ev.BASE_SCOPE, {}, identity,
+                              published=[c for _name, c in commands],
+                              writer=args.writer)
+    except Exception as exc:                                   # noqa: BLE001
+        out("  evidence: NOT recorded - %s" % (exc,))
+        return None
+    out("  evidence: recorded %s (a base run; no pointer names it)"
+        % (identity["runId"],))
+    return recorded["row"]
+
+
+def _run_base_of(project, args, manifest, tree, out=print):
+    """`--base-of`: measure the red steps of the recorded run `args.base_of`
+    in `tree`, record the run with `--record`, and answer the task run read
+    against the ledger with it. The exit is the recording's, never the base
+    run's verdict: a red base is the answer asked for, not a failure."""
+    refused = base_of_refusal(args, tree)
+    if refused:
+        out("[run-test-gate] %s" % (refused,))
+        return E_ASK
+    try:
+        rows = _ev.read_rows(project)["rows"]
+    except Exception as exc:                                   # noqa: BLE001
+        out("[run-test-gate] --base-of: the ledger could not be read (%s)"
+            % (exc,))
+        return E_ASK
+    row = _ev.row_by_run(rows, args.base_of)
+    if row is None:
+        out("[run-test-gate] --base-of: no run %s is recorded in the ledger"
+            % (args.base_of,))
+        return E_ASK
+    commands, left = base_commands(row)
+    if not commands:
+        out("[run-test-gate] --base-of: run %s has no red step whose command "
+            "its row keeps verbatim%s, so there is nothing to run at its base"
+            % (args.base_of, " (digests only: %s)" % (", ".join(left),)
+               if left else ""))
+        return E_ASK
+    say = _say_on_stderr if args.as_json else out
+    previous = _arm_interrupt()
+    try:
+        res = run_gate(tree, commands, timeout=args.timeout,
+                       recorded=_ev.recorded_paths(project, args.manifest)[0],
+                       muted=declared_mutes(manifest),
+                       preamble=declared_preamble(manifest), say=say)
+    finally:
+        _disarm_interrupt(previous)
+    if isinstance(res.get("testedState"), dict):
+        res["testedState"]["tree"] = {"key": _ev.tree_key(tree)}
+    res[_ev.BASE_OF_KEY] = args.base_of
+    base_row = _record_base_run(project, args, res, commands, say) \
+        if args.record else None
+    # Read against the rows as they stood plus this run's own, so the answer
+    # does not hang on a second read of a ledger other writers append to.
+    measured = base_row if base_row is not None else _ev.row_for(
+        project, res, _ev.BASE_SCOPE, {}, {"runId": "unrecorded"},
+        published=[c for _name, c in commands])
+    reading = base_reading(row, row.get("taskId"), lambda: rows + [measured])
+    answer = {"baseOf": args.base_of, "recorded": base_row is not None,
+              "runId": base_row.get("runId") if base_row else None,
+              "head": (res.get("testedState") or {}).get("head"),
+              "status": res.get("status"), "notRun": left,
+              "steps": [{"name": st.get("name"), "exit": st.get("exit")}
+                        for st in res.get("steps") or []],
+              _ev.BASE_RED_KEY: reading}
+    code = E_UNRECORDED if args.record and base_row is None else E_OK
+    if args.as_json:
+        out(json.dumps(answer, indent=2, sort_keys=True))
+        return code
+    out("[run-test-gate] base of %s: %d red step(s) measured at %s in %s"
+        % (args.base_of, len(commands), answer["head"], tree))
+    for name in left:
+        out("  not run: %s (its row keeps a digest of the command)" % (name,))
+    for line in base_red_lines(reading):
+        out(line)
+    out("  verdict: %s" % ((reading or {}).get("verdict"),))
+    return code
+
+
 # --- the third place: --full, against the whole product -----------------------
 def _record_full_run(project, args, res, commands, run_id, out=print):
     """Record a scope-`full` row: no ids, no pointer, no evidence boundary.
@@ -5467,6 +5708,8 @@ def main(argv, out=print):
     # names. Orthogonal to how the project is resolved: it only ever adds a
     # directory to measure in.
     p.add_argument("--tree", dest="tree", default=None, metavar="DIR")
+    # THE BASE OF A RECORDED TASK RUN, measured in `--tree` (`_run_base_of`).
+    p.add_argument("--base-of", dest="base_of", default=None, metavar="RUN_ID")
     _claude_home.attach_usage_hint(p)
     try:
         args = p.parse_args(argv)
@@ -5529,6 +5772,8 @@ def main(argv, out=print):
     except Exception as exc:
         out("[run-test-gate] cannot read the manifest: %s" % exc)
         return E_ASK
+    if args.base_of is not None:
+        return _run_base_of(project, args, manifest, tree, out=out)
     if args.full:
         return _run_full(project, args, manifest, out=out)
     if args.reconcile:
