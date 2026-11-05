@@ -777,18 +777,12 @@ def _gather_cases(check):
                     grandchild = int(fh.read().strip())
             except (OSError, ValueError):
                 grandchild = None
-            alive = grandchild is not None
-            deadline = time.time() + 5
-            while alive and time.time() < deadline:
-                gone = subprocess.run(["ps", "-o", "stat=", "-p",
-                                       str(grandchild)],
-                                      stdout=subprocess.PIPE,
-                                      stderr=subprocess.DEVNULL)
-                state = gone.stdout.decode("utf-8", "replace").strip()
-                alive = gone.returncode == 0 and state and not \
-                    state.startswith("Z")
-                if alive:
-                    time.sleep(0.1)
+            # Judged by the product's liveness rule through the one deadline
+            # helper: a `ps` of this suite's own would raise where a sandbox
+            # refuses it, and the orphaned grandchild is reaped by init, so the
+            # pid it leaves reads gone without the state letter.
+            alive = (grandchild is not None
+                     and not _harness.gone_within(grandchild, 5))
             check("af38 a listing that outlives its bound is torn down WHOLE: "
                   "the grandchild it started in the background is gone, the "
                   "answer is no exit 0, and the wait ended near the bound "
@@ -872,16 +866,6 @@ def _gather_cases(check):
         shutil.rmtree(tree, ignore_errors=True)
 
 
-def _pid_alive(pid):
-    """Whether `pid` names a live process that is not a zombie, asked of `ps`
-    so a pid this process did not start is still readable."""
-    import subprocess
-    got = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
-                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    state = got.stdout.decode("utf-8", "replace").strip()
-    return got.returncode == 0 and bool(state) and not state.startswith("Z")
-
-
 def _pids_in(path):
     """The pids one per line in `path`, or [] while it is not written yet."""
     try:
@@ -939,11 +923,10 @@ def _interrupt_cases(check):
         stop.set()
         sender.join()
         pids = _pids_in(pid_file)
-        deadline = time.time() + 2
-        alive = [p for p in pids if _pid_alive(p)]
-        while alive and time.time() < deadline:
-            time.sleep(0.1)
-            alive = [p for p in alive if _pid_alive(p)]
+        # The product's liveness rule through the deadline helper, as af38
+        # judges its grandchild; each pid is waited for in turn, so a survivor
+        # is reported after its own bound rather than a shared one.
+        alive = [p for p in pids if not _harness.gone_within(p, 2)]
         check("af43 an interrupt during a prefetch stops every listing it "
               "started - no grandchild survives it - and the call gives the "
               "interrupt back near when it landed rather than when the "

@@ -75,6 +75,189 @@ def _bare_signal_sees(pid):
     return True
 
 
+# --- an exited process nobody has reaped yet reads dead -----------------------
+def _zombie_cases(check):
+    """A killed child is a zombie until its parent calls wait, and a zombie still
+    answers `kill(pid, 0)`: the bare signal probe called it alive, to every
+    caller that is not the parent (only the parent can reap it, so waitpid is no
+    answer for a pid we do not own - it raises ECHILD). The fixture is confirmed
+    to BE a zombie from the process table and from the signal probe before the
+    answer is read, so a platform where the child is reaped early fails loudly
+    rather than passing for the wrong reason. Windows keeps no zombies: pl1 is
+    that platform's case.
+
+    A table nobody here may read is the one other way the fixture cannot be
+    confirmed, and that is a skip carrying the refusal `_harness.state_refusal`
+    read on its own - never a red over a zombie this run cannot see. A table
+    that IS readable keeps both cases asserting, so a product that answers
+    wrongly while `ps` works is still red.
+    """
+    if os.name == "nt":
+        print("SKIP pz* (Windows has no unreaped-zombie state)")
+        return
+    _zomb = subprocess.Popen([sys.executable, "-c",
+                              "import time; time.sleep(120)"])
+    _live = subprocess.Popen([sys.executable, "-c",
+                              "import time; time.sleep(120)"])
+    try:
+        _zomb.kill()                      # SIGKILL; deliberately NOT waited for
+        _refused = _harness.state_refusal()
+        _state = ""
+        _deadline = time.time() + 10
+        while _refused is None and time.time() < _deadline:
+            _state = _table_state(_zomb.pid)
+            if _state.startswith("Z"):
+                break
+            time.sleep(0.05)
+        _signal_ok = _bare_signal_sees(_zomb.pid)
+        if _refused is not None:
+            for _label in ("pz0 the fixture is an unreaped zombie",
+                           "pz0b pid_alive reads an unreaped zombie as gone"):
+                _harness.skip(check, _label,
+                              "the process table is unreadable here: %s"
+                              % (_refused,), True)
+        else:
+            check("pz0 the fixture is an unreaped zombie the bare signal probe "
+                  "still sees (state %r, kill(pid, 0) answered: %s)"
+                  % (_state, "success" if _signal_ok else "an error"),
+                  _state.startswith("Z") and _signal_ok)
+            _zomb_answer = M.pid_alive(_zomb.pid)
+            _live_answer = M.pid_alive(_live.pid)
+            check("pz0b pid_alive reads an unreaped zombie as gone and a live "
+                  "process as alive",
+                  _zomb_answer is False and _live_answer is True,
+                  "zombie answered %r, live answered %r"
+                  % (_zomb_answer, _live_answer))
+        _zomb.wait()
+        _reaped = M.pid_alive(_zomb.pid)
+        check("pz1 the same pid still reads gone once it is reaped, so the "
+              "zombie reading and the missing-pid reading agree: %r"
+              % (_reaped,), _reaped is False)
+    finally:
+        for _p in (_zomb, _live):
+            try:
+                _p.kill()
+            except OSError:
+                pass
+            _p.wait()
+
+
+# --- a process table `ps` is refused for ----------------------------------------
+def _refused_ps_cases(check):
+    """Where `ps` is the only reader of a process's state and it is refused, the
+    pid is present and its state is unknown - neither the zombie a gone holder
+    leaves nor a process proven running. The product answers that third reading
+    with its basis, counts it as live (an unknown state must not let a live
+    holder older than the stale bound be taken over), and the zombie cases skip
+    by the refusal instead of going red. The refusal is injected with a `ps` of
+    the suite's own on PATH, as a sandbox's exit 71 or an unstartable binary.
+    """
+    if os.name == "nt":
+        _harness.skip(check, "zr1 a refused ps is a third liveness answer",
+                      "no unreaped-zombie state, so no state letter is read",
+                      os.name == "nt")
+        return
+    sleeper = subprocess.Popen([sys.executable, "-c",
+                                "import time; time.sleep(120)"])
+    proj = tempfile.mkdtemp(prefix="audit-locks-refused-ps-")
+    try:
+        pid = sleeper.pid
+        # On a host with /proc the state is read there and `ps` is never asked,
+        # so the stub changes nothing: the expectation follows the reader.
+        proc_reads = os.path.isfile(os.path.join(os.sep, "proc", str(pid), "stat"))
+
+        refused = _harness.with_stub_ps(lambda: M._is_zombie(pid), "exit 71")
+        check("zr1 with ps refused (exit 71) the zombie reading is None - "
+              "unknown, not the False that read a zombie alive - with a reason "
+              "naming the refusal: %r" % (refused,),
+              (refused[0] is False if proc_reads else
+               isinstance(refused, tuple) and refused[0] is None
+               and "exited 71" in refused[1]))
+        unstartable = _harness.with_stub_ps(lambda: M._is_zombie(pid), None)
+        check("zr2 ...and the same for a ps that cannot be started at all, the "
+              "reason naming the error the start raised: %r" % (unstartable,),
+              (unstartable[0] is False if proc_reads else
+               isinstance(unstartable, tuple) and unstartable[0] is None
+               and "EACCES" in unstartable[1]))
+
+        seen = _harness.with_stub_ps(
+            lambda: (M.liveness(pid), M.pid_alive(pid)), "exit 71")
+        check("zr3 a present pid whose state ps was refused for reads LIVE with "
+              "the basis said - present, state unverified, and why - never gone "
+              "and never the unknown that falls back to age: %r" % (seen,),
+              seen[1] is True and seen[0].get("alive") is True
+              and (proc_reads or (seen[0].get("state") == "unverified"
+                                  and "exited 71" in seen[0].get("basis", ""))))
+
+        # SECOND DIRECTION: a ps that RUNS is read for its answer. A product
+        # answering "unknown" for every ps would pass zr1-zr3; these fail it.
+        zombie = _harness.with_stub_ps(
+            lambda: (M._is_zombie(pid), M.liveness(pid), M.pid_alive(pid)),
+            "echo Z; exit 0")
+        running = _harness.with_stub_ps(
+            lambda: (M._is_zombie(pid), M.liveness(pid), M.pid_alive(pid)),
+            "echo Ss; exit 0")
+        check("zr4 SECOND DIRECTION: a ps that runs and prints `Z` reads the pid "
+              "as a zombie, gone; one printing `Ss` reads it running - so the "
+              "reading follows ps's answer, and unknown is only for a refusal: "
+              "%r" % ((zombie, running),),
+              proc_reads or (
+                  zombie[0][0] is True and zombie[2] is False
+                  and zombie[1].get("state") == "zombie"
+                  and running[0][0] is False and running[2] is True
+                  and running[1].get("state") == "running"))
+
+        if not shutil.which("git"):
+            _harness.skip(check, "zr5 a holder whose state is unverified is not "
+                          "taken over", "git provides the shared directory a "
+                          "lock lives in", True)
+        else:
+            subprocess.call(["git", "init", "-q", proj])
+            path = os.path.join(M.lock_dir(proj), "index.lock")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            # Older than the stale bound, so an unknown verdict that fell back
+            # to age would take it.
+            old = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(
+                time.time() - (M.STALE_MINUTES * 2 + 5) * 60))
+            held = {"sessionId": "s-HOLD", "pid": pid,
+                    "hostname": platform.node(), "handedOff": False,
+                    "token": "t-hold", "note": "a long run", "startedAt": old}
+            M._write_lock(path, held)
+            lines = []
+            verdict = _harness.with_stub_ps(lambda: M.judge(held, path),
+                                            "exit 71")
+            code = _harness.with_stub_ps(
+                lambda: M.acquire(proj, "index", note="n", session="s-NEW",
+                                  pid=os.getpid(), wait=0, out=lines.append),
+                "exit 71")
+            check("zr5 a holder present past the stale bound whose state ps was "
+                  "refused for is judged live with the refusal said, and the "
+                  "lock is refused as held - not taken, not called abandoned: "
+                  "%r" % ((verdict, code, lines),),
+                  verdict[0] is True and code == M.E_LIVE
+                  and M.read_lock(path) == held
+                  and (proc_reads or ("exited 71" in verdict[1]
+                                      and any("exited 71" in x for x in lines))))
+
+        # The zombie cases, run with ps refused: where /proc does not answer
+        # they skip naming the refusal and fail nothing; where it does they run.
+        got = _harness.with_stub_ps(lambda: _harness.recorded(_zombie_cases),
+                                    "exit 71")
+        skipped = [c for c in got if "SKIPPED HERE" in c[0]]
+        failed = [c for c in got if not c[1]]
+        check("zr6 with ps refused the zombie cases skip by the refusal - "
+              "pz0 and pz0b each named, the reason carrying ps's exit - and "
+              "fail nothing: %r" % (got,),
+              not failed and len(got) == 3
+              and (proc_reads and not skipped
+                   or sorted(c[0].split()[0] for c in skipped) == ["pz0", "pz0b"]
+                   and all("exited 71" in c[0] for c in skipped)))
+    finally:
+        sleeper.kill()
+        sleeper.wait()
+        shutil.rmtree(proj, ignore_errors=True)
+
+
 def _cases(check):
     # --- the boundary ---------------------------------------------------------
     # Every name `audit-lock.py` spells must BE this module's object. A copy
@@ -466,55 +649,7 @@ def _cases(check):
     check("pl2 ...while this very process answers True, so pl1 is not a probe "
           "that says False to everything", M.pid_alive(os.getpid()) is True)
 
-    # --- an exited process nobody has reaped yet reads dead -----------------------
-    # A killed child is a zombie until its parent calls wait, and a zombie still
-    # answers `kill(pid, 0)`: the bare signal probe called it alive, to every
-    # caller that is not the parent (only the parent can reap it, so waitpid is
-    # no answer for a pid we do not own - it raises ECHILD). The fixture is
-    # confirmed to BE a zombie from the process table and from the signal probe
-    # before the answer is read, so a platform where the child is reaped early
-    # fails loudly rather than passing for the wrong reason. Windows keeps no
-    # zombies: pl1 above is that platform's case.
-    if os.name == "nt":
-        print("SKIP pz* (Windows has no unreaped-zombie state)")
-    else:
-        _zomb = subprocess.Popen([sys.executable, "-c",
-                                  "import time; time.sleep(120)"])
-        _live = subprocess.Popen([sys.executable, "-c",
-                                  "import time; time.sleep(120)"])
-        try:
-            _zomb.kill()                      # SIGKILL; deliberately NOT waited for
-            _state = ""
-            _deadline = time.time() + 10
-            while time.time() < _deadline:
-                _state = _table_state(_zomb.pid)
-                if _state.startswith("Z"):
-                    break
-                time.sleep(0.05)
-            _signal_ok = _bare_signal_sees(_zomb.pid)
-            check("pz0 the fixture is an unreaped zombie the bare signal probe "
-                  "still sees (state %r, kill(pid, 0) answered: %s)"
-                  % (_state, "success" if _signal_ok else "an error"),
-                  _state.startswith("Z") and _signal_ok)
-            _zomb_answer = M.pid_alive(_zomb.pid)
-            _live_answer = M.pid_alive(_live.pid)
-            check("pid_alive reads an unreaped zombie as gone and a live process "
-                  "as alive",
-                  _zomb_answer is False and _live_answer is True,
-                  "zombie answered %r, live answered %r"
-                  % (_zomb_answer, _live_answer))
-            _zomb.wait()
-            _reaped = M.pid_alive(_zomb.pid)
-            check("pz1 the same pid still reads gone once it is reaped, so the "
-                  "zombie reading and the missing-pid reading agree: %r"
-                  % (_reaped,), _reaped is False)
-        finally:
-            for _p in (_zomb, _live):
-                try:
-                    _p.kill()
-                except OSError:
-                    pass
-                _p.wait()
+    _zombie_cases(check)
 
     # --- a holder that lets go between the read and the judgement -----------------
     # The claim is read, THEN its holder is judged: a holder that releases and
@@ -790,6 +925,7 @@ def _cases(check):
     _harness.stage(check, "rf-block", _refresh_cases)
     _harness.stage(check, "sd-block", _sharing_cases)
     _harness.stage(check, "ap-block", _ancestor_cases)
+    _harness.stage(check, "zr-block", _refused_ps_cases)
 
 
 # --- a claim held by the caller's own process under an earlier session --------
@@ -930,11 +1066,20 @@ def _ancestor_cases(check):
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             universal_newlines=True)
         chain = [int(p) for p in probe.stdout.split() if p.isdigit()]
-        check("ap3 the ancestry a command reads reaches past its parent: a child "
-              "of this process lists this process AND this process's parent, "
-              "nearest first: %r" % ((chain, os.getpid(), holder,
-                                      probe.stderr[-300:]),),
-              chain[:2] == [os.getpid(), holder])
+        # Past the parent the walk reads the process table, and where `ps` is
+        # its only reader and is refused there is no table to walk; the child
+        # inherits this process's sandbox, so the refusal read here is its own.
+        _walk_refused = _harness.state_refusal()
+        if _walk_refused is not None:
+            _harness.skip(check, "ap3 the ancestry reaches past its parent",
+                          "the process table is unreadable here: %s"
+                          % (_walk_refused,), True)
+        else:
+            check("ap3 the ancestry a command reads reaches past its parent: a "
+                  "child of this process lists this process AND this process's "
+                  "parent, nearest first: %r"
+                  % ((chain, os.getpid(), holder, probe.stderr[-300:]),),
+                  chain[:2] == [os.getpid(), holder])
     finally:
         if pid_was is not None:
             os.environ["CLAUDE_PID"] = pid_was

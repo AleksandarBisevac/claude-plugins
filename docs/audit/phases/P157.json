@@ -1,0 +1,305 @@
+{
+  "id": "P157",
+  "title": "The cost phase before S2",
+  "status": "in_progress",
+  "description": "D15/D16 (owner 2026-11-05, option c). Analysis and per-task savings: quality-gates-internal/plans/2026-11-05-cost-phase/ANALYSIS.md and PLAN.md. Faults F833-F836, F838.",
+  "desiredOutcome": "The writer session reaches the drive's gate without blind retries, a red its base reproduces stops instead of resuming, the writer starts at plain Claude Code's size and leaves slow steps to the drive's gate, so the stage-2 pairs re-measure at Q1 <= 2.0",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "a27f8a563a6372beb97a53b1981ebc8d0a7f30f3",
+  "branch": "audit/p157-the-cost-phase-before-s2",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P157.1",
+      "title": "A refused ps is a third answer: liveness names the refusal, a lock holder is not taken over it, and the suites skip by the refusal instead of going red",
+      "status": "in_progress",
+      "description": "Fixes F835. At a27f8a56: _locks.py:201-222 _is_zombie returns False on OSError and ignores ps's exit code; pid_alive 166-198 returns `pid == os.getpid() or not _is_zombie(pid)`; _parent_of 264-290 also asks ps (caller _ancestry 339-355). Any macOS Seatbelt sandbox refuses /bin/ps (execvp EPERM, exit 71), so a zombie reads alive. Reproduced 2026-11-05: test__locks 138/138 plain, 136/138 under `(version 1)(allow default)`. Do NOT map \"present, zombie state unreadable\" to None for judge() (501-526): None falls back to age and would let a live holder older than STALE_MINUTES be taken - add a liveness answer with a basis (present-unverified counts as live). Callers to keep correct: holder_gone 498, judge 519, panel-server._pid_alive 860-863, _proc_group._gone 148-152, stamp-verification.py:3230, audit-lock.py:146, tools/_suite.py:122-129, tools/prove-gates.py:3179-3183, tests/_harness._pid_present 1655-1657 and _group_present 1660-1680 (True on OSError). Unguarded ps in tests/test__affected_tests.py:783 and 875-882. Skips use _harness.skip with the specific refusal as evidence, never any exception (F832's class.\nEOF\n)",
+      "files": [
+        "plugins/audit/scripts/governance/_locks.py",
+        "tests/test__locks.py",
+        "tests/test_run_test_gate.py",
+        "tests/_harness.py",
+        "tests/test__affected_tests.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__locks.py: with ps refused (a stub ps on PATH exiting 71) _is_zombie answers None with a reason naming the refusal; pid_alive does not read a present holder as gone and a lock is not taken; pz0 and pid_alive skip naming EPERM, and go red when ps runs but answers wrong",
+          "tests/test_run_test_gate.py: the liveness cases (lv0) skip naming the refusal when ps is refused and stay red-capable when it runs"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__locks.py tests/test_run_test_gate.py tests/test__affected_tests.py tests/test__deps.py tools/_suite.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-05T10:02:23Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-05T10:02:21Z",
+          "text": "the task changes only _harness's liveness helpers (_pid_present, _group_present); the sentence the sweep quotes ('refuses to start') belongs to fixture_root's isolation text, which the task does not touch",
+          "waives": "tools/sweep-selftests.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-05T10:33:34Z.4fab9a",
+        "status": "passed",
+        "at": "2026-11-05T10:33:34Z"
+      }
+    },
+    {
+      "id": "P157.2",
+      "title": "The red excerpt is the failing cases, read by one reader for the gate row and the drive's resume prompt, derived steps included, and says so when no case is readable",
+      "status": "pending",
+      "description": "Fixes F833 and F834 as one class: every builder of a failure excerpt reads failing cases through one reader. At a27f8a56: run-test-gate.py:946-971 _named_failures returns [] for a name absent from _FAILURE_READERS (no sweep/house row), so failing_lines 974-1019 falls back to `tail = lines[-limit:]` (1008); caller 3902-3903 with MAX_FAILING 10 (_evidence_io.py:501). In stage 2 (k03r) all three drive runs recorded 6 PASS lines and 0 failing cases. _runner_output.sweep_failing_cases 353-375 (and failing_cases(text, \"house\") 563-587) already parse them; only stamp-verification._failing_cases 1913-1922 calls it. drive-phase.failing_lines 2268-2287 keeps a step line only when its name holds no space (the regex at 2275), which a derived step name with spaces (`affected/python: a, b`) never matches. fl0 holds _FAILURE_READERS to _SUMMARY_READERS, so add the sweep/house branch in _named_failures (as _suite_candidates 1030-1037 does), not a table row. Dependants: the mute rule (muted_failures ~3654) needs named+raw - a sweep step becoming nameable must not change mute behaviour; audit-lookup.red_step_lines 1042-1091 and failing_suite_lines 1094-1110 match `suite in line`, so a case line carries its script. The row is hash-chained and bounded (MAX_FAILING, _journal_io.MAX_VALUE_CHARS). verbs-in-full.md:529 and orchestrator.md:626 describe the tail; orchestrator.md has a 62000 B ceiling.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/_runner_output.py",
+        "tests/test_run_test_gate.py",
+        "tests/test_drive_phase.py",
+        "tests/test__runner_output.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "tests/test_audit_lookup.py",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/reference/orchestrator.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_test_gate.py: a red sweep step's failing holds each failing case as '<script>: FAIL <label>' with a basis naming the sweep (replay of the k03r shape); a house single-suite run is named the same way; output no reader parses leaves failing empty with the basis 'no failing case readable from step <name>' (replaces fl3/fl4); a green step carries nothing (fl6); a muted sweep suite behaves as before (mu*)",
+          "tests/test_drive_phase.py: the resume prompt carries an affected/<arm>: a, b step's failing cases; a red with no readable case says so and names the step, with no tail under the failing-lines head; the prompt reads failing from the recorded row"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_drive_phase.py tests/test__runner_output.py tests/test_audit_lookup.py tests/test__refs.py tools/_suite.py",
+          "python3 tools/measure-context.py --gate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P157.3",
+      "title": "The writer's skills are disclosed, not appended whole: the system prompt carries each declared skill's name, description and checklist, and the session record names the skills the writer invoked",
+      "status": "pending",
+      "description": "Stage 2: the writer starts 11.7-12.1k tokens heavier than plain on every pair, 22% of the writer's excess; the three bodies are 30049 characters (ANALYSIS.md section 2A). At a27f8a56: run-agent-session.py:323-331 skills_prompt appends each SKILL.md whole; session_argv 234-255 adds --append-system-prompt-file (248-251); skills_record 334-336; producer drive-phase.writer_argv 1939-1953 / session_skills 1931-1936. Owner D12 requires the writer's skills loaded: \"loaded\" now means a Skill tool_use in the writer stream (the stage-1 check check-skills-loaded.py already accepts it), recorded as skillsInvoked, and the drive names a declared skill never invoked. Checklist rule: frontmatter description, plus a `## Checklist` section when the SKILL.md has one, nothing else (no-silent-pass has one; writing-python and before-you-claim do not). The module docstring 31-48 states the preload rationale and a probe (claude 2.1.307) - restate it from what the code does now; do not edit a probe claim by reading. Out of scope: the auto-memory section and the agent listing (no documented flag; needs a paid probe).",
+      "files": [
+        "plugins/audit/scripts/governance/run-agent-session.py",
+        "tests/test_run_agent_session.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_agent_session.py: the appended prompt file holds each skill's name, description and its Checklist section, and no body token (red-first: a body token is there today); a skill with no Checklist section gets name and description only; the record carries skillsInvoked read from a fixture stream's Skill tool_use; a stream with no Skill call records an empty list",
+          "tests/test_drive_phase.py: a writer that never invoked a declared skill is named in the drive's report of that session"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test_drive_phase.py tests/test__refs.py tools/_suite.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P157.4",
+      "title": "The writer brief leaves a step whose measured mean outlives the Bash tool's foreground bound to the drive's gate, naming it once with its mean and run count, and keeps the task's own suites",
+      "status": "pending",
+      "description": "Stage 2: the writer ran the 6-7 minute sweep the drive runs again after the session; past the Bash tool's 120 s foreground bound the CLI backgrounds it and the writer polls - wait/poll 18 calls vs 5, +0.268, full-sweep calls 0.130 (ANALYSIS.md section 2C). At a27f8a56: audit-lookup.py:998-1039 compose_writer_prompt (left_to_phase_gate 941-952, \"Before you finish\" 1034), config at write_brief 2136-2142 via _config_rules.phase_gate_only_setting 307-321. Durations: _evidence_io._gate_cost_walk 1898-1918 (per step name). Add a pure `slow=()` parameter computed in write_brief; the bound is a named constant whose basis is the CLI's message \"did not complete within its 120s timeout and was moved to the background\" (stage 2 k02 orchestrator stream). A mean over one run is printed with its count. COMPATIBILITY.md: phaseGateOnly keeps being read. Do not read .github/sweep-costs.json (this repo's CI table, not a plugin source).",
+      "files": [
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "tests/test_audit_lookup.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "tests/test__evidence_io.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_lookup.py: a step measured above the bound is not under 'Before you finish' and is named once with its mean and run count (red-first: listed today); a step measured under the bound stays; an unmeasured step stays and says unmeasured; write_brief reads a fixture ledger row's durationMs into the prompt; a slow step also in phaseGateOnly is named once; slow=() leaves wp1's bytes unchanged",
+          "tests/test__evidence_io.py: step_mean_ms returns the mean and the measured count by step name and none for a step with no measured run"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test__evidence_io.py tools/_suite.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P157.5",
+      "title": "The drive measures a red's base once and stops with red-at-base, not resume, when the base reproduces every failing case",
+      "status": "pending",
+      "description": "Fixes F836. Root cause: every drive row in stage 2 k02/k03r has baseRed.verdict no-base (\"no run of this gate is recorded at base ... on a clean tree\"); no ledger row ever tested either base commit. At a27f8a56: base_red run-test-gate.py:596-641 only reads the ledger through _evidence_io.base_run 861-879 (same_head and tested_tree_clean); a task gate runs on HEAD plus the work, so its rows are dirty and no-base is the usual answer for any task. run-test-gate.py:5790-5797 computes base_reading only for failed measured --task runs; drive-phase.base_red_why 1319-1356 turns it into a clause; gate_red_decision 2535-2567 never branches on the verdict (gate-red-writer at 2549-2553, DECISIONS 732-735). Fix: on no-base/not-knowable, measure the red steps once per start in a detached worktree at HEAD (stamp-verification._build_throwaway 3286-3291 is the pattern) with `run-test-gate.py ... --record --tree <wt>` and no task id, then decide: base-only -> a new decision gate-red-base (block / rerun / owner commit over it with a reason, see base_red_lines 687-690) with a STEPS row and a DECISIONS entry. Compare by failing case per script (P157.2's reader), and by suite or case for derived steps - _base_step 560-572 matches by name and derived names carry suite lists (_affected_tests.py:1009, run-test-gate.py:2603). Stage-2 cost of this fault: 0.239 writer + 0.501 orchestrator over two runs.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "tests/test_drive_phase.py",
+        "tests/test_run_test_gate.py",
+        "plugins/audit/reference/orchestrator.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a red task gate whose base verdict is no-base records one base run at HEAD on a clean tree and re-reads base_red; a base reproducing every failing case returns gate-red-base and dispatches no writer session; a base that is green, or reproduces only some cases, still returns gate-red-writer; the k02 sandbox-shaped red replays to gate-red-base",
+          "tests/test_run_test_gate.py: a base run of derived steps is matched to the task run by suite and case, not by step name"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_run_test_gate.py tests/test__evidence_io.py tests/test__refs.py tools/_suite.py",
+          "python3 tools/measure-context.py --gate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P157.2"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P157.6",
+      "title": "The drive dispatches the task gate as a background step and decides from the recorded row, so the CLI's background-command limit cannot kill it into a second measurement",
+      "status": "pending",
+      "description": "Fixes F838. In stage 2 k02 and k03r the orchestrator's `drive-phase.py next ... --task --signal` call carried no timeout and no run_in_background; the CLI moved it to the background after 120 s and killed it at about 708-720 s (durationMs 708384/708206), and the drive measured the whole gate again. At a27f8a56 the drive runs the task gate inline in gate_step 4573-4594 (task_gate 3311-3322, record_gate 3298-3308). Only the writer's run: line carries a background rule (WRITER_RULE drive-phase.py:475-476, held by sn4d ~10082). Mechanism: a dispatch step for the gate with a WRITER_RULE-shaped rule (every command already routes dispatch to background Bash; commands/phase.md has 2 B left under measure-context, so no command-doc bytes), the next call reuses the recorded verdict (reused_result ~2979, GATE VERDICT REUSED) - verify reuse holds on an identical tree digest - and a wait step for a launched gate with no row yet (like wait-writer 493-497). The CLI's 600 s cap is recorded at audit-task.py:5902 (_BASH_CALL_CAP_SECONDS).",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "plugins/audit/reference/orchestrator.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: next on a task whose writer has exited prints a gate dispatch whose run: line is the run-test-gate argv with a background rule and runs no gate inline; the next call decides from the recorded row without measuring again; a gate killed mid-run prints a wait or rerun step, never a silent re-measure; every command doc that routes dispatch covers the gate step (sn4d-style)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__refs.py tools/_suite.py",
+          "python3 tools/measure-context.py --gate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P157.5"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "988f3478-fc74-4a1e-a62b-7522b404c792",
+    "branch": "audit/p157-the-cost-phase-before-s2",
+    "at": "2026-11-05T10:02:23Z"
+  },
+  "startedAt": "2026-11-05T10:02:23Z"
+}

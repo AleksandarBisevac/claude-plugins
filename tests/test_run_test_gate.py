@@ -8333,33 +8333,85 @@ def _single_look_reads(source, filename):
     return sorted(found)
 
 
-def _liveness_cases(check):
-    """A killed process is judged gone by the one deadline helper, never by a look."""
+def _liveness_waits(check):
+    """`lv1`/`lv2`: a killed process, and a torn-down group, judged gone by the
+    one deadline helper on the product's liveness rule.
+
+    Both need the process table's state letter - a zombie is gone only once it
+    is SEEN to be one - so where nothing here may read that letter they skip
+    with the refusal `_harness` read on its own as their evidence: the single
+    pid's letter comes from /proc where it exists and from `ps` elsewhere, the
+    group's from `ps` everywhere. Where the table is readable both still assert.
+    """
     import _locks
-    _skip_reason = "no `os.killpg` here, so no group to wait on"
     if not hasattr(os, "killpg"):
-        _harness.skip(check, "A torn-down group's grandchild is judged gone by "
-                      "one deadline helper", _skip_reason, True)
+        _harness.skip(check, "lv1 a killed process is judged gone by one "
+                      "deadline helper", "no `os.killpg` here, so no group to "
+                      "wait on", True)
         return
     napper = "import time; time.sleep(0.6)"
+    solo_refused = _harness.state_refusal()
+    group_refused = _harness.ps_refusal()
     kids = []
     try:
-        # exits 0.6 s from now and is NOT reaped here: a zombie by the time it
-        # is judged. A single look at once sees it running.
-        solo = subprocess.Popen([sys.executable, "-c", napper],
-                                start_new_session=True)
-        kids.append(solo)
-        first_look = _harness._pid_present(solo.pid)
-        solo_gone = _harness.gone_within(solo.pid, 15)
-        product_says_alive = _locks.pid_alive(solo.pid)
-        grp = subprocess.Popen([sys.executable, "-c", napper],
-                               start_new_session=True)
-        kids.append(grp)
-        grp_gone = _harness.gone_within(grp.pid, 15, group=True)
-        self_gone = _harness.gone_within(os.getpid(), 0.2)
+        if solo_refused is not None:
+            _harness.skip(check, "lv1 a killed process is judged gone by one "
+                          "deadline helper", "the process table is unreadable "
+                          "here: %s" % (solo_refused,), True)
+        else:
+            # exits 0.6 s from now and is NOT reaped here: a zombie by the time
+            # it is judged. A single look at once sees it running.
+            solo = subprocess.Popen([sys.executable, "-c", napper],
+                                    start_new_session=True)
+            kids.append(solo)
+            first_look = _harness._pid_present(solo.pid)
+            solo_gone = _harness.gone_within(solo.pid, 15)
+            product_says_alive = _locks.pid_alive(solo.pid)
+            self_gone = _harness.gone_within(os.getpid(), 0.2)
+            check("lv1 a killed process is judged gone by one deadline helper "
+                  "on the product's liveness rule - a zombie counts as gone - "
+                  "and this live process is not (first_look=%r solo_gone=%r "
+                  "product_pid_alive=%r self_gone=%r)"
+                  % (first_look, solo_gone, product_says_alive, self_gone),
+                  first_look is True and solo_gone is True
+                  and product_says_alive is False and self_gone is False)
+        if group_refused is not None:
+            _harness.skip(check, "lv2 a torn-down group is judged gone by one "
+                          "deadline helper", "ps, the group's only reader, is "
+                          "refused here: %s" % (group_refused,), True)
+        else:
+            grp = subprocess.Popen([sys.executable, "-c", napper],
+                                   start_new_session=True)
+            kids.append(grp)
+            grp_gone = _harness.gone_within(grp.pid, 15, group=True)
+            check("lv2 a torn-down group's last member is judged gone by one "
+                  "deadline helper once it is a zombie (group_gone=%r)"
+                  % (grp_gone,), grp_gone is True)
     finally:
         for kid in kids:
             kid.wait()
+
+
+def _liveness_cases(check):
+    """A killed process is judged gone by the one deadline helper, never by a look."""
+    _liveness_waits(check)
+    # The waits, run with `ps` refused as a sandbox refuses it: each one whose
+    # reader is `ps` skips naming the refusal and none goes red. Where /proc
+    # answers for a single pid, lv1 still runs and must pass.
+    if hasattr(os, "killpg"):
+        proc_reads = os.path.isfile(os.path.join(os.sep, "proc",
+                                                 str(os.getpid()), "stat"))
+        got = _harness.with_stub_ps(lambda: _harness.recorded(_liveness_waits),
+                                    "exit 71")
+        skipped = sorted(c[0].split()[0] for c in got if "SKIPPED HERE" in c[0])
+        check("lv4 with ps refused (exit 71) the liveness waits skip by the "
+              "refusal, each naming ps's exit, and none goes red: %r" % (got,),
+              all(c[1] for c in got) and len(got) == 2
+              and skipped == (["lv2"] if proc_reads else ["lv1", "lv2"])
+              and all("exited 71" in c[0] for c in got if "SKIPPED HERE" in c[0]))
+    else:
+        _harness.skip(check, "lv4 the liveness waits skip by a refused ps",
+                      "no `os.killpg` here, so no group to wait on", True)
     scanned = {}
     for name in sorted(os.listdir(_harness.TESTS_DIR)):
         if name.endswith(".py"):
@@ -8371,16 +8423,9 @@ def _liveness_cases(check):
     fine = ("import os\ndef f(p):\n    os.kill(p, 0)\n")
     home = ("import os\ndef _pid_present(p):\n    os.kill(p, 9)\n"
             "    os.kill(p, 0)\n")
-    check("a torn-down group's grandchild is judged gone by one deadline helper "
-          "on the product's liveness rule, a zombie counts as gone, and no suite "
-          "reads a killed process's liveness once after a fixed sleep "
-          "(first_look=%r solo_gone=%r product_pid_alive=%r group_gone=%r "
-          "self_gone=%r offenders=%r)"
-          % (first_look, solo_gone, product_says_alive, grp_gone, self_gone,
-             offenders),
-          first_look is True and solo_gone is True
-          and product_says_alive is False and grp_gone is True
-          and self_gone is False and not offenders
+    check("lv3 no suite reads a killed process's liveness once after a fixed "
+          "sleep (offenders=%r)" % (offenders,),
+          not offenders
           and _single_look_reads(bad, "x.py") == [4]
           and _single_look_reads(fine, "x.py") == []
           and _single_look_reads(home, "_harness.py") == []

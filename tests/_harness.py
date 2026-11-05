@@ -82,6 +82,7 @@ import ast
 import atexit
 import builtins
 import contextlib
+import errno
 import io
 import json
 import locale
@@ -1642,6 +1643,76 @@ def run_script(path, args, cwd, stdin=None, env=None, timeout=300):
                           env=environ, input=raw_in, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE, timeout=timeout)
     return done.returncode, done.stdout, done.stderr
+
+
+# --- a process table this run may not read -------------------------------------
+# Where there is no /proc, a process's state letter comes from `ps`, and a
+# sandbox may refuse to start it: macOS will not let a sandboxed process run a
+# setuid binary, and /bin/ps is one. A case whose whole subject is that letter -
+# a zombie told apart from a running process - then has nothing to assert, so it
+# skips with the refusal as its evidence. The refusal is read HERE, by asking
+# `ps` about this very process, and not through the product: a product that
+# answered "unreadable" while `ps` works would otherwise make its own cases skip.
+def ps_refusal():
+    """None when `ps` prints this process's state letter, else the refusal, worded."""
+    try:
+        done = subprocess.run(["ps", "-o", "stat=", "-p", str(os.getpid())],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              universal_newlines=True)
+    except OSError as exc:
+        return "starting ps raised %s (%s: %s)" % (
+            type(exc).__name__, errno.errorcode.get(exc.errno, exc.errno),
+            exc.strerror)
+    if done.returncode != 0 or not done.stdout.strip():
+        return "ps exited %d reading this process's own state%s" % (
+            done.returncode,
+            (": %s" % done.stderr.strip()[-200:]) if done.stderr.strip() else "")
+    return None
+
+
+def state_refusal():
+    """None when a process's state letter is readable here - from /proc where it
+    exists, from `ps` elsewhere - else the refusal `ps_refusal()` words."""
+    if os.path.isfile(os.path.join(os.sep, "proc", str(os.getpid()), "stat")):
+        return None
+    return ps_refusal()
+
+
+def with_stub_ps(fn, script):
+    """`fn()`'s value, with a `ps` of the suite's own first on PATH.
+
+    `script` is the stub's POSIX-sh body (`exit 71` is a refused start, as
+    `sandbox-exec` reports one), or None for a `ps` that cannot be executed at
+    all and is the only one on PATH, so starting it raises rather than finding
+    the real one further along. PATH is restored and the stub removed whatever
+    `fn` does.
+    """
+    stub_dir = tempfile.mkdtemp(prefix="harness-stub-ps-")
+    saved = os.environ.get("PATH")
+    try:
+        stub = os.path.join(stub_dir, "ps")
+        with open(stub, "w") as fh:
+            fh.write("#!/bin/sh\n%s\n" % (script or "exit 0",))
+        os.chmod(stub, 0o644 if script is None else 0o755)
+        os.environ["PATH"] = (stub_dir if script is None
+                              else stub_dir + os.pathsep + (saved or ""))
+        return fn()
+    finally:
+        if saved is None:
+            os.environ.pop("PATH", None)
+        else:
+            os.environ["PATH"] = saved
+        shutil.rmtree(stub_dir, ignore_errors=True)
+
+
+def recorded(fn):
+    """`[(label, ok, detail)]` from `fn(check)` run with a check of its own - a
+    block run so a case can read back what it reported (which cases skipped, and
+    why) rather than have it reported."""
+    seen = []
+    fn(lambda label, cond, detail="": seen.append((label, bool(cond),
+                                                   str(detail))))
+    return seen
 
 
 # --- waiting for a killed process to be gone ------------------------------------

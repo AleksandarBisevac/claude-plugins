@@ -3600,10 +3600,13 @@ its own. A path in `removed` (a delete or a rename) owes its importers too, code
 
 ### `plugins/audit/scripts/governance/_locks.py`
 The lock library: where a lock lives (`lock_dir`), what it may be called
-(`valid_name`), whether its holder is alive (`pid_alive`, `judge`), what is held
+(`valid_name`), whether its holder is alive (`liveness`, `pid_alive`, `judge`), what is held
 (`read_lock`, `collect`), and taking or giving one back (`acquire`, `release`). Liveness,
 not age, decides a stale lock, and every verdict carries the BASIS sentence that makes it
-checkable. It is at the bottom of the graph because four callers ask about a lock and only
+checkable. A pid that is present but whose process-table state cannot be read — a sandbox
+refusing `ps` where there is no `/proc` — is its own reading, `unverified`: it counts as
+live, never as the unknown that falls back to age, and `judge` names the refusal in its
+basis. It is at the bottom of the graph because four callers ask about a lock and only
 one of them is a command: `_panel_state`, `audit-doctor` and `audit-usage` each loaded
 `audit-lock.py` through `_loader` (three of the edges `KNOWN_LAYER_DEBT` then carried), and
 `hooks/_config.py` resolves it by path on every tool call — so the module it reaches for

@@ -1006,6 +1006,12 @@
       "title": "The carried low batch of 3.8.0",
       "status": "done",
       "shard": "phases/P156.json"
+    },
+    {
+      "id": "P157",
+      "title": "The cost phase before S2",
+      "status": "in_progress",
+      "shard": "phases/P157.json"
     }
   ],
   "fileIndex": {
@@ -1930,7 +1936,13 @@
       "P156.19-3st",
       "P156.20-3st",
       "P156.21-3st",
-      "P156.22-3st"
+      "P156.22-3st",
+      "P157.1",
+      "P157.2",
+      "P157.3",
+      "P157.4",
+      "P157.5",
+      "P157.6"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -3510,7 +3522,10 @@
       "P155.11",
       "P155.29-gfj",
       "P156.7",
-      "P156.8-3st"
+      "P156.8-3st",
+      "P157.2",
+      "P157.5",
+      "P157.6"
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
@@ -4191,7 +4206,9 @@
       "P155.20-gfj",
       "P156.20-3st",
       "P156.21-3st",
-      "P156.22-3st"
+      "P156.22-3st",
+      "P157.4",
+      "P157.5"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -4322,7 +4339,8 @@
       "P131.2",
       "P143.7-z9j",
       "P153.1",
-      "P156.12-3st"
+      "P156.12-3st",
+      "P157.1"
     ],
     "plugins/audit/scripts/governance/_policy.py": [
       "P15.4",
@@ -4656,7 +4674,9 @@
       "P156.12-3st",
       "P156.20-3st",
       "P156.21-3st",
-      "P156.22-3st"
+      "P156.22-3st",
+      "P157.2",
+      "P157.5"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -6047,7 +6067,9 @@
       "P153.6",
       "P155.1",
       "P155.21-gfj",
-      "P156.7"
+      "P156.7",
+      "P157.2",
+      "P157.4"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -10180,7 +10202,8 @@
       "P131.2",
       "P142.2",
       "P142.9-6yq",
-      "P148.12-xpz"
+      "P148.12-xpz",
+      "P157.2"
     ],
     "plugins/audit/tests/test__runner_output.py": [
       "P102.3",
@@ -10810,7 +10833,11 @@
       "P156.13-3st",
       "P156.16-3st",
       "P156.19-3st",
-      "P156.20-3st"
+      "P156.20-3st",
+      "P157.2",
+      "P157.3",
+      "P157.5",
+      "P157.6"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11089,7 +11116,8 @@
       "P156.12-3st",
       "P156.18-3st",
       "P156.20-3st",
-      "P156.21-3st"
+      "P156.21-3st",
+      "P157.2"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
@@ -11974,7 +12002,8 @@
       "P156.4",
       "P156.6",
       "P156.7",
-      "P156.8-3st"
+      "P156.8-3st",
+      "P157.1"
     ],
     "tests/fixtures/pricing-page-2026-10-10.md": [
       "P131.1"
@@ -12035,7 +12064,8 @@
       "P156.8-3st",
       "P156.12-3st",
       "P156.19-3st",
-      "P156.20-3st"
+      "P156.20-3st",
+      "P157.1"
     ],
     "tests/test__areas.py": [
       "P131.1",
@@ -12190,7 +12220,8 @@
       "P155.20-gfj",
       "P156.20-3st",
       "P156.21-3st",
-      "P156.22-3st"
+      "P156.22-3st",
+      "P157.4"
     ],
     "tests/test__evidence_view.py": [
       "P131.1"
@@ -12257,7 +12288,8 @@
       "P131.1",
       "P153.1",
       "P153.2",
-      "P156.12-3st"
+      "P156.12-3st",
+      "P157.1"
     ],
     "tests/test__machine_paths.py": [
       "P131.1",
@@ -12455,7 +12487,8 @@
       "P142.2",
       "P142.9-6yq",
       "P142.16-6yq",
-      "P148.12-xpz"
+      "P148.12-xpz",
+      "P157.2"
     ],
     "tests/test__scope_companions.py": [
       "P131.1"
@@ -12602,7 +12635,9 @@
       "P152.25-6jb",
       "P155.1",
       "P155.21-gfj",
-      "P156.7"
+      "P156.7",
+      "P157.2",
+      "P157.4"
     ],
     "tests/test_audit_status.py": [
       "P131.1",
@@ -12832,7 +12867,11 @@
       "P156.13-3st",
       "P156.16-3st",
       "P156.19-3st",
-      "P156.20-3st"
+      "P156.20-3st",
+      "P157.2",
+      "P157.3",
+      "P157.5",
+      "P157.6"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -13001,7 +13040,10 @@
       "P156.12-3st",
       "P156.20-3st",
       "P156.21-3st",
-      "P156.22-3st"
+      "P156.22-3st",
+      "P157.1",
+      "P157.2",
+      "P157.5"
     ],
     "tests/test_set_priority.py": [
       "P131.1"
@@ -13130,7 +13172,8 @@
       "P138.1",
       "P138.4-myr",
       "P142.15-6yq",
-      "P148.2"
+      "P148.2",
+      "P157.3"
     ],
     "tests/test_run_agent_session.py": [
       "P131.3",
@@ -13143,7 +13186,8 @@
       "P138.1",
       "P138.4-myr",
       "P142.15-6yq",
-      "P148.2"
+      "P148.2",
+      "P157.3"
     ],
     "plugins/audit/scripts/governance/_clause_coverage.py": [
       "P131.7",

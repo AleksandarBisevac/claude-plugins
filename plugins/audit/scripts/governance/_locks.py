@@ -100,6 +100,7 @@ This module carries no `--selftest` of its own; its cases live in
 `tests/test__locks.py` — see `tests/_harness.py`.
 """
 import calendar
+import errno
 import json
 import os
 import platform
@@ -166,8 +167,31 @@ TOKEN_ENV = "AUDIT_LOCK_TOKENS"
 def pid_alive(pid):
     """True / False / None (unknown). None is the caller's cue to fall back to age.
 
+    `liveness(pid)["alive"]`: the reading behind the answer, and the basis that
+    makes it checkable, are `liveness`'s.
+    """
+    return liveness(pid)["alive"]
+
+
+def _reading(alive, state, basis):
+    return {"alive": alive, "state": state, "basis": basis}
+
+
+def liveness(pid):
+    """`{"alive", "state", "basis"}` - whether `pid` runs, and what says so.
+
+    `alive` is True / False / None; None (state "unknown": no usable pid, or a
+    probe that answered nothing) is the caller's cue to fall back to age. The
+    states that answer it are "running", "gone", "zombie" and "unverified".
+
     An exited process still waiting for its parent to reap it (a zombie) is
     False: it answers the signal probe, and it is not running.
+
+    A PRESENT PID WHOSE STATE CANNOT BE READ IS LIVE, state "unverified", with
+    the refusal in its basis. It is not None: None falls back to age, and a live
+    holder older than STALE_MINUTES would then be taken over because a sandbox
+    refused `ps`. It is not False either: the signal probe found it, and nothing
+    has said it exited.
 
     NOT os.kill(pid, 0) on Windows: CPython implements os.kill there as
     OpenProcess + TerminateProcess(handle, sig), so signal 0 would TERMINATE the
@@ -177,51 +201,74 @@ def pid_alive(pid):
     try:
         pid = int(pid)
     except (TypeError, ValueError):
-        return None
+        return _reading(None, "unknown", "no pid to probe (%r)" % (pid,))
     if pid <= 0:
-        return None
+        return _reading(None, "unknown", "pid %d names no process" % pid)
     if os.name == "nt":
-        return _pid_alive_windows(pid)
+        alive = _pid_alive_windows(pid)
+        return _reading(alive, {True: "running", False: "gone"}.get(alive, "unknown"),
+                        {True: "pid %d is running" % pid,
+                         False: "pid %d is gone" % pid}.get(
+                             alive, "pid %d could not be probed" % pid))
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
-        return False
+        return _reading(False, "gone", "pid %d is not in the process table" % pid)
     except PermissionError:
         pass                    # exists, owned by another user - may still be a zombie
-    except Exception:
-        return None
+    except Exception as exc:
+        return _reading(None, "unknown", "pid %d could not be probed (%s)"
+                        % (pid, exc))
     # The signal probe is true of a zombie: an exited process stays in the table
     # until its PARENT reaps it, and only the parent can (waitpid on any other
     # pid raises ECHILD). To every other caller that is a dead process answering
     # "present", so the table's own state letter is the second question. This
     # process is never one: it is running this line.
-    return pid == os.getpid() or not _is_zombie(pid)
+    if pid == os.getpid():
+        return _reading(True, "running", "pid %d is this process" % pid)
+    zombie, why = _is_zombie(pid)
+    if zombie is True:
+        return _reading(False, "zombie", "pid %d has exited (%s)" % (pid, why))
+    if zombie is False:
+        return _reading(True, "running", "pid %d is running (%s)" % (pid, why))
+    return _reading(True, "unverified",
+                    "pid %d is present, but whether it has exited could not be "
+                    "read (%s), so it counts as running" % (pid, why))
 
 
 def _is_zombie(pid):
-    """True only when the process table says `pid` has exited and awaits its parent.
+    """`(True | False | None, reason)`: has `pid` exited, awaiting its parent?
 
     /proc/<pid>/stat where it exists (Linux; the state letter follows the last
     ")" because the command name may itself hold spaces and parentheses), `ps -o
-    stat=` otherwise (macOS has no /proc). Anything unreadable - no ps, a hidden
-    /proc, a timeout - is False: a process that cannot be asked about stays
-    "present", which is what the bare signal said before this second question
-    existed, so the fallback never turns a live holder into a gone one.
+    stat=` otherwise (macOS has no /proc). None is "could not be read" - a `ps`
+    that would not start (a macOS sandbox refuses the setuid /bin/ps), exited
+    non-zero, timed out or printed nothing - and `reason` names which, so the
+    refusal reaches the verdict instead of passing for "not a zombie".
     """
     try:
         with open(os.path.join(os.sep, "proc", str(pid), "stat"),
                   encoding="utf-8", errors="replace") as fh:
-            return fh.read().rpartition(")")[2].split()[0] == "Z"
+            letter = fh.read().rpartition(")")[2].split()[0]
+        return letter == "Z", "/proc reads state %s" % letter
     except (OSError, IndexError):
         pass
     try:
-        out = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
-                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                             encoding="utf-8", errors="replace",
-                             timeout=10).stdout
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return out.strip().startswith("Z")
+        done = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
+                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                              encoding="utf-8", errors="replace", timeout=10)
+    except OSError as exc:
+        return None, "ps could not be started: %s (%s) %s" % (
+            type(exc).__name__, errno.errorcode.get(exc.errno, exc.errno),
+            exc.strerror or exc)
+    except subprocess.SubprocessError as exc:
+        return None, "ps did not answer: %s" % (type(exc).__name__,)
+    state = done.stdout.strip()
+    if done.returncode != 0:
+        return None, "ps exited %d" % done.returncode
+    if not state:
+        return None, "ps printed no state"
+    return state.startswith("Z"), "ps reads state %s" % state
 
 
 def _pid_alive_windows(pid):
@@ -516,10 +563,14 @@ def judge(info, path, host=None):
     pid, lock_host = info.get("pid"), info.get("hostname")
     age = _age_minutes(info, path)
     if pid and lock_host == host:
-        alive = pid_alive(pid)
-        if alive is True:
+        reading = liveness(pid)
+        if reading["state"] == "unverified":
+            # Live, and said so with its reason: the age below is never asked,
+            # so a holder past the stale bound is not taken over on a refusal.
+            return True, "%s on this host (%s)" % (reading["basis"], host)
+        if reading["alive"] is True:
             return True, "pid %s is running on this host (%s)" % (pid, host)
-        if alive is False:
+        if reading["alive"] is False:
             return False, "pid %s is gone on this host (%s)" % (pid, host)
         basis = "pid %s on this host could not be probed" % pid
     elif pid:
