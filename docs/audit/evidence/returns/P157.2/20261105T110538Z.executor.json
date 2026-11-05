@@ -1,0 +1,58 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_drive_phase.py tests/test__runner_output.py tests/test_audit_lookup.py tests/test__refs.py tools/_suite.py": "pass",
+    "python3 tools/measure-context.py --gate": "pass",
+    "python3 tests/test__output_lints.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-05T11:13:41Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_drive_phase.py tests/test__runner_output.py tests/test_audit_lookup.py tests/test__refs.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 12 of 609 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ru17 (house FAIL), bf56 (house FAIL), ws4 (house FAIL), fl3 (house FAIL), fl4 (house FAIL), mu64 (house FAIL), fc1 (house FAIL), fc2 (house FAIL) and 4 more: SELFTEST FAILED: 600/609 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Attempt 2 fixes the two lint findings test__output_lints.py reported against attempt 1, and nothing else. pn0: the three per-file sweep lines in tests/test_run_test_gate.py's fixtures (SWEEP_K03R's two `ok` lines, fc5's green sweep line) now build their case count through %-formatting instead of writing it in the literal; the fixture bytes are unchanged apart from one column of padding on the tools/where.py line. le4: _runner_output._sweep_blocks reads its body through plain_text() before the $-anchored _SWEEP_BLOCK runs over it, and run-test-gate._table_failures reads its body through _ro.plain_text() before the table's $-anchored readers run; both callers already normalised the text, and plain_text is idempotent, so the answers do not change - the lint asks that each reader not depend on its caller. Everything from attempt 1 stands as filed: _runner_output.house_case_lines is the one sweep/house case reader; run-test-gate._named_failures asks the sweep, then the table runners, then house; failing_lines returns [] with 'no failing case readable from step <name>: <why>' where no reader names a case, and only a no-verdict step keeps a labelled progress_tail; the mute rule reads only _FAILURE_READERS runners (mu64/mu65); drive-phase.failing_lines(row, text) reads the recorded row via gate_row; audit-lookup prints the gate's basis for an empty failing list and claims the line cap only when it was reached; docs in PLUGIN-BUILD-GUIDE, verbs-in-full.md, orchestrator.md (61992/62000 B). Commands, run from the project dir after these fixes: python3 tests/test__output_lints.py --selftest exit 0, ALL PASS 182/182; the brief's sweep command exit 0, '6/6 files ok, 1967 cases'; python3 tools/measure-context.py --gate exit 0. Dependants as answered in attempt 1, unchanged by this attempt: the two functions touched here are private and their outputs are identical for every caller. Not done: CHANGELOG.md (not in files) has no entry; ruff and vermin were not run (not in the brief's gate).",
+    "descriptive": "Attempt 2: the k03r fixture's case counts are built rather than written, and the two new readers normalise their own text, so the output lints pass along with the task gate."
+  },
+  "testsAdded": [
+    "tests/test_run_test_gate.py fc1: the k03r sweep replay - failing is the three '<script>: FAIL <label>' cases, basis names the sweep",
+    "fc2: the committed row keeps the three cases, each still opening with its script",
+    "fc3: a single house suite's case is named with the script its command names",
+    "fl3/fl4 rewritten: unparsed output and a jest run that named nothing leave failing empty with 'no failing case readable from step <name>'",
+    "fc4: a red sweep file that printed no case line says no case was readable",
+    "fc5: green sweep and green house steps carry no failing keys (fl6 kept)",
+    "fc6: render prints the cases under the step and no PASS line",
+    "fc7: a timed-out step keeps its labelled progress tail",
+    "mu64/mu65: a sweep step with its red files muted fails, honours and refuses nothing, as before",
+    "tests/test_drive_phase.py rz1-rz4: derived step with spaces carries its cases; no readable case says so with no tail; the prompt reads the row, not the rendered text; no row says so; ws4 extended - the real resume prompt carries the row's 'no failing case readable from step' sentence",
+    "tests/test__runner_output.py rs5: house_case_lines over sweep blocks, one suite, a command naming no script, and non-house output; house_case_lines added to ru17's floor",
+    "tests/test_audit_lookup.py bf56: a red file with no case line prints the gate's basis and no false cap claim"
+  ],
+  "casesAdded": [
+    [
+      "fc1",
+      "fc2",
+      "fc3",
+      "fl3",
+      "fl4",
+      "fc4",
+      "fc5",
+      "fl6",
+      "fc6",
+      "fc7",
+      "mu64",
+      "mu65"
+    ],
+    [
+      "rz1",
+      "rz2",
+      "rz3",
+      "rz4",
+      "ws4"
+    ]
+  ],
+  "claims": "claims:\n1 _runner_output.py _sweep_blocks and run-test-gate.py _table_failures now open with plain_text(), which their docstrings and le4 require; the rest as filed in attempt 1\n2 the lints were watched red on attempt 1's tree (the coordinator's run of test__output_lints: pn0, le4, 180/182) and green after these edits (182/182); the mutations from attempt 1 stand\n3 the pn0 hits were the three lines named; grep for a bare 'N cases' literal in my added fixture lines found no others, and test__output_lints over the whole tree is green; le4 named two sites, both fixed\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 the counts the lint flagged are now built by format, not written as prose numbers",
+  "stamp": "audit-stamp: {\"content\":\"sha256:e8a9cc209cd71be8461bc6b9999b0ec7c95de5d9a4113fdc021c7c4c8cd69ea8\",\"dirtyDigest\":\"sha256:ed0ba14f48a71acb90aa2dc1fcae770b571fdba63dabf8d40b21a84cc8ca626b\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"7e2b8b34f1d9ceae\",\"plugins/audit/reference/orchestrator.md\":\"7c3a6e10131c39cb\",\"plugins/audit/reference/verbs-in-full.md\":\"64f358255d39e59e\",\"plugins/audit/scripts/governance/_runner_output.py\":\"0f8bef6eb86e0513\",\"plugins/audit/scripts/governance/drive-phase.py\":\"5e565ec6c50965a5\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"9c22505973f1377c\",\"plugins/audit/scripts/status/audit-lookup.py\":\"841985af94979286\",\"tests/test__runner_output.py\":\"e74ffd793817241b\",\"tests/test_audit_lookup.py\":\"d2439e8c3b0af9b2\",\"tests/test_drive_phase.py\":\"02bf4442a5eaed37\",\"tests/test_run_test_gate.py\":\"272b66ad01d06bf8\"},\"head\":\"83d59075\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/orchestrator.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/governance/_runner_output.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test__runner_output.py\",\"tests/test_audit_lookup.py\",\"tests/test_drive_phase.py\",\"tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:bdab6b07b7a03c0dc8ae1a8af96df66746b35c9d03cfbba12aea76ddfe3f6606\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

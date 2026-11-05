@@ -1058,6 +1058,35 @@ def _brief_cases(check):
           and retry_section_m.count("no FAIL line recorded")
           == len(many) - _evio.MAX_FAILING)
 
+    # A red sweep file that printed no case line: the row keeps an empty
+    # `failing` beside the gate's sentence saying so, and no cut was taken.
+    unread_basis = ("no failing case readable from step selftests: no runner "
+                    "this gate reads wrote failure lines in its output")
+    unread_row = {"status": "failed", "durationMs": 10, "failed": ["selftests"],
+                  "ranTotal": 2, "coverageBasis": None, "treeBasis": "b",
+                  "treeMutated": [], "overlap": None,
+                  "steps": [{"name": "selftests", "command": sweep_cmd,
+                             "exit": 1, "failing": [],
+                             "failingBasis": unread_basis,
+                             "failingSuites": ["tests/test_boot.py"],
+                             "failingSuitesBasis": "the sweep named them"}]}
+    sweep_task["testEvidence"] = {"runId": "run-unread", "status": "failed",
+                                  "at": "z"}
+    proju, mpathu = project("bf-retry-unread", retry)
+    _evio.append_row(proju, _evio.row_for(
+        proju, unread_row, "task", {"taskId": "P1.1"},
+        {"runId": "run-unread", "ts": "2026-01-01T00:00:00Z", "attempt": 1,
+         "via": "cli"}, published=[sweep_cmd]))
+    brief(proju, mpathu, "P1.1", "executor")
+    textu = read(brief_file(proju, "P1.1", "20260101T000000Z.executor.md")) or ""
+    retry_section_u = textu[textu.find("Retry"):]
+    check("bf56 a red file the row names with NO case line says the gate's "
+          "own sentence that no case was readable, and never that the row's "
+          "line bound cut it - no cut was taken: %r" % (retry_section_u[:700],),
+          "tests/test_boot.py" in retry_section_u
+          and "no failing case readable from step selftests" in retry_section_u
+          and "keeps at most" not in retry_section_u)
+
     # ---- the retry section reads the FILED return, not the task's own -----
     # fields - `task.outcome`/`task.redFirst` move only at `done`
     # (`audit-task.py`'s `close_task`), so a retried attempt that was never

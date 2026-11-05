@@ -2639,26 +2639,27 @@ def _cases(check):
     _make_red = ("building object files\n"
                  "src/parse.c:44:9: error: implicit declaration\n"
                  "make: *** [build/parse.o] Error 1\n")
-    _tail, _tail_basis = M.failing_lines(_make_red, _ev_io.MAX_FAILING)
-    check("fl3 a runner NONE of the readers recognises gets a capped tail of its "
-          "output instead of silence, and the basis says so IN SO MANY WORDS - a "
-          "reader who could not tell a tail from a list of names would read a "
-          "stack frame as a test name: %r" % ((_tail[-1:], _tail_basis),),
-          _tail == _make_red.strip().split("\n")
-          and "NOT a list of failing checks" in _tail_basis
-          and "no runner this gate can count" in _tail_basis)
+    _fl3_step = M.observed_step("build", "make", 1, _make_red, {}, 1)
+    check("fl3 output NONE of the readers parses leaves failing EMPTY, and the "
+          "basis says no failing case was readable from the step, naming it - "
+          "a tail of the output handed over instead would read a compiler line "
+          "as a failing check: %r"
+          % ((_fl3_step.get("failing"), _fl3_step.get("failingBasis")),),
+          _fl3_step.get("failing") == []
+          and "no failing case readable from step build"
+          in (_fl3_step.get("failingBasis") or "")
+          and not any(ln in repr(_fl3_step.get("failing"))
+                      for ln in _make_red.strip().split("\n")))
 
     _quiet_jest = "Tests:       1 failed, 8 passed, 9 total\n"
-    _q_lines, _q_basis = M.failing_lines(_quiet_jest, _ev_io.MAX_FAILING)
-    check("fl4 A RECOGNISED RUNNER THAT NAMED NOTHING FALLS TO THE TAIL TOO, "
-          "which is the arm that keeps this from being the same defect one "
-          "branch in: an empty list because jest was recognised and printed no "
-          "bullet hands the operator a red verdict and no text, which is exactly "
-          "what they already had. The basis names the runner AND says the lines "
-          "are not failing checks: %r" % ((_q_lines, _q_basis),),
-          _q_lines == [_quiet_jest.strip()]
-          and "jest" in _q_basis
-          and "NOT a list of failing checks" in _q_basis)
+    _fl4_step = M.observed_step("test", "npx jest", 1, _quiet_jest, {}, 1)
+    check("fl4 A RECOGNISED RUNNER THAT NAMED NOTHING says the same, naming "
+          "the step: jest was read and printed no bullet, so there is no case "
+          "to hand over, and the summary line is not one: %r"
+          % ((_fl4_step.get("failing"), _fl4_step.get("failingBasis")),),
+          _fl4_step.get("failing") == []
+          and "no failing case readable from step test"
+          in (_fl4_step.get("failingBasis") or ""))
 
     _many = "".join("  ● suite > case %d\n" % (n,)
                     for n in range(_ev_io.MAX_FAILING + 3))
@@ -5406,6 +5407,7 @@ def _cases(check):
                    _empty_and_retry_cases)
     _harness.stage(check, "sf0 the suite-files block", _suite_files_cases)
     _harness.stage(check, "mu0 the muted-suite block", _muted_cases)
+    _harness.stage(check, "fc0 the failing-case block", _failing_case_cases)
     _harness.stage(check, "pw0 the playwright-flaky block", _playwright_cases)
     _harness.stage(check, "rv0 the remedy-line block", _remedy_cases)
     _harness.stage(check, "dg0 the record-before-render block", _record_order_cases)
@@ -6191,6 +6193,57 @@ def _scripted(outputs, calls=None):
     return run
 
 
+# A real sweep run, trimmed: two files red, their three FAIL case lines far
+# above the end, and the end itself a run of PASS lines, the two files' own
+# FAIL lines and the summary - so the last lines of the output hold no failing
+# case at all. The FAIL labels are verbatim; the PASS labels are cut short,
+# the paths name the suites where they live now, and the counts are filled
+# through the sweep's own summary format.
+_K03R_LOCKS_FAILS = (
+    "FAIL pz0 the fixture is an unreaped zombie the bare signal probe still "
+    "sees (state '', kill(pid, 0) answered: success)",
+    "FAIL pid_alive reads an unreaped zombie as gone and a live process as "
+    "alive (zombie answered True, live answered True)")
+_K03R_GATE_FAIL = (
+    "FAIL a torn-down group's grandchild is judged gone by one deadline helper "
+    "on the product's liveness rule, a zombie counts as gone, and no suite "
+    "reads a killed process's liveness once after a fixed sleep "
+    "(first_look=True solo_gone=False product_pid_alive=True group_gone=False "
+    "self_gone=False offenders={})")
+SWEEP_K03R = "\n".join(
+    ["budget: 8 slots; per-file timeout 300s",
+     "sweep: 340 files, 8 workers",
+     "  ok      tests/test__loader.py          %s cases  [0.1s]" % ("32",),
+     "  FAILED  tests/test__locks.py           exited 1  [14.3s]",
+     "  FAILED  tests/test_run_test_gate.py    exited 1  [84.4s]",
+     "  ok      tools/where.py                 %s cases  [0.1s]" % ("7",),
+     "",
+     "--- tests/test__locks.py: exited 1 ---",
+     "PASS b1 audit-lock.py re-exports the shared names as its own objects",
+     "PASS pl2 ...while this very process answers True",
+     _K03R_LOCKS_FAILS[0],
+     _K03R_LOCKS_FAILS[1],
+     "PASS pz1 the same pid still reads gone once it is reaped",
+     "PASS a1 acquire on a free lock returns 0 and says what it did",
+     "",
+     "SELFTEST FAILED: 136/138 cases passed",
+     "",
+     "--- tests/test_run_test_gate.py: exited 1 ---",
+     "PASS fow1 a run whose steps name no follower writes no followersOwed",
+     "PASS dg21 RED-FIRST: the step's own no-verdict signature stays put",
+     _K03R_GATE_FAIL,
+     "PASS ng1 nested project - a gate rewriting a declared file is owned"]
+    + ["PASS sm%d a selection-miss case, its label cut short here" % (n,)
+       for n in range(1, 15)]
+    + ["",
+       "SELFTEST FAILED: 556/557 cases passed",
+       "",
+       "FAIL  tests/test__locks.py: exited 1",
+       "FAIL  tests/test_run_test_gate.py: exited 1",
+       "%s/%s files ok, %s migrated to tests/, %s cases"
+       % ("338", "340", "155", "15914")]) + "\n"
+
+
 # Two suites fail in ONE jest step, and a mute names only the first of them.
 JEST_TWO_SUITES_FAIL = """\
 FAIL src/cart.test.ts
@@ -6664,6 +6717,138 @@ def _muted_cases(check):
           "catch: %r" % (M.shadow_gate_claim(_shadow_man, "P1", _muted_only),),
           M.shadow_gate_claim(_shadow_man, "P1", _muted_only) is None
           and M.shadow_gate_claim(_shadow_man, "P1", _unmuted) is not None)
+
+    # A sweep step's failing CASES are readable, each under its script; which
+    # suites a mute may excuse is a separate question, and the answer to it
+    # stays what it was before the cases were read: a sweep step is not muted.
+    sweep = [("selftests", "python3 tools/sweep-selftests.py")]
+    locks, gate = ("tests/test__locks.py",
+                   "tests/test_run_test_gate.py")
+    one = M.run_gate(repo, sweep,
+                     runner=_scripted({sweep[0][1]: (1, SWEEP_K03R)}),
+                     muted=[dict(mute, test=locks)], today=today)
+    both = M.run_gate(repo, sweep,
+                      runner=_scripted({sweep[0][1]: (1, SWEEP_K03R)}),
+                      muted=[dict(mute, test=locks),
+                             dict(mute, test=gate, bugId="B2")], today=today)
+    check("mu64 a sweep step whose red files are BOTH muted still fails and "
+          "honours no mute, as it did when its cases were unread - the cases "
+          "it now names change the excerpt, not what a mute excuses: %r"
+          % ((both["status"], both.get("muted"),
+              both["steps"][0].get("failing")),),
+          both["status"] == "failed" and both["failed"] == ["selftests"]
+          and not both.get("muted") and not both["steps"][0].get("muted")
+          and not both["steps"][0].get("muteRefused")
+          and len(both["steps"][0].get("failing") or []) == 3)
+    check("mu65 ...and one muted file beside an unmuted one fails the same "
+          "way: %r" % ((one["status"], one.get("muted")),),
+          one["status"] == "failed" and not one.get("muted"))
+
+
+# --- fc: a red step's excerpt is its failing CASES, read by one reader ------
+# A sweep step's red was handed back as the last lines of its output - the
+# summary and a run of PASS lines - while the three FAIL case lines sat far
+# above them, because no failure reader knew the sweep. A writer told to fix
+# that excerpt has nothing to fix. The cases are read with the script whose
+# block printed them, and a red whose output no reader parses says so in its
+# basis instead of handing over a tail that reads like a list of failures.
+def _failing_case_cases(check):
+    sweep_cmd = "python3 tools/sweep-selftests.py"
+    locks, gate = ("tests/test__locks.py",
+                   "tests/test_run_test_gate.py")
+    want = ["%s: %s" % (locks, _K03R_LOCKS_FAILS[0]),
+            "%s: %s" % (locks, _K03R_LOCKS_FAILS[1]),
+            "%s: %s" % (gate, _K03R_GATE_FAIL)]
+    red = M.observed_step("selftests", sweep_cmd, 1, SWEEP_K03R, {}, 1)
+    check("fc1 THE REPLAY: a red sweep step's failing holds each failing case "
+          "as `<script>: FAIL <label>`, in printed order, with no PASS line "
+          "and no summary among them, and the basis names the sweep: %r"
+          % ((red.get("failing"), red.get("failingBasis")),),
+          red.get("failing") == want
+          and "the sweep" in (red.get("failingBasis") or "")
+          and "tail" not in (red.get("failingBasis") or "")
+          and "last" not in (red.get("failingBasis") or ""))
+
+    repo = _mini_repo("run-test-gate-failing-cases-")
+    try:
+        res = M.run_gate(repo, [("selftests", sweep_cmd)],
+                         runner=_scripted({sweep_cmd: (1, SWEEP_K03R)}))
+        row = _ev_io.row_for(repo, res, "task", {"taskId": "P1.2"},
+                             {"runId": "R-fc"}, published=[sweep_cmd])
+    finally:
+        _harness.remove_tree(repo)
+    carried = row["steps"][0].get("failing") or []
+    check("fc2 ...and the committed row carries them, each still opening with "
+          "its script after the row's per-value cut, which is what a reader "
+          "matching a suite against a line finds: %r" % (carried,),
+          len(carried) == 3
+          and [c.split(": FAIL ", 1)[0] for c in carried] == [locks, locks, gate]
+          and all(len(c) <= _journal_io.MAX_VALUE_CHARS + len(" [truncated]")
+                  for c in carried)
+          and "the sweep" in (row["steps"][0].get("failingBasis") or ""))
+
+    house = ("PASS ct1 a positive quantity is kept\n"
+             "FAIL ct3 a negative quantity is refused\n"
+             "PASS ct4 the total is summed\n"
+             "SELFTEST FAILED: 2/3 cases passed\n")
+    one = M.observed_step("suite", "python3 tests/test_cart.py --selftest", 1,
+                          house, {}, 1)
+    check("fc3 a house run of ONE suite is named the same way, the script read "
+          "off the command that ran it: %r"
+          % ((one.get("failing"), one.get("failingBasis")),),
+          one.get("failing")
+          == ["tests/test_cart.py: FAIL ct3 a negative quantity is refused"]
+          and "house" in (one.get("failingBasis") or ""))
+
+    crashed = ("--- tests/test_boot.py: exited 1 ---\n"
+               "Traceback (most recent call last):\n"
+               "ImportError: no module named cart\n\n"
+               "FAIL  tests/test_boot.py: exited 1\n"
+               "%s/%s files ok, %s cases\n" % ("3", "4", "40"))
+    none = M.observed_step("selftests", sweep_cmd, 1, crashed, {}, 1)
+    check("fc4 a red sweep file whose block printed no case line leaves "
+          "failing EMPTY and the basis says no case was readable from the "
+          "step - never the traceback's tail as if it named a case: %r"
+          % ((none.get("failing"), none.get("failingBasis")),),
+          none.get("failing") == []
+          and "no failing case readable from step selftests"
+          in (none.get("failingBasis") or ""))
+
+    green_text = ("  ok      tests/test_cart.py   %s cases  [0.1s]\n%s/%s files "
+                  "ok, %s cases\n" % ("3", "1", "1", "3"))
+    green = M.observed_step("selftests", sweep_cmd, 0, green_text, {}, 1)
+    house_green = M.observed_step("suite", "python3 tests/test_cart.py", 0,
+                                  "PASS ct1 kept\nALL PASS: 1/1 cases passed\n",
+                                  {}, 1)
+    check("fc5 ALLOW: a GREEN sweep step and a green house step carry neither "
+          "key - the over-firing direction would put cases (or a sentence "
+          "saying there are none) under a step that exited zero: %r"
+          % (sorted(k for st in (green, house_green) for k in st
+                    if k.startswith("failing")),),
+          not any(k in st for st in (green, house_green)
+                  for k in ("failing", "failingBasis")))
+
+    slow = ("building the fixture\nstarting suite tests/test_slow.py\n"
+            "still waiting on the server\n")
+    timed = M.observed_step("slow", "make check", -9, slow,
+                            {"outcome": M.TIMED_OUT, "timeoutSeconds": 5}, 1)
+    check("fc7 a step that reached NO verdict (timed out) names no failing "
+          "case, so it keeps the last lines of its output as the record of how "
+          "far it got - under a basis saying exactly that, and never as "
+          "failing checks; `fl3` is the verdict-reaching twin that keeps none: "
+          "%r" % ((timed.get("failing"), timed.get("failingBasis")),),
+          timed.get("failing") == slow.strip().split("\n")
+          and "step slow reached no verdict" in (timed.get("failingBasis") or "")
+          and "NOT a list of failing checks" in (timed.get("failingBasis") or ""))
+
+    lines = []
+    M.render(res, out=lines.append)
+    text = "\n".join(lines)
+    check("fc6 `render` prints each case under the red step with its script, "
+          "and none of the PASS lines the old tail carried: %r"
+          % ([ln for ln in lines if "FAIL" in ln or "PASS" in ln][:4],),
+          all(("      " + w) in text for w in want)
+          and "PASS sm" not in text)
 
 
 def _playwright_cases(check):

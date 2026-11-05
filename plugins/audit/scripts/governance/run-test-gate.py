@@ -804,7 +804,7 @@ def measured_state(ran):
     return MEASURED_NOTHING if ran == 0 else MEASURED_CHECKS
 
 
-# --- which checks failed, or the tail that stands in for their names ----------
+# --- which checks failed, or the sentence that none could be read ------------
 # WHAT THIS IS FOR, reported three times by two projects: a red row carried the
 # status, the failing gate ENTRY names and how many checks ran, and nothing about
 # WHICH tests failed. Both operators wrote their own failing-test reporter around
@@ -943,79 +943,119 @@ def flaky_tests(text, limit):
                   % (len(kept),))
 
 
-def _named_failures(body):
+def _named_failures(body, command=None):
     """`(runner, names)` - the checks a recognised runner NAMED as failing.
 
     `names` is empty when the runner is not recognised or named none, which is
-    exactly when `failing_lines` falls to a tail. One reading, asked by
+    exactly when `failing_lines` says no case was readable. Asked by
     `failing_lines` for what to carry and by the mute rule for whether a
-    failure was named at all, so the two cannot disagree about a run.
+    failure was named at all, so the two cannot disagree about a run - and the
+    mute rule reads only the runners of `_FAILURE_READERS`, so a sweep or house
+    run being nameable leaves what a mute excuses as it was.
+
+    THE SWEEP FIRST, as `_suite_candidates` reads it: its summary is the last
+    line of its own run, and a red file's output it reprints above that line
+    may carry another runner's summary that is not the step's. A house run is
+    asked after the table's runners, which keep the precedence they had. Both
+    are `_runner_output.house_case_lines`, each case carrying its script;
+    `command` is the step's, the script a single suite's line names.
     """
     body = _ro.plain_text(body)
-    name, _joined, _words = summary_reader(body)
-    # `.get`, NEVER `[name]`. The two tables are held together by a case rather
-    # than by this line, and the case is the right mechanism - but a KeyError
-    # here would abort `run_gate` mid-gate and lose the run, which is a far worse
-    # answer to a drifted table than the tail this falls through to. `fl0` is
-    # what reports the drift; this is only what survives it.
-    if _FAILURE_READERS.get(name) is None:
-        return name, []
-    # jest's failed-to-run heading is paired with its suite and reason;
-    # playwright's entries are read by the block they sit under; every other
-    # runner's line already names the check it failed.
+    swept = _ro.sweep_summary(body) is not None
+    name = None
+    if not swept:
+        name, _joined, _words = summary_reader(body)
+        # `.get`, NEVER `[name]`. The two tables are held together by a case
+        # rather than by this line, and the case is the right mechanism - but a
+        # KeyError here would abort `run_gate` mid-gate and lose the run, which
+        # is a far worse answer to a drifted table than an empty list. `fl0` is
+        # what reports the drift; this is only what survives it.
+        if _FAILURE_READERS.get(name) is not None:
+            return name, _table_failures(name, body)
+    runner, lines = _ro.house_case_lines(body, _argv_of(command))
+    if runner is not None:
+        return runner, lines
+    return name, []
+
+
+def _table_failures(name, body):
+    """The names one runner of `_FAILURE_READERS` gave the checks it failed.
+    jest's failed-to-run heading is paired with its suite and reason;
+    playwright's entries are read by the block they sit under; every other
+    runner's line already names the check it failed."""
+    body = _ro.plain_text(body)
     if name == "jest":
-        return name, _distinct([_jest_failure_name(*f)
-                                for f in jest_failures(body)])
+        return _distinct([_jest_failure_name(*f) for f in jest_failures(body)])
     if name == "playwright":
-        return name, playwright_listed(body, "failed")
-    return name, _distinct(_FAILURE_READERS[name].findall(body))
+        return playwright_listed(body, "failed")
+    return _distinct(_FAILURE_READERS[name].findall(body))
 
 
-def failing_lines(text, limit):
-    """`(lines, basis)` - the names of the checks that failed, or a capped tail.
+def _argv_of(command):
+    """`command` split as the shell would, or None when it will not split."""
+    try:
+        return shlex.split(command) if command else None
+    except ValueError:
+        return None
 
-    TWO ANSWERS AND THE ROW SAYS WHICH, which is the whole contract: where the
-    summary reader recognises the runner these are the names it gave the checks
-    that failed, and where it does not they are the last lines of the output,
-    standing in for names nobody can parse. A reader who cannot tell those apart
-    would read a stack frame as a test name, so the basis names the runner when
-    there is one and says "tail" when there is not.
 
-    A RECOGNISED RUNNER THAT NAMED NOTHING FALLS TO THE TAIL TOO, and that arm is
-    the point rather than a leftover. Returning an empty list because jest was
-    recognised and printed no bullet would be this whole defect back again, one
-    branch in: the operator gets a red verdict and no text, which is what they
-    already had. `limit` bounds both arms identically - the row is hash-chained,
-    so a field with unbounded content is a row with unbounded size - and the
-    basis carries the count, so a cut announces itself rather than reading as
-    all there was.
+# How a basis names the runner whose lines it read.
+_RUNNER_WORDS = {_ro.HOUSE_RUNNER: "the house suite"}
+
+
+def failing_lines(text, limit, step=None, command=None):
+    """`(lines, basis)` - the failing checks a runner named, or none at all.
+
+    THE LINES ARE NAMES OR THEY ARE NOTHING. Where a reader recognises the
+    runner they are the names it gave the checks that failed - a sweep's and a
+    house suite's each as `<script>: FAIL <label>` - and where none does, or
+    the runner it recognised named none, `lines` is empty and the basis says
+    no failing case was readable from step `step`. A tail of the output in
+    their place is what this used to carry, and a sweep's tail is its summary
+    and a run of PASS lines: handed to a writer as the failure, it is a list
+    with nothing to fix in it. `limit` bounds the list - the row is
+    hash-chained, so a field with unbounded content is a row with unbounded
+    size - and the basis carries the count, so a cut announces itself rather
+    than reading as all there was.
 
     Nothing here redacts. That is `_evidence_io`'s job, done at the moment the
     row is assembled, because the TERMINAL wants the operator's own absolute
     paths and the committed file may never carry them.
     """
     body = text or ""
-    name, named = _named_failures(body)
+    name, named = _named_failures(body, command)
+    who = _RUNNER_WORDS.get(name, name)
     if named:
         kept = named[:limit]
         if len(named) > len(kept):
             return kept, ("%d of the %d check(s) %s named as failing; the "
                           "rest are not carried"
-                          % (len(kept), len(named), name))
+                          % (len(kept), len(named), who))
         return kept, ("the %d check(s) %s named as failing, read from its "
-                      "own failure lines" % (len(kept), name))
-    lines = [ln.rstrip() for ln in body.splitlines() if ln.strip()]
+                      "own failure lines" % (len(kept), who))
+    where = "no failing case readable from step %s" % (
+        step if step is not None else "(unnamed)",)
+    if not body.strip():
+        return [], "%s: it printed nothing" % (where,)
+    if name is None:
+        return [], ("%s: no runner this gate reads wrote failure lines in its "
+                    "output" % (where,))
+    return [], "%s: %s's output named no failing check" % (where, who)
+
+
+def progress_tail(text, limit, step=None):
+    """`(lines, basis)` - the last `limit` lines a step that reached NO verdict
+    printed, and a basis saying that is what they are; `([], None)` for one
+    that printed nothing. A timed-out or killed step is not a failure, so it
+    has no failing case to name, and its last lines are the only record of how
+    far it got."""
+    lines = [ln.rstrip() for ln in (text or "").splitlines() if ln.strip()]
     tail = lines[-limit:] if limit > 0 else []
     if not tail:
-        return [], ("the step printed nothing, so its own output names neither "
-                    "a failing check nor anything else")
-    if name is None:
-        return tail, ("no runner this gate can count wrote a summary line, so "
-                      "these are the last %d line(s) of the step's output and "
-                      "NOT a list of failing checks" % (len(tail),))
-    return tail, ("%s's summary was read for the check count and its output "
-                  "named no failing check, so these are the last %d line(s) of "
-                  "it and NOT a list of failing checks" % (name, len(tail)))
+        return [], None
+    return tail, ("step %s reached no verdict, so these are the last %d "
+                  "line(s) of its output, showing how far it got - NOT a list "
+                  "of failing checks" % (step, len(tail)))
 
 
 def _suite_candidates(body):
@@ -1087,14 +1127,14 @@ def failing_suites(text):
     evidence about anybody's work, and jest especially prints its whole
     `node_modules` path when a suite crashes on import).
 
-    `(None, basis)` FOR EVERY WAY THIS CAN COME UP EMPTY, and NEVER `([], ...)`
-    - the same rule `failing_lines` follows and for the same reason: a reader
-    who cannot tell an empty answer from nothing-to-tell would read a runner
-    that named no file as a runner that found nothing wrong. mocha NUMBERS its
-    failures and never names a file at all; an unrecognised runner answers the
-    same way for the same reason `failing_lines` falls to a tail instead of
-    a name. The basis says `named as failing` only when the paths came off the
-    runner's OWN failure lines - a learner can refuse anything else.
+    `(None, basis)` FOR EVERY WAY THIS CAN COME UP EMPTY, and NEVER `([], ...)`:
+    a reader who cannot tell an empty answer from nothing-to-tell would read a
+    runner that named no file as a runner that found nothing wrong. mocha
+    NUMBERS its failures and never names a file at all; an unrecognised runner
+    answers the same way. (`failing_lines` does return an empty list, and only
+    beside a basis saying no case was readable from the step.) The basis says
+    `named as failing` only when the paths came off the runner's OWN failure
+    lines - a learner can refuse anything else.
     """
     body = text or ""
     name, raw, source = _suite_candidates(body)
@@ -3651,9 +3691,9 @@ def mute_decision(step, text, entries, today, preamble=None, runners=None,
     """
     if step.get("exit") == 0 or step.get("outcome") or not entries:
         return [], [], []
-    _runner, named = _named_failures(text or "")
+    runner, named = _named_failures(text or "", step.get("command"))
     _name, raw, _source = _suite_candidates(text or "")
-    if not named or not raw:
+    if runner not in _FAILURE_READERS or not named or not raw:
         return [], [], []
     paths = _distinct(_norm(p) for p in raw)
     entries = [e for e in entries if isinstance(e, dict)]
@@ -3873,8 +3913,8 @@ def observed_step(name, command, code, text, facts, duration_ms):
             step["signalBasis"] = sig_basis
     if not step.get("outcome"):
         # The command's own words for "I asked nothing". The basis rides on the
-        # step for the terminal; the row keeps the words themselves, in the
-        # `failing` tail below.
+        # step and on the row; the row keeps the output's last lines too, in
+        # the `failing` tail below, since a step with no verdict names no case.
         said = no_verdict_signature(step["exit"], text, command)
         if said:
             step["outcome"] = CANNOT_RUN
@@ -3888,7 +3928,7 @@ def observed_step(name, command, code, text, facts, duration_ms):
         step["outcome"] = CANNOT_RUN
     # ON A STEP THAT DID NOT COME BACK ZERO, AND ON NO OTHER. The claim is "here
     # is what went wrong in this step", and a green step has nothing to say under
-    # it - so carrying a tail there would put an arbitrary slice of a passing
+    # it - so carrying anything there would put an arbitrary slice of a passing
     # runner's output into a committed row on every run this plugin ever records.
     # `fl6` is the allow case that holds that line, and it is the direction an
     # over-firing version of this breaks in.
@@ -3897,10 +3937,15 @@ def observed_step(name, command, code, text, facts, duration_ms):
     # the OS killed and a step stopped at its bound both printed whatever they
     # got to, and that text is the only thing on the row that says how far they
     # got. They are not failures and nothing here calls them one - the word stays
-    # `outcome`'s, and this is an observation beside it.
+    # `outcome`'s, and their tail (`progress_tail`) is an observation beside it,
+    # taken only when no reader named a failing case.
     if step["exit"] != 0:
-        step["failing"], step["failingBasis"] = failing_lines(text,
-                                                              _ev.MAX_FAILING)
+        step["failing"], step["failingBasis"] = failing_lines(
+            text, _ev.MAX_FAILING, name, command)
+        if not step["failing"] and step.get("outcome"):
+            tail, tail_basis = progress_tail(text, _ev.MAX_FAILING, name)
+            if tail:
+                step["failing"], step["failingBasis"] = tail, tail_basis
         # NEVER ON A `could-not-run` STEP. A killed jest worker's `FAIL`
         # header is not a failing TEST - `jest_worker_signal` already read
         # exactly that report and answered `could-not-run` with it, and

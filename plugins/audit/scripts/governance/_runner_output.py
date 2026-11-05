@@ -361,12 +361,56 @@ def sweep_failing_cases(text):
     body = plain_text(text)
     if sweep_summary(body) is None:
         return None
+    return [dict(case, script=script) for script, block in _sweep_blocks(body)
+            for case in _house_cases(block)]
+
+
+def _sweep_blocks(body):
+    """`[(script, block)]` - each red file's reprinted output, under the path
+    its `--- <path>: <why> ---` header names."""
+    body = plain_text(body)
     heads = list(_SWEEP_BLOCK.finditer(body))
+    return [(head.group(1),
+             body[head.end():heads[i + 1].start() if i + 1 < len(heads)
+                  else len(body)])
+            for i, head in enumerate(heads)]
+
+
+HOUSE_RUNNER = "house"
+
+
+def house_case_lines(text, cmd=None):
+    """`(runner, lines)` - the failing house cases a run printed, each one line
+    `<script>: FAIL <label>`, and who printed them: `SWEEP_RUNNER`, read block by
+    block through `sweep_failing_cases`, or `HOUSE_RUNNER` for one suite's own
+    run. `(None, None)` for output that is neither.
+
+    THE SCRIPT IS ON THE LINE because the line is read apart from the output it
+    came from: a resume prompt and a brief match a failing suite against the
+    lines a row kept, and a house label alone names no file. A single suite's
+    script is the one `.py` its command `cmd` (an argv list) names; a command
+    naming none, or several, is itself what the line carries."""
+    body = plain_text(text)
+    if sweep_summary(body) is not None:
+        return SWEEP_RUNNER, _distinct_lines(
+            "%s: FAIL %s" % (script, label)
+            for script, block in _sweep_blocks(body)
+            for label in _house_fail_labels(block))
+    tally = read_tally(body, cmd)
+    if tally is None or tally["runner"] != HOUSE_RUNNER:
+        return None, None
+    args = [str(a) for a in (cmd or ())]
+    scripts = [a for a in args if a.endswith(".py")]
+    script = scripts[0] if len(scripts) == 1 else " ".join(args) or "the run"
+    return HOUSE_RUNNER, _distinct_lines(
+        "%s: FAIL %s" % (script, label) for label in _house_fail_labels(body))
+
+
+def _distinct_lines(lines):
     out = []
-    for i, head in enumerate(heads):
-        end = heads[i + 1].start() if i + 1 < len(heads) else len(body)
-        out.extend(dict(case, script=head.group(1))
-                   for case in _house_cases(body[head.end():end]))
+    for line in lines:
+        if line not in out:
+            out.append(line)
     return out
 
 
@@ -429,17 +473,18 @@ def printed_labels(text, cmd=None):
             and ln.split(" ", 1)[1].strip()]
 
 
+def _house_fail_labels(text):
+    """The label of every `FAIL <label>` case line, escapes included."""
+    # Two spaces after FAIL is the sweep's own per-file line, not a case.
+    return [ln[len("FAIL "):].strip() for ln in plain_text(text).splitlines()
+            if ln.startswith("FAIL ") and not ln.startswith("FAIL  ")]
+
+
 def _house_cases(text):
-    text = plain_text(text)
-    out = []
-    for ln in text.splitlines():
-        # Two spaces after FAIL is the sweep's own per-file line, not a case.
-        if ln.startswith("FAIL ") and not ln.startswith("FAIL  ") \
-                and not any(m in ln for m in HOUSE_ESCAPES):
-            label = ln[len("FAIL "):].strip()
-            out.append({"id": house_case_id(label), "label": label,
-                        "assertion": True, "why": "house FAIL"})
-    return out
+    return [{"id": house_case_id(label), "label": label, "assertion": True,
+             "why": "house FAIL"}
+            for label in _house_fail_labels(text)
+            if not any(m in label for m in HOUSE_ESCAPES)]
 
 
 def _pytest_cases(text):

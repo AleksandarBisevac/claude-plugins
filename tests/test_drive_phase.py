@@ -1005,6 +1005,9 @@ def _writer_session_cases(check):
               and _flag(a, "--role") == "writer" and _flag(a, "--task") == "P1.1"
               and _flag(a, "--model") == WRITER_MODEL
               and "GATE RED" in f and not f.startswith("Implement the following")
+              # The gate here is a bare `false`: nothing in its output is a
+              # case, and the prompt says so from the run's recorded row.
+              and "no failing case readable from step" in f
               and r == 0 and _flag(got.get("argv"), "--resume") == WRITER_SESSION
               and "GATE RED" in (got.get("stdin") or "") and spent == before
               for _n, c, ln, a, f, r, got, spent in rounds))
@@ -1056,6 +1059,68 @@ def _writer_session_cases(check):
           and "run-agent-session.py --role" not in line + block)
     _writer_no_result_cases(check, M, bindir, log)
     _writer_twice_cases(check, M, bindir, log)
+    _resume_excerpt_cases(check, M)
+
+
+def _resume_excerpt_cases(check, M):
+    """The resume prompt's failing lines are read off the run's recorded row:
+    each red step - a derived one whose name holds spaces included - with the
+    cases the gate read for it, or the gate's own sentence that none was
+    readable; never a tail of the output under the failing-lines head."""
+    derived = "affected/python: tests/test_a.py, tests/test_b.py"
+    cases = ["tests/test_a.py: FAIL a2 a negative total is refused",
+             "tests/test_b.py: FAIL b1 the discount is applied once"]
+    row = {"runId": "R-rz1", "steps": [
+        {"name": "lint", "exit": 0},
+        {"name": derived, "exit": 1, "failing": cases,
+         "failingBasis": "the 2 failing case(s) the house run named"}]}
+    text = ("  lint         exit 0    ok\n"
+            "  %s exit 1    failed\n"
+            "GATE RED - a step exited non-zero\n"
+            "  evidence: recorded R-rz1\n" % (derived,))
+    lines = M.failing_lines(row, text)
+    check("rz1 a red DERIVED step, its name holding spaces, reaches the prompt "
+          "with its failing cases under it; the green step does not: %r"
+          % (lines,),
+          any(derived in ln and "exit 1" in ln for ln in lines)
+          and all(any(c in ln for ln in lines) for c in cases)
+          and not any("lint" in ln for ln in lines)
+          and any("GATE RED" in ln for ln in lines))
+
+    unread = {"runId": "R-rz2", "steps": [
+        {"name": "build", "exit": 2, "failing": [],
+         "failingBasis": "no failing case readable from step build"}]}
+    junk = ("  build        exit 2    failed\n"
+            "      make: *** [build/parse.o] Error 2\n"
+            "src/parse.c:44:9: error: implicit declaration\n"
+            "GATE RED - a step exited non-zero\n")
+    prompt = M.resume_prompt(M.failing_lines(unread, junk))
+    body = prompt.split(M.GATE_RED_HEAD, 1)[-1].split("Fix what fails", 1)[0]
+    check("rz2 a red with no readable case SAYS SO under the head, naming the "
+          "step, and nothing of the output's tail follows it: %r" % (body,),
+          "no failing case readable from step build" in body
+          and "make: ***" not in body and "parse.c" not in body)
+
+    stale_text = ("  test         exit 1    failed\n"
+                  "      PASS sm9 a selection-miss case\n"
+                  "      SELFTEST FAILED: 1/2 cases passed\n"
+                  "GATE RED - a step exited non-zero\n")
+    from_row = {"runId": "R-rz3", "steps": [
+        {"name": "test", "exit": 1,
+         "failing": ["tests/test_x.py: FAIL x1 the case that failed"],
+         "failingBasis": "the 1 failing case(s) the house run named"}]}
+    read = M.failing_lines(from_row, stale_text)
+    check("rz3 THE PROMPT READS THE RECORDED ROW, not the rendered text: the "
+          "row's case is carried and the lines the text indented under the "
+          "step are not: %r" % (read,),
+          any("FAIL x1 the case that failed" in ln for ln in read)
+          and not any("PASS sm9" in ln or "SELFTEST" in ln for ln in read))
+
+    blind = M.failing_lines(None, stale_text)
+    check("rz4 with no recorded row to read, the lines SAY so rather than "
+          "falling back to the text's tail: %r" % (blind,),
+          any("no failing case" in ln for ln in blind)
+          and not any("PASS sm9" in ln or "SELFTEST" in ln for ln in blind))
 
 
 # --- after the writer's session: the drive proves, stamps and files ----------------

@@ -2265,27 +2265,55 @@ def recorded_session(state, task):
     return None
 
 
-def failing_lines(text):
-    """The lines of a red gate's output a writer acts on: every verdict line,
-    every step line that exited non-zero and the lines indented under it. When
-    the output holds none of those shapes, its last lines, so a resume prompt
-    is never empty."""
-    kept, under = [], False
-    for line in (text or "").splitlines():
-        step = re.match(r"^  \S+\s+exit (-?\d+)\s", line)
-        if step:
-            under = step.group(1) != "0"
-            if under:
-                kept.append(line)
-        elif under and line.startswith("      "):
-            kept.append(line)
-        elif "GATE " in line:
-            under = False
-            kept.append(line)
-        else:
-            under = False
-    lines = kept or [ln for ln in (text or "").splitlines() if ln.strip()][-RESUME_LINES:]
-    return [_clip(ln.rstrip(), RESUME_LINE_BYTES) for ln in lines[:RESUME_LINES]]
+def failing_lines(row, text=None):
+    """The lines of a red gate a writer acts on, read off the run's recorded
+    `row`: the verdict lines of the gate's output `text`, then each step the
+    row holds red and unmuted - its name and exit, the failing cases the gate
+    read for it, and the basis the gate wrote beside them, which is also what
+    says no case was readable. A derived step's name holds spaces and commas
+    and is carried whole.
+
+    THE ROW, NOT THE RENDERED TEXT, because the gate's one reader already chose
+    the cases and bounded them there; a second reading of the terminal output
+    is a second answer, and a tail of it handed over as the failure is a list
+    with nothing to fix in it. With no row to read (`row` None) the lines say
+    so and carry no tail either."""
+    lines = [ln.strip() for ln in (text or "").splitlines() if "GATE " in ln]
+    if not isinstance(row, dict):
+        lines.append("no failing case readable: this gate run has no row in "
+                     "the evidence ledger to read its failing cases from")
+        row = {}
+    for step in row.get("steps") or []:
+        if not isinstance(step, dict) or step.get("exit") == 0 \
+                or step.get("muted"):
+            continue
+        name = step.get("name")
+        lines.append("  %s  exit %s" % (name, step.get("exit")))
+        lines += ["      %s" % (case,) for case in step.get("failing") or []]
+        lines.append("      basis: %s" % (
+            step.get("failingBasis")
+            or "no failing case readable from step %s" % (name,),))
+    if len(lines) > RESUME_LINES:
+        lines = lines[:RESUME_LINES - 1] + [
+            "(%d more line(s) not shown; the run's row holds them)"
+            % (len(lines) - RESUME_LINES + 1,)]
+    return [_clip(ln.rstrip(), RESUME_LINE_BYTES) for ln in lines]
+
+
+def gate_row(ctx, text):
+    """The ledger row of the run a gate's output `text` names - the run that
+    measured it, for a repeated verdict, when that one is still there - or None
+    when the output names no run, the ledger will not read, or no row carries
+    the id."""
+    found = _RUN_ID.search(text or "")
+    if not found:
+        return None
+    try:
+        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+    except Exception:                                          # noqa: BLE001
+        return None
+    row = _evio.row_by_run(rows, found.group(1))
+    return _evio.measured_row(rows, row) or row
 
 
 GATE_RED_HEAD = "The task gate the drive ran after your session is red. Its failing lines:"
@@ -2373,14 +2401,7 @@ def verdict_taken(ctx, text, tree=None):
     found = _RUN_ID.search(text or "")
     held = {"runId": found.group(1) if found else None, "at": None,
             "tree": tree or None, "failing": []}
-    if not found:
-        return held
-    try:
-        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
-    except Exception:                                          # noqa: BLE001
-        return held
-    row = _evio.row_by_run(rows, held["runId"])
-    measured = _evio.measured_row(rows, row) or row or {}
+    measured = gate_row(ctx, text) or {}
     held["at"] = measured.get("ts")
     held["failing"] = _evio.red_step_names(measured)
     return held
@@ -2550,7 +2571,8 @@ def gate_red_decision(ctx, state, manifest, phase, task, text, tree=None):
                         "round %d/%d" % (why, session[:8], held["resumes"] + 1,
                                          MAX_RESUME_ROUNDS),
                         extra=dict(verdict, session=session,
-                                   failing=failing_lines(text)))
+                                   failing=failing_lines(gate_row(ctx, text),
+                                                         text)))
     if not held["capNoted"]:
         refused = note_task(ctx, task, cap_note(ctx, held, session))
         if refused is not None:

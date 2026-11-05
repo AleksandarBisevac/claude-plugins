@@ -4407,8 +4407,12 @@ neither the result nor the row — so a red row named the failing gate **entry**
 gate. One of them recovered the names twice out of an artefact the next run overwrites, which
 makes the obvious reflex — re-run and read the output — the one action that destroys the evidence.
 Where `summary_count` recognises the runner, `_FAILURE_READERS` parses the names it gave the
-failing checks; where it does not, the row keeps a capped tail of the output instead of silence.
-The basis is what tells those two apart, and neither travels without the other. Three things bound
+failing checks, and a sweep or house step's cases are `_runner_output.house_case_lines`'s, each
+carrying its script. Where no reader names a case, `failing` is empty and the basis says
+`no failing case readable from step <name>` — never a tail of the output, which for a sweep is
+its summary and a run of PASS lines. Only a step that reached no verdict (timed out, killed)
+keeps its last lines, under a basis saying that is how far it got. The drive's resume prompt and
+the retry brief read these off the row, so all three say the same thing. Three things bound
 it: the list is cut to `_evidence_io.MAX_FAILING` **by the writer**, each line is held to
 `_journal_io.MAX_VALUE_CHARS`, and only steps with a non-zero exit carry it at all — a row is
 hash-chained, so a field with unbounded content is a row with unbounded size. Every line goes
@@ -5384,6 +5388,10 @@ the suite-path and vendor filters are not asked of a file the sweep ran as a sui
 `sweep_failures` answers `None` - not a shorter list - when the FAIL
 lines do not account for every file the summary failed. The sweep is not in `_SUMMARY_READERS`:
 its case total is the suites' own claims added up, not a count of checks this module saw run.
+Its CASES are read too: `house_case_lines` returns each `FAIL <label>` a red file's
+`--- <path>: <why> ---` block printed as `<script>: FAIL <label>`, and one house suite's run the
+same way with the script its command names - the one reader `run-test-gate.failing_lines` asks
+for a sweep or house step, escapes included, since a block that raised is the line a writer needs.
 
 **It also holds what `red` reads** — `TALLY_READERS`, `CASE_READERS`, `read_tally` and
 `failing_cases`, the narrower question of whether a NAMED case failed an ASSERTION. The house

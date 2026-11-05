@@ -30,7 +30,7 @@
     {
       "id": "P157.1",
       "title": "A refused ps is a third answer: liveness names the refusal, a lock holder is not taken over it, and the suites skip by the refusal instead of going red",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes F835. At a27f8a56: _locks.py:201-222 _is_zombie returns False on OSError and ignores ps's exit code; pid_alive 166-198 returns `pid == os.getpid() or not _is_zombie(pid)`; _parent_of 264-290 also asks ps (caller _ancestry 339-355). Any macOS Seatbelt sandbox refuses /bin/ps (execvp EPERM, exit 71), so a zombie reads alive. Reproduced 2026-11-05: test__locks 138/138 plain, 136/138 under `(version 1)(allow default)`. Do NOT map \"present, zombie state unreadable\" to None for judge() (501-526): None falls back to age and would let a live holder older than STALE_MINUTES be taken - add a liveness answer with a basis (present-unverified counts as live). Callers to keep correct: holder_gone 498, judge 519, panel-server._pid_alive 860-863, _proc_group._gone 148-152, stamp-verification.py:3230, audit-lock.py:146, tools/_suite.py:122-129, tools/prove-gates.py:3179-3183, tests/_harness._pid_present 1655-1657 and _group_present 1660-1680 (True on OSError). Unguarded ps in tests/test__affected_tests.py:783 and 875-882. Skips use _harness.skip with the specific refusal as evidence, never any exception (F832's class.\nEOF\n)",
       "files": [
         "plugins/audit/scripts/governance/_locks.py",
@@ -59,14 +59,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "83d5907508fe",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_locks.py: _is_zombie(pid) now returns (True|False|None, reason). None means the state could not be read: ps would not start (the OSError is named with its errno, e.g. PermissionError (EPERM)), exited non-zero ('ps exited 71'), timed out, or printed nothing. HEAD ignored ps's exit code and returned False on OSError. New public liveness(pid) returns {alive, state, basis}, where state is running|gone|zombie|unverified|unknown. A present pid whose state is unreadable is state 'unverified', alive True, and its basis names the refusal. pid_alive(pid) is liveness(pid)['alive'], so its values are unchanged from HEAD in every case (unverified stays True and is never None), and the age fallback is never reached on a refusal. judge() reads liveness(); on 'unverified' it returns (True, '<basis> on this host (<host>)') before age is asked, so acquire's E_LIVE 'basis:' line names the refusal. errno import added. _parent_of is not changed: on a refusal it still returns None, which ends the ancestry walk; that walk only adds a sentence to a refusal and never decides one. tests/_harness.py: added ps_refusal() (an independent ps probe of this process, returning the refusal worded or None), state_refusal() (None where /proc/<pid>/stat exists, else ps_refusal()), with_stub_ps(fn, script) (puts a stub ps first on PATH, or with script=None makes it the only, unexecutable ps; PATH restored in finally), and recorded(fn) (runs a block against a capturing check). test__locks.py: the zombie block is now _zombie_cases(). pz0 and pz0b (the formerly unlabelled pid_alive case) skip through _harness.skip with state_refusal()'s text as evidence, and only when that independent probe reports a refusal. ap3 skips the same way. New zr-block zr1-zr6. test_run_test_gate.py: lv0 is split into lv1 (a single pid; skips on state_refusal), lv2 (the group; skips on ps_refusal), lv3 (the static single-look scan, always runs) and lv4 (the lv1/lv2 waits run under a stub ps that exits 71: both skip naming 'exited 71', or lv2 alone where /proc answers, and none fail). test__affected_tests.py: the unguarded ps readers are gone. af38 and af43 now judge their grandchildren with _harness.gone_within, the product's rule through the deadline helper, and the test-local _pid_alive is deleted. PLUGIN-BUILD-GUIDE.md: the _locks.py section names liveness and the unverified reading. Runs: test__locks 154/154 plain (exit 0). Under sandbox-exec with '(version 1)(allow default)': 154/154 (exit 0) with pz0, pz0b and ap3 SKIPPED naming 'starting ps raised PermissionError (EPERM: Operation not permitted)'; HEAD's run there had 3 FAILs (pz0, the pid_alive case, ap3). test_run_test_gate --stage lv0: 600/600 plain and sandboxed, with lv1 and lv2 SKIPPED naming EPERM under the sandbox. test__affected_tests: 51/51 plain and sandboxed; HEAD's copy under the sandbox raised PermissionError on 'ps' (45/46). The gate command exited 0: '5/5 files ok, 1124 cases'. First red, before the fix: test__locks at 148/151; zr1 and zr2 failed their assertions (HEAD answered False); zr-block raised AttributeError on liveness, which this task adds. Mutation probes, run in a scratch git-archive export (never the shared tree), each restored and checked with cmp: unverified->None turned zr3 red (153/154); every ps answer None turned pz0b and zr4 red (152/154); judge's unverified branch removed turned zr5 red; refusal->False (HEAD's shape) turned zr1, zr3 and zr5 red (151/154); unverified->gone turned zr3 and zr5 red; judge falling back to age on unverified turned zr5 red (False, 'last touched 125 min old', code 4); _harness.ps_refusal never reporting a refusal turned zr6 red (153/154) and lv4 red (599/600). Dependants: holder_gone reads pid_alive(...) is False, and unverified is True, so a present holder is not gone (unchanged). judge reads liveness() and names the refusal. panel-server._pid_alive (pid_alive is True), _proc_group._gone (poll() first, then pid_alive is False), stamp-verification.py:3230 (True->running), audit-lock.py:146 (an alias of the same object, pinned by b1), tools/_suite.py pid_alive (is True) and tools/prove-gates.py _pid_state (three-valued): all still correct, because pid_alive returns exactly what HEAD returned in every reading. Under a refusal each now still reads the holder as live, which is the conservative direction. tests/_harness._pid_present is unchanged (pid_alive is not False). _group_present still returns True when it cannot enumerate, which is correct (not confirmed gone); lv2 now skips where ps is refused. Other dependants: _evidence_io, _invariants, _proposals, audit-task and merge-manifest import _locks for locks and use none of the changed signatures; the only callers of _is_zombie are _locks.liveness and test__locks (grep). test__affected_tests' names used elsewhere (_suites, _tool_module, _cases, _selftest) are untouched, and the deleted _pid_alive had no outside reader. test_run_test_gate's _group_present and _pid_present readers are unchanged. PLUGIN-BUILD-GUIDE: only the _locks.py section text changed.",
+        "descriptive": "When ps is refused (a macOS sandbox), liveness now says 'present, unverified' with the refusal as its basis, a lock holder is not taken over on it, and the zombie/liveness suites skip naming the refusal instead of going red."
       },
       "startedAt": "2026-11-05T10:02:23Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-05T10:33:37Z",
+      "verifiedBy": [
+        "zr1-zr2: with a stub ps exiting 71, or an unexecutable one, _is_zombie answers None with a reason naming the refusal",
+        "zr3: a present pid with ps refused reads alive True, state unverified, basis naming exit 71; pid_alive True",
+        "zr4: second direction - a stub ps printing Z reads zombie/gone, one printing Ss reads running",
+        "zr5: a holder past twice the stale bound, with ps refused, is judged live with the refusal named, and acquire is refused E_LIVE with the claim untouched",
+        "zr6: the zombie block run under a stub ps that exits 71 skips pz0 and pz0b naming 'exited 71' and fails nothing",
+        "pz0/pz0b and ap3: skip via _harness.skip on an independently read refusal, and assert as before where the table is readable",
+        "lv1-lv4: the liveness waits split, lv1/lv2 skip by the refusal, lv3 the static scan, lv4 the waits under a stub ps that exits 71 skip and none fail"
+      ],
       "notes": [
         {
           "at": "2026-11-05T10:02:21Z",
@@ -79,12 +87,24 @@
         "runId": "2026-11-05T10:33:34Z.4fab9a",
         "status": "passed",
         "at": "2026-11-05T10:33:34Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "83d5907508fe",
+        "at": "2026-11-05T10:33:37Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-05T10:21:44Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__locks.py tests/test_run_test_gate.py tests/test__affected_tests.py tests/test__deps.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 2 of 151 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - zr1 (house FAIL), zr2 (house FAIL): SELFTEST FAILED: 148/151 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P157.2",
       "title": "The red excerpt is the failing cases, read by one reader for the gate row and the drive's resume prompt, derived steps included, and says so when no case is readable",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes F833 and F834 as one class: every builder of a failure excerpt reads failing cases through one reader. At a27f8a56: run-test-gate.py:946-971 _named_failures returns [] for a name absent from _FAILURE_READERS (no sweep/house row), so failing_lines 974-1019 falls back to `tail = lines[-limit:]` (1008); caller 3902-3903 with MAX_FAILING 10 (_evidence_io.py:501). In stage 2 (k03r) all three drive runs recorded 6 PASS lines and 0 failing cases. _runner_output.sweep_failing_cases 353-375 (and failing_cases(text, \"house\") 563-587) already parse them; only stamp-verification._failing_cases 1913-1922 calls it. drive-phase.failing_lines 2268-2287 keeps a step line only when its name holds no space (the regex at 2275), which a derived step name with spaces (`affected/python: a, b`) never matches. fl0 holds _FAILURE_READERS to _SUMMARY_READERS, so add the sweep/house branch in _named_failures (as _suite_candidates 1030-1037 does), not a table row. Dependants: the mute rule (muted_failures ~3654) needs named+raw - a sweep step becoming nameable must not change mute behaviour; audit-lookup.red_step_lines 1042-1091 and failing_suite_lines 1094-1110 match `suite in line`, so a case line carries its script. The row is hash-chained and bounded (MAX_FAILING, _journal_io.MAX_VALUE_CHARS). verbs-in-full.md:529 and orchestrator.md:626 describe the tail; orchestrator.md has a 62000 B ceiling.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -117,16 +137,39 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-05T11:05:38Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-05T10:33:58Z",
+          "text": "it quotes run-test-gate's 'the work under test declares no files' refusal, which this task does not touch; the change is confined to the failing-case excerpt",
+          "waives": "tools/check-example-ledgers.py"
+        },
+        {
+          "at": "2026-11-05T10:33:58Z",
+          "text": "it quotes orchestrator.md's push/force-push/stash rule; this task edits only the sentence describing the red excerpt",
+          "waives": ".claude/hooks/guard-uncommitted.py"
+        },
+        {
+          "at": "2026-11-05T10:33:58Z",
+          "text": "it anchors on orchestrator.md's '## Reporting' heading, which this task neither moves nor renames",
+          "waives": "tools/prove-gates.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-05T11:19:31Z.280170",
+        "status": "passed",
+        "at": "2026-11-05T11:19:31Z"
+      }
     },
     {
       "id": "P157.3",

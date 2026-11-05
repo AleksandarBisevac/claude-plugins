@@ -525,16 +525,16 @@ sentence names the actual status).
 
 **Only a suite the row's failed steps NAMED counts.** A step's `failingSuites` is read —
 never `failing`, which carries a CHECK's own title and no path — and only when its
-`failingSuitesBasis` says the runner NAMED them; `run-test-gate.py` falls back to a capped
-tail of a step's own output when no runner it recognises wrote a summary, and a tail
-excerpt is not a list of failing tests. The suites are UNIONED with this task's own
+`failingSuitesBasis` says the runner NAMED them; a step no reader could name a case from
+carries an empty `failing` beside a basis saying so, and a step that reached no verdict
+carries its last lines, and neither is a list of failing tests. The suites are UNIONED with this task's own
 `--tests-add` paths — a fix task may still be asked to write a NEW case beside the failure
 it repairs — and pointed through the phase's path-scoped spelling (the recorded one, else
 a sibling's) exactly as the three ordinary defaults are. `tests.gateBasis` is written `failing-from-run:<runId>`:
 compare the word before the colon, and look the runId up rather than parsing further.
 
 **The gate is never empty just because `--failing-from` could not narrow anything.** A row
-whose failed steps named no suite (a tail basis) or a phase with neither a recorded spelling
+whose failed steps named no suite or a phase with neither a recorded spelling
 nor a path-scoped sibling to narrow through falls all the way through to the ordinary `tests.add` → `files` →
 phase-wide chain, with the reason it fell through printed FIRST in the `gate:` line — the
 same three defaults a call with no `--failing-from` gets, never silence and never the
@@ -1148,8 +1148,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" couple \
 
 `couple --caught` records that an already-coupled test earned its place: the run it names is
 looked up in the evidence ledger the same way `--basis-run` is, and it must be a third-place
-row (scope `full`) whose runner NAMED this test as failing — a suite list read off a tail
-excerpt, or off a step the row marks muted, is not a catch. The entry's `lastCaught` becomes
+row (scope `full`) whose runner NAMED this test as failing — a suite list the runner did
+not name, or one off a step the row marks muted, is not a catch. The entry's `lastCaught` becomes
 that row's `ts`, one `coupling.caught` journal row is written, and nothing else on the entry
 changes. `--caught` never creates a coupling and never changes `sources` or `basis`.
 A catch that is **not newer** than the `lastCaught` already recorded — an older run imported

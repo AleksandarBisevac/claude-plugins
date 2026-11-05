@@ -622,8 +622,8 @@ learned`.
 
 **Only a suite the runner named teaches.** Every miss is asked again through
 `_evidence_io.named_failing_suites`, which counts a suite only when the step's
-`failingSuitesBasis` says the runner named it, and never counts a muted step. A failure read off
-the tail of the output, a run the runner printed `evidence: NOT recorded` for, and a green run
+`failingSuitesBasis` says the runner named it, and never counts a muted step. A failure whose runner
+named no suite, a run the runner printed `evidence: NOT recorded` for, and a green run
 teach nothing, and a red run that taught nothing prints a line per reason. A miss whose `sources`
 the row cut (`sourcesDropped`) files its bug but no coupling, because a suite coupled to a
 prefix of what it depends on is narrowed where nobody sees it. A push retried on the same red

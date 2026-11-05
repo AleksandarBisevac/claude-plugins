@@ -1,0 +1,57 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_drive_phase.py tests/test__runner_output.py tests/test_audit_lookup.py tests/test__refs.py tools/_suite.py": "pass",
+    "python3 tools/measure-context.py --gate": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-05T10:59:21Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_drive_phase.py tests/test__runner_output.py tests/test_audit_lookup.py tests/test__refs.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 12 of 609 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ru17 (house FAIL), bf56 (house FAIL), ws4 (house FAIL), fl3 (house FAIL), fl4 (house FAIL), mu64 (house FAIL), fc1 (house FAIL), fc2 (house FAIL) and 4 more: SELFTEST FAILED: 600/609 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "One reader for a red step's failing cases. _runner_output.house_case_lines(text, cmd) (new, _runner_output.py:381) returns each FAIL <label> a sweep's --- <path>: <why> --- block printed, or one house suite printed, as '<script>: FAIL <label>' (single-suite script = the one .py its command names, else the command); escapes included, read through a new _house_fail_labels that _house_cases now filters (red's reading unchanged), and sweep_failing_cases now walks blocks through a shared _sweep_blocks. run-test-gate._named_failures(body, command) (946) asks the sweep first (as _suite_candidates does), then the _FAILURE_READERS table runners exactly as before (_table_failures), then the house reader - a branch, not a table row, so fl0 holds. failing_lines(text, limit, step, command) (1005) never returns a tail: no case readable -> [] with basis 'no failing case readable from step <name>: <why>'. A step that reached NO verdict (an outcome: timed out/killed/could-not-run) keeps its last lines via progress_tail (1045) under a basis saying it reached no verdict and the lines are NOT failing checks, because that tail is the only record of how far it got (fc7 pins it, fl3 is the twin). Mute rule: mute_decision (3695) now honours/refuses only for runners of _FAILURE_READERS, so a nameable sweep/house step mutes exactly as before (mu64 checks status, muted and muteRefused all unchanged; mu65). drive-phase.failing_lines(row, text) (2268) reads the run's recorded row via new gate_row(ctx, text) (2303; verdict_taken now uses it too): GATE verdict lines from the text, then each red unmuted step as '  <name>  exit <n>', its failing cases, and '      basis: <failingBasis>' - a derived step name with spaces is carried whole; no row -> a line saying so, never a tail; over RESUME_LINES a line says how many were cut. audit-lookup.red_step_lines prints the gate's failingBasis when failing is empty, and failing_suite_lines claims the row's line cap only when the list reached it, else '(no FAIL line recorded for this file)'. Docs: PLUGIN-BUILD-GUIDE run-test-gate and _runner_output sections, verbs-in-full.md (failing-from paragraph, gate fall-through, couple --caught), orchestrator.md (one sentence, 61992/62000 B). Gates run from the project dir: the brief's sweep command exit 0 '6/6 files ok, 1967 cases'; measure-context --gate exit 0 'GATE OK'. Mutations in a scratch git-archive copy, never the shared tree: mute guard removed -> mu64 red (608/609); progress tail always -> fl3, fl4, fc4 red (606/609); never -> fc7 red (608/609). Dependants: full-gate.py and the import-only suites (test__evidence_io, test__panel_composition, test__proc_group, test_commit_task_work, test_derive_phase_gate) - still correct, failing_lines keeps its positional (text, limit) prefix and the row keys are unchanged; close-phase.py uses _git_text only; stamp-verification.py - still correct, sweep_failing_cases returns the same cases (rs3 green); tests/_harness.py, test__filed_returns, test__output_lints, test__refs import _runner_output - still correct (test__refs ran green in the gate); drive-phase importers (_worktrees.py, test__invariants, test__worktrees, test_audit_status, test_commit_task_work, test_detect_plan_skip, test__filed_returns) - still correct, failing_lines is only called inside drive-phase; reach-diff/affected only read test names; verbs-in-full.md's readers (_areas.py, test__areas, test__manifest_vocab, test_audit_task, guide.md, execute-task.md, CHANGELOG) cite section names that did not change; orchestrator.md readers - one sentence changed, ceiling held. Not done: CHANGELOG.md (not in files) carries no entry for this change. Lints outside the brief's gate (ruff, vermin, the prose-number and house-style lints) were not run, per the gate rule.",
+    "descriptive": "A red gate's excerpt is now its failing cases with their scripts, read once by the gate and read off the row by the resume prompt and the brief, and it says so when no case is readable instead of handing over a tail of PASS lines."
+  },
+  "testsAdded": [
+    "tests/test_run_test_gate.py fc1: the k03r sweep replay - failing is the three '<script>: FAIL <label>' cases, basis names the sweep",
+    "fc2: the committed row keeps the three cases, each still opening with its script",
+    "fc3: a single house suite's case is named with the script its command names",
+    "fl3/fl4 rewritten: unparsed output and a jest run that named nothing leave failing empty with 'no failing case readable from step <name>'",
+    "fc4: a red sweep file that printed no case line says no case was readable",
+    "fc5: green sweep and green house steps carry no failing keys (fl6 kept)",
+    "fc6: render prints the cases under the step and no PASS line",
+    "fc7: a timed-out step keeps its labelled progress tail",
+    "mu64/mu65: a sweep step with its red files muted fails, honours and refuses nothing, as before",
+    "tests/test_drive_phase.py rz1-rz4: derived step with spaces carries its cases; no readable case says so with no tail; the prompt reads the row, not the rendered text; no row says so; ws4 extended - the real resume prompt carries the row's 'no failing case readable from step' sentence",
+    "tests/test__runner_output.py rs5: house_case_lines over sweep blocks, one suite, a command naming no script, and non-house output; house_case_lines added to ru17's floor",
+    "tests/test_audit_lookup.py bf56: a red file with no case line prints the gate's basis and no false cap claim"
+  ],
+  "casesAdded": [
+    [
+      "fc1",
+      "fc2",
+      "fc3",
+      "fl3",
+      "fl4",
+      "fc4",
+      "fc5",
+      "fl6",
+      "fc6",
+      "fc7",
+      "mu64",
+      "mu65"
+    ],
+    [
+      "rz1",
+      "rz2",
+      "rz3",
+      "rz4",
+      "ws4"
+    ]
+  ],
+  "claims": "claims:\n1 _runner_output.py:381 house_case_lines is the reader the guide and docstrings name; run-test-gate.py:946 _named_failures asks it, :1005 failing_lines returns [] with the 'no failing case readable from step' basis, :3695 is the mute guard; drive-phase.py:2268/2303 read the row; audit-lookup.py:1075 prints failingBasis, :1118 drops the false cap claim\n2 mute guard removed -> mu64 red 608/609; progress tail always -> fl3, fl4, fc4 red 606/609, never -> fc7 red 608/609; each in a scratch git-archive copy with __pycache__ purged, shared tree untouched; HEAD red is the helper's\n3 grep -rn \"failing_lines|failing_cases(|sweep_failing_cases|[-limit:]|RESUME_LINES\" over scripts/ and hooks/: builders are run-test-gate.failing_lines (fixed), drive-phase.failing_lines (now reads the row), stamp-verification._failing_cases (already on sweep_failing_cases, left); audit-lookup red_step_lines reads the row (fixed for empty failing); the other hits are panel/_panel_state.py:301 and audit-task.py:12788, row-list cuts that are not excerpts, left; drive-phase.py review-fix and clause resumes (2955, 2974, 8938) build from findings and clauses, not gate output, left. Doc grep for tail: verbs-in-full.md 529/537/1151 and orchestrator.md 626 fixed; PLUGIN-BUILD-GUIDE 4410 fixed\n4 n/a - no rule addressed to an agent added\n5 n/a - no property recorded; gate run twice after the last code change only for different files\n6 n/a - no guard; the mute rule's decision reads the runner the reader names, not command text\n7 n/a - no number written into prose; orchestrator byte figure is measure-context --gate's printed output",
+  "stamp": "audit-stamp: {\"content\":\"sha256:5c921073eb4ad4bcd0818ac2fa8c46d00c5bb1aeef26cb5b6733d7fef36de50b\",\"dirtyDigest\":\"sha256:ed0ba14f48a71acb90aa2dc1fcae770b571fdba63dabf8d40b21a84cc8ca626b\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"7e2b8b34f1d9ceae\",\"plugins/audit/reference/orchestrator.md\":\"7c3a6e10131c39cb\",\"plugins/audit/reference/verbs-in-full.md\":\"64f358255d39e59e\",\"plugins/audit/scripts/governance/_runner_output.py\":\"bc31e39b6e809a0d\",\"plugins/audit/scripts/governance/drive-phase.py\":\"5e565ec6c50965a5\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"0d42c31deef044cf\",\"plugins/audit/scripts/status/audit-lookup.py\":\"841985af94979286\",\"tests/test__runner_output.py\":\"e74ffd793817241b\",\"tests/test_audit_lookup.py\":\"d2439e8c3b0af9b2\",\"tests/test_drive_phase.py\":\"02bf4442a5eaed37\",\"tests/test_run_test_gate.py\":\"3f487231dbefce79\"},\"head\":\"83d59075\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/orchestrator.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/governance/_runner_output.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test__runner_output.py\",\"tests/test_audit_lookup.py\",\"tests/test_drive_phase.py\",\"tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:760f1e8fb315b1775518b8f6f7c9634e77cd885d4fd247d550451b50f2ee274e\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

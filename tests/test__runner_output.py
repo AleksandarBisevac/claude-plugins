@@ -349,6 +349,26 @@ def _sweep_cases(check):
           == [("x5", "a.py"), ("x5", "b.py")]
           and [c["id"] for c in plain] == ["x5", "x5"]
           and M.sweep_failing_cases("FAIL x5 second\n") is None)
+    raised = ("FAIL hx1 the total is refused\n"
+              "FAIL selftest body raised before reaching the end (KeyError)\n"
+              "SELFTEST FAILED: 1/3 cases passed\n")
+    lines = M.house_case_lines(red)
+    one = M.house_case_lines(raised, ["python3", "tests/test_hx.py"])
+    bare = M.house_case_lines(raised, ["make", "check"])
+    check("rs5 `house_case_lines` names each failing case as `<script>: FAIL "
+          "<label>` - a sweep's under the header that printed it, one suite's "
+          "under the script its command names, or the command itself when it "
+          "names none - keeps the escape `failing_cases` leaves out, and reads "
+          "output that is neither as (None, None): %r / %r / %r"
+          % (lines, one, bare),
+          lines == (M.SWEEP_RUNNER, ["a.py: FAIL x5 second",
+                                     "b.py: FAIL x5 second"])
+          and one == (M.HOUSE_RUNNER, [
+              "tests/test_hx.py: FAIL hx1 the total is refused",
+              "tests/test_hx.py: FAIL selftest body raised before reaching "
+              "the end (KeyError)"])
+          and bare[1][0] == "make check: FAIL hx1 the total is refused"
+          and M.house_case_lines("Tests: 1 failed, 1 total\n") == (None, None))
     clean = M.sweep_tally(_plain_line(2, 2, 9))
     check("rs4 a sweep that graded every file ok has a tally of its summary's "
           "cases; one with a red file, one that ran no file and one that counted "
@@ -405,7 +425,8 @@ _LINE_END_EXTRA = (
 )
 # The readers the line-end case must find, written out: a derivation that read
 # nothing would otherwise compare nothing and pass.
-_LINE_END_FLOOR = ("failing_cases", "jest_failures", "playwright_line_cases",
+_LINE_END_FLOOR = ("failing_cases", "house_case_lines", "jest_failures",
+                   "playwright_line_cases",
                    "playwright_line_tally", "read_run_tally", "read_tally",
                    "run_failing_cases", "summary_count", "summary_reader",
                    "summary_readers", "sweep_failing_cases", "sweep_failures",

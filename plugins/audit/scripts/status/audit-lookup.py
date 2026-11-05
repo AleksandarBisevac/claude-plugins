@@ -1069,8 +1069,13 @@ def red_step_lines(ctx, manifest, phase, task, evidence):
         out.append("red step %s: %s" % (name, command))
         failing = [str(x) for x in step.get("failing") or []]
         suites = [str(x) for x in step.get("failingSuites") or []]
+        # The gate's own sentence beside an empty list - most often that no
+        # failing case was readable from the step - is the whole of what the
+        # row knows about which case failed, so it is said, not left out.
+        said = [] if failing or not step.get("failingBasis") else [
+            "  basis: %s" % (step["failingBasis"],)]
         if suites:
-            out += failing_suite_lines(suites, failing)
+            out += failing_suite_lines(suites, failing) + said
         elif failing:
             # EACH RECORDED LINE, VERBATIM - `_evio`/`run-test-gate.py` already
             # bound this list (`MAX_FAILING`) before it ever reached the row,
@@ -1084,6 +1089,8 @@ def red_step_lines(ctx, manifest, phase, task, evidence):
                 out.append("  (the row keeps at most %d failing lines and "
                            "names no failing files: any further failing file "
                            "is not recorded)" % (_evio.MAX_FAILING,))
+        elif said:
+            out += said
         else:
             printed = _excerpt.reason_of(step.get("outcomeBasis") or "")
             out.append("  printed: %s"
@@ -1093,18 +1100,22 @@ def red_step_lines(ctx, manifest, phase, task, evidence):
 
 def failing_suite_lines(suites, failing):
     """One entry per failing file the row names, each followed by the recorded
-    FAIL lines that mention it. The row's line list is cut shorter than its
-    file list, so a file can be named with no line of its own; that is printed
-    as such, and a file list that itself reached its bound says further files
-    are not recorded. Lines naming none of the files follow, unchanged."""
+    FAIL lines that mention it. A file can be named with no line of its own -
+    the row's line list is cut shorter than its file list, or the file printed
+    no case line at all - and that is printed as such, the cut named only when
+    the list reached it; a file list that itself reached its bound says
+    further files are not recorded. Lines naming none of the files follow,
+    unchanged."""
     out = []
     for suite in suites:
         own = [line for line in failing if suite in line]
         out.append("  - %s" % (suite,))
         out += ["      %s" % (line,) for line in own]
-        if not own:
+        if not own and len(failing) >= _evio.MAX_FAILING:
             out.append("      (no FAIL line recorded for this file: the row "
                        "keeps at most %d lines)" % (_evio.MAX_FAILING,))
+        elif not own:
+            out.append("      (no FAIL line recorded for this file)")
     out += ["  - %s" % (line,) for line in failing
             if not any(suite in line for suite in suites)]
     if len(suites) >= _evio.MAX_PATHS:
