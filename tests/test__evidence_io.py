@@ -4431,9 +4431,66 @@ def _base_scope_cases(check):
           isinstance(found, dict) and found.get("runId") == "r-lists")
 
 
+def _foreground_bound_cases(check):
+    """(fb, gm) the Bash tool's foreground bound is one constant, here, and
+    every reader of it reads this one; and a gate's recorded mean - what the
+    drive weighs against that bound - is its steps' means summed, unmeasured
+    while any step is."""
+    import ast
+    lookup_path = _loader.script_path("audit-lookup.py")
+    with open(lookup_path, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    bound_here = [n.lineno for n in tree.body
+                  if isinstance(n, ast.Assign)
+                  and any(isinstance(t, ast.Name) and t.id == "FOREGROUND_BOUND_MS"
+                          for t in n.targets)]
+    held = getattr(M, "FOREGROUND_BOUND_MS", None)
+    lookup = _loader.load_script("audit-lookup.py", modname="audit_lookup_fb",
+                                 cache=False)
+    said = None
+    if isinstance(held, int):
+        # A bound no default would be, so a reader holding its own copy prints
+        # its own figure and not this one.
+        try:
+            M.FOREGROUND_BOUND_MS = 7000
+            said = lookup.foreground_bound_line()
+        finally:
+            M.FOREGROUND_BOUND_MS = held
+    check("fb1 the foreground bound is one constant in _evidence_io, audit-lookup "
+          "binds none of its own, and the sentence audit-lookup prints follows "
+          "this one when it changes: %r" % ((held, bound_here, said),),
+          isinstance(held, int) and held > 0 and not bound_here
+          and said is not None and "7 s" in said)
+    past = getattr(M, "outlives_foreground", None)
+    check("fb2 outlives_foreground reads that bound: a mean at it is not past "
+          "it, one over it is, and no mean is not: %r"
+          % ([past(v) for v in (held, (held or 0) + 1, None)]
+             if past and held else None,),
+          past is not None and isinstance(held, int)
+          and [past(v) for v in (held, held + 1, None)] == [False, True, False])
+
+    def mean(rows, names):
+        return _harness.attempt(lambda: M.gate_mean_ms(rows, names))
+    rows = [{"steps": [{"name": "lint", "durationMs": 1000},
+                       {"name": "unit", "durationMs": 3000}]},
+            {"steps": [{"name": "lint", "durationMs": 2000},
+                       {"name": "slow", "exit": 0}]}]
+    got = mean(rows, ["lint", "unit"])
+    # 3000 + 1500 is the sum of the means; 6000 would be the sum of every
+    # duration, and a count of 2 the step measured most often.
+    check("gm1 gate_mean_ms is the sum of its steps' means beside the fewest "
+          "runs any of them was measured over - (4500, 1): %r" % (got,),
+          got[0] and got[1] == (4500, 1))
+    partial, empty = mean(rows, ["lint", "slow"]), mean(rows, [])
+    check("gm2 ...and None while any step has no measured run, and for a gate "
+          "of no steps: %r / %r" % (partial, empty),
+          partial == (True, None) and empty == (True, None))
+
+
 def _selftest():
     def body(check):
         _cases(check)
+        _foreground_bound_cases(check)
         _base_scope_cases(check)
         _claimed_followers_cases(check)
         _tree_key_cases(check)

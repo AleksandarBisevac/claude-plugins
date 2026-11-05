@@ -2523,7 +2523,7 @@ def _writer_slow_cases(check):
           and "120 s" in bound_line)
     # THE ALLOW TWIN of ws1: the over-fire mutation (every measured step left
     # out, or the bound read as at-or-past) leaves the sweep out here.
-    at_bound = (("selftests", M.FOREGROUND_BOUND_MS, 4), ("lint", 2000, 5))
+    at_bound = (("selftests", _evio.FOREGROUND_BOUND_MS, 4), ("lint", 2000, 5))
     ok7, lines7 = _ws_compose(man, at_bound)
     ok0, lines0 = _ws_compose(man, ())
     check("ws7 a step measured AT the bound is not past it and stays; with no "

@@ -3901,6 +3901,13 @@ step known to have run one of the given suites (`step_runs_suite()`). A row file
 that run under `BASE_OF_KEY`; `subject_key()` gives it no subject, so no pointer is written or
 reconciled onto it.
 
+**The foreground bound.** `FOREGROUND_BOUND_MS` is the one statement of how long the Bash tool
+keeps a command in the foreground, and `outlives_foreground()` the one comparison against it:
+the writer's brief leaves a step past it to the drive's gate (`audit-lookup.py`), and the drive
+leaves a gate past it to the background (`drive-phase.py`'s `gate_in_background`).
+`gate_mean_ms()` is a gate's recorded mean - its steps' `step_mean_ms()` summed, beside the
+fewest runs any of them was measured over - and None while any step is unmeasured.
+
 ### `plugins/audit/scripts/governance/_gate_derive.py`
 The gate helpers' one home, and a pure `derive()`.
 
@@ -4776,16 +4783,25 @@ instead of making its own. A stale stamp prints the fields that moved (`moved_fi
 comparison's own `fields`), so nothing is left for the model to look up; a comparison git could
 not answer says so and never reads as unchanged.
 
-**Under `executor.writerModel` the task gate is a step of its own, not a call inside `next`.** A
-gate run inside `next` lived exactly as long as the main loop's Bash call, which the CLI moves to
-the background past its foreground bound and later kills, so the measurement was lost and taken
-again. `background_gate` prints `dispatch-gate`, whose `run:` line is the command `gate_args`
-spells for `record_gate` too, under `WRITER_RULE`, and marks the launch with the task's ledger
-rows as they stood. A `next` before a new row exists is `wait-gate`, printing the same `run:`
-line; a new `cancelled` row - a gate stopped mid-run - launches it again; a `passed` or `failed`
-row is repeated through `record_gate`, which on the same tree content measures nothing (`GATE
-VERDICT REUSED`), and a row of any other word is decided from as recorded. The Agent path still
-runs the gate inside `next`, and so does the base measurement a red asks for. The `bg` cases in
+**Every gate the drive runs inside `next` is chosen one way.** A gate run inside `next` lives
+exactly as long as the main loop's Bash call, which the CLI moves to the background past its
+foreground bound and later kills, so the measurement was lost and taken again. So each site - the
+task gate on the writer path and the Agent path (`chosen_task_gate`), the re-gate after a
+follower's recipe, the re-gate on the phase tree, and sign-off's phase gate (`chosen_phase_gate`)
+- asks `gate_in_background`: a gate whose recorded mean (`_evidence_io.gate_mean_ms`, the sum of
+its steps' means, since `run-test-gate.py` runs them one after another; unmeasured while any step
+is) is past `_evidence_io.FOREGROUND_BOUND_MS`, or that no run has measured, is a step of its own;
+one measured under it runs inline and costs the main loop no turn. The step prints
+`dispatch-gate`, whose `run:` line is the command `gate_args` (or `phase_gate_args`) spells for the
+inline run too, under `WRITER_RULE`, with the reason on the line below it, and marks the launch
+with the subject's ledger rows as they stood. A `next` before a new row exists is `wait-gate`,
+printing the same `run:` line; a new `cancelled` row - a gate stopped mid-run - launches it again;
+a `passed` or `failed` row is repeated through the same call, which on the same tree content
+measures nothing (`GATE VERDICT REUSED`), and a row of any other word is decided from as
+recorded. A phase gate launched by a sign-off answer resumes that sign-off at the same head and
+is forgotten at another. A wave print carries the rules of each member with a `run:` line once.
+The base measurement a red asks for still runs inside `next`: its reading is `run-test-gate.py`'s
+own `base_red` over the base run, which no recorded row carries. The `bg`, `gc` and `gs` cases in
 `tests/test_drive_phase.py` drive each arm against the real `run-test-gate.py`.
 
 **Deciding on facts: named planners, and no single `decide()`.** The drive's planners sit

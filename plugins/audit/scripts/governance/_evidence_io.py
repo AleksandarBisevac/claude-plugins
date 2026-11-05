@@ -1994,6 +1994,41 @@ def step_mean_ms(rows, name):
     return total / measured, measured
 
 
+# How long the Bash tool keeps a command in the foreground before the CLI moves
+# it to the background, after which the caller waits on it and polls for its
+# output instead of reading it, and later kills it. The basis is the CLI's own
+# message when a command reaches it - "Command did not complete within its 120s
+# timeout and was moved to the background" - read in a recorded session's tool
+# result; it is the default, and a session started with a different default is
+# not seen from here. One constant for every reader: the writer's brief leaves a
+# step past it to the drive's gate, and the drive leaves a gate past it to the
+# background.
+FOREGROUND_BOUND_MS = 120 * 1000
+
+
+def outlives_foreground(mean_ms):
+    """Whether a recorded mean is past `FOREGROUND_BOUND_MS`; no mean (None) is
+    not, since nothing says it is slow - a caller for whom an unmeasured step
+    is one to keep out of the foreground says so itself."""
+    return mean_ms is not None and mean_ms > FOREGROUND_BOUND_MS
+
+
+def gate_mean_ms(rows, names):
+    """`(mean_ms, runs)` for a gate of the steps `names` across `rows`, or None
+    when it has no steps or any of them has no measured run.
+
+    THE SUM OF THE STEPS' MEANS, because `run-test-gate.py` runs a gate's steps
+    one after another, so the gate lasts as long as all of them together. A
+    step with no measured run makes the whole unmeasured rather than leaving it
+    out: the sum without it is only a lower bound, and the step nobody has timed
+    may be the slow one. `runs` is the fewest any step was measured over - the
+    weakest of the means the sum stands on."""
+    readings = [step_mean_ms(rows, name) for name in names or ()]
+    if not readings or any(r is None for r in readings):
+        return None
+    return sum(r[0] for r in readings), min(r[1] for r in readings)
+
+
 def gate_names_seen(rows):
     """Every distinct `steps[].name` recorded across `rows`, sorted."""
     names = set()

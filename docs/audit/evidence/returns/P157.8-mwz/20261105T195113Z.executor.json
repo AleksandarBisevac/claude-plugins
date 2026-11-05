@@ -1,0 +1,58 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__evidence_io.py tests/test_audit_lookup.py tests/test__worktrees.py tests/test__output_lints.py tests/test__deps.py tests/test__refs.py tools/_suite.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-05T20:24:23Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__evidence_io.py` in a throwaway tree at HEAD exited 1 with 12 of 876 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fb1 (house FAIL), fb2 (house FAIL), gm1 (house FAIL), gm2 (house FAIL), gc1 (house FAIL), gc1b (house FAIL), gc2 (house FAIL), gc4 (house FAIL) and 4 more: SELFTEST FAILED: 868/876 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "One rule for every gate the drive runs inside next. _evidence_io.py: FOREGROUND_BOUND_MS moved here from audit-lookup.py (comment and basis moved with it), outlives_foreground() moved here, new gate_mean_ms(rows, names) = sum of each step's step_mean_ms, beside the fewest runs any step was measured over, None while any step is unmeasured or the gate has no steps (basis: run-test-gate.py run_gate runs a gate's steps one after another in its `for name, command in commands` loop, so the gate lasts as long as all of them; a missing step makes the sum only a lower bound). audit-lookup.py: binds no bound of its own; _seconds/foreground_bound_line/compose_writer_prompt read _evio.FOREGROUND_BOUND_MS and _evio.outlives_foreground at call time. drive-phase.py: gate_in_background(ctx, names) -> (due, why): past the bound or unmeasured (or ledger unreadable) -> background, measured under -> inline; chosen_task_gate() is the one chooser for the task gate on both the writer and the Agent path (gate_step), the re-gate after a follower recipe (follow_red_gate) and the re-gate on the phase tree (integrate_member); chosen_phase_gate() for sign-off's phase gate (green_phase_gate), with launch_phase_gate/derive_phase_gate/phase_gate_args/run_phase_gate split out of phase_gate; a phase gate launched by a sign-off answer resumes signoff_step at the same head (sign_off) and is forgotten at another; dispatch-gate's line is now generic (--task <id> or the phase id) and carries the reason on the line below; new_gate_row/subject_run_ids/unrepeatable_red shared by task and phase read-back; wave_said carries each rule line (STEP_RULES) of every member that has a run: line, once, replacing the budget-only special case; run_followers reads the measured row behind a repeated verdict, without which a background red never reached its follower recipe. Module docstring updated. tests/test_drive_phase.py: blocks gc-block (gc1, gc1b, gc2-gc5), gc6-block (gc6, gc7), gc8-block (gc8-gc10), gs-block (gs1-gs4), gw-block (gw1, gw2); _seed_gate_ms seeds a measured run of no subject; instruction()/drive() read and play a gate dispatch (only through _play_gate, which still runs nothing but run-test-gate.py); _load(real_gate_choice=False) gives every other case a ledger that measured each gate fast (gate_in_background -> (False, None)), the bg/gc/gs cases load the real chooser; _signoff_with_gate and so1 stub run_phase_gate/derive_phase_gate beside phase_gate. tests/test__evidence_io.py: fb1, fb2, gm1, gm2. tests/test_audit_lookup.py: ws7 reads _evio.FOREGROUND_BOUND_MS. orchestrator.md reworded in place (61995/62000 bytes by measure-context --gate, exit 0; the two waiver strings unchanged, counted once each). PLUGIN-BUILD-GUIDE.md: drive-phase section paragraph rewritten, _evidence_io section gains 'The foreground bound'. Verified: the 8-suite gate command exit 0, 8/8 files ok, 2352 cases (test_drive_phase 876, test__evidence_io 333, test_audit_lookup 168, test__worktrees 182 incl. ut5, test__output_lints 182, test__deps 284, test__refs 292, tools/_suite 35); test__refs, test__deps and test_audit_lookup re-run after the PLUGIN-BUILD-GUIDE edit, all ALL PASS; ruff check and vermin -t=3.8- clean on the changed files. Pre-fix run of the new cases on unchanged code: gc1, gc1b, gc2, gc4, gc6, gc8, gc9, gw1 FAIL by assertion, fb1, fb2, gm1, gm2 FAIL (gm by AttributeError on the introduced gate_mean_ms); twins gc3, gc5, gc7, gc10, gw2 and gs1-gs4 PASS before and after (lock cases). LEFT OPEN: measure_base still runs inside next. Its background half needs the base reading after the row lands, and that reading is run-test-gate.py's own base_red/_charge_step over the base run, which no ledger row carries and no run-test-gate mode computes without measuring; the right design moves base_red and its helpers into _evidence_io (both entry points import it) or adds a reading-only flag, and either needs run-test-gate.py, which is not in this task's files. Dependants: tests importing drive-phase use gate_said (signature extended, the old call shape still works - bg5 and the sn corpus pass), phase_gate (kept: derive then run), task_run_ids (kept); _evidence_io importers see additions only; audit-lookup's dependants: only tests/test_audit_lookup.py read FOREGROUND_BOUND_MS off it, updated; drive-phase.py names audit-lookup.py by basename only, unchanged; orchestrator.md's path dependants (guard-uncommitted, prove-gates, COMPATIBILITY.md, PLUGIN-BUILD-GUIDE.md) read no sentence this reword changed. No prose outside the task's files describes the old writer-only dispatch: grep of commands/*.md, reference/execute-task.md and README.md for dispatch-gate / background gate found none.",
+    "descriptive": "Every gate the drive runs inside next - task gate on both paths, the follower re-gate, the phase-tree re-gate and sign-off's phase gate - now runs inline when its recorded mean is under the Bash foreground bound and goes to the background when past it or unmeasured; the base measurement is left inline, blocked on run-test-gate.py."
+  },
+  "testsAdded": [
+    "gc1/gc1b/gc2: Agent-path task gate unmeasured or past the bound is a gate dispatch, read back as a repeat",
+    "gc3: Agent-path gate measured fast runs inline (allow twin)",
+    "gc4: writer-path gate measured fast runs inline with no extra turn",
+    "gc5: writer-path gate past the bound is still dispatched",
+    "gc6/gc7: re-gate after a follower recipe dispatched when slow, inline when fast",
+    "gc8/gc9/gc10: sign-off phase gate dispatched when unmeasured or slow, inline when fast",
+    "gs1-gs4: a background row of no-checks, timed-out, could-not-run or gate-mutated is decided from as recorded, nothing measured again",
+    "gw1/gw2: a wave print carries the background and budget rules once for members with a run: line, none for Agent members",
+    "fb1/fb2: the foreground bound is one constant in _evidence_io and audit-lookup reads it",
+    "gm1/gm2: gate_mean_ms sums step means and is None while any step is unmeasured"
+  ],
+  "casesAdded": [
+    [
+      "gc1",
+      "gc1b",
+      "gc2",
+      "gc3",
+      "gc4",
+      "gc5",
+      "gc6",
+      "gc7",
+      "gc8",
+      "gc9",
+      "gc10",
+      "gs1",
+      "gs2",
+      "gs3",
+      "gs4",
+      "gw1",
+      "gw2"
+    ],
+    [
+      "fb1",
+      "fb2",
+      "gm1",
+      "gm2"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py gate_in_background/chosen_task_gate/chosen_phase_gate are what the module docstring, PLUGIN-BUILD-GUIDE.md and orchestrator.md:15-19 describe; gate_step, follow_red_gate, integrate_member and green_phase_gate each call a chooser; measure_base is named as still inline in PLUGIN-BUILD-GUIDE.md\n2 pre-fix run on unchanged code: gc1, gc1b, gc2, gc4, gc6, gc8, gc9, gw1, fb1, fb2, gm1, gm2 FAIL; post-fix ALL PASS; allow twins gc3, gc5, gc7, gc10, gw2 pass both ways and go red under an always-dispatch mutation by construction (they assert no gate dispatch); the helper's run in submit is the recorded proof\n3 class = a gate run inside next: grep of record_gate/task_gate/phase_gate/run-test-gate.py callers in drive-phase.py - gate_step (fixed), follow_red_gate re-gate (fixed), integrate_member re-gate (fixed), green_phase_gate (fixed), measure_base _base_in (left: needs run-test-gate.py, named open), record_gate inside background_gate and chosen_phase_gate read-back (the repeat, which measures nothing)\n4 the background rule is WRITER_RULE under dispatch-gate; nothing makes the orchestrator obey it, and the drive's recorded row is the verdict either way\n5 n/a - no timing recorded; the seeded means sit far either side of the bound\n6 n/a - no guard\n7 no number written into prose; the bound's value is the constant's, printed by foreground_bound_line",
+  "stamp": "audit-stamp: {\"content\":\"sha256:0f99eb9f40a5505b9265443f26477209bdb09b9cffdc7b15ad9bae52e8e672aa\",\"dirtyDigest\":\"sha256:b1e5e9cd83a236c3810e07525855b52b0d66bc5fe10b6c94d6f14ef7a7bc5686\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"f72cb3711d47c8dc\",\"plugins/audit/reference/orchestrator.md\":\"d3d3f8bab77c529b\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"68b062f161463bdf\",\"plugins/audit/scripts/governance/drive-phase.py\":\"e515cf96e084b62a\",\"plugins/audit/scripts/status/audit-lookup.py\":\"df0d96b081dfc3ff\",\"tests/test__evidence_io.py\":\"f3b75ac24d48d5a7\",\"tests/test_audit_lookup.py\":\"662cb79eb023488f\",\"tests/test_drive_phase.py\":\"004332cfea33c072\"},\"head\":\"0cff7a57\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/orchestrator.md\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test__evidence_io.py\",\"tests/test_audit_lookup.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:e3e299e25aae8349f2a94b0f25687dc38bed23fad2e0bba067c118405d0c5060\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

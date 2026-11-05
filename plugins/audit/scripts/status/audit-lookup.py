@@ -998,30 +998,17 @@ def _or_list(items):
         "%s or %s" % (", ".join(items[:-1]), items[-1]))
 
 
-# How long the Bash tool keeps a command in the foreground before the CLI moves
-# it to the background, after which the session waits on it and polls for its
-# output instead of reading it. The basis is the CLI's own message when a command
-# reaches it - "Command did not complete within its 120s timeout and was moved to
-# the background" - read in a recorded session's tool result; it is the default,
-# and a session started with a different default is not seen from here. A gate
-# step whose recorded mean outlives it buys the writer only that wait: the drive
-# runs the task's whole gate again after the session.
-FOREGROUND_BOUND_MS = 120 * 1000
-
+# A gate step whose recorded mean outlives the Bash tool's foreground bound
+# (`_evidence_io.FOREGROUND_BOUND_MS`, read there at each call) buys the writer
+# only a wait: the drive runs the task's whole gate again after the session.
 UNMEASURED_NOTE = "duration unmeasured"
-
-
-def outlives_foreground(mean_ms):
-    """Whether a step's recorded mean is past `FOREGROUND_BOUND_MS`; an
-    unmeasured step (None) is not, since nothing says it is slow."""
-    return mean_ms is not None and mean_ms > FOREGROUND_BOUND_MS
 
 
 def _seconds(ms):
     """`ms` as seconds for a sentence, whole unless rounding would bring a mean
     that is past the bound down onto it."""
     whole = int(round(ms / 1000.0))
-    if whole * 1000 <= FOREGROUND_BOUND_MS < ms:
+    if whole * 1000 <= _evio.FOREGROUND_BOUND_MS < ms:
         return "%.1f s" % (ms / 1000.0,)
     return "%d s" % (whole,)
 
@@ -1034,7 +1021,7 @@ def _slow_basis(mean_ms, runs):
 def foreground_bound_line():
     """The one sentence saying why a command carrying a mean was left out."""
     return ("A command with a mean takes longer than the %s the Bash tool keeps "
-            "a command in the foreground." % (_seconds(FOREGROUND_BOUND_MS),))
+            "a command in the foreground." % (_seconds(_evio.FOREGROUND_BOUND_MS),))
 
 
 def gate_step_readings(rows, entries):
@@ -1071,7 +1058,7 @@ def compose_writer_prompt(manifest, phase, task, dependants=None,
 
     `slow` is `gate_step_readings`' answer - `(name, mean_ms, runs)` per gate
     entry, by the step name the ledger records. An entry whose mean outlives
-    `FOREGROUND_BOUND_MS` joins the same sentence, once, carrying its mean and
+    `_evio.FOREGROUND_BOUND_MS` joins the same sentence, once, carrying its mean and
     the run count it was taken over, whether or not `phase_gate_only` names it
     too, and one line after it states the bound; an entry with a reading and
     no measured run stays in the commands to run and says it is unmeasured. Only the prompt changes: the gate the drive
@@ -1085,7 +1072,7 @@ def compose_writer_prompt(manifest, phase, task, dependants=None,
     left, plain, slowed = [], [], False
     for name, command in _evio.resolved_commands(manifest, entries):
         mean_ms, runs = readings.get(name, (None, None))
-        if outlives_foreground(mean_ms):
+        if _evio.outlives_foreground(mean_ms):
             slowed = True
             left.append("%s (%s)" % (command, _slow_basis(mean_ms, runs)))
         elif left_to_phase_gate(command, phase_gate_only):

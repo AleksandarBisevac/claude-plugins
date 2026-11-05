@@ -13,9 +13,10 @@ agent, for a reader who asks, and for the commands outside the pipeline (`/audit
 `/audit:worktree`, `/audit:layout`) that still read it first. **Execute the task** and **Phase
 sign-off** are in `reference/execute-task.md` and `reference/phase-signoff.md`.
 A headless role run: `run-agent-session.py`; under `executor.writerModel` each writer and
-per-task reviewer runs through it (the drive files the reviewer's return), the task gate is
-`dispatch-gate` (background Bash, read from its ledger row), and a red its base does not share
-resumes the session up to `MAX_RESUME_ROUNDS` times.
+per-task reviewer runs through it (the drive files the reviewer's return), and a red its base
+does not share resumes the session up to `MAX_RESUME_ROUNDS` times. A drive gate whose recorded
+mean is past the foreground bound, or unmeasured, is `dispatch-gate` (background Bash, read from
+its ledger row); one measured under it runs inline.
 
 ## At a glance
 
@@ -32,7 +33,7 @@ resumes the session up to `MAX_RESUME_ROUNDS` times.
 - **On trouble:** unmet blockers → skip; gates red → retry to `maxAttempts` → `blocked`; gates
   can't run (infra) → don't burn an attempt, human action item; interrupted → `/audit:resume`.
   **A `rerun` answer measures:** the next gate run of that start gets `--no-reuse`, once — a
-  reused red verdict would hand the same decision straight back.
+  reused red verdict would hand the same decision back.
 - **One task per agent, bounded:** continuing a running agent onto its next task is preferred
   below `executor.maxHours` (default 3); at or past it, hand back with a summary and spawn fresh
   — `reference/execute-task.md`'s continuation rule.
@@ -556,7 +557,7 @@ records its row once the measurement completes and **before** its banner, so the
 never lost to a truncated terminal. Read it back with the `runId` the run's own `evidence:
 recorded <runId>` line named, or with `run latest --phase <id>` / `run latest --task <id>` when
 that id was not kept. **Never read a background gate's verdict off a truncated terminal** — the
-ledger row is what the recording already made durable, and it is a lookup rather than a search.
+ledger row is what the recording already made durable.
 
 **`brief` is the one of these you do not run.** It answers what an EXECUTOR would otherwise grep
 the manifest or the journal for; the drive writes it at each `dispatch` with `--role`, and the

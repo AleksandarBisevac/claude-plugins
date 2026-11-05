@@ -89,16 +89,26 @@ _FIXTURE_IDENTITY = ("[user]\n\temail = fixture@example.com\n\tname = Fixture\n"
                      "[commit]\n\tgpgsign = false\n")
 
 
-def _load(modname):
+def _load(modname, real_gate_choice=False):
     """A fresh copy of the driver, or `(None, why)` when it cannot be loaded -
     a driver that is not there yet is a failing case, never a raise that ends
     the suite before any case ran. Its `run_verb` runs each verb in this
-    interpreter unless the case needs a process (`_in_process_verbs`)."""
+    interpreter unless the case needs a process (`_in_process_verbs`).
+
+    THE WORLD MOST CASES RUN IN is one whose ledger has measured every gate
+    under the foreground bound, so each gate runs inside `next`: a fixture's
+    first gate has no recorded run, and the drive would leave it to the
+    background, which is what the `gc`, `gs` and `bg` cases are about and no
+    other case is. Those load the driver with `real_gate_choice` and read the
+    choice the drive makes off the ledger as the fixture seeds it
+    (`_seed_gate_ms`)."""
     try:
         module = _loader.load_script(DRIVER, modname, cache=False)
     except Exception as exc:                                   # noqa: BLE001
         return None, "%s: %s" % (type(exc).__name__, exc)
     module.run_verb = _in_process_verbs(module)
+    if not real_gate_choice and hasattr(module, "gate_in_background"):
+        module.gate_in_background = lambda ctx, names: (False, None)
     return module, None
 
 
@@ -526,13 +536,20 @@ def _file_phase_review(root, mpath, text, findings=(), entry_over=None,
 
 # --- reading what the driver printed ------------------------------------------
 _DISPATCH = re.compile(r"^dispatch (\S+) (\S+)")
+# A gate the drive leaves to the background: its subject is the task after
+# `--task`, or the phase the bare word names.
+_GATE_DISPATCH = re.compile(r"^dispatch run-test-gate\.py (?:--task )?(\S+)")
 
 
 def instruction(text):
     """`(kind, agent, task)` of one print: the instruction line, read by this
     file's own pattern rather than the driver's parser, so a parser that drifted
-    from what the driver prints cannot agree with itself here."""
+    from what the driver prints cannot agree with itself here. A gate dispatch
+    is `("dispatch", "gate", subject)`."""
     for line in text.splitlines():
+        gate = _GATE_DISPATCH.match(line)
+        if gate:
+            return ("dispatch", "gate", gate.group(1))
         hit = _DISPATCH.match(line)
         if hit:
             role = "executor" if hit.group(1).endswith("executor") else "reviewer"
@@ -594,6 +611,18 @@ def drive(M, root, mpath, on_dispatch=None, cap=40, returns=None,
                 continue
             if kind[0] == "dispatch":
                 _, role, tid = kind
+                if role == "gate":
+                    # A gate the drive left to the background is run to its
+                    # end, as the orchestrator's background Bash runs it; it is
+                    # no agent dispatch, so it is not counted as one. Its run:
+                    # line is the `--explain` text of a signal, and the signal
+                    # taken now is the wait on that launch, naming it again.
+                    _signal_raw(M, root, mpath)
+                    _c, block = _explain_of(M, root, mpath, tid)
+                    ran, _out = _play_gate(root, _run_argv(block) or [])
+                    if ran is None:
+                        break
+                    continue
                 if tid == PHASE and not phase_review:
                     break
                 dispatches += 1
@@ -1361,7 +1390,7 @@ def _background_gate_cases(check):
     background, waits while no row has come of it, launches it again when the
     row it left is a cancelled run, and decides from the row it recorded -
     repeating that verdict, never measuring it a second time."""
-    M, why = _load("drive_phase_bggate")
+    M, why = _load("drive_phase_bggate", real_gate_choice=True)
     if M is None:
         check("bg1 the driver loads", False, why)
         return
@@ -1491,6 +1520,256 @@ def _background_doc_case(check, M):
           and M.WRITER_RULE in (steps.get("dispatch-gate") or {}).get("rule", ())
           and runs == ["python3 run-test-gate.py --task P1.1"]
           and said.get("lines", []).count(M.WRITER_RULE) == 1)
+
+
+# --- every gate inside next, chosen by its recorded mean ---------------------------
+# A gate the ledger has measured fast runs inside `next`, costing the main loop no
+# turn; one measured past the Bash tool's foreground bound, or never measured, is
+# a dispatch of its own, read back from its row. The two seeded means sit far
+# either side of any bound a CLI could set, so the cases do not hang on its value.
+_GC_FAST_MS = 40
+_GC_SLOW_MS = 60 * 60 * 1000
+_GC_PHASE_GATE = '"%s" -c "import sys; sys.exit(0)"' % (sys.executable,)
+
+
+def _seed_gate_ms(root, mpath, names, ms):
+    """One measured run of each step in `names`, `ms` long, in the fixture's
+    ledger: a row of no subject, so it is what a gate's recorded mean is read
+    from and never a verdict anybody repeats."""
+    project, config = _evio.project_config_for(mpath, root)
+    _evio.append_row(project, {
+        "runId": "gc-seed-%d-%s" % (ms, hashlib.sha256(
+            "\n".join(names).encode("utf-8")).hexdigest()[:12]),
+        "ts": "2026-01-01T00:00:00Z",
+        "steps": [{"name": name, "exit": 0, "durationMs": ms} for name in names]},
+        writer="gc-seed", config=config)
+
+
+def _gc_agent_after_executor(M, prefix, ms):
+    """A one-task fixture on the Agent path whose executor has filed, its gate
+    `true` seeded at `ms` (None: never measured): `(root, mpath, calls, code,
+    line)`, the signal of the step after the filing and every gate run the
+    drive made for it."""
+    root, mpath = _repo(prefix, task_ids=TASKS[:1])
+    if ms is not None:
+        _seed_gate_ms(root, mpath, ["true"], ms)
+    _signal_raw(M, root, mpath)
+    _file_executor(root, mpath, "P1.1")
+    calls = _gate_calls(M)
+    code, line = _signal_raw(M, root, mpath)
+    return root, mpath, calls, code, line
+
+
+def _gate_choice_cases(check):
+    """The task gate, on the Agent path and the writer path alike, runs inline
+    when its recorded mean is under the foreground bound and is dispatched to
+    the background when it is past it or unmeasured."""
+    M, why = _load("drive_phase_gate_choice", real_gate_choice=True)
+    if M is None:
+        check("gc1 the driver loads", False, why)
+        return
+    for label, ms in (("gc1", None), ("gc2", _GC_SLOW_MS)):
+        root, mpath, calls, code, line = _gc_agent_after_executor(
+            M, "gc-agent-%s" % (label,), ms)
+        _c, block = _explain_of(M, root, mpath, "P1.1")
+        argv = _run_argv(block) or []
+        check("%s on the Agent path a task gate %s is a gate dispatch whose run: "
+              "line is run-test-gate.py --task P1.1 --record, and no gate runs "
+              "inside next: %r" % (label, "never measured" if ms is None
+                                   else "measured past the bound",
+                                   (code, line, calls),),
+              code == 0 and _signal_head(line) == ("dispatch", "P1.1")
+              and "run-test-gate.py" in line and not _task_gate_runs(calls)
+              and _flag(argv, "--task") == "P1.1" and "--record" in argv)
+        if label == "gc1":
+            ran, _said = _play_gate(root, argv)
+            del calls[:]
+            again_code, again = _signal_raw(M, root, mpath)
+            check("gc1b ...and the next call after it ran goes on to the reviewer, "
+                  "the drive's one gate call repeating the verdict the background "
+                  "run measured: %r" % ((ran, again_code, again, calls),),
+                  ran == 0 and again_code == 0 and "run-test-gate.py" not in again
+                  and _signal_head(again) == ("dispatch", "P1.1")
+                  and [("GATE VERDICT REUSED" in o)
+                       for _a, o in _task_gate_runs(calls)] == [True]
+                  and len(_measured_rows(root, mpath, "P1.1")) == 1)
+    root, mpath, calls, code, line = _gc_agent_after_executor(
+        M, "gc-agent-fast", _GC_FAST_MS)
+    # THE ALLOW TWIN, for the mutation that dispatches every gate: a gate the
+    # ledger measured fast stays inside next, as it always did here.
+    check("gc3 on the Agent path a task gate measured under the bound runs inline: "
+          "the step after the filing is the reviewer's dispatch, and the drive "
+          "measured the gate itself, once: %r" % ((code, line, calls),),
+          code == 0 and "run-test-gate.py" not in line
+          and _signal_head(line) == ("dispatch", "P1.1")
+          and [("GATE VERDICT REUSED" in o)
+               for _a, o in _task_gate_runs(calls)] == [False]
+          and len(_measured_rows(root, mpath, "P1.1")) == 1)
+    root, mpath, calls = _bg_writer_exited(M, "gc-writer-fast", ("true",))
+    _seed_gate_ms(root, mpath, ["true"], _GC_FAST_MS)
+    code, line = _signal_raw(M, root, mpath)
+    check("gc4 on the writer path a task gate measured under the bound runs inline "
+          "with no extra turn: no gate dispatch and no wait, the drive measured "
+          "the gate itself, once: %r" % ((code, line, calls),),
+          code == 0 and "run-test-gate.py" not in line
+          and _signal_head(line) not in (("wait", "P1.1"),)
+          and [("GATE VERDICT REUSED" in o)
+               for _a, o in _task_gate_runs(calls)] == [False]
+          and len(_measured_rows(root, mpath, "P1.1")) == 1)
+    root, mpath, calls = _bg_writer_exited(M, "gc-writer-slow", ("true",))
+    _seed_gate_ms(root, mpath, ["true"], _GC_SLOW_MS)
+    code, line = _signal_raw(M, root, mpath)
+    check("gc5 ...and one measured past the bound is still the gate dispatch, "
+          "with no gate run inside next: %r" % ((code, line, calls),),
+          code == 0 and _signal_head(line) == ("dispatch", "P1.1")
+          and "run-test-gate.py" in line and not calls)
+
+
+def _gate_choice_follow_cases(check):
+    """The re-gate after a follower's recipe is chosen the same way: measured
+    past the bound, it is a second gate dispatch after the recipe ran; measured
+    under it, it runs inside the same next."""
+    M, why = _load("drive_phase_gate_choice_follow", real_gate_choice=True)
+    if M is None:
+        check("gc6 the driver loads", False, why)
+        return
+    gate = '"%s" check_follower.py' % (sys.executable,)
+    runs = {}
+    for label, ms in (("slow", _GC_SLOW_MS), ("fast", _GC_FAST_MS)):
+        root, mpath = _follower_repo("gc-follow-%s" % (label,), "docs/map.txt",
+                                     "git show HEAD:map.fresh > docs/map.txt",
+                                     "check_map")
+        # The phase gate is `true`, measured fast, so sign-off stays inline.
+        _seed_gate_ms(root, mpath, [gate], ms)
+        _seed_gate_ms(root, mpath, ["true"], _GC_FAST_MS)
+        run = drive(M, root, mpath, cap=12)
+        prints = [t for _c, t in run["prints"]]
+        gates = [n for n, s in enumerate(run["steps"])
+                 if s == ("dispatch", "gate", "P1.1")]
+        runs[label] = (run["steps"], gates, prints,
+                       [r.get("status") for r in _measured_rows(root, mpath, "P1.1")],
+                       tasks_of(mpath)["P1.1"].get("status"))
+    steps, gates, prints, statuses, status = runs["slow"]
+    regen = [n for n, text in enumerate(prints) if "docs/map.txt regenerated" in text]
+    check("gc6 a re-gate after a follower's recipe, its gate measured past the "
+          "bound, is a gate dispatch of its own after the recipe ran - two gate "
+          "dispatches, the second on the print that says the follower was "
+          "regenerated - and each run measured once: %r"
+          % ((steps, gates, regen, statuses, status),),
+          len(gates) == 2 and regen and regen[0] == gates[1]
+          and statuses == ["failed", "passed"] and status == "done")
+    steps, gates, prints, statuses, status = runs["fast"]
+    check("gc7 THE TWIN: measured under the bound, the re-gate runs inside the "
+          "next that ran the recipe - no gate dispatch at all, the same two "
+          "measured runs: %r" % ((steps, statuses, status),),
+          steps == expected_sequence(["P1.1"]) and not gates
+          and statuses == ["failed", "passed"] and status == "done")
+
+
+def _phase_gate_calls(calls):
+    """The phase-gate runs among `calls` (`_gate_calls`): neither a task's nor
+    a base's."""
+    return [(a, out) for a, out in calls
+            if "--task" not in a and "--base-of" not in a]
+
+
+def _gate_choice_signoff_cases(check):
+    """Sign-off's phase gate is chosen the same way: unmeasured or measured
+    past the bound it is a gate dispatch, the verdict read back from its row;
+    measured under it, it runs inside next."""
+    M, why = _load("drive_phase_gate_choice_signoff", real_gate_choice=True)
+    if M is None:
+        check("gc8 the driver loads", False, why)
+        return
+    for label, ms in (("gc8", None), ("gc9", _GC_SLOW_MS), ("gc10", _GC_FAST_MS)):
+        root, mpath = _repo("gc-signoff-%s" % (label,), task_ids=TASKS[:1],
+                            phase_gate=(_GC_PHASE_GATE,))
+        _seed_gate_ms(root, mpath, ["true"], _GC_FAST_MS)
+        if ms is not None:
+            _seed_gate_ms(root, mpath, [_GC_PHASE_GATE], ms)
+        calls = _gate_calls(M)
+        run = drive(M, root, mpath, cap=14)
+        phase_gates = [s for s in run["steps"] if s == ("dispatch", "gate", PHASE)]
+        reused = [("GATE VERDICT REUSED" in o) for _a, o in _phase_gate_calls(calls)]
+        done = run["steps"][-1:] == [DONE]
+        if label != "gc10":
+            check("%s sign-off's phase gate %s is a gate dispatch of the phase, and "
+                  "the drive's own phase-gate call repeats the verdict the "
+                  "background run measured, then the phase lands: %r"
+                  % (label, "never measured" if ms is None
+                     else "measured past the bound", (run["steps"], reused),),
+                  len(phase_gates) == 1 and reused == [True] and done)
+        else:
+            # THE ALLOW TWIN, for the mutation that dispatches every phase gate.
+            check("gc10 THE TWIN: measured under the bound, the phase gate runs "
+                  "inside next - no gate dispatch, the drive measuring it itself: "
+                  "%r" % ((run["steps"], reused),),
+                  not phase_gates and reused == [False] and done)
+
+
+# The words a recorded run's `status` takes that hold no verdict a repeat may
+# copy - `run-test-gate.py`'s own, spelled here from its vocabulary.
+_GS_STATUSES = (("gs1", "no-checks"), ("gs2", "timed-out"),
+                ("gs3", "could-not-run"), ("gs4", "gate-mutated"))
+
+
+def _gate_status_cases(check):
+    """A background gate whose row records a status no repeat may copy is
+    decided from that row as it stands - a red naming the status - and never
+    measured again inside next."""
+    M, why = _load("drive_phase_gate_status", real_gate_choice=True)
+    if M is None:
+        check("gs1 the driver loads", False, why)
+        return
+    for label, status in _GS_STATUSES:
+        root, mpath, calls = _bg_writer_exited(M, "gs-%s" % (label,), ("true",))
+        code, first = _signal_raw(M, root, mpath)
+        project, config = _evio.project_config_for(mpath, root)
+        _evio.append_row(project, {
+            "runId": "gs-run-%s" % (label,), "ts": "2026-11-05T12:00:00Z",
+            "scope": "task", "taskId": "P1.1", "phaseId": PHASE,
+            "status": status, "steps": [{"name": "true", "exit": 0}]},
+            writer="gs-rows", config=config)
+        code, line = _signal_raw(M, root, mpath)
+        _c, block = _explain_of(M, root, mpath, "P1.1")
+        check("%s a background gate whose row records %s is decided from that "
+              "row: the red decision names the status and the run, and no gate "
+              "is measured inside next: %r"
+              % (label, status, (first, code, line, block, calls),),
+              _signal_head(first) == ("dispatch", "P1.1") and code == 0
+              and "gate-red" in line and status in line + block
+              and "gs-run-%s" % (label,) in line + block and not calls)
+
+
+def _wave_rule_cases(check):
+    """A wave print shows each member's first line, so a rule a member with a
+    process of its own carries - a gate's or a session's - is carried once
+    under the wave; an Agent member carries none."""
+    M, why = _load("drive_phase_wave_rule")
+    if M is None:
+        check("gw1 the driver loads", False, why)
+        return
+    ctx = {"phase": PHASE, "only": None}
+    gates = [M.gate_said(ctx, tid, ["python3", "run-test-gate.py", "--task", tid])
+             for tid in ("P1.1", "P1.2")]
+    writer = M.writer_said(ctx, "P1.3", WRITER_MODEL, "p.md",
+                           ["python3", "run-agent-session.py"])
+    agent = M.instruction("dispatch", ["dispatch Agent P1.4", "an agent's rule"],
+                          M.signal_of("dispatch-executor", "P1.4", "Agent",
+                                      "brief", prompts=["brief P1.4"]))
+    lines = M.wave_said(ctx, gates + [writer, agent])["lines"]
+    check("gw1 a wave holding two gate dispatches and a session carries the "
+          "background rule once and the budget rule once, each member's own "
+          "line kept: %r" % (lines,),
+          lines.count(M.WRITER_RULE) == 1
+          and lines.count(M.SESSION_BUDGET_RULE) == 1
+          and "an agent's rule" not in lines
+          and all(m["lines"][0] in lines for m in gates + [writer, agent]))
+    # THE ALLOW TWIN, for the mutation that carries every rule on every wave.
+    plain = M.wave_said(ctx, [agent, agent])["lines"]
+    check("gw2 THE TWIN: a wave of Agent members alone carries neither rule: %r"
+          % (plain,),
+          M.WRITER_RULE not in plain and M.SESSION_BUDGET_RULE not in plain)
 
 
 def _writer_files_cases(check):
@@ -12269,8 +12548,9 @@ def _signoff_branch_units(check):
     tmp, mfile = _with_manifest(opened)
     try:
         M.git_head = lambda ctx: _HEAD_A
-        M.phase_gate = lambda ctx, phase: (
+        M.phase_gate = M.run_phase_gate = lambda ctx, phase: (
             0, "[run-test-gate] GATE GREEN: true\n", "")
+        M.derive_phase_gate = lambda ctx, phase: None
         M.lint_probe = lambda ctx, state, phase, head: None
         M.run_verb, calls = _verb_rig()
         state = {"summary": SUMMARY}
@@ -12313,7 +12593,8 @@ def _signoff_with_gate(M, phase, gate, verbs=None):
     tmp, mfile = _with_manifest(phase)
     try:
         M.git_head = lambda ctx: _HEAD_A
-        M.phase_gate = lambda ctx, phase: gate
+        M.phase_gate = M.run_phase_gate = lambda ctx, phase: gate
+        M.derive_phase_gate = lambda ctx, phase: None
         M.lint_probe = lambda ctx, state, phase, head: None
         M.run_verb, calls = _fake_verbs(verbs)
         state = {}
@@ -17202,6 +17483,11 @@ def _rf_verb_brief(check):
 STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("ws-block", "_writer_session_cases"),
           ("bg-block", "_background_gate_cases"),
+          ("gc-block", "_gate_choice_cases"),
+          ("gc6-block", "_gate_choice_follow_cases"),
+          ("gc8-block", "_gate_choice_signoff_cases"),
+          ("gs-block", "_gate_status_cases"),
+          ("gw-block", "_wave_rule_cases"),
           ("rv-block", "_reviewer_session_cases"),
           ("pv-block", "_phase_validation_cases"),
           ("pv4-block", "_phase_cold_cases"),
