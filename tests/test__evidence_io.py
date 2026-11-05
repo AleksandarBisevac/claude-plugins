@@ -2536,15 +2536,15 @@ def _cases(check):
 
     # --- gate_last_caught / gate_cost_ms: paired with the tally, not a third one
     cost_rows = [
-        {"ts": "2026-02-01T00:00:00Z", "runId": "c1",
+        {"ts": "2026-02-01T00:00:00Z", "runId": "c1", "status": "passed",
          "steps": [{"name": "lint", "exit": 0, "durationMs": 1000}]},
-        {"ts": "2026-02-02T00:00:00Z", "runId": "c2",
+        {"ts": "2026-02-02T00:00:00Z", "runId": "c2", "status": "failed",
          "steps": [{"name": "lint", "exit": 1, "durationMs": 2000}]},
-        {"ts": "2026-02-03T00:00:00Z", "runId": "c3",
+        {"ts": "2026-02-03T00:00:00Z", "runId": "c3", "status": "failed",
          "steps": [{"name": "lint", "exit": 1, "durationMs": 1500}]},
         # A run that came LATER and passed - it must not win `gate_last_caught`,
         # which asks when the gate last CAUGHT something, not when it last ran.
-        {"ts": "2026-02-04T00:00:00Z", "runId": "c4",
+        {"ts": "2026-02-04T00:00:00Z", "runId": "c4", "status": "passed",
          "steps": [{"name": "lint", "exit": 0}]},
     ]
     check("ev43 gate_last_caught is the newest ts among the FAILED steps, "
@@ -2614,6 +2614,23 @@ def _step_mean_cases(check, cost_rows):
     check("smm3 one measured run is a mean with a count of 1, so the caller "
           "can say it was one: %r" % (single,),
           single[0] and single[1] == (1000, 1))
+    # Every step below carries a duration, so only the row's status can tell a
+    # run that measured from one that stopped early: the fast could-not-run and
+    # cancelled rows and the slow timed-out one would move a mean over all five
+    # far from the two verdict rows' 2000.
+    stopped = [dict({"steps": [{"name": "lint", "exit": code, "durationMs": ms}]},
+                    status=status)
+               for status, code, ms in (("passed", 0, 1000), ("failed", 1, 3000),
+                                        ("could-not-run", 2, 50),
+                                        ("cancelled", 143, 10),
+                                        ("timed-out", 124, 90000))]
+    verdicts = mean(stopped, "lint")
+    none_left = mean(stopped[2:], "lint")
+    check("smm4 step_mean_ms counts only the rows whose status is a measured "
+          "verdict, passed or failed: (2000, 2) over the two of them, and None "
+          "when only could-not-run, cancelled and timed-out rows remain: %r / %r"
+          % (verdicts, none_left),
+          verdicts == (True, (2000, 2)) and none_left == (True, None))
 
 
 def _pin_suite_cases(check):
@@ -4471,9 +4488,11 @@ def _foreground_bound_cases(check):
 
     def mean(rows, names):
         return _harness.attempt(lambda: M.gate_mean_ms(rows, names))
-    rows = [{"steps": [{"name": "lint", "durationMs": 1000},
+    rows = [{"status": "passed",
+             "steps": [{"name": "lint", "durationMs": 1000},
                        {"name": "unit", "durationMs": 3000}]},
-            {"steps": [{"name": "lint", "durationMs": 2000},
+            {"status": "failed",
+             "steps": [{"name": "lint", "durationMs": 2000},
                        {"name": "slow", "exit": 0}]}]
     got = mean(rows, ["lint", "unit"])
     # 3000 + 1500 is the sum of the means; 6000 would be the sum of every
@@ -4485,6 +4504,18 @@ def _foreground_bound_cases(check):
     check("gm2 ...and None while any step has no measured run, and for a gate "
           "of no steps: %r / %r" % (partial, empty),
           partial == (True, None) and empty == (True, None))
+    # A cancelled run of the slow step, timed: a mean over every row would give
+    # the gate a mean, and a fast one, where none of its runs measured `slow`.
+    aborted = rows + [{"status": "cancelled",
+                       "steps": [{"name": "slow", "durationMs": 5}]},
+                      {"status": "could-not-run",
+                       "steps": [{"name": "unit", "durationMs": 1}]}]
+    still = mean(aborted, ["lint", "unit"])
+    unmeasured = mean(aborted, ["lint", "slow"])
+    check("gm3 gate_mean_ms reads only rows whose status is passed or failed: a "
+          "cancelled run of a step gives it no mean, and a could-not-run row "
+          "moves none - (4500, 1) and None: %r / %r" % (still, unmeasured),
+          still == (True, (4500, 1)) and unmeasured == (True, None))
 
 
 def _selftest():

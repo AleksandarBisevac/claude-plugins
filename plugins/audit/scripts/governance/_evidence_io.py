@@ -1981,14 +1981,22 @@ def gate_cost_measured(rows, name):
 
 
 def step_mean_ms(rows, name):
-    """`(mean_ms, measured)` for the named step across `rows`, or `None` when
-    no matching step carries a `durationMs` -- unmeasured, never a zero mean.
+    """`(mean_ms, measured)` for the named step across the `rows` that reached
+    a verdict (`MEASURED_STATUSES`), or `None` when no matching step of theirs
+    carries a `durationMs` -- unmeasured, never a zero mean.
+
+    ONLY A RUN THAT REACHED A VERDICT SAYS HOW LONG THE STEP TAKES. A run that
+    could not start, was cancelled or was stopped at its bound timed its steps
+    too, but for as long as they were let run: a cancelled slow suite reads
+    fast, and a mean over it predicts a gate shorter than it is.
 
     The count travels with the mean because a mean over one run and a mean over
     many are different claims, and the caller printing the mean owes its reader
     which one it is. Both come from `_gate_cost_walk`, so the divisor is exactly
     the steps the sum took, never `gate_tally`'s `ran`."""
-    total, measured = _gate_cost_walk(rows, name)
+    total, measured = _gate_cost_walk(
+        [row for row in rows or () if isinstance(row, dict)
+         and row.get("status") in MEASURED_STATUSES], name)
     if not measured:
         return None
     return total / measured, measured
@@ -2858,6 +2866,9 @@ def row_by_run(rows, run_id):
 
 # The one status a recorded run is green under.
 RUN_PASSED = "passed"
+# The statuses of a run that reached a verdict - every step it started ran to
+# its end - and so the only ones whose durations measure the gate.
+MEASURED_STATUSES = (RUN_PASSED, "failed")
 
 
 def row_is_red(row):

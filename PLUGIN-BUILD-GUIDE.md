@@ -440,7 +440,7 @@ L9:
   close-phase -> _branch, _claude_home, _config_rules, _evidence_io, _excerpt, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _scoped_commit, _tree_stamp, _utc_stamp, _verdict_binding, _worktrees
   commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_vocab, _output, _panel_write, _scoped_commit, _verdict_binding, usage_ledger
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _invariants, _loader, _machine_paths, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _utc_stamp
-  drive-phase -> _areas, _claude_home, _clause_coverage, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _gate_derive, _invariants, _journal_io, _loader, _locks, _manifest_io, _manifest_phases, _output, _proc_group, _runner_collects, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _tree_stamp, _verdict_binding, _wave, _worktrees
+  drive-phase -> _affected_tests, _areas, _claude_home, _clause_coverage, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _gate_derive, _invariants, _journal_io, _loader, _locks, _manifest_io, _manifest_phases, _output, _proc_group, _runner_collects, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _tree_stamp, _verdict_binding, _wave, _worktrees
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
@@ -3916,7 +3916,10 @@ keeps a command in the foreground, and `outlives_foreground()` the one compariso
 the writer's brief leaves a step past it to the drive's gate (`audit-lookup.py`), and the drive
 leaves a gate past it to the background (`drive-phase.py`'s `gate_in_background`).
 `gate_mean_ms()` is a gate's recorded mean - its steps' `step_mean_ms()` summed, beside the
-fewest runs any of them was measured over - and None while any step is unmeasured.
+fewest runs any of them was measured over - and None while any step is unmeasured. A mean reads
+only the rows whose status is a verdict (`MEASURED_STATUSES`): a run that could not start, was
+cancelled or was stopped at its bound timed its steps for as long as they were let run, which
+would make a slow gate read fast.
 
 ### `plugins/audit/scripts/governance/_gate_derive.py`
 The gate helpers' one home, and a pure `derive()`.
@@ -4806,18 +4809,26 @@ follower's recipe, the re-gate on the phase tree, and sign-off's phase gate (`ch
 - asks `gate_in_background`: a gate whose recorded mean (`_evidence_io.gate_mean_ms`, the sum of
 its steps' means, since `run-test-gate.py` runs them one after another; unmeasured while any step
 is) is past `_evidence_io.FOREGROUND_BOUND_MS`, or that no run has measured, is a step of its own;
-one measured under it runs inline and costs the main loop no turn. The step prints
+one measured under it runs inline and costs the main loop no turn, and so does a gate of no steps,
+which runs nothing. The steps weighed are the ones the run will take (`task_gate_steps`, and
+`runnable_entries` for the phase's): the entries `_manifest_io.gate_entries` names, less the
+review-only ones the runner never runs. A task's own gate that does not already carry its phase's
+wide gate (`_affected_tests.already_wide`) is joined by the affected suites the runner gathers
+itself, which nothing knows before it runs, so it is weighed as unmeasured. The step prints
 `dispatch-gate`, whose `run:` line is the command `gate_args` (or `phase_gate_args`) spells for the
 inline run too, under `WRITER_RULE`, with the reason on the line below it, and marks the launch
 with the subject's ledger rows as they stood. A `next` before a new row exists is `wait-gate`,
 printing the same `run:` line; a new `cancelled` row - a gate stopped mid-run - launches it again;
 a `passed` or `failed` row is repeated through the same call, which on the same tree content
-measures nothing (`GATE VERDICT REUSED`), and a row of any other word is decided from as
-recorded. A phase gate launched by a sign-off answer resumes that sign-off at the same head and
-is forgotten at another. A wave print carries the rules of each member with a `run:` line once.
+measures nothing (`GATE VERDICT REUSED`), an `empty-gate` row - the runner's own green - is asked
+again the same way, and a row of any other word is decided from as recorded (`read_back`, one
+reading for the task gate and the phase gate). A red read back names its verdict line, never the
+repeat's banner (`gate_red_lines`, read by the gate-red decision, the re-gate on the phase
+tree and the phase gate's stop). A phase gate launched by a sign-off answer resumes that sign-off
+at the same head and is forgotten at another. A wave print carries the rules of each member with a `run:` line once.
 The base measurement a red asks for still runs inside `next`: its reading is `run-test-gate.py`'s
-own `base_red` over the base run, which no recorded row carries. The `bg`, `gc` and `gs` cases in
-`tests/test_drive_phase.py` drive each arm against the real `run-test-gate.py`.
+own `base_red` over the base run, which no recorded row carries. The `bg`, `gc`, `gs`, `ge` and
+`ga` cases in `tests/test_drive_phase.py` drive each arm against the real `run-test-gate.py`.
 
 **Deciding on facts: named planners, and no single `decide()`.** The drive's planners sit
 under `# --- deciding a step on facts ---`: `_advance_plan`

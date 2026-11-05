@@ -108,7 +108,7 @@ def _load(modname, real_gate_choice=False):
         return None, "%s: %s" % (type(exc).__name__, exc)
     module.run_verb = _in_process_verbs(module)
     if not real_gate_choice and hasattr(module, "gate_in_background"):
-        module.gate_in_background = lambda ctx, names: (False, None)
+        module.gate_in_background = lambda ctx, names, joins=None: (False, None)
     return module, None
 
 
@@ -1534,13 +1534,14 @@ _GC_PHASE_GATE = '"%s" -c "import sys; sys.exit(0)"' % (sys.executable,)
 
 def _seed_gate_ms(root, mpath, names, ms):
     """One measured run of each step in `names`, `ms` long, in the fixture's
-    ledger: a row of no subject, so it is what a gate's recorded mean is read
-    from and never a verdict anybody repeats."""
+    ledger: a passed row of no subject, so it is what a gate's recorded mean
+    is read from - a mean counts only a run that reached a verdict - and never
+    a verdict anybody repeats."""
     project, config = _evio.project_config_for(mpath, root)
     _evio.append_row(project, {
         "runId": "gc-seed-%d-%s" % (ms, hashlib.sha256(
             "\n".join(names).encode("utf-8")).hexdigest()[:12]),
-        "ts": "2026-01-01T00:00:00Z",
+        "ts": "2026-01-01T00:00:00Z", "status": "passed",
         "steps": [{"name": name, "exit": 0, "durationMs": ms} for name in names]},
         writer="gc-seed", config=config)
 
@@ -1639,7 +1640,11 @@ def _gate_choice_follow_cases(check):
         root, mpath = _follower_repo("gc-follow-%s" % (label,), "docs/map.txt",
                                      "git show HEAD:map.fresh > docs/map.txt",
                                      "check_map")
-        # The phase gate is `true`, measured fast, so sign-off stays inline.
+        # The phase gate is the task's own, so no affected suite joins the
+        # task's and its recorded mean alone decides; `true`, measured fast,
+        # is what the sign-off gate falls back to nowhere here.
+        _commit_plan(root, mpath, lambda plan: plan["phases"][0].update(
+            testGate=[gate]), "phase gate is the task's")
         _seed_gate_ms(root, mpath, [gate], ms)
         _seed_gate_ms(root, mpath, ["true"], _GC_FAST_MS)
         run = drive(M, root, mpath, cap=12)
@@ -1705,6 +1710,245 @@ def _gate_choice_signoff_cases(check):
                   "inside next - no gate dispatch, the drive measuring it itself: "
                   "%r" % ((run["steps"], reused),),
                   not phase_gates and reused == [False] and done)
+
+
+# --- a gate of no steps is green, however it is run -------------------------------
+# `run-test-gate.py` records a gate with nothing to run as `empty-gate` and exits
+# 0, its own green. A gate of no steps has no recorded mean either, so a chooser
+# reading the ledger alone leaves it to the background - and the read-back of
+# that row has to say green too, or every task with no gate goes red on a run
+# that found nothing wrong.
+def _gate_red_said(run):
+    """Every print of `run` (`drive`) that names a red gate."""
+    return [t for _c, t in run["prints"]
+            if "gate-red" in t or "GATE RED" in t or "unrepeatable" in t]
+
+
+def _clear_gates(plan):
+    """`_commit_plan`'s edit: every task's gate cleared on purpose
+    (`tests.gateBasis: cleared`), so it is the task's own EMPTY gate rather
+    than a fall back to its phase's."""
+    for task in plan["phases"][0]["tasks"]:
+        task["tests"]["gate"] = []
+        task["tests"]["gateBasis"] = "cleared"
+
+
+def _empty_gate_cases(check):
+    """An empty gate - a task's or the phase's - lets the drive go on as a
+    green one does, on the Agent path, the writer path, the re-gate on the
+    phase tree and at sign-off; and a background row that recorded one is
+    read back as the green it is."""
+    M, why = _load("drive_phase_empty_gate", real_gate_choice=True)
+    if M is None:
+        check("ge1 the driver loads", False, why)
+        return
+    root, mpath = _repo("ge-task", task_ids=TASKS[:1],
+                        phase_gate=(_GC_PHASE_GATE,))
+    _commit_plan(root, mpath, _clear_gates, "gate cleared")
+    _seed_gate_ms(root, mpath, [_GC_PHASE_GATE], _GC_FAST_MS)
+    run = drive(M, root, mpath, cap=14)
+    agent_steps = [s for s in run["steps"] if s[:2] != ("dispatch", "gate")]
+    check("ge1 on the Agent path a task whose gate is cleared goes on as a green "
+          "one does - executor, reviewer, sign-off - with no red gate printed "
+          "and the task done: %r" % ((run["steps"], _gate_red_said(run),
+                                      tasks_of(mpath)["P1.1"].get("status")),),
+          agent_steps == expected_sequence(["P1.1"]) and not _gate_red_said(run)
+          and tasks_of(mpath)["P1.1"].get("status") == "done")
+    # The task borrows its phase's gate, and that is empty too.
+    root, mpath, calls = _bg_writer_exited(M, "ge-writer", ())
+    lines = []
+    for _round in range(3):
+        code, line = _signal_raw(M, root, mpath)
+        lines.append(line)
+        if _signal_head(line) != ("dispatch", "P1.1") \
+                or "run-test-gate.py" not in line:
+            break
+        _c, block = _explain_of(M, root, mpath, "P1.1")
+        ran, _said = _play_gate(root, _run_argv(block) or [])
+        if ran is None:
+            break
+    gated = (_drive_state(root).get("gated") or {}).get("P1.1") or {}
+    check("ge2 on the writer path a task with an empty gate is gated green, with "
+          "no red gate and no wait in any step and its green marked: %r"
+          % ((lines, gated),),
+          lines and not any("gate-red" in ln or "unrepeatable" in ln
+                            or _signal_head(ln) == ("wait", "P1.1")
+                            for ln in lines)
+          and "run-test-gate.py" not in lines[-1] and bool(gated))
+    root, mpath = _repo("ge-signoff", task_ids=TASKS[:1], phase_gate=())
+    _seed_gate_ms(root, mpath, ["true"], _GC_FAST_MS)
+    run = drive(M, root, mpath, cap=14)
+    check("ge3 a phase whose testGate is empty signs off and lands, with no red "
+          "gate printed at sign-off: %r" % ((run["steps"], _gate_red_said(run)),),
+          run["steps"][-1:] == [DONE] and not _gate_red_said(run))
+    _empty_row_cases(check, M)
+    _empty_regate_case(check, M)
+
+
+def _empty_row_cases(check, M):
+    """A gate launched in the background whose row came back `empty-gate` - its
+    plan emptied between the launch and the run - is read back green on the
+    task path and at sign-off, never as a red no repeat may copy."""
+    root, mpath, calls = _bg_writer_exited(M, "ge-row", ("true",))
+    _code, first = _signal_raw(M, root, mpath)
+    project, config = _evio.project_config_for(mpath, root)
+    _evio.append_row(project, {
+        "runId": "ge-row-task", "ts": "2026-11-05T12:00:00Z", "scope": "task",
+        "taskId": "P1.1", "phaseId": PHASE, "status": "empty-gate", "steps": []},
+        writer="ge-rows", config=config)
+    code, line = _signal_raw(M, root, mpath)
+    gated = (_drive_state(root).get("gated") or {}).get("P1.1") or {}
+    check("ge4 a task gate whose background row recorded empty-gate is read back "
+          "green: the step after it names no red gate and the green is marked: "
+          "%r" % ((first, code, line, gated),),
+          _signal_head(first) == ("dispatch", "P1.1") and code == 0
+          and "gate-red" not in line and "empty-gate" not in line
+          and bool(gated))
+    root, mpath = _repo("ge-row-signoff", task_ids=TASKS[:1],
+                        phase_gate=(_GC_PHASE_GATE,))
+    _seed_gate_ms(root, mpath, ["true"], _GC_FAST_MS)
+    ns = argparse.Namespace(project_dir=root, manifest=mpath, verbose=False,
+                            phase=PHASE, task_only=False)
+    with _Env(root):
+        ctx = M.context(ns)
+        head = _head_of(root)
+        state = {M.PHASE_GATE_LAUNCH_KEY: {"head": head, "at": "2026-11-05T12:00:00Z",
+                                           "argv": ["python3", "run-test-gate.py"],
+                                           "known": []}}
+        _evio.append_row(ctx["project"], {
+            "runId": "ge-row-phase", "ts": "2026-11-05T12:00:00Z",
+            "scope": "phase", "phaseId": PHASE, "status": "empty-gate",
+            "steps": []}, writer="ge-rows", config=ctx["config"])
+        said, measured = _caught(M.chosen_phase_gate, ctx, state,
+                                 _mio.load_manifest(mpath)["phases"][0], head)
+    check("ge5 sign-off's phase gate whose background row recorded empty-gate is "
+          "read back green - exit 0, no GATE RED - and the launch is spent: %r"
+          % ((said, measured),),
+          said is None and isinstance(measured, tuple) and measured[0] == 0
+          and "GATE RED" not in measured[1] + measured[2]
+          and M.PHASE_GATE_LAUNCH_KEY not in state)
+
+
+def _empty_regate_case(check, M):
+    """A wave member whose gate is cleared, its integration unable to say
+    whether it overlapped a sibling, is re-gated on the phase tree - green."""
+    root, mpath = _wave_repo("ge-regate", 2)
+    _commit_plan(root, mpath, _clear_gates, "gates cleared")
+    _code, first = _next_wave(M, root, mpath)
+    for t in _dispatched(first):
+        _file_wave_executor(root, mpath, t)
+    real_run = M.run_verb
+
+    def unsure(ctx, script, args, stdin=None):
+        code, out, err = real_run(ctx, script, args, stdin=stdin)
+        if script == "integrate-task.py":
+            body = json.loads(out)
+            body["regate"] = None
+            out = json.dumps(body)
+        return code, out, err
+    M.run_verb = unsure
+    try:
+        _code, text = _next_wave(M, root, mpath)
+    finally:
+        M.run_verb = real_run
+    check("ge6 the re-gate on the phase tree of a member whose gate is cleared is "
+          "green, for each member, with no red gate and no gate dispatch: %r"
+          % ((_dispatched(first), text[-600:]),),
+          sorted(_dispatched(first)) == ["P1.1", "P1.2"]
+          and "re-gate P1.1 green" in text and "re-gate P1.2 green" in text
+          and "gate-red" not in text and "GATE RED" not in text)
+
+
+# --- the estimate covers what the gate will run -----------------------------------
+# `run-test-gate.py` adds to a task's own gate the suites its change can break,
+# found by a gathering that runs only inside the gate; the declared steps' mean
+# alone is not what the run will take.
+def _gate_reach_cases(check):
+    """A task gate the affected suites may join is weighed as unmeasured; one
+    no suite can join - it borrows its phase's gate, or already carries it -
+    is weighed by its own recorded mean."""
+    M, why = _load("drive_phase_gate_reach", real_gate_choice=True)
+    if M is None:
+        check("ga1 the driver loads", False, why)
+        return
+    root, mpath = _repo("ga-narrow", task_ids=TASKS[:1],
+                        phase_gate=(_GC_PHASE_GATE,))
+    _seed_gate_ms(root, mpath, ["true"], _GC_FAST_MS)
+    _seed_gate_ms(root, mpath, [_GC_PHASE_GATE], _GC_FAST_MS)
+    _signal_raw(M, root, mpath)
+    _file_executor(root, mpath, "P1.1")
+    calls = _gate_calls(M)
+    code, line = _signal_raw(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    check("ga1 a task gate whose declared step is measured fast, but which the "
+          "affected suites may join, is a gate dispatch - no gate runs inside "
+          "next - and its reason names the suites the run adds: %r"
+          % ((code, line, block, calls),),
+          code == 0 and _signal_head(line) == ("dispatch", "P1.1")
+          and "run-test-gate.py" in line and not _task_gate_runs(calls)
+          and "affected" in block)
+    root, mpath = _repo("ga-borrowed", task_ids=TASKS[:1], gate=(),
+                        phase_gate=(_GC_PHASE_GATE,))
+    _seed_gate_ms(root, mpath, [_GC_PHASE_GATE], _GC_FAST_MS)
+    _signal_raw(M, root, mpath)
+    _file_executor(root, mpath, "P1.1")
+    calls = _gate_calls(M)
+    code, line = _signal_raw(M, root, mpath)
+    # THE ALLOW TWIN, for the mutation that sends every task gate away.
+    check("ga2 THE TWIN: a task measured by its phase's gate, measured fast, runs "
+          "inline - no suite joins a gate that is the phase's own: %r"
+          % ((code, line, calls),),
+          code == 0 and "run-test-gate.py" not in line
+          and [("GATE VERDICT REUSED" in o)
+               for _a, o in _task_gate_runs(calls)] == [False])
+
+
+# --- a red read back names its red line --------------------------------------------
+# A repeated verdict opens with the repeat's banner, and on the background path
+# every red reaches its reader as one: a reader taking the first line holding
+# the word GATE names the banner instead of the red.
+def _reuse_red_text(run_id):
+    """The shape `run-test-gate.py` prints for a repeated red: the banner, the
+    lines under it, then the verdict."""
+    return ("GATE VERDICT REUSED (re-run with --no-reuse to measure it): nothing "
+            "ran here. This verdict was MEASURED by run %s at "
+            "2026-11-05T12:00:00Z.\n"
+            "  identity: id\n"
+            "  repeats:  run %s (failed, recorded 2026-11-05T12:00:00Z)\n"
+            "GATE RED: unit-red-step\n"
+            "  evidence: recorded %s\n" % (run_id, run_id, run_id))
+
+
+def _red_line_cases(check):
+    """`red_gate_stop` and the re-gate inside `integrate_member` name the red
+    line of a repeated verdict, never its banner."""
+    M, why = _unit_driver("drive_phase_red_line")
+    if M is None:
+        check("gl1 the driver loads", False, why)
+        return
+    text = _reuse_red_text("gl-run")
+    M.run_verb = lambda ctx, script, args, stdin=None: (0, "", "")
+    stopped = _caught(M.red_gate_stop, _step_ctx(), {"id": PHASE}, text, "")
+    said = stopped[1] if isinstance(stopped, tuple) and len(stopped) == 2 \
+        and isinstance(stopped[1], str) else ""
+    check("gl1 red_gate_stop over a repeated red names its GATE RED line and not "
+          "the repeat's banner: %r" % (stopped,),
+          "GATE RED: unit-red-step" in said and "GATE VERDICT REUSED" not in said)
+    task_u = _step_task()
+    state = {}
+    M._mark(state, "integrated", task_u, {"regate": True, "followers": []})
+    M.stored_green = lambda *a, **kw: None
+    M.load_phase = lambda ctx: ({"phases": []}, {"id": PHASE})
+    M.chosen_task_gate = lambda *a, **kw: (None, (1, text, ""))
+    M.verdict_taken = lambda *a, **kw: {"runId": "gl-run"}
+    _caught(M.integrate_member, _step_ctx(), state, {"id": PHASE}, task_u)
+    why_said = str((state.get("pending") or {}).get("why"))
+    check("gl2 the re-gate on the phase tree, red on a repeated verdict, asks "
+          "gate-red naming the GATE RED line and not the repeat's banner: %r"
+          % (state.get("pending"),),
+          (state.get("pending") or {}).get("decision") == "gate-red"
+          and "GATE RED: unit-red-step" in why_said
+          and "GATE VERDICT REUSED" not in why_said)
 
 
 # The words a recorded run's `status` takes that hold no verdict a repeat may
@@ -17487,6 +17731,9 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("gc6-block", "_gate_choice_follow_cases"),
           ("gc8-block", "_gate_choice_signoff_cases"),
           ("gs-block", "_gate_status_cases"),
+          ("ge-block", "_empty_gate_cases"),
+          ("ga-block", "_gate_reach_cases"),
+          ("gl-block", "_red_line_cases"),
           ("gw-block", "_wave_rule_cases"),
           ("rv-block", "_reviewer_session_cases"),
           ("pv-block", "_phase_validation_cases"),

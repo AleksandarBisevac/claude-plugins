@@ -375,6 +375,7 @@ import _wave  # noqa: E402  (select: which ready tasks may run together)
 import _doctor_setup  # noqa: E402  (hooks_task_binding: whether the loaded hooks bind a task tree)
 import _runner_collects  # noqa: E402  (collects: whether a runner takes a test path)
 import _gate_derive  # noqa: E402  (entry_collector: what collects a gate entry's tests)
+import _affected_tests as _affected  # noqa: E402  (already_wide: whether the suites a change can break join a task's gate)
 import _tree_stamp  # noqa: E402  (parse_stamp, declared_scope: the scope a filing was made under)
 import _clause_coverage as _cc  # noqa: E402  (check: whether the writer answered every clause)
 import _scope_companions  # noqa: E402  (derive: the runner config a widen declares)
@@ -995,6 +996,10 @@ _CITED = re.compile(
 # The gate's banners a green exit still prints, and the clause each becomes.
 GATE_BANNERS = (("NO OVERLAP WITH THIS WORK", "NO OVERLAP"),
                 ("TREE CHANGED OUTSIDE THIS WORK", "TREE CHANGED"))
+# The first line `run-test-gate.py` prints for a verdict it repeated rather than
+# measured, its literal mirrored for the same reason; the `bg` and `gc` cases
+# drive the real verb, which is what goes red if it drifts.
+GATE_REUSED_BANNER = "GATE VERDICT REUSED"
 # The journal row `record-risk-confirmation.py` writes, and the sentence its
 # summary carries the covered ids in. An entry point may not import another,
 # so both are spelled here; the `hr` cases drive the real verb, which is what
@@ -2880,6 +2885,16 @@ def sweep_base_trees(ctx, state):
         write_state(ctx, state)
 
 
+def gate_red_lines(text):
+    """The lines of a gate run's output that hold its verdict - every line
+    holding GATE but the banner a repeated verdict opens with. The verdict is
+    a line after that banner, and a background gate's red reaches its reader
+    as a repeat every time, so a reader taking the first GATE line would name
+    the banner as the red."""
+    return [ln for ln in (text or "").splitlines()
+            if "GATE" in ln and not ln.startswith(GATE_REUSED_BANNER)]
+
+
 def gate_red_decision(ctx, state, manifest, phase, task, text, tree=None):
     """The decision a red task gate asks: red at base (`gate-red-base`) when
     the base commit fails every case it fails, so no session is sent; else
@@ -2887,10 +2902,7 @@ def gate_red_decision(ctx, state, manifest, phase, task, text, tree=None):
     failing lines; past the last round, the plain gate-red, after a note on the
     task naming each resumed run. Every one carries the run it stands on
     (`verdict_taken`)."""
-    # A repeated verdict opens with the repeat's banner; the verdict is the line
-    # after it, and a background gate's red reaches here as a repeat every time.
-    said = [ln for ln in (text or "").splitlines()
-            if "GATE" in ln and not ln.startswith("GATE VERDICT REUSED")]
+    said = gate_red_lines(text)
     reading = base_reading_for(ctx, state, phase, task, text, tree)
     why = ((said[0].strip() if said else "exit 1")[:80]
            + base_red_why(ctx, text, manifest, phase, task, reading))
@@ -4992,20 +5004,72 @@ def gate_step(ctx, state, manifest, phase, task, tree=None):
 # new row exists waits; a call after one repeats its verdict through the same
 # run-test-gate call, which on the same tree content measures nothing (`GATE
 # VERDICT REUSED`). A gate measured under the bound runs inline and costs the
-# main loop no turn. The words a row's `status` takes are `run-test-gate.py`'s,
-# mirrored because an entry point may not import another; `bg3`, `bg3g` and
-# `bg4` drive the real verb on each, and `gs1`-`gs4` the words no repeat copies.
+# main loop no turn, and so does a gate of no steps, which runs nothing. The
+# words a row's `status` takes are `run-test-gate.py`'s, mirrored because an
+# entry point may not import another; `bg3`, `bg3g` and `bg4` drive the real
+# verb on each, `gs1`-`gs4` the words no repeat copies, and `ge4`-`ge5` the
+# empty gate's, which that verb exits 0 on - its green.
 GATE_LAUNCH_KEY = "gateLaunched"
 PHASE_GATE_LAUNCH_KEY = "phaseGateLaunched"
-GATE_REPEATABLE = ("passed", "failed")
+GATE_REPEATABLE = _evio.MEASURED_STATUSES
+GATE_EMPTY = "empty-gate"
 GATE_CANCELLED = "cancelled"
 
 
-def gate_in_background(ctx, names):
+def runnable_entries(manifest, entries):
+    """The gate `entries` `run-test-gate.py` runs: every one but those that
+    declare themselves review-only (`_phases.review_only_entry`, the rule the
+    runner splits them out by), which it says and never runs - so no run ever
+    times them."""
+    build = (manifest.get("meta") or {}).get("buildCommands")
+    return [e for e in entries or () if not _phases.review_only_entry(e, build)]
+
+
+def task_gate_steps(manifest, phase, task_id):
+    """`(names, joins)` - the steps `run-test-gate.py --task` runs for the task
+    as far as they are known before it runs, and why more may join them.
+
+    `names` are its gate's entries (`_mio.gate_entries`, the runner's own
+    reading of whose gate it is) less the review-only ones the runner says and
+    never runs (`_phases.review_only_entry`). To a gate that runs anything the
+    runner adds the suites the task's change can break, found by a gathering
+    it runs itself - unless the gate is its phase's, or already carries the phase's
+    wide gate (`_affected_tests.already_wide`, the runner's own test). `joins`
+    is None in those cases, else the reason the steps that join are not known
+    here. `phase` answers for a task the plan does not hold.
+
+    The runner's step list itself is not asked for: it is built inside the
+    run, after a gathering that may run the project's own listings, and
+    `next` must not pay for that in the foreground it is protecting."""
+    owner, task = phase, None
+    for each in manifest.get("phases") or []:
+        found = [t for t in ((each.get("tasks") or []) if isinstance(each, dict)
+                             else []) if isinstance(t, dict) and t.get("id") == task_id]
+        if found:
+            owner, task = each, found[0]
+            break
+    entries, source = _mio.gate_entries(owner, task)
+    names = runnable_entries(manifest, entries)
+    if not names or source != "task" \
+            or _affected.already_wide(names, _mio.gate_entries(owner)[0]):
+        return names, None
+    return names, ("run-test-gate.py adds to it the affected suites - the ones "
+                   "this task's change can break - and which those are is known "
+                   "only once the run gathers them")
+
+
+def gate_in_background(ctx, names, joins=None):
     """`(due, why)` - whether a gate of the steps `names` goes to the
-    background, and the reason it does: its recorded mean
-    (`_evidence_io.gate_mean_ms`) is past the foreground bound, or there is
-    none to weigh. `(False, None)` for a gate measured under the bound."""
+    background, and the reason it does: steps whose duration nobody can know
+    before it runs join it (`joins`, `task_gate_steps`' reason), its recorded
+    mean (`_evidence_io.gate_mean_ms`) is past the foreground bound, or there
+    is none to weigh. `(False, None)` for a gate measured under the bound, and
+    for a gate of no steps: it runs nothing, so nothing in it can outlive the
+    bound."""
+    if not names:
+        return False, None
+    if joins:
+        return True, joins
     try:
         rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
     except Exception as exc:                                   # noqa: BLE001
@@ -5033,8 +5097,8 @@ def chosen_task_gate(ctx, state, phase, task, tree=None, manifest=None):
     if not isinstance(_marked(state, GATE_LAUNCH_KEY, task), dict):
         if manifest is None:
             manifest = _mio.load_manifest(ctx["manifest"])
-        due, why = gate_in_background(ctx, gate_step_names(
-            manifest, phase, [task["id"]]))
+        names, joins = task_gate_steps(manifest, phase, task["id"])
+        due, why = gate_in_background(ctx, names, joins)
         if not due:
             return None, task_gate(ctx, state, phase, task, tree)
         return launch_gate(ctx, state, phase, task, tree, why=why), None
@@ -5106,6 +5170,25 @@ def unrepeatable_red(run_id, status):
             "  evidence: recorded %s\n" % (run_id, status, run_id), "")
 
 
+def read_back(ctx, run_id, status, repeat, label):
+    """`(code, out, err)` for the background row `run_id` of `status`, the one
+    reading the task gate and the phase gate share: a verdict
+    (`GATE_REPEATABLE`) is repeated by `repeat()`, the run-test-gate call that
+    on the same tree measures nothing; an empty gate's row, the runner's own
+    green, is asked again by the same call, which over a gate still empty runs
+    nothing and over one given steps since measures them; any other word is
+    the red the row carries (`unrepeatable_red`). `label` names the gate on
+    the did-line said when a verdict's repeat measured after all - a repeat
+    of an empty gate has no verdict to have repeated, so it says none."""
+    if status not in GATE_REPEATABLE and status != GATE_EMPTY:
+        return unrepeatable_red(run_id, status)
+    code, out, err = repeat()
+    if status != GATE_EMPTY and GATE_REUSED_BANNER not in out + err:
+        ctx["did"].append("%s measured again inside next: run %s did not "
+                          "repeat on this tree" % (label, run_id))
+    return code, out, err
+
+
 def launch_gate(ctx, state, phase, task, tree, argv=None, why=None):
     """Mark the launch of `task`'s gate - the moment, the command and the rows
     the ledger held for it then - and print its dispatch with `why` it goes to
@@ -5147,13 +5230,9 @@ def background_gate(ctx, state, phase, task, tree):
                            launched.get("argv")), None
     _spend(state, GATE_LAUNCH_KEY, task)
     write_state(ctx, state)
-    if status not in GATE_REPEATABLE:
-        return None, unrepeatable_red(run_id, status)
-    code, out, err = record_gate(ctx, phase, task, tree)
-    if "GATE VERDICT REUSED" not in out + err:
-        ctx["did"].append("gate %s measured again inside next: run %s did not "
-                          "repeat on this tree" % (task["id"], run_id))
-    return None, (code, out, err)
+    return None, read_back(ctx, run_id, status,
+                           lambda: record_gate(ctx, phase, task, tree),
+                           "gate %s" % (task["id"],))
 
 
 def gate_banners(text):
@@ -5815,7 +5894,7 @@ def integrate_member(ctx, state, phase, task):
             return said
         code, out, err = measured
         if code == 1:
-            said = [ln for ln in (out + err).splitlines() if "GATE" in ln]
+            said = gate_red_lines(out + err)
             return decision(ctx, state, "gate-red", task, (
                 "re-gate on the phase tree: %s" % (
                     said[0].strip() if said else "exit 1",))[:80],
@@ -9694,8 +9773,9 @@ def chosen_phase_gate(ctx, state, phase, head):
         failed = derive_phase_gate(ctx, phase)
         if failed is not None:
             return None, failed
-        _manifest, current = load_phase(ctx)
-        due, why = gate_in_background(ctx, list(_mio.gate_entries(current)[0]))
+        manifest, current = load_phase(ctx)
+        due, why = gate_in_background(ctx, runnable_entries(
+            manifest, _mio.gate_entries(current)[0]))
         if not due:
             return None, run_phase_gate(ctx, phase)
         return launch_phase_gate(ctx, state, phase, head, why=why), None
@@ -9713,19 +9793,14 @@ def chosen_phase_gate(ctx, state, phase, head):
                                  launched.get("argv")), None
     state.pop(PHASE_GATE_LAUNCH_KEY, None)
     write_state(ctx, state)
-    if status not in GATE_REPEATABLE:
-        return None, unrepeatable_red(run_id, status)
-    code, out, err = phase_gate(ctx, phase)
-    if "GATE VERDICT REUSED" not in out + err:
-        ctx["did"].append("phase gate measured again inside next: run %s did "
-                          "not repeat on this tree" % (run_id,))
-    return None, (code, out, err)
+    return None, read_back(ctx, run_id, status, lambda: phase_gate(ctx, phase),
+                           "phase gate")
 
 
 def red_gate_stop(ctx, phase, out, err):
     """The stop for a red phase gate: its own GATE lines, the invariants run
     beside it, and the remedy. Nothing after the gate has run."""
-    said = [ln for ln in (out + err).splitlines() if "GATE" in ln][:3]
+    said = gate_red_lines(out + err)[:3]
     run_id = _RUN_ID.search(out + err)
     code, inv_out, inv_err = run_verb(ctx, "verify-invariants.py", [
         ctx["manifest"], phase["id"], "--project", ctx["project"]])
