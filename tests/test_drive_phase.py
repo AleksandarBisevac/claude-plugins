@@ -16590,6 +16590,64 @@ def _skill_units(check):
     check("sk3 a task that resolves no skill gets no --skill at all - the flag is "
           "not added with an empty name: %r" % ((bare,),),
           _flag(bare, "--role") == "writer" and "--skill" not in bare)
+    _skill_invoked_units(check, M)
+
+
+def _invoked_record(root, name, invoked, skills=("alpha-house", "audit:beta-house",
+                                                 "gamma-house")):
+    """A runner record of one writer session that declared `skills` and - unless
+    `invoked` is None, which leaves the key out as a runner that read no stream
+    does - invoked `invoked` through the Skill tool. Returns its path."""
+    body = {"line": "session=%s subtype=success is_error=false total_cost_usd=0.5 "
+                    "exit=0 stream=%s" % (WRITER_SESSION,
+                                          os.path.join(root, "w.jsonl")),
+            "exit": 0}
+    if skills:
+        body["skills"] = [{"name": n, "path": "/s/%s/SKILL.md" % n, "sha256": "0" * 64}
+                          for n in skills]
+    if invoked is not None:
+        body["skillsInvoked"] = list(invoked)
+    path = os.path.join(root, name)
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(json.dumps(body) + "\n")
+    return path
+
+
+def _skill_invoked_units(check, M):
+    """The drive's note of a session names a declared skill the session never
+    invoked, read off the runner's record: the declared names are its `skills`,
+    the invoked ones its `skillsInvoked`. A plugin-qualified declaration
+    (`audit:beta-house`) is met by the bare name the Skill tool was called with."""
+    root = _harness.fixture_root("drive-skills-invoked-")
+    try:
+        missing = M.read_sessions(_invoked_record(root, "m.jsonl",
+                                                  ["alpha-house", "beta-house"]))
+        note = M.session_note(1, missing[-1]) if missing else ""
+        check("sk4 a writer that never invoked a declared skill is named in the "
+              "drive's note of that session - gamma-house, once - and the two it "
+              "invoked are not: %r" % (note,),
+              len(missing) == 1 and note.count("gamma-house") == 1
+              and "never invoked" in note and "alpha-house" not in note
+              and "beta-house" not in note)
+        # THE OTHER DIRECTION, for a note that names skills whatever was
+        # invoked: every declared skill invoked leaves the note exactly as a
+        # session with no skills declared gets it.
+        every = M.read_sessions(_invoked_record(
+            root, "e.jsonl", ["gamma-house", "alpha-house", "beta-house"]))
+        plain = M.read_sessions(_invoked_record(root, "p.jsonl", [], skills=()))
+        got = [M.session_note(1, r[-1]) if r else None for r in (every, plain)]
+        check("sk5 ...and a writer that invoked every declared skill gets the note "
+              "a session with none declared gets, word for word: %r" % (got,),
+              got[0] is not None and got[0] == got[1] and "never invoked" not in got[0])
+        unread = M.read_sessions(_invoked_record(root, "u.jsonl", None))
+        note_u = M.session_note(1, unread[-1]) if unread else ""
+        check("sk6 a record that declares skills and carries no skillsInvoked says "
+              "that whether they were invoked is not recorded, and names none as "
+              "never invoked: %r" % (note_u,),
+              "skillsInvoked" in note_u and "not recorded" in note_u
+              and "never invoked" not in note_u)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 
 
 # --- a ready task runs before a triage, a sign-off or a wave step decides ------

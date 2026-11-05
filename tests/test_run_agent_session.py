@@ -115,6 +115,13 @@ def emit(event):
     sys.stdout.write(json.dumps(event) + "\n")
 emit({"type": "system", "subtype": "hook_started", "session_id": sid})
 emit({"type": "system", "subtype": "init", "session_id": sid, "model": "x"})
+# Events a case hands in as a JSONL file, emitted between the init and the
+# result with this session's id, as a session's own tool calls would be.
+if os.environ.get("STUB_EVENTS"):
+    with open(os.environ["STUB_EVENTS"], encoding="utf-8") as fh:
+        for line in fh:
+            if line.strip():
+                emit(dict(json.loads(line), session_id=sid))
 emit({"type": "assistant", "session_id": sid,
       "message": {"content": [{"type": "text", "text": "done"}]}})
 if mode == "ok":
@@ -136,6 +143,39 @@ elif mode == "hang":
 sys.stdout.flush()
 raise SystemExit(int(os.environ.get("STUB_EXIT", "0")))
 '''
+
+# Two Skill calls and their results as a recorded plain writer session's stream
+# holds them (claude-sonnet-5-5, 2026-11-02), trimmed to the fields a reader of
+# the call uses: each call is one assistant event whose content is a `tool_use`
+# named `Skill` with the skill in `input.skill`, at the top level of the session
+# (`parent_tool_use_id` null). The third call is NOT from that stream: it is the
+# same event with a `parent_tool_use_id`, the shape a subagent's own call has in
+# the parent's stream, and the skill it loads is in the subagent's context, not
+# the session's.
+SKILL_EVENTS = [
+    {"type": "assistant", "parent_tool_use_id": None,
+     "message": {"role": "assistant", "content": [
+         {"type": "tool_use", "id": "toolu_017rjURmLxTVzeffwhErF9dT", "name": "Skill",
+          "input": {"skill": "writing-python"}, "caller": {"type": "direct"}}]}},
+    {"type": "user", "parent_tool_use_id": None,
+     "message": {"role": "user", "content": [
+         {"type": "tool_result", "tool_use_id": "toolu_017rjURmLxTVzeffwhErF9dT",
+          "content": "Launching skill: writing-python"}]},
+     "tool_use_result": {"success": True, "commandName": "writing-python"}},
+    {"type": "assistant", "parent_tool_use_id": None,
+     "message": {"role": "assistant", "content": [
+         {"type": "tool_use", "id": "toolu_01QvRAe1rcwUkaYrRPras5Mt", "name": "Skill",
+          "input": {"skill": "before-you-claim"}, "caller": {"type": "direct"}}]}},
+    {"type": "user", "parent_tool_use_id": None,
+     "message": {"role": "user", "content": [
+         {"type": "tool_result", "tool_use_id": "toolu_01QvRAe1rcwUkaYrRPras5Mt",
+          "content": "Launching skill: before-you-claim"}]},
+     "tool_use_result": {"success": True, "commandName": "before-you-claim"}},
+    {"type": "assistant", "parent_tool_use_id": "toolu_0SubagentDispatchQ81z",
+     "message": {"role": "assistant", "content": [
+         {"type": "tool_use", "id": "toolu_0SubagentSkillQ81z", "name": "Skill",
+          "input": {"skill": "no-silent-pass"}, "caller": {"type": "direct"}}]}},
+]
 
 
 def _install_stub(root):
@@ -671,7 +711,10 @@ def _cases(check):
                   encoding="utf-8") as fh:
             guide_text = fh.read()
         guide_at = guide_text.index("### `plugins/audit/scripts/governance/run-agent-session.py`")
-        guide_text = guide_text[guide_at:guide_at + 6000]
+        # The script's own section, to the next section's heading - a fixed
+        # window cut the section short once a paragraph above the drop list grew.
+        guide_end = guide_text.find("\n### ", guide_at + 1)
+        guide_text = guide_text[guide_at:guide_end if guide_end > 0 else len(guide_text)]
         const_at = script_text.index("PARENT_SESSION_VARS = (")
         const_comment = script_text[script_text.rindex("\n\n", 0, const_at):const_at]
         outside = ("run-plain", "plain arm", "measurement harness", "quality-gates-internal")
@@ -711,8 +754,9 @@ def _cases(check):
               "this script's exit code, the directory made on the way: %r"
               % ((first[0], second[0], lines),),
               len(lines) == 2
-              and lines[0] == {"line": first[1].strip(), "exit": 0}
-              and lines[1] == {"line": second[1].strip(), "exit": second[0]}
+              and lines[0] == {"line": first[1].strip(), "exit": 0, "skillsInvoked": []}
+              and lines[1] == {"line": second[1].strip(), "exit": second[0],
+                               "skillsInvoked": []}
               and second[0] == e_budget)
         refused = os.path.join(root, "records", "usage.jsonl")
         code, out, err, rec, dirs = _run(root, bindir, "writer", model="opus",
@@ -852,10 +896,29 @@ def _digest(path):
         return hashlib.sha256(fh.read()).hexdigest()
 
 
+def _skill_text(name, token):
+    """A SKILL.md whose description holds `<token>-DESC-k3v9` and whose body holds
+    `<token>-BODY-k3v9`: the first is what a disclosed skill carries, the second
+    what it must not."""
+    return ("---\nname: %s\ndescription: %s-DESC-k3v9 what the skill is for\n---\n"
+            "%s-BODY-k3v9\n" % (name, token, token))
+
+
+def _description_of(text):
+    """The `description:` line's value of a SKILL.md, its surrounding quotes
+    taken off - read here by a line match, not through the script's parser, so
+    the case compares two readings."""
+    hit = re.search(r"^description:[ \t]*(.*)$", text, re.M)
+    value = hit.group(1).strip() if hit else ""
+    if len(value) > 1 and value[0] == value[-1] and value[0] in "'\"":
+        value = value[1:-1]
+    return value
+
+
 def _skill_cases(check, M, root, bindir, e_io):
-    """The skills a session is started with. Every body is a sentinel that cannot
-    occur by accident, and the project and user copies of `dup-skill` differ, so a
-    resolver that took the wrong one of the two is red."""
+    """The skills a session is started with. Every description and body is a
+    sentinel that cannot occur by accident, and the project and user copies of
+    `dup-skill` differ, so a resolver that took the wrong one of the two is red."""
     home = os.path.join(root, "home-sk")
     user_dir = os.path.join(home, ".claude", "skills")
 
@@ -865,15 +928,15 @@ def _skill_cases(check, M, root, bindir, e_io):
     plugin_dir = os.path.join(_harness._PLUGIN_DIR, "skills")
     # An empty CLAUDE_CONFIG_DIR falls through to ~/.claude, which is HOME's.
     pinned = {"HOME": home, "USERPROFILE": home, "CLAUDE_CONFIG_DIR": ""}
-    user_only = _write_skill(user_dir, "user-only",
-                             "---\nname: user-only\n---\nUSER-ONLY-BODY-k3v9\n")
-    _write_skill(user_dir, "dup-skill", "---\nname: dup-skill\n---\nUSER-DUP-BODY-k3v9\n")
-    dup_text = "---\nname: dup-skill\n---\nPROJECT-DUP-BODY-k3v9\n"
+    user_only = _write_skill(user_dir, "user-only", _skill_text("user-only", "USER-ONLY"))
+    _write_skill(user_dir, "dup-skill", _skill_text("dup-skill", "USER-DUP"))
+    dup_text = _skill_text("dup-skill", "PROJECT-DUP")
     _write_skill(project_dir("sk"), "dup-skill", dup_text)
     plugin_one = sorted(os.listdir(plugin_dir))[0]
     plugin_path = os.path.join(plugin_dir, plugin_one, "SKILL.md")
     with open(plugin_path, encoding="utf-8") as fh:
         plugin_text = fh.read()
+    plugin_desc = _description_of(plugin_text)[:60]
     names = ["user-only", "dup-skill", plugin_one]
     flags = [x for n in names for x in ("--skill", n)]
 
@@ -881,27 +944,37 @@ def _skill_cases(check, M, root, bindir, e_io):
                                      env_extra=pinned)
     argv = (rec or {}).get("argv") or []
     held = (rec or {}).get("skills_file") or ""
-    at = [held.find(t) for t in ("USER-ONLY-BODY-k3v9", "USER-DUP-BODY-k3v9",
-                                 plugin_text.strip()[-60:])]
+    at = [held.find(t) for t in ("USER-ONLY-DESC-k3v9", "USER-DUP-DESC-k3v9",
+                                 plugin_desc)]
     check("ras35 the resolved skills reach the session as one "
-          "--append-system-prompt-file under the task's scratch, holding each body "
-          "once in the order named, the personal copy of a name that the project "
-          "also has and not the project's: %r" % ((code, argv, at, err[-200:]),),
-          code == 0 and rec is not None
+          "--append-system-prompt-file under the task's scratch, holding each "
+          "skill's description once in the order named, the personal copy of a "
+          "name that the project also has and not the project's: %r"
+          % ((code, argv, at, err[-200:]),),
+          code == 0 and rec is not None and bool(plugin_desc)
           and _under(rec.get("skills_path") or "/", dirs["scratch"])
           and all(a >= 0 for a in at) and at == sorted(at)
-          and held.count("USER-ONLY-BODY-k3v9") == 1
-          and held.count("USER-DUP-BODY-k3v9") == 1
-          and held.count("PROJECT-DUP-BODY-k3v9") == 0
+          and held.count("USER-ONLY-DESC-k3v9") == 1
+          and held.count("USER-DUP-DESC-k3v9") == 1
+          and held.count("PROJECT-DUP-DESC-k3v9") == 0
           and argv.count("--append-system-prompt-file") == 1)
-    check("ras36 ...each body wrapped with its name, so a reader of the prompt can tell "
-          "where one skill ends: %r" % (held[:300],),
-          all(('"%s"' % n) in held for n in names)
+    check("ras36 ...each skill wrapped with its name, so a reader of the prompt can "
+          "tell where one skill ends: %r" % (held[:300],),
+          all(('<skill name="%s">' % n) in held for n in names)
           and held.count("</skill>") == len(names))
     check("ras37 ...and the prompt on stdin is the one given, byte for byte, in no "
           "argv element, with the skills' text in no argv element either",
           rec is not None and rec["stdin"] == PROMPT
-          and not any("PROMPT-SENTINEL" in a or "BODY-k3v9" in a for a in argv))
+          and not any("PROMPT-SENTINEL" in a or "k3v9" in a for a in argv))
+    # The plugin skill's last line is body text unless that skill ends in a
+    # checklist, which the prompt would carry; then the line is not looked for.
+    plugin_tail = plugin_text.strip()[-60:]
+    tail_is_body = "## Checklist" not in plugin_text
+    check("ras60b ...and no skill's body reaches the prompt - neither a fixture's "
+          "body sentinel nor the plugin skill's last line (looked for: %r): %r"
+          % (tail_is_body, held[:300]),
+          rec is not None and "BODY-k3v9" not in held
+          and (not tail_is_body or plugin_tail not in held))
 
     # The mutation this guards: a flag added unconditionally.
     code, out, err, rec, dirs = _run(root, bindir, "writer", tag="sk0", env_extra=pinned)
@@ -932,7 +1005,7 @@ def _skill_cases(check, M, root, bindir, e_io):
 
     # --- a plugin-qualified name resolves from that plugin alone ---------------
     for tag in ("skq", "skq2"):
-        _write_skill(project_dir(tag), plugin_one, "---\nname: x\n---\nSHADOW-k3v9\n")
+        _write_skill(project_dir(tag), plugin_one, _skill_text("x", "SHADOW"))
     with open(os.path.join(_harness._PLUGIN_DIR, ".claude-plugin", "plugin.json"),
               encoding="utf-8") as fh:
         plugin_name = json.load(fh)["name"]
@@ -941,7 +1014,7 @@ def _skill_cases(check, M, root, bindir, e_io):
     held = (rec or {}).get("skills_file") or ""
     check("ras40 `<plugin>:<skill>` is read from that plugin's own skills/ and not from "
           "a project or user skill of the same name: %r" % (held[:200],),
-          code == 0 and "SHADOW-k3v9" not in held and plugin_text.strip()[-60:] in held)
+          code == 0 and "SHADOW-" not in held and plugin_desc in held)
     code, out, err, rec, dirs = _run(root, bindir, "writer", tag="skq2", env_extra=pinned,
                                      extra=["--skill", "other-plugin:%s" % plugin_one])
     check("ras41 ...and a name qualified by some other plugin refuses, naming it, "
@@ -963,7 +1036,7 @@ def _skill_cases(check, M, root, bindir, e_io):
     user_dup = os.path.join(user_dir, "dup-skill", "SKILL.md")
     expected = [{"name": "user-only", "path": user_only, "sha256": _digest(user_only)},
                 {"name": "dup-skill", "path": user_dup, "sha256": _digest(user_dup)}]
-    check("ras43 the --record line names each preloaded skill with its path and the "
+    check("ras43 the --record line names each declared skill with its path and the "
           "sha256 of its file, in order - the personal dup-skill, whose digest "
           "differs from the project's: %r" % ((listed,),),
           code == 0 and len(lines) == 1 and listed == expected
@@ -972,7 +1045,7 @@ def _skill_cases(check, M, root, bindir, e_io):
     _run(root, bindir, "writer", tag="skp", env_extra=pinned, extra=["--record", plain])
     check("ras44 a run with no skills records none: the line has no skills key, "
           "rather than an empty list standing for them",
-          [sorted(x) for x in _record_lines(plain)] == [["exit", "line"]])
+          [sorted(x) for x in _record_lines(plain)] == [["exit", "line", "skillsInvoked"]])
 
     # --- the reviewer keeps its --agents body, and the skills ride beside it ----
     code, out, err, rec, dirs = _run(root, bindir, "reviewer", tag="skv", env_extra=pinned,
@@ -988,8 +1061,8 @@ def _skill_cases(check, M, root, bindir, e_io):
           code == 0 and rec is not None
           and _after(argv, "--agent") == "audit-reviewer"
           and defn.get("prompt", "").strip() == body.strip()
-          and "USER-ONLY-BODY-k3v9" not in (rec.get("agents_file") or "")
-          and "USER-ONLY-BODY-k3v9" in (rec.get("skills_file") or "")
+          and "USER-ONLY-" not in (rec.get("agents_file") or "")
+          and "USER-ONLY-DESC-k3v9" in (rec.get("skills_file") or "")
           and rec["stdin"] == PROMPT)
 
     # --- Claude Code's documented precedence: personal over project -------------
@@ -998,44 +1071,29 @@ def _skill_cases(check, M, root, bindir, e_io):
     # direction: a resolver that stopped looking in the project would pass the
     # duplicate and fail this one.
     _write_skill(project_dir("skd"), "dup-skill", dup_text)
-    proj_only = _write_skill(project_dir("skd"), "project-only",
-                             "---\nname: project-only\n---\nPROJECT-ONLY-BODY-k3v9\n")
+    _write_skill(project_dir("skd"), "project-only",
+                 _skill_text("project-only", "PROJECT-ONLY"))
     code, out, err, rec, dirs = _run(root, bindir, "writer", tag="skd", env_extra=pinned,
                                      extra=["--skill", "dup-skill", "--skill", "project-only"])
     held = (rec or {}).get("skills_file") or ""
     check("ras47 a name held by both the personal and the project skills loads the "
           "PERSONAL copy once and never the project's, while a name only the project "
           "holds still loads from there: %r" % ((code, held[:400], err[-200:]),),
-          code == 0 and held.count("USER-DUP-BODY-k3v9") == 1
-          and held.count("PROJECT-DUP-BODY-k3v9") == 0
-          and held.count("PROJECT-ONLY-BODY-k3v9") == 1)
+          code == 0 and held.count("USER-DUP-DESC-k3v9") == 1
+          and held.count("PROJECT-DUP-DESC-k3v9") == 0
+          and held.count("PROJECT-ONLY-DESC-k3v9") == 1)
 
     # A personal copy of a plugin's skill name must not answer `plugin:skill`.
-    _write_skill(user_dir, plugin_one, "---\nname: x\n---\nPERSONAL-SHADOW-k3v9\n")
+    _write_skill(user_dir, plugin_one, _skill_text("x", "PERSONAL-SHADOW"))
     code, out, err, rec, dirs = _run(root, bindir, "writer", tag="skq3", env_extra=pinned,
                                      extra=["--skill", "%s:%s" % (plugin_name, plugin_one)])
     held = (rec or {}).get("skills_file") or ""
     check("ras48 `<plugin>:<skill>` is read from that plugin alone even when the "
           "personal skills hold a skill of the same bare name: %r" % (held[:200],),
-          code == 0 and "PERSONAL-SHADOW-k3v9" not in held
-          and plugin_text.strip()[-60:] in held)
+          code == 0 and "PERSONAL-SHADOW-" not in held and plugin_desc in held)
 
-    # --- each skill is headed by its base directory, as the Skill tool does ------
-    code, out, err, rec, dirs = _run(root, bindir, "writer", tag="skd", env_extra=pinned,
-                                     extra=["--skill", "user-only", "--skill", "project-only",
-                                            "--skill", "%s:%s" % (plugin_name, plugin_one)])
-    held = (rec or {}).get("skills_file") or ""
-    wanted = [os.path.dirname(user_only), os.path.dirname(proj_only),
-              os.path.dirname(plugin_path)]
-    heads = ["Base directory for this skill: %s" % d for d in wanted]
-    at = [held.find(h) for h in heads]
-    check("ras49 every appended skill is headed by 'Base directory for this skill: "
-          "<its directory>' exactly once, ahead of its body, so a skill that names "
-          "files under references/ can be followed: %r" % ((at, held[:300]),),
-          code == 0 and all(a >= 0 for a in at) and at == sorted(at)
-          and held.count("Base directory for this skill:") == len(wanted)
-          and 0 <= at[0] < held.find("USER-ONLY-BODY-k3v9")
-          and 0 <= at[1] < held.find("PROJECT-ONLY-BODY-k3v9"))
+    _disclosure_cases(check, root, bindir, pinned, project_dir)
+    _invoked_cases(check, M, root, bindir, pinned)
 
     # `claude --help` does not list the flag the skills ride on; the file must say
     # it was probed, when, and on which build, beside the flag.
@@ -1067,6 +1125,155 @@ def _skill_cases(check, M, root, bindir, e_io):
           % ((code, out[-200:], err[-200:]),),
           e_io is not None and code == e_io and rec is None and user_only in out + err
           and "Traceback" not in err)
+
+
+LISTED_SKILL = """---
+name: listed-skill
+description: LISTED-DESC-k3v9 what the skill is for
+---
+# LISTED-TITLE-k3v9
+
+LISTED-BODY-k3v9 the body a session loads on demand.
+
+## Checklist
+
+- [ ] LISTED-CHECK-k3v9 the first item
+```text
+## LISTED-FENCED-k3v9 a heading-shaped line inside a fence
+```
+### LISTED-SUB-k3v9 a subheading inside the checklist
+- [ ] LISTED-LAST-k3v9 the last item
+
+## LISTED-AFTER-HEAD-k3v9
+
+LISTED-AFTER-k3v9 a section past the checklist.
+"""
+
+BARE_SKILL = """---
+name: bare-skill
+description: BARE-DESC-k3v9 what the skill is for
+---
+# BARE-TITLE-k3v9
+
+BARE-BODY-k3v9 the body.
+
+## Usage
+
+BARE-USAGE-k3v9 a section that is not a checklist.
+"""
+
+
+def _elements(held):
+    """`{name: inner text}` of every `<skill name="...">` element in the
+    appended prompt, and the count of elements read (a name twice is two)."""
+    found = re.findall(r'<skill name="([^"]+)">\n(.*?)\n</skill>', held, re.S)
+    return dict(found), len(found)
+
+
+def _section(text, heading):
+    """The `## <heading>` section of `text` - its heading line through the line
+    before the next level-one or level-two heading, or the end - read here
+    without the script's reader. Fences are not looked into, which the fixtures
+    the case uses this on do not need."""
+    at = text.find("\n## %s\n" % heading)
+    if at < 0:
+        return ""
+    rest = text[at + 1:]
+    ends = [m.start() for m in re.finditer(r"^#{1,2} ", rest, re.M) if m.start() > 0]
+    return rest[:ends[0]] if ends else rest
+
+
+def _disclosure_cases(check, root, bindir, pinned, project_dir):
+    """What the appended prompt holds of a skill: its name, its description and
+    its `## Checklist` section when it has one - nothing of the body beside."""
+    _write_skill(project_dir("sdc"), "listed-skill", LISTED_SKILL)
+    _write_skill(project_dir("sdc"), "bare-skill", BARE_SKILL)
+    _write_skill(project_dir("sdc"), "nodesc-skill",
+                 "---\nname: nodesc-skill\n---\nNODESC-BODY-k3v9\n")
+    real = os.path.join(REPO_ROOT, ".claude", "skills", "no-silent-pass", "SKILL.md")
+    real_text = ""
+    if os.path.isfile(real):
+        with open(real, encoding="utf-8") as fh:
+            real_text = fh.read()
+        _write_skill(project_dir("sdc"), "no-silent-pass", real_text)
+    code, out, err, rec, dirs = _run(
+        root, bindir, "writer", tag="sdc", env_extra=pinned,
+        extra=["--skill", "listed-skill", "--skill", "bare-skill",
+               "--skill", "nodesc-skill", "--skill", "no-silent-pass"])
+    held = (rec or {}).get("skills_file") or ""
+    parts, count = _elements(held)
+    listed = parts.get("listed-skill", "")
+    present = ("LISTED-DESC-k3v9", "## Checklist", "LISTED-CHECK-k3v9",
+               "LISTED-FENCED-k3v9", "LISTED-SUB-k3v9", "LISTED-LAST-k3v9")
+    absent = ("LISTED-TITLE-k3v9", "LISTED-BODY-k3v9", "LISTED-AFTER-HEAD-k3v9",
+              "LISTED-AFTER-k3v9")
+    check("ras60 the appended prompt holds each skill once, wrapped with its name, "
+          "and a skill with a Checklist section is disclosed by its description and "
+          "that whole section - a fenced or deeper heading inside it included - and "
+          "by no body token: counts %r, absent-but-there %r: %r"
+          % (dict((t, listed.count(t)) for t in present),
+             [t for t in absent if t in held], (code, listed[:400], err[-200:])),
+          code == 0 and count == 4 and len(parts) == 4
+          and all(listed.count(t) == 1 for t in present)
+          and not [t for t in absent if t in held])
+    check("ras60c ...and the prompt says, ahead of the first skill, that the Skill "
+          "tool loads a skill's full instructions: %r" % (held[:300],),
+          code == 0 and "Skill tool" in held[:max(0, held.find("<skill "))])
+    bare = parts.get("bare-skill", "")
+    check("ras61 a skill with no Checklist section is disclosed by its name and "
+          "description only - no heading, no body line, no other section: %r"
+          % (bare,),
+          code == 0 and bare.count("BARE-DESC-k3v9") == 1 and "#" not in bare
+          and "BARE-" not in bare.replace("BARE-DESC-k3v9", ""))
+    nodesc = parts.get("nodesc-skill", "")
+    check("ras62 a skill whose frontmatter has no description says so in its place "
+          "rather than standing empty, and still carries no body: %r" % (nodesc,),
+          code == 0 and "no description" in nodesc and "NODESC-BODY-k3v9" not in nodesc)
+    want = _section(real_text, "Checklist").strip()
+    desc = _description_of(real_text)
+    title = next((ln for ln in real_text.splitlines() if ln.startswith("# ")), "")
+    got = parts.get("no-silent-pass", "")
+    check("ras63 the repository's own no-silent-pass, copied into the tree, is "
+          "disclosed by its description and its Checklist section as the file "
+          "holds them, and not by its title line %r: %r" % (title, got[:300]),
+          code == 0 and bool(want) and bool(desc) and bool(title)
+          and got.count(want) == 1 and got.count(desc) == 1 and title not in got)
+
+
+def _invoked_cases(check, M, root, bindir, pinned):
+    """The record names the skills the session invoked through the Skill tool,
+    read off the saved stream."""
+    events = os.path.join(root, "skill-events.jsonl")
+    with open(events, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("".join(json.dumps(e) + "\n" for e in SKILL_EVENTS))
+    kept = os.path.join(root, "records", "invoked.jsonl")
+    code, out, err, rec, dirs = _run(
+        root, bindir, "writer", tag="siv", env_extra=dict(pinned, STUB_EVENTS=events),
+        extra=["--record", kept, "--skill", "user-only"])
+    lines = _record_lines(kept)
+    got = lines[-1].get("skillsInvoked") if lines else None
+    check("ras64 the record carries skillsInvoked read from the stream's Skill "
+          "tool_use calls, in the order made - and a call a subagent made, inside "
+          "its own context, is not the session's: %r" % ((code, got, err[-200:]),),
+          code == 0 and len(lines) == 1
+          and got == ["writing-python", "before-you-claim"])
+    none = os.path.join(root, "records", "none-invoked.jsonl")
+    code, out, err, rec, dirs = _run(root, bindir, "writer", tag="sin", env_extra=pinned,
+                                     extra=["--record", none, "--skill", "user-only"])
+    lines = _record_lines(none)
+    check("ras65 a stream with no Skill call records skillsInvoked as an empty list "
+          "beside the declared skills: %r" % ((code, lines),),
+          code == 0 and len(lines) == 1 and lines[0].get("skillsInvoked") == []
+          and [s.get("name") for s in lines[0].get("skills") or []] == ["user-only"])
+    refused = os.path.join(root, "records", "never-ran.jsonl")
+    code, out, err, rec, dirs = _run(root, bindir, "writer", tag="sir", env_extra=pinned,
+                                     model="opus", extra=["--record", refused,
+                                                          "--skill", "user-only"])
+    lines = _record_lines(refused)
+    check("ras66 THE OTHER DIRECTION: a run that never started a session records no "
+          "skillsInvoked key at all - no stream was read, so an empty list would "
+          "claim a session that called nothing: %r" % ((code, lines),),
+          code == M.E_USAGE and len(lines) == 1 and "skillsInvoked" not in lines[0])
 
 
 def _record_lines(path):

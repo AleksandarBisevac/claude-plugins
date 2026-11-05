@@ -5689,24 +5689,34 @@ gets `--agents <file>`, built from `agents/audit-reviewer.md` through `_help.fro
 with `--` cannot reach the argv as a flag. The budget must be a finite positive number, since
 `float()` also reads `inf` and `nan`.
 
-**`--skill NAME`, repeatable, starts the session with those skills already loaded.** Each name is
+**`--skill NAME`, repeatable, starts the session with those skills disclosed, not loaded.** Each name is
 found by `_skill_places.resolve_skill`, the answer `/audit:doctor`'s plan-skills row asks too, in
 Claude Code's documented order ("personal over project"): the user's (`_claude_home.claude_home()`)
 `skills/<name>/SKILL.md`, then the tree's `.claude/skills/<name>/SKILL.md`, then this plugin's
 own `skills/`; a `plugin:skill` name is read only from that plugin and never falls back to a
 same-named project or user skill, and a name that could leave those directories (`SKILL_NAME`) is a
 usage error. A name found nowhere refuses to start — exit `2`, naming the skill, every place
-looked and that only those places are searched — because a skill the plan declares and the session never loads is exactly the defect that
+looked and that only those places are searched — because a skill the plan declares and the session cannot find is exactly the defect that
 cannot be seen in a cost. A `SKILL.md` that exists and cannot be read is `io-error:`, not a missing
-skill. The files are written whole, each wrapped as `<skill name="...">` and opening with
-`Base directory for this skill: <dir>` as the Skill tool does, into one
-`<stream name>.skills.md` under the scratch and passed as `--append-system-prompt-file`; the argv
+skill. What reaches the session of each skill is its name, its frontmatter description and its
+`## Checklist` section when the file has one (`skill_disclosure`, the section cut at the next
+level-one or level-two heading outside a fence by `skill_checklist`), each wrapped as
+`<skill name="...">` after a preamble saying the Skill tool loads a skill's full instructions, in one
+`<stream name>.skills.md` under the scratch passed as `--append-system-prompt-file`. The rest of
+the body is not appended: system-prompt text goes with every call a session makes, and the body
+reaches the session through its own Skill tool call, as it does in a plain session. The argv
 carries that flag only when a skill was named, and the prompt on stdin is untouched. The
 subagent-definition `skills` field was probed on claude 2.1.307 and the session did not see the
 skill, so the reviewer's `--agents` body is left as it was and its skills ride in the same appended
 file. `--record` adds a `"skills"` key to its line — name, path and the sha256 of the file's bytes —
-and no such key when none were named. `drive-phase.py`'s `writer_argv` adds one `--skill` per name
-`_areas.resolve_skills` returns, for the writer, the reviewer and the validation session alike.
+and no such key when none were named, and, once a session ran and its stream was read,
+`"skillsInvoked"`: the skills its top-level Skill tool calls named, in the order first called
+(`invoked_skills`; a call carrying a `parent_tool_use_id` is a subagent's and is not counted), an
+empty list for none, and no key when no stream was read. `drive-phase.py`'s `writer_argv` adds one
+`--skill` per name `_areas.resolve_skills` returns, for the writer, the reviewer and the validation
+session alike, and its note of each session (`session_note`, through `skills_said`) names a declared
+skill the session never invoked — a `plugin:skill` declaration is met by a call with the bare name —
+or says that no `skillsInvoked` was recorded to judge by.
 
 **The prompt goes on stdin, never in argv**, because a sibling session's `pkill -f` matches command
 lines; the script reads its own prompt off stdin or `--prompt-file` for the same reason. The child

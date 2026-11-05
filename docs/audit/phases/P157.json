@@ -104,7 +104,7 @@
     {
       "id": "P157.2",
       "title": "The red excerpt is the failing cases, read by one reader for the gate row and the drive's resume prompt, derived steps included, and says so when no case is readable",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes F833 and F834 as one class: every builder of a failure excerpt reads failing cases through one reader. At a27f8a56: run-test-gate.py:946-971 _named_failures returns [] for a name absent from _FAILURE_READERS (no sweep/house row), so failing_lines 974-1019 falls back to `tail = lines[-limit:]` (1008); caller 3902-3903 with MAX_FAILING 10 (_evidence_io.py:501). In stage 2 (k03r) all three drive runs recorded 6 PASS lines and 0 failing cases. _runner_output.sweep_failing_cases 353-375 (and failing_cases(text, \"house\") 563-587) already parse them; only stamp-verification._failing_cases 1913-1922 calls it. drive-phase.failing_lines 2268-2287 keeps a step line only when its name holds no space (the regex at 2275), which a derived step name with spaces (`affected/python: a, b`) never matches. fl0 holds _FAILURE_READERS to _SUMMARY_READERS, so add the sweep/house branch in _named_failures (as _suite_candidates 1030-1037 does), not a table row. Dependants: the mute rule (muted_failures ~3654) needs named+raw - a sweep step becoming nameable must not change mute behaviour; audit-lookup.red_step_lines 1042-1091 and failing_suite_lines 1094-1110 match `suite in line`, so a case line carries its script. The row is hash-chained and bounded (MAX_FAILING, _journal_io.MAX_VALUE_CHARS). verbs-in-full.md:529 and orchestrator.md:626 describe the tail; orchestrator.md has a 62000 B ceiling.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -139,14 +139,27 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ff22e5c1bed4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Attempt 2 fixes the two lint findings test__output_lints.py reported against attempt 1, and nothing else. pn0: the three per-file sweep lines in tests/test_run_test_gate.py's fixtures (SWEEP_K03R's two `ok` lines, fc5's green sweep line) now build their case count through %-formatting instead of writing it in the literal; the fixture bytes are unchanged apart from one column of padding on the tools/where.py line. le4: _runner_output._sweep_blocks reads its body through plain_text() before the $-anchored _SWEEP_BLOCK runs over it, and run-test-gate._table_failures reads its body through _ro.plain_text() before the table's $-anchored readers run; both callers already normalised the text, and plain_text is idempotent, so the answers do not change - the lint asks that each reader not depend on its caller. Everything from attempt 1 stands as filed: _runner_output.house_case_lines is the one sweep/house case reader; run-test-gate._named_failures asks the sweep, then the table runners, then house; failing_lines returns [] with 'no failing case readable from step <name>: <why>' where no reader names a case, and only a no-verdict step keeps a labelled progress_tail; the mute rule reads only _FAILURE_READERS runners (mu64/mu65); drive-phase.failing_lines(row, text) reads the recorded row via gate_row; audit-lookup prints the gate's basis for an empty failing list and claims the line cap only when it was reached; docs in PLUGIN-BUILD-GUIDE, verbs-in-full.md, orchestrator.md (61992/62000 B). Commands, run from the project dir after these fixes: python3 tests/test__output_lints.py --selftest exit 0, ALL PASS 182/182; the brief's sweep command exit 0, '6/6 files ok, 1967 cases'; python3 tools/measure-context.py --gate exit 0. Dependants as answered in attempt 1, unchanged by this attempt: the two functions touched here are private and their outputs are identical for every caller. Not done: CHANGELOG.md (not in files) has no entry; ruff and vermin were not run (not in the brief's gate).",
+        "descriptive": "Attempt 2: the k03r fixture's case counts are built rather than written, and the two new readers normalise their own text, so the output lints pass along with the task gate."
       },
       "startedAt": "2026-11-05T11:05:38Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-05T11:19:34Z",
+      "verifiedBy": [
+        "tests/test_run_test_gate.py fc1: the k03r sweep replay - failing is the three '<script>: FAIL <label>' cases, basis names the sweep",
+        "fc2: the committed row keeps the three cases, each still opening with its script",
+        "fc3: a single house suite's case is named with the script its command names",
+        "fl3/fl4 rewritten: unparsed output and a jest run that named nothing leave failing empty with 'no failing case readable from step <name>'",
+        "fc4: a red sweep file that printed no case line says no case was readable",
+        "fc5: green sweep and green house steps carry no failing keys (fl6 kept)",
+        "fc6: render prints the cases under the step and no PASS line",
+        "fc7: a timed-out step keeps its labelled progress tail",
+        "mu64/mu65: a sweep step with its red files muted fails, honours and refuses nothing, as before",
+        "tests/test_drive_phase.py rz1-rz4: derived step with spaces carries its cases; no readable case says so with no tail; the prompt reads the row, not the rendered text; no row says so; ws4 extended - the real resume prompt carries the row's 'no failing case readable from step' sentence",
+        "tests/test__runner_output.py rs5: house_case_lines over sweep blocks, one suite, a command naming no script, and non-house output; house_case_lines added to ru17's floor",
+        "tests/test_audit_lookup.py bf56: a red file with no case line prints the gate's basis and no false cap claim"
+      ],
       "notes": [
         {
           "at": "2026-11-05T10:33:58Z",
@@ -169,12 +182,24 @@
         "runId": "2026-11-05T11:19:31Z.280170",
         "status": "passed",
         "at": "2026-11-05T11:19:31Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "ff22e5c1bed4",
+        "at": "2026-11-05T11:19:34Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-05T11:13:41Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_drive_phase.py tests/test__runner_output.py tests/test_audit_lookup.py tests/test__refs.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 12 of 609 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ru17 (house FAIL), bf56 (house FAIL), ws4 (house FAIL), fl3 (house FAIL), fl4 (house FAIL), mu64 (house FAIL), fc1 (house FAIL), fc2 (house FAIL) and 4 more: SELFTEST FAILED: 600/609 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P157.3",
       "title": "The writer's skills are disclosed, not appended whole: the system prompt carries each declared skill's name, description and checklist, and the session record names the skills the writer invoked",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Stage 2: the writer starts 11.7-12.1k tokens heavier than plain on every pair, 22% of the writer's excess; the three bodies are 30049 characters (ANALYSIS.md section 2A). At a27f8a56: run-agent-session.py:323-331 skills_prompt appends each SKILL.md whole; session_argv 234-255 adds --append-system-prompt-file (248-251); skills_record 334-336; producer drive-phase.writer_argv 1939-1953 / session_skills 1931-1936. Owner D12 requires the writer's skills loaded: \"loaded\" now means a Skill tool_use in the writer stream (the stage-1 check check-skills-loaded.py already accepts it), recorded as skillsInvoked, and the drive names a declared skill never invoked. Checklist rule: frontmatter description, plus a `## Checklist` section when the SKILL.md has one, nothing else (no-silent-pass has one; writing-python and before-you-claim do not). The module docstring 31-48 states the preload rationale and a probe (claude 2.1.307) - restate it from what the code does now; do not edit a probe claim by reading. Out of scope: the auto-memory section and the agent listing (no documented flag; needs a paid probe).",
       "files": [
         "plugins/audit/scripts/governance/run-agent-session.py",
@@ -200,16 +225,22 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-05T11:19:36Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-05T11:42:21Z.f70f78",
+        "status": "passed",
+        "at": "2026-11-05T11:42:21Z"
+      }
     },
     {
       "id": "P157.4",

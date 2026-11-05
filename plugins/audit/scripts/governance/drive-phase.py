@@ -1941,7 +1941,8 @@ def writer_argv(ctx, task, writer, prompt, record, tree=None, resume=None,
     """The command that runs `task`'s writer session - or its reviewer's, under
     `role` - in the task's own tree when it has one, else the project; its
     scratch and its stream under `stateDir`, and one `--skill` per skill the task
-    resolves to, which the runner puts in the session's system prompt."""
+    resolves to, which the runner discloses in the session's system prompt by
+    name, description and checklist; the body is the Skill tool's to load."""
     skills = [flag for name in session_skills(ctx, task) for flag in ("--skill", name)]
     argv = ["python3", _loader.script_path(WRITER_RUNNER), "--role", role,
             "--task", task["id"],
@@ -2022,10 +2023,13 @@ def open_dispatch(ctx, state, task, round_n, build, tree=None, key="writer",
 
 def read_sessions(path):
     """Each outcome the runner appended to one record, in order, as `{"session",
-    "cost", "stream", "line", "exit"}` - `session` and `cost` None for an
-    outcome that carries no session. Reading stops at a line that does not
-    parse: the runner may be part-way through writing it. `[]` when there is no
-    record yet (the run has not happened, or is running)."""
+    "cost", "stream", "line", "exit", "declared", "invoked"}` - `session` and
+    `cost` None for an outcome that carries no session; `declared` the names of
+    the skills the session was started with (`[]` for none), `invoked` the
+    runner's `skillsInvoked`, or None when the line carries no such list. Reading
+    stops at a line that does not parse: the runner may be part-way through
+    writing it. `[]` when there is no record yet (the run has not happened, or is
+    running)."""
     try:
         with open(path, "r", encoding="utf-8") as fh:
             raw = fh.read()
@@ -2043,25 +2047,70 @@ def read_sessions(path):
             break
         line = str(body.get("line") or "")
         hit = _SESSION_LINE.match(line)
+        skills = body.get("skills")
+        invoked = body.get("skillsInvoked")
         runs.append({"session": hit.group(1) if hit else None,
                      "cost": hit.group(4) if hit else None,
                      "stream": hit.group(6).strip() if hit else None,
-                     "line": line, "exit": body.get("exit")})
+                     "line": line, "exit": body.get("exit"),
+                     "declared": [str(s.get("name")) for s in skills
+                                  if isinstance(s, dict) and s.get("name")]
+                     if isinstance(skills, list) else [],
+                     "invoked": [str(n) for n in invoked]
+                     if isinstance(invoked, list) else None})
     return runs
+
+
+def _bare_skill(name):
+    """A skill name without its plugin qualifier: `audit:x` and `x` are one
+    skill to the Skill tool's caller, who may spell either."""
+    return name.rsplit(":", 1)[-1]
+
+
+def uninvoked_skills(run):
+    """`(names, why)` for one read outcome (`read_sessions`): the declared skills
+    its session never invoked through the Skill tool, in declared order, and
+    None; `([], None)` when it declared none or invoked every one; `(None, why)`
+    when it declared some and its record carries no `skillsInvoked` to judge by,
+    which is not a session that invoked none."""
+    declared = run.get("declared") or []
+    if not declared:
+        return [], None
+    invoked = run.get("invoked")
+    if invoked is None:
+        return None, ("whether its declared skills (%s) were invoked is not "
+                      "recorded: its record carries no skillsInvoked"
+                      % (", ".join(declared),))
+    called = set(_bare_skill(n) for n in invoked)
+    return [n for n in declared if _bare_skill(n) not in called], None
+
+
+def skills_said(run):
+    """The clause a session's note ends with about its declared skills - the ones
+    never invoked by name, or that no reading of them was recorded - or "" when
+    there is nothing to say (none declared, or every one invoked)."""
+    missing, why = uninvoked_skills(run)
+    if why:
+        return "; %s" % (why,)
+    if missing:
+        return "; declared skill(s) never invoked through the Skill tool: %s" % (
+            ", ".join(missing),)
+    return ""
 
 
 def session_note(round_n, run, who="writer"):
     """The note one session leaves on its task: the cost its own result printed,
-    or - for a run that produced no result - the runner's words, with no cost.
-    `note_task` scrubs any path it still holds."""
+    or - for a run that produced no result - the runner's words, with no cost,
+    then `skills_said` of its declared skills. `note_task` scrubs any path it
+    still holds."""
     if run["session"]:
         return ("%s session %s round %d: total_cost_usd=%s (from its own "
-                "result; stream %s, runner exit %s)" % (
+                "result; stream %s, runner exit %s)%s" % (
                     who, run["session"], round_n, run["cost"],
-                    os.path.basename(run["stream"]), run["exit"]))
+                    os.path.basename(run["stream"]), run["exit"], skills_said(run)))
     return ("%s session round %d produced no result, so no cost is recorded: "
-            "%s (runner exit %s)" % (who, round_n, _clip(run["line"], 200),
-                                     run["exit"]))
+            "%s (runner exit %s)%s" % (who, round_n, _clip(run["line"], 200),
+                                       run["exit"], skills_said(run)))
 
 
 def note_task(ctx, task, text):
@@ -2096,9 +2145,9 @@ def note_sessions(ctx, state, task, key="writer"):
             _mark(state, key, task, held)
             write_state(ctx, state)
             label = (run["session"] or "with no result")[:13]
-            ctx["did"].append("%s session %s round %d %s" % (
+            ctx["did"].append("%s session %s round %d %s%s" % (
                 who, label, each["round"], "noted" if refused is None
-                else "not noted (%s)" % (refused,)))
+                else "not noted (%s)" % (refused,), skills_said(run)))
 
 
 def writer_wait(ctx, state, task):

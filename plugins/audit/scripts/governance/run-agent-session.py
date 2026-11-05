@@ -28,24 +28,30 @@ WHAT THE ARGV CARRIES, AND WHY EACH ONE:
     flag and no agent body. The definition goes in a FILE, which the CLI's help
     documents for print mode, rather than as an argv string: the body is several
     kilobytes of prose that a batch-file launcher would re-quote;
-  * `--skill NAME`, repeatable, puts the named skills in the session's system prompt
-    from its first turn: each SKILL.md is found the way a session in that tree
-    finds a skill (`_skill_places.resolve_skill`) and the bodies, each wrapped with its name, are
-    written to ONE file under the scratch and passed as
-    `--append-system-prompt-file`; `claude --help` does not list that flag, though
-    the CLI accepts it, and a probe (claude 2.1.307, 2026-10-23: `--agents <file>
-    --agent <name> --append-system-prompt-file <file>` on a print-mode session)
-    had the reviewer quote a token only the appended skill held, so the reviewer
-    path delivers it as the writer's does. A subagent definition's `skills` field
-    was probed (claude 2.1.307, 2026-10-23) and the session did not see the skill,
-    which is why this appends instead; the prompt on stdin is untouched by it. The
-    order a name is searched in is the user's skills, the project's, then the
-    plugin's own (see `_skill_places`), and each skill is headed by its base
-    directory, as the Skill tool does. A name that
-    resolves nowhere refuses to start, naming every place looked in, because a
-    skill the plan declares and the session never loads is a defect the cost of
-    which nobody sees. `--record` carries each skill's name, path and sha256, so a
-    reader can tell which skills a session had without a Skill call;
+  * `--skill NAME`, repeatable, discloses the named skills in the session's system
+    prompt from its first turn: each SKILL.md is found the way a session in that
+    tree finds a skill (`_skill_places.resolve_skill`), and ONE file under the
+    scratch, passed as `--append-system-prompt-file`, carries each skill's name,
+    its frontmatter description and its `## Checklist` section when the file has
+    one (`skill_disclosure`) - never the rest of the body. Text in the system
+    prompt is sent with every call the session makes, so a body appended whole
+    is paid for on every turn whether the task needs it or not; the body reaches
+    the session when the session calls the Skill tool for it. `claude --help`
+    does not list that flag, though the CLI accepts it, and a probe (claude
+    2.1.307, 2026-10-23: `--agents <file> --agent <name>
+    --append-system-prompt-file <file>` on a print-mode session) had the reviewer
+    quote a token only the appended skill held, so the reviewer path delivers it
+    as the writer's does. A subagent definition's `skills` field was probed
+    (claude 2.1.307, 2026-10-23) and the session did not see the skill, which is
+    why this appends instead; the prompt on stdin is untouched by it. The order a
+    name is searched in is the user's skills, the project's, then the plugin's
+    own (see `_skill_places`). A name that resolves nowhere refuses to start,
+    naming every place looked in, because a skill the plan declares and the
+    session cannot find is a defect the cost of which nobody sees. `--record`
+    carries each declared skill's name, path and sha256, and - once a session
+    ran and its stream was read - `skillsInvoked`, the skills its own Skill tool
+    calls named (`invoked_skills`), so a reader can tell a skill the session was
+    shown from one it loaded;
   * `--resume <session id>` continues a recorded session and changes nothing else;
     an id that is not a UUID is refused (`SESSION_ID`), so no flag rides in as one.
   * the budget must be a finite positive number - `float()` also reads `inf` and
@@ -106,7 +112,8 @@ prints `io-error:` naming the path, before claude is started.
 
 `--record <path>` ALSO APPENDS THAT OUTCOME TO A FILE, one JSON line `{"line",
 "exit"}` per run: the line printed (a usage refusal's message prefixed `usage:`)
-and this script's exit code. It is how the step driver learns which session ran and what it cost without
+and this script's exit code, with `skills` and `skillsInvoked` beside them when
+`write_record` has them. It is how the step driver learns which session ran and what it cost without
 the main loop retyping the line: the driver names the path in the command it
 prints and reads each line once at its next steps, taking a last line that
 does not parse as not written yet. A record that cannot be written is reported on stderr and
@@ -320,15 +327,54 @@ def load_skills(found):
     return loaded
 
 
+def skill_checklist(text):
+    """The `## Checklist` section of a SKILL.md's text - its heading line through
+    the line before the next level-one or level-two heading, or the end - with its
+    outer blank lines taken off; "" when the file has no such section. A line
+    inside a ``` or ~~~ fence is never read as a heading, so a fenced example
+    shaped like one does not cut the section short."""
+    kept, inside, fence = [], False, None
+    for line in text.splitlines():
+        mark = line.lstrip()[:3]
+        is_fence = mark in ("```", "~~~")
+        if fence is None and not is_fence and re.match(r"#{1,2} ", line):
+            if inside:
+                break
+            inside = line.rstrip() == "## Checklist"
+        if inside:
+            kept.append(line)
+        if is_fence:
+            # Opened by either marker, closed only by the one that opened it.
+            fence = None if fence == mark else (fence or mark)
+    return "\n".join(kept).strip("\n")
+
+
+def skill_disclosure(skill):
+    """What the system prompt carries of one skill: its frontmatter description -
+    or a line saying the frontmatter has none - and its `## Checklist` section when
+    it has one (`skill_checklist`). The rest of the body is left to the Skill tool."""
+    description = _help.front_matter(skill["text"]).get("description") or ""
+    parts = ["description: %s" % (description or "(no description: its SKILL.md "
+                                  "frontmatter carries none)")]
+    checklist = skill_checklist(skill["text"])
+    if checklist:
+        parts.append(checklist)
+    return "\n\n".join(parts)
+
+
+# What the appended file opens with, ahead of the first skill.
+SKILLS_PREAMBLE = ("The skills declared for this task, each disclosed by its name, its "
+                   "description and its checklist when it has one. The Skill tool "
+                   "loads a skill's full instructions.\n\n")
+
+
 def skills_prompt(loaded):
-    """The text appended to the system prompt: each skill's file, whole, wrapped in a
-    `<skill name="...">` element so a reader of the prompt can tell where one ends.
-    The element opens with `Base directory for this skill: <dir>`, the line the Skill
-    tool puts above a skill it loads, so a file the skill names under `references/`
-    resolves against the skill's own directory."""
-    return "\n".join('<skill name="%s">\nBase directory for this skill: %s\n\n%s\n</skill>\n'
-                     % (s["name"], os.path.dirname(s["path"]), s["text"].rstrip("\n"))
-                     for s in loaded)
+    """The text appended to the system prompt: `SKILLS_PREAMBLE`, then each skill's
+    disclosure (`skill_disclosure`) wrapped in a `<skill name="...">` element so a
+    reader of the prompt can tell where one ends."""
+    return SKILLS_PREAMBLE + "\n".join('<skill name="%s">\n%s\n</skill>\n'
+                                       % (s["name"], skill_disclosure(s))
+                                       for s in loaded)
 
 
 def skills_record(loaded):
@@ -368,6 +414,46 @@ def read_stream(path):
         return {"result": None, "unparsed": unparsed,
                 "problem": "the last result event carries no session_id"}
     return {"result": last, "unparsed": unparsed, "problem": None}
+
+
+def invoked_skills(path):
+    """The skills the session's own Skill tool calls named, in the order first
+    called, each once - or None when the stream cannot be read, which is not a
+    session that called none. A call is an assistant event's `tool_use` block named
+    `Skill` with the skill in `input.skill`. An event carrying a
+    `parent_tool_use_id` is a subagent's, whose skill loaded into that subagent's
+    context and not the session's, so it is not counted."""
+    named = []
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(event, dict) or event.get("type") != "assistant" \
+                or event.get("parent_tool_use_id"):
+            continue
+        message = event.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        for block in content if isinstance(content, list) else []:
+            name = _skill_call(block)
+            if name and name not in named:
+                named.append(name)
+    return named
+
+
+def _skill_call(block):
+    """The skill one content block's Skill tool call names, its leading `/` taken
+    off, or "" when the block is no such call."""
+    if not isinstance(block, dict) or block.get("type") != "tool_use" \
+            or block.get("name") != "Skill" or not isinstance(block.get("input"), dict):
+        return ""
+    skill = block["input"].get("skill")
+    return skill.strip().lstrip("/") if isinstance(skill, str) else ""
 
 
 def _word(result, key):
@@ -607,15 +693,20 @@ def _read_prompt(args, stdin):
     return stdin.buffer.read().decode("utf-8") if hasattr(stdin, "buffer") else stdin.read()
 
 
-def write_record(path, line, code, skills=None):
+def write_record(path, line, code, skills=None, invoked=None):
     """Append `{"line", "exit"}` to `path` as one JSON line, making its
     directory, with a `"skills"` key beside them when the session was started with
-    skills (`skills_record`) and no such key when it was not. None, or why it could
-    not be written. Appended, so the same command run twice keeps both outcomes; the
-    one reader takes a last line that does not parse as one not written yet."""
+    skills (`skills_record`) and no such key when it was not, and a
+    `"skillsInvoked"` key (`invoked_skills`, an empty list included) when a session
+    ran and its stream was read - and none when it was not, since no reading is not
+    a reading of no calls. None, or why it could not be written. Appended, so the
+    same command run twice keeps both outcomes; the one reader takes a last line
+    that does not parse as one not written yet."""
     body = {"line": line, "exit": code}
     if skills:
         body["skills"] = skills
+    if invoked is not None:
+        body["skillsInvoked"] = invoked
     try:
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         with open(path, "a", encoding="utf-8", newline="\n") as fh:
@@ -643,7 +734,7 @@ def main(argv, stdin=None, out=print):
     code = _run(args, stdin, tell, refuse, ran)
     if args.record:
         problem = write_record(args.record, said[-1] if said else "", code,
-                               ran.get("skills"))
+                               ran.get("skills"), ran.get("invoked"))
         if problem:
             sys.stderr.write("ERROR: %s\n" % problem)
     return code
@@ -654,7 +745,8 @@ def _run(args, stdin, out, refuse, ran):
     line, or one `refuse` - a usage refusal, which goes to stderr. `ran` is the
     caller's dict for what the run learned that its printed line does not carry:
     `ran["skills"]` is `skills_record` of the skills the session was started with,
-    set as soon as they are read so every later outcome is recorded with them."""
+    set as soon as they are read so every later outcome is recorded with them, and
+    `ran["invoked"]` is `invoked_skills` of the saved stream, set once claude ran."""
     if not is_full_model_id(args.model):
         return refuse("--model %r is not a full model id (claude-<family>-<version>); "
                       "an alias resolves to whatever is newest on the day" % args.model)
@@ -698,7 +790,8 @@ def _run(args, stdin, out, refuse, ran):
     prepared = {}
     try:
         prepared = _prepare(args, stream, loaded)
-        return _in_session(args, prompt, claude, stream, stderr_path, prepared, out)
+        return _in_session(args, prompt, claude, stream, stderr_path, prepared, out,
+                           ran)
     except PreparationError as exc:
         out("io-error: %s" % exc)
         return E_IO
@@ -713,9 +806,10 @@ def _run(args, stdin, out, refuse, ran):
             sys.stderr.write("ERROR: %s\n" % problem)
 
 
-def _in_session(args, prompt, claude, stream, stderr_path, prepared, out):
+def _in_session(args, prompt, claude, stream, stderr_path, prepared, out, ran):
     """The session itself, once `_prepare` made what it needs: start claude, read
-    its stream, print the one line. The caller removes the TMPDIR."""
+    its stream - the skills it invoked into `ran["invoked"]`, however it ended -
+    and print the one line. The caller removes the TMPDIR."""
     if prepared.get("problem"):
         out(could_not_run_line(prepared["problem"], stream, stderr_path, None, 0))
         return E_COULD_NOT_RUN
@@ -729,6 +823,7 @@ def _in_session(args, prompt, claude, stream, stderr_path, prepared, out):
     except OSError as exc:
         out("io-error: could not start the session writing %s: %s" % (stream, exc))
         return E_IO
+    ran["invoked"] = invoked_skills(stream)
     if interrupted:
         out(could_not_run_line("interrupted by %s; the session group was torn down"
                                % interrupted, stream, stderr_path, code, 0))
