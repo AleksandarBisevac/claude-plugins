@@ -1010,7 +1010,7 @@
     {
       "id": "P157",
       "title": "The cost phase before S2",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P157.json"
     }
   ],

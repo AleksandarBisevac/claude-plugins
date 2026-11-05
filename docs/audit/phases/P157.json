@@ -1,7 +1,7 @@
 {
   "id": "P157",
   "title": "The cost phase before S2",
-  "status": "in_progress",
+  "status": "done",
   "description": "D15/D16 (owner 2026-11-05, option c). Analysis and per-task savings: quality-gates-internal/plans/2026-11-05-cost-phase/ANALYSIS.md and PLAN.md. Faults F833-F836, F838.",
   "desiredOutcome": "The writer session reaches the drive's gate without blind retries, a red its base reproduces stops instead of resuming, the writer starts at plain Claude Code's size and leaves slow steps to the drive's gate, so the stage-2 pairs re-measure at Q1 <= 2.0",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "a27f8a563a6372beb97a53b1981ebc8d0a7f30f3",
   "branch": "audit/p157-the-cost-phase-before-s2",
-  "mergedAt": null,
+  "mergedAt": "2026-11-05T23:41:51Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -996,5 +996,6 @@
     "runId": "2026-11-05T23:39:39Z.234133",
     "status": "passed",
     "at": "2026-11-05T23:39:39Z"
-  }
+  },
+  "mergedHead": "6d1e27b6ea21dacc332bc9d672d0d1231763edde"
 }
