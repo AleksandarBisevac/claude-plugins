@@ -199,7 +199,7 @@
     {
       "id": "P157.3",
       "title": "The writer's skills are disclosed, not appended whole: the system prompt carries each declared skill's name, description and checklist, and the session record names the skills the writer invoked",
-      "status": "in_progress",
+      "status": "done",
       "description": "Stage 2: the writer starts 11.7-12.1k tokens heavier than plain on every pair, 22% of the writer's excess; the three bodies are 30049 characters (ANALYSIS.md section 2A). At a27f8a56: run-agent-session.py:323-331 skills_prompt appends each SKILL.md whole; session_argv 234-255 adds --append-system-prompt-file (248-251); skills_record 334-336; producer drive-phase.writer_argv 1939-1953 / session_skills 1931-1936. Owner D12 requires the writer's skills loaded: \"loaded\" now means a Skill tool_use in the writer stream (the stage-1 check check-skills-loaded.py already accepts it), recorded as skillsInvoked, and the drive names a declared skill never invoked. Checklist rule: frontmatter description, plus a `## Checklist` section when the SKILL.md has one, nothing else (no-silent-pass has one; writing-python and before-you-claim do not). The module docstring 31-48 states the preload rationale and a probe (claude 2.1.307) - restate it from what the code does now; do not edit a probe claim by reading. Out of scope: the auto-memory section and the agent listing (no documented flag; needs a paid probe).",
       "files": [
         "plugins/audit/scripts/governance/run-agent-session.py",
@@ -227,25 +227,50 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3b05120cb5f7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "run-agent-session.py: skills_prompt no longer appends each SKILL.md whole. It writes SKILLS_PREAMBLE, then per skill a <skill name=...> element holding skill_disclosure(): the frontmatter description (through _help.front_matter; a line saying there is none when absent) and the '## Checklist' section when the file has one (skill_checklist: heading line through the line before the next level-1/2 heading, fences not read as headings). The Base directory line is gone with the body. New invoked_skills(stream)/_skill_call(): the top-level assistant tool_use blocks named Skill, input.skill, first-call order, each once, a parent_tool_use_id event (subagent) not counted, None when the stream cannot be read. _in_session sets ran['invoked'] once claude ran (every outcome after that, could-not-run included); write_record adds 'skillsInvoked' when it is not None, so a run that never started a session has no key. Module docstring's --skill bullet restated from the code: disclose, why (system-prompt text goes with every call), the dated 2.1.307 probe sentences kept as they stood, the stale 'headed by its base directory' clause removed; --record paragraph names skills/skillsInvoked. drive-phase.py: read_sessions adds 'declared' (record skills names) and 'invoked' (skillsInvoked or None); new _bare_skill, uninvoked_skills, skills_said; session_note and note_sessions' did line end with skills_said: the declared skills never invoked (plugin:skill met by its bare name), or that no skillsInvoked was recorded; nothing added when none declared or all invoked. writer_argv docstring says 'discloses'. PLUGIN-BUILD-GUIDE.md run-agent-session section rewritten to match. Tests: test_run_agent_session.py adds a STUB_EVENTS hook to the stub, SKILL_EVENTS (two Skill calls trimmed from the recorded k08 plain-writer stream plus one synthesized subagent call, labelled as such), cases ras60 ras60b ras60c ras61 ras62 ras63 (the repo's real no-silent-pass, checklist read by a second reader) ras64 ras65 ras66; existing ras35/36/37/40/45/47/48 moved from body sentinels to description sentinels; ras27/ras44 expect skillsInvoked []; ras49 (Base directory heading) removed because that line no longer exists; ras30d now reads the guide section to the next ### heading instead of a fixed 6000-char window, which my longer paragraph overflowed. test_drive_phase.py adds _skill_invoked_units: sk4 sk5 sk6. Red on HEAD before the fix: test_run_agent_session 68/78 (ras27 ras44 ras60 ras60b ras60c ras61 ras62 ras63 ras64 ras65 red; ras66 green as the second-direction case), test_drive_phase --stage uy-block 53/55 (sk4 sk6 red; sk5 green as the second-direction case). After: gate command exit 0, '4/4 files ok, 1254 cases'. Mutations, in memory only (no tree edits): uninvoked_skills made to name every declared skill -> sk4 sk5 sk6 red; made to name none -> sk4 sk6 red, sk5 green; skill_checklist without fence handling -> returns the section cut at the fenced '## ' line, dropping the LISTED-FENCED/SUB/LAST tokens ras60 counts. Not mutated: ras66's direction (the runner runs as a subprocess; no scratch copy built). TDD note: I read test_run_agent_session.py and then run-agent-session.py before writing its new cases, and read read_sessions/session_note before writing sk4-sk6, so these tests were not drafted blind. Dependants: test__config_rules.py (is_full_model_id) unchanged, still correct; test__doctor_policy.py uses find_skills/_skill_places, unchanged and still correct, but its comment at line 454 says the runner 'loads the skills a task names into the session' - now it discloses them; not my file, left as is; tools/affected.py (_usage, _cases, _selftest, paths) unchanged names, still correct; audit-config.schema.json and _config_rules.py only name the runner for writerModel/budget/full-id, unaffected; _read_text/drop_session_tmp/exit_for unchanged; drive-phase importers: read_sessions runs gain two keys that are also kept in state runs, and session_note text is byte-identical when no skills are declared (sk5 asserts equality), and every drive e2e block stayed green; test_drive_phase/test_run_agent_session dependants (.github/sweep-costs.json, ci.yml, tools/*) reference paths/names that did not change - the run-agent-session suite makes a few more runner runs, so its recorded cost may drift; not re-recorded. PLUGIN-BUILD-GUIDE dependants: basename references, unaffected. Not done (outside files): no CHANGELOG entry. The auto-memory section and the agent listing are left alone, as scoped.",
+        "descriptive": "The writer's system prompt now carries each declared skill's name, description and checklist instead of its whole body, the session record names the skills the writer invoked through the Skill tool, and the drive's note of a session names a declared skill it never invoked."
       },
       "startedAt": "2026-11-05T11:19:36Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-05T11:42:24Z",
+      "verifiedBy": [
+        "ras60: a skill with a Checklist section is disclosed by its description and that whole section (a fenced heading-shaped line and a ### subheading inside it kept), with no title, body or later-section token in the prompt",
+        "ras60b: no fixture body sentinel and no plugin-skill body line reaches the prompt",
+        "ras60c: the prompt says, ahead of the first skill, that the Skill tool loads a skill's full instructions",
+        "ras61: a skill with no Checklist section gets its name and description only",
+        "ras62: a skill with no frontmatter description says so instead of standing empty",
+        "ras63: the repo's real no-silent-pass is disclosed by its description and its Checklist section as the file holds them, not by its title",
+        "ras64: the record's skillsInvoked is read from a fixture stream's Skill tool_use calls in order, and a subagent's call is not counted",
+        "ras65: a stream with no Skill call records skillsInvoked as []",
+        "ras66: a run that never started a session records no skillsInvoked key (the other direction)",
+        "sk4: the drive's note of a writer session names the declared skill it never invoked, once, and not the ones it invoked (plugin:skill met by bare name)",
+        "sk5: a session that invoked every declared skill gets the note a session with none declared gets, word for word (the over-fire direction)",
+        "sk6: a record declaring skills with no skillsInvoked says it is not recorded and names none as never invoked"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-05T11:42:21Z.f70f78",
         "status": "passed",
         "at": "2026-11-05T11:42:21Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "3b05120cb5f7",
+        "at": "2026-11-05T11:42:24Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-05T11:37:00Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test_drive_phase.py tests/test__refs.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 12 of 78 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sk4 (house FAIL), sk6 (house FAIL), ras27 (house FAIL), ras60b (house FAIL), ras44 (house FAIL), ras60 (house FAIL), ras60c (house FAIL), ras61 (house FAIL) and 4 more: SELFTEST FAILED: 68/78 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P157.4",
       "title": "The writer brief leaves a step whose measured mean outlives the Bash tool's foreground bound to the drive's gate, naming it once with its mean and run count, and keeps the task's own suites",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Stage 2: the writer ran the 6-7 minute sweep the drive runs again after the session; past the Bash tool's 120 s foreground bound the CLI backgrounds it and the writer polls - wait/poll 18 calls vs 5, +0.268, full-sweep calls 0.130 (ANALYSIS.md section 2C). At a27f8a56: audit-lookup.py:998-1039 compose_writer_prompt (left_to_phase_gate 941-952, \"Before you finish\" 1034), config at write_brief 2136-2142 via _config_rules.phase_gate_only_setting 307-321. Durations: _evidence_io._gate_cost_walk 1898-1918 (per step name). Add a pure `slow=()` parameter computed in write_brief; the bound is a named constant whose basis is the CLI's message \"did not complete within its 120s timeout and was moved to the background\" (stage 2 k02 orchestrator stream). A mean over one run is printed with its count. COMPATIBILITY.md: phaseGateOnly keeps being read. Do not read .github/sweep-costs.json (this repo's CI table, not a plugin source).",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -271,16 +296,22 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-05T11:42:26Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-05T12:02:04Z.b9c37e",
+        "status": "passed",
+        "at": "2026-11-05T12:02:04Z"
+      }
     },
     {
       "id": "P157.5",

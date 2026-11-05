@@ -924,9 +924,12 @@ def documented_lines(ctx, task):
 # return contract. The layout is the one the owner's baseline measured, so a
 # difference in what the session does is not a difference in what it was told.
 # Three lines differ from that measured text on purpose: the commit sentence
-# (the drive commits), the sentence naming what the project left to the phase gate
-# (`executor.phaseGateOnly`; absent when it names none) and the closing line (one
-# answer per acceptance clause).
+# (the drive commits), the sentence naming what is left to the phase gate
+# (`executor.phaseGateOnly`, and a step whose recorded mean outlives the Bash
+# tool's foreground bound; absent when neither names one) and the closing line
+# (one answer per acceptance clause). When a slow step is named, one line after
+# that sentence states the bound, and a gate command with no measured run says
+# so on its own line.
 
 WRITER_COMMIT_LINE = ("Fix whatever does not pass. When everything is green, "
                       "leave the changes uncommitted: the drive commits them.")
@@ -995,8 +998,58 @@ def _or_list(items):
         "%s or %s" % (", ".join(items[:-1]), items[-1]))
 
 
+# How long the Bash tool keeps a command in the foreground before the CLI moves
+# it to the background, after which the session waits on it and polls for its
+# output instead of reading it. The basis is the CLI's own message when a command
+# reaches it - "Command did not complete within its 120s timeout and was moved to
+# the background" - read in a recorded session's tool result; it is the default,
+# and a session started with a different default is not seen from here. A gate
+# step whose recorded mean outlives it buys the writer only that wait: the drive
+# runs the task's whole gate again after the session.
+FOREGROUND_BOUND_MS = 120 * 1000
+
+UNMEASURED_NOTE = "duration unmeasured"
+
+
+def outlives_foreground(mean_ms):
+    """Whether a step's recorded mean is past `FOREGROUND_BOUND_MS`; an
+    unmeasured step (None) is not, since nothing says it is slow."""
+    return mean_ms is not None and mean_ms > FOREGROUND_BOUND_MS
+
+
+def _seconds(ms):
+    """`ms` as seconds for a sentence, whole unless rounding would bring a mean
+    that is past the bound down onto it."""
+    whole = int(round(ms / 1000.0))
+    if whole * 1000 <= FOREGROUND_BOUND_MS < ms:
+        return "%.1f s" % (ms / 1000.0,)
+    return "%d s" % (whole,)
+
+
+def _slow_basis(mean_ms, runs):
+    return "mean %s over %d run%s" % (_seconds(mean_ms), runs,
+                                     "" if runs == 1 else "s")
+
+
+def foreground_bound_line():
+    """The one sentence saying why a command carrying a mean was left out."""
+    return ("A command with a mean takes longer than the %s the Bash tool keeps "
+            "a command in the foreground." % (_seconds(FOREGROUND_BOUND_MS),))
+
+
+def gate_step_readings(rows, entries):
+    """`slow` for `compose_writer_prompt`: `(name, mean_ms, runs)` for each gate
+    entry, read off the ledger `rows` by step name (`_evio.step_mean_ms`), with
+    `(name, None, 0)` for an entry no recorded run measured."""
+    readings = []
+    for name in entries or []:
+        mean = _evio.step_mean_ms(rows, name)
+        readings.append((name,) + (mean if mean is not None else (None, 0)))
+    return tuple(readings)
+
+
 def compose_writer_prompt(manifest, phase, task, dependants=None,
-                          phase_gate_only=()):
+                          phase_gate_only=(), slow=()):
     """The writer session's whole prompt, as lines: plain's own text for the
     task, composed from the task alone - no brief path, no rules, no skills, no
     submit - so two calls on the same task are the same bytes.
@@ -1014,14 +1067,33 @@ def compose_writer_prompt(manifest, phase, task, dependants=None,
     `phase_gate_only` is left out of the commands to run and listed, once, as left
     to the phase gate - the only thing the sentence says, since nothing here
     knows who runs it. A plan whose gate has no such entry gets no sentence:
-    naming commands the task does not have would be a claim with no basis."""
+    naming commands the task does not have would be a claim with no basis.
+
+    `slow` is `gate_step_readings`' answer - `(name, mean_ms, runs)` per gate
+    entry, by the step name the ledger records. An entry whose mean outlives
+    `FOREGROUND_BOUND_MS` joins the same sentence, once, carrying its mean and
+    the run count it was taken over, whether or not `phase_gate_only` names it
+    too, and one line after it states the bound; an entry with a reading and
+    no measured run stays in the commands to run and says it is unmeasured. Only the prompt changes: the gate the drive
+    runs after the session is the task's `tests.gate`, read from the plan. The
+    empty default reads nothing, so the composition is the task alone's."""
     tests = task.get("tests") or {}
     files = [f for f in (task.get("files") or []) if isinstance(f, str)]
     added = [a for a in (tests.get("add") or []) if isinstance(a, str) and a.strip()]
     entries, _whose = _task_gate(manifest, phase, task)
-    commands = [c for _name, c in _evio.resolved_commands(manifest, entries)]
-    left = [c for c in commands if left_to_phase_gate(c, phase_gate_only)]
-    plain = [c for c in commands if not left_to_phase_gate(c, phase_gate_only)]
+    readings = dict((r[0], (r[1], r[2])) for r in slow)
+    left, plain, slowed = [], [], False
+    for name, command in _evio.resolved_commands(manifest, entries):
+        mean_ms, runs = readings.get(name, (None, None))
+        if outlives_foreground(mean_ms):
+            slowed = True
+            left.append("%s (%s)" % (command, _slow_basis(mean_ms, runs)))
+        elif left_to_phase_gate(command, phase_gate_only):
+            left.append(command)
+        elif name in readings and mean_ms is None:
+            plain.append("%s (%s)" % (command, UNMEASURED_NOTE))
+        else:
+            plain.append(command)
     lines = ["Implement the following task in this repository.", "",
              "Task: %s" % (task.get("title"),), ""]
     lines += _verbatim(task.get("description"), "The task records no description.")
@@ -1035,6 +1107,7 @@ def compose_writer_prompt(manifest, phase, task, dependants=None,
     lines += ["- %s" % (c,) for c in plain] or ["- none declared"]
     if left:
         lines += ["", "Do not run %s: left to the phase gate." % (_or_list(left),)]
+        lines += [foreground_bound_line()] if slowed else []
     lines += ["", WRITER_COMMIT_LINE, "", writer_closing_line(task)]
     return lines
 
@@ -2147,10 +2220,18 @@ def write_brief(manifest, manifest_path, project_arg, node_id, role):
         left, problem = _config_rules.phase_gate_only_setting(ctx["config"])
         if problem:
             return E_CONFIG, problem
+        entries, _whose = _task_gate(manifest, phase, task)
+        try:
+            rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+        except Exception:                                      # noqa: BLE001
+            # Advisory: a ledger that cannot be read measured nothing, and
+            # every step then says it is unmeasured rather than passing as fast.
+            rows = []
         lines = compose_writer_prompt(
             manifest, phase, task,
             dependant_lines(ctx, task, DEPENDANTS_ASK_WRITER),
-            phase_gate_only=left)
+            phase_gate_only=left,
+            slow=gate_step_readings(rows, entries))
     else:
         ok, gate = runs_gate_reading(ctx["project"], ctx["hc"])
         if not ok:

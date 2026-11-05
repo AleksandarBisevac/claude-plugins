@@ -1934,6 +1934,20 @@ def gate_cost_measured(rows, name):
     return _gate_cost_walk(rows, name)[1]
 
 
+def step_mean_ms(rows, name):
+    """`(mean_ms, measured)` for the named step across `rows`, or `None` when
+    no matching step carries a `durationMs` -- unmeasured, never a zero mean.
+
+    The count travels with the mean because a mean over one run and a mean over
+    many are different claims, and the caller printing the mean owes its reader
+    which one it is. Both come from `_gate_cost_walk`, so the divisor is exactly
+    the steps the sum took, never `gate_tally`'s `ran`."""
+    total, measured = _gate_cost_walk(rows, name)
+    if not measured:
+        return None
+    return total / measured, measured
+
+
 def gate_names_seen(rows):
     """Every distinct `steps[].name` recorded across `rows`, sorted."""
     names = set()

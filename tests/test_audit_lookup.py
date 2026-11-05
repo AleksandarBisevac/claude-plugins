@@ -2406,22 +2406,28 @@ def _writer_prompt_cases(check):
             on_disk = fh.read()
     except OSError:
         on_disk = None
-    # The command adds the dependants section the composition alone leaves out;
-    # the expected prompt is that composition with the same section, so every
-    # other byte is still the measured baseline's (`wp1`).
+    # The command adds the dependants section the composition alone leaves out,
+    # and the ledger's reading of each gate step - this project has no ledger, so
+    # every step reads unmeasured. The expected prompt is that composition with
+    # the same two, so every other byte is still the measured baseline's (`wp1`).
     phase_one = man["phases"][0]
     deps = M.dependant_lines(M._brief_context(mpath, proj), phase_one["tasks"][0],
                              M.DEPENDANTS_ASK_WRITER)
+    unread = M.gate_step_readings([], phase_one["tasks"][0]["tests"]["gate"])
     expected = "\n".join(M.compose_writer_prompt(
         man, phase_one, phase_one["tasks"][0], deps,
-        phase_gate_only=_WP_LEFT)) + "\n"
+        phase_gate_only=_WP_LEFT, slow=unread)) + "\n"
+    no_deps = "\n".join(M.compose_writer_prompt(
+        man, phase_one, phase_one["tasks"][0],
+        phase_gate_only=_WP_LEFT, slow=unread)) + "\n"
     check("wp12 `brief P1.1 --role writer` exits 0 and writes exactly the "
           "prompt, with the dependants section, to a file of its own beside "
           "the executor's: code=%r file=%s"
           % (code, "found" if on_disk is not None else "missing"),
           code == M.E_OK and on_disk == expected
           and on_disk.replace("\n\nWho depends on this:\n%s" % (
-              "\n".join(deps),), "") == text
+              "\n".join(deps),), "") == no_deps
+          and no_deps.replace(" (%s)" % (M.UNMEASURED_NOTE,), "") == text
           and written in out.getvalue())
     # A key the reader cannot use stops the brief by name; it is not read as the
     # empty default, which would put the browser gates back in the writer's list.
@@ -2444,6 +2450,145 @@ def _writer_prompt_cases(check):
           bad_code == M.E_CONFIG and not os.path.exists(written)
           and "executor.phaseGateOnly" in out.getvalue() + err.getvalue())
     shutil.rmtree(root, ignore_errors=True)
+
+
+def _ws_items(lines):
+    """The bullet lines under 'Before you finish', in order."""
+    at = lines.index("Before you finish, check that everything passes:")
+    items = []
+    for ln in lines[at + 1:]:
+        if not ln.startswith("- "):
+            break
+        items.append(ln)
+    return items
+
+
+def _ws_compose(manifest, slow, left=_WP_LEFT):
+    """`(True, lines)` or `(False, "TypeError: ...")`, so a composition that
+    does not take `slow` is each case's failure rather than the block's."""
+    phase = manifest["phases"][0]
+    return _harness.attempt(M.compose_writer_prompt, manifest, phase,
+                            phase["tasks"][0], phase_gate_only=left, slow=slow)
+
+
+def _writer_slow_cases(check):
+    """(ws) A gate step whose recorded mean outlives the Bash tool's foreground
+    bound is left to the drive's gate, named once with the mean and the count
+    it was taken over; a step under the bound, or with no measured run, stays
+    in the writer's list."""
+    sweep = "python3 tools/sweep-selftests.py"
+    lint = "ruff check plugins/audit tools && vermin -t=3.8- --no-tips plugins/audit"
+    report = ("python3 plugins/audit/scripts/report/render-report.py "
+              "docs/audit/audit-plan.json --out-dir /tmp/audit-report")
+    man = _wp_manifest()
+    readings = (("selftests", 400000, 3), ("lint", 2000, 5), ("report", None, 0))
+    ok, lines = _ws_compose(man, readings)
+    lines = lines if ok else []
+    text = "\n".join(lines)
+    items = _ws_items(lines) if ok else []
+    left_lines = [ln for ln in lines if ln.startswith("Do not run")]
+    check("ws1 a step measured above the bound is not under 'Before you finish' "
+          "and is named once, on the line leaving it to the phase gate, with its "
+          "mean and its run count: items=%r left=%r" % (items, left_lines),
+          ok and ("- %s" % (sweep,)) not in items
+          and not [i for i in items if sweep in i]
+          and text.count(sweep) == 1
+          and len(left_lines) == 1 and sweep in left_lines[0]
+          and "400 s" in left_lines[0] and "3 runs" in left_lines[0]
+          and left_lines[0].endswith(": left to the phase gate."))
+    check("ws2 a step measured under the bound stays, its line unchanged: %r"
+          % (items,),
+          ok and ("- %s" % (lint,)) in items
+          and not [ln for ln in left_lines if lint in ln])
+    report_items = [i for i in items if i.startswith("- %s" % (report,))]
+    check("ws3 an unmeasured step stays, and its line says it is unmeasured: %r"
+          % (report_items,),
+          ok and len(report_items) == 1 and "unmeasured" in report_items[0]
+          and not [ln for ln in left_lines if report in ln])
+    # The browser command is already left to the phase gate by the project's key;
+    # measured slow too, it is still one name on the one line.
+    both = readings + (("shots", 300000, 2),)
+    ok5, lines5 = _ws_compose(man, both)
+    text5 = "\n".join(lines5) if ok5 else ""
+    left5 = [ln for ln in (lines5 if ok5 else []) if ln.startswith("Do not run")]
+    check("ws5 a slow step the project also leaves to the phase gate is named "
+          "once: count=%d left=%r" % (text5.count(_WP_BROWSER[0]), left5),
+          ok5 and text5.count(_WP_BROWSER[0]) == 1 and len(left5) == 1
+          and _WP_BROWSER[0] in left5[0] and text5.count(sweep) == 1)
+    bound_line = M.foreground_bound_line()
+    check("ws1b ...and the bound is stated once, on the line after: %r"
+          % ([ln for ln in lines if "foreground" in ln],),
+          ok and lines.count(bound_line) == 1
+          and lines.index(bound_line) == lines.index(left_lines[0]) + 1
+          and "120 s" in bound_line)
+    # THE ALLOW TWIN of ws1: the over-fire mutation (every measured step left
+    # out, or the bound read as at-or-past) leaves the sweep out here.
+    at_bound = (("selftests", M.FOREGROUND_BOUND_MS, 4), ("lint", 2000, 5))
+    ok7, lines7 = _ws_compose(man, at_bound)
+    ok0, lines0 = _ws_compose(man, ())
+    check("ws7 a step measured AT the bound is not past it and stays; with no "
+          "step past it there is no bound line and the leftover line is the "
+          "one with no reading: %r" % (_ws_items(lines7) if ok7 else lines7,),
+          ok7 and ok0 and ("- %s" % (sweep,)) in _ws_items(lines7)
+          and bound_line not in lines7
+          and [ln for ln in lines7 if ln.startswith("Do not run")]
+          == [ln for ln in lines0 if ln.startswith("Do not run")])
+    ok6, lines6 = _ws_compose(man, ())
+    check("ws6 slow=() leaves wp1's bytes unchanged - the composition with no "
+          "reading is the one wp1 holds to the baseline: ok=%r" % (ok6,),
+          ok6 and "\n".join(lines6) + "\n" == _wp_text(man))
+
+    # --- through `brief --role writer`, reading the project's evidence ledger
+    root = _harness.fixture_root("audit-lookup-ws-")
+    try:
+        proj = os.path.join(root, "proj")
+        os.makedirs(os.path.join(proj, ".claude"))
+        with open(os.path.join(proj, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json",
+                       "executor": {"phaseGateOnly": list(_WP_LEFT)}}, fh)
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.join(proj, "docs", "audit", "evidence"))
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(man, fh)
+        # One measured run of the sweep, and one of lint under the bound.
+        with open(os.path.join(proj, "docs", "audit", "evidence",
+                               "2026-10.fixture.jsonl"), "w",
+                  encoding="utf-8", newline="") as fh:
+            fh.write(json.dumps({
+                "v": 1, "runId": "run-ws", "ts": "2026-10-01T00:00:00Z",
+                "scope": "task", "taskId": "P1.0", "status": "passed",
+                "failed": [], "observations": {"ranTotal": 2},
+                "steps": [{"name": "selftests", "exit": 0, "durationMs": 400000},
+                          {"name": "lint", "exit": 0, "durationMs": 2000}]})
+                + "\n")
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                code = M.main([mpath, "brief", "P1.1", "--role", "writer",
+                               "--project", proj])
+            except SystemExit as exc:
+                code = exc.code
+        written = os.path.join(proj, ".claude", "state", "briefs", "P1.1",
+                               "20260101T000000Z.writer.md")
+        try:
+            with open(written, "r", encoding="utf-8", newline="") as fh:
+                on_disk = fh.read().split("\n")
+        except OSError:
+            on_disk = []
+        disk_left = [ln for ln in on_disk if ln.startswith("Do not run")]
+        disk_items = _ws_items(on_disk) if on_disk else []
+        check("ws4 `brief --role writer` reads a ledger row's durationMs into the "
+              "prompt: the sweep, measured once at 400 s, is left to the phase "
+              "gate as a mean over 1 run, and lint stays: code=%r left=%r"
+              % (code, disk_left),
+              code == M.E_OK and len(disk_left) == 1
+              and sweep in disk_left[0] and "400 s" in disk_left[0]
+              and "1 run" in disk_left[0] and "1 runs" not in disk_left[0]
+              and not [i for i in disk_items if sweep in i]
+              and ("- %s" % (lint,)) in disk_items)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 
 
 _DI_FILES = {
@@ -2833,6 +2978,7 @@ def _selftest():
         _harness.stage(check, "nl-block", _nested_scope_cases)
         _harness.stage(check, "nm-block", _nested_member_cases)
         _harness.stage(check, "wp-block", _writer_prompt_cases)
+        _harness.stage(check, "ws-block", _writer_slow_cases)
         _harness.stage(check, "rq-block", _red_command_reader_cases)
         _harness.stage(check, "ow-block", _owed_red_first_brief_cases)
         _harness.stage(check, "co-block", _conventions_order_cases)

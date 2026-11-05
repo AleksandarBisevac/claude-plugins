@@ -2578,6 +2578,7 @@ def _cases(check):
           "read the one walk",
           M.gate_cost_measured([{"steps": [{"name": "lint", "exit": 0}]}],
                                "lint") == 0)
+    _step_mean_cases(check, cost_rows)
 
     _worktree_ledger_cases(check)
     _merge_ledger_cases(check)
@@ -2586,6 +2587,33 @@ def _cases(check):
     _selection_miss_row_cases(check)
     _resolve_named_cases(check)
     _pin_suite_cases(check)
+
+
+def _step_mean_cases(check, cost_rows):
+    """(smm) the mean a step's recorded runs took, beside the count it divides
+    by - the reading a brief judges a step's duration from, so the count has to
+    travel with it: a mean over one run is a different claim from one over many.
+    `cost_rows` is the `ev43`-`ev48` fixture: three measured lint runs and a
+    fourth that carries no durationMs."""
+    def mean(rows, name):
+        # Looked up at call time, so a module without it fails each case.
+        return _harness.attempt(lambda: M.step_mean_ms(rows, name))
+    got = mean(cost_rows, "lint")
+    # 1125 is the mean a divisor of EVERY run would give (4500 / 4); the
+    # fixture is chosen so that mistake and the right answer disagree.
+    check("smm1 step_mean_ms is the mean over the MEASURED runs and their count "
+          "- (1500, 3), not 4500 spread over the four runs: %r" % (got,),
+          got[0] and got[1] == (1500, 3))
+    unmeasured = mean([{"steps": [{"name": "lint", "exit": 0}]}], "lint")
+    absent = mean(cost_rows, "selftests")
+    check("smm2 ...and None, never a zero mean, for a step whose runs carry no "
+          "durationMs and for a step no row names: %r / %r"
+          % (unmeasured, absent),
+          unmeasured == (True, None) and absent == (True, None))
+    single = mean(cost_rows[:1], "lint")
+    check("smm3 one measured run is a mean with a count of 1, so the caller "
+          "can say it was one: %r" % (single,),
+          single[0] and single[1] == (1000, 1))
 
 
 def _pin_suite_cases(check):
