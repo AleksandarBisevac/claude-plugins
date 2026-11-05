@@ -847,7 +847,7 @@
     {
       "id": "P157.11-mwz",
       "title": "The gate chooser weighs what the gate will run and reads every green word: an empty gate is green, the affected suites run-test-gate adds are in the estimate, a mean counts only runs that measured, and a read-back red names its red line",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase code review of P157 (commits 0cff7a57, e7f472c1). At HEAD: (1) GATE_REPEATABLE = (passed, failed), and an empty gate has no step names, so gate_mean_ms is None and the gate always goes to the background; run-test-gate records empty-gate and exits 0 (run-test-gate.py treats passed and EMPTY_GATE as green), but the read-back turns it into unrepeatable_red - a task with no gate burns attempts as gate-red, a phase with an empty testGate stops at sign-off. (2) chosen_task_gate weighs gate_step_names (declared entries) only, while run-test-gate appends the affected suites (commands = commands + extra), so a fast declared step plus a slow affected suite runs inline and the CLI kills it. (3) the means take every row's durations, aborted and cancelled ones included, biasing a slow gate fast. (4) integrate_member and red_gate_stop take the first line holding GATE, which on a read-back is the reuse banner (gate_red_decision was fixed for this; these two were not). One reading for what a gate will run, shared with run-test-gate's own step list rather than a second derivation.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -875,25 +875,44 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c95cd5a3a3e2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: (1) gate_in_background(ctx, names, joins=None) now returns inline for a gate with no steps (it runs nothing). Rows are read back through one read_back() helper shared by background_gate and chosen_phase_gate. It treats an empty-gate row (GATE_EMPTY) as the runner's own green and asks it again, writing no measured-again did-line. GATE_REPEATABLE is now _evio.MEASURED_STATUSES. (2) chosen_task_gate weighs task_gate_steps(manifest, phase, task_id) -> (names, joins). names is _mio.gate_entries less the review-only entries (runnable_entries, also used by the phase-gate chooser). joins is set when the gate is the task's own and does not already carry the phase's wide gate (_affected_tests.already_wide, the runner's own test). Those affected suites are known only once run-test-gate gathers them, so such a gate goes to the background with that reason. The runner's step list is not asked for directly, because building it runs the gathering inside next. New import: _affected_tests (module map regenerated with tools/lints/_deps.py --write-map, exit 0). (4) gate_red_lines(text), with the GATE_REUSED_BANNER constant, is the one reader. gate_red_decision, integrate_member's phase-tree re-gate and red_gate_stop use it. _evidence_io.py: MEASURED_STATUSES = (RUN_PASSED, 'failed'). step_mean_ms (and so gate_mean_ms) reads only rows with those statuses. Tests: test_drive_phase gets new blocks ge-block, ga-block and gl-block in STAGES. Fixture changes: _load's stub accepts joins; _seed_gate_ms rows carry status passed; in gc6/gc7 the phase testGate is the follower gate so its mean still decides. test__evidence_io: the ev43 cost_rows and gm rows carry statuses; smm4 and gm3 added. PLUGIN-BUILD-GUIDE.md: the foreground-bound and gate-chooser passages are updated, and the module map is regenerated. Verified: the gate command exited 0 (7/7 files ok on the quiet re-run). An earlier run's single fm-block raise came from a guide rewrite I made while it ran. test__worktrees --selftest exited 0 (all cases passed). ruff exited 0. vermin -t=3.8- exited 0. Dependants: _worktrees and the test suites that import drive-phase use no name whose contract changed (the new parameter is a keyword with a default; GATE_REPEATABLE holds the same words), and test__worktrees is green. audit-lookup's gate_step_readings reads step_mean_ms, so the writer brief now says 'duration unmeasured' for a step whose only rows were timed-out, cancelled or could-not-run; test_audit_lookup is green. The prose surfaces (README, execute-task.md, COMPATIBILITY.md) name no word this changes. FOUND, NOT FIXED (out of scope; proposed for Faults): a task with no gate of its own that borrows a non-empty phase gate the drive sends to the background waits forever. run-test-gate files that row under scope 'phase' (subject_key ('phase', P1)), while new_gate_row looks for ('task', id). Probe <scratchpad>/probe/borrowed.py printed 'wait P1.1 | no gate row' on each of 3 calls after the gate exited 0, with the ledger holding ('phase','P1.1','passed'). Left as is: the writer resume lines (drive-phase resume_lines, filter 'GATE ' in ln) still include the reuse banner, which there tells the writer the verdict was repeated.",
+        "descriptive": "An empty gate is green on every background path, a task gate the affected suites may join is never run inline on a fast declared step alone, gate means count only runs that reached a verdict, and a read-back red names its red line, not the reuse banner."
       },
       "startedAt": "2026-11-05T22:03:54Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-05T22:41:36Z",
+      "verifiedBy": [
+        "ge1-ge3: a cleared task gate (Agent path), a borrowed empty gate (writer path) and an empty phase testGate (sign-off) each drive to green with no red gate",
+        "ge4-ge5: a background row recording empty-gate is read back green on the task path and at sign-off",
+        "ge6: a wave member with a cleared gate re-gated on the phase tree is green",
+        "ga1/ga2: a fast declared step the affected suites may join goes to the background; a task measured by its phase's gate, measured fast, runs inline (allow twin)",
+        "gl1/gl2: red_gate_stop and the integrate_member re-gate name GATE RED, not the reuse banner",
+        "smm4/gm3: step_mean_ms and gate_mean_ms ignore could-not-run, cancelled and timed-out rows"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-05T22:41:33Z.6f078b",
         "status": "passed",
         "at": "2026-11-05T22:41:33Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "c95cd5a3a3e2",
+        "at": "2026-11-05T22:41:36Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-05T22:27:09Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__evidence_io.py tests/test_audit_lookup.py tests/test__output_lints.py tests/test__deps.py tests/test__refs.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 11 of 890 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - smm4 (house FAIL), gm3 (house FAIL), ge1 (house FAIL), ge2 (house FAIL), ge3 (house FAIL), ge4 (house FAIL), ge5 (house FAIL), ge6 (house FAIL) and 3 more: SELFTEST FAILED: 881/890 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P157.12-mwz",
       "title": "The writer is always told to run its own tests, and the session notes read what the writer actually did: a gate whose every step is slow still lists the task's suites, a resumed writer is not warned of skills it invoked earlier, and the prose dependants skip file names",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase code review of P157 (commits 09683a97, 3b05120c, 0bb2ad67). At HEAD: (1) compose_writer_prompt: when every gate entry is slow, plain is empty and the brief says 'Before you finish ... - none declared' plus 'Do not run <cmd>' - the writer verifies nothing, not even the tests it adds, and 'none declared' is false. The task's own suites (tests.add paths) are what the writer should run. (2) run-agent-session invoked_skills reads only the round's fresh stream, and writer_argv passes the same --skill flags on --resume, so round 2 says the skills were never invoked though round 1 loaded them; and an empty stream returns [] (read as none) instead of an unknown reading. (3) _impact defined_terms: a dotted string whose first segment is a config root counts as a config key, so 'ci.yml' in _config_rules.py and _panel_settings.py makes CLAUDE.md, CONTRIBUTING.md, README and the build guide prose dependants of any task declaring either file.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -925,16 +944,22 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-05T22:41:38Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-05T23:18:58Z.c09133",
+        "status": "passed",
+        "at": "2026-11-05T23:18:58Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

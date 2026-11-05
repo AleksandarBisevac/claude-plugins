@@ -1039,6 +1039,46 @@ def gate_step_readings(rows, entries):
     return tuple(readings)
 
 
+# What a command cut down to the task's own suites says beside itself, and what
+# the list says when the gate declares commands and none is left to the writer.
+OWN_SUITES_NOTE = "the tests this task adds, cut from a command left to the phase gate"
+NOTHING_IN_FOREGROUND = ("no command to run here: every declared one is left to "
+                         "the phase gate, below")
+
+
+def own_suite_command(command, added):
+    """`command` cut down to the suites of `added` (`tests.add` files) it names,
+    or None when it names none of them or is more than one simple command.
+
+    A slow gate step left to the phase gate still runs the task's own tests,
+    and a writer told to run nothing verifies nothing it wrote. The cut keeps
+    the step's own runner and flags and drops every path it names that is not
+    one of `added` - except the program an interpreter runs, which is the
+    runner, not a suite (`python3 tools/sweep-selftests.py tests/a.py` keeps
+    the script), and an interpreter running a module (`python3 -m pytest`)
+    runs no script, so its first path is a suite like the rest. A compound
+    command (`a && b`) is not cut: which half a path belongs to is a guess the
+    writer would pay for."""
+    if not added or not any(_fr.names_path(command, f) for f in added):
+        return None
+    commands = _phases.gate_entry_commands(command)
+    if len(commands) != 1 or not commands[0]:
+        return None
+    words = commands[0]
+    program = _phases._is_script_runner(words[0])
+    kept = []
+    for word in words:
+        path = _phases.shell_word_path(word)
+        if word == "-m":
+            program = False
+        elif path is not None and program:
+            program = False
+        elif path is not None and path not in added:
+            continue
+        kept.append(shlex.quote(word))
+    return " ".join(kept)
+
+
 def compose_writer_prompt(manifest, phase, task, dependants=None,
                           phase_gate_only=(), slow=()):
     """The writer session's whole prompt, as lines: plain's own text for the
@@ -1065,7 +1105,12 @@ def compose_writer_prompt(manifest, phase, task, dependants=None,
     `_evio.FOREGROUND_BOUND_MS` joins the same sentence, once, carrying its mean and
     the run count it was taken over, whether or not `phase_gate_only` names it
     too, and one line after it states the bound; an entry with a reading and
-    no measured run stays in the commands to run and says it is unmeasured. Only the prompt changes: the gate the drive
+    no measured run stays in the commands to run and says it is unmeasured. A
+    slow entry naming a `tests.add` file is listed cut down to the task's own
+    suites (`own_suite_command`), so the writer still runs the tests it adds;
+    a gate whose every declared command is left to the phase gate says so in
+    the list, which reads `none declared` only when the gate declares none.
+    Only the prompt changes: the gate the drive
     runs after the session is the task's `tests.gate`, read from the plan. The
     empty default reads nothing, so the composition is the task alone's."""
     tests = task.get("tests") or {}
@@ -1073,12 +1118,17 @@ def compose_writer_prompt(manifest, phase, task, dependants=None,
     added = [a for a in (tests.get("add") or []) if isinstance(a, str) and a.strip()]
     entries, _whose = _task_gate(manifest, phase, task)
     readings = dict((r[0], (r[1], r[2])) for r in slow)
-    left, plain, slowed = [], [], False
-    for name, command in _evio.resolved_commands(manifest, entries):
+    own_files = _fr.tests_add_files(task)
+    left, plain, own, slowed = [], [], [], False
+    resolved = _evio.resolved_commands(manifest, entries)
+    for name, command in resolved:
         mean_ms, runs = readings.get(name, (None, None))
         if _evio.outlives_foreground(mean_ms):
             slowed = True
             left.append("%s (%s)" % (command, _slow_basis(mean_ms, runs)))
+            cut = own_suite_command(command, own_files)
+            if cut is not None and cut not in own:
+                own.append(cut)
         elif left_to_phase_gate(command, phase_gate_only):
             left.append(command)
         elif name in readings and mean_ms is None:
@@ -1095,7 +1145,9 @@ def compose_writer_prompt(manifest, phase, task, dependants=None,
     lines += ["", "Tests to add:"]
     lines += ["- %s" % (a,) for a in added] or ["- none"]
     lines += ["", "Before you finish, check that everything passes:"]
-    lines += ["- %s" % (c,) for c in plain] or ["- none declared"]
+    run = ["- %s" % (c,) for c in plain] + [
+        "- %s (%s)" % (c, OWN_SUITES_NOTE) for c in own if c not in plain]
+    lines += run or ["- %s" % (NOTHING_IN_FOREGROUND if resolved else "none declared",)]
     if left:
         lines += ["", "Do not run %s: left to the phase gate." % (_or_list(left),)]
         lines += [foreground_bound_line()] if slowed else []

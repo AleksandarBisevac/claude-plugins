@@ -17358,12 +17358,12 @@ def _skill_units(check):
 
 
 def _invoked_record(root, name, invoked, skills=("alpha-house", "audit:beta-house",
-                                                 "gamma-house")):
+                                                 "gamma-house"), session=WRITER_SESSION):
     """A runner record of one writer session that declared `skills` and - unless
     `invoked` is None, which leaves the key out as a runner that read no stream
     does - invoked `invoked` through the Skill tool. Returns its path."""
     body = {"line": "session=%s subtype=success is_error=false total_cost_usd=0.5 "
-                    "exit=0 stream=%s" % (WRITER_SESSION,
+                    "exit=0 stream=%s" % (session,
                                           os.path.join(root, "w.jsonl")),
             "exit": 0}
     if skills:
@@ -17410,6 +17410,132 @@ def _skill_invoked_units(check, M):
               "never invoked: %r" % (note_u,),
               "skillsInvoked" in note_u and "not recorded" in note_u
               and "never invoked" not in note_u)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+    _skill_resumed_units(check)
+    _skill_unread_stream_units(check)
+
+
+_OTHER_SESSION = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d"
+
+
+def _resumed_notes(M, root, rounds):
+    """The notes `note_sessions` leaves for one task's dispatches, in order:
+    `rounds` is `[(record path, resumed session id or None)]`, the first a
+    fresh dispatch. The verb is stubbed to keep each note's text."""
+    task_u = _step_task(skills=["alpha-house", "audit:beta-house", "gamma-house"])
+    state = {}
+    dispatches = [{"seq": n, "round": n, "record": rec,
+                   "argv": ["python3", "run-agent-session.py", "--role", "writer"]
+                   + (["--resume", resumed] if resumed else [])}
+                  for n, (rec, resumed) in enumerate(rounds)]
+    held = dict(M.writer_state(state, task_u), dispatches=dispatches,
+                resumes=len(rounds) - 1)
+    M._mark(state, "writer", task_u, held)
+    noted = []
+
+    def keep(ctx, script, args, stdin=None):
+        noted.append(stdin)
+        return 0, "", ""
+
+    M.run_verb = keep
+    ctx = _step_ctx()
+    M.note_sessions(ctx, state, task_u)
+    return noted
+
+
+def _skill_resumed_units(check):
+    """A resumed session's context is the session it resumes, so a skill that
+    session invoked in an earlier round is loaded in this one: the note of a
+    resumed round reads the invocations of the rounds that session ran. A fresh
+    dispatch starts a new context, so its note reads its own stream alone."""
+    M, why = _unit_driver("drive_phase_skills_resumed")
+    root = _harness.fixture_root("drive-skills-resumed-")
+    try:
+        first = _invoked_record(root, "r0.jsonl",
+                                ["alpha-house", "beta-house", "gamma-house"])
+        again = _invoked_record(root, "r1.jsonl", [])
+        notes = _resumed_notes(M, root, [(first, None), (again, WRITER_SESSION)]) \
+            if M is not None else [why]
+        check("sk7 a resumed writer round whose own stream calls no skill is not "
+              "said to have never invoked one its first round invoked, nor to "
+              "have no reading: %r" % (notes,),
+              len(notes) == 2 and "round 1" in (notes[1] or "")
+              and "never invoked" not in (notes[1] or "")
+              and "not recorded" not in (notes[1] or ""))
+        fresh = _invoked_record(root, "f1.jsonl", [], session=_OTHER_SESSION)
+        fnotes = _resumed_notes(M, root, [(first, None), (fresh, None)]) \
+            if M is not None else [why]
+        check("sk8 THE OVER-FIRE TWIN: a second dispatch that starts a fresh "
+              "session reads its own stream alone, so the three skills it never "
+              "called are each named once: %r" % (fnotes,),
+              len(fnotes) == 2 and "never invoked" in (fnotes[1] or "")
+              and all((fnotes[1] or "").count(n) == 1
+                      for n in ("alpha-house", "beta-house", "gamma-house")))
+        part = _invoked_record(root, "p0.jsonl", ["alpha-house"])
+        pnotes = _resumed_notes(M, root, [(part, None), (again, WRITER_SESSION)]) \
+            if M is not None else [why]
+        check("sk8b ...and a resumed round is met only by what the session it "
+              "resumes did invoke: the two skills no round called are named, the "
+              "one the first round called is not: %r" % (pnotes,),
+              len(pnotes) == 2 and "never invoked" in (pnotes[1] or "")
+              and (pnotes[1] or "").count("gamma-house") == 1
+              and (pnotes[1] or "").count("beta-house") == 1
+              and "alpha-house" not in (pnotes[1] or ""))
+        unread = _invoked_record(root, "u0.jsonl", None)
+        unotes = _resumed_notes(M, root, [(unread, None), (again, WRITER_SESSION)]) \
+            if M is not None else [why]
+        check("sk9 a resumed round whose earlier round has no reading of its "
+              "skills says the reading is not recorded and names none as never "
+              "invoked: %r" % (unotes,),
+              len(unotes) == 2 and "not recorded" in (unotes[1] or "")
+              and "never invoked" not in (unotes[1] or ""))
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def _skill_unread_stream_units(check):
+    """The runner's reading of a stream it could not read, or one that holds no
+    event, is no reading: the note says the invocations are not recorded rather
+    than naming every declared skill as never invoked. A stream that holds
+    events and no Skill call is a reading of none."""
+    RAS = _loader.load_script("run-agent-session.py", modname="drive_skills_ras",
+                              cache=False)
+    M, why = _unit_driver("drive_phase_skills_unread")
+    root = _harness.fixture_root("drive-skills-unread-")
+    try:
+        empty = os.path.join(root, "empty.jsonl")
+        open(empty, "w", encoding="utf-8").close()
+        quiet = os.path.join(root, "quiet.jsonl")
+        with open(quiet, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(json.dumps({"type": "system", "subtype": "init",
+                                 "session_id": WRITER_SESSION}) + "\n")
+            fh.write(json.dumps({"type": "result", "subtype": "success",
+                                 "session_id": WRITER_SESSION}) + "\n")
+        notes = {}
+        for label, stream in (("empty", empty), ("missing",
+                                                 os.path.join(root, "gone.jsonl")),
+                              ("quiet", quiet)):
+            rec = os.path.join(root, "%s.record.jsonl" % (label,))
+            RAS.write_record(rec, "session=%s subtype=success is_error=false "
+                             "total_cost_usd=0.5 exit=0 stream=%s"
+                             % (WRITER_SESSION, stream), 0,
+                             skills=[{"name": "gamma-house", "path": "/s/g",
+                                      "sha256": "0" * 64}],
+                             invoked=RAS.invoked_skills(stream))
+            runs = M.read_sessions(rec) if M is not None else []
+            notes[label] = M.session_note(1, runs[-1]) if runs else why
+        check("sk10 a session whose stream is empty, or cannot be read, reports "
+              "its skills reading as unknown - not recorded - and never as none "
+              "invoked: %r" % ((notes.get("empty"), notes.get("missing")),),
+              all("not recorded" in (notes.get(k) or "")
+                  and "never invoked" not in (notes.get(k) or "")
+                  for k in ("empty", "missing")))
+        check("sk11 THE OVER-FIRE TWIN: a stream holding events and no Skill call "
+              "is a reading of none, so the declared skill is named never "
+              "invoked: %r" % (notes.get("quiet"),),
+              "never invoked" in (notes.get("quiet") or "")
+              and (notes.get("quiet") or "").count("gamma-house") == 1)
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

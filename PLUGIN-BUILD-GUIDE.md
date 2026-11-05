@@ -3544,6 +3544,13 @@ declared file's dependants unbounded. A task whose files nothing names gets the 
 line saying what was searched, and no ask. Nothing grades the answers mechanically; the
 reviewer's verdict is the check.
 
+The writer's prompt (`compose_writer_prompt`) leaves a gate step whose recorded mean is past
+`_evidence_io.FOREGROUND_BOUND_MS` to the phase gate, and still tells the writer to run the
+tests it adds: a slow step naming a `tests.add` file is listed again cut down to those suites
+(`own_suite_command` — the step's own runner and flags, every other path it names dropped, a
+compound command left uncut). A gate whose every declared command is left to the phase gate
+says so in the list; `none declared` is said only when the gate declares no command.
+
 The executor's brief also carries `Where your files are documented` (`documented_lines`): one
 row per Markdown heading of a tracked document that names a declared file — by its path in
 full, a directory by its path with the slash, or a file by its basename standing alone, as in a
@@ -3579,7 +3586,8 @@ strongest kind, importers first and prose last within a kind, so a cap keeps the
 `.py` file it also lists, per top-level `def`/`class` name, the files naming it. It also lists
 the prose that names what a declared file defines without naming the file: a kebab-case dict
 key (a decision or step a driver's table keys), a dotted config key the file spells whose first
-segment is one of the caller's `config_roots`, and — in a code comment only — the file's
+segment is one of the caller's `config_roots` and whose last is no file extension
+(`is_file_name`: `ci.yml` is the workflow, not a key under `ci`), and — in a code comment only — the file's
 basename, each found as a backticked span on a prose line or after a code line's comment
 marker, and listed per file with the names it uses and their lines, the file naming the most
 of them first (`prose_files`). A suite defines no such term and a changelog holds no passage;
@@ -5798,11 +5806,17 @@ file. `--record` adds a `"skills"` key to its line — name, path and the sha256
 and no such key when none were named, and, once a session ran and its stream was read,
 `"skillsInvoked"`: the skills its top-level Skill tool calls named, in the order first called
 (`invoked_skills`; a call carrying a `parent_tool_use_id` is a subagent's and is not counted), an
-empty list for none, and no key when no stream was read. `drive-phase.py`'s `writer_argv` adds one
-`--skill` per name `_areas.resolve_skills` returns, for the writer, the reviewer and the validation
-session alike, and its note of each session (`session_note`, through `skills_said`) names a declared
-skill the session never invoked — a `plugin:skill` declaration is met by a call with the bare name —
-or says that no `skillsInvoked` was recorded to judge by.
+empty list for a stream holding events and no such call, and no key when no stream was read or the
+stream holds no event at all — an empty stream is no reading, not a reading of none. A resumed
+run's stream holds that round's events alone, so its list names that round's calls alone.
+`drive-phase.py`'s `writer_argv` adds one `--skill` per name `_areas.resolve_skills` returns, for
+the writer, the reviewer and the validation session alike, and its note of each session
+(`session_note`, through `skills_said`) names a declared skill the session never invoked — a
+`plugin:skill` declaration is met by a call with the bare name — or says that no `skillsInvoked`
+was recorded to judge by. A resumed round is judged against the session it resumes
+(`session_reading`, keyed by the `--resume` id the dispatch carried): the calls every earlier round
+of that session made are joined with its own, since a skill loaded there is still loaded, and a
+fresh dispatch is judged by its own stream alone.
 
 **The prompt goes on stdin, never in argv**, because a sibling session's `pkill -f` matches command
 lines; the script reads its own prompt off stdin or `--prompt-file` for the same reason. The child

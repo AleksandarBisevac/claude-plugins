@@ -49,9 +49,11 @@ WHAT THE ARGV CARRIES, AND WHY EACH ONE:
     naming every place looked in, because a skill the plan declares and the
     session cannot find is a defect the cost of which nobody sees. `--record`
     carries each declared skill's name, path and sha256, and - once a session
-    ran and its stream was read - `skillsInvoked`, the skills its own Skill tool
-    calls named (`invoked_skills`), so a reader can tell a skill the session was
-    shown from one it loaded;
+    ran and its stream was read and held an event - `skillsInvoked`, the skills
+    its own Skill tool calls named (`invoked_skills`), so a reader can tell a
+    skill the session was shown from one it loaded. A resumed run's stream holds
+    that round's events alone, so its `skillsInvoked` names that round's calls
+    alone; the reader joins the rounds of one session;
   * `--resume <session id>` continues a recorded session and changes nothing else;
     an id that is not a UUID is refused (`SESSION_ID`), so no flag rides in as one.
   * the budget must be a finite positive number - `float()` also reads `inf` and
@@ -418,22 +420,26 @@ def read_stream(path):
 
 def invoked_skills(path):
     """The skills the session's own Skill tool calls named, in the order first
-    called, each once - or None when the stream cannot be read, which is not a
-    session that called none. A call is an assistant event's `tool_use` block named
-    `Skill` with the skill in `input.skill`. An event carrying a
-    `parent_tool_use_id` is a subagent's, whose skill loaded into that subagent's
-    context and not the session's, so it is not counted."""
+    called, each once - or None when the stream cannot be read, or holds no
+    event at all (empty, or only lines that do not parse): neither is a session
+    that called none, so neither may read as the empty list one that did gives.
+    A call is an assistant event's `tool_use` block named `Skill` with the skill
+    in `input.skill`. An event carrying a `parent_tool_use_id` is a subagent's,
+    whose skill loaded into that subagent's context and not the session's, so it
+    is not counted."""
     named = []
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
             lines = fh.read().splitlines()
     except OSError:
         return None
+    events = 0
     for line in lines:
         try:
             event = json.loads(line)
         except ValueError:
             continue
+        events += 1 if isinstance(event, dict) else 0
         if not isinstance(event, dict) or event.get("type") != "assistant" \
                 or event.get("parent_tool_use_id"):
             continue
@@ -443,7 +449,7 @@ def invoked_skills(path):
             name = _skill_call(block)
             if name and name not in named:
                 named.append(name)
-    return named
+    return named if events else None
 
 
 def _skill_call(block):
@@ -698,8 +704,8 @@ def write_record(path, line, code, skills=None, invoked=None):
     directory, with a `"skills"` key beside them when the session was started with
     skills (`skills_record`) and no such key when it was not, and a
     `"skillsInvoked"` key (`invoked_skills`, an empty list included) when a session
-    ran and its stream was read - and none when it was not, since no reading is not
-    a reading of no calls. None, or why it could not be written. Appended, so the
+    ran and its stream was read and held an event - and none when it was not, since
+    no reading is not a reading of no calls. None, or why it could not be written. Appended, so the
     same command run twice keeps both outcomes; the one reader takes a last line
     that does not parse as one not written yet."""
     body = {"line": line, "exit": code}

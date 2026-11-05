@@ -1,0 +1,57 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test_run_agent_session.py tests/test_drive_phase.py tests/test__impact.py tests/test__output_lints.py tests/test__deps.py tests/test__refs.py tools/_suite.py": "pass",
+    "python3 tools/measure-context.py --gate": "pass",
+    "python3 tests/test__worktrees.py --selftest": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-05T23:05:59Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test_run_agent_session.py tests/test_drive_phase.py tests/test__impact.py tests/test__output_lints.py tests/test__deps.py tests/test__refs.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 9 of 80 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pr12 (house FAIL), pr13 (house FAIL), ws8 (house FAIL), ws9 (house FAIL), sk7 (house FAIL), sk8b (house FAIL), sk9 (house FAIL), sk10 (house FAIL) and 1 more: SELFTEST FAILED: 79/80 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "(1) status/audit-lookup.py: compose_writer_prompt still tells the writer to run the tests it adds when a slow gate step is left to the phase gate. A new own_suite_command cuts a slow step that names a tests.add file down to those suites: it keeps the step's runner and flags, keeps the interpreter's script, treats a '-m' module run as having no script, drops every other path, and does not cut a compound command. The line reads 'none declared' only when the gate declares no command; when every declared command is left to the phase gate it says NOTHING_IN_FOREGROUND. (2) governance/run-agent-session.py: invoked_skills returns None when the stream holds no event (empty, or only lines that do not parse), so write_record leaves out skillsInvoked. governance/drive-phase.py: new resumed_session(argv) and session_reading(prior, run, resumed). A resumed round's reading joins the earlier rounds of the SAME session id, taken from the dispatch's --resume word, with its own stream. A fresh dispatch reads its own stream alone. If an earlier round of that session has no reading, the result is unknown, and it says 'not recorded' when a skill is otherwise missing. uninvoked_skills reads 'carried', and note_sessions applies it. I chose union keyed by the resumed session id over 'say nothing': a resumed context IS the session it resumes, so an earlier round's calls are loaded. Keying by round instead would credit a fresh re-dispatch with calls its new context never made, which sk8 pins. (3) status/_impact.py: is_file_name and FILE_NAME_EXTS. A dotted name whose last segment is a file extension is no config key. On the tree (scratch script over every non-suite .py under plugins/audit/scripts and hooks with CONFIG_ROOTS), the only config-shaped term whose last segment is an extension is ci.yml (in _config_rules.py and _panel_settings.py). No leaf key in audit-config.schema.json is an extension word. P157 prose dependants, HEAD's _impact vs the working one, over the current tree: P157.7-mwz drops 6 ci.yml rows on tools/sweep-selftests.py (CLAUDE.md, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md, _config_rules.py, _impact.py). P157.9-mwz and P157.12-mwz each drop 6 ci.yml rows on _impact.py, which now names ci.yml in its own comment. Every other P157 task is unchanged, and no row was added anywhere. PLUGIN-BUILD-GUIDE.md: the audit-lookup section gains a writer-prompt paragraph; the run-agent-session paragraph states the empty-stream and resumed-round readings; the _impact paragraph states the file-name exclusion. Verified: gate sweep exit 0 (8/8 files ok), measure-context --gate exit 0, test__worktrees.py --selftest exit 0 (182/182), ruff on the changed files exit 0. Second-direction mutations, each in a throwaway git-archive export with copy-restore: union over every prior run -> sk7/sk8/sk8b red; is_file_name always True -> pr2/pr13 red; cut keeps every path -> ws8 red; foreground sentence with no gate -> ws10 red; invoked_skills always None -> ras27/44/64/65/68 red; '-m' branch removed -> ws11 red. Dependants: the importing suites of audit-lookup.py, drive-phase.py, run-agent-session.py and _impact.py are still correct, because no signature changed and only new names were added; their suites are in the green gate. The README rows on executor.phaseGateOnly, own-tests, executor.runsGate and review.perTask are still correct: this change touches only what the writer is told for a slow step, and the named-command sentence is unchanged. execute-task.md is still correct for the same reason. _config_rules.py:96 and test__doctor_policy.py:454 name run-agent-session.py's model-id refusal and skill loading, which this change does not touch. COMPATIBILITY.md executor.* rows are still correct: no config key changed. The schema and _clause_coverage.py basename mentions, plus the docs/research files, are history and design notes and still correct. PLUGIN-BUILD-GUIDE.md changed as stated. sweep-costs.json, affected.py and reach-diff.py read the suites' paths and names; none was renamed. Files outside my declared ones: none edited.",
+    "descriptive": "The writer is told to run its own suites even when every gate step is slow, a resumed writer round is no longer reported as never invoking skills an earlier round of the same session invoked, an empty stream reads as no skill reading, and a workflow file name is no longer read as a config key in the prose dependants."
+  },
+  "testsAdded": [
+    "test_audit_lookup ws8: a task whose only gate step is slow is told to run its tests.add suite through that step's runner, other suites cut, never 'none declared'",
+    "test_audit_lookup ws9: every step slow and none naming the task's suites -> the foreground sentence, not 'none declared'",
+    "test_audit_lookup ws10: over-fire twin, a task with no gate command still reads 'none declared'",
+    "test_audit_lookup ws11: own_suite_command drops a module run's first path, leaves compound and non-naming commands uncut",
+    "test_drive_phase sk7: a resumed round whose own stream calls no skill is not said to have never invoked what round one invoked",
+    "test_drive_phase sk8: over-fire twin, a fresh re-dispatch reads its own stream alone",
+    "test_drive_phase sk8b: a resumed round is met only by what its session did invoke",
+    "test_drive_phase sk9: an earlier round with no reading makes the resumed reading 'not recorded'",
+    "test_drive_phase sk10: an empty or unreadable stream, through the runner's reader and record, reads 'not recorded', never 'never invoked'",
+    "test_drive_phase sk11: over-fire twin, a stream with events and no Skill call is a reading of none",
+    "test__impact pr12: ci.yml is no config key, so a document naming it is no prose dependant",
+    "test__impact pr13: allow twin, ci.pushCarry beside it is still a key with its passage",
+    "test_run_agent_session ras67: an empty or unparseable stream reads None like an unreadable one",
+    "test_run_agent_session ras68: over-fire twin, a stream with an event and no Skill call reads []"
+  ],
+  "casesAdded": [
+    [
+      "ws8",
+      "ws9",
+      "ws10",
+      "ws11"
+    ],
+    [
+      "sk7",
+      "sk8",
+      "sk8b",
+      "sk9",
+      "sk10",
+      "sk11"
+    ],
+    [
+      "pr12",
+      "pr13"
+    ]
+  ],
+  "claims": "claims:\n1 audit-lookup.py own_suite_command and the 'run or [...]' line in compose_writer_prompt do what its docstring and the guide paragraph say; drive-phase.py session_reading/uninvoked_skills and note_sessions do what the guide's run-agent-session paragraph says; run-agent-session.py invoked_skills 'return named if events else None'; _impact.py defined_terms 'and not is_file_name(word)'\n2 tdd reds: ws8/ws9, pr12/pr13, sk7/sk8b/sk9/sk10, ras67 all FAIL on HEAD code; over-fire mutations in a throwaway export: sk8, pr13, ws10, ras68 and ws11 went red, then restored by copy\n3 grep \"none declared\" over plugins/: audit-lookup.py:530 (gate_lines, empty only when no entry, left), :1138 (files list, left), :1146 (fixed); stamp-verification/audit-task/sync.md/guard-release name other lists (left). Grep of dotted config terms on the tree shows ci.yml as the only extension-shaped one, now excluded\n4 n/a - no rule to an agent\n5 FILE_NAME_EXTS comment is dated 'measured on 2026-11-05' (measured once)\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:1093c6ce3920cac54a3e38f2a1ec22bcd32c02d5901d7eed771f009abb54c97c\",\"dirtyDigest\":\"sha256:3e91eb1f813228730e2fb9624b009ef1ed97bcb18e4ba72693bda5a8208eb69d\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"f778deaec3b86d34\",\"plugins/audit/scripts/governance/drive-phase.py\":\"de7960c53b826665\",\"plugins/audit/scripts/governance/run-agent-session.py\":\"d35199cb4d6ef573\",\"plugins/audit/scripts/status/_impact.py\":\"fe046b81ace37d8f\",\"plugins/audit/scripts/status/audit-lookup.py\":\"cae2caf25d0e3426\",\"tests/test__impact.py\":\"551eb9c818eb3f45\",\"tests/test_audit_lookup.py\":\"3d1e454922d3e027\",\"tests/test_drive_phase.py\":\"311c4cbb9317f8ca\",\"tests/test_run_agent_session.py\":\"8d42a0b8720e1119\"},\"head\":\"c95cd5a3\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/run-agent-session.py\",\"plugins/audit/scripts/status/_impact.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test__impact.py\",\"tests/test_audit_lookup.py\",\"tests/test_drive_phase.py\",\"tests/test_run_agent_session.py\"],\"scopeDigest\":\"sha256:6ac302c53a99fc538a412cd993eacfda0fd83947e6892dc35a67ca33a4a21920\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -637,6 +637,12 @@ _PROSE_TREE = {
     # Two documents describing the driver: the one naming more of its terms
     # ranks first.
     "ref/guide.md": "`gate-red-base` then `gate-red-writer`.\n",
+    # A rules module whose config root is also the stem of a workflow file it
+    # names: the file name is no key, the key beside it is.
+    "config/rules.py": ('"""Rules.\n\nThe workflow `ci.yml` and the key '
+                        '`ci.pushCarry`.\n"""\n\nWORKFLOW = "ci.yml"\n'
+                        'KEY = "ci.pushCarry"\n'),
+    "docs/ci.md": "Edit `ci.yml` by hand.\n\nSet `ci.pushCarry` to carry.\n",
 }
 
 
@@ -716,6 +722,18 @@ def _prose_replays(check, root):
           "the lookup module has no prose row - the roots are the caller's "
           "statement, never guessed: %r %r" % (_prose_rows(rootless[0]), err2),
           err2 is None and _prose_rows(rootless[0]) == [])
+    rules, err3 = _prose_scan(root, ["config/rules.py"],
+                              config_roots=("ci", "executor"))
+    named = sorted(set(n for n, _f, _l in _prose_rows(rules[0])))
+    check("pr12 a file-name string whose stem is a config root (`ci.yml`) is no "
+          "config key, so a document naming the workflow is no prose dependant "
+          "of the file that names it: %r %r" % (_prose_rows(rules[0]), err3),
+          err3 is None and "ci.yml" not in named
+          and not [r for r in _prose_rows(rules[0]) if r[2] == 1])
+    check("pr13 THE ALLOW TWIN: the dotted key beside it, under the same root, "
+          "is still a config key and its passage still listed: %r"
+          % (_prose_rows(rules[0]),),
+          err3 is None and _prose_rows(rules[0]) == [("ci.pushCarry", "docs/ci.md", 3)])
 
 
 def _prose_bounds(check, root):

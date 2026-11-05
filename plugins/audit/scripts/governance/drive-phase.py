@@ -2147,22 +2147,67 @@ def _bare_skill(name):
     return name.rsplit(":", 1)[-1]
 
 
+def resumed_session(argv):
+    """The session id a dispatch's command resumes (the word after `--resume`),
+    or None for a dispatch that starts a fresh session."""
+    argv = list(argv or [])
+    return next((argv[i + 1] for i, a in enumerate(argv[:-1]) if a == "--resume"),
+                None)
+
+
+def session_reading(prior, run, resumed):
+    """`run` (`read_sessions`) with `carried`: the skills invoked in its
+    session's whole context up to this round, or None when that is not known.
+
+    A RESUMED SESSION'S CONTEXT IS THE SESSION IT RESUMES. The runner reads one
+    round's stream, which holds that round's events alone, while a skill an
+    earlier round loaded is still loaded - so a resumed round's own reading,
+    judged alone, names every skill it did not call again as never invoked.
+    `carried` joins the readings of the earlier rounds `prior` holds for the
+    resumed session (`resumed`, from `resumed_session`) with this round's own;
+    a fresh dispatch starts a new context, so its own reading is all of it. Keyed
+    by the session id rather than the round, so a re-dispatch that starts over
+    is never met by an earlier session's calls. When an earlier round of that
+    session has no reading, or none is held, `carried` is None."""
+    own = run.get("invoked")
+    if not resumed:
+        return dict(run, carried=own)
+    known = [p.get("carried", p.get("invoked")) for p in prior or []
+             if p.get("session") == resumed]
+    if own is None or not known or any(k is None for k in known):
+        return dict(run, carried=None, resumed=resumed)
+    joined = []
+    for names in known + [own]:
+        joined += [n for n in names if n not in joined]
+    return dict(run, carried=joined, resumed=resumed)
+
+
 def uninvoked_skills(run):
-    """`(names, why)` for one read outcome (`read_sessions`): the declared skills
-    its session never invoked through the Skill tool, in declared order, and
-    None; `([], None)` when it declared none or invoked every one; `(None, why)`
-    when it declared some and its record carries no `skillsInvoked` to judge by,
-    which is not a session that invoked none."""
+    """`(names, why)` for one read outcome (`read_sessions`, or
+    `session_reading` of one): the declared skills its session never invoked
+    through the Skill tool, in declared order, and None; `([], None)` when it
+    declared none or invoked every one; `(None, why)` when it declared some and
+    there is no reading to judge by - its record carries no `skillsInvoked`, or
+    it resumed a session whose earlier rounds' readings are not all held -
+    which is not a session that invoked none. The reading is `carried` when the
+    outcome has one, else its own `invoked`."""
     declared = run.get("declared") or []
     if not declared:
         return [], None
-    invoked = run.get("invoked")
-    if invoked is None:
+    own = run.get("invoked")
+    if own is None:
         return None, ("whether its declared skills (%s) were invoked is not "
                       "recorded: its record carries no skillsInvoked"
                       % (", ".join(declared),))
-    called = set(_bare_skill(n) for n in invoked)
-    return [n for n in declared if _bare_skill(n) not in called], None
+    invoked = run.get("carried", own)
+    called = set(_bare_skill(n) for n in (invoked if invoked is not None else own))
+    missing = [n for n in declared if _bare_skill(n) not in called]
+    if invoked is None and missing:
+        return None, ("whether its declared skills (%s) were invoked is not "
+                      "recorded: it resumed session %s, and no reading of every "
+                      "earlier round of that session is held"
+                      % (", ".join(missing), run.get("resumed")))
+    return missing, None
 
 
 def skills_said(run):
@@ -2216,7 +2261,9 @@ def note_sessions(ctx, state, task, key="writer"):
     for each in held["dispatches"]:
         seen = int(held["noted"].get(str(each["seq"])) or 0)
         runs = read_sessions(each["record"])
+        resumed = resumed_session(each.get("argv"))
         for run in runs[seen:]:
+            run = session_reading(held["runs"], run, resumed)
             refused = note_task(ctx, task, session_note(each["round"], run, who))
             held["runs"] = list(held["runs"]) + [dict(run, round=each["round"],
                                                       seq=each["seq"])]

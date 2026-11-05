@@ -2537,6 +2537,7 @@ def _writer_slow_cases(check):
     check("ws6 slow=() leaves wp1's bytes unchanged - the composition with no "
           "reading is the one wp1 holds to the baseline: ok=%r" % (ok6,),
           ok6 and "\n".join(lines6) + "\n" == _wp_text(man))
+    _writer_own_suite_cases(check)
 
     # --- through `brief --role writer`, reading the project's evidence ledger
     root = _harness.fixture_root("audit-lookup-ws-")
@@ -2589,6 +2590,57 @@ def _writer_slow_cases(check):
               and ("- %s" % (lint,)) in disk_items)
     finally:
         shutil.rmtree(root, ignore_errors=True)
+
+
+def _writer_own_suite_cases(check):
+    """(ws) A slow gate step that names the task's own suites is left to the
+    phase gate, and the writer is still told to run those suites through the
+    same runner; a gate with no command the writer can run says that, never
+    that no command is declared."""
+    narrowed = "python3 tools/sweep-selftests.py tests/test_refund.py"
+    whole = narrowed + " tests/test_other.py tools/_suite.py"
+    only = _wp_manifest(gate=(whole,))
+    ok, lines = _ws_compose(only, ((whole, 400000, 3),))
+    lines = lines if ok else []
+    items = _ws_items(lines) if ok else []
+    left = [ln for ln in lines if ln.startswith("Do not run")]
+    check("ws8 a task whose only gate step is slow is still told to run the "
+          "suite its tests.add names, through that step's own runner and with "
+          "the other suites cut, and is never told no command is declared: "
+          "items=%r left=%r" % (items, left),
+          ok and len(items) == 1 and items[0].startswith("- %s" % (narrowed,))
+          and items[0].count("tests/test_refund.py") == 1
+          and "tests/test_other.py" not in items[0]
+          and "tools/_suite.py" not in items[0]
+          and "none declared" not in "\n".join(lines)
+          and len(left) == 1 and whole in left[0])
+    keyed = _wp_manifest(gate=("selftests",))
+    ok9, lines9 = _ws_compose(keyed, (("selftests", 400000, 3),))
+    lines9 = lines9 if ok9 else []
+    items9 = _ws_items(lines9) if ok9 else []
+    check("ws9 a gate whose every step is slow and names no suite of the task "
+          "says no command is left to run in the foreground - a declared "
+          "command is never 'none declared': items=%r" % (items9,),
+          ok9 and len(items9) == 1 and "none declared" not in items9[0]
+          and "phase gate" in items9[0]
+          and "none declared" not in "\n".join(lines9))
+    cut = M.own_suite_command
+    module_run = "python3 -m pytest tests/test_other.py tests/test_refund.py -q"
+    shapes = (cut(module_run, ["tests/test_refund.py"]),
+              cut("python3 a.py tests/test_refund.py && vermin x.py",
+                  ["tests/test_refund.py"]),
+              cut(whole, ["tests/test_absent.py"]))
+    check("ws11 the cut reads the command's shape: a module run has no script, "
+          "so its first path is a suite and is dropped; a compound command and "
+          "one naming none of the task's suites are not cut: %r" % (shapes,),
+          shapes == ("python3 -m pytest tests/test_refund.py -q", None, None))
+    # THE OVER-FIRE TWIN of ws9: a task with no gate entry at all still reads
+    # 'none declared', since nothing is declared.
+    bare = _wp_manifest(gate=())
+    ok10, lines10 = _ws_compose(bare, ())
+    check("ws10 a task declaring no gate command still reads 'none declared': %r"
+          % (_ws_items(lines10) if ok10 else lines10,),
+          ok10 and _ws_items(lines10) == ["- none declared"])
 
 
 _DI_FILES = {

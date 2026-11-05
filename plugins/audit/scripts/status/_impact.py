@@ -426,7 +426,8 @@ def _file_dependants(root, path, cap, exclude, git, pcre):
 #                spells as a string or in backticks in its own comments or
 #                docstrings, whose first segment is one of `config_roots` - the
 #                caller's statement of which blocks are configuration, since a
-#                dotted name in general is as often a plan field;
+#                dotted name in general is as often a plan field - and whose
+#                last segment is no file extension (`FILE_NAME_EXTS`);
 #   basename   - the declared file's own basename, read in code COMMENTS only: a
 #                document naming it is already its `basename` dependant, while a
 #                code file importing it is listed as `import` and its comment
@@ -447,6 +448,15 @@ def _file_dependants(root, path, cap, exclude, git, pcre):
 # root read plan fields (`meta.buildCommands`) named across the reference
 # documents as if the module defined them.
 HASH_COMMENT_EXTS = (".py", ".sh", ".bash", ".yml", ".yaml", ".toml")
+# A file name whose stem is a config root (`ci.yml`, beside the `ci` block) is
+# spelled like a config key, and read as one it lists every document naming the
+# workflow as a prose dependant of the module naming it. A last segment that is
+# a file extension marks it a file name: measured on 2026-11-05, no key the
+# config schema declares ends in one, and the only config-shaped file name a
+# module of this repository spelled was that workflow.
+FILE_NAME_EXTS = HASH_COMMENT_EXTS + JS_EXTS + DOC_EXTS + (
+    ".json", ".jsonl", ".html", ".htm", ".css", ".cfg", ".ini", ".lock", ".csv",
+    ".xml", ".svg", ".png", ".gif", ".log")
 # How many prose files, and how many names per file, the rendering prints; the
 # files naming the MOST of a declared file's terms first - a document naming many
 # of what a module defines is the one describing it.
@@ -474,7 +484,8 @@ def _comment_texts(source):
 
 def defined_terms(source, config_roots=()):
     """The table keys and config keys a Python source defines, sorted; raises
-    `SyntaxError` for a source that does not parse."""
+    `SyntaxError` for a source that does not parse. A dotted name ending in a
+    file extension is a file name (`is_file_name`), never a config key."""
     tree = ast.parse(source)
     strings = [n.value for n in ast.walk(tree) if _is_str(n)]
     keys = set(k.value for n in ast.walk(tree) if isinstance(n, ast.Dict)
@@ -484,8 +495,15 @@ def defined_terms(source, config_roots=()):
     spoken = strings + [span for text in strings + _comment_texts(source)
                         for span in _TICKED.findall(text)]
     config = set(word for word in spoken if roots and _DOTTED.match(word)
-                 and _DOTTED.match(word).group(1) in roots)
+                 and _DOTTED.match(word).group(1) in roots
+                 and not is_file_name(word))
     return sorted(keys | config)
+
+
+def is_file_name(word):
+    """Whether a dotted name ends in a file extension (`FILE_NAME_EXTS`), which
+    makes it a file name and no config key."""
+    return posixpath.splitext(word)[1].lower() in FILE_NAME_EXTS
 
 
 def is_suite(path):

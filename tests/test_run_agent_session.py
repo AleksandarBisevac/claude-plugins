@@ -1274,6 +1274,23 @@ def _invoked_cases(check, M, root, bindir, pinned):
           "skillsInvoked key at all - no stream was read, so an empty list would "
           "claim a session that called nothing: %r" % ((code, lines),),
           code == M.E_USAGE and len(lines) == 1 and "skillsInvoked" not in lines[0])
+    empty = os.path.join(root, "empty-stream.jsonl")
+    with open(empty, "w", encoding="utf-8") as fh:
+        fh.write("\n")
+    torn = os.path.join(root, "torn-stream.jsonl")
+    with open(torn, "w", encoding="utf-8") as fh:
+        fh.write('{"type": "assist\n')
+    readings = [M.invoked_skills(p) for p in (empty, torn, os.path.join(root, "gone"))]
+    check("ras67 a stream holding no event - empty, or only a line that does not "
+          "parse - is no reading, the same None an unreadable stream gives, never "
+          "the empty list a session that called nothing gives: %r" % (readings,),
+          readings == [None, None, None])
+    calm = os.path.join(root, "calm-stream.jsonl")
+    with open(calm, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"type": "result", "subtype": "success"}) + "\n")
+    check("ras68 THE OVER-FIRE TWIN: a stream holding an event and no Skill call "
+          "reads as the empty list: %r" % (M.invoked_skills(calm),),
+          M.invoked_skills(calm) == [])
 
 
 def _record_lines(path):
