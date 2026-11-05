@@ -262,7 +262,14 @@ verb writes and refuses, and what the run commands leave behind, is
         is `could-not-prove` with that basis. A red the helper will not grade, or a
         re-proof that stops proving, is `red-refused-writer`: `resume` sends the helper's
         words to the session.
-     3. **The recorded gate.** Red goes back to the session (`gate-red-writer`).
+     3. **The recorded gate.** A gate step whose recorded mean outlives the Bash
+        tool's foreground bound, or that no run has measured, is dispatched to the
+        background (`dispatch-gate`, then `wait-gate`) and decided from its recorded
+        row; a measured-fast one runs inline. A red whose base commit fails every
+        case it fails stops as `gate-red-base`, with no session sent. Any other red
+        goes back to the recorded session (`gate-red-writer`) while a resume round
+        is left; with no recorded session, or past the last round, it is the plain
+        `gate-red`.
      4. **At the green gate, the stamp and the filing**, `audit-task.py file-return`, with
         a return the drive builds: the diff's paths, the proof's block with its HEAD and
         digest, every re-proof, the stamp, `casesAddedBasis` saying why no case is bound

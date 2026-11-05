@@ -501,7 +501,7 @@
     {
       "id": "P157.7-mwz",
       "title": "No suite reaches a real claude CLI: the sweep puts a refusing claude first on every child's PATH, and a suite that needs one installs its own stub ahead of it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes F842. Executing P157.6, a test helper ran a reviewer-session run: line the unfixed driver printed; no claude stub was on the fixture PATH, so the real CLI started with --max-budget-usd 2.5 and ran about two minutes. The instance (tests/test_drive_phase.py:_play_gate runs only run-test-gate.py) is fixed; the class is the runner's: it already redirects HOME, TMPDIR, PYTHONPYCACHEPREFIX and GIT_CONFIG_GLOBAL for every child (tools/sweep-selftests.py, the env builder beside GIT_CONFIG_GLOBAL ~571) and filters CLAUDE_* variables, but a child still resolves the operator's claude through PATH. Put one runner-owned directory holding a refusing claude first on every child's PATH (stdlib, a POSIX sh script plus a .cmd twin for Windows, or a python shim the runner writes per child). Suites that already install a stub (test_run_agent_session, test_drive_phase, test_audit_doctor, test__config_rules, test__machine_paths) put theirs ahead and keep passing. Whether gh and az get the same shadow: decide with a grep of what suites call, and state the answer. The isolation paragraph in CLAUDE.md, CONTRIBUTING.md and the _harness.fixture_root docstring each owe the new family a mention (the lint that compared them was retired).",
       "files": [
         "tools/sweep-selftests.py",
@@ -528,14 +528,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b0754f71f10b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/sweep-selftests.py: new section 'the CLIs a child must not reach through PATH' - SHADOWED_CLIS (claude, gh, az), shadow_scripts(os_name) (a POSIX sh script per name, or a .cmd on nt; each appends the call to a `calls` file beside itself via ${0%/*} / %~dp0, prints a refusal naming tools/sweep-selftests.py on stderr, exits SHADOW_EXIT), shadow_env(root, path) (writes them into a per-child mkdtemp 'sc-' dir and returns PATH = dir + pathsep + inherited PATH, os.defpath when none), shadow_debris(root) (each distinct recorded call as 'shadowed CLI: ran `<argv>` from PATH', with a count when repeated), is_shadow_finding (block-prefix aware). run_one allocates the dir per child, layers PATH, adds shadow_debris to debris, removes the dir with the others. grade: debris split into writes and shadow calls, worded apart via _reasons ('ran a CLI the sweep shadows instead of a stub of its own: ...'); a killed run still names a call; existing wordings byte-identical (cw14, h0, h1, x3 green). Cases added: cs1-cs7 (_claude_shadow_cases); x11 updated: PATH is now the caller's whole behind one 'sc-' dir instead of identical. Mechanism choice: sh script + .cmd twin (no interpreter, no PATH lookup inside the shadow); windows limit stated in the comment: a non-PATHEXT lookup (bare CreateProcess) skips a .cmd, and .cmd records %* through cmd parsing. gh/az decision: grep shows no suite reaches either through PATH today (az: test_audit_doctor replaces shutil.which, test_ado_connect/test__doctor_ado fake subprocess; gh: drive-phase ci_run, tools/ci-verified.py gh_api and tools/check-release-published.py are injected in their suites) - shadowed anyway, same reason claude was safe until a helper was not; a sweep of those eight suites through the new runner exited 0 (8/8 files ok). Docs: CLAUDE.md Tests isolation paragraph, CONTRIBUTING.md (new 'AND NO CHILD REACHES THE OPERATOR'S CLI THROUGH PATH' paragraph), tests/_harness.py fixture_root docstring each mention the shadow; no numbers written. Waiver strings checked present by grep -cF: 'no --selftest' 7, 'SWEEP_DIRS = (' 1, 'def _selftest():' 1, CONTRIBUTING 'print it with' 1, CLAUDE.md 'no annotations' 1. Commands (tree), each exit 0: sweep --selftest 'ALL PASS: 167/167'; task gate sweep of the five stub suites + tools/_suite.py '6/6 files ok, 1345 cases'; tests/test__output_lints.py --selftest 182/182; tests/test__deps.py --selftest 284/284; ruff check (2 files) 0; vermin -t=3.8- 0; tools/measure-context.py --gate 0; sweep of tests/_harness.py test__areas test_derive_phase_gate gate-parity affected check-prohibitions test_hooks test_guard_history_rewrite reach-diff '9/9 files ok'. Mutation probe (in-process monkeypatch of the module, nothing written to the tree; <scratchpad>/probe/mutate.py): shadow_debris->[] reddens cs2,cs3; shadow_env->{} reddens cs1-cs4 (fixture exits 3, never runs the real CLI); shadow_debris always-fires reddens cs2,cs3,cs5; is_shadow_finding->False reddens cs6; unmutated all green. run-test-gate --own could-not-run: '[run-test-gate] no task 'P157.7-mwz' in phase 'P157'' exit 2 - the tree's manifest copy is the base's and does not carry the task; its underlying command (sweep --selftest) was run directly. Dependants: every path reference to tools/sweep-selftests.py (evals.json, sweep-costs.json, ci.yml, _output.py, _runner_collects.py, _runner_output.py, stamp-verification.py, _filed_returns.py) still holds - path, CLI, contract line and row keys unchanged; only a new `why` wording for a new finding. ambient_env (reach-diff) unchanged; reach-diff's run_one calls now get the shadow and its suite passed. budget_line, coverage_findings, _positive unchanged. _harness.py: docstring only; _load_sweep callers (test_drive_phase, _harness's push_suite case) go through run_one and both suites passed. CLAUDE.md/CONTRIBUTING.md basename readers: lints green, waiver strings kept. docs/research/pipeline-cost-levers.md:238 is about a fixture's CLAUDE.md, not this one - unaffected. sweep-costs.json not re-recorded (the sweep's own selftest gains a handful of short child runs).",
+        "descriptive": "The sweep puts a refusing claude/gh/az first on every child's PATH, records any call and names the suite red, while a suite's own stub ahead of it still wins."
       },
       "startedAt": "2026-11-05T19:50:55Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-05T20:33:42Z",
+      "verifiedBy": [
+        "cs1 a stub-less child running `claude --version` resolves the shadow: non-zero exit, a line naming tools/sweep-selftests.py",
+        "cs2 that run is red from the record alone though the child exited 0 with its contract; the finding names claude and --version",
+        "cs3 sweep() names that suite red for the shadowed CLI while the own-stub suite beside it is green",
+        "cs4 a child prepending its own stub runs the stub, and its inherited PATH resolved the shadow first",
+        "cs5 second direction: that run has no finding and grades green (the shadow records calls, not lookups)",
+        "cs6 a block-prefixed call is named in a killed run and beside an exit code and a leak, each worded apart",
+        "cs7 the platform forms: .cmd per name on nt, bare sh script elsewhere, each carrying record, mark and exit code"
+      ],
       "notes": [
         {
           "at": "2026-11-05T19:50:20Z",
@@ -587,6 +595,18 @@
         "runId": "2026-11-05T20:25:14Z.058519",
         "status": "passed",
         "at": "2026-11-05T20:25:14Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "b0754f71f10b",
+        "at": "2026-11-05T20:33:42Z",
+        "return": "docs/audit/evidence/returns/P157.7-mwz/20261105T195055Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-05T20:09:22Z",
+        "basis": "`python3 tools/sweep-selftests.py --selftest` in a throwaway tree at HEAD exited 1 with 6 of 167 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code, the task's run with its inline suite tools/sweep-selftests.py laid over as HEAD's copy plus its 2 test hunk(s), 8 other hunk(s) held at HEAD, and pulled in for the names its test hunks reference: SHADOWED_CLIS = (\"claude\", \"gh\", \"az\") (line 623); SHADOW_CHANNEL = \"shadowed CLI\" (line 624); SHADOW_RECORD = \"calls\" (line 625); SHADOW_EXIT = 97 (line 626); SHADOW_MARK = \"refused by tools/sweep-selftests.py\" (line 627); def shadow_refusal(name): (line 631); def shadow_scripts(os_name=None): (line 638); _SHADOW_CHILD = ( (line 3919); _OWN_STUB_CHILD = ( (line 3940); def _said(output): (line 3975); def _claude_shadow_cases(check): (line 3981)), each passing with the working tree's implementation - cs1 (house FAIL), cs2 (house FAIL), cs3 (house FAIL), cs4 (house FAIL), cs6 (house FAIL), x11 (house FAIL): SELFTEST FAILED: 161/167 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -677,7 +697,7 @@
     {
       "id": "P157.9-mwz",
       "title": "A task's dependants include the documents that name what its files define: prose naming a decision, step or config key a declared file defines is listed, and the three stale passages found in this phase are corrected",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Fixes F839, F840, F841 and their class. Three times in P157 a task's change left prose outside its declared files describing the old behaviour: tests/test__doctor_policy.py ~454 says the runner loads skills (P157.3 made it disclose them), plugins/audit/README.md's executor.phaseGateOnly default says every gate command is listed (P157.4 leaves a slow step to the drive), plugins/audit/reference/execute-task.md:265 says a recorded-gate red goes back to the session (P157.5 added gate-red-base; P157.6 made the gate a background dispatch). The brief's Who depends on this (status/_impact.py, rendered by audit-lookup.py) names readers by import, path and basename and names used elsewhere in code; it does not name a document that describes a declared file's behaviour by the names that file defines. Extend it to tracked prose: a decision, step or config key defined in a declared file and named in a tracked .md (or a comment) is a dependant, shown under the existing bound with the name it uses. Choose how a defined name is read (decision/step tables, config keys read) by measuring over this tree, and report how many prose dependants a typical brief gains - a section nobody reads is not a mechanism. Then correct the three passages.",
       "files": [
         "plugins/audit/scripts/status/_impact.py",
@@ -706,16 +726,29 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-05T20:34:02Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-05T20:34:01Z",
+          "text": "quotes README's '| step `decide-high-risk` |' table row, which correcting the executor.phaseGateOnly row does not touch",
+          "waives": "tools/prove-gates.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-05T21:08:46Z.bfca4d",
+        "status": "passed",
+        "at": "2026-11-05T21:08:46Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

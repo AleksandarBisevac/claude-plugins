@@ -451,8 +451,10 @@ def _cases(check):
               _detail(rep, "skills").count("'ghost'") == 1)
 
         # --- where a named skill lives: ONE resolver, shared with the launcher ----
-        # `run-agent-session.py` loads the skills a task names into the session it
-        # starts; doctor says whether the plan's names would resolve. Two answers to
+        # `run-agent-session.py` discloses the skills a task names to the session
+        # it starts - each one's name, description and checklist in the system
+        # prompt, the body left to the session's Skill tool - after resolving each
+        # name; doctor says whether the plan's names would resolve. Two answers to
         # "where does this name live" is how doctor goes green over a name the
         # launcher then refuses, so both ask `_skill_places`, which takes no
         # inventory: a name only the machine scan lists does not resolve here.

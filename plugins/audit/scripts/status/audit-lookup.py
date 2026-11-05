@@ -747,6 +747,10 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
 # waived with a reason. The rest of the listing is graded by nothing mechanical -
 # the reviewer's verdict is the check.
 DEPENDANTS_TITLE = "Who depends on this"
+# The blocks of the plugin's own config: a dotted name a declared file reads that
+# starts with one of them is a config key, and a document naming it describes
+# what that file does with it (`_impact`'s prose passages).
+CONFIG_ROOTS = tuple(sorted(_config_rules.KNOWN_ROOT))
 _DEPENDANT_ANSWER = ("still correct, and why - or changed, and what changed in "
                      "it or in this task's change.")
 DEPENDANTS_ASK = ("Answer each listed dependant in your outcome: %s"
@@ -794,7 +798,7 @@ def dependant_lines(ctx, task, ask):
         return ["The task declares no files, so nothing is searched for."]
     got = _impact.section(top, inside, task.get("description") or "",
                           dependants_command(ctx, task.get("id")),
-                          exclude=exclude)
+                          exclude=exclude, config_roots=CONFIG_ROOTS)
     lines = got["lines"] if inside else []
     lines += ["- %s: outside the checkout, not searched" % (f,) for f in outside]
     return lines + [ask] if got["answerable"] else lines
@@ -804,8 +808,8 @@ def dependants_listing(ctx, task):
     """Every declared file's dependants, with no budget - what the cut line of a
     bounded section points at."""
     top, inside, outside, exclude = _dependant_scope(ctx, task)
-    lines = _impact.render(_impact.dependants(top, inside, exclude=exclude)) \
-        if inside else []
+    lines = _impact.render(_impact.dependants(
+        top, inside, exclude=exclude, config_roots=CONFIG_ROOTS)) if inside else []
     return lines + ["- %s: outside the checkout, not searched" % (f,)
                     for f in outside] or [
         "The task declares no files, so nothing is searched for."]

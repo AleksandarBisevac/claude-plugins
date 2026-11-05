@@ -3533,8 +3533,10 @@ shares). `--selftest`.
 
 The executor's brief, the writer's prompt and the reviewer's brief each carry a
 `Who depends on this` section (`dependant_lines`): `_impact.section` over the declared files,
-searched from the checkout's top with the plan's own directory left out, followed by one line
-asking the executor and the writer to answer each listed dependant as still correct and why,
+searched from the checkout's top with the plan's own directory left out and the blocks of the
+plugin's config (`CONFIG_ROOTS`, read off `_config_rules.KNOWN_ROOT`) as the roots a dotted
+config key a declared file reads starts with, so a document naming that key is listed as
+prose under the file, followed by one line asking the executor and the writer to answer each listed dependant as still correct and why,
 or changed — and asking the reviewer to check those answers. The section is bounded by
 `_impact`'s file and line budgets; a cut ends with how many of the declared files it shows and
 the command that lists them all, `dependants <taskId>`, the one verb here that lists every
@@ -3574,10 +3576,18 @@ basename, each as a whole word; a JS/TS file is also found through a relative sp
 without its extension (or with the `.js` an ESM build resolves, or as its directory for an index
 file), resolved against the importing file's directory. Each dependant is listed under its
 strongest kind, importers first and prose last within a kind, so a cap keeps the callers; for a
-`.py` file it also lists, per top-level `def`/`class` name, the files naming it. The declared
+`.py` file it also lists, per top-level `def`/`class` name, the files naming it. It also lists
+the prose that names what a declared file defines without naming the file: a kebab-case dict
+key (a decision or step a driver's table keys), a dotted config key the file spells whose first
+segment is one of the caller's `config_roots`, and — in a code comment only — the file's
+basename, each found as a backticked span on a prose line or after a code line's comment
+marker, and listed per file with the names it uses and their lines, the file naming the most
+of them first (`prose_files`). A suite defines no such term and a changelog holds no passage;
+the comment above `defined_terms` says how each reading was measured. The declared
 file is never its own dependant, the list is capped with its total kept beside it, and a
-`git grep` that fails is the file's `error`, never an empty list. At most two `git grep` calls
-per declared file, each with a timeout. `section(...)` is a brief's bounded form: it scans at
+`git grep` that fails is the file's `error` (`proseError` for the passages), never an empty
+list. At most two `git grep` calls per declared file, plus one per scan for the passages, each
+with a timeout. `section(...)` is a brief's bounded form: it scans at
 most `FILE_BUDGET` files in `scan_order` (those the description names, then source, then
 documents), renders at most `LINE_BUDGET` lines, and closes a cut with the counts and the
 command it is given. `render(results)` is the unbounded text. A file nothing names says what it

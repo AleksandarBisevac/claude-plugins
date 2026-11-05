@@ -246,9 +246,9 @@ def _run_cases(check, root):
     M.dependants(root, ["pkg/refund.py", "web/app.js", "docs/alone.md"],
                  git=counting)
     check("im7 the scan is bounded: at most two git calls per declared file "
-          "(one for references, one for a Python file's names): %d calls"
-          % (len(calls),),
-          0 < len(calls) <= 2 * 3 and all(a[0] == "grep" for a in calls))
+          "(one for references, one for a Python file's names), plus one for "
+          "the prose passages of the whole scan: %d calls" % (len(calls),),
+          0 < len(calls) <= 2 * 3 + 1 and all(a[0] == "grep" for a in calls))
 
     refused = []
 
@@ -263,10 +263,11 @@ def _run_cases(check, root):
     two = ["pkg/refund.py", "pkg/caller.py"]
     plain = M.dependants(root, two, git=no_pcre)
     check("im8 a git without PCRE gets the same answer through the "
-          "fixed-string form, offered PCRE once per scan and not again: "
+          "fixed-string form, offered PCRE once per scan and not again (the "
+          "last call is the prose scan, fixed-string by design): "
           "calls=%r same=%r" % (refused, plain == M.dependants(root, two)),
           plain == M.dependants(root, two)
-          and refused == [False, True, False, False, False])
+          and refused == [False, True, False, False, False, False])
 
 
 def _js_cases(check):
@@ -596,6 +597,195 @@ def _removal_cases(check, root):
           and "ci.yml" not in rows and "docs/d.md" not in rows)
 
 
+# The prose fixture: three passages shaped like the ones a change left stale -
+# a reference document naming a decision a driver's table defines, a README row
+# naming a config key a lookup module reads, a suite's comment describing a
+# runner by its basename - each beside the near misses that must not be listed.
+_DRIVE = ('"""Driver."""\n\nDECISIONS = {\n    "gate-red-writer": "resume",\n'
+          '    "gate-red-base": "block",\n}\nWORDS = ("gate-red-other",)\n'
+          '# `gate-red-writer` is named here, in its own file.\n')
+_LOOKUP = ('"""Lookup.\n\nLeaves a step to the phase gate when '
+           '`executor.phaseGateOnly` names it; `meta.buildCommands` is a plan\n'
+           'field, not a config key.\n"""\n\n\ndef brief():\n    return 1\n')
+_PROSE_TREE = {
+    "gov/drive.py": _DRIVE,
+    "status/lookup.py": _LOOKUP,
+    "gov/run-session.py": "def run():\n    return 1\n",
+    "ref/execute.md": ("# Execute\n\n"
+                       "3. **The recorded gate.** Red goes back to the session "
+                       "(`gate-red-writer`).\n"),
+    "README.md": ("| key | default |\n|---|---|\n"
+                  "| `executor.phaseGateOnly` | every gate command is listed |\n"
+                  "| `meta.buildCommands` | none |\n"),
+    "tests/test_policy.py": ("import _loader\n"
+                             "# `run-session.py` loads the skills a task names.\n"
+                             "L = _loader.load_script(\"run-session.py\")\n"),
+    # One step off each passage: a suffixed name, a bare (unquoted) name, a
+    # string the driver holds that is no table key, a code line that is not a
+    # comment, and a document naming the runner's basename - already a
+    # `basename` dependant, not a prose row.
+    "docs/near.md": ("`gate-red-writers` and gate-red-writer and `gate-red-other`.\n"
+                     "Run `run-session.py` by hand.\n"),
+    "tools/msg.py": 'MSG = "see `gate-red-writer`"\n',
+    "docs/quiet.md": "Nothing here names a term.\n",
+    # A changelog naming the decision records what it meant that day; a suite
+    # keying the same decision in a fixture defines nothing, and a comment
+    # naming the suite is no prose dependant of it.
+    "CHANGELOG.md": "- `gate-red-writer` was added.\n",
+    "tests/test_drive.py": ('import drive\nCASES = {"gate-red-writer": 1}\n'),
+    "tools/see.py": "# cases in `test_drive.py`\n",
+    # Two documents describing the driver: the one naming more of its terms
+    # ranks first.
+    "ref/guide.md": "`gate-red-base` then `gate-red-writer`.\n",
+}
+
+
+def _prose_repo():
+    root = os.path.join(_harness.fixture_root("impact-prose-"), "repo")
+    os.makedirs(root)
+    _harness.git(root, "init", "-q")
+    _write(root, _PROSE_TREE)
+    _harness.git(root, "add", "-A")
+    _harness.git(root, "commit", "-q", "-m", "fixture")
+    return root
+
+
+def _prose_scan(root, paths, **kw):
+    """`M.dependants` with the config roots. A signature without them answers
+    with no rows, so each case reads that as a failed assertion naming the
+    missing argument rather than a block that never ran."""
+    try:
+        return M.dependants(root, paths, **kw), None
+    except TypeError as exc:
+        return [{"path": p, "prose": [], "files": [], "symbols": []}
+                for p in paths], str(exc)
+
+
+def _prose_rows(result):
+    return sorted((r["name"], r["file"], r["line"])
+                  for r in result.get("prose") or [])
+
+
+def _prose_cases(check):
+    root = _prose_repo()
+    try:
+        _prose_replays(check, root)
+        _prose_bounds(check, root)
+    finally:
+        _harness.remove_tree(os.path.dirname(root))
+
+
+def _prose_replays(check, root):
+    paths = ["gov/drive.py", "status/lookup.py", "gov/run-session.py"]
+    got, err = _prose_scan(root, paths, config_roots=("executor", "review"))
+    by = dict((r["path"], _prose_rows(r)) for r in got)
+    text = "\n".join(M.render(got)) if err is None else ""
+    check("pr1 a decision a declared file's table defines (a dict key) and a "
+          "reference document names in backticks is listed under that file "
+          "with the name and the line - the recorded-gate passage: %r %r"
+          % (by.get("gov/drive.py"), err),
+          ("gate-red-writer", "ref/execute.md", 3) in (by.get("gov/drive.py") or [])
+          and "ref/execute.md (`gate-red-writer`:3)" in text)
+    check("pr2 a config key a declared file reads (named in backticks in its own "
+          "text, under a config root) and a README row names is listed under that "
+          "file - the phaseGateOnly default cell: %r %r"
+          % (by.get("status/lookup.py"), err),
+          by.get("status/lookup.py")
+          == [("executor.phaseGateOnly", "README.md", 3)]
+          and "README.md (`executor.phaseGateOnly`:3)" in text)
+    check("pr3 a code comment naming a declared file's basename in backticks is "
+          "listed under that file as prose, though the same file's import is "
+          "already its `import` dependant - the skills-loaded comment: %r %r"
+          % (by.get("gov/run-session.py"), err),
+          by.get("gov/run-session.py")
+          == [("run-session.py", "tests/test_policy.py", 2)]
+          and "tests/test_policy.py (`run-session.py`:2)" in text)
+    strays = sorted(set(f for rows in by.values() for _, f, _ in rows)
+                    & {"docs/near.md", "tools/msg.py", "gov/drive.py",
+                       "status/lookup.py", "docs/quiet.md", "CHANGELOG.md"})
+    check("pr4 THE OVER-FIRE TWINS: a suffixed name, an unquoted name, a string "
+          "the driver holds that keys no table, `meta.buildCommands` (no config "
+          "root), a backticked name in a code string, a document's basename "
+          "mention, a changelog line and the declared file's own comment are "
+          "none of them a prose row: strays=%r rows=%r" % (strays, by),
+          err is None and not strays
+          and all(n != "meta.buildCommands" for rows in by.values()
+                  for n, _, _ in rows))
+    rootless, err2 = _prose_scan(root, ["status/lookup.py"])
+    check("pr5 with no config roots given, a dotted name is no config key, so "
+          "the lookup module has no prose row - the roots are the caller's "
+          "statement, never guessed: %r %r" % (_prose_rows(rootless[0]), err2),
+          err2 is None and _prose_rows(rootless[0]) == [])
+
+
+def _prose_bounds(check, root):
+    quiet, err = _prose_scan(root, ["docs/quiet.md", "gov/drive.py"],
+                             config_roots=("executor",))
+    lines = M.render(quiet) if err is None else []
+    quiet_lines = [ln for ln in lines if "named in prose" in ln]
+    check("pr6 THE ALLOW TWIN: a file defining no term renders no prose line, "
+          "so the section spends no line on it; the file that has one renders "
+          "exactly one: %r" % (lines,),
+          err is None and len(quiet_lines) == 1
+          and "gate-red-writer" in quiet_lines[0])
+    calls = []
+
+    def counting(argv, cwd):
+        calls.append(argv)
+        return M.run_git(argv, cwd)
+
+    paths = ["gov/drive.py", "status/lookup.py", "gov/run-session.py"]
+    plain, perr = _prose_scan(root, paths, config_roots=("executor",))
+    _prose_scan(root, paths, config_roots=("executor",), git=counting)
+    suite, serr = _prose_scan(root, ["tests/test_drive.py", "gov/drive.py"],
+                              config_roots=("executor",))
+    rows = dict((r["path"], _prose_rows(r)) for r in suite)
+    check("pr8 a declared suite defines no term - its dict keys are fixtures and "
+          "a comment naming it points at cases - while the module keying the "
+          "same decision keeps its passages: %r %r" % (rows, serr),
+          serr is None and rows.get("tests/test_drive.py") == []
+          and ("gate-red-writer", "ref/execute.md", 3)
+          in (rows.get("gov/drive.py") or []))
+    drive = [r for r in suite if r["path"] == "gov/drive.py"]
+    ranked = M.prose_files(drive[0]["prose"]) if drive else []
+    line = [ln for ln in M.render(drive) if "named in prose" in ln] if drive else []
+    check("pr9 the prose files are ranked by how many of the file's terms each "
+          "names - the guide naming two before the reference naming one - and "
+          "the line counts the files: %r %r" % ([r["file"] for r in ranked], line),
+          [r["file"] for r in ranked] == ["ref/guide.md", "ref/execute.md"]
+          and [n for n, _ in ranked[0]["names"]]
+          == ["gate-red-base", "gate-red-writer"]
+          and len(line) == 1 and "(2 files)" in line[0]
+          and line[0].index("ref/guide.md") < line[0].index("ref/execute.md"))
+    capped = dict(drive[0]) if drive else {"prose": [], "proseError": None}
+    capped["prose"] = [{"name": "gate-red-writer", "file": "d%02d.md" % n, "line": 1}
+                       for n in range(M.PROSE_CAP + 2)]
+    cut = [ln for ln in M.render([capped]) if "named in prose" in ln] if drive else []
+    check("pr10 more prose files than the cap keep the cap and print how many of "
+          "how many - never a silent cut: %r" % (cut,),
+          len(cut) == 1 and ("%d of %d files shown" % (M.PROSE_CAP, M.PROSE_CAP + 2))
+          in cut[0] and cut[0].count(".md (") == M.PROSE_CAP)
+    def prose_refused(argv, cwd):
+        if "-n" in argv:
+            return 128, "", "fatal: the prose scan was refused\n"
+        return M.run_git(argv, cwd)
+
+    broken, berr = _prose_scan(root, ["gov/drive.py"], config_roots=("executor",),
+                               git=prose_refused)
+    btext = [ln for ln in M.render(broken) if "named in prose" in ln] if berr is None else []
+    check("pr11 a prose scan git refuses says so on the file - `proseError` set and "
+          "the line reading `passages not read` - never the empty answer a file "
+          "with no passage gets: %r %r" % (btext, berr),
+          berr is None and broken[0].get("proseError")
+          and broken[0].get("prose") == [] and len(btext) == 1
+          and "passages not read: fatal: the prose scan was refused" in btext[0])
+    check("pr7 the prose scan costs ONE git call for the whole scan, on top of "
+          "the two per declared file: %d calls for %d files"
+          % (len(calls), len(paths)),
+          perr is None and 0 < len(calls) <= 2 * len(paths) + 1
+          and any(r.get("prose") for r in plain))
+
+
 def _selftest():
     def body(check):
         _harness.stage(check, "im-block", _cases)
@@ -604,6 +794,7 @@ def _selftest():
         _harness.stage(check, "bd-block", _budget_cases)
         _harness.stage(check, "ow-block", _owed_cases)
         _harness.stage(check, "eb-block", _bounded_cases)
+        _harness.stage(check, "pr-block", _prose_cases)
     return _harness.run(body)
 
 

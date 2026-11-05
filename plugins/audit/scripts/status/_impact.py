@@ -29,6 +29,15 @@ naming the module's internals describes them rather than calls them. The declare
 dependant, and `exclude` drops whole directories (the plan's own state names
 every file it indexes and reads none of them).
 
+WHAT COUNTS AS PROSE NAMING IT. A document can describe what a file does by the
+names the file defines without naming the file: a decision a driver's table
+keys, a config key a module reads. Each declared file's terms - kebab-case dict
+keys and, under the caller's `config_roots`, the dotted config keys it spells,
+plus its basename for code comments - are searched as backticked spans in
+prose files and code comments, and each passage is listed with the name it uses
+and its line. The comment above `defined_terms` says how each reading was
+chosen and what it leaves out.
+
 WHICH READERS A DISPATCH DEMANDS. `owed` narrows the dependants to the ones an
 edit to the declared file can reach - its own suite, a file quoting its text
 beside its path, a document section headed by its path - bounded by the region
@@ -43,6 +52,10 @@ reference spelled in pieces (`os.path.join("status", name)`), an aliased or
 computed JS/TS import (`@/util`, `import(name)`), or a name reached by `getattr`
 is not on any line in a form this reads, and is not found; a file nothing names
 says what it was searched by, so an empty answer is never wider than the search.
+Prose naming a term outside backticks, a term inside a code string or a
+docstring (a panel's help string) or in a data file (a JSON schema's
+description), and a term the file defines some other way than a dict key or a
+dotted config key are not prose passages.
 A defined name
 that is a common word (`main`) is found in every file that says it; the
 rendering lists the names named by the FEWEST files first, so the specific ones
@@ -52,10 +65,12 @@ THE COST IS BOUNDED. At most two `git grep` calls per declared file - one for
 the references and a second for a `.py` file's names or a JS/TS file's import
 stems - each with a timeout, whatever the size of the tree, plus one retry per
 scan when git was built without PCRE and refused the fast form of the names
-call. A brief's `section` scans at most `FILE_BUDGET` declared files, in
-`scan_order` (those the description names, then source, then documents), and
-renders at most `LINE_BUDGET` lines, closing with how many of the declared files
-it showed and the command that lists the rest. A call that fails is reported as
+call, plus one call per scan for the prose passages of every declared file.
+A brief's `section` scans at most `FILE_BUDGET` declared files, in `scan_order`
+(those the description names, then source, then documents), and renders at most
+`LINE_BUDGET` lines - a file's prose passages take one of them, at most
+`PROSE_CAP` files on it - closing with how many of the declared files it showed
+and the command that lists the rest. A call that fails is reported as
 an error on that file, never as an empty list.
 
 This module carries no `--selftest` of its own; its cases live in
@@ -64,11 +79,13 @@ This module carries no `--selftest` of its own; its cases live in
 Stdlib only, Python 3.8 compatible.
 """
 import ast
+import io
 import os
 import posixpath
 import re
 import subprocess
 import sys
+import tokenize
 import warnings
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
@@ -378,7 +395,8 @@ def _name_users(root, path, names, referrers, exclude, cap, git, pcre):
 def _file_dependants(root, path, cap, exclude, git, pcre):
     path = _norm(path)
     result = {"path": path, "files": [], "total": 0, "symbols": [],
-              "defined": 0, "error": None, "namesError": None}
+              "defined": 0, "prose": [], "error": None, "namesError": None,
+              "proseError": None}
     refs, error = _references(root, path, exclude, git)
     if error is not None:
         result["error"] = error
@@ -395,24 +413,232 @@ def _file_dependants(root, path, cap, exclude, git, pcre):
     return result, pcre
 
 
-def file_dependants(root, path, cap=CAP, exclude=(), git=None):
+# --- prose that names what a file defines ----------------------------------------
+# A document describes a module's behaviour by the names the module defines - a
+# decision it takes, a key it reads - without naming the module, so a change to
+# that behaviour leaves the paragraph stale while no path, basename or import
+# points from one to the other. A file's TERMS are read three ways, each chosen
+# by measuring which readings stay small over this repository:
+#
+#   table key  - a string-literal dict key of kebab shape (`gate-red-writer`) in
+#                a declared `.py`: the decision and step tables a driver keys;
+#   config key - a dotted name (`executor.phaseGateOnly`) the declared `.py`
+#                spells as a string or in backticks in its own comments or
+#                docstrings, whose first segment is one of `config_roots` - the
+#                caller's statement of which blocks are configuration, since a
+#                dotted name in general is as often a plan field;
+#   basename   - the declared file's own basename, read in code COMMENTS only: a
+#                document naming it is already its `basename` dependant, while a
+#                code file importing it is listed as `import` and its comment
+#                describing the file is otherwise invisible.
+#
+# A declared test suite (`is_suite`) defines no term: its dict keys and dotted
+# strings are fixtures, and a module's comment naming its suite points at the
+# cases rather than describing behaviour. A changelog (`_CHANGELOG`) is no
+# passage: it records what a name meant on the day, which no change makes stale.
+#
+# A passage is a line naming a term as a whole backticked span: any line of a
+# prose file (`DOC_EXTS`), or the part of a code line after its comment marker
+# (`#` for `HASH_COMMENT_EXTS`, `//` for `JS_EXTS`). A string literal in code and
+# a docstring are not comments on one line, so neither is a passage. Measured
+# once, on 2026-11-05, over the tasks of one phase of this repository's plan:
+# reading every kebab or dotted string literal as a term listed more prose files
+# than these readings on every task sampled, and a dotted name with no config
+# root read plan fields (`meta.buildCommands`) named across the reference
+# documents as if the module defined them.
+HASH_COMMENT_EXTS = (".py", ".sh", ".bash", ".yml", ".yaml", ".toml")
+# How many prose files, and how many names per file, the rendering prints; the
+# files naming the MOST of a declared file's terms first - a document naming many
+# of what a module defines is the one describing it.
+PROSE_CAP = 4
+PROSE_NAME_CAP = 3
+_CHANGELOG = re.compile(r"^(?:changelog|changes|history)(?:\.\w+)?$", re.IGNORECASE)
+_KEBAB = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$")
+_DOTTED = re.compile(r"^([a-z][A-Za-z0-9]*)(?:\.[a-z][A-Za-z0-9]*)+$")
+_TICKED = re.compile(r"`([^`\n]+)`")
+
+
+def _is_str(node):
+    return isinstance(node, ast.Constant) and isinstance(node.value, str)
+
+
+def _comment_texts(source):
+    """The text of every `#` comment in a Python source; [] when it does not
+    tokenize, which a source `ast.parse` accepted always does."""
+    try:
+        return [tok.string for tok in tokenize.generate_tokens(
+            io.StringIO(source).readline) if tok.type == tokenize.COMMENT]
+    except (tokenize.TokenError, SyntaxError):
+        return []
+
+
+def defined_terms(source, config_roots=()):
+    """The table keys and config keys a Python source defines, sorted; raises
+    `SyntaxError` for a source that does not parse."""
+    tree = ast.parse(source)
+    strings = [n.value for n in ast.walk(tree) if _is_str(n)]
+    keys = set(k.value for n in ast.walk(tree) if isinstance(n, ast.Dict)
+               for k in n.keys if k is not None and _is_str(k)
+               and _KEBAB.match(k.value))
+    roots = set(config_roots)
+    spoken = strings + [span for text in strings + _comment_texts(source)
+                        for span in _TICKED.findall(text)]
+    config = set(word for word in spoken if roots and _DOTTED.match(word)
+                 and _DOTTED.match(word).group(1) in roots)
+    return sorted(keys | config)
+
+
+def is_suite(path):
+    """Whether `path` is named as a test suite in one of `suite_stems`' shapes."""
+    stem = posixpath.splitext(posixpath.basename(path))[0]
+    return stem.startswith("test_") or stem.endswith(
+        ("_test", "_spec", ".test", ".spec"))
+
+
+def _file_terms(root, path, config_roots):
+    """`{term: kind}` for one declared file: its basename, and a `.py` file's
+    `defined_terms` too when its source reads - one that does not parse already
+    carries its `namesError`, and keeps only its basename here. A suite has
+    none."""
+    if is_suite(path):
+        return {}
+    terms = {posixpath.basename(path): "basename"}
+    if path.endswith(".py"):
+        try:
+            terms.update((t, "term") for t in defined_terms(
+                _read_text(root, path), config_roots))
+        except (SyntaxError, ValueError):
+            pass
+    return terms
+
+
+def _code_comment_at(text, ext):
+    """Where the comment on one code line starts, or None: the first comment
+    marker outside a quoted string, read left to right on the line alone."""
+    if ext in HASH_COMMENT_EXTS:
+        marker, quotes = "#", "\"'"
+    elif ext in JS_EXTS:
+        marker, quotes = "//", "\"'`"
+    else:
+        return None
+    quote, escaped = None, False
+    for i, ch in enumerate(text):
+        if escaped:
+            escaped = False
+        elif quote:
+            escaped = ch == "\\"
+            quote = None if ch == quote else quote
+        elif ch in quotes:
+            quote = ch
+        elif text.startswith(marker, i):
+            return i
+    return None
+
+
+def _grep_numbered(out):
+    """`[(file, line, text)]` from `git grep -z -n` output."""
+    rows = []
+    for row in out.split("\n"):
+        parts = row.split("\0", 2)
+        if len(parts) == 3 and parts[1].isdigit():
+            rows.append((parts[0], int(parts[1]), parts[2]))
+    return rows
+
+
+def _passage_spans(name, text):
+    """The backticked spans on one line that may name a term: every span on a
+    prose line, those after the comment marker on a code line, none elsewhere."""
+    if is_doc(name):
+        return _TICKED.findall(text), True
+    start = _code_comment_at(text, posixpath.splitext(name)[1])
+    if start is None:
+        return [], False
+    return _TICKED.findall(text[start:]), False
+
+
+def prose_sites(root, terms_by_path, exclude=(), git=None):
+    """`({path: [{"name", "file", "line"}]}, error)` - per declared path, the
+    passages naming one of its terms (`terms_by_path`: `{path: {term: kind}}`),
+    from ONE `git grep` over every term at once. A basename counts only in a
+    code comment, and a file is never a passage of its own terms."""
+    run = git if git is not None else run_git
+    every = sorted(set(t for terms in terms_by_path.values() for t in terms))
+    found = dict((p, []) for p in terms_by_path)
+    if not every:
+        return found, None
+    argv = ["grep", "-z", "-n", "-I", "-F"]
+    for term in every:
+        argv += ["-e", "`%s`" % (term,)]
+    code, out, err = run(argv + _pathspec(exclude), root)
+    error = _grep_error(code, err)
+    if error is not None:
+        return found, error
+    for name, line, text in _grep_numbered(out):
+        name = _norm(name)
+        if _CHANGELOG.match(posixpath.basename(name)):
+            continue
+        spans, prose = _passage_spans(name, text)
+        for span in sorted(set(spans)):
+            for path, terms in terms_by_path.items():
+                kind = terms.get(span)
+                if kind is None or name == path or (kind == "basename" and prose):
+                    continue
+                found[path].append({"name": span, "file": name, "line": line})
+    return found, None
+
+
+def prose_files(sites):
+    """`[{"file", "names": [(name, line)], "passages"}]` - the passages grouped
+    by the file holding them, the file naming the most distinct terms first;
+    within a file, each name once at its first line, the names fewest files say
+    first, so a cut keeps the specific ones."""
+    named_by = {}
+    for site in sites:
+        named_by.setdefault(site["name"], set()).add(site["file"])
+    per = {}
+    for site in sorted(sites, key=lambda s: (s["file"], s["line"])):
+        row = per.setdefault(site["file"], {"file": site["file"], "names": {},
+                                            "passages": 0})
+        row["passages"] += 1
+        row["names"].setdefault(site["name"], site["line"])
+    rows = [{"file": r["file"], "passages": r["passages"],
+             "names": sorted(r["names"].items(),
+                             key=lambda nl: (len(named_by[nl[0]]), nl[0]))}
+            for r in per.values()]
+    return sorted(rows, key=lambda r: (-len(r["names"]), r["file"]))
+
+
+def file_dependants(root, path, cap=CAP, exclude=(), git=None, config_roots=()):
     """One declared file's dependants:
     `{"path", "files": [{"file", "via"}] (at most cap), "total", "symbols":
-    [{"name", "files", "total"}], "defined", "error", "namesError"}`.
+    [{"name", "files", "total"}], "defined", "prose": [{"name", "file",
+    "line"}], "error", "namesError", "proseError"}`.
     `error` is set when the references could not be read, and `files` is then
-    empty - an answer `total == 0` never stands in for."""
-    return _file_dependants(root, path, cap, exclude,
-                            git if git is not None else run_git, True)[0]
+    empty - an answer `total == 0` never stands in for; `proseError` is the same
+    for the passages."""
+    return dependants(root, [path], cap, exclude, git, config_roots)[0]
 
 
-def dependants(root, paths, cap=CAP, exclude=(), git=None):
+def dependants(root, paths, cap=CAP, exclude=(), git=None, config_roots=()):
     """`file_dependants` for each declared path, in the order given; a git that
-    refused the PCRE form once is not offered it again for the rest."""
+    refused the PCRE form once is not offered it again for the rest. The
+    passages naming each file's terms come from one scan over all of them;
+    `config_roots` are the blocks a dotted config key starts with, and with none
+    given no dotted name is read as one."""
     run = git if git is not None else run_git
     results, pcre = [], True
     for path in paths:
         result, pcre = _file_dependants(root, path, cap, exclude, run, pcre)
         results.append(result)
+    readable = [r["path"] for r in results if r["error"] is None]
+    sites, error = prose_sites(
+        root, dict((p, _file_terms(root, p, config_roots)) for p in readable),
+        exclude, run)
+    for result in results:
+        if result["path"] in sites:
+            result["prose"] = sorted(sites[result["path"]], key=lambda s: (
+                s["file"], s["line"], s["name"]))
+            result["proseError"] = error
     return results
 
 
@@ -735,7 +961,8 @@ def none_line(results):
 
 def _has_any(result):
     return bool(result["error"] or result["total"] or result["symbols"]
-                or result["namesError"])
+                or result["namesError"] or result["prose"]
+                or result["proseError"])
 
 
 def _counted(shown, total, noun):
@@ -761,6 +988,26 @@ def _names_line(result):
         len(symbols), result["defined"], cut, "; ".join(parts))
 
 
+def _prose_part(row):
+    names = row["names"][:PROSE_NAME_CAP]
+    more = len(row["names"]) - len(names)
+    return "%s (%s%s)" % (row["file"], ", ".join(
+        "`%s`:%d" % (n, line) for n, line in names),
+        " +%d more" % (more,) if more else "")
+
+
+def _prose_line(result):
+    """The files whose prose names the file's terms, with the names they use and
+    where - the count beside a cut - or why the passages were not read."""
+    rows = prose_files(result["prose"])
+    shown = rows[:PROSE_CAP]
+    parts = [_prose_part(r) for r in shown]
+    if result["proseError"]:
+        parts.append("passages not read: %s" % (result["proseError"],))
+    return "  named in prose (%s): %s" % (_counted(shown, len(rows), "file"),
+                                          "; ".join(parts))
+
+
 def _block(result):
     """One declared file's lines."""
     if result["error"]:
@@ -777,6 +1024,8 @@ def _block(result):
                  % (result["path"], _searched(result["path"]))]
     if result["symbols"] or result["namesError"]:
         lines.append(_names_line(result))
+    if result["prose"] or result["proseError"]:
+        lines.append(_prose_line(result))
     return lines
 
 
@@ -807,7 +1056,7 @@ def scan_order(paths, description):
 
 
 def section(root, paths, description, rest_command, exclude=(), git=None,
-            file_budget=FILE_BUDGET, line_budget=LINE_BUDGET):
+            file_budget=FILE_BUDGET, line_budget=LINE_BUDGET, config_roots=()):
     """A brief's bounded section: `{"lines", "shown", "declared",
     "answerable"}`. At most `file_budget` files are scanned, in `scan_order`,
     and whole files' lines are kept while they fit `line_budget`; when fewer
@@ -816,7 +1065,8 @@ def section(root, paths, description, rest_command, exclude=(), git=None,
     shown file has something to answer for."""
     order = scan_order([_norm(p) for p in paths], description)
     scanned = order if file_budget is None else order[:file_budget]
-    results = dependants(root, scanned, exclude=exclude, git=git)
+    results = dependants(root, scanned, exclude=exclude, git=git,
+                         config_roots=config_roots)
     if not any(_has_any(r) for r in results):
         lines, shown = [none_line(results)], results
     else:
