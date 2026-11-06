@@ -22,10 +22,11 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [],
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "P158: every tests.add suite reaches the writer brief through a derived command or a stated reason (F848); the phase review's four med findings fixed in P158.2",
   "tasks": [
     {
       "id": "P158.1-lxm",
@@ -90,7 +91,7 @@
     {
       "id": "P158.2-7vi",
       "title": "A suite counts as run only by a command that really runs it: a filtered run is not a whole run, a suite goes only to a runner the plan hands that kind of suite, the phase gate's spellings are read, and the derived command keeps the step's own shell words",
-      "status": "in_progress",
+      "status": "done",
       "description": "Phase code review of P158 (commit facd6f30, audit-lookup.py). MED1: _runs_whole_tree (~1168) reads any command whose non-flag words hold no path as a whole-tree run, so `python3 -m pytest -k smoke` counts as covering every suite and a tests.add suite gets no line; no case pins the branch (patching it to False leaves every ws case green). A whole run must be one the plan itself spells as the runner with no selection (no path and no selecting option), or count as not covering. MED2: suite_coverage (~1197) hands every unrun suite to the first known runner whatever the suite's kind; tie a runner to the kinds of suite the plan hands it (e.g. the suffix/extension of the paths it is spelled with) and give a reason line otherwise. MED3: _plan_commands (~1124) reads buildCommands values and tasks' tests.gate only; a phase testGate (and meta.fullGate when set) are plan spellings too, and the reason line must not claim no runner is known when the inherited gate spells one. MED4: _given_suites (~1165) shlex.quote()s every word after shlex split them, turning $ROOT/~ into literals; rebuild the derived command from the original command text (replace only the path words, keep the rest byte for byte), and give own_suite_command the same treatment so there is one way to derive a cut. LOW: --flag=suite words are lost (keep flags whole); non-suite tests.add files are handed to runners (filter with the suite-path reading); the compose_writer_prompt docstring still says the composition is the task alone's while it now reads the plan - state what it reads. One derivation shared by the cut and the extension, not two.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -116,27 +117,48 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b01a072210f4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/scripts/status/audit-lookup.py: one shared derivation for the cut and the extension - _runner_at (runner + first argument index, options read before paths), _slots (path-argument indexes, an option word such as --only=x is never a slot), _simple_command (one simple command whose shell_words values equal gate_entry_commands', else None), _rewritten (the step's own text with only the dropped path words removed and the inserted suites put at the first slot - every other byte as written, so a ROOT-variable word and a tilde-led word stay unquoted). own_suite_command now cuts through _simple_command/_slots/_rewritten (a non-interpreter command keeps its first word; a redirection is no longer cut). _given_suites removed. _suite_runner rebuilt on _runner_at/_slots. _plan_commands also reads meta.fullGate literal entries and every phase's testGate. suite_taking_runners returns {runner: kinds} (the extension of each suite path the plan hands it). _runs_whole_tree(command, known, suite) is a whole run only when the runner is known for the suite's kind, no path is handed and every word after the runner is -q/-v/--quiet/--verbose (_OUTPUT_ONLY_OPTION, _selects_cases). suite_coverage filters tests.add files by _manifest_phases.is_suite_path, hands each unrun suite to the first eligible step (_step_offer: single, known runner, no selecting option, rewritable) whose runner kinds include its kind, and names each suite left with clauses per blocker (_unrun_line: compound, not known, kind mismatch naming the runner and its kinds, selecting option, not rewritable); the all-compound/unknown wording is unchanged. compose_writer_prompt docstring now states what it reads (task, phase testGate when the task has none, buildCommands, every plan-spelled command). Added `import re`. tests/test_audit_lookup.py: new _writer_suite_reading_cases with ws21-ws27, ws18 fixture set gains 'fast filtered'. PLUGIN-BUILD-GUIDE.md: the suite_coverage paragraph restated (whole run, kinds, fullGate/testGate spellings, the one derivation, the reasons); the prove-gates anchor `python3 tools/sweep-selftests.py` still occurs once (grep -c = 1). Mutations via an in-process scratch runner (shared tree untouched): _runs_whole_tree->False reds ws22 (+wp1-3); the old pathless reading reds ws21, ws18; kinds ignored reds ws23, ws27; _plan_commands without phase/fullGate reds ws24; re-quoting rewrite reds ws25; flags as slots reds ws26; suite_coverage without the is_suite_path filter reds ws27; _step_offer ignoring selection reds ws21; unmutated 188/188. Gate: sweep command exit 0, 7/7 files ok, 1943 cases. ruff 0, vermin 0. Live plan sanity: this task's own writer list keeps measure-context and gets `python3 tools/sweep-selftests.py tests/test_audit_lookup.py` as the cut; suite_taking_runners(live) = {tools/sweep-selftests.py: .py}. Dependants: tests/test__evidence_io.py, tests/test__filed_returns.py, tests/test_drive_phase.py import the module but use none of the changed names (grep of own_suite_command|suite_coverage|suite_taking_runners|_runs_whole_tree|_given_suites|_plan_commands|_suite_runner|compose_writer_prompt over the tree hits only the three files of this task plus historical evidence returns and phase shards) - still correct; test_drive_phase.py ran green in the gate. tests/test_audit_lookup.py - changed, by this task. PLUGIN-BUILD-GUIDE.md - changed, the paragraph describing these functions. docs/research/pipeline-cost-design.md, plugins/audit/schema/audit-plan.schema.json, _clause_coverage.py, README.md, reference/execute-task.md, token-efficiency-audit.md, _doctor_hygiene.py and the other guide dependants name the module, executor.runsGate/own-tests/review.perTask or the guide file, none of which this change touches - still correct. .github/sweep-costs.json and tools/affected.py name the test file by path and _cases/_selftest - unchanged names, still correct; tests/test_audit_task.py uses _cli/_success_line_cases, untouched. Not done: bare-program runners (pytest, npx vitest) are still not suite runners for the extension - only interpreter-run ones, as before; a tests/ fixture is read as a suite by its directory and so gets a reason line rather than no line.",
+        "descriptive": "The writer brief no longer counts a filtered run as covering a suite, hands suites only to runners the plan hands that kind, reads phase testGate and fullGate spellings, and derives commands from the step's own text."
       },
       "startedAt": "2026-11-06T18:57:41Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-06T19:27:27Z",
+      "verifiedBy": [
+        "ws21 a fast -k smoke / --lf run is not a whole run: the suite is named by exactly one bullet, not a filtered command",
+        "ws22 a fast -q whole run of a runner known for .py is the one line (pins _runs_whole_tree)",
+        "ws23 a .js suite gets a reason line, never the sweep the plan hands only .py suites",
+        "ws24 a task inheriting a phase testGate that spells the sweep with a suite gets a derived command",
+        "ws25 the ROOT-variable word and the tilde-led word stay unquoted in the cut and the derived command",
+        "ws26 --only=<suite> stays whole in the cut and is never replaced in a derived command",
+        "ws27 a .json fixture is not handed to a runner and a file outside test dirs is on no line",
+        "ws18 invariant fixture set gains a fast filtered run"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-06T19:27:24Z.f0bb70",
         "status": "passed",
         "at": "2026-11-06T19:27:24Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "b01a072210f4",
+        "at": "2026-11-06T19:27:27Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-06T19:16:56Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test_drive_phase.py tests/test__output_lints.py tests/test__deps.py tests/test__refs.py tools/prove-gates.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 7 of 188 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ws21 (house FAIL), ws23 (house FAIL), ws24 (house FAIL), ws25 (house FAIL), ws26 (house FAIL), ws27 (house FAIL), ws18 (house FAIL): SELFTEST FAILED: 181/188 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "988f3478-fc74-4a1e-a62b-7522b404c792",
-    "branch": "audit/p158-the-writer-always-runs-the-tes",
-    "at": "2026-11-06T18:02:21Z"
-  },
-  "startedAt": "2026-11-06T18:02:21Z"
+  "startedAt": "2026-11-06T18:02:21Z",
+  "testEvidence": {
+    "runId": "2026-11-06T19:48:05Z.96b8de",
+    "status": "passed",
+    "at": "2026-11-06T19:48:05Z"
+  }
 }
