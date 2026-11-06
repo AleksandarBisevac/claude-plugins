@@ -1,7 +1,7 @@
 {
   "id": "P158",
   "title": "The writer always runs the tests it adds",
-  "status": "in_progress",
+  "status": "done",
   "description": "Fixes F848 (quality-gates-internal PLAN.md), a recurrence of the class P157.12 closed for one shape. Blocks the stage-2 re-measurement.",
   "desiredOutcome": "Every writer brief of a task that declares tests.add files lists a command that runs each of them, whatever the gate's slow steps are spelled as, or says why none could be derived",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "8407a02df8b1e8a1a16f854430112481254b628d",
   "branch": "audit/p158-the-writer-always-runs-the-tes",
-  "mergedAt": null,
+  "mergedAt": "2026-11-06T19:48:45Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -160,5 +160,6 @@
     "runId": "2026-11-06T19:48:05Z.96b8de",
     "status": "passed",
     "at": "2026-11-06T19:48:05Z"
-  }
+  },
+  "mergedHead": "287385767c3005a62f91731cfe06e2aa4b0aab4c"
 }

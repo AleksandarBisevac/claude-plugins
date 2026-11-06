@@ -1016,7 +1016,7 @@
     {
       "id": "P158",
       "title": "The writer always runs the tests it adds",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P158.json"
     }
   ],
