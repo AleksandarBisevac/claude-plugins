@@ -1,0 +1,46 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test_drive_phase.py tests/test__output_lints.py tests/test__deps.py tests/test__refs.py tools/_suite.py": "pass",
+    "python3 tools/measure-context.py --gate": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-06T18:22:33Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test_drive_phase.py tests/test__output_lints.py tests/test__deps.py tests/test__refs.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 10 of 181 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ws1 (house FAIL), ws9 (house FAIL), ws12 (house FAIL), ws14 (house FAIL), ws15 (house FAIL), ws16 (house FAIL), ws19 (house FAIL), ws20 (house FAIL) and 2 more: SELFTEST FAILED: 171/181 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "audit-lookup.py: added _suite_runner (an interpreter-led simple command running a non-suite script or a -m module, every path behind it a suite, read with _manifest_phases' _is_script_runner/shell_word_path/is_suite_path), _plan_commands + suite_taking_runners (runners the plan spells handed a suite path in any buildCommands value or task gate entry: the basis that a runner takes suite paths, not a list of program names), _given_suites (suites in place of the step's own path args, else appended), _runs_whole_tree (a listed whole run counts as running the suites only for a known runner), suite_coverage (derived command from the first declared simple step with a known runner, preamble re-applied through _evio.resolved_commands; otherwise one line per suite: '<suite>: no command to run it is given - <reason>', the reason naming no gate / no single known runner / compound). compose_writer_prompt collects listed raw commands in its loop, appends derived lines with GIVEN_SUITES_NOTE and the reason lines after the run list; docstring says the runner answer reaches past the task to the plan. A first version credited any listed interpreter-led no-path script as a whole run; a live compose over the real plan with gate [whole sweep slow, measure-context fast] showed it hid the suite behind measure-context, so whole-run credit now needs a known runner. Tests: ws12-ws20 added (ws12-ws17, ws19, ws20 entry 1; ws18 invariant over slow sweep/slow pytest/slow compound/fast only/no gate); ws1, ws4, ws5 reworded to the narrowed-sweep shape, ws9 moved to a plan with no suite spelling, ws10 loosened to first item; _wp_manifest gains buildCommands 'onesuite' (the sweep handed a suite) so wp1's baseline literal holds unchanged. PLUGIN-BUILD-GUIDE.md paragraph under compose_writer_prompt. Suite 181/181; gate sweep exit 0 (6/6 files, 1870 cases); measure-context --gate exit 0 (it carries no writer row: grep -i writer tools/measure-context.py has no hit, so no ceiling there gauges the writer brief); ruff check plugins/audit tools tests .claude/hooks exit 0; vermin exit 0. Mutations in a git-archive scratch copy: M1 any runner known -> ws9 ws19 ws20 red; M2 whole run without evidence -> ws20 red; M3 no reason lines -> ws9 ws15 ws16 ws18 ws19 ws20 red; M4 no derivation -> ws1 ws4 ws12 ws14 ws18 red; M5 compound reason dropped -> ws15 red; restored 181/181. Dependants: test__evidence_io, test__filed_returns ran green (2/2 files, 453 cases); test_drive_phase green in gate; README/execute-task/pipeline-cost-design/token-efficiency-audit name executor.runsGate/own-tests/phaseGateOnly/review.perTask, none of which changed - still correct; schema and _clause_coverage reference by basename, unchanged; .github/sweep-costs.json ws-block figure not re-recorded (recorded cost, grows by a few cases); tools/affected.py and test_audit_task.py read _cases/_selftest/_cli/_success_line_cases, unchanged; PLUGIN-BUILD-GUIDE dependants reference basenames/headings untouched. Not done: suites of different languages handed to one runner are not filtered by the runner's language.",
+    "descriptive": "Every tests.add suite now reaches the writer brief: a slow whole-tree runner the plan spells with suites is handed the task's suites, and a suite no command can be given gets a line naming it and why."
+  },
+  "testsAdded": [
+    "ws12 slow whole-tree sweep, plan spells sweep with a suite: writer gets the sweep handed tests/test_refund.py",
+    "ws13 fast step already naming the suite: no second line",
+    "ws14 two slow steps, two suites: each suite on exactly one line, no line repeated",
+    "ws15 compound slow step: line naming the suite with the compound reason",
+    "ws16 slow ./scripts/verify.sh: line naming the suite, not known to take suite paths",
+    "ws17 allow: slow step naming the suite is still cut to it",
+    "ws19 slow measure-context with another runner's evidence: not handed the suite, reason line",
+    "ws20 plan never spelling the sweep with a suite: listed whole sweep stays, suite named with reason",
+    "ws18 invariant over slow sweep / slow pytest / slow compound / fast only / no gate"
+  ],
+  "casesAdded": [
+    [
+      "ws12",
+      "ws13",
+      "ws14",
+      "ws15",
+      "ws16",
+      "ws17",
+      "ws19",
+      "ws20"
+    ],
+    [
+      "ws18"
+    ]
+  ],
+  "claims": "claims:\n1 suite_coverage/_runs_whole_tree/_suite_runner in plugins/audit/scripts/status/audit-lookup.py do what the docstring and PLUGIN-BUILD-GUIDE paragraph say; live compose over docs/audit/audit-plan.json printed '- python3 tools/sweep-selftests.py tests/test_audit_lookup.py (the tests this task adds, given to a declared command's runner)'\n2 M1-M5 in a git-archive scratch copy each turned named ws cases red (M2 over-fire -> ws20, M1 over-fire -> ws9/ws19/ws20); restored 181/181\n3 class: every tests.add suite, not the shape; the slow-step-names-suite shape (own_suite_command, ws8/ws17) left as is; the listed-whole-run shape was found live (measure-context) and fixed by the known-runner rule\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 no number written into prose; guide case-id range replaced by 'the ws cases'",
+  "stamp": "audit-stamp: {\"content\":\"sha256:43c27c3d9e9dba2f4ada143bdf998b9c829ca4c4c63f239d5f44a19691e3b217\",\"dirtyDigest\":\"sha256:fd979b0553883765050c6d9436567418f31998291671c55c6a2406b93f437902\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"1a74d96760923b97\",\"plugins/audit/scripts/status/audit-lookup.py\":\"4bf2daf8d14acbbc\",\"tests/test_audit_lookup.py\":\"232deccb5c247611\"},\"head\":\"8407a02d\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test_audit_lookup.py\"],\"scopeDigest\":\"sha256:0038f68e6366a9ea51f1c554b332f9483bda5eed0b08c6bc6450a79182e6f36e\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

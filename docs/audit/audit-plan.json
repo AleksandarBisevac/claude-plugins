@@ -1012,6 +1012,12 @@
       "title": "The cost phase before S2",
       "status": "done",
       "shard": "phases/P157.json"
+    },
+    {
+      "id": "P158",
+      "title": "The writer always runs the tests it adds",
+      "status": "in_progress",
+      "shard": "phases/P158.json"
     }
   ],
   "fileIndex": {
@@ -1949,7 +1955,8 @@
       "P157.9-mwz",
       "P157.10-mwz",
       "P157.11-mwz",
-      "P157.12-mwz"
+      "P157.12-mwz",
+      "P158.1-lxm"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -6085,7 +6092,8 @@
       "P157.4",
       "P157.8-mwz",
       "P157.9-mwz",
-      "P157.12-mwz"
+      "P157.12-mwz",
+      "P158.1-lxm"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -12668,7 +12676,8 @@
       "P157.4",
       "P157.8-mwz",
       "P157.9-mwz",
-      "P157.12-mwz"
+      "P157.12-mwz",
+      "P158.1-lxm"
     ],
     "tests/test_audit_status.py": [
       "P131.1",

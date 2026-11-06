@@ -1,0 +1,83 @@
+{
+  "id": "P158",
+  "title": "The writer always runs the tests it adds",
+  "status": "in_progress",
+  "description": "Fixes F848 (quality-gates-internal PLAN.md), a recurrence of the class P157.12 closed for one shape. Blocks the stage-2 re-measurement.",
+  "desiredOutcome": "Every writer brief of a task that declares tests.add files lists a command that runs each of them, whatever the gate's slow steps are spelled as, or says why none could be derived",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "8407a02df8b1e8a1a16f854430112481254b628d",
+  "branch": "audit/p158-the-writer-always-runs-the-tes",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P158.1-lxm",
+      "title": "Every tests.add suite the task declares is run by a command the writer brief lists: a slow step that names none of them is extended to them when its runner takes suite paths, and otherwise the brief names each suite it could not give a command for and why",
+      "status": "in_progress",
+      "description": "F848. At 8407a02d compose_writer_prompt (plugins/audit/scripts/status/audit-lookup.py ~1082-1150) moves a slow gate step to `Do not run ... left to the phase gate` and calls own_suite_command (~1049) to keep the task's own suites runnable; own_suite_command returns None unless the step's command already names a tests.add file. A whole-tree step - this repo's `python3 tools/sweep-selftests.py`, whose recorded mean is past FOREGROUND_BOUND_MS on the stage-2 bases v01, v02, v08 - names none, so the brief lists only validate/lint and the writer runs no test it wrote. P157.12 fixed the shape where the slow step names the suite; this is the same class in another shape, so the fix is the invariant, not a third shape: every _fr.tests_add_files(task) entry is covered by a listed command or by a stated reason. Deriving the command: a single simple command whose runner takes suite paths (the sweep runner does: `python3 tools/sweep-selftests.py tests/a.py`) gets the uncovered suites appended in place of its own path arguments; decide how a runner is known to take suite paths from what _phases already knows about script runners and say how you decided, rather than a list of program names. The plain arm of the measurement is composed by this same function (both arms read it), so the wording stays task-only. measure-context's ceiling for the writer brief must hold.",
+      "files": [
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "tests/test_audit_lookup.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_lookup.py: a task whose tests.add names tests/test_x.py and whose gate's only test step is a slow whole-tree python3 tools/sweep-selftests.py (no path) gets a Before you finish line running tests/test_x.py (red-first: today no listed command names it - own_suite_command returns None); a fast step already naming the suite adds no second line; two slow steps add one line per suite, never a duplicate; a compound or non-path-taking slow command yields a line naming the suite with the reason no command was derived, never silence (allow case: P157.12's cut of a slow step that names the suite is unchanged)",
+          "tests/test_audit_lookup.py: an invariant case over the composer - for every tests.add file of a fixture set of tasks (slow sweep, slow pytest, slow compound, fast steps only, no gate), the composed brief either lists a command naming that file or a line naming it with a reason"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test_drive_phase.py tests/test__output_lints.py tests/test__deps.py tests/test__refs.py tools/_suite.py",
+          "python3 tools/measure-context.py --gate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 2,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-06T18:33:30Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-06T18:53:15Z.e8ba28",
+        "status": "passed",
+        "at": "2026-11-06T18:53:15Z"
+      }
+    }
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "988f3478-fc74-4a1e-a62b-7522b404c792",
+    "branch": "audit/p158-the-writer-always-runs-the-tes",
+    "at": "2026-11-06T18:02:21Z"
+  },
+  "startedAt": "2026-11-06T18:02:21Z"
+}

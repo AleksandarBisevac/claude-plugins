@@ -1,0 +1,37 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test_drive_phase.py tests/test__output_lints.py tests/test__deps.py tests/test__refs.py tools/_suite.py": "pass",
+    "python3 tools/measure-context.py --gate": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-06T18:42:52Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test_drive_phase.py tests/test__output_lints.py tests/test__deps.py tests/test__refs.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 10 of 181 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ws1 (house FAIL), ws9 (house FAIL), ws12 (house FAIL), ws14 (house FAIL), ws15 (house FAIL), ws16 (house FAIL), ws19 (house FAIL), ws20 (house FAIL) and 2 more: SELFTEST FAILED: 171/181 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Retry for the prove-gates c2 red: the paragraph attempt 1 added to PLUGIN-BUILD-GUIDE.md (under compose_writer_prompt's section) spelled the sweep_glob_drift row's anchor literal twice in its example, so the anchor occurred 3 times. Reworded the example to describe the sweep runner given no path and listed again given tests/test_x.py, without the anchor's literal; the prove-gates row is untouched. grep -o of the anchor literal over PLUGIN-BUILD-GUIDE.md | wc -l -> 1. python3 tools/sweep-selftests.py tools/prove-gates.py exit 0 (1/1 files, 66 cases). Task gate: the six-file sweep exit 0 (6/6 files ok, 1870 cases); python3 tools/measure-context.py --gate exit 0 (GATE OK). python3 tests/test_audit_lookup.py --selftest: 181/181, ws12-ws20 PASS. Attempt 1's code and tests kept unchanged. Dependants: unchanged from attempt 1's answer - the only edit this attempt is prose inside the guide paragraph; the guide's dependants reference basenames/headings that this rewording does not touch, still correct.",
+    "descriptive": "The guide paragraph on suite coverage no longer repeats the prove-gates sweep anchor, so c2 holds while the writer-brief coverage fix stands."
+  },
+  "testsAdded": [
+    "ws12-ws17, ws19, ws20: a slow whole-tree sweep gets a line running the task's suite; a fast naming step adds no second line; two slow steps one line per suite; compound or unknown-runner steps name the suite with a reason; P157.12's cut unchanged",
+    "ws18: invariant over slow sweep, slow pytest, slow compound, fast-only and no-gate fixtures - every tests.add suite is named by exactly one bullet"
+  ],
+  "casesAdded": [
+    [
+      "ws12",
+      "ws13",
+      "ws14",
+      "ws15",
+      "ws16",
+      "ws17",
+      "ws19",
+      "ws20"
+    ],
+    "ws18"
+  ],
+  "claims": "claims:\n1 PLUGIN-BUILD-GUIDE.md paragraph now says only that a pathless sweep is listed again given the suite, which audit-lookup.py's suite_coverage does (ws12 output shows the line)\n2 prove-gates c2 was the red (anchor 3 times); after rewording, sweep over tools/prove-gates.py exit 0, 66 cases\n3 grep -o 'python3 tools/sweep-selftests.py' PLUGIN-BUILD-GUIDE.md: 1 hit, the pre-existing one the row anchors on, left\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:cf04f8cf6a8df5d63e37eab89b390e75ca52d1475b4e9b4f5497cc45f9638c96\",\"dirtyDigest\":\"sha256:fd979b0553883765050c6d9436567418f31998291671c55c6a2406b93f437902\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"d6f58a05ed360901\",\"plugins/audit/scripts/status/audit-lookup.py\":\"4bf2daf8d14acbbc\",\"tests/test_audit_lookup.py\":\"232deccb5c247611\"},\"head\":\"8407a02d\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test_audit_lookup.py\"],\"scopeDigest\":\"sha256:11c7699fc98cc0ec4f3667155b4519aa919856109691a650b22db19f8c4e55a4\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

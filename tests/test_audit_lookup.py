@@ -2187,7 +2187,10 @@ def _wp_manifest(gate=("selftests", "lint", "report", "shots", "interactive"),
         "shots": _WP_BROWSER[0],
         "interactive": _WP_BROWSER[1],
         # a user project's own gate, spelled the way a project may spell it
-        "verifysh": "./scripts/verify.sh --fast"}
+        "verifysh": "./scripts/verify.sh --fast",
+        # the sweep handed one suite, as a plan spells it for a task's own
+        # gate: the basis on which the whole-tree sweep is read as running it
+        "onesuite": "python3 tools/sweep-selftests.py tests/test_other.py"}
     task = {"id": "P1.1", "title": "Split a refund across lines",
             "status": "in_progress", "description": description,
             "files": ["src/refund.py", "tests/test_refund.py"],
@@ -2484,15 +2487,18 @@ def _writer_slow_cases(check):
     readings = (("selftests", 400000, 3), ("lint", 2000, 5), ("report", None, 0))
     ok, lines = _ws_compose(man, readings)
     lines = lines if ok else []
-    text = "\n".join(lines)
     items = _ws_items(lines) if ok else []
     left_lines = [ln for ln in lines if ln.startswith("Do not run")]
+    narrowed = "- %s tests/test_refund.py " % (sweep,)
     check("ws1 a step measured above the bound is not under 'Before you finish' "
-          "and is named once, on the line leaving it to the phase gate, with its "
-          "mean and its run count: items=%r left=%r" % (items, left_lines),
+          "- only its runner handed the task's suite is - and is named once, on "
+          "the line leaving it to the phase gate, with its mean and its run "
+          "count: items=%r left=%r" % (items, left_lines),
           ok and ("- %s" % (sweep,)) not in items
-          and not [i for i in items if sweep in i]
-          and text.count(sweep) == 1
+          and [i for i in items if sweep in i]
+          == [i for i in items if i.startswith(narrowed)]
+          and len([i for i in items if sweep in i]) == 1
+          and "\n".join(left_lines).count(sweep) == 1
           and len(left_lines) == 1 and sweep in left_lines[0]
           and "400 s" in left_lines[0] and "3 runs" in left_lines[0]
           and left_lines[0].endswith(": left to the phase gate."))
@@ -2514,7 +2520,7 @@ def _writer_slow_cases(check):
     check("ws5 a slow step the project also leaves to the phase gate is named "
           "once: count=%d left=%r" % (text5.count(_WP_BROWSER[0]), left5),
           ok5 and text5.count(_WP_BROWSER[0]) == 1 and len(left5) == 1
-          and _WP_BROWSER[0] in left5[0] and text5.count(sweep) == 1)
+          and _WP_BROWSER[0] in left5[0] and left5[0].count(sweep) == 1)
     bound_line = M.foreground_bound_line()
     check("ws1b ...and the bound is stated once, on the line after: %r"
           % ([ln for ln in lines if "foreground" in ln],),
@@ -2586,7 +2592,10 @@ def _writer_slow_cases(check):
               code == M.E_OK and len(disk_left) == 1
               and sweep in disk_left[0] and "400 s" in disk_left[0]
               and "1 run" in disk_left[0] and "1 runs" not in disk_left[0]
-              and not [i for i in disk_items if sweep in i]
+              and ("- %s" % (sweep,)) not in disk_items
+              and len([i for i in disk_items if sweep in i]) == 1
+              and [i for i in disk_items if sweep in i][0].startswith(
+                  "- %s tests/test_refund.py " % (sweep,))
               and ("- %s" % (lint,)) in disk_items)
     finally:
         shutil.rmtree(root, ignore_errors=True)
@@ -2615,14 +2624,18 @@ def _writer_own_suite_cases(check):
           and "none declared" not in "\n".join(lines)
           and len(left) == 1 and whole in left[0])
     keyed = _wp_manifest(gate=("selftests",))
+    del keyed["meta"]["buildCommands"]["onesuite"]
     ok9, lines9 = _ws_compose(keyed, (("selftests", 400000, 3),))
     lines9 = lines9 if ok9 else []
     items9 = _ws_items(lines9) if ok9 else []
     check("ws9 a gate whose every step is slow and names no suite of the task "
           "says no command is left to run in the foreground - a declared "
-          "command is never 'none declared': items=%r" % (items9,),
-          ok9 and len(items9) == 1 and "none declared" not in items9[0]
+          "command is never 'none declared'; the suite the plan never spells "
+          "the sweep with is named after it, with the reason: items=%r"
+          % (items9,),
+          ok9 and len(items9) == 2 and "none declared" not in items9[0]
           and "phase gate" in items9[0]
+          and items9[1].startswith("- tests/test_refund.py: ")
           and "none declared" not in "\n".join(lines9))
     cut = M.own_suite_command
     module_run = "python3 -m pytest tests/test_other.py tests/test_refund.py -q"
@@ -2640,7 +2653,171 @@ def _writer_own_suite_cases(check):
     ok10, lines10 = _ws_compose(bare, ())
     check("ws10 a task declaring no gate command still reads 'none declared': %r"
           % (_ws_items(lines10) if ok10 else lines10,),
-          ok10 and _ws_items(lines10) == ["- none declared"])
+          ok10 and _ws_items(lines10)[:1] == ["- none declared"])
+    _writer_suite_coverage_cases(check)
+
+
+def _ws_suites_manifest(gate, suites=("tests/test_refund.py",), known=()):
+    """The writer fixture with `gate` and one tests.add entry per suite, every
+    suite among the files the task declares; `known` is the gate of a second,
+    finished task - where the plan spells a runner given a suite path."""
+    man = _wp_manifest(gate=gate,
+                       add=tuple("%s: the case" % (s,) for s in suites))
+    task = man["phases"][0]["tasks"][0]
+    task["files"] = ["src/refund.py"] + list(suites)
+    if known:
+        man["phases"][0]["tasks"].append(
+            {"id": "P1.0", "title": "An earlier task", "status": "done",
+             "files": ["tests/test_other.py"],
+             "tests": {"mode": "regression", "add": [], "gate": list(known)}})
+    return man
+
+
+def _ws_naming(items, suite):
+    """The bullets under 'Before you finish' naming `suite` as a word."""
+    return [i for i in items if suite in i.replace("`", " ").split()
+            or (suite + ":") in i.split()]
+
+
+def _writer_suite_coverage_cases(check):
+    """(ws) Every suite the task's tests.add names is run by a command the
+    writer is told to run, or is named with the reason no command could be
+    given for it - whatever the gate's slow steps are spelled as."""
+    sweep = "python3 tools/sweep-selftests.py"
+    refund, split = "tests/test_refund.py", "tests/test_split.py"
+    # A whole-tree sweep, slow, as the gate's only test step: it names no suite
+    # of the task, and its runner takes suite paths.
+    spelled = ("%s tests/test_other.py" % (sweep,),)
+    man = _ws_suites_manifest(("selftests", "lint"), known=spelled)
+    ok, lines = _ws_compose(man, (("selftests", 400000, 3), ("lint", 2000, 5)))
+    items = _ws_items(lines) if ok else []
+    left = [ln for ln in (lines if ok else []) if ln.startswith("Do not run")]
+    named = _ws_naming(items, refund)
+    check("ws12 a slow whole-tree sweep naming no suite of the task is left to "
+          "the phase gate, and the writer is told to run the task's suite "
+          "through that runner: items=%r left=%r" % (items, left),
+          ok and len(named) == 1
+          and named[0].startswith("- %s %s" % (sweep, refund))
+          and len(left) == 1 and sweep in left[0])
+    # THE OVER-FIRE TWIN: a fast step already naming the suite adds no line.
+    narrowed = "%s %s" % (sweep, refund)
+    man13 = _ws_suites_manifest(("selftests", narrowed))
+    ok13, lines13 = _ws_compose(man13, (("selftests", 400000, 3),
+                                        (narrowed, 2000, 4)))
+    items13 = _ws_items(lines13) if ok13 else []
+    check("ws13 a fast step already naming the suite is the one line naming "
+          "it - no second line is derived: items=%r" % (items13,),
+          ok13 and len(_ws_naming(items13, refund)) == 1
+          and _ws_naming(items13, refund)[0].startswith("- %s" % (narrowed,)))
+    # Two slow path-taking steps, two suites: each suite on one line, no line
+    # twice.
+    pytest = "python3 -m pytest -q"
+    man14 = _ws_suites_manifest(("selftests", pytest), (refund, split),
+                                known=spelled)
+    ok14, lines14 = _ws_compose(man14, (("selftests", 400000, 3),
+                                        (pytest, 300000, 2)))
+    items14 = _ws_items(lines14) if ok14 else []
+    check("ws14 two slow steps and two suites: each suite is named by exactly "
+          "one line, and no line repeats: items=%r" % (items14,),
+          ok14 and len(_ws_naming(items14, refund)) == 1
+          and len(_ws_naming(items14, split)) == 1
+          and len(set(items14)) == len(items14)
+          and "none declared" not in "\n".join(lines14))
+    # A compound slow step: no suite can be handed to it, and the suite is
+    # named with that reason.
+    compound = "ruff check src && %s" % (sweep,)
+    man15 = _ws_suites_manifest((compound,), known=spelled)
+    ok15, lines15 = _ws_compose(man15, ((compound, 400000, 3),))
+    items15 = _ws_items(lines15) if ok15 else []
+    named15 = _ws_naming(items15, refund)
+    check("ws15 a compound slow step yields a line naming the suite with the "
+          "reason no command was derived, never silence: items=%r" % (items15,),
+          ok15 and len(named15) == 1 and "compound" in named15[0]
+          and not named15[0].startswith("- %s" % (sweep,)))
+    # A slow step whose runner is not known to take suite paths.
+    script = "./scripts/verify.sh --fast"
+    man16 = _ws_suites_manifest(("verifysh",))
+    ok16, lines16 = _ws_compose(man16, (("verifysh", 400000, 3),))
+    items16 = _ws_items(lines16) if ok16 else []
+    named16 = _ws_naming(items16, refund)
+    check("ws16 a slow step whose runner is not known to take suite paths "
+          "yields a line naming the suite and saying so: items=%r" % (items16,),
+          ok16 and len(named16) == 1 and "suite path" in named16[0]
+          and script not in named16[0].split(": ", 1)[0])
+    # THE ALLOW CASE: the cut of a slow step naming the suite is unchanged.
+    whole = "%s %s tests/test_other.py" % (sweep, refund)
+    man17 = _ws_suites_manifest((whole,))
+    ok17, lines17 = _ws_compose(man17, ((whole, 400000, 3),))
+    items17 = _ws_items(lines17) if ok17 else []
+    check("ws17 a slow step that names the suite is still cut to it, one line, "
+          "nothing appended: items=%r" % (items17,),
+          ok17 and len(items17) == 1
+          and items17[0].startswith("- %s" % (narrowed,))
+          and items17[0].count("tests/test_refund.py") == 1
+          and "test_other" not in items17[0])
+    # THE OVER-FIRE TWIN of ws12: an interpreter running a script with no path
+    # is not, by that shape alone, a runner that takes suites - the plan must
+    # spell that runner given one. Another runner spelled so is not evidence.
+    measure = "python3 tools/measure-context.py --gate"
+    man19 = _ws_suites_manifest((measure,), known=spelled)
+    ok19, lines19 = _ws_compose(man19, ((measure, 400000, 3),))
+    items19 = _ws_items(lines19) if ok19 else []
+    named19 = _ws_naming(items19, refund)
+    check("ws19 a slow script run the plan never spells with a suite path is "
+          "not handed the suite; the suite is named with that reason: %r"
+          % (items19,),
+          ok19 and len(named19) == 1 and "suite path" in named19[0]
+          and not [i for i in items19 if i.startswith("- %s" % (measure,))])
+    # A plan that never spells the sweep with a suite: the whole-tree sweep
+    # stays listed as declared, and the suite is named beside it, since
+    # nothing says the sweep runs it.
+    bare_plan = _ws_suites_manifest(("selftests",))
+    del bare_plan["meta"]["buildCommands"]["onesuite"]
+    ok20, lines20 = _ws_compose(bare_plan, ())
+    items20 = _ws_items(lines20) if ok20 else []
+    named20 = _ws_naming(items20, refund)
+    check("ws20 with no spelling of the sweep handed a suite, the listed "
+          "whole-tree sweep is not read as running the suite: it stays as "
+          "declared and the suite is named with the reason: %r" % (items20,),
+          ok20 and items20[:1] == ["- %s" % (sweep,)]
+          and len(named20) == 1 and "suite path" in named20[0])
+    _writer_suite_invariant_cases(check)
+
+
+def _writer_suite_invariant_cases(check):
+    """(ws) The invariant over the composer: for every fixture task, every
+    tests.add suite is on a bullet under 'Before you finish' - a command naming
+    it, or a line naming it with a reason."""
+    sweep = "python3 tools/sweep-selftests.py"
+    suites = ("tests/test_refund.py", "tests/test_split.py")
+    on_sweep = ("%s tests/test_other.py" % (sweep,),)
+    on_pytest = ("python3 -m pytest tests/test_other.py",)
+    fixtures = (
+        ("slow sweep", ("selftests", "lint"),
+         (("selftests", 400000, 3), ("lint", 2000, 5)), on_sweep),
+        ("slow pytest", ("python3 -m pytest -q",),
+         (("python3 -m pytest -q", 400000, 3),), on_pytest),
+        ("slow compound", ("ruff check src && %s" % (sweep,),),
+         (("ruff check src && %s" % (sweep,), 400000, 3),), on_sweep),
+        ("fast steps only", ("%s tests/test_refund.py" % (sweep,), "lint"),
+         (("%s tests/test_refund.py" % (sweep,), 2000, 3), ("lint", 2000, 5)),
+         ()),
+        ("no gate", (), (), ()),
+    )
+    gaps = []
+    for name, gate, slow, known in fixtures:
+        ok, lines = _ws_compose(_ws_suites_manifest(gate, suites, known), slow)
+        if not ok:
+            gaps.append((name, "raised", lines))
+            continue
+        items = _ws_items(lines)
+        for suite in suites:
+            if len(_ws_naming(items, suite)) != 1:
+                gaps.append((name, suite, _ws_naming(items, suite)))
+    check("ws18 every tests.add suite of every fixture task (slow sweep, slow "
+          "pytest, slow compound, fast steps only, no gate) is named by exactly "
+          "one bullet under 'Before you finish': gaps=%r" % (gaps,),
+          gaps == [])
 
 
 _DI_FILES = {

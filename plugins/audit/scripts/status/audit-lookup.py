@@ -1079,6 +1079,139 @@ def own_suite_command(command, added):
     return " ".join(kept)
 
 
+# What a command derived for suites no declared command names says beside itself.
+GIVEN_SUITES_NOTE = "the tests this task adds, given to a declared command's runner"
+
+
+def _suite_runner(words):
+    """`(runner, at, suites)` for one simple command that runs suites through an
+    interpreter, else None: `runner` is `("script", path)` or `("module",
+    name)`, `at` the index of the first word after it, `suites` the paths the
+    command hands it.
+
+    The shape is `_manifest_phases`' reading of an interpreter's words: the
+    first path after the interpreter is the program it runs and every path
+    after that is an argument, and `-m` runs a module, which is no path. Such a
+    command is a suite runner only when every path it hands over is a suite -
+    one handed a plan or an output directory is a tool, not a runner - and
+    when the program it runs is not itself a suite, since a suite run as a
+    program takes the paths behind it as its own arguments."""
+    if not words or not _phases._is_script_runner(words[0]):
+        return None
+    runner, at = None, 1
+    while at < len(words) and runner is None:
+        word = words[at]
+        path = _phases.shell_word_path(word)
+        if word == "-m" and at + 1 < len(words):
+            runner, at = ("module", words[at + 1]), at + 2
+        elif path is not None:
+            if _phases.is_suite_path(path):
+                return None
+            runner, at = ("script", path), at + 1
+        elif word.startswith("-"):
+            at += 1
+        else:
+            return None
+    if runner is None:
+        return None
+    paths = [_phases.shell_word_path(w) for w in words[at:]]
+    paths = [p for p in paths if p is not None]
+    if not all(_phases.is_suite_path(p) for p in paths):
+        return None
+    return runner, at, paths
+
+
+def _plan_commands(manifest):
+    """Every command the plan spells: each `meta.buildCommands` value and each
+    task's literal gate entry, in document order."""
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    build = meta.get("buildCommands") if isinstance(meta.get("buildCommands"), dict) else {}
+    spelled = [v for v in build.values() if isinstance(v, str)]
+    for _phase, task in _mio.iter_tasks(manifest):
+        tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
+        gate = tests.get("gate") if isinstance(tests.get("gate"), list) else []
+        spelled += [g for g in gate if isinstance(g, str) and g not in build]
+    return spelled
+
+
+def suite_taking_runners(manifest):
+    """The runners (`_suite_runner`'s first answer) the plan spells handed at
+    least one suite path, in any simple command of any command it spells.
+
+    A runner is known to take suite paths only from that: a script run with no
+    path (`python3 tools/measure-context.py --gate`) has the same shape as a
+    whole-tree test run, and handing it a suite would be a command nobody
+    wrote, so the plan's own spelling of the runner with a suite is the basis."""
+    known = set()
+    for command in _plan_commands(manifest):
+        for words in _phases.gate_entry_commands(command):
+            read = _suite_runner(words)
+            if read is not None and read[2]:
+                known.add(read[0])
+    return known
+
+
+def _given_suites(words, at, suites):
+    """`words` with every path it hands its runner replaced by `suites`, put
+    where the first one stood, or appended when it hands none."""
+    out, placed = [], False
+    for i, word in enumerate(words):
+        if i >= at and _phases.shell_word_path(word) is not None:
+            out += [] if placed else list(suites)
+            placed = True
+            continue
+        out.append(word)
+    out += [] if placed else list(suites)
+    return " ".join(shlex.quote(w) for w in out)
+
+
+def _runs_whole_tree(command, known):
+    """Whether a listed command is a runner of `known` handed no suite: a
+    whole run, which runs every suite of the task. A script with no path that
+    the plan never spells with a suite has the same shape and runs none."""
+    words = _phases.gate_entry_commands(command)
+    read = _suite_runner(words[0]) if len(words) == 1 else None
+    return read is not None and not read[2] and read[0] in known
+
+
+def suite_coverage(manifest, steps, listed, suites):
+    """`(derived, unrun)` for the suites of `suites` no command in `listed`
+    runs: `derived` the commands that run them, `unrun` the lines naming each
+    suite left with the reason no command could be given for it.
+
+    `steps` is `[(name, raw)]`, every declared gate step before
+    `meta.nodePreamble`. A listed command runs a suite when it names it or is
+    a whole run of a runner the plan spells with a suite (`_runs_whole_tree`).
+    The first step that is one simple command
+    whose runner the plan spells with a suite (`suite_taking_runners`) is given
+    every suite still unrun, in place of its own path arguments; a compound
+    step is never given one, since which of its commands a path belongs to is
+    a guess the writer would pay for."""
+    known = suite_taking_runners(manifest) if suites else set()
+    unrun = [f for i, f in enumerate(suites) if f not in suites[:i]
+             and not any(_fr.names_path(c, f) or _runs_whole_tree(c, known)
+                         for c in listed)]
+    if not unrun:
+        return [], []
+    compound = False
+    for _name, raw in steps:
+        words = _phases.gate_entry_commands(raw)
+        compound = compound or len(words) > 1
+        read = _suite_runner(words[0]) if len(words) == 1 else None
+        if read is not None and read[0] in known:
+            given = _given_suites(words[0], read[1], unrun)
+            return [_evio.resolved_commands(manifest, [given])[0][1]], []
+    if not steps:
+        why = "the task declares no gate command"
+    else:
+        why = ("no declared command names it, and none is a single command "
+               "known to take suite paths%s"
+               % ("; a compound command cannot be handed a suite"
+                  if compound else "",))
+    return [], ["%s: no command to run it is given - %s" % (f, why)
+                for f in unrun]
+
+
 def compose_writer_prompt(manifest, phase, task, dependants=None,
                           phase_gate_only=(), slow=()):
     """The writer session's whole prompt, as lines: plain's own text for the
@@ -1110,6 +1243,13 @@ def compose_writer_prompt(manifest, phase, task, dependants=None,
     suites (`own_suite_command`), so the writer still runs the tests it adds;
     a gate whose every declared command is left to the phase gate says so in
     the list, which reads `none declared` only when the gate declares none.
+
+    Every `tests.add` suite is then on the list, whatever the gate's steps are
+    spelled as (`suite_coverage`): run by a listed command, run by a command
+    derived from a declared step whose runner the plan spells with a suite
+    path, or named on a line of its own with the reason no command could be
+    given for it. Which runners take suite paths is read off every command the
+    plan spells, so that one answer reaches past the task to the plan.
     Only the prompt changes: the gate the drive
     runs after the session is the task's `tests.gate`, read from the plan. The
     empty default reads nothing, so the composition is the task alone's."""
@@ -1121,6 +1261,10 @@ def compose_writer_prompt(manifest, phase, task, dependants=None,
     own_files = _fr.tests_add_files(task)
     left, plain, own, slowed = [], [], [], False
     resolved = _evio.resolved_commands(manifest, entries)
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    build = meta.get("buildCommands") if isinstance(meta.get("buildCommands"), dict) else {}
+    steps = [(name, build.get(name, name)) for name, _c in resolved]
+    listed = []
     for name, command in resolved:
         mean_ms, runs = readings.get(name, (None, None))
         if _evio.outlives_foreground(mean_ms):
@@ -1133,8 +1277,10 @@ def compose_writer_prompt(manifest, phase, task, dependants=None,
             left.append(command)
         elif name in readings and mean_ms is None:
             plain.append("%s (%s)" % (command, UNMEASURED_NOTE))
+            listed.append(build.get(name, name))
         else:
             plain.append(command)
+            listed.append(build.get(name, name))
     lines = ["Implement the following task in this repository.", "",
              "Task: %s" % (task.get("title"),), ""]
     lines += _verbatim(task.get("description"), "The task records no description.")
@@ -1145,9 +1291,12 @@ def compose_writer_prompt(manifest, phase, task, dependants=None,
     lines += ["", "Tests to add:"]
     lines += ["- %s" % (a,) for a in added] or ["- none"]
     lines += ["", "Before you finish, check that everything passes:"]
+    derived, unrun = suite_coverage(manifest, steps, listed + own, own_files)
     run = ["- %s" % (c,) for c in plain] + [
-        "- %s (%s)" % (c, OWN_SUITES_NOTE) for c in own if c not in plain]
+        "- %s (%s)" % (c, OWN_SUITES_NOTE) for c in own if c not in plain] + [
+        "- %s (%s)" % (c, GIVEN_SUITES_NOTE) for c in derived]
     lines += run or ["- %s" % (NOTHING_IN_FOREGROUND if resolved else "none declared",)]
+    lines += ["- %s" % (u,) for u in unrun]
     if left:
         lines += ["", "Do not run %s: left to the phase gate." % (_or_list(left),)]
         lines += [foreground_bound_line()] if slowed else []
