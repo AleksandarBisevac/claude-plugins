@@ -3551,19 +3551,27 @@ tests it adds: a slow step naming a `tests.add` file is listed again cut down to
 compound command left uncut). A gate whose every declared command is left to the phase gate
 says so in the list; `none declared` is said only when the gate declares no command.
 
-Every `tests.add` suite then ends on the list, whatever the slow steps are spelled as
-(`suite_coverage`): a suite no listed command names, and that no listed whole run of such a
-runner covers, is handed to the first declared step that is one simple command whose runner takes suite paths, in
+Every `tests.add` file read as a suite (`_manifest_phases.is_suite_path`) then ends on the list,
+whatever the slow steps are spelled as (`suite_coverage`). A listed command runs a suite when it
+names it, or when it is a whole run: one simple command of a runner the plan hands that kind of
+suite, carrying no path and no option but `-q`/`-v` — `-m pytest -k smoke` names no path and
+runs only some cases, so it covers nothing. A suite nothing listed runs is handed to the first
+declared step that is one simple command, carries no such option, and whose runner the plan
+hands suites of the same kind (`.py`, `.js` — the extension of the paths it is spelled with), in
 place of that step's own path arguments (the sweep runner given no path, a whole-tree run, is
-listed again given `tests/test_x.py`). Which runners take suite paths is read from
-the shape `_manifest_phases` already reads, an interpreter running a script that is not itself a
-suite, or a module through `-m`, with every path behind it a suite, and from the plan's own
-spelling (`suite_taking_runners`): the runner must appear somewhere the plan spells a command,
-in a `meta.buildCommands` value or any task's gate, handed at least one suite path. A script
-with no path has the same shape as a whole-tree run, so the shape alone is no basis. A suite
-nothing can be handed to, behind a compound step, an unknown runner or no gate at all, gets a
-line of its own naming it and the reason. The `ws` cases in `tests/test_audit_lookup.py` hold
-the derivation and the reasons, and `ws18` holds the invariant over a set of gate shapes.
+listed again given `tests/test_x.py`). Which runners take which suites is read from the shape
+`_manifest_phases` already reads, an interpreter running a script that is not itself a suite, or
+a module through `-m`, with every path behind it a suite, and from the plan's own spelling
+(`suite_taking_runners`): the runner must appear somewhere the plan spells a command — a
+`meta.buildCommands` value, `meta.fullGate`, a phase's `testGate` or any task's gate — handed
+at least one suite path of that kind. A script with no path has the same shape as a whole-tree
+run, so the shape alone is no basis. The cut and the command handed suites are one derivation
+(`_rewritten`): the step's own text with only its path arguments replaced, so `$ROOT/` and `~/`
+stay words the shell expands, and an option carrying a path (`--only=tests/a.py`) stays whole. A
+suite nothing can be handed to, behind a compound step, an unknown runner, a runner handed only
+another kind, an option that may select cases, or no gate at all, gets a line of its own naming
+it and the reason. The `ws` cases in `tests/test_audit_lookup.py` hold the derivation and the
+reasons, and `ws18` holds the invariant over a set of gate shapes.
 
 The executor's brief also carries `Where your files are documented` (`documented_lines`): one
 row per Markdown heading of a tracked document that names a declared file — by its path in

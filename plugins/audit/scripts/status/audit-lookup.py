@@ -98,6 +98,7 @@ import json
 import os
 import pathlib
 import posixpath
+import re
 import shlex
 import subprocess
 import sys
@@ -1046,37 +1047,108 @@ NOTHING_IN_FOREGROUND = ("no command to run here: every declared one is left to 
                          "the phase gate, below")
 
 
-def own_suite_command(command, added):
-    """`command` cut down to the suites of `added` (`tests.add` files) it names,
-    or None when it names none of them or is more than one simple command.
+def _runner_at(values):
+    """`(runner, at)` for one simple command's word values, or None: `runner`
+    is `("script", path)` or `("module", name)` for an interpreter's program,
+    `("program", word)` for a command no interpreter starts, and `at` the
+    index of the first word after it.
 
-    A slow gate step left to the phase gate still runs the task's own tests,
-    and a writer told to run nothing verifies nothing it wrote. The cut keeps
-    the step's own runner and flags and drops every path it names that is not
-    one of `added` - except the program an interpreter runs, which is the
-    runner, not a suite (`python3 tools/sweep-selftests.py tests/a.py` keeps
-    the script), and an interpreter running a module (`python3 -m pytest`)
-    runs no script, so its first path is a suite like the rest. A compound
-    command (`a && b`) is not cut: which half a path belongs to is a guess the
-    writer would pay for."""
-    if not added or not any(_fr.names_path(command, f) for f in added):
+    `_manifest_phases`' reading of an interpreter's words: options come first,
+    `-m` runs a module, which is no path, and the first path after them is the
+    program. An option is read as one before its path is, so `--x=a/b.py`
+    ahead of the program is not taken for it. A word before the program that
+    is neither (`python3 -W ignore x.py`) leaves the program unknown."""
+    if not values:
         return None
+    if not _phases._is_script_runner(values[0]):
+        return ("program", values[0]), 1
+    at = 1
+    while at < len(values):
+        word = values[at]
+        if word == "-m" and at + 1 < len(values):
+            return ("module", values[at + 1]), at + 2
+        if not word.startswith("-"):
+            path = _phases.shell_word_path(word)
+            return (("script", path), at + 1) if path is not None else None
+        at += 1
+    return None
+
+
+def _slots(values, at):
+    """The indexes, from `at` on, of the words that hand the runner a path. An
+    option is the runner's own word and stays whole even when it carries a
+    path (`--only=tests/a.py`): which paths a flag selects is the runner's
+    reading, not this one's."""
+    return [i for i in range(at, len(values))
+            if not values[i].startswith("-")
+            and _phases.shell_word_path(values[i]) is not None]
+
+
+def _simple_command(command):
+    """`(words, values, runner, at)` for a command that is one simple command
+    whose every word `shell_words` reads as `gate_entry_commands` does, else
+    None - the only shape a derived command can be written from word for word.
+    A redirection or an attached operator is a word one reading keeps and the
+    other drops, and such a command is not rewritten at all."""
     commands = _phases.gate_entry_commands(command)
     if len(commands) != 1 or not commands[0]:
         return None
-    words = commands[0]
-    program = _phases._is_script_runner(words[0])
-    kept = []
-    for word in words:
-        path = _phases.shell_word_path(word)
-        if word == "-m":
-            program = False
-        elif path is not None and program:
-            program = False
-        elif path is not None and path not in added:
-            continue
-        kept.append(shlex.quote(word))
-    return " ".join(kept)
+    words = _phases.shell_words(command)
+    if [value for _raw, value in words] != commands[0]:
+        return None
+    read = _runner_at(commands[0])
+    if read is None:
+        return None
+    return words, commands[0], read[0], read[1]
+
+
+def _rewritten(command, words, drop, insert):
+    """`command`'s own text with the words at the indexes of `drop` taken out
+    and `insert` (shell words) put where the first of them stood, or after the
+    last word when `drop` is empty.
+
+    THE ONE DERIVATION of a command from a gate step, shared by the cut and by
+    the command handed suites: every byte outside the dropped words is the
+    step's own, so `$ROOT/x.py` and `~/x.py` stay words the shell expands, and
+    a word re-quoted from its value would have made them literals."""
+    pieces, cursor, placed = [], 0, False
+    for i, (raw, _value) in enumerate(words):
+        start = command.index(raw, cursor)
+        gap, cursor = command[cursor:start], start + len(raw)
+        if i not in drop:
+            pieces.append(gap + raw)
+        elif insert and not placed:
+            pieces.append(gap + " ".join(insert))
+            placed = True
+    if insert and not placed:
+        pieces.append(" " + " ".join(insert))
+    return "".join(pieces) + command[cursor:]
+
+
+def own_suite_command(command, added):
+    """`command` cut down to the suites of `added` (`tests.add` files) it names,
+    or None when it names none of them or cannot be rewritten word for word
+    (`_simple_command`).
+
+    A slow gate step left to the phase gate still runs the task's own tests,
+    and a writer told to run nothing verifies nothing it wrote. The cut keeps
+    the step's own runner and flags and drops every path it hands the runner
+    that is not one of `added` (`_slots`): the program an interpreter runs is
+    the runner, not a suite (`python3 tools/sweep-selftests.py tests/a.py`
+    keeps the script), an interpreter running a module (`python3 -m pytest`)
+    runs no script, so its first path is a suite like the rest, and a command
+    no interpreter starts keeps its first word. A compound command (`a && b`)
+    is not cut: which half a path belongs to is a guess the writer would pay
+    for."""
+    if not added or not any(_fr.names_path(command, f) for f in added):
+        return None
+    simple = _simple_command(command)
+    if simple is None:
+        return None
+    words, values, _runner, at = simple
+    drop = [i for i in _slots(values, at)
+            if _phases.shell_word_path(values[i]) not in added]
+    return _rewritten(command, words, drop, [])
 
 
 # What a command derived for suites no declared command names says beside itself.
@@ -1089,139 +1161,201 @@ def _suite_runner(words):
     name)`, `at` the index of the first word after it, `suites` the paths the
     command hands it.
 
-    The shape is `_manifest_phases`' reading of an interpreter's words: the
-    first path after the interpreter is the program it runs and every path
-    after that is an argument, and `-m` runs a module, which is no path. Such a
-    command is a suite runner only when every path it hands over is a suite -
-    one handed a plan or an output directory is a tool, not a runner - and
-    when the program it runs is not itself a suite, since a suite run as a
-    program takes the paths behind it as its own arguments."""
+    The runner is `_runner_at`'s and the paths are `_slots`'. Such a command
+    is a suite runner only when every path it hands over is a suite - one
+    handed a plan or an output directory is a tool, not a runner - and when
+    the program it runs is not itself a suite, since a suite run as a program
+    takes the paths behind it as its own arguments."""
     if not words or not _phases._is_script_runner(words[0]):
         return None
-    runner, at = None, 1
-    while at < len(words) and runner is None:
-        word = words[at]
-        path = _phases.shell_word_path(word)
-        if word == "-m" and at + 1 < len(words):
-            runner, at = ("module", words[at + 1]), at + 2
-        elif path is not None:
-            if _phases.is_suite_path(path):
-                return None
-            runner, at = ("script", path), at + 1
-        elif word.startswith("-"):
-            at += 1
-        else:
-            return None
-    if runner is None:
+    read = _runner_at(words)
+    if read is None:
         return None
-    paths = [_phases.shell_word_path(w) for w in words[at:]]
-    paths = [p for p in paths if p is not None]
+    runner, at = read
+    if runner[0] == "script" and _phases.is_suite_path(runner[1]):
+        return None
+    paths = [_phases.shell_word_path(words[i]) for i in _slots(words, at)]
     if not all(_phases.is_suite_path(p) for p in paths):
         return None
     return runner, at, paths
 
 
 def _plan_commands(manifest):
-    """Every command the plan spells: each `meta.buildCommands` value and each
-    task's literal gate entry, in document order."""
+    """Every command the plan spells, in document order: each
+    `meta.buildCommands` value, then each literal entry of `meta.fullGate`, of
+    a phase's `testGate` and of a task's `tests.gate` - an entry naming a
+    `buildCommands` key is already its value."""
     meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
     build = meta.get("buildCommands") if isinstance(meta.get("buildCommands"), dict) else {}
     spelled = [v for v in build.values() if isinstance(v, str)]
-    for _phase, task in _mio.iter_tasks(manifest):
-        tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
-        gate = tests.get("gate") if isinstance(tests.get("gate"), list) else []
-        spelled += [g for g in gate if isinstance(g, str) and g not in build]
+    lists = [meta.get("fullGate")]
+    lists += [p.get("testGate") for p in manifest.get("phases") or []
+              if isinstance(p, dict)]
+    lists += [(t.get("tests") or {}).get("gate") for _p, t in _mio.iter_tasks(manifest)
+              if isinstance(t.get("tests") or {}, dict)]
+    for entries in lists:
+        spelled += [e for e in (entries if isinstance(entries, list) else [])
+                    if isinstance(e, str) and e not in build]
     return spelled
 
 
+def _suite_kind(path):
+    """The extension a suite's basename ends in (`.py` for `test_a.py`, `.js`
+    for `ui.test.js`), or "" for none: the kind of suite a runner is handed."""
+    base = str(path).replace("\\", "/").rsplit("/", 1)[-1]
+    return base[base.rindex("."):] if "." in base else ""
+
+
 def suite_taking_runners(manifest):
-    """The runners (`_suite_runner`'s first answer) the plan spells handed at
-    least one suite path, in any simple command of any command it spells.
+    """`{runner: kinds}`: each runner (`_suite_runner`'s first answer) the plan
+    spells handed at least one suite path, in any simple command of any command
+    it spells, with the `_suite_kind`s of the suites it is handed there.
 
     A runner is known to take suite paths only from that: a script run with no
     path (`python3 tools/measure-context.py --gate`) has the same shape as a
     whole-tree test run, and handing it a suite would be a command nobody
-    wrote, so the plan's own spelling of the runner with a suite is the basis."""
-    known = set()
+    wrote, so the plan's own spelling of the runner with a suite is the basis -
+    and only for the kinds it is spelled with, since a runner handed `.py`
+    suites says nothing about whether it runs `ui.test.js`."""
+    known = {}
     for command in _plan_commands(manifest):
         for words in _phases.gate_entry_commands(command):
             read = _suite_runner(words)
-            if read is not None and read[2]:
-                known.add(read[0])
+            for path in (read[2] if read is not None else []):
+                known.setdefault(read[0], set()).add(_suite_kind(path))
     return known
 
 
-def _given_suites(words, at, suites):
-    """`words` with every path it hands its runner replaced by `suites`, put
-    where the first one stood, or appended when it hands none."""
-    out, placed = [], False
-    for i, word in enumerate(words):
-        if i >= at and _phases.shell_word_path(word) is not None:
-            out += [] if placed else list(suites)
-            placed = True
-            continue
-        out.append(word)
-    out += [] if placed else list(suites)
-    return " ".join(shlex.quote(w) for w in out)
+# The options that change only what a run prints. Any other word after the
+# runner may select cases (`-k smoke`, `--lf`, `--only=a.py`) and nothing here
+# can tell which do, so a run carrying one is read as partial.
+_OUTPUT_ONLY_OPTION = re.compile(r"^(?:-q+|-v+|--quiet|--verbose)$")
 
 
-def _runs_whole_tree(command, known):
-    """Whether a listed command is a runner of `known` handed no suite: a
-    whole run, which runs every suite of the task. A script with no path that
-    the plan never spells with a suite has the same shape and runs none."""
+def _selects_cases(values, at):
+    """Whether a command's words after its runner (`at` on) hold anything but
+    the paths it hands over and `_OUTPUT_ONLY_OPTION`s."""
+    slots = set(_slots(values, at))
+    return any(i not in slots and not _OUTPUT_ONLY_OPTION.match(values[i])
+               for i in range(at, len(values)))
+
+
+def _runs_whole_tree(command, known, suite):
+    """Whether a listed command is a whole run that runs `suite`: one simple
+    command of a runner `known` takes `suite`'s kind with, handed no path and
+    no option that may select cases (`_selects_cases`). A script with no path
+    that the plan never spells with a suite has the same shape and runs none,
+    and `-m pytest -k smoke` names no path and runs some."""
     words = _phases.gate_entry_commands(command)
     read = _suite_runner(words[0]) if len(words) == 1 else None
-    return read is not None and not read[2] and read[0] in known
+    return (read is not None and not read[2]
+            and _suite_kind(suite) in known.get(read[0], ())
+            and not _selects_cases(words[0], read[1]))
+
+
+# Why a declared step was handed no suite: the clauses of a reason line.
+_NOT_KNOWN = "none is a single command known to take suite paths"
+_COMPOUND = "a compound command cannot be handed a suite"
+_SELECTS = ("a command carrying an option other than -q or -v may select "
+            "cases, so it is not handed a suite")
+_UNREWRITABLE = ("a command whose words cannot be rewritten as written (a "
+                 "redirection, or a quote the shell reads as several words) "
+                 "is not handed a suite")
+
+
+def _step_offer(raw, known):
+    """`(simple, why)` for one declared step: `simple` `_simple_command`'s
+    answer when the step may be handed suites of its runner's kinds, else None
+    with `why` the clause saying why not."""
+    commands = _phases.gate_entry_commands(raw)
+    if len(commands) > 1:
+        return None, _COMPOUND
+    read = _suite_runner(commands[0]) if commands else None
+    if read is None or read[0] not in known:
+        return None, _NOT_KNOWN
+    if _selects_cases(commands[0], read[1]):
+        return None, _SELECTS
+    simple = _simple_command(raw)
+    return (simple, None) if simple is not None else (None, _UNREWRITABLE)
+
+
+def _runner_label(runner):
+    return runner[1] if runner[0] == "script" else "-m %s" % (runner[1],)
+
+
+def _unrun_line(suite, offers, known):
+    """The line naming `suite` with the reason no step was handed it."""
+    if not offers:
+        return "%s: no command to run it is given - the task declares no gate command" % (suite,)
+    clauses = []
+    for simple, why in offers:
+        clause = why if simple is None else (
+            "the plan hands %s only %s suite paths"
+            % (_runner_label(simple[2]), "/".join(sorted(known[simple[2]])) or "extensionless"))
+        if clause not in clauses:
+            clauses.append(clause)
+    if [c for c in clauses if c not in (_NOT_KNOWN, _COMPOUND)]:
+        clauses = [c for c in clauses if c != _NOT_KNOWN] + (
+            ["the rest are not known to take suite paths"]
+            if _NOT_KNOWN in clauses else [])
+    elif _NOT_KNOWN not in clauses:
+        clauses.insert(0, _NOT_KNOWN)
+    return ("%s: no command to run it is given - no declared command names it, "
+            "and %s" % (suite, "; ".join(clauses)))
 
 
 def suite_coverage(manifest, steps, listed, suites):
-    """`(derived, unrun)` for the suites of `suites` no command in `listed`
+    """`(derived, unrun)` for the suites among `suites` no command in `listed`
     runs: `derived` the commands that run them, `unrun` the lines naming each
     suite left with the reason no command could be given for it.
 
+    Only a `suites` file `_manifest_phases.is_suite_path` reads as a suite is
+    asked about; a fixture or a source file the task adds is no test to run.
     `steps` is `[(name, raw)]`, every declared gate step before
     `meta.nodePreamble`. A listed command runs a suite when it names it or is
-    a whole run of a runner the plan spells with a suite (`_runs_whole_tree`).
-    The first step that is one simple command
-    whose runner the plan spells with a suite (`suite_taking_runners`) is given
-    every suite still unrun, in place of its own path arguments; a compound
-    step is never given one, since which of its commands a path belongs to is
-    a guess the writer would pay for."""
-    known = suite_taking_runners(manifest) if suites else set()
-    unrun = [f for i, f in enumerate(suites) if f not in suites[:i]
-             and not any(_fr.names_path(c, f) or _runs_whole_tree(c, known)
-                         for c in listed)]
+    a whole run of a runner the plan spells with that kind of suite
+    (`_runs_whole_tree`). Each step that is one simple command whose runner
+    the plan spells with a suite (`suite_taking_runners`), carrying no option
+    that may select cases, is given every suite still unrun of the kinds the
+    plan hands that runner, in place of its own path arguments
+    (`_rewritten`); a compound step is never given one, since which of its
+    commands a path belongs to is a guess the writer would pay for."""
+    wanted = [f for i, f in enumerate(suites)
+              if f not in suites[:i] and _phases.is_suite_path(f)]
+    known = suite_taking_runners(manifest) if wanted else {}
+    unrun = [f for f in wanted
+             if not any(_fr.names_path(c, f) or _runs_whole_tree(c, known, f)
+                        for c in listed)]
     if not unrun:
         return [], []
-    compound = False
-    for _name, raw in steps:
-        words = _phases.gate_entry_commands(raw)
-        compound = compound or len(words) > 1
-        read = _suite_runner(words[0]) if len(words) == 1 else None
-        if read is not None and read[0] in known:
-            given = _given_suites(words[0], read[1], unrun)
-            return [_evio.resolved_commands(manifest, [given])[0][1]], []
-    if not steps:
-        why = "the task declares no gate command"
-    else:
-        why = ("no declared command names it, and none is a single command "
-               "known to take suite paths%s"
-               % ("; a compound command cannot be handed a suite"
-                  if compound else "",))
-    return [], ["%s: no command to run it is given - %s" % (f, why)
-                for f in unrun]
+    offers = [_step_offer(raw, known) for _name, raw in steps]
+    derived, given = [], []
+    for (simple, _why), (_name, raw) in zip(offers, steps):
+        if simple is None:
+            continue
+        words, values, runner, at = simple
+        mine = [f for f in unrun if f not in given and _suite_kind(f) in known[runner]]
+        if mine:
+            command = _rewritten(raw, words, _slots(values, at),
+                                 [shlex.quote(f) for f in mine])
+            derived.append(_evio.resolved_commands(manifest, [command])[0][1])
+            given += mine
+    return derived, [_unrun_line(f, offers, known) for f in unrun if f not in given]
 
 
 def compose_writer_prompt(manifest, phase, task, dependants=None,
                           phase_gate_only=(), slow=()):
     """The writer session's whole prompt, as lines: plain's own text for the
-    task, composed from the task alone - no brief path, no rules, no skills, no
-    submit - so two calls on the same task are the same bytes.
+    task - no brief path, no rules, no skills, no submit - composed from the
+    task, its phase's `testGate` when the task declares no gate, the plan's
+    `meta.buildCommands`, and every command the plan spells (`_plan_commands`,
+    for which runners take which suites), so two calls on the same plan are
+    the same bytes.
 
     `dependants` is `dependant_lines`' answer for the task, placed after the
     declared files; `write_brief` always passes it, and None leaves the section
-    out - the composition from the task alone, which is what the measured
-    baseline the selftests compare against holds.
+    out - the composition the measured baseline the selftests compare against
+    holds.
 
     `phase_gate_only` is the project's `executor.phaseGateOnly` (empty when it
     sets none, which is the default).
@@ -1244,15 +1378,14 @@ def compose_writer_prompt(manifest, phase, task, dependants=None,
     a gate whose every declared command is left to the phase gate says so in
     the list, which reads `none declared` only when the gate declares none.
 
-    Every `tests.add` suite is then on the list, whatever the gate's steps are
-    spelled as (`suite_coverage`): run by a listed command, run by a command
-    derived from a declared step whose runner the plan spells with a suite
-    path, or named on a line of its own with the reason no command could be
-    given for it. Which runners take suite paths is read off every command the
-    plan spells, so that one answer reaches past the task to the plan.
-    Only the prompt changes: the gate the drive
-    runs after the session is the task's `tests.gate`, read from the plan. The
-    empty default reads nothing, so the composition is the task alone's."""
+    Every `tests.add` file read as a suite is then on the list, whatever the
+    gate's steps are spelled as (`suite_coverage`): run by a listed command,
+    run by a command derived from a declared step whose runner the plan
+    spells with that kind of suite path, or named on a line of its own with
+    the reason no command could be given for it. Only the prompt changes: the
+    gate the drive runs after the session is the one `_task_gate` reads from
+    the plan. `slow` left empty reads no ledger, and the prompt then holds no
+    mean."""
     tests = task.get("tests") or {}
     files = [f for f in (task.get("files") or []) if isinstance(f, str)]
     added = [a for a in (tests.get("add") or []) if isinstance(a, str) and a.strip()]

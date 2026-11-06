@@ -1956,7 +1956,8 @@
       "P157.10-mwz",
       "P157.11-mwz",
       "P157.12-mwz",
-      "P158.1-lxm"
+      "P158.1-lxm",
+      "P158.2-7vi"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -6093,7 +6094,8 @@
       "P157.8-mwz",
       "P157.9-mwz",
       "P157.12-mwz",
-      "P158.1-lxm"
+      "P158.1-lxm",
+      "P158.2-7vi"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -12677,7 +12679,8 @@
       "P157.8-mwz",
       "P157.9-mwz",
       "P157.12-mwz",
-      "P158.1-lxm"
+      "P158.1-lxm",
+      "P158.2-7vi"
     ],
     "tests/test_audit_status.py": [
       "P131.1",

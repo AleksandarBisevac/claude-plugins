@@ -2781,7 +2781,108 @@ def _writer_suite_coverage_cases(check):
           "declared and the suite is named with the reason: %r" % (items20,),
           ok20 and items20[:1] == ["- %s" % (sweep,)]
           and len(named20) == 1 and "suite path" in named20[0])
+    _writer_suite_reading_cases(check)
     _writer_suite_invariant_cases(check)
+
+
+def _ws_run(manifest, slow):
+    """`(items, ok)`: the bullets under 'Before you finish' for `manifest`."""
+    ok, lines = _ws_compose(manifest, slow)
+    return (_ws_items(lines) if ok else []), ok
+
+
+def _writer_suite_reading_cases(check):
+    """(ws) A suite counts as run only by a command that really runs it, is
+    handed only to a runner the plan hands that kind of suite, and a derived
+    command keeps the step's own words as written."""
+    sweep = "python3 tools/sweep-selftests.py"
+    refund = "tests/test_refund.py"
+    on_pytest = ("python3 -m pytest tests/test_other.py",)
+    # A filtered run names no path, so it used to read as a whole run.
+    filtered = {}
+    for step in ("python3 -m pytest -k smoke", "python3 -m pytest --lf"):
+        items, ok = _ws_run(_ws_suites_manifest((step,), known=on_pytest),
+                            ((step, 2000, 3),))
+        filtered[step] = (ok, _ws_naming(items, refund))
+    check("ws21 a fast listed command selecting cases (-k, --lf) is not a whole "
+          "run: the suite is still named by exactly one bullet, and that bullet "
+          "is not the filtered run handed the suite: %r" % (filtered,),
+          all(ok and len(named) == 1 and " -k " not in named[0]
+              and "--lf" not in named[0] for ok, named in filtered.values()))
+    # THE OVER-FIRE TWIN: a whole run with only output options really runs the
+    # suite, so nothing is added; reading every run as partial turns this red.
+    whole = "python3 -m pytest -q"
+    items22, ok22 = _ws_run(_ws_suites_manifest((whole,), known=on_pytest),
+                            ((whole, 2000, 3),))
+    check("ws22 a fast whole run of a runner the plan hands the suite's kind is "
+          "the one line - no command is derived beside it: %r" % (items22,),
+          ok22 and items22 == ["- %s" % (whole,)])
+    # The plan hands the sweep only .py suites.
+    ui = "tests/ui.test.js"
+    items23, ok23 = _ws_run(_ws_suites_manifest(("selftests",), (refund, ui)),
+                            (("selftests", 400000, 3),))
+    named23 = _ws_naming(items23, ui)
+    check("ws23 a .js suite is never handed to a runner the plan only hands .py "
+          "suites: it is named on a reason line, and the .py suite is still "
+          "given to the sweep: %r" % (items23,),
+          ok23 and len(named23) == 1
+          and named23[0].startswith("- %s: " % (ui,))
+          and "suite path" in named23[0]
+          and [i for i in items23 if i.startswith("- %s %s" % (sweep, refund))]
+          and not [i for i in items23 if i.startswith("- python3") and ui in i])
+    # The only spelling of the sweep with a suite is the phase's own testGate.
+    inherit = _ws_suites_manifest(())
+    del inherit["meta"]["buildCommands"]["onesuite"]
+    phase_step = "%s tests/test_other.py" % (sweep,)
+    inherit["phases"][0]["testGate"] = [phase_step]
+    items24, ok24 = _ws_run(inherit, ((phase_step, 400000, 3),))
+    named24 = _ws_naming(items24, refund)
+    check("ws24 a task inheriting a phase testGate that spells the sweep with a "
+          "suite gets a derived command, never a reason saying no runner is "
+          "known: %r" % (items24,),
+          ok24 and len(named24) == 1
+          and named24[0].startswith("- %s %s" % (sweep, refund)))
+    # Shell words the derivation must not quote into literals.
+    cut = M.own_suite_command
+    rooted = cut("python3 $ROOT/tools/sweep-selftests.py %s tests/test_other.py"
+                 % (refund,), [refund])
+    tilde = "python3 ~/tools/sweep-selftests.py tests/test_other.py"
+    items25, ok25 = _ws_run(_ws_suites_manifest((tilde,)),
+                            ((tilde, 400000, 3),))
+    named25 = _ws_naming(items25, refund)
+    check("ws25 a step spelled with $ROOT or ~ keeps that word unquoted, in the "
+          "cut and in the derived command alike: cut=%r items=%r"
+          % (rooted, items25),
+          rooted == "python3 $ROOT/tools/sweep-selftests.py %s" % (refund,)
+          and ok25 and len(named25) == 1
+          and named25[0].startswith(
+              "- python3 ~/tools/sweep-selftests.py %s" % (refund,)))
+    only = "%s --only=tests/test_other.py" % (sweep,)
+    kept = cut("%s %s" % (only, refund), [refund])
+    items26, ok26 = _ws_run(_ws_suites_manifest((only,), known=(phase_step,)),
+                            ((only, 400000, 3),))
+    check("ws26 a --only=<suite> word is a flag: the cut keeps it whole, and no "
+          "derived command replaces it with the suite: cut=%r items=%r"
+          % (kept, items26),
+          kept == "%s %s" % (only, refund) and ok26
+          and len(_ws_naming(items26, refund)) == 1
+          and not [i for i in items26
+                   if i.startswith("- %s %s" % (sweep, refund))])
+    # A fixture under tests/ reads as a suite by its directory, so it is the
+    # kind of suite the plan hands no runner that keeps it off the sweep; one
+    # outside every test directory is no suite at all and gets no line.
+    fixture, rates = "tests/fixtures/x.json", "fixtures/rates.json"
+    items27, ok27 = _ws_run(
+        _ws_suites_manifest(("selftests",), (refund, fixture, rates)),
+        (("selftests", 400000, 3),))
+    check("ws27 a tests.add file that is no suite (a .json fixture) is not "
+          "handed to a runner, one no reading takes for a suite is on no line, "
+          "and the suite beside them is still given to the sweep: %r"
+          % (items27,),
+          ok27 and not [i for i in items27
+                        if i.startswith("- python3") and fixture in i]
+          and not [i for i in items27 if rates in i]
+          and [i for i in items27 if i.startswith("- %s %s" % (sweep, refund))])
 
 
 def _writer_suite_invariant_cases(check):
@@ -2797,6 +2898,8 @@ def _writer_suite_invariant_cases(check):
          (("selftests", 400000, 3), ("lint", 2000, 5)), on_sweep),
         ("slow pytest", ("python3 -m pytest -q",),
          (("python3 -m pytest -q", 400000, 3),), on_pytest),
+        ("fast filtered", ("python3 -m pytest -k smoke",),
+         (("python3 -m pytest -k smoke", 2000, 3),), on_pytest),
         ("slow compound", ("ruff check src && %s" % (sweep,),),
          (("ruff check src && %s" % (sweep,), 400000, 3),), on_sweep),
         ("fast steps only", ("%s tests/test_refund.py" % (sweep,), "lint"),
@@ -2815,7 +2918,8 @@ def _writer_suite_invariant_cases(check):
             if len(_ws_naming(items, suite)) != 1:
                 gaps.append((name, suite, _ws_naming(items, suite)))
     check("ws18 every tests.add suite of every fixture task (slow sweep, slow "
-          "pytest, slow compound, fast steps only, no gate) is named by exactly "
+          "pytest, fast filtered, slow compound, fast steps only, no gate) is "
+          "named by exactly "
           "one bullet under 'Before you finish': gaps=%r" % (gaps,),
           gaps == [])
 
