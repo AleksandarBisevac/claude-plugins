@@ -246,7 +246,8 @@
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
         "tests/test_drive_phase.py",
-        "plugins/audit/reference/verbs-in-full.md"
+        "plugins/audit/reference/verbs-in-full.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -263,6 +264,62 @@
       "skills": [],
       "risk": "med",
       "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-08T23:36:18Z",
+          "reader": "PLUGIN-BUILD-GUIDE.md",
+          "reads": "plugins/audit/scripts/governance/drive-phase.py",
+          "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/governance/drive-phase.py - a section headed by its path"
+        }
+      ]
+    },
+    {
+      "id": "P159.4-pue",
+      "title": "The prompt hook never stops ordinary work when it cannot run, does not start another task after an interrupt, drives the tree the command drives, and stands aside in plan mode",
+      "status": "pending",
+      "description": "Phase code review of P159. (1) Probed on claude 2.1.319: a hook command that cannot start under onFailure \"block\" blocks every prompt with cost 0, ahead of the prefilter, with no writerModel set. A plugin update under an open session or an empty CLAUDE_PLUGIN_ROOT would stop all work, against SECURITY.md, the README and py-launch.sh. Remove onFailure; a failed hook sends the prompt on, which is the command as it was. The timeout stays long enough that expiry is not a normal path; state what expiry then does, and make the drive stop when its parent goes rather than run on. (2) /audit:next picks ready[0], which excludes in_progress, so after any interrupt or needs-model stop retyping it starts a different task (run: P1.1 and P1.2 both in_progress, a paid session on the wrong one), and a pending decision is a dead end. When the plan holds a task in progress, /audit:next passes through and next.md rule continues it; the interrupt line stops promising a resume the hook does not do. Fix next.md order so the \"no ready task\" rule does not pre-empt the in-progress paragraph. (3) Read the parent pid before anything that can take a signal: Esc during audit-status orphans a whole paid drive. (4) repo_root reads CLAUDE_PROJECT_DIR before cwd, so the hook and the pass-through command can drive different trees from a linked worktree; resolve the tree one way, through _config.tree_for. (5) permission_mode plan passes through: plan mode is read-only intent and the hook would start paid writers and commit. A Bash deny rule is not read: state that in SECURITY.md with the opt-out key rather than parsing rules. (6) Windows: proc.terminate() is TerminateProcess, so auto cannot tear down and its writers survive; use taskkill /T /F there, keep the parent-gone check honest (getppid does not change on Windows), qualify the CHANGELOG line, and name the Windows command for a manual check since the cases skip there. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/hooks/drive-without-model.py",
+        "plugins/audit/hooks/hooks.json",
+        "tests/test_drive_without_model.py",
+        "tests/test_hooks.py",
+        "plugins/audit/commands/next.md",
+        "SECURITY.md",
+        "plugins/audit/README.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_without_model.py: hooks.json carries no onFailure on this hook; /audit:next with a task in_progress passes through and starts nothing; the interrupt text promises no resume the hook does not do; SIGTERM during the audit-status read reaches the drive and leaves none running; a session in a linked worktree drives that worktree when CLAUDE_PROJECT_DIR names the main checkout, the tree _config.tree_for answers; permission_mode plan passes through; the parent going away stops the drive"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_without_model.py tests/test_hooks.py tests/test__deps.py tests/test__manifest_vocab.py tests/test__refs.py tools/_suite.py",
+          "python3 tools/bench-hooks.py --gate",
+          "python3 tools/gate-parity.py",
+          "python3 tools/measure-context.py --gate"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P159.3-pue"
+      ],
       "dependsOn": [],
       "attempts": 0,
       "maxAttempts": 3,
