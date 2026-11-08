@@ -1018,6 +1018,12 @@
       "title": "The writer always runs the tests it adds",
       "status": "done",
       "shard": "phases/P158.json"
+    },
+    {
+      "id": "P159",
+      "title": "The drive without a model",
+      "status": "pending",
+      "shard": "phases/P159.json"
     }
   ],
   "fileIndex": {
@@ -1346,7 +1352,8 @@
       "P156.18-3st",
       "P156.20-3st",
       "P156.21-3st",
-      "P156.22-3st"
+      "P156.22-3st",
+      "P159.2"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1957,7 +1964,9 @@
       "P157.11-mwz",
       "P157.12-mwz",
       "P158.1-lxm",
-      "P158.2-7vi"
+      "P158.2-7vi",
+      "P159.1",
+      "P159.2"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2054,7 +2063,8 @@
       "P125.132-0h5",
       "P130.8",
       "P131.1",
-      "P142.1"
+      "P142.1",
+      "P159.2"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -2430,7 +2440,8 @@
       "P155.11",
       "P155.19-gfj",
       "P155.42-gfj",
-      "P157.9-mwz"
+      "P157.9-mwz",
+      "P159.2"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -2655,7 +2666,8 @@
       "P125.82-0h5",
       "P130.45-ywo",
       "P131.5",
-      "P139.1"
+      "P139.1",
+      "P159.2"
     ],
     "plugins/audit/commands/panel.md": [
       "P57.3",
@@ -2720,7 +2732,8 @@
       "P139.2-6sp",
       "P139.3-6sp",
       "P148.5",
-      "P156.4"
+      "P156.4",
+      "P159.2"
     ],
     "plugins/audit/commands/propose.md": [
       "P31.2",
@@ -2779,7 +2792,8 @@
       "P125.65-0h5",
       "P125.82-0h5",
       "P131.5",
-      "P139.1"
+      "P139.1",
+      "P159.2"
     ],
     "plugins/audit/commands/status.md": [
       "P7.1",
@@ -3039,7 +3053,8 @@
       "P155.34-gfj",
       "P155.45-gfj",
       "P156.7",
-      "P156.16-3st"
+      "P156.16-3st",
+      "P159.2"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -3219,7 +3234,8 @@
       "P109.5",
       "P128.6-0h5",
       "P125.39-0h5",
-      "P125.42-0h5"
+      "P125.42-0h5",
+      "P159.2"
     ],
     "plugins/audit/hooks/journal-writes.py": [
       "P15.4",
@@ -3543,7 +3559,8 @@
       "P157.2",
       "P157.5",
       "P157.6",
-      "P157.8-mwz"
+      "P157.8-mwz",
+      "P159.1"
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
@@ -3618,7 +3635,8 @@
       "P128.2-0h5",
       "P128.41-izt",
       "P131.5",
-      "P132.4"
+      "P132.4",
+      "P159.2"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -8417,7 +8435,8 @@
       "P128.6-0h5",
       "P125.39-0h5",
       "P130.8",
-      "P131.1"
+      "P131.1",
+      "P159.2"
     ],
     "tools/capture-demo-gif.py": [
       "P59.13",
@@ -8659,7 +8678,8 @@
       "P155.33-gfj",
       "P155.39-gfj",
       "P156.6",
-      "P156.8-3st"
+      "P156.8-3st",
+      "P159.2"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -10869,7 +10889,8 @@
       "P157.8-mwz",
       "P157.10-mwz",
       "P157.11-mwz",
-      "P157.12-mwz"
+      "P157.12-mwz",
+      "P159.1"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11149,7 +11170,8 @@
       "P156.18-3st",
       "P156.20-3st",
       "P156.21-3st",
-      "P157.2"
+      "P157.2",
+      "P159.1"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
@@ -11844,7 +11866,8 @@
       "P156.8-3st",
       "P156.12-3st",
       "P156.15-3st",
-      "P156.20-3st"
+      "P156.20-3st",
+      "P159.2"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -12918,7 +12941,8 @@
       "P157.8-mwz",
       "P157.10-mwz",
       "P157.11-mwz",
-      "P157.12-mwz"
+      "P157.12-mwz",
+      "P159.1"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -12977,7 +13001,8 @@
       "P153.20-34e"
     ],
     "tests/test_hooks.py": [
-      "P131.1"
+      "P131.1",
+      "P159.2"
     ],
     "tests/test_import_evidence.py": [
       "P131.1",
@@ -13380,6 +13405,12 @@
     ],
     "tests/test_drive_phase.py,tests/test__config.py": [
       "P155.47-gfj"
+    ],
+    "plugins/audit/hooks/drive-without-model.py": [
+      "P159.2"
+    ],
+    "tests/test_drive_without_model.py": [
+      "P159.2"
     ]
   },
   "bugs": [

@@ -1,0 +1,125 @@
+{
+  "id": "P159",
+  "title": "The drive without a model",
+  "status": "pending",
+  "description": "Owner 2026-11-08: solve the orchestrator. Design, probes and pass criterion: quality-gates-internal/plans/2026-11-08-orchestrator-without-model/PLAN.md. Prior art: plans/2026-11-05-cost-phase/analysis/prior-art-orchestrator.md.",
+  "desiredOutcome": "A typed /audit:run, /audit:next or /audit:phase whose writer is a headless session runs the drive with no model request unless a step needs judgement or the human, so the orchestrator session stops being paid for relaying a script's output",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P159.1",
+      "title": "drive-phase.py auto runs the drive's mechanical steps itself and ends with a distinct answer on done, on stop, and on a step that needs a model",
+      "status": "pending",
+      "description": "Today the main loop is a model executing: next --signal, next --explain, run the printed run: line in background Bash, repeat (orchestrator's calls in stage-2 re-measurement k02m-k07mr, 12 to 23 per task, none carrying a decision). Add an `auto` action beside `next` in build_parser (drive-phase.py ~11769) that takes the same target forms and --task. Reuse the step result `next` builds (the signal dict in the function near 11610: step, subject, basis, next, runs, prompts) instead of parsing printed lines, and classify a step through SIGNAL_VERBS (859): done/stop end; judge/ask/review end as needs-model; dispatch with runs is executed; dispatch with no runs (an Agent) is needs-model; wait is resolved by the fact that auto itself ran the child to exit. Do not route through a shell a command the drive built, keep it an argv. wait-writer's docstring says only the main loop knows whether a session started: auto is that main loop now, so say what it knows. Exit answers are three distinct codes, documented in --help, and stdout on done/stop is what --explain prints, bounded as it is. No model is involved, so nothing here may be a new decision: every branch that the model used to take on `judge`/`ask` stays the model's or the human's. A gate's and a writer's run is a child of auto in its own process group; SIGTERM (what Esc delivers to a hook, probed 2026-11-08) is forwarded and auto exits with the stop answer, leaving the in-progress task for `next` to resume. The Bash foreground bound and gate_in_background do not apply inside auto, but leave that choice's readers intact. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "plugins/audit/reference/verbs-in-full.md",
+        "plugins/audit/reference/orchestrator.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: auto over a scripted drive runs each dispatch's run: command, repeats next, and on done exits with the done answer and the text --explain prints; a stop ends with the stop answer and its whole text; judge, ask, review and a dispatch with no run: line end with the needs-model answer having run nothing further, and the recorded state lets next continue from that step; a wait step whose child already exited is not spun on; a step repeating with no progress ends with a named stop within a stated bound; SIGTERM during a child ends the child's process group and leaves the task resumable; a child's non-zero exit is reported and goes back through next rather than being read as success"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__refs.py tools/_suite.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P159.2",
+      "title": "A UserPromptSubmit hook runs the drive for a typed run verb and blocks the prompt only when the drive finished without needing a model",
+      "status": "pending",
+      "description": "Probed on claude 2.1.319 (PLAN.md table): a UserPromptSubmit hook printing {\"decision\":\"block\",\"reason\":...} ends `claude -p \"/x:y\"` with exit 0, total_cost_usd 0, num_turns 0, and the reason in result; a hook lived 720 s with timeout 1800 and could start a nested claude -p; interactively the CLI shows a spinner with esc to interrupt, and Esc is SIGTERM to the hook. The hook receives the prompt as typed. Docs: default timeout on this event is 30 s, so set timeout explicitly; on timeout the prompt still reaches Claude unless onFailure is \"block\"; reason is not added to context; hookSpecificOutput.suppressOriginalPrompt drops the \"Original prompt:\" tail. Hooks are importless of scripts/: resolve through hooks/_config.find_script(), launched via py-launch.sh like the others. It fires on every prompt of every session, so the prefilter for \"not one of our verbs\" is a string check before anything heavy, under the bench-hooks budget; SECURITY.md's fail-mode table is held by gate-parity. Fail-open here means the prompt goes on to the model and the command runs as it does today, which is safe because the drive's own lock and state decide. A new config key (default on) turns it off; adding a key is free under COMPATIBILITY.md. The command texts run.md, next.md and phase.md state the pass-through case: when the prompt reaches the model, the drive may already have advanced, so it continues with next. Check how /audit:next picks its task (audit-status READY NOW, commands/next.md) and reuse that reading rather than a second rule; if it needs a model, say why and leave that verb passing through. The run-agent-session environment scrub (PARENT_SESSION_VARS) already covers a child started from a hook; confirm rather than assume. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/hooks/drive-without-model.py",
+        "plugins/audit/hooks/hooks.json",
+        "tests/test_drive_without_model.py",
+        "tests/test_hooks.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/schema/audit-config.schema.json",
+        "plugins/audit/commands/run.md",
+        "plugins/audit/commands/next.md",
+        "plugins/audit/commands/phase.md",
+        "plugins/audit/README.md",
+        "SECURITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/lints/_deps.py",
+        "tools/bench-hooks.py",
+        "tools/gate-parity.py",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_without_model.py: a prompt that is exactly /audit:run <id> with executor.writerModel set starts auto and, on done or stop, prints decision block with auto's text and suppressOriginalPrompt; on needs-model it prints nothing and exits 0 so the prompt goes on; /audit:run <id> --dry-run, any other prompt, a prompt merely containing the words, no writerModel, the opt-out key set false, no plan, an unreadable config, and auto missing or crashing all pass the prompt through with no block; a crash says so on stderr; /audit:next and /audit:phase <id> take the same path through one table; a bare /audit:run with no id passes through; SIGTERM reaches auto and the hook then blocks with a line saying the drive was interrupted and how to resume",
+          "tests/test_hooks.py: hooks.json registers the new hook on UserPromptSubmit with a timeout that outlasts a drive and onFailure block"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_without_model.py tests/test_hooks.py tests/test__deps.py tools/_suite.py",
+          "python3 tools/bench-hooks.py --gate",
+          "python3 tools/gate-parity.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [
+        "P159.1"
+      ],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}
