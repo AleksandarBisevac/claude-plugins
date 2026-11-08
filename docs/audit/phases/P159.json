@@ -64,7 +64,19 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-08T21:24:00Z",
+          "text": "it quotes the git-prohibition sentence of orchestrator.md, and this task adds a description of the auto action without touching that sentence",
+          "waives": ".claude/hooks/guard-uncommitted.py"
+        },
+        {
+          "at": "2026-11-08T21:24:00Z",
+          "text": "it pins the Reporting heading of orchestrator.md, and this task adds no change to that heading",
+          "waives": "tools/prove-gates.py"
+        }
+      ]
     },
     {
       "id": "P159.2",
