@@ -101,7 +101,7 @@
     {
       "id": "P159.2",
       "title": "A UserPromptSubmit hook runs the drive for a typed run verb and blocks the prompt only when the drive finished without needing a model",
-      "status": "in_progress",
+      "status": "done",
       "description": "Probed on claude 2.1.319 (PLAN.md table): a UserPromptSubmit hook printing {\"decision\":\"block\",\"reason\":...} ends `claude -p \"/x:y\"` with exit 0, total_cost_usd 0, num_turns 0, and the reason in result; a hook lived 720 s with timeout 1800 and could start a nested claude -p; interactively the CLI shows a spinner with esc to interrupt, and Esc is SIGTERM to the hook. The hook receives the prompt as typed. Docs: default timeout on this event is 30 s, so set timeout explicitly; on timeout the prompt still reaches Claude unless onFailure is \"block\"; reason is not added to context; hookSpecificOutput.suppressOriginalPrompt drops the \"Original prompt:\" tail. Hooks are importless of scripts/: resolve through hooks/_config.find_script(), launched via py-launch.sh like the others. It fires on every prompt of every session, so the prefilter for \"not one of our verbs\" is a string check before anything heavy, under the bench-hooks budget; SECURITY.md's fail-mode table is held by gate-parity. Fail-open here means the prompt goes on to the model and the command runs as it does today, which is safe because the drive's own lock and state decide. A new config key (default on) turns it off; adding a key is free under COMPATIBILITY.md. The command texts run.md, next.md and phase.md state the pass-through case: when the prompt reaches the model, the drive may already have advanced, so it continues with next. Check how /audit:next picks its task (audit-status READY NOW, commands/next.md) and reuse that reading rather than a second rule; if it needs a model, say why and leave that verb passing through. The run-agent-session environment scrub (PARENT_SESSION_VARS) already covers a child started from a hook; confirm rather than assume. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/hooks/drive-without-model.py",
@@ -150,14 +150,17 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "62662f103b00",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Retry for the one recorded red, tests/test__manifest_vocab.py mv37. Attempt 1's work is untouched; the only file edited is tests/test__manifest_vocab.py. mv37 now reads plugins/audit/hooks/hooks.json: a hook file leaves the walk only when hooks.json registers it and every event it is registered on is in a table of events that do not fire per tool call (UserPromptSubmit, SessionStart, Stop, SubagentStop, SessionEnd). An event absent from that table counts as per-tool-call, a shared module no event registers stays walked, and a command naming no file turns the case red, so each misreading walks more or goes red. On this tree the walk leaves out detect-plan-skip.py, drive-without-model.py and meter-usage.py. Dropping meter-usage.py loses no root: _config.py names usage_ledger too, and it is walked, so the walked roots are _areas, _journal_io, _locks, _manifest_io, _policy, _task_outputs, usage_ledger. No basename was renamed or built dynamically and the assertion was not loosened; it gained two conditions (some hook is on the path, no command was unread). I kept the derivation you proposed, with one choice of mine: a table of non-tool events rather than matching 'Tool' in the event name, because a per-tool event not spelled that way would otherwise fall out of the walk. Corrected a stale sentence in the comment above the case: it said meter-usage.py loads usage_ledger on every tool call, but hooks.json registers meter-usage.py only on SessionStart, Stop, SubagentStop and SessionEnd; the comment now names _config._ledger_lib() as used by require-plan.py and journal-writes.py (require-plan.py:407, journal-writes.py:203). Limit, stated in the comment: a tool-event hook that loaded a left-out hook in process would not be followed. Mutation probe over a throwaway copy of the working tree (<scratchpad>/mutate_mv37.py, exit 0, each mutation asserted to have landed): unmutated baseline 68/68; red with mv37 the only failure (67/68, exit 1) for each of: literal drive-phase.py added to guard-edits.py (per-tool-call hook gains a root), same literal added to _config.py (shared module), drive-without-model.py also registered on PreToolUse, also on an event the table does not know, a command naming no file, the exclusion removed (the original red), every hook excluded, every registered hook counted as off the path. Commands on the final tree, from the project directory: python3 tools/sweep-selftests.py tests/test__manifest_vocab.py tests/test__refs.py exit 0 (68 and 292 cases, so attempt 1's sc1/sc2 red is gone); python3 tools/sweep-selftests.py tests/test_drive_without_model.py tests/test_hooks.py tests/test__deps.py tools/_suite.py exit 0 (4/4 files, 600 cases); python3 tools/bench-hooks.py --gate exit 0, on 3.14.7 only, the tool itself printing 3.8-3.13 NOT MEASURED; python3 tools/gate-parity.py exit 0; also tests/test__output_lints.py exit 0 (182 cases), tests/test__task_outputs.py exit 0 (72 cases), ruff check tests/test__manifest_vocab.py exit 0. Dependants: this retry changed only tests/test__manifest_vocab.py, so readers of the task's other files stand as attempt 1 answered them. Of that file's readers: tests/test__task_outputs.py:191 cites mv37 as walking the per-tool-call path, still correct and green; _manifest_vocab.py's point-3 comment says nothing on that path imports it, still what the case asserts. Not done: a full sweep, not in this task's gate.",
+        "descriptive": "mv37 now walks only what hooks.json puts on a per-tool-call event plus shared modules, so the new prompt hook no longer reds it, and mutation shows the case still fails when a tool-event hook reaches the vocabulary."
       },
       "startedAt": "2026-11-08T23:06:29Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-08T23:26:16Z",
+      "verifiedBy": [
+        "tests/test_drive_without_model.py: the hook driven as a process in a fixture tree with a stub drive and stub status (dm1-dm41), exit codes read off the real drive-phase.py and every argv put through its real parser, pass-through cases asserted by the stub's own call record, SIGTERM direct and through the launcher",
+        "tests/test_hooks.py: hk7a-hk7c, hooks.json registers the hook once on UserPromptSubmit through the launcher in open mode, with a timeout above executor.maxHours and onFailure block"
+      ],
       "notes": [
         {
           "at": "2026-11-08T22:17:18Z",
@@ -221,7 +224,56 @@
         "runId": "2026-11-08T23:26:13Z.a8fe99",
         "status": "passed",
         "at": "2026-11-08T23:26:13Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "62662f103b00",
+        "at": "2026-11-08T23:26:16Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-08T23:15:38Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_without_model.py tests/test_hooks.py tests/test__deps.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 48 of 235 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code but for the sweep grading the empty file laid where the task adds tests/test_drive_without_model.py red for printing no contract: tests/test_drive_without_model.py did not exist at HEAD, which is red for every case it adds, its declared test files new at HEAD (tests/test_drive_without_model.py) laid over as empty files), each passing with the working tree's implementation - dm1 (house FAIL), dm2 (house FAIL), dm3 (house FAIL), dm4 (house FAIL), dm5 (house FAIL), dm6 (house FAIL), dm7 (house FAIL), dm8 (house FAIL), dm9 (house FAIL) and 39 more: SELFTEST FAILED: 232/235 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P159.3-pue",
+      "title": "A wave runs under auto only when every member is a dispatch with a command, a step owing a board echo goes to the model, and an unreaped child or a closed terminal ends the drive honestly",
+      "status": "pending",
+      "description": "Phase code review of P159 (two read-only opus reviewers; each case below was run by the reviewer with the real driver and a stub claude). (1) drive-phase.py step_member (~7806) returns \"dispatch\" for any non-decide member, so inside a wave a wait-writer, wait-gate, wait-reviewer-session or follow-browser arrives at auto_answer (~11838) as a dispatch and its run: command is started again: a SIGKILLed session runner at waveWidth 2 started claude 6 times against 1 at width 1, and a follow-browser recipe is dropped. Classify by member: a wave is executed only when every member is a dispatch with a run: command; anything else ends needs-model and starts nothing. (2) ado_echo_lines (~11639) reads one step, and auto discards every step's text but the last, so an earlier task's board update is lost and on a done ending no model performs the last. A step that owes an echo ends needs-model, carrying it, so the existing command text does it; warnings a step said (a cancelled gate, a refused note, cannot-tell) reach the final text within the existing bound. (3) auto_report (~11902) raises TypeError on a child whose returncode is None, turning an interrupt into exit 2 with empty stdout; say the run was not reaped. (4) A direct auto arms no SIGHUP: closing a terminal leaves children running in their own sessions; arm it. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "plugins/audit/reference/verbs-in-full.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: under waveWidth 2 a wave holding a wait-writer, wait-gate, wait-reviewer-session or follow-browser member starts nothing and ends needs-model; a killed session runner in a wave is started once; a wave of dispatches with run: lines runs them; a step owing an ado echo ends needs-model with the echo in the text, for each of two linked tasks; a step's warning reaches the final text; a child with returncode None yields the stop answer and non-empty stdout; SIGHUP tears the children down"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__refs.py tools/_suite.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "reviewPerTask": "signals",

@@ -10893,7 +10893,8 @@
       "P157.10-mwz",
       "P157.11-mwz",
       "P157.12-mwz",
-      "P159.1"
+      "P159.1",
+      "P159.3-pue"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11174,7 +11175,8 @@
       "P156.20-3st",
       "P156.21-3st",
       "P157.2",
-      "P159.1"
+      "P159.1",
+      "P159.3-pue"
     ],
     "docs/research/pipeline-cost-results.md": [
       "P118.19-v7t",
@@ -12948,7 +12950,8 @@
       "P157.10-mwz",
       "P157.11-mwz",
       "P157.12-mwz",
-      "P159.1"
+      "P159.1",
+      "P159.3-pue"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
