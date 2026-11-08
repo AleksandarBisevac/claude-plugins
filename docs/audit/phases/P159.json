@@ -30,7 +30,7 @@
     {
       "id": "P159.1",
       "title": "drive-phase.py auto runs the drive's mechanical steps itself and ends with a distinct answer on done, on stop, and on a step that needs a model",
-      "status": "in_progress",
+      "status": "done",
       "description": "Today the main loop is a model executing: next --signal, next --explain, run the printed run: line in background Bash, repeat (orchestrator's calls in stage-2 re-measurement k02m-k07mr, 12 to 23 per task, none carrying a decision). Add an `auto` action beside `next` in build_parser (drive-phase.py ~11769) that takes the same target forms and --task. Reuse the step result `next` builds (the signal dict in the function near 11610: step, subject, basis, next, runs, prompts) instead of parsing printed lines, and classify a step through SIGNAL_VERBS (859): done/stop end; judge/ask/review end as needs-model; dispatch with runs is executed; dispatch with no runs (an Agent) is needs-model; wait is resolved by the fact that auto itself ran the child to exit. Do not route through a shell a command the drive built, keep it an argv. wait-writer's docstring says only the main loop knows whether a session started: auto is that main loop now, so say what it knows. Exit answers are three distinct codes, documented in --help, and stdout on done/stop is what --explain prints, bounded as it is. No model is involved, so nothing here may be a new decision: every branch that the model used to take on `judge`/`ask` stays the model's or the human's. A gate's and a writer's run is a child of auto in its own process group; SIGTERM (what Esc delivers to a hook, probed 2026-11-08) is forwarded and auto exits with the stop answer, leaving the in-progress task for `next` to resume. The Bash foreground bound and gate_in_background do not apply inside auto, but leave that choice's readers intact. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -57,14 +57,16 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "19aab8916514",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Retry of attempt 1: the implementation in drive-phase.py and tests/test_drive_phase.py is unchanged from attempt 1, whose outcome stands for the auto verb itself, with one correction below. Diagnosis, by running it: `python3 tools/measure-context.py --gate` exit 1, 'BREACH reference/orchestrator.md: 62371 bytes, over a ceiling of 62000'. The three red cases share that one cause: fb15 asserts the gate still holds every entry, its failing tuple is the gate's exit 1; mc24 and mc34 both print ('reference/orchestrator.md', 62371, 62000, ...). The 63180 in the retry note is not the file's size: mc34 prints it as the old ceiling the 62000 replaced. Fix: removed the whole paragraph attempt 1 added to reference/orchestrator.md. HEAD's copy is 61995 bytes, 5 under the ceiling, so not even a one-line pointer fits; `git diff -- plugins/audit/reference/orchestrator.md` is now empty. No ceiling raised. Correction to attempt 1's record: it listed orchestrator.md's Progress output among the docs carrying auto; it no longer does, and auto is described in reference/verbs-in-full.md and PLUGIN-BUILD-GUIDE.md. The one fact verbs-in-full.md lacked, that a headless writer's session is such a run: command (drive-phase.py:498 dispatches run-agent-session.py; auto_answer at :11838 runs only a dispatch with no Agent prompt), was added to its existing paragraph as one clause. Commands, from the project dir: `python3 tools/measure-context.py --gate` exit 0, reference/orchestrator.md 61995 / 62000; `python3 tools/sweep-selftests.py tests/test_audit_task.py tools/measure-context.py` exit 0, '2/2 files ok, 1292 cases' (the same command before the edit: exit 1, 0/2 files ok, fb15, mc24, mc34 FAIL); `python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__refs.py tools/_suite.py` exit 0, '3/3 files ok, 1244 cases'; `python3 tools/sweep-selftests.py tests/test__areas.py tests/test__usage_routing.py` (readers of the two reference files) exit 0, '2/2 files ok, 150 cases'. Not re-run this attempt: the 14-row mutation table from attempt 1, since no code or test changed. Dependants: drive-phase.py's importers (_worktrees and the tests/test_* importers): still correct, the file is untouched in this attempt and attempt 1 only added to it. tests/test_drive_phase.py's readers (sweep-costs.json, ci.yml, affected.py, reach-diff.py, test__runner_output, test_run_test_gate, test_stamp_verification): still correct, untouched in this attempt, names unchanged. verbs-in-full.md's readers (PLUGIN-BUILD-GUIDE, _areas, test__areas, test__manifest_vocab, test_audit_task, CHANGELOG, guide.md, execute-task.md): still correct, one clause inside one paragraph, no heading added or moved; test__areas and test_audit_task ran green. orchestrator.md's readers (guard-uncommitted, prove-gates, COMPATIBILITY, PLUGIN-BUILD-GUIDE, pipeline-cost-design, evals, guard-history-rewrite, schema, close-phase, _manifest_crossrefs, test__areas, test__usage_routing): still correct, the file is byte-identical to HEAD. PLUGIN-BUILD-GUIDE's readers (_doctor_hygiene, evals, test__affected_tests, test__config, test__deps, test__doctor_trail): still correct, untouched in this attempt; its section 'orchestrator.md + the execution verb commands' never named auto, and its drive-phase section does not cite orchestrator.md for it.",
+        "descriptive": "auto stays in reference/verbs-in-full.md only, so reference/orchestrator.md is back under its ceiling and the three red cases are green"
       },
       "startedAt": "2026-11-08T21:55:53Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-08T22:17:03Z",
+      "verifiedBy": [
+        "auto over scripted and real drives: dispatch run lines executed and next repeated, done and stop answers with the --explain text and bound, needs-model on judge/ask/review/Agent dispatch with nothing further run, wait on an exited child not spun, no-progress named stop within the bound, SIGTERM ending the child's process group and leaving the task resumable, a child's non-zero exit reported and sent back through next, with allow twins"
+      ],
       "notes": [
         {
           "at": "2026-11-08T21:24:00Z",
@@ -82,6 +84,18 @@
         "runId": "2026-11-08T22:17:00Z.888dee",
         "status": "passed",
         "at": "2026-11-08T22:17:00Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "19aab8916514",
+        "at": "2026-11-08T22:17:03Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-08T22:06:48Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__refs.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 21 of 917 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - au1 (house FAIL), au2 (house FAIL), au2b (house FAIL), au3 (house FAIL), au4 (house FAIL), au4b (house FAIL), au5 (house FAIL), au5b (house FAIL) and 13 more: SELFTEST FAILED: 896/917 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -105,7 +119,9 @@
         "tools/lints/_deps.py",
         "tools/bench-hooks.py",
         "tools/gate-parity.py",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "tests/test__config.py",
+        "tests/test__deps.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -137,7 +153,61 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-08T22:17:18Z",
+          "text": "it pins a README table row; this task adds an entry and leaves the quoted sentence as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-08T22:17:18Z",
+          "text": "it links the SECURITY.md heading; this task adds an entry and leaves the quoted sentence as it is",
+          "waives": ".github/ISSUE_TEMPLATE/config.yml"
+        },
+        {
+          "at": "2026-11-08T22:17:18Z",
+          "text": "it quotes a guard sentence in SECURITY.md; this task adds an entry and leaves the quoted sentence as it is",
+          "waives": "tests/test__panel_page.py"
+        },
+        {
+          "at": "2026-11-08T22:17:18Z",
+          "text": "it quotes the secret-read sentence; this task adds an entry and leaves the quoted sentence as it is",
+          "waives": "tests/test_guard_secrets_read.py"
+        },
+        {
+          "at": "2026-11-08T22:17:18Z",
+          "text": "it quotes one SECURITY.md sentence; this task adds an entry and leaves the quoted sentence as it is",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-08T22:17:18Z",
+          "text": "it quotes one SECURITY.md sentence; this task adds an entry and leaves the quoted sentence as it is",
+          "waives": "tools/check-git-pipeline.py"
+        },
+        {
+          "at": "2026-11-08T22:17:18Z",
+          "text": "a research note naming SECURITY.md by path; the path does not change",
+          "waives": "docs/research/guard-ownership-design.md"
+        },
+        {
+          "at": "2026-11-08T22:17:18Z",
+          "text": "it names the bench-hooks step; the command and its flag do not change",
+          "waives": "tools/verify.sh"
+        },
+        {
+          "at": "2026-11-08T22:17:18Z",
+          "reader": "tests/test__config.py",
+          "reads": "plugins/audit/hooks/_config.py",
+          "text": "declared to answer a reading: tests/test__config.py reads plugins/audit/hooks/_config.py - its own suite"
+        },
+        {
+          "at": "2026-11-08T22:17:18Z",
+          "reader": "tests/test__deps.py",
+          "reads": "tools/lints/_deps.py",
+          "text": "declared to answer a reading: tests/test__deps.py reads tools/lints/_deps.py - its own suite"
+        }
+      ]
     }
   ],
   "reviewPerTask": "signals",
