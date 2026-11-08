@@ -90,7 +90,7 @@ PORTABILITY_MODES = ("strict", "warn", "off")
 # the same shape PLAN_GATE_MODES above mirrors PLAN_GATE_TIERS.
 KNOWN_EXECUTOR = {"runsGate", "maxHours", "waveWidth", "worktreeSetup",
                   "worktreeRoot", "writerModel", "writerBudgetUsd",
-                  "phaseGateOnly"}
+                  "phaseGateOnly", "driveWithoutModel"}
 # A full model id is `claude-<family...>` with a version digit in it; an alias
 # (`opus`, `sonnet`) names whatever is newest on the day, so two writers under
 # one config could run two models. `run-agent-session.py` refuses the same
@@ -708,6 +708,10 @@ def _check_executor(executor, findings, warnings):
                 and not _positive_amount(executor["writerBudgetUsd"]):
             findings.append("executor.writerBudgetUsd must be a positive number "
                             "of USD")
+    if ("driveWithoutModel" in executor
+            and not isinstance(executor["driveWithoutModel"], bool)):
+        findings.append("executor.driveWithoutModel must be true or false (a "
+                        "bool, not a string)")
     if "phaseGateOnly" in executor:
         _names, problem = phase_gate_only_setting({"executor": executor})
         if problem:

@@ -1354,6 +1354,8 @@ AUDITED_EXEMPTIONS = {
     "CITATION_SCAN_EXEMPT": ("live", "register_citation_violations"),
     "STEP_POINTER_SCAN_EXEMPT": ("live", "step_pointer_violations"),
     "PLAIN_READ_EXEMPT": ("live", "plain_read_violations"),
+    # `h4f` asks each row whether its hook still stops short of the floor.
+    "BELOW_FLOOR": ("live", "tools/bench-hooks.py h4f"),
     # The prohibitions this repo states and does NOT enforce. `check-prohibitions`
     # reads each row's reason for length and asks the document whether the rule it
     # excuses is still stated - so the table cannot go stale quietly, and a rule

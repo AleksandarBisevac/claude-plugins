@@ -18,15 +18,15 @@ phase id to run. A phase id spelling a verb: ask (AskUserQuestion) which.
 0. `--dry-run`: `S/status/audit-status.py" --phase <phaseId>`,
    `S/manifest/resolve-branch.py" <manifest> --phase <phaseId>` and `S/git/close-phase.py"
    <manifest> <phaseId> --project <dir> --dry-run`, whose `no branch is recorded` exit 1 reads
-   `not started yet`, never a refusal - print the plan, stop.
+   `not started yet`, not a refusal: print the plan, stop.
 1. `--confirm-high-risk "<your words>"`: run `S/governance/record-risk-confirmation.py"
    <manifest> <phaseId> --confirm-high-risk "<your words>"` first; print the ids it covers
    verbatim in your reply - a task off it asks unless the owner typed `#approve-high-risk`
    (`#revoke-high-risk` disarms). **The operator's words go in VERBATIM**.
-2. Run `S/governance/drive-phase.py" next <phaseId> --signal` and do what its line says until
-   `done`: `audit <phase> <verb> <subject> ... | <basis> | next: <command>`, whole under
+2. Run `S/governance/drive-phase.py" next <phaseId> --signal` and do what it says until
+   `done` (a hook may start it): `audit <phase> <verb> <subject> ... | <basis> | next: <command>`, whole at
    `next <phaseId> --explain <subject>`.
-3. `dispatch` → a `run:` line under `--explain`: background Bash. The session is its own
+3. `dispatch` → `run:` line under `--explain`: background Bash. The session is its own
    process under its own --budget-usd, set by executor.writerBudgetUsd; it is not drawn from this
    session's budget, so launch the run: line as printed. Else an Agent per
    subject (`subagent_type`, `model`: basis), prompt
@@ -34,7 +34,7 @@ phase id to run. A phase id spelling a verb: ask (AskUserQuestion) which.
    `wait` → do `next:`; `ask` → the human first (AskUserQuestion); `review` → read it whole,
    answer; `stop` → relay it whole.
 4. `done` → report what landed and where. **Phase sign-off** (orchestrator) is the drive's last
-   step: a fix task comes first, its edits invalidate an earlier gate. Nothing measures whether you held the order
+   step: a fix task first, its edits invalidate an earlier gate. Nothing measures whether you held the order
    for a hand-run gate. A `chain:` line: clear context, then re-enter with `/audit:phase <next id>`.
 
 ## Subcommand: `add "<title>" --outcome "<..>"`

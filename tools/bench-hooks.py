@@ -227,6 +227,16 @@ EXTRA_ALLOWED = {
     },
 }
 
+# A hook deliberately cheaper than the floor, and why. The floor is every other
+# hook's price because each imports `_config` at module scope; this one fires on
+# every prompt of every session and answers almost all of them with a bytes search
+# before importing anything, so a bare interpreter start is the point of it.
+BELOW_FLOOR = {
+    "drive-without-model.py": "a prompt naming no verb is answered before `_config` "
+                              "is imported: the prefilter is the whole cost of the "
+                              "common case",
+}
+
 # `subprocess` is called out because it is the expensive one and because it has now
 # been deferred out of two hooks. It brings roughly a dozen modules behind it
 # (threading, selectors, select, signal, locale, warnings, ...), so a hook that
@@ -514,6 +524,9 @@ LANES = (
     # to be cheap, because it runs on EVERY session, not only the rare one
     # whose previous run mispriced or disagreed with the CLI.
     ("meter-usage.py", "open", "sessionstart"),
+    # The prompt that names no verb, which is nearly every prompt this hook sees:
+    # it must stop at a bytes search, before `_config` and `subprocess` are paid.
+    ("drive-without-model.py", "open", "prompt"),
 )
 
 
@@ -526,6 +539,7 @@ def _payloads(root):
         "bash": {"tool_name": "Bash", "tool_input": {"command": "ls -la"}},
         "read": {"tool_name": "Read", "tool_input": {"file_path": src}},
         "skill": {"tool_name": "Skill", "tool_input": {"skill": "some-skill"}},
+        "prompt": {"hook_event_name": "UserPromptSubmit", "prompt": "fix the login page"},
         "sessionstart": {"hook_event_name": "SessionStart", "transcript_path":
                          os.path.join(root, "projects", "-bench",
                                       "new-session.jsonl")},
@@ -701,9 +715,18 @@ def _cases(check):
     check("h4 every hook still pulls the whole floor - an entry no hook needs is an "
           "allowance nobody asked for, and deriving the floor does not excuse that: "
           "it is derived from `_config`, not from the hooks, so it can still name "
-          "something none of them reach",
+          "something none of them reach. The one exception is a named row of "
+          "BELOW_FLOOR, which h4f holds to its reason",
           bool(_floor) and all(_floor.issubset(v) for v in
-                               (modules_pulled(h) or _floor for h in hooks)))
+                               (modules_pulled(h) or _floor for h in hooks
+                                if h not in BELOW_FLOOR)))
+    check("h4f every BELOW_FLOOR row names a hook that exists, carries a reason, and "
+          "really does stop short of the floor - it imports no `_config` - so the "
+          "row cannot outlive the deferral it excuses",
+          all(h in hooks and why.strip()
+              and "_config" not in (modules_pulled(h) or {"_config"})
+              for h, why in BELOW_FLOOR.items()),
+          dict((h, sorted(modules_pulled(h) or [])) for h in BELOW_FLOOR))
 
     # The half a derived floor CANNOT answer, and the reason it is asked of the
     # source rather than of the runtime graph.

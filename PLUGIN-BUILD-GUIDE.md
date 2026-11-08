@@ -98,11 +98,12 @@ claude-plugins/                           # this repo (personal, public)
         audit-reviewer.md                 # per-task intent check + sign-off review (no edit tools)
         guide.md                          # answers questions about the plugin (Read/Grep/Glob, haiku)
       hooks/
-        hooks.json                        # wires the 9 hooks to events (${CLAUDE_PLUGIN_ROOT})
+        hooks.json                        # wires the hooks to events (${CLAUDE_PLUGIN_ROOT})
         py-launch.sh                      # interpreter launcher: python3→python→py, fail-loud guards
         _config.py                        # shared config loader + path/manifest helpers
         require-plan.py                   # plan-first gate, graded on evidence (observe/warn/deny; Pre decides, Post commits state)
         detect-plan-skip.py               # arms the plan-first bypass + config-error warning + state GC
+        drive-without-model.py            # runs the drive for a typed run verb; blocks the prompt on done/stop, so no model request
         guard-secrets-read.py             # blocks secret reads (direct+indirect) + shell source writes
         guard-edits.py                    # token-logging ban, custom rules, self-edit/forgery block
         guard-history-rewrite.py          # refuse a git command that would orphan a recorded task.commit
@@ -552,7 +553,7 @@ Maps events → scripts, every entry running through
 - PostToolUse `Edit|Write|MultiEdit|NotebookEdit` → `require-plan.py` (state commit), `remind-tdd.py`, `guard-bash-writes.py` (records tool edits), `journal-writes.py` (records manifest/config writes; all **open**)
 - PostToolUse `mcp__.*` → `require-plan.py` (state commit), `journal-writes.py` (the digest sweep, which needs no write test because it asks the FILE; both **open**). `guard-bash-writes.py` and `remind-tdd.py` are deliberately absent — each says why in its own docstring
 - PostToolUse `Bash` → `guard-bash-writes.py` (the diff check), `journal-writes.py` (the `dangerouslyDisableSandbox` row **and** the digest sweep that catches a manifest written by a shell command; both **open**)
-- UserPromptSubmit → `detect-plan-skip.py` (**open**)
+- UserPromptSubmit → `detect-plan-skip.py`, `drive-without-model.py` (**open**; the second with `timeout` long enough for a drive and `onFailure: "block"`)
 
 `py-launch.sh` resolves `python3` → `python` → `py` with shell builtins only and
 runs the script (stdin passes through once, exit code propagates). It does not
@@ -753,6 +754,22 @@ single-use. It also stamps `stateDir/running-plugin-<session>.json` (`{root, ver
 every prompt, which is the only record of **which copy of the plugin the harness is actually
 running** — a prompt is the coarsest event a session cannot avoid, so the stamp sits here
 rather than on the per-tool-call path the guards are on. `--selftest`.
+
+### `plugins/audit/hooks/drive-without-model.py`
+UserPromptSubmit hook. When the prompt is exactly `/audit:run <id>`, `/audit:next` or
+`/audit:phase <id>` (one table, `VERBS`), `executor.writerModel` is set,
+`executor.driveWithoutModel` is not false and a plan exists, it starts `drive-phase.py auto`
+(found by `_config.find_script`, which is how a hook reaches `scripts/`) and waits. Done and stop
+block the prompt with `auto`'s text and `suppressOriginalPrompt`, so the turn costs no model
+request; needs-model prints nothing and the prompt goes on, the command text continuing from
+wherever the drive stands. `/audit:next`'s task is `audit-status.py --json`'s `ready[0]`, the
+list READY NOW renders, rather than a second reading of readiness. A prompt that does not contain
+the verb prefix costs a process start and a bytes search: `_config` and `subprocess` are imported
+past it, which `tools/bench-hooks.py --gate` holds. Every failure passes the prompt on and says so
+on stderr. A signal, or the launcher's process going away (py-launch.sh runs the interpreter
+rather than `exec`ing it, so a signal to it stops there), is forwarded to `auto`, and an
+interrupted drive always blocks with a line naming how to resume. Cases:
+`tests/test_drive_without_model.py`.
 
 ### `plugins/audit/hooks/guard-bash-writes.py` (v0.6.0)
 PostToolUse watcher — the "complete control" for shell writes the PreToolUse text

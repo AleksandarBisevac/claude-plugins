@@ -1,0 +1,76 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_without_model.py tests/test_hooks.py tests/test__deps.py tools/_suite.py": "pass",
+    "python3 tools/bench-hooks.py --gate": "pass",
+    "python3 tools/gate-parity.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test__manifest_vocab.py tests/test__refs.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-08T23:15:38Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_without_model.py tests/test_hooks.py tests/test__deps.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 48 of 235 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code but for the sweep grading the empty file laid where the task adds tests/test_drive_without_model.py red for printing no contract: tests/test_drive_without_model.py did not exist at HEAD, which is red for every case it adds, its declared test files new at HEAD (tests/test_drive_without_model.py) laid over as empty files), each passing with the working tree's implementation - dm1 (house FAIL), dm2 (house FAIL), dm3 (house FAIL), dm4 (house FAIL), dm5 (house FAIL), dm6 (house FAIL), dm7 (house FAIL), dm8 (house FAIL), dm9 (house FAIL) and 39 more: SELFTEST FAILED: 232/235 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Retry for the one recorded red, tests/test__manifest_vocab.py mv37. Attempt 1's work is untouched; the only file edited is tests/test__manifest_vocab.py. mv37 now reads plugins/audit/hooks/hooks.json: a hook file leaves the walk only when hooks.json registers it and every event it is registered on is in a table of events that do not fire per tool call (UserPromptSubmit, SessionStart, Stop, SubagentStop, SessionEnd). An event absent from that table counts as per-tool-call, a shared module no event registers stays walked, and a command naming no file turns the case red, so each misreading walks more or goes red. On this tree the walk leaves out detect-plan-skip.py, drive-without-model.py and meter-usage.py. Dropping meter-usage.py loses no root: _config.py names usage_ledger too, and it is walked, so the walked roots are _areas, _journal_io, _locks, _manifest_io, _policy, _task_outputs, usage_ledger. No basename was renamed or built dynamically and the assertion was not loosened; it gained two conditions (some hook is on the path, no command was unread). I kept the derivation you proposed, with one choice of mine: a table of non-tool events rather than matching 'Tool' in the event name, because a per-tool event not spelled that way would otherwise fall out of the walk. Corrected a stale sentence in the comment above the case: it said meter-usage.py loads usage_ledger on every tool call, but hooks.json registers meter-usage.py only on SessionStart, Stop, SubagentStop and SessionEnd; the comment now names _config._ledger_lib() as used by require-plan.py and journal-writes.py (require-plan.py:407, journal-writes.py:203). Limit, stated in the comment: a tool-event hook that loaded a left-out hook in process would not be followed. Mutation probe over a throwaway copy of the working tree (<scratchpad>/mutate_mv37.py, exit 0, each mutation asserted to have landed): unmutated baseline 68/68; red with mv37 the only failure (67/68, exit 1) for each of: literal drive-phase.py added to guard-edits.py (per-tool-call hook gains a root), same literal added to _config.py (shared module), drive-without-model.py also registered on PreToolUse, also on an event the table does not know, a command naming no file, the exclusion removed (the original red), every hook excluded, every registered hook counted as off the path. Commands on the final tree, from the project directory: python3 tools/sweep-selftests.py tests/test__manifest_vocab.py tests/test__refs.py exit 0 (68 and 292 cases, so attempt 1's sc1/sc2 red is gone); python3 tools/sweep-selftests.py tests/test_drive_without_model.py tests/test_hooks.py tests/test__deps.py tools/_suite.py exit 0 (4/4 files, 600 cases); python3 tools/bench-hooks.py --gate exit 0, on 3.14.7 only, the tool itself printing 3.8-3.13 NOT MEASURED; python3 tools/gate-parity.py exit 0; also tests/test__output_lints.py exit 0 (182 cases), tests/test__task_outputs.py exit 0 (72 cases), ruff check tests/test__manifest_vocab.py exit 0. Dependants: this retry changed only tests/test__manifest_vocab.py, so readers of the task's other files stand as attempt 1 answered them. Of that file's readers: tests/test__task_outputs.py:191 cites mv37 as walking the per-tool-call path, still correct and green; _manifest_vocab.py's point-3 comment says nothing on that path imports it, still what the case asserts. Not done: a full sweep, not in this task's gate.",
+    "descriptive": "mv37 now walks only what hooks.json puts on a per-tool-call event plus shared modules, so the new prompt hook no longer reds it, and mutation shows the case still fails when a tool-event hook reaches the vocabulary."
+  },
+  "testsAdded": [
+    "tests/test_drive_without_model.py: the hook driven as a process in a fixture tree with a stub drive and stub status (dm1-dm41), exit codes read off the real drive-phase.py and every argv put through its real parser, pass-through cases asserted by the stub's own call record, SIGTERM direct and through the launcher",
+    "tests/test_hooks.py: hk7a-hk7c, hooks.json registers the hook once on UserPromptSubmit through the launcher in open mode, with a timeout above executor.maxHours and onFailure block"
+  ],
+  "casesAdded": [
+    [
+      "dm1",
+      "dm2",
+      "dm3",
+      "dm4",
+      "dm5",
+      "dm6",
+      "dm7",
+      "dm8",
+      "dm9",
+      "dm10",
+      "dm11",
+      "dm12",
+      "dm13",
+      "dm14",
+      "dm15",
+      "dm16",
+      "dm17",
+      "dm18",
+      "dm19",
+      "dm20",
+      "dm21",
+      "dm22",
+      "dm23",
+      "dm24",
+      "dm25",
+      "dm26",
+      "dm27",
+      "dm28",
+      "dm29",
+      "dm30",
+      "dm31",
+      "dm32",
+      "dm33",
+      "dm34",
+      "dm35",
+      "dm36",
+      "dm37",
+      "dm38",
+      "dm39",
+      "dm40",
+      "dm41"
+    ],
+    [
+      "hk7a",
+      "hk7b",
+      "hk7c"
+    ]
+  ],
+  "claims": "claims:\n1 the mv37 comment's sentences: tests/test__manifest_vocab.py `_hook_left_out` and the `if _hrel in _hook_left_out` skip do the exclusion; the corrected usage_ledger sentence rests on hooks/_config.py:1961, require-plan.py:407, journal-writes.py:203 and hooks.json's registrations\n2 8 mutations on a throwaway copy: guard-edits literal, _config literal, PreToolUse registration, unknown event, command naming no file, exclusion removed, all excluded, all off path - each 67/68 exit 1 with mv37 FAIL; baseline 68/68 exit 0; shared tree never mutated. The last two are the over-fire direction\n3 grep -rn '_py_literal_basenames' tests tools: 5 hits - test__manifest_vocab.py:527 is this case; prove-gates.py:1315 and _deps.py:990,1066,1350 are the import graph, left because they read scripts/ edges and not the hook path. grep -rln 'per-tool-call' over tests, tools, scripts, hooks: 8 files; test__task_outputs.py:191 cites mv37 and stays true (suite exit 0); _deps.py:271 and the module comments describe the path and were left, none walks hooks/\n4 n/a - no rule to an agent\n5 n/a - no property recorded; the probe is a deterministic graph walk\n6 mv37 decides from the event registrations hooks.json holds and the AST of each walked file, not from a hook's name; allow direction proven by the baseline row going green with the prompt hook present\n7 no number written into prose; the label's counts are computed with %d at run time",
+  "stamp": "audit-stamp: {\"content\":\"sha256:a5afb9865a325845e925afb41b051d4ac2be64f9748321afb44d4ef484d5e327\",\"dirtyDigest\":\"sha256:7a7cf54470c17acf7ffa755bd1369a5b9c649df1a22abcb0724e7e9547f37fea\",\"dirtyPaths\":{\"CHANGELOG.md\":\"f0d6366d8cb11cf9\",\"PLUGIN-BUILD-GUIDE.md\":\"2f9090adc861c2bd\",\"SECURITY.md\":\"946f42bf6d1be999\",\"docs/screenshots/captured-at.json\":\"f01c9214642ffd3e\",\"plugins/audit/README.md\":\"e279de50f793a035\",\"plugins/audit/commands/next.md\":\"5f14c9c4d903bfa8\",\"plugins/audit/commands/phase.md\":\"502c7054e05aea63\",\"plugins/audit/commands/run.md\":\"f6c3f9e5b8209ea5\",\"plugins/audit/hooks/_config.py\":\"2a49c62076adb40a\",\"plugins/audit/hooks/drive-without-model.py\":\"98467a74a7bd7d2e\",\"plugins/audit/hooks/hooks.json\":\"271f914d4d0d1398\",\"plugins/audit/schema/audit-config.schema.json\":\"fdca5f36f1597da9\",\"plugins/audit/scripts/config/_config_rules.py\":\"65e8edf6bd02daa6\",\"plugins/audit/scripts/panel/_panel_settings.py\":\"cd79cd076b23eec2\",\"tests/test__config.py\":\"55728810cc57cfe1\",\"tests/test__manifest_vocab.py\":\"23744e9680badc57\",\"tests/test_drive_without_model.py\":\"c92bb053b56324f2\",\"tests/test_hooks.py\":\"f031beb72609c076\",\"tools/bench-hooks.py\":\"bbf33dd467e063e0\",\"tools/gate-parity.py\":\"554b18fd2e484329\"},\"head\":\"293071c7\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"docs/screenshots/captured-at.json\",\"plugins/audit/README.md\",\"plugins/audit/commands/next.md\",\"plugins/audit/commands/phase.md\",\"plugins/audit/commands/run.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/drive-without-model.py\",\"plugins/audit/hooks/hooks.json\",\"plugins/audit/schema/audit-config.schema.json\",\"plugins/audit/scripts/config/_config_rules.py\",\"plugins/audit/scripts/panel/_panel_settings.py\",\"tests/test__config.py\",\"tests/test__deps.py\",\"tests/test__manifest_vocab.py\",\"tests/test_drive_without_model.py\",\"tests/test_hooks.py\",\"tools/bench-hooks.py\",\"tools/gate-parity.py\",\"tools/lints/_deps.py\"],\"scopeDigest\":\"sha256:42960e340f36e2214db62058f6c19567e5f9f2cdb2695508fb0d8a8bd80ea30b\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -187,7 +187,16 @@ commit and the command above does not.
 | `remind-tdd` | PostToolUse edits | silent | no-op |
 | `journal-writes` | PreToolUse edits **+ Bash**, PostToolUse edits + Bash | silent | no-op |
 | `detect-plan-skip` | UserPromptSubmit | silent | no-op |
+| `drive-without-model` | UserPromptSubmit | silent | no-op |
 | `meter-usage` | Stop / SubagentStop / SessionEnd / SessionStart | silent | no-op |
+
+**`drive-without-model` is a no-op in the direction that sends the prompt on.** Every failure
+on its internal path (`hooks/drive-without-model.py`'s `main()` catches them, and a case in
+`tests/test_drive_without_model.py` exercises each) lets the prompt reach the model, where the
+command runs as it does with no hook; the drive's own lock and state decide what that does. The one
+thing it does not leave to chance is the timeout: `onFailure: "block"` in `hooks.json` holds the
+prompt back when the harness times the hook out, so a drive the hook stopped waiting for does not
+also become a model turn nobody asked for.
 
 **One row on that table has two arms with different activation, and the column
 above cannot show it.** `guard-history-rewrite` refuses history rewrites only

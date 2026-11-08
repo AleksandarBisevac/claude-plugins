@@ -108,6 +108,8 @@ Config keys (all optional; defaults in DEFAULTS below):
         REFUSED (the function returns None) rather than folded into "own-tests"
         — a typo here would otherwise make the cheap default look like a
         deliberate choice.
+  executor.driveWithoutModel bool — whether the UserPromptSubmit hook may run
+        the drive for a typed run verb (default true, with writerModel set).
   executor.maxHours      number — how many hours a single spawned executor may
         be CONTINUED onto further tasks (never re-spawned) before the
         orchestrator stops preferring that and hands it back instead. Default 3
@@ -378,7 +380,8 @@ DEFAULTS = {
     # config ran before the key existed; "worktreeSetup" and "worktreeRoot" ship
     # unset (no setup command; the directory above the git root), so an absent
     # key changes nothing.
-    "executor": {"runsGate": "own-tests", "maxHours": 3, "waveWidth": 1},
+    "executor": {"runsGate": "own-tests", "maxHours": 3, "waveWidth": 1,
+                 "driveWithoutModel": True},
     # Where a task's three review answers - the intent binding, the red-first
     # grade, the inherited-test question - are given: "phase" (shipped) carries
     # them to the phase review at sign-off, "always" spawns a reviewer per task,
@@ -4910,6 +4913,20 @@ def executor_context_bound_hours(cfg):
     if isinstance(reading, bool) or not isinstance(reading, (int, float)):
         return None
     return reading if reading > 0 else None
+
+
+def drive_without_model_enabled(cfg):
+    """`executor.driveWithoutModel`, default true (a non-bool is ignored, not
+    trusted): whether a typed run verb may start `drive-phase.py auto` from the
+    prompt hook. It takes effect only where `executor.writerModel` is also set."""
+    try:
+        block = (cfg or {}).get("executor")
+        reading = block.get("driveWithoutModel") if isinstance(block, dict) else None
+    except Exception:
+        reading = None
+    if isinstance(reading, bool):
+        return reading
+    return DEFAULTS["executor"]["driveWithoutModel"]
 
 
 # --- whose change is it: the command's own window -------------------------------

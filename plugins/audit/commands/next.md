@@ -24,6 +24,11 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" next <taskId> 
 Do what its one line says, `audit <phase> <verb> <subject> ... | <basis> | next: <command>`,
 until `done`; the whole step is `next <taskId> --explain <subject>`.
 
+With `executor.writerModel` set, the `drive-without-model.py` hook may already have started the
+first ready task before this prompt reached you and stopped at a step that needs you; that task is
+`in_progress`, so it is no longer under READY NOW. When one is, `next <thatTask> --signal`
+continues it; do not pick another.
+
 - `dispatch` → an Agent per subject (`subagent_type`, `model`: the basis), the prompt
   `Follow the brief this prints: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" brief --manifest "<manifest>" --project-dir "<project>" --role <role> <id>`.
   Wait for its one-line hand-back, then `next <taskId> --signal`.

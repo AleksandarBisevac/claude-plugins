@@ -343,6 +343,10 @@ FIELD_HELP = {
         "The most one writer session may spend, in USD, passed to the session as "
         "its budget and enforced by the CLI. A positive number; required when the "
         "writer session model is set.",
+    "executor.driveWithoutModel":
+        "With a writer session model set, a typed run verb runs the drive from "
+        "the prompt hook and ends the turn with no model request when the drive "
+        "finishes or stops. Off sends every such prompt to the model.",
     "executor.phaseGateOnly":
         "Gate commands a writer session is told not to run itself because they "
         "are left to the phase gate. Add one entry at a time: a script name such as "
@@ -706,6 +710,8 @@ SETTINGS_GROUPS = (
              "kind": "text", "placeholder": "unset: the executor agent"},
             {"path": "executor.writerBudgetUsd", "label": "Writer session budget (USD)",
              "kind": "number", "min": 0},
+            {"path": "executor.driveWithoutModel",
+             "label": "Run the drive from the prompt hook", "kind": "bool"},
             {"path": "executor.phaseGateOnly",
              "label": "Gate commands the writer leaves to the phase gate",
              "kind": "list", "placeholder": "none"},

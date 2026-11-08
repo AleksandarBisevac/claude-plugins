@@ -75,6 +75,7 @@ from concurrent.futures import ThreadPoolExecutor
 import _harness                                    # sets sys.path for scripts/ + hooks/
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
+import _config                                     # noqa: E402
 
 PLUGIN_DIR = os.path.dirname(_harness.HOOKS_DIR)
 HOOKS_JSON = os.path.join(_harness.HOOKS_DIR, "hooks.json")
@@ -998,9 +999,34 @@ def _flip_cases(check, observed):
               outcomes)
 
 
+def _prompt_hook_cases(check):
+    """The UserPromptSubmit hook that holds a drive: its own `timeout` and
+    `onFailure` decide what a stalled drive does to the prompt."""
+    with open(HOOKS_JSON, encoding="utf-8") as fh:
+        groups = json.load(fh)["hooks"].get("UserPromptSubmit") or []
+    entries = [entry for group in groups for entry in group.get("hooks", [])
+               if "drive-without-model.py" in entry.get("command", "")]
+    check("hk7a hooks.json registers the drive hook once on UserPromptSubmit, "
+          "through the launcher in open mode",
+          len(entries) == 1 and "py-launch.sh" in entries[0]["command"]
+          and entries[0]["command"].rstrip().endswith("drive-without-model.py open"),
+          entries)
+    entry = entries[0] if entries else {}
+    hours = _config.DEFAULTS["executor"]["maxHours"]
+    check("hk7b its timeout is above executor.maxHours (%s h), the one duration "
+          "the plugin names for a stretch of agent work, so a drive of several "
+          "writers is not timed out at the default" % (hours,),
+          isinstance(entry.get("timeout"), int)
+          and entry["timeout"] > hours * 3600, entry.get("timeout"))
+    check("hk7c onFailure is block, so a drive the hook could not finish waiting "
+          "for does not also send the prompt to a model",
+          entry.get("onFailure") == "block", entry.get("onFailure"))
+
+
 def _cases(check):
     _shape_cases(check)
     _unit_cases(check)
+    _prompt_hook_cases(check)
     with open(HOOKS_JSON, encoding="utf-8") as fh:
         entries = pre_tool_entries(json.load(fh))
     _matcher_cases(check, entries)

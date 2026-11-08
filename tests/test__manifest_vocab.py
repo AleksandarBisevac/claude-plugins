@@ -473,17 +473,49 @@ def _cases(check):
     # what the hooks RUNTIME-load by basename through `_config.find_script()` and
     # what THOSE import in turn. All but one of those roots is at layer 1 beside
     # `_manifest_vocab`, where the layer rule refuses the edge as not strictly
-    # downward; `usage_ledger` is at layer 3 and `meter-usage.py` loads it on every
-    # tool call, so the one edge that would falsify the premise is legal, downward,
-    # and invisible to every other gate here. Hence a case rather than a sentence.
+    # downward; `usage_ledger` is at layer 3 and `_config._ledger_lib()` loads it
+    # for `require-plan.py` and `journal-writes.py`, both registered on tool events,
+    # so the one edge that would falsify the premise is legal, downward, and
+    # invisible to every other gate here. Hence a case rather than a sentence.
+    #
+    # WHICH FILES ARE ON THAT PATH IS READ OFF hooks.json, the file the host reads.
+    # A hook file leaves the walk only when hooks.json registers it AND every event
+    # it is registered on is one of `_hook_not_per_tool`. Each other way of being
+    # misread keeps a file IN: an event absent from that table counts as per-tool-call,
+    # and a shared module no event registers (`_config.py`, which is what names
+    # `usage_ledger` for the hooks above) is walked. A hook on such an event may
+    # start a heavy script for one typed verb, and no edit pays for that.
+    # WHAT THIS CANNOT SEE: a tool-event hook loading a hook that was left out.
     #
     # THE WHOLE GRAPH, not a grep and not a walk written here: `import_graph()`
     # unions static imports with `_loader` runtime loads, and a second reachability
     # walk over `scripts/` would be a second answer to what this tree imports.
+    _hook_not_per_tool = frozenset(
+        ("UserPromptSubmit", "SessionStart", "Stop", "SubagentStop", "SessionEnd"))
+    with open(os.path.join(_output.HOOKS_DIR, "hooks.json"), "r",
+              encoding="utf-8") as _hfh:
+        _hook_table = json.load(_hfh)["hooks"]
+    _hook_events = {}
+    _hook_unread = []
+    for _hevent, _hgroups in _hook_table.items():
+        for _hgroup in _hgroups:
+            for _hentry in _hgroup.get("hooks") or []:
+                _hcommand = _hentry.get("command", "")
+                _hfiles = [p for p in _hcommand.split() if p.endswith(".py")]
+                if not _hfiles:
+                    # A command this cannot name is not a command that runs nothing.
+                    _hook_unread.append((_hevent, _hcommand))
+                for _hfile in _hfiles:
+                    _hook_events.setdefault(_hfile, set()).add(_hevent)
+    _hook_left_out = sorted(h for h, ev in _hook_events.items()
+                            if ev <= _hook_not_per_tool)
+    _hook_on_path = sorted(set(_hook_events) - set(_hook_left_out))
     _hook_roots = set()
     _hook_unparsed = []
     _script_names = set(_deps._module_files(_output.SCRIPTS_DIR)[0])
     for _hrel, _hpath in _output.py_files(_output.HOOKS_DIR):
+        if _hrel in _hook_left_out:
+            continue
         with open(_hpath, "r", encoding="utf-8") as _hfh:
             _htext = _hfh.read()
         try:
@@ -520,16 +552,20 @@ def _cases(check):
     check("mv37 ...and the premise point 3 of that comment rests on - that nothing "
           "on the per-tool-call hook path reaches this module, so deriving the "
           "vocabulary would cost the validator and the panel rather than every edit "
-          "- is WALKED rather than believed: the %d scripts/ modules hooks/ "
-          "runtime-load by basename reach %d modules between them, `_output` among "
-          "them so the walk is known to have followed an edge, and %s reaches this "
-          "one. `usage_ledger` sits at layer 3, so an import from there would be "
-          "legal and strictly downward - no layer rule can close that hole, which "
-          "is why this case exists"
-          % (len(_hook_roots), len(_hreach), _hculprits or "none of them"),
-          bool(_hook_roots) and not _hook_unparsed and not _hbroken
+          "- is WALKED rather than believed: of the hook files, hooks.json has %d on "
+          "a per-tool-call event and leaves out %s, registered on no such event; the "
+          "%d scripts/ modules the walked files runtime-load by basename reach %d "
+          "modules between them, `_output` among them so the walk is known to have "
+          "followed an edge, and %s reaches this one. `usage_ledger` sits at layer "
+          "3, so an import from there would be legal and strictly downward - no "
+          "layer rule can close that hole, which is why this case exists"
+          % (len(_hook_on_path), _hook_left_out, len(_hook_roots), len(_hreach),
+             _hculprits or "none of them"),
+          bool(_hook_roots) and bool(_hook_on_path) and not _hook_unread
+          and not _hook_unparsed and not _hbroken
           and "_output" in _hreach and not _hculprits,
-          repr((sorted(_hook_roots), _hook_unparsed, _hbroken, sorted(_hreach))))
+          repr((sorted(_hook_roots), _hook_on_path, _hook_left_out, _hook_unread,
+                _hook_unparsed, _hbroken, sorted(_hreach))))
 
     # --- testEvidence, the pointer both levels may carry --------------------------
     # A CACHE and not a source of truth: the run itself lives in the append-only

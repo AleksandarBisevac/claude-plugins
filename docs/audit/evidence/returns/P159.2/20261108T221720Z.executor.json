@@ -1,0 +1,75 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_without_model.py tests/test_hooks.py tests/test__deps.py tools/_suite.py": "pass",
+    "python3 tools/bench-hooks.py --gate": "pass",
+    "python3 tools/gate-parity.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-08T22:50:47Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_without_model.py tests/test_hooks.py tests/test__deps.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 48 of 235 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code but for the sweep grading the empty file laid where the task adds tests/test_drive_without_model.py red for printing no contract: tests/test_drive_without_model.py did not exist at HEAD, which is red for every case it adds, its declared test files new at HEAD (tests/test_drive_without_model.py) laid over as empty files), each passing with the working tree's implementation - dm1 (house FAIL), dm2 (house FAIL), dm3 (house FAIL), dm4 (house FAIL), dm5 (house FAIL), dm6 (house FAIL), dm7 (house FAIL), dm8 (house FAIL), dm9 (house FAIL) and 39 more: SELFTEST FAILED: 232/235 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "plugins/audit/hooks/drive-without-model.py (new): UserPromptSubmit hook; a bytes search for /audit: before any import past os/sys, then _config.owner_prompt, a VERBS table for /audit:run <id> (auto --task), /audit:next (audit-status --json ready[0], the list READY NOW renders; both forms showed P86.1 first on the live plan) and /audit:phase <id> (subcommands pass through); drive-phase.py auto through _config.find_script; done/stop block with suppressOriginalPrompt, needs-model silent, every failure passes on with a stderr line; a signal or the launcher's death is forwarded and the hook blocks with a resume line. hooks.json registers it at timeout 86400 with onFailure block. Also: _config.drive_without_model_enabled + DEFAULTS, schema, _config_rules KNOWN_EXECUTOR + non-bool finding, _panel_settings help + bool control (both added to the task's scope by the orchestrator), README, SECURITY row and paragraph, GUIDE tree line, events line and section (the '9 hooks' count deleted), CHANGELOG [Unreleased], run/next/phase.md pass-through sentences (phase.md's clause fitted by trimming wording: measure-context 3980/3980, exit 0), bench-hooks prompt lane + BELOW_FLOOR table + h4f, gate-parity AUDITED_EXEMPTIONS row. tools/lints/_deps.py needed no change (tests/test__deps.py green). Commands run on the final tree: the three tests.gate commands exit 0 (sweep 4/4 files, 600 cases); tests/test__panel_settings.py exit 0 (79 cases). KNOWN RED, CAUSED BY THIS TASK AND NOT FIXED: tests/test__refs.py sc1 and sc2 (290/292) - the panel control changes the panel page's source digest (980711a66ef6 -> 4366fe30e6b9), so committed docs/screenshots entries read as stale; test__refs was exit 0 before the panel edit on this tree. The repair is `node tools/capture-screenshots.mjs`, which writes docs/screenshots (not this task's files) and needs the machine-wide browser; it is not in tests.gate, so the phase gate will show it. Live probe on claude 2.1.319: a block of this shape gave exit 0, total_cost_usd 0, num_turns 0, and onFailure was accepted (measured once); the hook's environment held CLAUDECODE, CLAUDE_CODE_*, CLAUDE_EFFORT, CLAUDE_PID, CLAUDE_PROJECT_DIR, and run-agent-session's _is_parent_session_var returned True for each. Not probed: a real interactive Esc, and hook lifetime beyond the plan's 720 s. Dependants: tests/test__refs.py (except sc1/sc2 above), tests/test_drive_phase.py, tests/test__config.py, tests/test__config_rules.py and measure-context are green, so readers of the commands, config and hooks.json still hold; CONTRIBUTING's sentence that every registered hook is driven through the launcher holds through dm41 rather than through check-git-pipeline, which does not drive this hook.",
+    "descriptive": "A typed run verb with a headless writer runs the drive with no model request unless a step needs judgement or the human"
+  },
+  "testsAdded": [
+    "tests/test_drive_without_model.py: the hook driven as a process in a fixture tree with a stub drive and stub status (dm1-dm41), exit codes read off the real drive-phase.py and every argv put through its real parser, pass-through cases asserted by the stub's own call record, SIGTERM direct and through the launcher",
+    "tests/test_hooks.py: hk7a-hk7c, hooks.json registers the hook once on UserPromptSubmit through the launcher in open mode, with a timeout above executor.maxHours and onFailure block"
+  ],
+  "casesAdded": [
+    [
+      "dm1",
+      "dm2",
+      "dm3",
+      "dm4",
+      "dm5",
+      "dm6",
+      "dm7",
+      "dm8",
+      "dm9",
+      "dm10",
+      "dm11",
+      "dm12",
+      "dm13",
+      "dm14",
+      "dm15",
+      "dm16",
+      "dm17",
+      "dm18",
+      "dm19",
+      "dm20",
+      "dm21",
+      "dm22",
+      "dm23",
+      "dm24",
+      "dm25",
+      "dm26",
+      "dm27",
+      "dm28",
+      "dm29",
+      "dm30",
+      "dm31",
+      "dm32",
+      "dm33",
+      "dm34",
+      "dm35",
+      "dm36",
+      "dm37",
+      "dm38",
+      "dm39",
+      "dm40",
+      "dm41"
+    ],
+    [
+      "hk7a",
+      "hk7b",
+      "hk7c"
+    ]
+  ],
+  "claims": "claims:\n1 drive-without-model.py main() holds the bytes prefilter the GUIDE describes, read_answer() the done/stop/needs-model split, run_auto() the signal and parent forwarding; hooks.json carries the timeout and onFailure SECURITY's paragraph names\n2 13 hook mutations on a scratch copy: 11 red in the cases named (dm14, dm5, dm38, dm40, dm25 and others, dm36, dm33-34, dm38-39, dm23-24, dm26, dm1+dm3); m12 survived, so the redundant _configError branch was deleted; m13 survived, so dm10 now asserts an empty stderr, and m13 then went red on dm10; restored 46/46. Over-fire: dm28 is the allow direction of the opt-out and went red under m5. h4f red when the hook imports _config at module scope\n3 n/a as a defect fix; for the enumeration class, grep 'detect-plan-skip' over tools, tests, docs: GUIDE tree, events line and section, SECURITY row, README bullet and the bench lane each got the new hook; left: check-git-pipeline and CONTRIBUTING's 'also drives' list, not this task's files, the launcher path being held by dm41 instead\n4 no must/never added for an agent except next.md's 'do not pick another', which nothing mechanical enforces beyond the drive's own lock; next.md does not say so in its sentence\n5 hook lifetime and block shape: measured once on 2.1.319 against the plan's probe; 28.6 ms bench reading measured once and not recorded in any document; the gate is the import graph\n6 the decision reads the whole prompt as the verb table's exact shape through _config.owner_prompt, not a substring; allow cases dm15-dm22 and dm29 were green before the block paths were accepted as complete\n7 no count written; timeout 86400 is a value in hooks.json, not prose; the GUIDE's '9 hooks' deleted and the pointer kept",
+  "stamp": "audit-stamp: {\"content\":\"sha256:fb7c8eb39f84977925a2b6112e98f26e74e2eeb9379eed4ece794f923aed6d14\",\"dirtyDigest\":\"sha256:ec24e0230bcf3287bdda97fa338f3099468d8cb6dc3ee888c6a793eb682f0f02\",\"dirtyPaths\":{\"CHANGELOG.md\":\"f0d6366d8cb11cf9\",\"PLUGIN-BUILD-GUIDE.md\":\"2f9090adc861c2bd\",\"SECURITY.md\":\"946f42bf6d1be999\",\"plugins/audit/README.md\":\"e279de50f793a035\",\"plugins/audit/commands/next.md\":\"5f14c9c4d903bfa8\",\"plugins/audit/commands/phase.md\":\"502c7054e05aea63\",\"plugins/audit/commands/run.md\":\"f6c3f9e5b8209ea5\",\"plugins/audit/hooks/_config.py\":\"2a49c62076adb40a\",\"plugins/audit/hooks/drive-without-model.py\":\"98467a74a7bd7d2e\",\"plugins/audit/hooks/hooks.json\":\"271f914d4d0d1398\",\"plugins/audit/schema/audit-config.schema.json\":\"fdca5f36f1597da9\",\"plugins/audit/scripts/config/_config_rules.py\":\"65e8edf6bd02daa6\",\"plugins/audit/scripts/panel/_panel_settings.py\":\"cd79cd076b23eec2\",\"tests/test__config.py\":\"55728810cc57cfe1\",\"tests/test_drive_without_model.py\":\"c92bb053b56324f2\",\"tests/test_hooks.py\":\"f031beb72609c076\",\"tools/bench-hooks.py\":\"bbf33dd467e063e0\",\"tools/gate-parity.py\":\"554b18fd2e484329\"},\"head\":\"293071c7\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/README.md\",\"plugins/audit/commands/next.md\",\"plugins/audit/commands/phase.md\",\"plugins/audit/commands/run.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/drive-without-model.py\",\"plugins/audit/hooks/hooks.json\",\"plugins/audit/schema/audit-config.schema.json\",\"plugins/audit/scripts/config/_config_rules.py\",\"plugins/audit/scripts/panel/_panel_settings.py\",\"tests/test__config.py\",\"tests/test__deps.py\",\"tests/test_drive_without_model.py\",\"tests/test_hooks.py\",\"tools/bench-hooks.py\",\"tools/gate-parity.py\",\"tools/lints/_deps.py\"],\"scopeDigest\":\"sha256:f47d9bd11c424cd1180978037eeab615c89749fcd95651999fe33104f245c52d\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

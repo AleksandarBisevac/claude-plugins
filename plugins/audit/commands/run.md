@@ -25,7 +25,9 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" next <taskId> 
 ```
 
 Its one line is `audit <phase> <verb> <subject> ... | <basis> | next: <command>`; the whole
-step is `next <taskId> --explain <subject>`.
+step is `next <taskId> --explain <subject>`. With `executor.writerModel` set, the
+`drive-without-model.py` hook may already have driven this task before this prompt reached you,
+stopping at a step that needs you: `next` continues from where it stands.
 
 - `dispatch` → an Agent (`subagent_type`, `model`: the basis), the prompt
   `Follow the brief this prints: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" brief --manifest "<manifest>" --project-dir "<project>" --role <role> <id>`.

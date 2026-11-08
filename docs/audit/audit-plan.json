@@ -2211,7 +2211,8 @@
       "P128.34-0h5",
       "P131.5",
       "P132.4",
-      "P154.3-mkf"
+      "P154.3-mkf",
+      "P159.2"
     ],
     "examples/acme-store/acme-store-audit.html": [
       "P13.3",
@@ -3938,7 +3939,8 @@
       "P155.18-gfj",
       "P155.35-gfj",
       "P156.18-3st",
-      "P156.20-3st"
+      "P156.20-3st",
+      "P159.2"
     ],
     "plugins/audit/scripts/config/_help.py": [
       "P10.2",
@@ -5556,7 +5558,8 @@
       "P131.1",
       "P131.2",
       "P131.5",
-      "P132.4"
+      "P132.4",
+      "P159.2"
     ],
     "plugins/audit/scripts/panel/_panel_state.py": [
       "P12.3",
@@ -12414,7 +12417,8 @@
       "P155.18-gfj",
       "P155.35-gfj",
       "P156.18-3st",
-      "P156.20-3st"
+      "P156.20-3st",
+      "P159.2"
     ],
     "tests/test__merge_install.py": [
       "P131.1"

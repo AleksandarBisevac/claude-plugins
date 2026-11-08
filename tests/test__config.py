@@ -2344,6 +2344,23 @@ def _cases(check):
           _ag_gone == M.UNNAMED_AGENT and _ag_gone != M.MAIN_AGENT
           and M.is_subagent({"agent_id": "///"}))
 
+    # --- executor.driveWithoutModel --------------------------------------------
+    check("dwm1 the prompt hook's opt-out reads as on when absent, an empty block "
+          "included",
+          M.drive_without_model_enabled({}) is True
+          and M.drive_without_model_enabled({"executor": {}}) is True
+          and M.drive_without_model_enabled(None) is True)
+    check("dwm2 false turns it off and true keeps it on",
+          M.drive_without_model_enabled(
+              {"executor": {"driveWithoutModel": False}}) is False
+          and M.drive_without_model_enabled(
+              {"executor": {"driveWithoutModel": True}}) is True)
+    check("dwm3 a value that is not a boolean is not read as a decision: the default "
+          "stands, so a typo cannot silently turn the hook off",
+          all(M.drive_without_model_enabled(
+              {"executor": {"driveWithoutModel": _bad}}) is True
+              for _bad in (0, "false", None, [])))
+
     # --- executor.runsGate (P42.5) -----------------------------------------------
     # The key that stops the executor's own gate run from being suppressed by a
     # handoff note nobody reads twice: absent resolves to the cheap default,

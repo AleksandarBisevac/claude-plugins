@@ -504,6 +504,11 @@
           "exclusiveMinimum": 0,
           "description": "The per-session budget in USD every writer session runs under (run-agent-session.py --budget-usd, enforced by the CLI). A finite positive number; required when writerModel is set."
         },
+        "driveWithoutModel": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether a typed /audit:run <id>, /audit:next or /audit:phase <id> may run drive-phase.py auto from the UserPromptSubmit hook, blocking the prompt on done and on stop so no model request is made. It takes effect only with writerModel set; false sends every such prompt to the model, as a project with no writerModel does."
+        },
         "phaseGateOnly": {
           "type": "array",
           "items": {"type": "string", "minLength": 1},

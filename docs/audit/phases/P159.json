@@ -101,7 +101,7 @@
     {
       "id": "P159.2",
       "title": "A UserPromptSubmit hook runs the drive for a typed run verb and blocks the prompt only when the drive finished without needing a model",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Probed on claude 2.1.319 (PLAN.md table): a UserPromptSubmit hook printing {\"decision\":\"block\",\"reason\":...} ends `claude -p \"/x:y\"` with exit 0, total_cost_usd 0, num_turns 0, and the reason in result; a hook lived 720 s with timeout 1800 and could start a nested claude -p; interactively the CLI shows a spinner with esc to interrupt, and Esc is SIGTERM to the hook. The hook receives the prompt as typed. Docs: default timeout on this event is 30 s, so set timeout explicitly; on timeout the prompt still reaches Claude unless onFailure is \"block\"; reason is not added to context; hookSpecificOutput.suppressOriginalPrompt drops the \"Original prompt:\" tail. Hooks are importless of scripts/: resolve through hooks/_config.find_script(), launched via py-launch.sh like the others. It fires on every prompt of every session, so the prefilter for \"not one of our verbs\" is a string check before anything heavy, under the bench-hooks budget; SECURITY.md's fail-mode table is held by gate-parity. Fail-open here means the prompt goes on to the model and the command runs as it does today, which is safe because the drive's own lock and state decide. A new config key (default on) turns it off; adding a key is free under COMPATIBILITY.md. The command texts run.md, next.md and phase.md state the pass-through case: when the prompt reaches the model, the drive may already have advanced, so it continues with next. Check how /audit:next picks its task (audit-status READY NOW, commands/next.md) and reuse that reading rather than a second rule; if it needs a model, say why and leave that verb passing through. The run-agent-session environment scrub (PARENT_SESSION_VARS) already covers a child started from a hook; confirm rather than assume. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/hooks/drive-without-model.py",
@@ -121,7 +121,11 @@
         "tools/gate-parity.py",
         "CHANGELOG.md",
         "tests/test__config.py",
-        "tests/test__deps.py"
+        "tests/test__deps.py",
+        "plugins/audit/scripts/config/_config_rules.py",
+        "plugins/audit/scripts/panel/_panel_settings.py",
+        "docs/screenshots/captured-at.json",
+        "tests/test__manifest_vocab.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -144,14 +148,14 @@
         "P159.1"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-08T23:06:29Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -206,8 +210,18 @@
           "reader": "tests/test__deps.py",
           "reads": "tools/lints/_deps.py",
           "text": "declared to answer a reading: tests/test__deps.py reads tools/lints/_deps.py - its own suite"
+        },
+        {
+          "at": "2026-11-08T22:46:12Z",
+          "text": "Scope widened: the new executor key must be known to the config validator (_config_rules.KNOWN_EXECUTOR), and every known key needs a panel control (tests/test__panel_settings.py)."
         }
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-08T23:26:13Z.a8fe99",
+        "status": "passed",
+        "at": "2026-11-08T23:26:13Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

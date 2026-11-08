@@ -4,6 +4,18 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [Unreleased]
+
+### Added
+- **A typed `/audit:run <id>`, `/audit:next` or `/audit:phase <id>` runs the drive with no model
+  request when the writer is a headless session.** A new UserPromptSubmit hook,
+  `drive-without-model.py`, starts `drive-phase.py auto` when `executor.writerModel` is set; on
+  done and on stop it blocks the prompt, which ends the turn at no cost and shows the drive's
+  answer. A step that needs a model or the human lets the prompt go on, and the command continues
+  the drive from where it stands. `executor.driveWithoutModel: false` turns it off. Esc during
+  the drive stops `auto` and its children, and the prompt is blocked with a line naming how to
+  resume.
+
 ## [3.8.0]
 
 ### Added
