@@ -21,6 +21,14 @@ exit 2 and one line naming `/audit:phase <id>` and the tasks it would run - in w
 `drive-phase.py next <phaseId>`. This is what each guard and each record means, for a reader who
 asks.
 
+`drive-phase.py auto <id>` takes the same targets and runs the drive's steps itself: each
+`dispatch` whose whole instruction is a `run:` command, as a headless writer's session is, runs as
+a child process of its own, `auto` reads the signal `next` would have printed instead of a model reading it, and it ends with a distinct
+exit answer on `done`, on a stop, and on a step that needs a model - `auto --help` prints them.
+A `judge`, `ask`, `review`, an Agent dispatch or a wait on a command it never started is left
+exactly as `next` left it, so `next` continues from that step. SIGTERM or SIGINT ends a running
+child's whole process group and leaves the task in progress.
+
 ### The status guards of `/audit:run`
 
 The step driver hands three of these back itself: a task already `done` or `cancelled` is reported

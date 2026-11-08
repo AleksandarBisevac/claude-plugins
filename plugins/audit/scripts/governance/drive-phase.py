@@ -166,7 +166,8 @@ result printed, every path spelled as a committed row may say it
 (`note_sessions`); a note the verb refuses is said on the step and not asked
 again, since no step waits on a note. While the latest dispatch's record holds
 nothing the step is `wait-writer`: the session is running or was never
-started, and only the main loop knows which. Every gate the drive runs - the
+started, and only the main loop knows which - `auto`, when it is the main loop,
+knows only of the children it started itself (`auto_answer`). Every gate the drive runs - the
 task gate on this path or the Agent one, a re-gate, sign-off's phase gate - is
 chosen one way (`gate_in_background`): one whose recorded mean is past the
 Bash tool's foreground bound, or that no run has measured, is no call inside
@@ -325,6 +326,7 @@ import pathlib
 import re
 import shlex
 import shutil
+import signal as _signals
 import subprocess
 import sys
 import tempfile
@@ -2280,8 +2282,12 @@ def note_sessions(ctx, state, task, key="writer"):
 def writer_wait(ctx, state, task):
     """The wait printed while the latest writer dispatch has written no record:
     the session is running, or has not been started. Its command is printed
-    again, since only the main loop knows which of the two it is. None once a
-    record holds an outcome, or when no writer was dispatched."""
+    again, since only the main loop knows which of the two it is. A model main
+    loop knows by having launched it; `auto` is a main loop with no model, and
+    what it knows is the children it started itself and saw exit, so a wait on
+    one of those is a stop and a wait on any other command - which another
+    session may be running - is the model's (`auto_answer`). None once a record
+    holds an outcome, or when no writer was dispatched."""
     held = writer_state(state, task)
     if not held["dispatches"]:
         return None
@@ -5112,9 +5118,13 @@ def gate_in_background(ctx, names, joins=None):
     mean (`_evidence_io.gate_mean_ms`) is past the foreground bound, or there
     is none to weigh. `(False, None)` for a gate measured under the bound, and
     for a gate of no steps: it runs nothing, so nothing in it can outlive the
-    bound."""
+    bound. Inside `auto` (`ctx["auto"]`) the Bash bound means nothing and the
+    gate that runs anything is a child auto can stop, so it is always a step
+    of its own; `next`'s choice is not touched by that."""
     if not names:
         return False, None
+    if ctx.get("auto"):
+        return True, AUTO_GATE_WHY
     if joins:
         return True, joins
     try:
@@ -11607,8 +11617,10 @@ def stop_basis(text):
 
 
 def signal(ctx, code, said):
-    """`{"line", "subjects", "explain"}` for one `next --signal`: the line, the
-    ids `--explain` answers for it, and the whole text the line stands for."""
+    """`{"line", "subjects", "explain", "step", "verb", "subject", "prompts",
+    "runs"}` for one `next --signal`: the line, the ids `--explain` answers for
+    it, the whole text the line stands for, and the step's own fields, which
+    `auto` reads instead of parsing the line."""
     fields = said.get("signal") if isinstance(said, dict) else None
     target = drive_target(ctx)
     if fields is not None:
@@ -11629,8 +11641,10 @@ def signal(ctx, code, said):
         basis = "%s; %s" % (basis, echo[0])
     prompts = list((fields or {}).get("prompts") or [])
     runs = list((fields or {}).get("runs") or [])
-    return {"line": signal_line(ctx, SIGNAL_VERBS.get(step, "stop"), subject,
-                                ctx["did"], basis, nxt),
+    verb = SIGNAL_VERBS.get(step, "stop")
+    return {"line": signal_line(ctx, verb, subject, ctx["did"], basis, nxt),
+            "step": step, "verb": verb, "subject": subject,
+            "prompts": prompts, "runs": runs,
             "subjects": [subject] + list((fields or {}).get("subjects") or []),
             "explain": "\n".join([full] + ["prompt: %s" % (p,) for p in prompts]
                                  + ["run: %s" % (r,) for r in runs])}
@@ -11758,7 +11772,223 @@ def run_brief(args, out):
     return E_OK
 
 
+# --- auto: the drive's steps run with no model in the loop ---------------------------
+# `next` prints one instruction and leaves the main loop to do it; `auto` is that
+# loop for the steps that hold no decision: a `dispatch` whose whole instruction
+# is a `run:` command, repeated until a step needs somebody. It reads the same
+# step result `next --signal` builds, and classifies by `SIGNAL_VERBS` alone
+# (`auto_answer`), so every branch a model took on a `judge` or `ask` stays the
+# model's or the human's: nothing here answers a decision.
+#
+# EVERY RUN IS A CHILD OF THIS PROCESS IN A GROUP OF ITS OWN, started from an argv
+# split off the printed command and never handed to a shell, with its output in
+# `.auto.log` beside the state rather than on stdout, which is the answer's. A
+# stop signal only sets a flag (`auto_arm`): a verb inside `drive` runs to its end,
+# and the wait on a child sees the flag and tears the group down, so the task stays
+# in progress with its state whole for `next` to resume.
+AUTO_DONE, AUTO_STOP, AUTO_NEEDS_MODEL = E_OK, E_STOPPED, 3
+# How many times one command - the same step, subject and run: lines - is run in
+# one `auto` before the next sight of it is a stop. A resumed session or a
+# re-gate carries a command of its own, or is short of this; the same words past
+# it are a drive making no progress.
+AUTO_REPEAT_BOUND = 3
+AUTO_POLL_SECONDS = 0.1
+AUTO_LOG_SUFFIX = ".auto.log"
+AUTO_GATE_WHY = "auto runs every gate as a child it can stop"
+
+
+def one_next(ctx, answer=None, reason=None, fixes=()):
+    """`(code, said)` of one drive; a ValueError is a stop, worded as `drive`
+    words one."""
+    try:
+        return drive(ctx, answer=answer, reason=reason, fixes=fixes)
+    except ValueError as exc:
+        return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], exc)
+
+
+def auto_next(args):
+    """`(ctx, code, said)` of one step of `next --signal`, its text kept where
+    `--explain` reads it. A context of its own per step, as a `next` of its own
+    would have: `ctx["did"]` and `ctx["log"]` are one step's."""
+    ctx = context(args)
+    ctx["auto"] = True
+    ctx["carryTo"] = None
+    code, said = one_next(ctx)
+    said = signal(ctx, code, said)
+    problem = write_explain(ctx, said)
+    if problem:
+        sys.stderr.write("drive-phase.py: %s\n" % (problem,))
+    return ctx, code, said
+
+
+def auto_answer(said, ran):
+    """What `auto` does with one step: `done` and `stop` end it; `run` executes
+    the step's commands; `needs-model` ends it on a step somebody must act on;
+    `child-exited` ends it on a wait for a child it already ran to exit.
+
+    A wait on a command this run never started is `needs-model`: another
+    session may be running it, and only a main loop that knows can say so.
+    A dispatch naming an Agent, alone or beside a session in one wave, has no
+    process of its own to run, so the model sends it - and the wave's `run:`
+    lines with it, since half a wave is no step of the drive's."""
+    verb = said["verb"]
+    if verb in ("done", "stop"):
+        return verb
+    if verb == "dispatch":
+        return "run" if said["runs"] and not said["prompts"] else "needs-model"
+    if verb == "wait" and said["runs"] and all(r in ran for r in said["runs"]):
+        return "child-exited"
+    return "needs-model"
+
+
+def auto_argv(command):
+    """The argv of a printed `run:` command, split as the POSIX shell that
+    `shlex.quote` wrote it for would - no shell involved - with the drive's own
+    `python3` word as this interpreter, so a run starts the Python running the
+    drive."""
+    argv = shlex.split(command)
+    return [sys.executable] + argv[1:] if argv[:1] == ["python3"] else argv
+
+
+def auto_arm(interrupted):
+    """Install the stop handlers; return what they displaced. Each signal only
+    appends its name to `interrupted`: a raise would land inside a verb's write
+    in `drive`, and no child is signalled here but by the wait that watches
+    `interrupted`."""
+    def note(signum, _frame):
+        interrupted.append(_signals.Signals(signum).name)
+    return [(getattr(_signals, name),
+             _signals.signal(getattr(_signals, name), note))
+            for name in _proc_group.INTERRUPT_SIGNALS]
+
+
+def auto_log_path(ctx):
+    return explain_path(ctx)[:-len(EXPLAIN_SUFFIX)] + AUTO_LOG_SUFFIX
+
+
+def auto_run(ctx, commands, interrupted):
+    """`(results, confirmed)`: `(command, exit code or None, problem or None)`
+    for each of `commands`, started together - a wave's members are - each a
+    child in its own process group. On a stop signal every group still live is
+    torn down, and `confirmed` is whether each teardown could be confirmed."""
+    path = auto_log_path(ctx)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=ctx["project"])
+    children, confirmed = [], True
+    with open(path, "ab") as log:
+        for command in commands:
+            try:
+                children.append((command, subprocess.Popen(
+                    auto_argv(command), cwd=ctx["project"], env=env,
+                    stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                    **_proc_group.group_kwargs()), None))
+            except (OSError, ValueError) as exc:
+                children.append((command, None, "could not start: %s" % (exc,)))
+        try:
+            while any(p is not None and p.poll() is None for _c, p, _w in children):
+                if interrupted:
+                    break
+                time.sleep(AUTO_POLL_SECONDS)
+        finally:
+            for _command, proc, _why in children:
+                if proc is not None and proc.poll() is None:
+                    confirmed = _proc_group.tear_down(proc) and confirmed
+    return ([(c, p.returncode if p is not None else None, w)
+             for c, p, w in children], confirmed)
+
+
+def auto_report(ctx, said, results):
+    """Say on stderr each run that did not exit 0; the step `next` prints after
+    it is what decides what that meant."""
+    where = project_relative(ctx, auto_log_path(ctx))
+    for _command, code, problem in results:
+        if code != 0:
+            sys.stderr.write("%s auto: %s %s: %s; output in %s; back through next\n"
+                             % (PREFIX, said["step"], said["subject"],
+                                problem or "run exited %d" % (code,), where))
+
+
+def auto_end(ctx, out, said, name, words):
+    """Answer stop on a stop of auto's own, named `name`, its text kept where
+    `--explain` reads it."""
+    text = "%s %s: stopped - %s: %s" % (PREFIX, ctx["phase"], name, words)
+    problem = write_explain(ctx, {"subjects": said["subjects"], "explain": text})
+    if problem:
+        sys.stderr.write("drive-phase.py: %s\n" % (problem,))
+    out(explain_text(text.splitlines()))
+    return AUTO_STOP
+
+
+def auto_steps(args, out, interrupted):
+    """The loop: one `next`, what it says done, until a step ends it."""
+    ran, seen = set(), {}
+    while True:
+        ctx, _code, said = auto_next(args)
+        answer = auto_answer(said, ran)
+        if answer in ("done", "stop"):
+            out(explain_text(said["explain"].splitlines()))
+            return AUTO_DONE if answer == "done" else AUTO_STOP
+        if answer == "needs-model":
+            out(said["line"])
+            return AUTO_NEEDS_MODEL
+        again = "next %s --signal resumes it" % (drive_target(ctx),)
+        if answer == "child-exited":
+            return auto_end(ctx, out, said, "auto-child-exited", (
+                "the child for %s %s exited and the drive still waits on what "
+                "it should have written; %s" % (said["step"], said["subject"], again)))
+        if interrupted:
+            return auto_end(ctx, out, said, "auto-interrupted", (
+                "%s arrived before %s %s started; %s" % (
+                    interrupted[0], said["step"], said["subject"], again)))
+        key = (said["step"], said["subject"], tuple(said["runs"]))
+        if seen.get(key, 0) >= AUTO_REPEAT_BOUND:
+            return auto_end(ctx, out, said, "auto-no-progress", (
+                "%s %s came back with the same command after %d runs of it; %s"
+                % (said["step"], said["subject"], AUTO_REPEAT_BOUND, again)))
+        seen[key] = seen.get(key, 0) + 1
+        results, confirmed = auto_run(ctx, said["runs"], interrupted)
+        ran.update(said["runs"])
+        auto_report(ctx, said, results)
+        if interrupted:
+            return auto_end(ctx, out, said, "auto-interrupted", (
+                "%s arrived while %s %s ran; its process group was torn down%s; "
+                "the task stays in progress and %s" % (
+                    interrupted[0], said["step"], said["subject"],
+                    "" if confirmed else " (not confirmed)", again)))
+
+
+def run_auto(args, out):
+    """`auto`: exit `AUTO_DONE`, `AUTO_STOP` or `AUTO_NEEDS_MODEL`, or `E_USAGE`
+    when it could not run at all - a usage error, or a crash, which is never
+    read as one of the three answers."""
+    interrupted = []
+    previous = auto_arm(interrupted)
+    try:
+        return auto_steps(args, out, interrupted)
+    except ValueError as exc:
+        sys.stderr.write("drive-phase.py: %s\n" % (exc,))
+        return E_USAGE
+    except Exception as exc:                                   # noqa: BLE001
+        sys.stderr.write("drive-phase.py: auto crashed - %s: %s\n"
+                         % (type(exc).__name__, exc))
+        return E_USAGE
+    finally:
+        _proc_group.disarm_interrupt(previous)
+
+
 # --- the command line -------------------------------------------------------------
+def add_drive_target(parser):
+    """The target forms `next` and `auto` both take."""
+    parser.add_argument("phase", help="the phase id, or a task id to drive that "
+                                      "one task")
+    parser.add_argument("manifest", nargs="?", default=None,
+                        help="the manifest (default: the project's configured one)")
+    parser.add_argument("--project-dir", dest="project_dir", default=None)
+    parser.add_argument("--task", dest="task_only", action="store_true",
+                        help="the one-task form `/audit:run` passes: a phase id is "
+                             "refused, naming /audit:phase, and no task is picked")
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="drive-phase.py", add_help=True, allow_abbrev=False,
@@ -11767,14 +11997,7 @@ def build_parser():
     sub = parser.add_subparsers(dest="action")
     sub.required = True
     nxt = sub.add_parser("next", help="perform the due steps, print one instruction")
-    nxt.add_argument("phase", help="the phase id, or a task id to drive that "
-                                   "one task")
-    nxt.add_argument("manifest", nargs="?", default=None,
-                     help="the manifest (default: the project's configured one)")
-    nxt.add_argument("--project-dir", dest="project_dir", default=None)
-    nxt.add_argument("--task", dest="task_only", action="store_true",
-                     help="the one-task form `/audit:run` passes: a phase id is "
-                          "refused, naming /audit:phase, and no task is picked")
+    add_drive_target(nxt)
     nxt.add_argument("--answer", default=None,
                      help="answer the pending decision with one of its options")
     nxt.add_argument("--reason", default=None,
@@ -11796,6 +12019,25 @@ def build_parser():
                      help="print, within %d bytes, the step the last signal "
                           "about ID stands for, or the decision waiting on it; "
                           "drives nothing" % (EXPLAIN_BYTES,))
+    aut = sub.add_parser(
+        "auto", help="run the drive's mechanical steps itself, with no model, "
+                     "until a step needs one",
+        description="Run every step of the drive that needs no judgement "
+                    "itself - every dispatch whose whole instruction is a run: "
+                    "command, each a child of this process in its own group - "
+                    "and end on the first that needs somebody. Exit %d: done, "
+                    "stdout the text --explain prints. Exit %d: stop, stdout "
+                    "its text - SIGTERM or SIGINT ends a running child's "
+                    "group and answers this, the task left in progress. Exit "
+                    "%d: a step needs a model or the human, stdout its one "
+                    "signal line; next continues from it. A step repeating "
+                    "the same command %d times with no progress is a stop. "
+                    "Exit %d: could not run." % (
+                        AUTO_DONE, AUTO_STOP, AUTO_NEEDS_MODEL,
+                        AUTO_REPEAT_BOUND, E_USAGE))
+    add_drive_target(aut)
+    aut.add_argument("--verbose", action="store_true",
+                     help="print each verb's run above the instruction")
     brf = sub.add_parser("brief", help="print the brief written for an agent's "
                          "dispatch: the dispatch prompt runs this")
     brf.add_argument("id", help="the task id, or the phase id for `--role phase`")
@@ -12035,6 +12277,8 @@ def main(argv, out=print, stdin=None):
         return run_brief(args, out)
     if args.action == "restore" and cmd is None:
         return run_restore(args, out)
+    if args.action == "auto" and cmd is None:
+        return run_auto(args, out)
     if cmd is not None:
         sys.stderr.write("drive-phase.py: only `submit` takes a command after "
                          "`--`\n")
@@ -12057,13 +12301,8 @@ def main(argv, out=print, stdin=None):
         out(text)
         return code
     ctx["carryTo"] = args.carry_to
-    try:
-        fixes = [f.strip() for given in args.fix for f in given.split(",")
-                 if f.strip()]
-        code, said = drive(ctx, answer=args.answer, reason=args.reason,
-                           fixes=fixes)
-    except ValueError as exc:
-        code, said = E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], exc)
+    fixes = [f.strip() for given in args.fix for f in given.split(",") if f.strip()]
+    code, said = one_next(ctx, answer=args.answer, reason=args.reason, fixes=fixes)
     if not args.signal:
         out(render(ctx, code, said))
         return code

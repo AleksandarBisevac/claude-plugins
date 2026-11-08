@@ -4800,8 +4800,9 @@ why. Learning twice files nothing new, by the own-miss rule above. Beside `--wri
 writer to name.
 
 ### `plugins/audit/scripts/governance/drive-phase.py`
-`drive-phase.py next <phaseId|taskId> [manifest] [--project-dir DIR] [--answer OPTION] [--reason TEXT]
-[--fix FINDING[,FINDING]] [--verbose]` — **the step driver.** One `next` reads the plan and the filed returns, performs
+`drive-phase.py next <phaseId|taskId> [manifest] [--project-dir DIR] [--task] [--answer OPTION]
+[--reason TEXT] [--fix FINDING[,FINDING]] [--verbose]`, and `drive-phase.py auto <phaseId|taskId>
+[manifest] [--project-dir DIR] [--task] [--verbose]` — **the step driver.** One `next` reads the plan and the filed returns, performs
 every step of the phase's run that is due and needs no judgement, and prints exactly one
 instruction: `dispatch` (an agent type, the task, its model and the brief file `audit-lookup.py
 brief` wrote), `decide` (a named decision with its options), or `done`. The command body is the
@@ -4814,6 +4815,19 @@ background - and the reviewer's session files nothing: its prompt ends with
 `REVIEWER_SESSION_RULE`, which tells it not to run its brief's `submit`, and the drive files the
 JSON object its last message ends with through `submit` itself (`reviewer_session_step`), once
 the saved stream shows the session opened something.
+
+**`auto` is that loop with no model in it** (`run_auto`). It reads the step result `next --signal`
+builds - never its printed line - and classifies it through `SIGNAL_VERBS` (`auto_answer`):
+`done` and a stop end it, `judge`/`ask`/`review` and an Agent dispatch end it as needs-model with
+the step left for `next`, and a `dispatch` whose instruction is only `run:` commands is run as a
+child of its own process group from an argv (`auto_argv`), never a shell, with every gate one of
+those children rather than an inline call (`gate_in_background` reads `ctx["auto"]`). A wait on a
+child it ran to exit is a named stop, a wait on a command it never started is the model's, and a
+command it has already run `AUTO_REPEAT_BOUND` times with no progress is a named stop; a child's
+non-zero exit goes to stderr and back through `next`. SIGTERM and SIGINT are only flagged
+(`auto_arm`), the child's group torn down and the task left in progress for `next` to resume.
+The exit answers are `auto --help`'s; stdout is what `--explain` prints on `done` and a stop, and
+the step's signal line on needs-model.
 
 **Every step is an existing verb, run as a subprocess.** An entry point may not import another,
 so each verb is resolved by basename through `_loader.script_path` and run: `audit-lock.py

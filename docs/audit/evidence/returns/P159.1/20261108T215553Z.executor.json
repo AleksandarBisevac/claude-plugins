@@ -1,0 +1,49 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__refs.py tools/_suite.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test_audit_task.py tools/measure-context.py": "pass",
+    "python3 tools/measure-context.py --gate": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-08T22:06:48Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__refs.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 21 of 917 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - au1 (house FAIL), au2 (house FAIL), au2b (house FAIL), au3 (house FAIL), au4 (house FAIL), au4b (house FAIL), au5 (house FAIL), au5b (house FAIL) and 13 more: SELFTEST FAILED: 896/917 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Retry of attempt 1: the implementation in drive-phase.py and tests/test_drive_phase.py is unchanged from attempt 1, whose outcome stands for the auto verb itself, with one correction below. Diagnosis, by running it: `python3 tools/measure-context.py --gate` exit 1, 'BREACH reference/orchestrator.md: 62371 bytes, over a ceiling of 62000'. The three red cases share that one cause: fb15 asserts the gate still holds every entry, its failing tuple is the gate's exit 1; mc24 and mc34 both print ('reference/orchestrator.md', 62371, 62000, ...). The 63180 in the retry note is not the file's size: mc34 prints it as the old ceiling the 62000 replaced. Fix: removed the whole paragraph attempt 1 added to reference/orchestrator.md. HEAD's copy is 61995 bytes, 5 under the ceiling, so not even a one-line pointer fits; `git diff -- plugins/audit/reference/orchestrator.md` is now empty. No ceiling raised. Correction to attempt 1's record: it listed orchestrator.md's Progress output among the docs carrying auto; it no longer does, and auto is described in reference/verbs-in-full.md and PLUGIN-BUILD-GUIDE.md. The one fact verbs-in-full.md lacked, that a headless writer's session is such a run: command (drive-phase.py:498 dispatches run-agent-session.py; auto_answer at :11838 runs only a dispatch with no Agent prompt), was added to its existing paragraph as one clause. Commands, from the project dir: `python3 tools/measure-context.py --gate` exit 0, reference/orchestrator.md 61995 / 62000; `python3 tools/sweep-selftests.py tests/test_audit_task.py tools/measure-context.py` exit 0, '2/2 files ok, 1292 cases' (the same command before the edit: exit 1, 0/2 files ok, fb15, mc24, mc34 FAIL); `python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__refs.py tools/_suite.py` exit 0, '3/3 files ok, 1244 cases'; `python3 tools/sweep-selftests.py tests/test__areas.py tests/test__usage_routing.py` (readers of the two reference files) exit 0, '2/2 files ok, 150 cases'. Not re-run this attempt: the 14-row mutation table from attempt 1, since no code or test changed. Dependants: drive-phase.py's importers (_worktrees and the tests/test_* importers): still correct, the file is untouched in this attempt and attempt 1 only added to it. tests/test_drive_phase.py's readers (sweep-costs.json, ci.yml, affected.py, reach-diff.py, test__runner_output, test_run_test_gate, test_stamp_verification): still correct, untouched in this attempt, names unchanged. verbs-in-full.md's readers (PLUGIN-BUILD-GUIDE, _areas, test__areas, test__manifest_vocab, test_audit_task, CHANGELOG, guide.md, execute-task.md): still correct, one clause inside one paragraph, no heading added or moved; test__areas and test_audit_task ran green. orchestrator.md's readers (guard-uncommitted, prove-gates, COMPATIBILITY, PLUGIN-BUILD-GUIDE, pipeline-cost-design, evals, guard-history-rewrite, schema, close-phase, _manifest_crossrefs, test__areas, test__usage_routing): still correct, the file is byte-identical to HEAD. PLUGIN-BUILD-GUIDE's readers (_doctor_hygiene, evals, test__affected_tests, test__config, test__deps, test__doctor_trail): still correct, untouched in this attempt; its section 'orchestrator.md + the execution verb commands' never named auto, and its drive-phase section does not cite orchestrator.md for it.",
+    "descriptive": "auto stays in reference/verbs-in-full.md only, so reference/orchestrator.md is back under its ceiling and the three red cases are green"
+  },
+  "testsAdded": [
+    "auto over scripted and real drives: dispatch run lines executed and next repeated, done and stop answers with the --explain text and bound, needs-model on judge/ask/review/Agent dispatch with nothing further run, wait on an exited child not spun, no-progress named stop within the bound, SIGTERM ending the child's process group and leaving the task resumable, a child's non-zero exit reported and sent back through next, with allow twins"
+  ],
+  "casesAdded": [
+    [
+      "au1",
+      "au2",
+      "au2b",
+      "au3",
+      "au4",
+      "au4b",
+      "au5",
+      "au5b",
+      "au6",
+      "au7",
+      "au7b",
+      "au8",
+      "au9",
+      "au10",
+      "au10b",
+      "au12",
+      "au20",
+      "au21",
+      "au22",
+      "au23",
+      "au24"
+    ]
+  ],
+  "claims": "claims:\n1 verbs-in-full.md's added clause: drive-phase.py:498 is the headless writer's run-agent-session.py dispatch, :11838 runs a dispatch only when it has run commands and no Agent prompts\n2 n/a - no check touched this attempt; the gate itself was watched red on this tree (measure-context --gate exit 1, BREACH 62371) and green after the removal (exit 0, 61995 / 62000); attempt 1's mutation table covers the auto cases and no code changed\n3 grep -n 'auto <' plugins/audit/reference/orchestrator.md: 1 hit, line 748, the removed paragraph; the class is an entry over its ceiling, and the same --gate run lists every entry, the others all under theirs; left: none\n4 n/a - no rule to an agent added\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written into a document",
+  "stamp": "audit-stamp: {\"content\":\"sha256:1ad9786773fe58a515695d6cd9bfa9c34556e8624ebe77fffc7df3584e692eb2\",\"dirtyDigest\":\"sha256:2d7a07a1e3c9f0aaf80125c198c1ca15f14aa028fee745db09250db27eff7d14\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"2f12b4531264cb09\",\"plugins/audit/reference/verbs-in-full.md\":\"fa28fa35c80cbd40\",\"plugins/audit/scripts/governance/drive-phase.py\":\"d106a7775489915a\",\"tests/test_drive_phase.py\":\"d688cf0a7c45e318\"},\"head\":\"51c51916\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/orchestrator.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:d147f9c57ddfa3e01dd2dcbb539d26660b1cab8499d8cb14521e691adbcd662d\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

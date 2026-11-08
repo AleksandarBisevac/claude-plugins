@@ -805,10 +805,15 @@ WRITER_COSTS = ("0.4242", "0.5151", "0.6161")
 # ends the stream with the one `result` event the runner reads the session id
 # and cost from, its `result` text `WS_RESULT`.
 _WRITER_STUB = r'''
-import json, os, subprocess, sys
+import json, os, subprocess, sys, time
 prompt = sys.stdin.buffer.read().decode("utf-8")
 with open(os.environ["WS_LOG"], "a", encoding="utf-8") as fh:
     fh.write(json.dumps({"argv": sys.argv[1:], "stdin": prompt}) + "\n")
+if os.environ.get("WS_MODE") == "sleep":
+    held = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])
+    with open(os.environ["WS_PIDS"], "w", encoding="utf-8") as fh:
+        fh.write("%d %d" % (os.getpid(), held.pid))
+    time.sleep(600)
 for rel, text in sorted(json.loads(os.environ.get("WS_EDIT") or "{}").items()):
     with open(os.path.join(*rel.split("/")), "w", encoding="utf-8",
               newline="\n") as fh:
@@ -924,16 +929,15 @@ def _flag(argv, flag):
     return argv[argv.index(flag) + 1] if flag in argv[:-1] else None
 
 
-def _play_session(root, argv, bindir, log, cost, session=WRITER_SESSION,
-                  mode="ok", edit=None, result=None, commit=False, tools=0,
-                  reads=None):
-    """Run the printed session command as the main loop does - its interpreter
-    word replaced by this one - with the stub standing for `claude`. `mode`
-    `none` makes the stub exit 7 with no result event. `edit` maps the paths
+def _stub_environ(bindir, log, cost, session=WRITER_SESSION, mode="ok", edit=None,
+                  result=None, commit=False, tools=0, reads=None):
+    """This process's environment with the stub standing for `claude`. `mode`
+    `none` makes the stub exit 7 with no result event, and `sleep` makes it
+    write its pid and a child's to `WS_PIDS` and sleep. `edit` maps the paths
     the stub writes to their text, `result` is its last message, `commit`
     has it commit what it wrote and `tools` is how many tool calls its stream
     holds, each a Read of src/mine.py - or, given `reads`, one Read of each
-    path it lists. Returns `(code, output)`."""
+    path it lists."""
     env = dict(os.environ)
     env["PATH"] = bindir + os.pathsep + env.get("PATH", "")
     # A TEMP DIRECTORY OF THE FIXTURE'S, removed with it: the runner makes the
@@ -947,6 +951,18 @@ def _play_session(root, argv, bindir, log, cost, session=WRITER_SESSION,
                           else _said("the session is done")),
                WS_COMMIT="1" if commit else "", WS_TOOLS=str(tools),
                WS_READS=json.dumps(reads) if reads is not None else "")
+    return env
+
+
+def _play_session(root, argv, bindir, log, cost, session=WRITER_SESSION,
+                  mode="ok", edit=None, result=None, commit=False, tools=0,
+                  reads=None):
+    """Run the printed session command as the main loop does - its interpreter
+    word replaced by this one - with the stub standing for `claude`
+    (`_stub_environ` says what each argument makes it do). Returns
+    `(code, output)`."""
+    env = _stub_environ(bindir, log, cost, session=session, mode=mode, edit=edit,
+                        result=result, commit=commit, tools=tools, reads=reads)
     done = subprocess.run([sys.executable] + list(argv[1:]), cwd=root, env=env,
                           capture_output=True, text=True, encoding="utf-8",
                           errors="replace", timeout=120)
@@ -11690,6 +11706,408 @@ def _wave_writer_cases(check, M, bindir, log):
           bool(tree_f) and in_tree == [] and in_project == ["src/f2.txt"])
 
 
+# --- auto: the drive run with no model in its loop ------------------------------
+# The three answers, spelled here rather than read off the driver, so a
+# renumbered answer is a red case and not a table agreeing with itself.
+AUTO_DONE, AUTO_STOP, AUTO_NEEDS_MODEL = 0, 1, 3
+# What a child prints: its own words on its own line, for the cases that read
+# what the loop kept of them.
+_AUTO_CHILD = ("import sys\n"
+               "with open(sys.argv[1], 'a', encoding='utf-8') as fh:\n"
+               "    fh.write(' '.join(sys.argv[2:]) + '\\n')\n"
+               "print('child output')\n"
+               "sys.exit(int(sys.argv[2]))\n")
+
+
+def _auto_command(mark, code=0, *words):
+    """A `run:` command, quoted as the drive quotes one, whose child appends its
+    arguments to `mark` and exits `code`."""
+    return " ".join(shlex.quote(w) for w in
+                    [sys.executable, "-c", _AUTO_CHILD, mark, str(code)] + list(words))
+
+
+def _auto_said(M, step, subject="P1.1", runs=(), prompts=(), explain=None):
+    """One step as `auto_next` hands it to the loop."""
+    verb = M.SIGNAL_VERBS[step]
+    return {"step": step, "verb": verb, "subject": subject, "subjects": [subject],
+            "runs": list(runs), "prompts": list(prompts),
+            "line": "audit %s %s %s | a basis | next: wait" % (PHASE, verb, subject),
+            "explain": (explain if explain is not None
+                        else "%s %s: the step's own text" % (step, subject))}
+
+
+def _auto_scripted(M, root, mpath, steps, args=()):
+    """`auto` over `steps`, each handed in turn to the loop by a stand-in for
+    `auto_next`, the last repeated past the end: `{"code", "out", "err",
+    "nexts"}`. The stand-in keeps the step's text as `next --signal` does, so
+    `--explain` answers from the same file; a loop that never ends raises
+    after a count no bound here reaches."""
+    calls = []
+    real = getattr(M, "auto_next", None)
+
+    def scripted(args_seen):
+        ctx = M.context(args_seen)
+        said = steps[min(len(calls), len(steps) - 1)]
+        calls.append(said["step"])
+        if len(calls) > 40:
+            raise RuntimeError("the loop never ended")
+        M.write_explain(ctx, said)
+        return ctx, M.E_OK, said
+    M.auto_next = scripted
+    held = io.StringIO()
+    said = []
+    try:
+        with _Env(root), contextlib.redirect_stderr(held):
+            code = M.main(["auto", PHASE, mpath, "--project-dir", root] + list(args),
+                          out=said.append)
+    finally:
+        M.auto_next = real
+    return {"code": code, "out": "\n".join(said), "err": held.getvalue(),
+            "nexts": len(calls)}
+
+
+def _auto_marks(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return [ln.rstrip("\n") for ln in fh if ln.strip()]
+    except OSError:
+        return []
+
+
+def _auto_cases(check):
+    """`auto` over a scripted drive: which step it runs, which it ends on and
+    with which answer, nothing here a real session."""
+    M, why = _load("drive_phase_auto")
+    if M is None:
+        check("au0 the driver loads: %r" % (why,), False)
+        return
+    root, mpath = _repo("auto-scripted", task_ids=TASKS[:1])
+    marks = os.path.join(root, "marks.log")
+    one, two = _auto_command(marks, 0, "one"), _auto_command(marks, 0, "two")
+    final = "done-task P1.1: closed at abc1234\nthe rule under it"
+    run = _auto_scripted(M, root, mpath, [
+        _auto_said(M, "dispatch-writer", runs=[one]),
+        _auto_said(M, "dispatch-gate", runs=[two]),
+        _auto_said(M, "done-task", explain=final)])
+    _c, explained = _explain_of(M, root, mpath, "P1.1")
+    check("au1 auto runs each dispatch's run: command in turn, asks next again "
+          "after each, and on done answers done with exactly what --explain "
+          "prints: %r" % ((run, _auto_marks(marks), explained),),
+          run["code"] == AUTO_DONE and run["nexts"] == 3
+          and _auto_marks(marks) == ["0 one", "0 two"]
+          and run["out"] == explained == final)
+
+    stop_text = "\n".join("[drive-phase] P1: stopped - line %d of its words" % (n,)
+                          for n in range(1, 6))
+    stopped = _auto_scripted(M, root, mpath, [
+        _auto_said(M, "stopped", subject=PHASE, explain=stop_text)])
+    check("au2 a stop ends with the stop answer and the stop's whole text, one "
+          "next and nothing run: %r" % ((stopped,),),
+          stopped["code"] == AUTO_STOP and stopped["out"] == stop_text
+          and stopped["nexts"] == 1)
+    long_stop = "\n".join("[drive-phase] line %d %s" % (n, "x" * 300)
+                          for n in range(40))
+    bounded = _auto_scripted(M, root, mpath, [
+        _auto_said(M, "stopped", subject=PHASE, explain=long_stop)])
+    _c, kept = _explain_of(M, root, mpath, PHASE)
+    check("au2b a stop past the --explain bound prints what --explain prints, "
+          "inside the same bound: %r" % ((len(bounded["out"]), len(kept)),),
+          bounded["code"] == AUTO_STOP and bounded["out"] == kept
+          and len(bounded["out"].encode("utf-8")) <= EXPLAIN_BYTES)
+
+    held = []
+    for step, kw in (("decide-gate-red", {}), ("decide-high-risk", {}),
+                     ("decide-triage", {}),
+                     ("dispatch-executor", {"prompts": ["brief --role executor P1.1"]}),
+                     ("dispatch-wave", {"prompts": ["brief --role executor P1.1"],
+                                        "runs": [_auto_command(marks, 0, "mixed")]})):
+        if os.path.exists(marks):
+            os.remove(marks)
+        said = _auto_said(M, step, **kw)
+        answer = _auto_scripted(M, root, mpath, [said])
+        held.append((step, answer, _auto_marks(marks), said["line"]))
+    check("au3 judge, ask, review, a dispatch with no run: line and a wave with an "
+          "Agent member each end with the needs-model answer after one next, "
+          "having run nothing, and print the step's own signal line: %r" % (held,),
+          len(held) == 5 and all(
+              a["code"] == AUTO_NEEDS_MODEL and a["nexts"] == 1 and got == []
+              and a["out"] == line
+              for _s, a, got, line in held))
+
+    if os.path.exists(marks):
+        os.remove(marks)
+    command = _auto_command(marks, 0, "session")
+    exited = _auto_scripted(M, root, mpath, [
+        _auto_said(M, "dispatch-writer", runs=[command]),
+        _auto_said(M, "wait-writer", runs=[command])])
+    check("au4 a wait on a child auto already ran to exit is not spun on: one "
+          "more next, the child run once, a stop naming that the child exited, "
+          "kept where --explain answers: %r" % ((exited, _auto_marks(marks)),),
+          exited["code"] == AUTO_STOP and exited["nexts"] == 2
+          and _auto_marks(marks) == ["0 session"]
+          and "auto-child-exited" in exited["out"]
+          and _explain_of(M, root, mpath, "P1.1")[1] == exited["out"])
+    if os.path.exists(marks):
+        os.remove(marks)
+    never = _auto_scripted(M, root, mpath, [
+        _auto_said(M, "wait-writer", runs=[_auto_command(marks, 0, "elsewhere")])])
+    no_run = _auto_scripted(M, root, mpath, [_auto_said(M, "follow-browser")])
+    check("au4b THE TWIN: a wait on a command this auto never started is the "
+          "model's, not a stop, and starts nothing; a wait with no command at all "
+          "is the model's too: %r" % ((never, no_run, _auto_marks(marks)),),
+          never["code"] == AUTO_NEEDS_MODEL and never["nexts"] == 1
+          and _auto_marks(marks) == []
+          and no_run["code"] == AUTO_NEEDS_MODEL and no_run["nexts"] == 1)
+
+    if os.path.exists(marks):
+        os.remove(marks)
+    same = _auto_command(marks, 0, "same")
+    spun = _auto_scripted(M, root, mpath, [_auto_said(M, "dispatch-gate", runs=[same])])
+    bound = getattr(M, "AUTO_REPEAT_BOUND", None)
+    check("au5 a step that repeats with no progress ends with a named stop "
+          "stating its bound, the command run no more times than the bound: %r"
+          % ((spun, bound, len(_auto_marks(marks))),),
+          spun["code"] == AUTO_STOP and "auto-no-progress" in spun["out"]
+          and isinstance(bound, int) and "%d" % (bound,) in spun["out"]
+          and len(_auto_marks(marks)) == bound and spun["nexts"] == bound + 1)
+    if os.path.exists(marks):
+        os.remove(marks)
+    rounds = [_auto_said(M, "resume-writer", runs=[_auto_command(marks, 0, "round%d" % (n,))])
+              for n in range(1, (bound or 1) + 3)]
+    moved = _auto_scripted(M, root, mpath, rounds + [_auto_said(M, "done-task")])
+    check("au5b THE TWIN: the same step with a different command each time is "
+          "progress, not a repeat - it runs past the bound and reaches done: %r"
+          % ((moved, len(_auto_marks(marks))),),
+          moved["code"] == AUTO_DONE and len(_auto_marks(marks)) == len(rounds))
+
+    if os.path.exists(marks):
+        os.remove(marks)
+    failed = _auto_scripted(M, root, mpath, [
+        _auto_said(M, "dispatch-writer", runs=[_auto_command(marks, 7, "failing")]),
+        _auto_said(M, "done-task", explain="done after the failure")])
+    check("au7 a child's non-zero exit is reported naming the code on stderr, and "
+          "the next step is what answers - next is asked again, not a success "
+          "read off the exit and not a stop: %r" % ((failed,),),
+          failed["code"] == AUTO_DONE and failed["nexts"] == 2
+          and "exited 7" in failed["err"] and "dispatch-writer" in failed["err"]
+          and failed["out"] == "done after the failure")
+    if os.path.exists(marks):
+        os.remove(marks)
+    clean = _auto_scripted(M, root, mpath, [
+        _auto_said(M, "dispatch-writer", runs=[_auto_command(marks, 0, "fine")]),
+        _auto_said(M, "done-task")])
+    check("au7b THE TWIN: a child that exits 0 reports nothing, so a report that "
+          "always fires reads red here: %r" % ((clean,),),
+          clean["code"] == AUTO_DONE and "exited" not in clean["err"])
+
+    if os.path.exists(marks):
+        os.remove(marks)
+    pwned = os.path.join(root, "pwned")
+    # Unquoted on purpose: a shell would read `;` and run the second command, the
+    # drive's own quoted spelling would pass through a shell unchanged and could
+    # not tell the two apart.
+    raw = "%s ; touch %s" % (_auto_command(marks, 0, "argv"), shlex.quote(pwned))
+    shelled = _auto_scripted(M, root, mpath, [
+        _auto_said(M, "dispatch-writer", runs=[raw]),
+        _auto_said(M, "done-task")])
+    check("au10 a run: command is split into an argv and no shell reads it: the "
+          "metacharacter reaches the child as a word and nothing after it "
+          "runs: %r" % ((shelled, _auto_marks(marks), os.path.exists(pwned)),),
+          shelled["code"] == AUTO_DONE and not os.path.exists(pwned)
+          and len(_auto_marks(marks)) == 1 and ";" in _auto_marks(marks)[0])
+    argv = getattr(M, "auto_argv", lambda _c: None)(
+        "python3 /x/run-agent-session.py --tree 'a b'")
+    check("au10b the drive's own `python3` word is this interpreter, the rest "
+          "split as a POSIX shell reads it: %r" % (argv,),
+          argv == [sys.executable, "/x/run-agent-session.py", "--tree", "a b"])
+
+    answers = tuple(getattr(M, n, None) for n in ("AUTO_DONE", "AUTO_STOP",
+                                                  "AUTO_NEEDS_MODEL"))
+    words = sorted(set(answers + (M.E_USAGE,)), key=str)
+    helped = io.StringIO()
+    with contextlib.redirect_stdout(helped):
+        code = M.main(["auto", "--help"], out=helped.write)
+    text = " ".join(helped.getvalue().split()).lower()
+    check("au8 the three answers are distinct from each other and from the "
+          "usage exit, and --help documents each by number: %r" % ((words, text),),
+          answers == (AUTO_DONE, AUTO_STOP, AUTO_NEEDS_MODEL) and len(words) == 4
+          and code == M.E_OK and "exit 0" in text and "exit 1" in text
+          and "exit 3" in text)
+
+    refused = []
+    with _Env(root), contextlib.redirect_stderr(io.StringIO()) as err:
+        code = M.main(["auto", PHASE, mpath, "--project-dir", root, "--task"],
+                      out=refused.append)
+    check("au12 auto takes next's forms: --task with a phase id is the usage "
+          "refusal naming /audit:phase, and nothing is driven: %r"
+          % ((code, err.getvalue(), refused),),
+          code == M.E_USAGE and "/audit:phase" in err.getvalue())
+
+    G, why = _load("drive_phase_auto_choice", real_gate_choice=True)
+    gate_root, _gate_mpath = _repo("auto-choice", task_ids=TASKS[:1])
+    if G is None:
+        check("au9 the driver loads: %r" % (why,), False)
+        return
+    held_mean = G._evio.gate_mean_ms
+    G._evio.gate_mean_ms = lambda rows, names: (10.0, 3)
+    try:
+        ctx = {"project": gate_root, "config": {}}
+        plain = G.gate_in_background(ctx, ["true"])
+        inside = G.gate_in_background(dict(ctx, auto=True), ["true"])
+        empty = G.gate_in_background(dict(ctx, auto=True), [])
+    finally:
+        G._evio.gate_mean_ms = held_mean
+    check("au9 inside auto every gate that runs anything is a child of auto, "
+          "not a call inside next, whatever its recorded mean; the choice next "
+          "makes under the foreground bound is unchanged, and a gate of no "
+          "steps runs nothing either way: %r" % ((plain, inside, empty),),
+          plain == (False, None) and inside[0] is True and bool(inside[1])
+          and empty == (False, None))
+
+
+def _auto_stub(prefix):
+    stubs = os.path.realpath(_harness.fixture_root("drive-%s-" % (prefix,)))
+    return _writer_stub(stubs), os.path.join(stubs, "runs.jsonl"), stubs
+
+
+def _auto_argv(mpath, root, target, extra=()):
+    return _script(DRIVER) + ["auto", target, mpath, "--project-dir", root] + list(extra)
+
+
+def _auto_process(root, mpath, target, bindir, log, extra=(), **stub):
+    """`(code, stdout, stderr)` of `auto` as a process, the stub on its PATH."""
+    with _Env(root):
+        env = _stub_environ(bindir, log, stub.pop("cost", "0.33"), **stub)
+    done = subprocess.run(_auto_argv(mpath, root, target, extra), cwd=root, env=env,
+                          capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", timeout=180)
+    return done.returncode, done.stdout, done.stderr
+
+
+def _auto_real_cases(check):
+    """`auto` over real drives: a real plan, the real verbs, the real session
+    runner with the stub standing for `claude`."""
+    M, why = _load("drive_phase_auto_real")
+    if M is None:
+        check("au20 the driver loads: %r" % (why,), False)
+        return
+    bindir, log, _stubs = _auto_stub("auto-stub")
+    root, mpath = _repo("auto-done", task_ids=TASKS[:1], per_task="phase",
+                        executor=WRITER_EXECUTOR)
+    code, out, err = _auto_process(root, mpath, "P1.1", bindir, log,
+                                   edit={"src/f1.txt": "changed by the writer\n"})
+    _c, explained = _explain_of(M, root, mpath, "P1.1")
+    task = tasks_of(mpath).get("P1.1") or {}
+    check("au20 a real drive of one task under a writer session reaches done with "
+          "no model: the session ran once, the task closed on a commit, the "
+          "answer is done and the text is what --explain prints: %r"
+          % ((code, out, err[-400:], explained, task.get("status")),),
+          code == AUTO_DONE and len(_stub_runs(log)) == 1
+          and task.get("status") == "done" and bool(task.get("commit"))
+          and out.strip() == explained.strip() and "P1.1" in out)
+
+    no_budget, no_mpath = _repo("auto-nobudget", task_ids=TASKS[:1],
+                                executor={"writerModel": WRITER_MODEL})
+    code, out, err = _auto_process(no_budget, no_mpath, PHASE, bindir, log)
+    _c, said = _explain_of(M, no_budget, no_mpath, PHASE)
+    check("au21 a real stop - a writer model with no budget - answers stop with "
+          "the stop's own text: %r" % ((code, out, err[-400:], said),),
+          code == AUTO_STOP and "executor.writerBudgetUsd" in out
+          and out.strip() == said.strip())
+
+    agent, agent_mpath = _repo("auto-agent", task_ids=TASKS[:1])
+    code, out, err = _auto_process(agent, agent_mpath, PHASE, bindir, log)
+    before = _attempts(agent_mpath, "P1.1")
+    next_code, line = _signal_raw(M, agent, agent_mpath)
+    filed_code, filed = _file_executor(agent, agent_mpath, "P1.1")
+    after_code, after = _signal_raw(M, agent, agent_mpath)
+    check("au22 with no writer model the executor is an Agent: auto ends needs-model "
+          "having started no session and the signal line in hand, and the recorded "
+          "state lets next carry on - the same step again, no attempt spent, and "
+          "the filed return moves the drive to the next step: %r"
+          % ((code, out, err[-400:], next_code, line, filed_code, after_code, after),),
+          code == AUTO_NEEDS_MODEL and out.startswith("audit P1 dispatch P1.1")
+          and next_code == 0 and " P1.1 " in line
+          and _attempts(agent_mpath, "P1.1") == before
+          and filed_code == 0 and after_code == 0 and after != line)
+
+    red, red_mpath = _repo("auto-red", task_ids=TASKS[:1], gate=("false",),
+                           executor=WRITER_EXECUTOR)
+    code, out, err = _auto_process(red, red_mpath, PHASE, bindir, log,
+                                   edit={"src/f1.txt": "changed by the writer\n"})
+    before = _attempts(red_mpath, "P1.1")
+    runs = len(_stub_runs(log))
+    answered_code, answered = _signal_raw(M, red, red_mpath, "--answer", "resume")
+    check("au23 a red gate is the model's to judge: auto runs the session and the "
+          "gate, ends needs-model on the decision it did not take, and next "
+          "takes the answer from that step: %r"
+          % ((code, out, err[-400:], answered_code, answered),),
+          code == AUTO_NEEDS_MODEL and "gate-red-writer" in out
+          and _attempts(red_mpath, "P1.1") == before
+          and len(_stub_runs(log)) == runs
+          and answered_code == 0 and "run-agent-session.py --role writer" in answered)
+
+    crash, crash_mpath = _repo("auto-noresult", task_ids=TASKS[:1],
+                               executor=WRITER_EXECUTOR)
+    code, out, err = _auto_process(crash, crash_mpath, PHASE, bindir, log, mode="none")
+    check("au24 a session that exits non-zero with no result is reported on "
+          "stderr and goes back through next, which decides what follows: %r"
+          % ((code, out, err[-400:]),),
+          code == AUTO_NEEDS_MODEL and "exited" in err
+          and "no-executor-return" in out)
+    _harness.skip(check, "au6 SIGTERM during a child", "SIGTERM cannot be delivered "
+                  "to a console process here and there is no process group to "
+                  "end", not hasattr(os, "killpg")) if not hasattr(os, "killpg") \
+        else _auto_sigterm_case(check, M, bindir, log)
+
+
+def _auto_sigterm_case(check, M, bindir, log):
+    """SIGTERM while a real session runs: auto ends the child's whole group,
+    answers stop, and leaves the task for `next`."""
+    root, mpath = _repo("auto-term", task_ids=TASKS[:1], executor=WRITER_EXECUTOR)
+    pids = os.path.join(root, "stub.pids")
+    with _Env(root):
+        env = _stub_environ(bindir, log, "0.1", mode="sleep")
+    env["WS_PIDS"] = pids
+    proc = subprocess.Popen(_auto_argv(mpath, root, PHASE), cwd=root, env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    held = ()
+    try:
+        deadline = time.time() + 60
+        while time.time() < deadline and not os.path.exists(pids):
+            time.sleep(0.05)
+        try:
+            with open(pids, encoding="utf-8") as fh:
+                held = tuple(int(n) for n in fh.read().split())
+        except (OSError, ValueError):
+            held = ()
+        proc.send_signal(signal.SIGTERM)
+        out, err = proc.communicate(timeout=60)
+    except BaseException:
+        proc.kill()
+        proc.communicate()
+        raise
+    code = proc.returncode
+    out, err = _as_text(out), _as_text(err)
+    gone = len(held) == 2 and all(_harness.gone_within(p, 30) for p in held)
+    for pid in held:
+        if _harness.gone_within(pid, 0):
+            continue
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+    next_code, line = _signal_raw(M, root, mpath)
+    check("au6 SIGTERM during a child ends the child's process group, session and "
+          "its own child included, answers stop with a line naming the interrupt "
+          "and how to resume, and leaves the task in progress for next: %r"
+          % ((code, out, err[-300:], held, gone, next_code, line),),
+          len(held) == 2 and gone and code == AUTO_STOP
+          and "auto-interrupted" in out and "SIGTERM" in out
+          and (tasks_of(mpath).get("P1.1") or {}).get("status") == "in_progress"
+          and next_code == 0 and " stop " not in line)
+
+
 # --- the drive's planners, over facts and nothing else --------------------------
 # Each case names one arm of one planner, the facts that choose it, and a twin
 # with ONE fact flipped that chooses a neighbouring arm: a planner whose arm
@@ -17903,6 +18321,8 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("sn-block", "_signal_cases"),
           ("sn3-block", "_explain_cases"),
           ("sn5-block", "_signal_drive_cases"),
+          ("au-block", "_auto_cases"),
+          ("au20-block", "_auto_real_cases"),
           ("bc-block", "_brief_crlf_cases"),
           ("ce-block", "_close_evidence_cases"),
           ("fv-block", "_review_rules_cases"),

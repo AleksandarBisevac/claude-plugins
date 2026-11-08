@@ -1,0 +1,47 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__refs.py tools/_suite.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-08T21:45:35Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__refs.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 21 of 917 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - au1 (house FAIL), au2 (house FAIL), au2b (house FAIL), au3 (house FAIL), au4 (house FAIL), au4b (house FAIL), au5 (house FAIL), au5b (house FAIL) and 13 more: SELFTEST FAILED: 896/917 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Added `drive-phase.py auto <phase|task> [manifest] [--project-dir] [--task] [--verbose]` beside `next` (add_drive_target shared by both). auto_next builds one step through the same drive + signal() as next --signal; signal() now also returns step/verb/subject/prompts/runs so nothing parses printed lines. auto_answer classifies via SIGNAL_VERBS: done/stop end; judge/ask/review, dispatch with no runs, a mixed Agent+run wave, a wait with no runs and a wait on a command this run never started end needs-model; dispatch with only run: lines runs; a wait on a child auto already ran is the named stop auto-child-exited. Children start from an argv (auto_argv: shlex split, no shell, python3 word -> sys.executable), each in its own group (_proc_group.group_kwargs), output to <state>.auto.log, waited on by polling; SIGTERM/SIGINT only set a flag (auto_arm), the wait tears down every live group (_proc_group.tear_down), and auto answers stop (auto-interrupted) with the task left in progress. A non-zero child is reported on stderr and goes back through next. Same step+subject+run commands past AUTO_REPEAT_BOUND runs is the named stop auto-no-progress. Exit answers AUTO_DONE/AUTO_STOP/AUTO_NEEDS_MODEL, E_USAGE for could-not-run/crash, each in auto --help. stdout on done/stop is explain_text of the step's explain (equal to next --explain, asserted au1/au2b/au20/au21); on needs-model the signal line. gate_in_background reads ctx[\"auto\"]: every gate running anything is a child step inside auto, next's choice untouched (au9 twin). wait-writer's and writer_wait's docstrings say what auto knows. Docs: verbs-in-full.md, orchestrator.md Progress output, PLUGIN-BUILD-GUIDE drive-phase section (no exit numbers restated; --help is the source). Gate: python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__refs.py tools/_suite.py exit 0, '3/3 files ok, 1244 cases'. Mutation table in throwaway copies (scratchpad mutate.py, 14 rows: shell, no-group, no-forward, no-bound, bound over-fire, wait spun, wait over-fire, agent-run, judge-runs, report silent/always, nonzero-as-stop, gate unchanged/always): each red on the case it targets, the first attempt having falsely read SURVIVED because the copy lacked tools/ and the probe had not checked a run happened - fixed with a 'cases passed' check. Dependants: drive-phase.py's importers (_worktrees, tests/test_*): still correct - only additions, signal()'s dict gained keys, main's next path now reaches drive through one_next with the identical ValueError stop. tests/test_drive_phase.py readers (sweep-costs.json, ci.yml, tools/affected.py, reach-diff.py, test__runner_output, test_run_test_gate, test_stamp_verification): still correct - two new STAGES rows, names unchanged; sweep-costs carries no figure for the new blocks, weighed by the suite's figure over its blocks as the sweep says. verbs-in-full.md and orchestrator.md readers (PLUGIN-BUILD-GUIDE, _areas, test__areas, test__usage_routing, guard-uncommitted, prove-gates, COMPATIBILITY, close-phase, _manifest_crossrefs, evals): still correct - one paragraph added to existing sections, no ## section added or moved. PLUGIN-BUILD-GUIDE readers (_doctor_hygiene, evals, test__affected_tests, test__config, test__deps, test__doctor_trail): still correct - one paragraph and the usage line in an existing section. PLUGIN-BUILD-GUIDE is last declared by P159.2 too, which will edit it afterwards.",
+    "descriptive": "drive-phase.py auto runs a headless drive's mechanical steps itself and ends with a distinct exit on done, on stop, and on a step that needs a model"
+  },
+  "testsAdded": [
+    "auto cases in tests/test_drive_phase.py: scripted (au-block) and real drives with a stub claude (au20-block): run/repeat/done, stop text, needs-model for judge/ask/review/Agent dispatch/mixed wave, wait not spun with its twin, no-progress bound with its twin, SIGTERM ending the child's group with the task resumable, non-zero child reported and back through next with its twin, no shell, exit codes in --help, --task usage, gate choice inside auto with its twin"
+  ],
+  "casesAdded": [
+    [
+      "au1",
+      "au2",
+      "au2b",
+      "au3",
+      "au4",
+      "au4b",
+      "au5",
+      "au5b",
+      "au6",
+      "au7",
+      "au7b",
+      "au8",
+      "au9",
+      "au10",
+      "au10b",
+      "au12",
+      "au20",
+      "au21",
+      "au22",
+      "au23",
+      "au24"
+    ]
+  ],
+  "claims": "claims:\n1 auto_answer plugins/audit/scripts/governance/drive-phase.py:11824 is the classification the --help and docs state; auto_run :11869 the children; ctx.get(\"auto\") :5126 the gate clause; run_auto :11960 the exit answers\n2 14-row mutation table in throwaway copies: shell=True -> au10 red; no group kwargs and no tear_down -> au6 red; bound removed -> au5 red, over-fired -> au5b red; wait spun -> au4 red, over-fired -> au4b red; agent dispatch run, judge done -> au3 red; report silent -> au7, always -> au7b, nonzero-as-stop -> au7; gate clause removed -> au9, always -> au9; a first pass read SURVIVED because the copy crashed on import, caught and re-run with a 'cases passed' check\n3 n/a - not a fix of a reported defect\n4 n/a - no must/never rule addressed to an agent is added; the exit answers are stated by --help and held by au8\n5 n/a - no property measured\n6 decision reads the step result's verb and runs, never a printed line (signal() fields); no guard on command spelling\n7 no numeral added to prose; the answers are printed by auto --help and the bound by AUTO_REPEAT_BOUND in it",
+  "stamp": "audit-stamp: {\"content\":\"sha256:b09b85eb3b2597566c2cb806a69a82c4a086ed76ca96cfc43d3e66d98a141bfc\",\"dirtyDigest\":\"sha256:736509f1292ab2af4b2d7cb121c94723b21126a7a5fa4e19254d8c78917f5c3a\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"2f12b4531264cb09\",\"plugins/audit/reference/orchestrator.md\":\"d17a5ce85c301843\",\"plugins/audit/reference/verbs-in-full.md\":\"9120498adcdadfec\",\"plugins/audit/scripts/governance/drive-phase.py\":\"d106a7775489915a\",\"tests/test_drive_phase.py\":\"d688cf0a7c45e318\"},\"head\":\"51c51916\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/orchestrator.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:c00f3fba5cede57a613373a99b21a3705e7ce6515d071d880084083a0b7be0b5\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
