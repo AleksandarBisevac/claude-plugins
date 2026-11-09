@@ -22,24 +22,27 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P160-R1",
         "severity": "low",
         "file": "tests/test_drive_without_model.py:677-690",
         "issue": "dm73 (/audit:next) asserts pass-through, but the hook never acts on /audit:next on any platform (hooks/drive-without-model.py docstring, 'THE PROMPT NAMES ITS TARGET': /audit:next is not on the table). It would still pass if the no-signals simulation or the platform check were deleted. Shape: an assertion the behaviour never reaches. The executor reported this too.",
-        "resolution": "Not a defect of this diff. Keep dm73 as a verb-list pin, but do not read it as Windows coverage; dm71 and dm72 carry the platform check. A separate task could drop dm73 from the no-signals loop or give it its own label."
+        "resolution": "Not a defect of this diff. Keep dm73 as a verb-list pin, but do not read it as Windows coverage; dm71 and dm72 carry the platform check. A separate task could drop dm73 from the no-signals loop or give it its own label.",
+        "status": "accepted-open",
+        "acceptedReason": "dm73 is a redundant pass-through check: /audit:next is outside the hook's table in every platform; the other two simulated cases carry the assertion. Harmless and kept."
       }
     ],
-    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 0 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "Simulated-Windows cases no longer reach for os.killpg on a real Windows host.",
   "tasks": [
     {
       "id": "P160.1",
       "title": "The simulated-Windows cases do not reach for a POSIX-only attribute",
-      "status": "in_progress",
+      "status": "done",
       "description": "dm71 to dm73 in tests/test_drive_without_model.py simulate Windows and fail on a real Windows runner with AttributeError: module object has no attribute killpg at line 6 of the inline program (CI run 42546489107, selftests windows plain 3). The simulation must remove or stub the attribute only where it exists, so the cases mean the same on POSIX and on Windows. Prove it on POSIX by running the case with os.killpg absent from the module before the simulation runs, since a real Windows host is not available here. Do not skip the cases on Windows. No F/P/BUG ids in comments.",
       "files": [
         "tests/test_drive_without_model.py"
@@ -60,27 +63,38 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "9e780fdb50fd",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_drive_without_model.py: SIMULATE_NO_SIGNALS now removes the attribute only where it exists (line 117: if sys.argv[1] == \"no-signals\" and hasattr(os, \"killpg\")), the comment above it says why, and the _run_as docstring says absent rather than removed. No case skipped, none added. EVIDENCE, all from a probe under the scratchpad that imports the suite and runs only _windows_cases, tree untouched by it: (a) before the fix, os.killpg absent via sitecustomize: dm71-dm73 FAIL with the CI AttributeError, exit 1; before the fix, present: all PASS, exit 0. (b) after the fix, absent: dm71, dm72, dm73, dm75 PASS, exit 0; present: same four PASS, exit 0. (c) mutation applied in-process to the simulation text only (del replaced by pass, the change asserted to have landed), attribute present: dm71 and dm72 FAIL because the hook drove (decision block, auto in calls), exit 1, so those two do depend on the removal. (d) whole suite with the attribute absent from every child: python3 tests/test_drive_without_model.py --selftest exit 0, 73/73 cases passed, 34 of them SKIPPED HERE lines, which are the DRIVE_LABELS and INTERRUPT_LABELS names. GATES: executor.runsGate is own-tests and this task adds no test, so the brief gives nothing of its own to run and no gate command was run; the probes above are the proof the task's text asks for, not gate runs. The task gate is the orchestrator's to record. OBSERVED, NOT CHANGED: dm73 passes under the mutation too, because /audit:next is not on the hook's verb list on any platform (hooks/drive-without-model.py docstring, line 14), so dm73 asserts pass-through but cannot detect the simulation or the platform check being lost; dm71 and dm72 carry that. LIMIT: this proves the attribute's absence on POSIX only, not the rest of a real Windows host; the phase outcome needs the Windows CI cell. DEPENDANTS: SECURITY.md:195 still correct, the failure-path cases it points at are unchanged. SECURITY.md:209 still correct, the case still runs the hook with the mechanism absent and starts no drive (dm71, dm72); on a real Windows host the attribute was never there to remove, which does not change what the sentence promises. PLUGIN-BUILD-GUIDE.md:780 still correct, a bare pointer to the suite for the hook's cases.",
+        "descriptive": "The simulated-Windows bootstrap no longer crashes where os.killpg does not exist, so dm71 to dm73 run and mean the same on POSIX and on Windows; proved on POSIX with the attribute absent."
       },
       "startedAt": "2026-11-09T01:46:10Z",
-      "completedAt": null,
+      "completedAt": "2026-11-09T01:52:55Z",
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-09T01:52:17Z.c21dbf",
         "status": "passed",
         "at": "2026-11-09T01:52:17Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "9e780fdb50fd",
+        "at": "2026-11-09T01:52:55Z",
+        "return": "docs/audit/evidence/returns/P160.1/20261109T014610Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "None owed: tests.mode is regression, expectRedFirst false, tests.add is empty, so no case of this task exists for the helper to prove. The task's own POSIX proof was run by a scratchpad probe instead, before the fix went in: with os.killpg absent from every child through a sitecustomize on PYTHONPATH, dm71, dm72 and dm73 failed with code=1 and err naming File \"<string>\", line 6, AttributeError: 'module' object has no attribute 'killpg', the CI signature; probe exit 1. The helper did not judge that red.",
+        "at": "n/a - the helper was not run"
       }
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "988f3478-fc74-4a1e-a62b-7522b404c792",
-    "branch": "audit/p160-the-simulated-windows-cases-ru",
-    "at": "2026-11-09T01:46:10Z"
-  },
-  "startedAt": "2026-11-09T01:46:10Z"
+  "startedAt": "2026-11-09T01:46:10Z",
+  "testEvidence": {
+    "runId": "2026-11-09T02:13:43Z.9146ac",
+    "status": "passed",
+    "at": "2026-11-09T02:13:43Z"
+  }
 }
