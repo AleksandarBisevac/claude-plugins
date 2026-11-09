@@ -1,7 +1,7 @@
 {
   "id": "P159",
   "title": "The drive without a model",
-  "status": "in_progress",
+  "status": "done",
   "description": "Owner 2026-11-08: solve the orchestrator. Design, probes and pass criterion: quality-gates-internal/plans/2026-11-08-orchestrator-without-model/PLAN.md. Prior art: plans/2026-11-05-cost-phase/analysis/prior-art-orchestrator.md.",
   "desiredOutcome": "A typed /audit:run, /audit:next or /audit:phase whose writer is a headless session runs the drive with no model request unless a step needs judgement or the human, so the orchestrator session stops being paid for relaying a script's output",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "51c519164d6bdc7f366615b2d8d24ca74901890a",
   "branch": "audit/p159-the-drive-without-a-model",
-  "mergedAt": null,
+  "mergedAt": "2026-11-09T01:36:38Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -569,5 +569,6 @@
     "runId": "2026-11-09T01:28:09Z.db3cde",
     "status": "passed",
     "at": "2026-11-09T01:28:09Z"
-  }
+  },
+  "mergedHead": "5fcdd710b1c0e46cefc0a5074b127a72ffd3fd99"
 }
