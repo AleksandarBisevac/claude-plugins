@@ -1,7 +1,7 @@
 {
   "id": "P160",
   "title": "The simulated Windows cases run on Windows",
-  "status": "in_progress",
+  "status": "done",
   "description": "The per-run CI on f1ec3e01 failed one job, selftests (windows, plain 3): dm71 to dm73 simulate Windows and hit AttributeError on os.killpg on a real one.",
   "desiredOutcome": "tests/test_drive_without_model.py is green on a real Windows runner",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "2a35c7e7a9267c7c079bb52110d69cc6199a80cf",
   "branch": "audit/p160-the-simulated-windows-cases-ru",
-  "mergedAt": null,
+  "mergedAt": "2026-11-09T02:13:57Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -96,5 +96,6 @@
     "runId": "2026-11-09T02:13:43Z.9146ac",
     "status": "passed",
     "at": "2026-11-09T02:13:43Z"
-  }
+  },
+  "mergedHead": "2df680001323bc084f644aa56042d893b5a6535c"
 }
