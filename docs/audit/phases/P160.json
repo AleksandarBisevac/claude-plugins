@@ -1,0 +1,64 @@
+{
+  "id": "P160",
+  "title": "The simulated Windows cases run on Windows",
+  "status": "pending",
+  "description": "The per-run CI on f1ec3e01 failed one job, selftests (windows, plain 3): dm71 to dm73 simulate Windows and hit AttributeError on os.killpg on a real one.",
+  "desiredOutcome": "tests/test_drive_without_model.py is green on a real Windows runner",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": null,
+  "branch": null,
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P160.1",
+      "title": "The simulated-Windows cases do not reach for a POSIX-only attribute",
+      "status": "pending",
+      "description": "dm71 to dm73 in tests/test_drive_without_model.py simulate Windows and fail on a real Windows runner with AttributeError: module object has no attribute killpg at line 6 of the inline program (CI run 42546489107, selftests windows plain 3). The simulation must remove or stub the attribute only where it exists, so the cases mean the same on POSIX and on Windows. Prove it on POSIX by running the case with os.killpg absent from the module before the simulation runs, since a real Windows host is not available here. Do not skip the cases on Windows. No F/P/BUG ids in comments.",
+      "files": [
+        "tests/test_drive_without_model.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_without_model.py tools/_suite.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ]
+}

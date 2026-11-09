@@ -1024,6 +1024,12 @@
       "title": "The drive without a model",
       "status": "done",
       "shard": "phases/P159.json"
+    },
+    {
+      "id": "P160",
+      "title": "The simulated Windows cases run on Windows",
+      "status": "pending",
+      "shard": "phases/P160.json"
     }
   ],
   "fileIndex": {
@@ -13437,7 +13443,8 @@
     "tests/test_drive_without_model.py": [
       "P159.2",
       "P159.4-pue",
-      "P159.5-pue"
+      "P159.5-pue",
+      "P160.1"
     ]
   },
   "bugs": [
