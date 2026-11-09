@@ -145,8 +145,7 @@
           {
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py-launch.sh\" drive-without-model.py open",
-            "timeout": 86400,
-            "onFailure": "block"
+            "timeout": 86400
           }
         ]
       }

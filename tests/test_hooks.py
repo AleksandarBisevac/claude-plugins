@@ -1000,8 +1000,9 @@ def _flip_cases(check, observed):
 
 
 def _prompt_hook_cases(check):
-    """The UserPromptSubmit hook that holds a drive: its own `timeout` and
-    `onFailure` decide what a stalled drive does to the prompt."""
+    """The UserPromptSubmit hook that holds a drive: its own `timeout` decides
+    when a stalled drive is given up on, and it carries no `onFailure`, so a hook
+    that could not start lets the prompt through instead of blocking it."""
     with open(HOOKS_JSON, encoding="utf-8") as fh:
         groups = json.load(fh)["hooks"].get("UserPromptSubmit") or []
     entries = [entry for group in groups for entry in group.get("hooks", [])
@@ -1018,9 +1019,9 @@ def _prompt_hook_cases(check):
           "writers is not timed out at the default" % (hours,),
           isinstance(entry.get("timeout"), int)
           and entry["timeout"] > hours * 3600, entry.get("timeout"))
-    check("hk7c onFailure is block, so a drive the hook could not finish waiting "
-          "for does not also send the prompt to a model",
-          entry.get("onFailure") == "block", entry.get("onFailure"))
+    check("hk7c no onFailure key: under block, a hook that cannot start stops "
+          "every prompt in the session at cost 0, ahead of the prefilter",
+          bool(entry) and "onFailure" not in entry, entry)
 
 
 def _cases(check):

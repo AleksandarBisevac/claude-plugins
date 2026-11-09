@@ -20,12 +20,37 @@ as it runs with no hook at all, and the drive's own lock and state decide what t
 does. So every failure below - an unreadable config, a missing script, a crash -
 lets the prompt go on and says so on stderr; none of them blocks.
 
-SIGTERM REACHES THE DRIVE. `Esc` during a hook is a SIGTERM to it, and a hook timeout
-too, and the launcher runs this interpreter rather than `exec`ing it, so a signal
-sent to the launcher alone stops at the launcher. Both are watched for: a signal
-here and the parent going away are each forwarded to `auto`, which tears down its
-own children. An interrupted drive always blocks, whatever `auto` answered, because
-the person stopped it and the prompt must not then go on to a model.
+A STOP REACHES THE DRIVE, from the moment one can arrive. `Esc` during a hook is a
+SIGTERM to it, and the launcher runs this interpreter rather than `exec`ing it, so a
+signal sent to the launcher alone stops at the launcher. Both are watched for across
+the `audit-status` read as well as the drive, and the parent's pid is read first,
+before stdin: read later, a launcher that had already gone would be the parent the
+watch compared against, and it would never see one go. An interrupted run always
+blocks, whatever `auto` answered, because the person stopped it and the prompt must
+not then go on to a model. What it cannot see, stated here because nothing tests
+it: a SIGKILL of this interpreter itself, which leaves `auto` running.
+
+PAST THE HOOK'S OWN `timeout` in `hooks.json` the harness ends the hook. It is set
+far past any drive, so expiry is not a normal path; the watch above then stops `auto`
+the same way, and the prompt goes on, as it does for any hook that failed.
+
+ON WINDOWS `terminate()` is TerminateProcess, which gives `auto` no chance to take
+its writers down, so `stop_command` names `taskkill /T /F` for the tree. `getppid`
+never changes there, so `parent_gone` answers no rather than guess: a launcher
+killed on Windows leaves the drive to end on its own. The interrupt cases skip on
+that platform; `stop_command` and `parent_gone` take an `osname`, so their Windows
+answers are asserted anywhere, and the live path is checked by hand: an Esc during a
+drive, then `tasklist | findstr /I "claude python"` shows no writer left.
+
+THE TREE IS `_config.tree_for`'s. The command this hook stands in for runs in the
+session's tree, and `CLAUDE_PROJECT_DIR` may name the main checkout from a linked
+worktree, so reading that variable first could drive a different tree from the one
+the pass-through command would.
+
+WHAT PASSES THROUGH ON PURPOSE, beyond the table: `permission_mode` plan, because
+plan mode is read-only intent and the drive starts paid writers and commits; and
+`/audit:next` when the plan holds a task in progress, because `ready` excludes that
+task, so its first entry is a different one - `commands/next.md` continues it.
 
 Contract: always exit 0. `{"decision": "block", ...}` on stdout, or nothing.
 
@@ -61,6 +86,12 @@ VERBS = {
 # not wait for this: it wakes the wait at once.
 PARENT_POLL_SECONDS = 0.5
 STATUS_TIMEOUT_SECONDS = 60
+STOP_TIMEOUT_SECONDS = 30
+
+# A stop that landed while a drive was running, and one that landed before any was.
+INTERRUPTED = ("[audit] the drive was interrupted; /audit:resume continues a task "
+               "it left in progress")
+INTERRUPTED_EARLY = "[audit] interrupted before the drive started; no task was run"
 
 
 def say(message):
@@ -102,10 +133,11 @@ def drive_applies(cfg):
     return isinstance(model, str) and bool(model)
 
 
-def first_ready(root, manifest):
+def first_ready(run, root, manifest, env):
     """The task `/audit:next` would pick: the first entry of `audit-status.py
     --json`'s `ready`, the list its READY NOW block renders. None when nothing is
-    ready, or when it could not be asked, which is said."""
+    ready, when a task is already in progress (the command continues that one), or
+    when it could not be asked, which is said."""
     import json
     import subprocess
     import _config
@@ -114,19 +146,24 @@ def first_ready(root, manifest):
         say("audit-status.py not found; the prompt goes on")
         return None
     try:
-        done = subprocess.run([sys.executable, script, str(manifest), "--json"],
-                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                              cwd=str(root), timeout=STATUS_TIMEOUT_SECONDS)
+        code, out = run([sys.executable, script, str(manifest), "--json"],
+                        root, env, STATUS_TIMEOUT_SECONDS)
     except (OSError, subprocess.SubprocessError) as exc:
         say("audit-status could not run (%s); the prompt goes on" % (exc,))
         return None
     try:
-        ready = json.loads(done.stdout.decode("utf-8", "replace"))["ready"]
+        doc = json.loads(out.decode("utf-8", "replace"))
+        ready = doc["ready"]
     except (ValueError, KeyError, TypeError):
-        say("audit-status exited %s with no ready list; the prompt goes on"
-            % (done.returncode,))
+        say("audit-status exited %s with no ready list" % (code,))
         return None
-    return ready[0] if isinstance(ready, list) and ready else None
+    if not isinstance(ready, list) or not ready:
+        return None
+    counts = (doc.get("tasks") or {}).get("byStatus")
+    if not isinstance(counts, dict):
+        say("audit-status did not say what is in progress; the prompt goes on")
+        return None
+    return None if counts.get("in_progress") else ready[0]
 
 
 def stop_signals():
@@ -136,47 +173,94 @@ def stop_signals():
             if hasattr(signal, name)]
 
 
-def run_auto(drive, target, flags, root):
-    """`(exit code, stdout bytes, interrupted)` of `auto`.
+def stop_command(pid, osname=None):
+    """The argv that takes `pid` and its whole tree down where a signal cannot, or
+    None where `terminate()` reaches a process that tears its own children down."""
+    if (osname or os.name) != "nt":
+        return None
+    return ["taskkill", "/T", "/F", "/PID", str(pid)]
 
-    The handlers forward a signal to the child rather than raising here, so the
-    child's own answer is still read after it stops. `communicate` is retried
-    after a timeout, which the docs promise loses no output; the timeout is only
-    there to look at the parent."""
+
+def parent_gone(parent, osname=None):
+    """True when the process that started this hook has gone. POSIX reparents, so
+    `getppid` changes; Windows keeps the old id for the life of the process, so
+    there the honest answer is that this cannot tell, and it says no."""
+    if (osname or os.name) == "nt":
+        return False
+    return os.getppid() != parent
+
+
+def stop_process(proc):
+    """Stop `proc` and what it started. A Windows tree `taskkill` could not take
+    down is said, since the writers under it are still running and spending."""
+    import subprocess
+    argv = stop_command(proc.pid)
+    if argv is not None:
+        try:
+            done = subprocess.run(argv, stdin=subprocess.DEVNULL,
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                  timeout=STOP_TIMEOUT_SECONDS)
+            if done.returncode == 0 or proc.poll() is not None:
+                return
+            say("taskkill exited %s; its writers may still be running" % (done.returncode,))
+        except (OSError, subprocess.SubprocessError) as exc:
+            say("taskkill could not run (%s); its writers may still be running" % (exc,))
+    try:
+        proc.terminate()
+    except OSError:
+        pass
+
+
+def with_watch(parent, body):
+    """`(body's value, interrupted)` of `body(run, stopped)`, with the stop signals
+    taken and `parent` watched for as long as it runs.
+
+    `run(argv, root, env, limit)` is `(exit code, stdout bytes)`: the handlers stop
+    the child rather than raise here, so its own answer is still read after it
+    stops. `communicate` is retried after a timeout, which the docs promise loses no
+    output; that timeout is only there to look at the parent. `stopped()` is whether
+    a stop has landed, and looks at the parent itself, so it answers correctly
+    before any child exists."""
     import signal
     import subprocess
+    import time
     interrupted, children = [], []
 
-    def stop_child():
+    def stop_children():
         for proc in children:
-            try:
-                proc.terminate()
-            except OSError:
-                pass
+            stop_process(proc)
+
+    def stopped():
+        if not interrupted and parent_gone(parent):
+            interrupted.append("parent exited")
+            stop_children()
+        return bool(interrupted)
 
     def forward(signum, _frame):
         interrupted.append(signum)
-        stop_child()
+        stop_children()
 
-    displaced = [(sig, signal.signal(sig, forward)) for sig in stop_signals()]
-    try:
-        parent = os.getppid()
-        proc = subprocess.Popen(
-            [sys.executable, drive, "auto", target] + list(flags)
-            + ["--project-dir", str(root)],
-            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, cwd=str(root),
-            env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)))
+    def run(argv, root, env, limit=None):
+        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                cwd=str(root), env=env)
         children.append(proc)
         if interrupted:
-            stop_child()
+            stop_children()
+        deadline = None if limit is None else time.monotonic() + limit
         while True:
             try:
                 out, _err = proc.communicate(timeout=PARENT_POLL_SECONDS)
-                return proc.returncode, out or b"", bool(interrupted)
+                return proc.returncode, out or b""
             except subprocess.TimeoutExpired:
-                if not interrupted and os.getppid() != parent:
-                    interrupted.append("parent exited")
-                    stop_child()
+                stopped()
+                if deadline is not None and time.monotonic() > deadline:
+                    stop_process(proc)
+                    proc.communicate()
+                    raise subprocess.TimeoutExpired(argv, limit)
+
+    displaced = [(sig, signal.signal(sig, forward)) for sig in stop_signals()]
+    try:
+        return body(run, stopped), bool(interrupted)
     finally:
         for sig, previous in displaced:
             signal.signal(sig, previous)
@@ -188,14 +272,13 @@ def blocked(reason):
                                    "suppressOriginalPrompt": True}}
 
 
-def read_answer(code, out, interrupted, typed):
+def read_answer(code, out, interrupted):
     """What `auto`'s end means for the prompt: the block to print, or None for
     the prompt to go on. A done or a stop with nothing on stdout is no answer -
     an interpreter that dies before `auto` starts exits with the stop code."""
     text = out.decode("utf-8", "replace").strip()
     if interrupted:
-        line = "[audit] the drive was interrupted; type %s again to resume it" % (typed,)
-        return blocked("%s\n%s" % (line, text) if text else line)
+        return blocked("%s\n%s" % (INTERRUPTED, text) if text else INTERRUPTED)
     if code in (AUTO_DONE, AUTO_STOP) and text:
         return blocked(text)
     if code == AUTO_NEEDS_MODEL:
@@ -205,18 +288,18 @@ def read_answer(code, out, interrupted, typed):
     return None
 
 
-def answer(raw):
+def answer(raw, parent):
     """The block for this payload, or None for the prompt to go on."""
     import json
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import _config
     data = json.loads(raw.decode("utf-8", "replace"))
     parsed = parse_verb(_config.owner_prompt(data))
-    if parsed is None:
+    if parsed is None or data.get("permission_mode") == "plan":
         return None
-    verb, target, row = parsed
-    root = _config.repo_root(data)
-    cfg = _config.load(root)
+    target, row = parsed[1], parsed[2]
+    tree = _config.tree_for(data)
+    root, cfg = tree["root"], tree["cfg"]
     manifest = root / (cfg.get("manifestPath") or _config.DEFAULTS["manifestPath"])
     if not drive_applies(cfg) or not manifest.is_file():
         return None
@@ -224,15 +307,23 @@ def answer(raw):
     if drive is None:
         say("drive-phase.py not found; the prompt goes on")
         return None
-    chosen = target if row["takesId"] else first_ready(root, manifest)
-    if chosen is None:
-        return None
-    code, out, interrupted = run_auto(drive, chosen, row["autoFlags"], root)
-    typed = "%s %s" % (verb, target) if target else verb
-    return read_answer(code, out, interrupted, typed)
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
+
+    def body(run, stopped):
+        chosen = target if row["takesId"] else first_ready(run, root, manifest, env)
+        if chosen is None or stopped():
+            return None
+        return run([sys.executable, drive, "auto", chosen] + list(row["autoFlags"])
+                   + ["--project-dir", str(root)], root, env)
+
+    outcome, interrupted = with_watch(parent, body)
+    if outcome is None:
+        return blocked(INTERRUPTED_EARLY) if interrupted else None
+    return read_answer(outcome[0], outcome[1], interrupted)
 
 
 def main():
+    parent = os.getppid()
     try:
         raw = sys.stdin.buffer.read()
     except Exception:
@@ -240,7 +331,7 @@ def main():
     if VERB_MARK not in raw:
         return
     try:
-        result = answer(raw)
+        result = answer(raw, parent)
     except Exception as exc:                                   # noqa: BLE001
         say("internal error (%s: %s); the prompt goes on"
             % (type(exc).__name__, exc))

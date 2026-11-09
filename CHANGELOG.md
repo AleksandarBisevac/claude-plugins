@@ -12,9 +12,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `drive-without-model.py`, starts `drive-phase.py auto` when `executor.writerModel` is set; on
   done and on stop it blocks the prompt, which ends the turn at no cost and shows the drive's
   answer. A step that needs a model or the human lets the prompt go on, and the command continues
-  the drive from where it stands. `executor.driveWithoutModel: false` turns it off. Esc during
-  the drive stops `auto` and its children, and the prompt is blocked with a line naming how to
-  resume.
+  the drive from where it stands. `executor.driveWithoutModel: false` turns it off. Plan mode
+  and `/audit:next` with a task already in progress pass through. A hook that cannot start never
+  blocks a prompt. Esc during the drive, or during `/audit:next`'s status read, stops `auto` and
+  its children on POSIX and blocks the prompt with a line naming `/audit:resume`; on Windows a
+  signal reaches them through `taskkill /T /F`, but a launcher killed without one is not seen,
+  and the interrupt cases skip there (manual check: Esc during a drive, then
+  `tasklist | findstr /I "claude python"` shows no writer left).
 
 ## [3.8.0]
 

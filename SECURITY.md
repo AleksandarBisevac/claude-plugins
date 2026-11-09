@@ -193,10 +193,20 @@ commit and the command above does not.
 **`drive-without-model` is a no-op in the direction that sends the prompt on.** Every failure
 on its internal path (`hooks/drive-without-model.py`'s `main()` catches them, and a case in
 `tests/test_drive_without_model.py` exercises each) lets the prompt reach the model, where the
-command runs as it does with no hook; the drive's own lock and state decide what that does. The one
-thing it does not leave to chance is the timeout: `onFailure: "block"` in `hooks.json` holds the
-prompt back when the harness times the hook out, so a drive the hook stopped waiting for does not
-also become a model turn nobody asked for.
+command runs as it does with no hook; the drive's own lock and state decide what that does.
+`hooks.json` gives this hook no `onFailure` key: under `"block"`, probed on claude 2.1.319, a hook
+command that could not start blocked every prompt of the session at cost 0, ahead of the
+prefilter, so a plugin update under an open session would have stopped all work. Its `timeout` is
+long enough that expiry is not a normal path. A hook the harness ends for it is a failed hook, and
+the prompt goes on (expiry itself is not probed), while the hook's watch stops `auto` first, by
+the signal it is sent or by seeing its launcher go, on POSIX. On Windows the watch cannot see a
+parent go, because `getppid` does not change there, so the signal arm alone applies.
+
+**It does not read the permission rules.** `permission_mode: plan` passes the prompt on, because
+plan mode is read-only intent and the drive starts paid writers and commits. A `Bash` deny rule,
+or any other rule in settings, is not parsed: the writer sessions the drive starts apply their own
+permissions when they run. Set `executor.driveWithoutModel: false` to keep the hook out of a
+project whose rules should stop it.
 
 **One row on that table has two arms with different activation, and the column
 above cannot show it.** `guard-history-rewrite` refuses history rewrites only

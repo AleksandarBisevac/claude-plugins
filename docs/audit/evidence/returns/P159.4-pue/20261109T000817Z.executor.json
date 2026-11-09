@@ -1,0 +1,51 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_without_model.py tests/test_hooks.py tests/test__deps.py tests/test__manifest_vocab.py tests/test__refs.py tools/_suite.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-09T00:26:15Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_without_model.py tests/test_hooks.py tests/test__deps.py tests/test__manifest_vocab.py tests/test__refs.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 7 of 235 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dm38 (house FAIL), dm51 (house FAIL), dm52 (house FAIL), dm58 (house FAIL), dm59 (house FAIL), dm53 (house FAIL), hk7c (house FAIL): SELFTEST FAILED: 234/235 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-without-model.py: the parent pid is read first in main(), before stdin; one with_watch() holds the stop signals and the parent watch across the audit-status read and the drive, so a stop in that window starts no drive and blocks with INTERRUPTED_EARLY. /audit:next passes through when tasks.byStatus.in_progress is non-zero, and says so on stderr when the count is missing. The tree and config come from _config.tree_for, and the drive and audit-status both get that tree as CLAUDE_PROJECT_DIR. permission_mode plan passes through. The interrupt line names /audit:resume instead of offering the typed verb. Windows: stop_command() is taskkill /T /F and parent_gone() answers no. hooks.json loses onFailure, hk7c now pins its absence. next.md puts the in-progress rule before the no-ready-task rule and names the full status view's [~] mark. SECURITY.md, README, CHANGELOG and PLUGIN-BUILD-GUIDE updated; SECURITY.md states the no-rule-parsing limit with the opt-out key. Ran the brief's sweep command: exit 0, 6/6 files ok, 978 cases; test_drive_without_model.py 64/64 three times with 3 s gaps. Second-direction mutations ran on a scratch copy, never the shared tree, 14 in all. Red results: in_progress always busy dm9+dm44; never busy dm43; plan check on any mode dm48; no plan check dm47; repo_root instead of tree_for dm49+dm50; taskkill everywhere dm56; taskkill nowhere dm55; nt compares getppid dm57; parent read only at the drive dm53+dm59; no check before the drive dm59; typed verb in the stop line dm38+dm51. Three first-round mutations did not go red, and each led to a change: one did not model the bug and was replaced by the parent-read-only-at-the-drive row; two stop checks masked each other, so the one inside first_ready was removed and dm58 and dm59 added. Not run: bench-hooks --gate, gate-parity and measure-context --gate, outside own-tests; next.md grew, so measure-context is the one to watch. Not exercised live: Windows; the interrupt cases skip there, dm55-dm57 assert its answers through an osname argument, and a manual check is named in the docstring and CHANGELOG. Harness timeout expiry was not probed, which SECURITY.md says; the onFailure block behaviour is the task's own probe on claude 2.1.319, not re-run here. Residual stated in the docstring: a SIGKILL of the interpreter itself leaves auto running. Dependants: next.md - test__refs.py passed in the sweep; test_drive_phase.py was not run, and measure-context.py was not run as a gate; verbs-in-full.md and the docs/research files were not re-read. SECURITY.md - the fail-mode row is unchanged, so its guards and hook readers are still correct; test__refs and test__deps passed. drive-without-model.py - the hook's prefilter still imports only os and sys, adding one getppid call, so bench-hooks should hold but was not run; first_ready in _priority.py and the blocked, main, run_auto names are same-name coincidences, since a hook is imported by no script; run_auto is gone from this hook while drive-phase.py's own is untouched and PLUGIN-BUILD-GUIDE names that one. hooks.json - same shape minus one key on one entry; test_hooks passed; py-launch.sh, bench-hooks, check-git-pipeline and prove-gates do not read onFailure as far as the sweep shows, not separately checked. tests/test_drive_without_model.py and tests/test_hooks.py - test_commit_task_work imports _git and _write from test_hooks, unchanged. README and CHANGELOG - only prose in the hook's own entries changed. PLUGIN-BUILD-GUIDE - the two passages naming the hook were rewritten to match.",
+    "descriptive": "The prompt hook no longer blocks work when it cannot start, stops a drive from the moment a stop can land, continues in-progress work rather than starting another task, drives the session's own tree and stands aside in plan mode."
+  },
+  "testsAdded": [
+    "hooks.json registers the hook once with no onFailure",
+    "/audit:next with a task in progress passes through and starts nothing, a recorded zero still drives, a missing count passes through and says so, and the real audit-status --json is pinned to the shape read",
+    "the interrupt line names /audit:resume and does not offer the typed verb",
+    "a stop or the launcher going during the audit-status read leaves no drive, including a status child that ignores the stop and a read shorter than one poll",
+    "a linked worktree is driven, and its plan read, when CLAUDE_PROJECT_DIR names the main checkout",
+    "permission_mode plan passes through and default still drives",
+    "a SIGKILL of the launcher stops a running drive",
+    "the Windows stop command and parent-gone answers, read through an osname argument"
+  ],
+  "casesAdded": [
+    [
+      "dm42",
+      "dm43",
+      "dm44",
+      "dm45",
+      "dm46",
+      "dm47",
+      "dm48",
+      "dm49",
+      "dm50",
+      "dm51",
+      "dm52",
+      "dm53",
+      "dm54",
+      "dm55",
+      "dm56",
+      "dm57",
+      "dm58",
+      "dm59"
+    ]
+  ],
+  "claims": "claims:\n1 hook lines: main() first statement reads the parent; with_watch() holds signals over first_ready and the drive; first_ready returns None on a non-zero in_progress; answer() reads tree_for and permission_mode; hooks.json has no onFailure, observed by dm42 and hk7c\n2 first red 49/59 on the unfixed hook; 14 scratch-copy mutations listed in outcome, 11 red, 3 first-round survivors each led to a rewritten mutation or a removed check plus dm58/dm59; both directions covered by dm43/dm44, dm47/dm48, dm55/dm56\n3 instance of an unwatched window before the drive: both child runs now go through one with_watch, so no separate status path remains; grep of onFailure in SECURITY.md, PLUGIN-BUILD-GUIDE.md, test_hooks.py: all three sites rewritten, hooks.json key removed\n4 n/a - no must/never rule addressed to an agent added; next.md's do-not-pick-another is prior text restated, enforced only by the hook passing the prompt on, which is dm43\n5 suite 64/64 three runs with 3 s gaps; harness timeout expiry not measured, and SECURITY.md says it is not probed\n6 no guard text matching: decisions read payload fields, audit-status JSON counts and the tree_for answer\n7 n/a - no number written; the timeout value was deleted from the docstring and the pointer to hooks.json kept",
+  "stamp": "audit-stamp: {\"content\":\"sha256:5e92dd77e056ff46d06fe1aaac2d7d2e99860a452ca3d4934a3534876ce27995\",\"dirtyDigest\":\"sha256:3cf88542e0875843df08ad1df7c866733ac76874ff1700052cd0b2b1dc21c561\",\"dirtyPaths\":{\"CHANGELOG.md\":\"0418fea41baea93a\",\"PLUGIN-BUILD-GUIDE.md\":\"9c8e7687e24f1c12\",\"SECURITY.md\":\"8e40ab0f4952e728\",\"plugins/audit/README.md\":\"e2d008eb4ee54f57\",\"plugins/audit/commands/next.md\":\"5700d178fc35f9af\",\"plugins/audit/hooks/drive-without-model.py\":\"7aab0756e8bac2a3\",\"plugins/audit/hooks/hooks.json\":\"2bb3ecc2bb5fadcc\",\"tests/test_drive_without_model.py\":\"5bbfdcb7f007ea97\",\"tests/test_hooks.py\":\"87676e6f1c0dd3a6\"},\"head\":\"cdd7bb2d\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/README.md\",\"plugins/audit/commands/next.md\",\"plugins/audit/hooks/drive-without-model.py\",\"plugins/audit/hooks/hooks.json\",\"tests/test_drive_without_model.py\",\"tests/test_hooks.py\"],\"scopeDigest\":\"sha256:03fde29d2b03d10f0bb5b03355d3149aec4c83ffbdc18323caa96526d2c57a4b\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

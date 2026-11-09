@@ -553,7 +553,7 @@ Maps events → scripts, every entry running through
 - PostToolUse `Edit|Write|MultiEdit|NotebookEdit` → `require-plan.py` (state commit), `remind-tdd.py`, `guard-bash-writes.py` (records tool edits), `journal-writes.py` (records manifest/config writes; all **open**)
 - PostToolUse `mcp__.*` → `require-plan.py` (state commit), `journal-writes.py` (the digest sweep, which needs no write test because it asks the FILE; both **open**). `guard-bash-writes.py` and `remind-tdd.py` are deliberately absent — each says why in its own docstring
 - PostToolUse `Bash` → `guard-bash-writes.py` (the diff check), `journal-writes.py` (the `dangerouslyDisableSandbox` row **and** the digest sweep that catches a manifest written by a shell command; both **open**)
-- UserPromptSubmit → `detect-plan-skip.py`, `drive-without-model.py` (**open**; the second with `timeout` long enough for a drive and `onFailure: "block"`)
+- UserPromptSubmit → `detect-plan-skip.py`, `drive-without-model.py` (**open**; the second with `timeout` long enough for a drive, and no `onFailure`, so a hook that cannot start never blocks a prompt)
 
 `py-launch.sh` resolves `python3` → `python` → `py` with shell builtins only and
 runs the script (stdin passes through once, exit code propagates). It does not
@@ -762,13 +762,18 @@ UserPromptSubmit hook. When the prompt is exactly `/audit:run <id>`, `/audit:nex
 (found by `_config.find_script`, which is how a hook reaches `scripts/`) and waits. Done and stop
 block the prompt with `auto`'s text and `suppressOriginalPrompt`, so the turn costs no model
 request; needs-model prints nothing and the prompt goes on, the command text continuing from
-wherever the drive stands. `/audit:next`'s task is `audit-status.py --json`'s `ready[0]`, the
-list READY NOW renders, rather than a second reading of readiness. A prompt that does not contain
+wherever the drive stands. The tree is `_config.tree_for`'s, so a session in a linked worktree
+drives that worktree. `/audit:next`'s task is `audit-status.py --json`'s `ready[0]`, the list
+READY NOW renders, rather than a second reading of readiness, and it passes through when a task
+is already in progress, since `ready` excludes that task; `permission_mode` plan passes through
+too. A prompt that does not contain
 the verb prefix costs a process start and a bytes search: `_config` and `subprocess` are imported
 past it, which `tools/bench-hooks.py --gate` holds. Every failure passes the prompt on and says so
 on stderr. A signal, or the launcher's process going away (py-launch.sh runs the interpreter
-rather than `exec`ing it, so a signal to it stops there), is forwarded to `auto`, and an
-interrupted drive always blocks with a line naming how to resume. Cases:
+rather than `exec`ing it, so a signal to it stops there), is watched for from before stdin is
+read, across the `audit-status` read as well as the drive, and stops `auto`; on Windows the stop
+is `taskkill /T /F`, and a launcher going away cannot be seen. An interrupted run always blocks,
+naming `/audit:resume`. Cases:
 `tests/test_drive_without_model.py`.
 
 ### `plugins/audit/hooks/guard-bash-writes.py` (v0.6.0)

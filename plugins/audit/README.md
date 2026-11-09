@@ -252,8 +252,10 @@ page behind it, read against the form rather than instead of it. All of it is
   - `drive-without-model.py` (UserPromptSubmit) — with `executor.writerModel` set, a prompt
     that is exactly `/audit:run <id>`, `/audit:next` or `/audit:phase <id>` runs the drive's
     mechanical steps itself and ends the turn with no model request when the drive finishes or
-    stops, showing its answer. A step that needs judgement or you lets the prompt go on. Any
-    failure of the hook sends the prompt on; `executor.driveWithoutModel: false` turns it off.
+    stops, showing its answer. A step that needs judgement or you lets the prompt go on, and so
+    do plan mode and `/audit:next` with a task already in progress. Any failure of the hook
+    sends the prompt on, a hook that cannot start included; `executor.driveWithoutModel: false`
+    turns it off.
   - `guard-secrets-read.py` (PreToolUse: Read/Grep/Bash) — refuses a call naming a
     secret file (`.env`, credentials, signing material) beside a read verb the guard
     lists — the direct tool call, a listed shell read verb, `git show`, `source`,

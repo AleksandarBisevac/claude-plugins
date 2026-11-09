@@ -314,7 +314,7 @@
     {
       "id": "P159.4-pue",
       "title": "The prompt hook never stops ordinary work when it cannot run, does not start another task after an interrupt, drives the tree the command drives, and stands aside in plan mode",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase code review of P159. (1) Probed on claude 2.1.319: a hook command that cannot start under onFailure \"block\" blocks every prompt with cost 0, ahead of the prefilter, with no writerModel set. A plugin update under an open session or an empty CLAUDE_PLUGIN_ROOT would stop all work, against SECURITY.md, the README and py-launch.sh. Remove onFailure; a failed hook sends the prompt on, which is the command as it was. The timeout stays long enough that expiry is not a normal path; state what expiry then does, and make the drive stop when its parent goes rather than run on. (2) /audit:next picks ready[0], which excludes in_progress, so after any interrupt or needs-model stop retyping it starts a different task (run: P1.1 and P1.2 both in_progress, a paid session on the wrong one), and a pending decision is a dead end. When the plan holds a task in progress, /audit:next passes through and next.md rule continues it; the interrupt line stops promising a resume the hook does not do. Fix next.md order so the \"no ready task\" rule does not pre-empt the in-progress paragraph. (3) Read the parent pid before anything that can take a signal: Esc during audit-status orphans a whole paid drive. (4) repo_root reads CLAUDE_PROJECT_DIR before cwd, so the hook and the pass-through command can drive different trees from a linked worktree; resolve the tree one way, through _config.tree_for. (5) permission_mode plan passes through: plan mode is read-only intent and the hook would start paid writers and commit. A Bash deny rule is not read: state that in SECURITY.md with the opt-out key rather than parsing rules. (6) Windows: proc.terminate() is TerminateProcess, so auto cannot tear down and its writers survive; use taskkill /T /F there, keep the parent-gone check honest (getppid does not change on Windows), qualify the CHANGELOG line, and name the Windows command for a manual check since the cases skip there. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/hooks/drive-without-model.py",
@@ -348,14 +348,14 @@
         "P159.3-pue"
       ],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-09T00:08:17Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -409,7 +409,13 @@
           "text": "it reads the Unreleased heading of CHANGELOG.md, and this task edits a line under that heading",
           "waives": "tools/release.py"
         }
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-09T00:36:29Z.e9c520",
+        "status": "passed",
+        "at": "2026-11-09T00:36:29Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

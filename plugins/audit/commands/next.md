@@ -6,13 +6,22 @@ allowed-tools: Read, Edit, Bash, Agent, Skill, Glob, Grep, AskUserQuestion
 
 # /audit:next — execute the next ready task
 
-Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" --short`. Its first entry
-under READY NOW is the task this command runs; do not re-derive the readiness rule. Show that
-list verbatim in your own reply, as a short fenced block, since a tool result is collapsed behind
-the call.
+Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status/audit-status.py" --short`. Unless a task is
+already in progress (below), its first entry under READY NOW is the task this command runs; do
+not re-derive the readiness rule. Show that list verbatim in your own reply, as a short fenced
+block, since a tool result is collapsed behind the call.
 
-**`--dry-run`** (in `$ARGUMENTS`): say which task would run and stop, changing nothing. **No
-ready task:** relay the `waiting on` column it printed per task, and stop.
+**`--dry-run`** (in `$ARGUMENTS`): say which task would run and stop, changing nothing.
+
+**A task already in progress goes first, and an empty READY NOW does not end this.** READY NOW
+excludes a task in progress, so after an interrupt, a stop at a step that needs you, or the
+`drive-without-model.py` hook having started one before this prompt reached you (with
+`executor.writerModel` set), its first entry is a different task. The same script without
+`--short` marks one `[~]`; when there is one, `next <thatTask> --signal` continues it. Do not
+pick another; the hook passes this prompt on rather than starting one.
+
+**No ready task and none in progress:** relay the `waiting on` column it printed per task, and
+stop.
 
 Otherwise run that one task through the step driver, exactly as `/audit:run` does - `next
 <taskId>` drives that task alone, and the two commands differ only in how the task is chosen:
@@ -23,11 +32,6 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" next <taskId> 
 
 Do what its one line says, `audit <phase> <verb> <subject> ... | <basis> | next: <command>`,
 until `done`; the whole step is `next <taskId> --explain <subject>`.
-
-With `executor.writerModel` set, the `drive-without-model.py` hook may already have started the
-first ready task before this prompt reached you and stopped at a step that needs you; that task is
-`in_progress`, so it is no longer under READY NOW. When one is, `next <thatTask> --signal`
-continues it; do not pick another.
 
 - `dispatch` → an Agent per subject (`subagent_type`, `model`: the basis), the prompt
   `Follow the brief this prints: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/governance/drive-phase.py" brief --manifest "<manifest>" --project-dir "<project>" --role <role> <id>`.
