@@ -1354,7 +1354,8 @@
       "P156.21-3st",
       "P156.22-3st",
       "P159.2",
-      "P159.4-pue"
+      "P159.4-pue",
+      "P159.5-pue"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1969,7 +1970,8 @@
       "P159.1",
       "P159.2",
       "P159.4-pue",
-      "P159.3-pue"
+      "P159.3-pue",
+      "P159.5-pue"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2068,7 +2070,8 @@
       "P131.1",
       "P142.1",
       "P159.2",
-      "P159.4-pue"
+      "P159.4-pue",
+      "P159.5-pue"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -2447,7 +2450,8 @@
       "P155.42-gfj",
       "P157.9-mwz",
       "P159.2",
-      "P159.4-pue"
+      "P159.4-pue",
+      "P159.5-pue"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -2674,7 +2678,8 @@
       "P131.5",
       "P139.1",
       "P159.2",
-      "P159.4-pue"
+      "P159.4-pue",
+      "P159.5-pue"
     ],
     "plugins/audit/commands/panel.md": [
       "P57.3",
@@ -13019,7 +13024,8 @@
     "tests/test_hooks.py": [
       "P131.1",
       "P159.2",
-      "P159.4-pue"
+      "P159.4-pue",
+      "P159.5-pue"
     ],
     "tests/test_import_evidence.py": [
       "P131.1",
@@ -13425,11 +13431,13 @@
     ],
     "plugins/audit/hooks/drive-without-model.py": [
       "P159.2",
-      "P159.4-pue"
+      "P159.4-pue",
+      "P159.5-pue"
     ],
     "tests/test_drive_without_model.py": [
       "P159.2",
-      "P159.4-pue"
+      "P159.4-pue",
+      "P159.5-pue"
     ]
   },
   "bugs": [
