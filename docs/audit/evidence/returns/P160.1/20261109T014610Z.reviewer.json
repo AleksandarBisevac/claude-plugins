@@ -1,0 +1,19 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "tests/test_drive_without_model.py:677-690",
+   "issue": "dm73 (/audit:next) asserts pass-through, but the hook never acts on /audit:next on any platform (hooks/drive-without-model.py docstring, 'THE PROMPT NAMES ITS TARGET': /audit:next is not on the table). It would still pass if the no-signals simulation or the platform check were deleted. Shape: an assertion the behaviour never reaches. The executor reported this too.",
+   "resolution": "Not a defect of this diff. Keep dm73 as a verb-list pin, but do not read it as Windows coverage; dm71 and dm72 carry the platform check. A separate task could drop dm73 from the no-signals loop or give it its own label."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task: 'The simulation must remove or stub the attribute only where it exists, so the cases mean the same on POSIX and on Windows' and 'Do not skip the cases on Windows'. Diff line 117 now reads `if sys.argv[1] == \"no-signals\" and hasattr(os, \"killpg\"): del os.killpg`, so a real Windows host, where the attribute is absent, no longer hits AttributeError at line 6 of the inline program. No case is skipped (_windows_cases is not guarded by the killpg check; dm71-dm73 and dm75 still run). The comment and the _run_as docstring were updated, with no F/P/BUG ids. Claim: the outcome describes this diff accurately, including the one-sided evidence (POSIX with the attribute absent, not a real Windows runner) and the dm73 weakness. The recorded probe runs were not re-run by me; they are the executor's report, unverified here. All three dependants (SECURITY.md:195, SECURITY.md:209, PLUGIN-BUILD-GUIDE.md:780) are answered and hold against a test-only change that keeps every assertion.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "tests.add is empty and expectRedFirst is false, so none is owed. The executor's scratchpad probe (os.killpg absent via sitecustomize, dm71-dm73 failing with the CI AttributeError before the fix) is a reported, unrun-by-me proof outside the helper; I do not grade it as proved.",
+  "inheritedTests": "flagged",
+  "inheritedTestsBasis": "Read the gate command `python3 tools/sweep-selftests.py tests/test_drive_without_model.py tools/_suite.py`, which selects tests/test_drive_without_model.py and tools/_suite.py. In the suite, dm73 at tests/test_drive_without_model.py:677-690 (the /audit:next iteration of the loop) would pass with the behaviour deleted, because the hook does not act on /audit:next at all (hook docstring lines 14-17). Judged from reading. dm71 and dm72 depend on the removal; the executor reports they go red under a del-to-pass mutation. I did not run it."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

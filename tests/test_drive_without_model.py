@@ -106,13 +106,15 @@ sys.exit(plan.get("statusExit", 0))
 # Removes the mechanism the hook reads. Spelled as the mechanism rather than as
 # `os.name`, because `pathlib` picks its class off that name and a hook past the
 # check would find no file at all: such a run passes through for the wrong reason,
-# green on a hook that never looked at the platform.
+# green on a hook that never looked at the platform. A real Windows host has no such
+# attribute to remove, so the removal asks first and the hook meets the same module
+# on both.
 SIMULATE_NO_SIGNALS = """\
 import os
 import runpy
 import sys
 
-if sys.argv[1] == "no-signals":
+if sys.argv[1] == "no-signals" and hasattr(os, "killpg"):
     del os.killpg
 path = sys.argv[2]
 sys.path.insert(0, os.path.dirname(path))
@@ -209,7 +211,7 @@ def _run_from(fx, stdin, cwd, project):
 
 
 def _run_as(fx, stdin, mechanism):
-    """(exit, stdout, stderr) of the hook with `os.killpg` removed (`no-signals`)
+    """(exit, stdout, stderr) of the hook with `os.killpg` absent (`no-signals`)
     or left alone (`as-is`), through the same bootstrap."""
     done = subprocess.run([sys.executable, "-c", SIMULATE_NO_SIGNALS, mechanism, fx["hook"]],
                           input=stdin.encode("utf-8"), stdout=subprocess.PIPE,

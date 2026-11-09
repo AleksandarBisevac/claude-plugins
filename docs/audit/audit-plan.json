@@ -1028,7 +1028,7 @@
     {
       "id": "P160",
       "title": "The simulated Windows cases run on Windows",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/P160.json"
     }
   ],

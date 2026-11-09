@@ -1,7 +1,7 @@
 {
   "id": "P160",
   "title": "The simulated Windows cases run on Windows",
-  "status": "pending",
+  "status": "in_progress",
   "description": "The per-run CI on f1ec3e01 failed one job, selftests (windows, plain 3): dm71 to dm73 simulate Windows and hit AttributeError on os.killpg on a real one.",
   "desiredOutcome": "tests/test_drive_without_model.py is green on a real Windows runner",
   "testGate": [
@@ -16,21 +16,30 @@
     "vitest"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "2a35c7e7a9267c7c079bb52110d69cc6199a80cf",
+  "branch": "audit/p160-the-simulated-windows-cases-ru",
   "mergedAt": null,
   "review": {
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P160-R1",
+        "severity": "low",
+        "file": "tests/test_drive_without_model.py:677-690",
+        "issue": "dm73 (/audit:next) asserts pass-through, but the hook never acts on /audit:next on any platform (hooks/drive-without-model.py docstring, 'THE PROMPT NAMES ITS TARGET': /audit:next is not on the table). It would still pass if the no-signals simulation or the platform check were deleted. Shape: an assertion the behaviour never reaches. The executor reported this too.",
+        "resolution": "Not a defect of this diff. Keep dm73 as a verb-list pin, but do not read it as Windows coverage; dm71 and dm72 carry the platform check. A separate task could drop dm73 from the no-signals loop or give it its own label."
+      }
+    ],
+    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P160.1",
       "title": "The simulated-Windows cases do not reach for a POSIX-only attribute",
-      "status": "pending",
+      "status": "in_progress",
       "description": "dm71 to dm73 in tests/test_drive_without_model.py simulate Windows and fail on a real Windows runner with AttributeError: module object has no attribute killpg at line 6 of the inline program (CI run 42546489107, selftests windows plain 3). The simulation must remove or stub the attribute only where it exists, so the cases mean the same on POSIX and on Windows. Prove it on POSIX by running the case with os.killpg absent from the module before the simulation runs, since a real Windows host is not available here. Do not skip the cases on Windows. No F/P/BUG ids in comments.",
       "files": [
         "tests/test_drive_without_model.py"
@@ -49,16 +58,29 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-09T01:46:10Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-09T01:52:17Z.c21dbf",
+        "status": "passed",
+        "at": "2026-11-09T01:52:17Z"
+      }
     }
-  ]
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "988f3478-fc74-4a1e-a62b-7522b404c792",
+    "branch": "audit/p160-the-simulated-windows-cases-ru",
+    "at": "2026-11-09T01:46:10Z"
+  },
+  "startedAt": "2026-11-09T01:46:10Z"
 }
