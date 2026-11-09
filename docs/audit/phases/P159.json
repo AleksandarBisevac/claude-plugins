@@ -441,7 +441,7 @@
     {
       "id": "P159.5-pue",
       "title": "The prompt hook acts only when the prompt names its target, resolves the tree the command resolves, and stands aside on Windows until a stop is proven there",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Second review round of P159. The recurrences have one root each, so these are invariants rather than more shapes. (1) /audit:next chooses its target from state the drive itself changes: after an echo-owing close it ran a second paid task or stranded the echo and the phase lock (run with a stub claude), after the earlier interrupt and pending-decision fixes. The hook acts only when the prompt names its target: /audit:run <id> and /audit:phase <id>. Remove /audit:next from the table and everything only it used (first_ready and the audit-status read); /audit:next passes through and runs as it did. next.md goes back to its previous rules except for what still applies. (2) The hook and the command must resolve the same tree: from a cwd in <main>/.claude/worktrees/x with CLAUDE_PROJECT_DIR=<main> the hook drove and committed on main while the command resolves the worktree (_config within_root answers before git; tree_for docstring names this residual). Bash has no CLAUDE_PROJECT_DIR, so the command's drive-phase.py project_context reads cwd. The hook starts auto from the session cwd with CLAUDE_PROJECT_DIR removed and no --project-dir, so auto resolves by the one reader the command uses, and the hook reads the writerModel setting from that same tree. Whatever cannot be told to agree passes through. (3) Windows cannot deliver SIGTERM to another process, so Esc ends only the launcher and auto and its writers keep spending; parent_gone cannot see it and taskkill is unreachable from that path. Until a real Windows run proves a stop, the hook passes through on Windows, so the command runs as it did. Remove the Windows stop branch this makes dead, and state the limit in SECURITY.md, the README and the CHANGELOG. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/hooks/drive-without-model.py",
@@ -472,14 +472,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-09T00:48:01Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -533,7 +533,13 @@
           "text": "it reads the Unreleased heading of CHANGELOG.md, and this task edits a line under that heading",
           "waives": "tools/release.py"
         }
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-09T01:07:33Z.bf207c",
+        "status": "passed",
+        "at": "2026-11-09T01:07:33Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

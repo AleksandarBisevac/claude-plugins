@@ -756,24 +756,27 @@ running** — a prompt is the coarsest event a session cannot avoid, so the stam
 rather than on the per-tool-call path the guards are on. `--selftest`.
 
 ### `plugins/audit/hooks/drive-without-model.py`
-UserPromptSubmit hook. When the prompt is exactly `/audit:run <id>`, `/audit:next` or
-`/audit:phase <id>` (one table, `VERBS`), `executor.writerModel` is set,
+UserPromptSubmit hook. When the prompt is exactly `/audit:run <id>` or `/audit:phase <id>` (one
+table, `VERBS`, whose rows each take exactly one id), `executor.writerModel` is set,
 `executor.driveWithoutModel` is not false and a plan exists, it starts `drive-phase.py auto`
 (found by `_config.find_script`, which is how a hook reaches `scripts/`) and waits. Done and stop
 block the prompt with `auto`'s text and `suppressOriginalPrompt`, so the turn costs no model
 request; needs-model prints nothing and the prompt goes on, the command text continuing from
-wherever the drive stands. The tree is `_config.tree_for`'s, so a session in a linked worktree
-drives that worktree. `/audit:next`'s task is `audit-status.py --json`'s `ready[0]`, the list
-READY NOW renders, rather than a second reading of readiness, and it passes through when a task
-is already in progress, since `ready` excludes that task; `permission_mode` plan passes through
-too. A prompt that does not contain
-the verb prefix costs a process start and a bytes search: `_config` and `subprocess` are imported
-past it, which `tools/bench-hooks.py --gate` holds. Every failure passes the prompt on and says so
-on stderr. A signal, or the launcher's process going away (py-launch.sh runs the interpreter
-rather than `exec`ing it, so a signal to it stops there), is watched for from before stdin is
-read, across the `audit-status` read as well as the drive, and stops `auto`; on Windows the stop
-is `taskkill /T /F`, and a launcher going away cannot be seen. An interrupted run always blocks,
-naming `/audit:resume`. Cases:
+wherever the drive stands. `/audit:next` is not on the table: it would have to choose its target
+from state the drive itself changes, so it passes through and runs as it does with no hook;
+`permission_mode` plan passes through too. **The tree is the command's.** `auto` is started in the
+payload's `cwd` with `CLAUDE_PROJECT_DIR` removed and no `--project-dir`, so it resolves through
+`drive-phase.py`'s own `project_context`, and the settings are read from that same directory
+(`_config.tree_for` would answer the project for a worktree under it, since `within_root` answers
+before git). A payload with no existing `cwd`, or a manifest outside it or under a nearer project
+marker, cannot be made to agree and passes through. **On Windows the hook does not act**:
+`signals_reach_children` is false, no drive starts and every verb passes through, because a stop
+cannot be delivered there; the reason is in `SECURITY.md`. A prompt that names neither verb costs
+a process start and a bytes search: `_config` and `subprocess` are imported past it, which
+`tools/bench-hooks.py --gate` holds. Every failure passes the prompt on and says so on stderr. A
+signal, or the launcher's process going away (py-launch.sh runs the interpreter rather than
+`exec`ing it, so a signal to it stops there), is watched for from before stdin is read and stops
+`auto`. An interrupted run always blocks, naming `/audit:resume`. Cases:
 `tests/test_drive_without_model.py`.
 
 ### `plugins/audit/hooks/guard-bash-writes.py` (v0.6.0)

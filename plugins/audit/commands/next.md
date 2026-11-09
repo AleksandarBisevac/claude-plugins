@@ -14,11 +14,9 @@ block, since a tool result is collapsed behind the call.
 **`--dry-run`** (in `$ARGUMENTS`): say which task would run and stop, changing nothing.
 
 **A task already in progress goes first, and an empty READY NOW does not end this.** READY NOW
-excludes a task in progress, so after an interrupt, a stop at a step that needs you, or the
-`drive-without-model.py` hook having started one before this prompt reached you (with
-`executor.writerModel` set), its first entry is a different task. The same script without
-`--short` marks one `[~]`; when there is one, `next <thatTask> --signal` continues it. Do not
-pick another; the hook passes this prompt on rather than starting one.
+excludes a task in progress, so after an interrupt or a stop at a step that needs you, its first
+entry is a different task. The same script without `--short` marks one `[~]`; when there is one,
+`next <thatTask> --signal` continues it. Do not pick another.
 
 **No ready task and none in progress:** relay the `waiting on` column it printed per task, and
 stop.

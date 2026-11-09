@@ -199,8 +199,15 @@ command that could not start blocked every prompt of the session at cost 0, ahea
 prefilter, so a plugin update under an open session would have stopped all work. Its `timeout` is
 long enough that expiry is not a normal path. A hook the harness ends for it is a failed hook, and
 the prompt goes on (expiry itself is not probed), while the hook's watch stops `auto` first, by
-the signal it is sent or by seeing its launcher go, on POSIX. On Windows the watch cannot see a
-parent go, because `getppid` does not change there, so the signal arm alone applies.
+the signal it is sent or by seeing its launcher go, on POSIX.
+
+**On Windows this hook does not act, and the limit is deliberate.** No process there can send
+another a signal it can catch, so an Esc during a drive would end only the launcher, while `auto`
+and its writers went on spending with nothing to stop them, and the parent watch cannot see that
+either. `hooks/drive-without-model.py` reads the platform's mechanism (`signals_reach_children`)
+past the string check and passes every verb through, so the command runs as it does with no hook;
+the case in `tests/test_drive_without_model.py` that removes the mechanism starts no drive. This
+holds until a real Windows run proves a stop.
 
 **It does not read the permission rules.** `permission_mode: plan` passes the prompt on, because
 plan mode is read-only intent and the drive starts paid writers and commits. A `Bash` deny rule,

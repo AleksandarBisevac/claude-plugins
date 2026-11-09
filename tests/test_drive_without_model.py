@@ -5,12 +5,20 @@ the drive itself when a typed verb's writer is a headless session.
 
 EVERY CASE DRIVES THE REAL HOOK AS A PROCESS, in a fixture copy of the plugin's
 layout: `hooks/` holds the real hook and the real `_config.py`, and `scripts/`
-holds a stub `drive-phase.py` and a stub `audit-status.py`, because
-`_config.find_script` walks from the `_config.py` that is running. The stub's
-script is a file, `plan.json` beside it: what to print, what to exit with, whether
-to hold until a SIGTERM. What the hook did is read from the stub's own record of
-each call, so a case can say the drive was never started rather than infer it from
-silence.
+holds a stub `drive-phase.py`, because `_config.find_script` walks from the
+`_config.py` that is running. The stub's script is a file, `plan.json` beside it:
+what to print, what to exit with, whether to hold until a SIGTERM. What the hook did
+is read from the stub's own record of each call, so a case can say the drive was
+never started rather than infer it from silence. A stub `audit-status.py` answers
+as the real one would and records being started, so a case can say the hook never
+read it.
+
+WHICH TREE A CASE EXPECTS is the real `project_context`'s answer to what the stub
+recorded: its working directory, its CLAUDE_PROJECT_DIR and its argv. The hook has
+no reader of its own for the drive's tree to agree with.
+
+WHAT THIS SUITE PROVES ON WINDOWS is only that the hook stands aside. Every case
+that needs the hook to act is skipped there by name, through `_harness.skip`.
 
 WHAT THE STUB'S EXIT CODES ARE. They are the real `drive-phase.py`'s constants,
 loaded here, and every argv the hook hands the stub is put back through the real
@@ -53,8 +61,14 @@ here = os.path.dirname(os.path.abspath(__file__))
 with open(os.path.join(here, "plan.json"), encoding="utf-8") as fh:
     plan = json.load(fh)
 with open(os.path.join(here, "calls.jsonl"), "a", encoding="utf-8") as fh:
-    fh.write(json.dumps({"argv": sys.argv[1:],
+    fh.write(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(),
                          "project": os.environ.get("CLAUDE_PROJECT_DIR")}) + "\\n")
+if plan.get("markTree"):
+    named = (sys.argv[sys.argv.index("--project-dir") + 1]
+             if "--project-dir" in sys.argv else None)
+    tree = named or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    with open(os.path.join(tree, "driven-here"), "w", encoding="utf-8") as fh:
+        fh.write("driven")
 with open(os.path.join(here, "pid"), "w", encoding="utf-8") as fh:
     fh.write(str(os.getpid()))
 if plan.get("hold"):
@@ -78,25 +92,46 @@ sys.exit(plan.get("exit", 0))
 STUB_STATUS = """\
 import json
 import os
-import signal
 import sys
-import time
 
 here = os.path.dirname(os.path.abspath(__file__))
 with open(os.path.join(here, "plan.json"), encoding="utf-8") as fh:
     plan = json.load(fh)
 with open(os.path.join(here, "status-calls.jsonl"), "a", encoding="utf-8") as fh:
     fh.write(json.dumps(sys.argv[1:]) + "\\n")
-with open(os.path.join(here, "status-cwd"), "w", encoding="utf-8") as fh:
-    fh.write(os.getcwd())
-if plan.get("statusIgnoresStop"):
-    signal.signal(signal.SIGTERM, signal.SIG_IGN)
-if plan.get("statusHold"):
-    with open(os.path.join(here, "status-started"), "w", encoding="utf-8") as fh:
-        fh.write("started")
-    time.sleep(plan["statusHold"])
 sys.stdout.write(plan.get("status", ""))
 sys.exit(plan.get("statusExit", 0))
+"""
+
+# Removes the mechanism the hook reads. Spelled as the mechanism rather than as
+# `os.name`, because `pathlib` picks its class off that name and a hook past the
+# check would find no file at all: such a run passes through for the wrong reason,
+# green on a hook that never looked at the platform.
+SIMULATE_NO_SIGNALS = """\
+import os
+import runpy
+import sys
+
+if sys.argv[1] == "no-signals":
+    del os.killpg
+path = sys.argv[2]
+sys.path.insert(0, os.path.dirname(path))
+sys.argv = [path]
+runpy.run_path(path, run_name="__main__")
+"""
+
+# The hook's own `answer`, handed a parent id that is not its parent: the launcher
+# having gone before the drive starts, which no signal can stage from outside.
+PARENT_GONE = """\
+import json
+import os
+import runpy
+import sys
+
+path = sys.argv[1]
+sys.path.insert(0, os.path.dirname(path))
+ns = runpy.run_path(path, run_name="under_test")
+print(json.dumps(ns["answer"](sys.stdin.buffer.read(), os.getppid() + 1)))
 """
 
 
@@ -162,12 +197,61 @@ def _run(fx, stdin):
             done.stderr.decode("utf-8", "replace"))
 
 
-def _calls(fx):
-    path = os.path.join(fx["scripts"], "calls.jsonl")
+def _run_from(fx, stdin, cwd, project):
+    """(exit, stdout, stderr) of the hook started in `cwd` with `project` as
+    CLAUDE_PROJECT_DIR - the session's own spelling of both, not the fixture's."""
+    done = subprocess.run([sys.executable, fx["hook"]], input=stdin.encode("utf-8"),
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          cwd=cwd, env=dict(os.environ, CLAUDE_PROJECT_DIR=project),
+                          timeout=HOOK_TIMEOUT)
+    return (done.returncode, done.stdout.decode("utf-8", "replace"),
+            done.stderr.decode("utf-8", "replace"))
+
+
+def _run_as(fx, stdin, mechanism):
+    """(exit, stdout, stderr) of the hook with `os.killpg` removed (`no-signals`)
+    or left alone (`as-is`), through the same bootstrap."""
+    done = subprocess.run([sys.executable, "-c", SIMULATE_NO_SIGNALS, mechanism, fx["hook"]],
+                          input=stdin.encode("utf-8"), stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, cwd=fx["project"], env=_env(fx),
+                          timeout=HOOK_TIMEOUT)
+    return (done.returncode, done.stdout.decode("utf-8", "replace"),
+            done.stderr.decode("utf-8", "replace"))
+
+
+def _jsonl(path):
     if not os.path.isfile(path):
         return []
     with open(path, encoding="utf-8") as fh:
         return [json.loads(line) for line in fh if line.strip()]
+
+
+def _calls(fx):
+    return _jsonl(os.path.join(fx["scripts"], "calls.jsonl"))
+
+
+def _status_calls(fx):
+    return _jsonl(os.path.join(fx["scripts"], "status-calls.jsonl"))
+
+
+def _command_tree(real, record):
+    """The project the real `drive-phase.py` reader settles on from what the stub
+    recorded, or the ValueError it refuses with."""
+    held_cwd = os.getcwd()
+    held_env = os.environ.pop("CLAUDE_PROJECT_DIR", None)
+    if record.get("project") is not None:
+        os.environ["CLAUDE_PROJECT_DIR"] = record["project"]
+    os.chdir(record["cwd"])
+    try:
+        args = real.build_parser().parse_args(record["argv"])
+        return os.path.realpath(real.project_context(args)[1]["project"])
+    except ValueError as exc:
+        return "refused: %s" % (exc,)
+    finally:
+        os.chdir(held_cwd)
+        os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        if held_env is not None:
+            os.environ["CLAUDE_PROJECT_DIR"] = held_env
 
 
 def _block(stdout):
@@ -205,11 +289,15 @@ def _answer_cases(check, root, real):
     code, out, err = _run(fx, _payload(fx, "/audit:run P1.1"))
     calls = _calls(fx)
     check("dm1 a prompt that is exactly /audit:run <id> starts auto once, on that "
-          "task, in the one-task form, in this project",
+          "task, in the one-task form, from the session's directory",
           len(calls) == 1 and calls[0]["argv"][:2] == ["auto", "P1.1"]
           and "--task" in calls[0]["argv"]
-          and os.path.realpath(calls[0]["project"] or "")
-          == os.path.realpath(fx["project"]),
+          and os.path.realpath(calls[0]["cwd"]) == os.path.realpath(fx["project"]),
+          "calls=%r err=%r" % (calls, err))
+    check("dm65 auto is started with no CLAUDE_PROJECT_DIR in its environment and "
+          "no --project-dir, so it resolves its tree the way the command's Bash does",
+          len(calls) == 1 and calls[0]["project"] is None
+          and "--project-dir" not in calls[0]["argv"],
           "calls=%r err=%r" % (calls, err))
     check("dm2 auto's done answer blocks the prompt with auto's text as the "
           "reason and the original prompt suppressed, exit 0",
@@ -219,10 +307,20 @@ def _answer_cases(check, root, real):
     check("dm3 the argv the hook hands auto is one the real drive-phase.py parser "
           "accepts, naming the task and the one-task flag",
           args is not None and args.action == "auto" and args.phase == "P1.1"
-          and args.task_only is True
-          and os.path.realpath(args.project_dir or "")
-          == os.path.realpath(fx["project"]),
+          and args.task_only is True and args.project_dir is None,
           "args=%r" % (args,))
+
+    # THE HOOK'S OWN PROCESS STANDS ELSEWHERE, so the case tells starting auto in
+    # the session's directory from merely inheriting the hook's.
+    fx = _make(root, "payload-cwd", {"out": "ok\n", "exit": real.AUTO_DONE})
+    code, out, err = _run_from(fx, _payload(fx, "/audit:run P1.1"),
+                               os.path.dirname(fx["project"]), fx["project"])
+    calls = _calls(fx)
+    check("dm66 auto starts in the directory the payload names as the session's, "
+          "not the one the hook's own process happens to stand in",
+          len(calls) == 1
+          and os.path.realpath(calls[0]["cwd"]) == os.path.realpath(fx["project"]),
+          "code=%r calls=%r err=%r" % (code, calls, err))
 
     stop_text = "audit P1: stopped - the gate is red"
     fx = _make(root, "stop", {"out": stop_text + "\n", "exit": real.AUTO_STOP})
@@ -253,51 +351,18 @@ def _answer_cases(check, root, real):
 
 
 # --- the table ----------------------------------------------------------------
-def _table_cases(check, root, real):
-    for label, prompt, want, task_only in (
-            ("dm8 /audit:phase <id> takes the same path as /audit:run",
-             "/audit:phase P2", "P2", False),
-            ("dm9 /audit:next takes the same path, on the first task audit-status "
-             "lists under READY NOW", "/audit:next", "P2.3", False)):
-        fx = _make(root, "verb-%s" % (want,),
-                   {"out": "done text\n", "exit": real.AUTO_DONE,
-                    "status": json.dumps(STATUS_READY)})
-        code, out, err = _run(fx, _payload(fx, prompt))
-        calls = _calls(fx)
-        args = real.build_parser().parse_args(calls[0]["argv"]) if calls else None
-        check(label,
-              code == 0 and _blocks_with(out, "done text") and args is not None
-              and args.action == "auto" and args.phase == want
-              and args.task_only is task_only,
-              "code=%r out=%r err=%r calls=%r" % (code, out, err, calls))
+def _phase_verb_cases(check, root, real):
+    fx = _make(root, "verb-phase", {"out": "done text\n", "exit": real.AUTO_DONE})
+    code, out, err = _run(fx, _payload(fx, "/audit:phase P2"))
+    calls = _calls(fx)
+    args = real.build_parser().parse_args(calls[0]["argv"]) if calls else None
+    check("dm8 /audit:phase <id> takes the same path as /audit:run, over the phase",
+          code == 0 and _blocks_with(out, "done text") and args is not None
+          and args.action == "auto" and args.phase == "P2" and args.task_only is False,
+          "code=%r out=%r err=%r calls=%r" % (code, out, err, calls))
 
-    fx = _make(root, "none-ready", {"status": json.dumps({"ready": [],
-                                                          "tasks": TASKS_IDLE})})
-    code, out, err = _run(fx, _payload(fx, "/audit:next"))
-    check("dm10 /audit:next with nothing ready starts nothing and passes the prompt "
-          "on: relaying what each task waits on is the command's own job - and "
-          "says nothing on stderr, since nothing went wrong",
-          code == 0 and out == "" and err == "" and _calls(fx) == [],
-          "code=%r out=%r err=%r calls=%r" % (code, out, err, _calls(fx)))
 
-    fx = _make(root, "status-down", {"statusExit": 2, "status": "not json"})
-    code, out, err = _run(fx, _payload(fx, "/audit:next"))
-    check("dm11 an audit-status that cannot answer passes the prompt on and says "
-          "so on stderr",
-          code == 0 and out == "" and _calls(fx) == [] and "audit-status" in err,
-          "code=%r out=%r err=%r" % (code, out, err))
-
-    fx = _make(root, "status-args", {"out": "t\n", "exit": real.AUTO_DONE,
-                                     "status": json.dumps(STATUS_READY)})
-    _run(fx, _payload(fx, "/audit:next"))
-    asked = os.path.join(fx["scripts"], "status-calls.jsonl")
-    status_argv = []
-    if os.path.isfile(asked):
-        with open(asked, encoding="utf-8") as fh:
-            status_argv = json.loads(fh.readline())
-    check("dm12 /audit:next asks audit-status for the machine form of the list the "
-          "command reads", "--json" in status_argv, status_argv)
-
+def _table_cases(check, root):
     with open(os.path.join(os.path.dirname(_harness.HOOKS_DIR), "commands",
                            "phase.md"), encoding="utf-8") as fh:
         text = fh.read()
@@ -317,6 +382,39 @@ def _table_cases(check, root, real):
 
 
 SUBVERBS = ("add", "retarget", "priority", "cancel", "signoff", "settle")
+
+
+# --- /audit:next --------------------------------------------------------------
+# Its target would have to be chosen from state the drive itself changes, so the
+# hook never acts on it. Each row is a state a verb still in the table would read
+# differently; the stub answers it, so a hook that asks gets told. dm70 is the
+# prefilter's half: a config that raises is reached only by a prompt the hook takes.
+NEXT_STATES = (
+    ("dm60 with tasks ready",
+     {"status": json.dumps(STATUS_READY)}, {}),
+    ("dm61 with nothing ready",
+     {"status": json.dumps({"ready": [], "tasks": TASKS_IDLE})}, {}),
+    ("dm62 with a task already in progress",
+     {"status": json.dumps({"ready": ["P2.3"],
+                            "tasks": {"byStatus": {"in_progress": 1}}})}, {}),
+    ("dm63 with a status that cannot answer",
+     {"status": "not json", "statusExit": 2}, {}),
+    ("dm70 under a config that cannot be read", {"status": json.dumps(STATUS_READY)},
+     {"broken_config": True}),
+)
+
+
+def _next_cases(check, root, real):
+    for label, plan, kwargs in NEXT_STATES:
+        fx = _make(root, label.split()[0],
+                   dict(plan, out="should not be seen\n", exit=real.AUTO_DONE), **kwargs)
+        code, out, err = _run(fx, _payload(fx, "/audit:next"))
+        check("%s: /audit:next passes on, starts nothing, reads no status and says "
+              "nothing" % (label,),
+              code == 0 and out == "" and err == "" and _calls(fx) == []
+              and _status_calls(fx) == [],
+              "code=%r out=%r err=%r calls=%r status=%r"
+              % (code, out, err, _calls(fx), _status_calls(fx)))
 
 
 # --- passing through ----------------------------------------------------------
@@ -348,16 +446,6 @@ def _pass_through_cases(check, root, real):
               code == 0 and out == "" and _calls(fx) == [],
               "code=%r out=%r err=%r calls=%r" % (code, out, err, _calls(fx)))
 
-    # THE ALLOW DIRECTION OF THE OPT-OUT: a mutation reading the key as off by
-    # default is red here and green in every case above.
-    fx = _make(root, "opt-in", {"out": "t\n", "exit": real.AUTO_DONE},
-               config=dict(WRITER, executor=dict(WRITER["executor"],
-                                                 driveWithoutModel=True)))
-    code, out, _err = _run(fx, _payload(fx, "/audit:run P1.1"))
-    check("dm28 the opt-out key set true is the same as the key absent: the drive "
-          "runs", code == 0 and _blocks_with(out, "t") and len(_calls(fx)) == 1,
-          "code=%r out=%r" % (code, out))
-
     fx = _make(root, "subagent", plan)
     code, out, _err = _run(fx, _payload(fx, "/audit:run P1.1", agent_id="a1"))
     check("dm29 a prompt a subagent carries is no typed verb: passes on",
@@ -370,6 +458,66 @@ def _pass_through_cases(check, root, real):
           code == 0 and out == "" and _calls(fx) == [],
           "code=%r out=%r calls=%r" % (code, out, _calls(fx)))
 
+    for label, cwd in (("dm67 a payload naming no working directory", None),
+                       ("dm68 a working directory that does not exist", "gone")):
+        fx = _make(root, label.split()[0], plan)
+        doc = json.loads(_payload(fx, "/audit:run P1.1"))
+        if cwd is None:
+            del doc["cwd"]
+        else:
+            doc["cwd"] = os.path.join(fx["project"], cwd)
+        code, out, _err = _run(fx, json.dumps(doc))
+        check("%s cannot be told to agree with the command: passes on, no drive"
+              % (label,), code == 0 and out == "" and _calls(fx) == [],
+              "code=%r out=%r calls=%r" % (code, out, _calls(fx)))
+
+    outside = _harness.fixture_root("dm-elsewhere-")
+    _write(os.path.join(outside, "plan.json"), "{}\n")
+    far = os.path.join(outside, "plan.json")
+    fx = _make(root, "dm82", plan,
+               config=dict(WRITER, manifestPath=far))
+    code, out, _err = _run(fx, _payload(fx, "/audit:run P1.1"))
+    check("dm82 a manifestPath outside the session's directory passes on: the "
+          "drive would take that plan's tree for the project",
+          code == 0 and out == "" and _calls(fx) == [],
+          "code=%r out=%r calls=%r" % (code, out, _calls(fx)))
+
+    fx = _make(root, "dm83", plan,
+               config=dict(WRITER, manifestPath="sub/plan.json"))
+    _write(os.path.join(fx["project"], "sub", "plan.json"), "{}\n")
+    _write(os.path.join(fx["project"], "sub", ".claude", "marker"), "x")
+    code, out, _err = _run(fx, _payload(fx, "/audit:run P1.1"))
+    check("dm83 a manifest whose nearest project marker is not the session's "
+          "directory passes on: the drive would read that directory's settings",
+          code == 0 and out == "" and _calls(fx) == [],
+          "code=%r out=%r calls=%r" % (code, out, _calls(fx)))
+
+    # The command run from a subdirectory reads that subdirectory as its project and
+    # finds no plan there; the hook must not find one by walking up.
+    fx = _make(root, "dm69", plan)
+    below = os.path.join(fx["project"], "src")
+    os.makedirs(below)
+    code, out, _err = _run_from(fx, _payload(dict(fx, project=below), "/audit:run P1.1"),
+                                below, fx["project"])
+    check("dm69 a session below the project passes on: the command resolves that "
+          "directory, which holds no plan, whatever CLAUDE_PROJECT_DIR says",
+          code == 0 and out == "" and _calls(fx) == [],
+          "code=%r out=%r calls=%r" % (code, out, _calls(fx)))
+
+
+def _drive_answer_cases(check, root, real):
+    """The cases past the pass-through table that need the hook to reach auto."""
+    # THE ALLOW DIRECTION OF THE OPT-OUT: a mutation reading the key as off by
+    # default is red here and green in every case above.
+    fx = _make(root, "opt-in", {"out": "t\n", "exit": real.AUTO_DONE},
+               config=dict(WRITER, executor=dict(WRITER["executor"],
+                                                 driveWithoutModel=True)))
+    code, out, _err = _run(fx, _payload(fx, "/audit:run P1.1"))
+    check("dm28 the opt-out key set true is the same as the key absent: the drive "
+          "runs", code == 0 and _blocks_with(out, "t") and len(_calls(fx)) == 1,
+          "code=%r out=%r" % (code, out))
+
+    plan = {"out": "should not be seen\n", "exit": real.AUTO_DONE}
     fx = _make(root, "no-drive", plan, drive=False)
     code, out, err = _run(fx, _payload(fx, "/audit:run P1.1"))
     check("dm31 auto missing passes the prompt on and says so on stderr",
@@ -393,6 +541,21 @@ def _pass_through_cases(check, root, real):
               and "drive-without-model" in err,
               "code=%r out=%r err=%r" % (code, out, err))
 
+    fx = _make(root, "broken-config", {"out": "x\n", "exit": 0}, broken_config=True)
+    code, out, err = _run(fx, _payload(fx, "/audit:run P1.1"))
+    check("dm37 an internal error past the prefilter passes the prompt on and says "
+          "so on stderr",
+          code == 0 and out == "" and _calls(fx) == [] and "drive-without-model" in err,
+          "code=%r out=%r err=%r" % (code, out, err))
+
+    fx = _make(root, "mode-default", {"out": "t\n", "exit": real.AUTO_DONE})
+    code, out, _err = _run(fx, _payload(fx, "/audit:run P1.1",
+                                        permission_mode="default"))
+    # THE ALLOW DIRECTION, for the mutation that passes through on any mode.
+    check("dm48 permission_mode default drives as before",
+          code == 0 and _blocks_with(out, "t") and len(_calls(fx)) == 1,
+          "code=%r out=%r calls=%r" % (code, out, _calls(fx)))
+
 
 # --- cost on the prompts that are not ours --------------------------------------
 def _prefilter_cases(check, root):
@@ -401,13 +564,6 @@ def _prefilter_cases(check, root):
     check("dm36 a prompt naming no verb never reaches the shared config module: a "
           "_config.py that raises on import changes nothing",
           code == 0 and out == "" and err == "",
-          "code=%r out=%r err=%r" % (code, out, err))
-
-    fx = _make(root, "broken-config", {"out": "x\n", "exit": 0}, broken_config=True)
-    code, out, err = _run(fx, _payload(fx, "/audit:run P1.1"))
-    check("dm37 an internal error past the prefilter passes the prompt on and says "
-          "so on stderr",
-          code == 0 and out == "" and _calls(fx) == [] and "drive-without-model" in err,
           "code=%r out=%r err=%r" % (code, out, err))
 
 
@@ -472,8 +628,8 @@ def _interrupt_cases(check, root, real):
           "started=%r code=%r out=%r" % (started, code, out))
 
     # RETYPING IS NOT A RESUME. The hook would start `auto` afresh for the same
-    # words, and for /audit:next on a different task, so the line must not offer
-    # the prompt the user just typed as the way back.
+    # words, so the line must not offer the prompt the user just typed as the way
+    # back.
     check("dm51 the interrupt line does not offer the typed verb as the way to "
           "resume: the hook does not resume, the /audit:resume command does",
           started and "/audit:run P1.1" not in reason.replace(stop_text, "")
@@ -512,84 +668,57 @@ def _interrupt_cases(check, root, real):
           and _no_drive_running(fx),
           "started=%r files=%r" % (started, sorted(os.listdir(fx["scripts"]))))
 
-    # THE SIGNAL LANDS WHILE audit-status IS BEING READ, which is before any drive
-    # exists. /audit:next is the only verb with that window. The hold is long
-    # enough for the signal to arrive and short enough that the hook goes on to
-    # the point where it would start a drive if it took nothing from the signal.
-    during_status = {"hold": True, "out": stop_text + "\n", "exit": real.AUTO_STOP,
-                     "status": json.dumps(STATUS_READY), "statusHold": 1.0}
-    fx = _make(root, "term-status", during_status)
-    code, out, started = _interrupted_run(fx, direct, prompt="/audit:next",
-                                          gate="status-started")
-    doc = _block(out) or {}
-    check("dm52 SIGTERM to the hook during the audit-status read leaves no drive "
-          "running, and a drive that did start was told to stop; the prompt does "
-          "not go on to a model",
-          started and code == 0 and doc.get("decision") == "block"
-          and "interrupted" in (doc.get("reason") or "")
-          and (_calls(fx) == []
-               or os.path.exists(os.path.join(fx["scripts"], "terminated")))
-          and _no_drive_running(fx),
-          "started=%r code=%r out=%r calls=%r" % (started, code, out, _calls(fx)))
 
-    # THE STATUS ANSWER ARRIVES ANYWAY. Stopping audit-status usually leaves no JSON,
-    # which ends the run for an unrelated reason; a child that finishes its answer
-    # hands the hook a valid task after the stop has already landed.
-    fx = _make(root, "term-status-answers", dict(during_status, statusIgnoresStop=True))
-    code, out, started = _interrupted_run(fx, direct, prompt="/audit:next",
-                                          gate="status-started")
-    doc = _block(out) or {}
-    check("dm58 a stop that lands while audit-status finishes a good answer leaves "
-          "no drive, and the prompt is still blocked as interrupted",
-          started and code == 0 and _calls(fx) == []
-          and doc.get("decision") == "block"
-          and "interrupted" in (doc.get("reason") or ""),
-          "started=%r code=%r out=%r calls=%r" % (started, code, out, _calls(fx)))
-
-    # A STATUS READ SHORTER THAN ONE POLL OF THE PARENT. No poll tick lands inside
-    # it, so only the check made before the drive starts can see the launcher gone;
-    # without that check the drive runs until the first tick, which the record shows.
-    fx = _make(root, "launcher-status-brief", dict(during_status, statusHold=0.1))
-    _code, _out, started = _interrupted_run(fx, launched, prompt="/audit:next",
-                                            gate="status-started")
-    check("dm59 the launcher going away during a status read shorter than a poll "
-          "starts no drive at all",
-          started and _calls(fx) == [], "started=%r calls=%r" % (started, _calls(fx)))
-
-    fx = _make(root, "launcher-status", during_status)
-    _code, _out, started = _interrupted_run(fx, launched, prompt="/audit:next",
-                                            gate="status-started")
-    check("dm53 the launcher going away during the audit-status read leaves no "
-          "drive running: the parent is read before anything that can take a signal",
-          started and (_calls(fx) == []
-                       or os.path.exists(os.path.join(fx["scripts"], "terminated")))
-          and _no_drive_running(fx),
-          "started=%r calls=%r files=%r" % (started, _calls(fx),
-                                            sorted(os.listdir(fx["scripts"]))))
+INTERRUPT_LABELS = ("dm38", "dm39", "dm40", "dm51", "dm54")
 
 
-INTERRUPT_LABELS = ("dm38", "dm39", "dm40", "dm51", "dm52", "dm53", "dm54", "dm58",
-                    "dm59")
+# --- windows ------------------------------------------------------------------
+# No process on Windows can be told to stop by a signal another process sends, so
+# the hook passes through there until a real run proves a stop. dm74 is the allow
+# direction of the simulation: the same bootstrap with the mechanism left in place
+# drives, so the silence above it comes from the mechanism and not from the
+# bootstrap failing to start the hook.
+def _windows_cases(check, root, real):
+    for label, prompt in (("dm71 /audit:run <id>", "/audit:run P1.1"),
+                          ("dm72 /audit:phase <id>", "/audit:phase P2"),
+                          ("dm73 /audit:next", "/audit:next")):
+        fx = _make(root, "win-%s" % (label.split()[0],),
+                   {"out": "should not be seen\n", "exit": real.AUTO_DONE,
+                    "status": json.dumps(STATUS_READY)})
+        code, out, err = _run_as(fx, _payload(fx, prompt), "no-signals")
+        check("%s on Windows passes the prompt on, starts no drive and says nothing"
+              % (label,),
+              code == 0 and out == "" and err == "" and _calls(fx) == []
+              and _status_calls(fx) == [],
+              "code=%r out=%r err=%r calls=%r" % (code, out, err, _calls(fx)))
 
-
-def _platform_cases(check):
     hook = _loader.load(os.path.join(_harness.HOOKS_DIR, HOOK_NAME))
-    argv = hook.stop_command(4242, "nt")
-    check("dm55 on Windows the stop is taskkill over the tree, by that pid; "
-          "TerminateProcess would leave auto's writers running",
-          argv == ["taskkill", "/T", "/F", "/PID", "4242"], argv)
-    # THE OTHER DIRECTION: taskkill on every platform is red here and green above.
-    check("dm56 on posix the stop is the signal auto tears its own children down "
-          "on: no external command",
-          hook.stop_command(4242, "posix") is None, hook.stop_command(4242, "posix"))
-    # A fixture value that is not this process's parent, so a real getppid compare
-    # says gone: the Windows answer must not depend on it.
-    stale = os.getppid() + 1
-    check("dm57 the parent-gone check answers no on Windows, where getppid never "
-          "changes, and does compare on posix",
-          hook.parent_gone(stale, "nt") is False
-          and hook.parent_gone(stale, "posix") is True
-          and hook.parent_gone(os.getppid(), "posix") is False, stale)
+    check("dm75 no Windows stop branch is left behind: the stop has one spelling",
+          not hasattr(hook, "stop_command")
+          and "taskkill" not in _harness.module_source(hook),
+          sorted(n for n in dir(hook) if "stop" in n))
+
+
+def _early_stop_case(check, root, real):
+    fx = _make(root, "parent-gone", {"out": "should not be seen\n", "exit": real.AUTO_DONE})
+    done = subprocess.run([sys.executable, "-c", PARENT_GONE, fx["hook"]],
+                          input=_payload(fx, "/audit:run P1.1").encode("utf-8"),
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          cwd=fx["project"], env=_env(fx), timeout=HOOK_TIMEOUT)
+    doc = _block(done.stdout.decode("utf-8", "replace")) or {}
+    check("dm81 a launcher already gone when the drive would start starts no drive "
+          "and blocks the prompt as interrupted",
+          _calls(fx) == [] and doc.get("decision") == "block"
+          and "interrupted" in (doc.get("reason") or ""),
+          "doc=%r calls=%r err=%r" % (doc, _calls(fx), done.stderr))
+
+
+def _windows_allow_case(check, root, real):
+    fx = _make(root, "win-allow", {"out": "t\n", "exit": real.AUTO_DONE})
+    code, out, err = _run_as(fx, _payload(fx, "/audit:run P1.1"), "as-is")
+    check("dm74 the same bootstrap with the mechanism present drives",
+          code == 0 and _blocks_with(out, "t") and len(_calls(fx)) == 1,
+          "code=%r out=%r err=%r calls=%r" % (code, out, err, _calls(fx)))
 
 
 def _launcher_cases(check, root, real):
@@ -618,53 +747,6 @@ def _registration_cases(check):
           len(entries) == 1 and "onFailure" not in entries[0], entries)
 
 
-# --- work already in progress -------------------------------------------------
-def _in_progress_cases(check, root, real):
-    busy = {"ready": ["P2.3"], "tasks": {"byStatus": {"in_progress": 1, "pending": 2}}}
-    plan = {"out": "should not be seen\n", "exit": real.AUTO_DONE,
-            "status": json.dumps(busy)}
-    fx = _make(root, "next-busy", plan)
-    code, out, err = _run(fx, _payload(fx, "/audit:next"))
-    check("dm43 /audit:next with a task in progress passes the prompt on and starts "
-          "nothing: READY NOW excludes that task, so the first entry is another one",
-          code == 0 and out == "" and err == "" and _calls(fx) == [],
-          "code=%r out=%r err=%r calls=%r" % (code, out, err, _calls(fx)))
-
-    # THE ALLOW DIRECTION: a mutation reading any byStatus at all as busy is red
-    # here and green in dm43.
-    idle = {"ready": ["P2.3"], "tasks": {"byStatus": {"in_progress": 0, "pending": 2}}}
-    fx = _make(root, "next-idle", {"out": "t\n", "exit": real.AUTO_DONE,
-                                   "status": json.dumps(idle)})
-    code, out, _err = _run(fx, _payload(fx, "/audit:next"))
-    check("dm44 a recorded in_progress of zero is an idle plan: the drive starts",
-          code == 0 and _blocks_with(out, "t") and len(_calls(fx)) == 1,
-          "code=%r out=%r calls=%r" % (code, out, _calls(fx)))
-
-    fx = _make(root, "next-blind", {"out": "x\n", "exit": real.AUTO_DONE,
-                                    "status": json.dumps({"ready": ["P2.3"]})})
-    code, out, err = _run(fx, _payload(fx, "/audit:next"))
-    check("dm45 a status answer that does not say what is in progress passes the "
-          "prompt on and says so on stderr: no count is no evidence the plan is idle",
-          code == 0 and out == "" and _calls(fx) == [] and "audit-status" in err,
-          "code=%r out=%r err=%r calls=%r" % (code, out, err, _calls(fx)))
-
-    # The stub's shape is hand-written; this pins it to the real script's.
-    plan_root = _harness.fixture_root("dm-status-")
-    path = os.path.join(plan_root, "audit-plan.json")
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(_harness.running_plan("P1", ["src/a.ts"], "P2"), fh)
-    script = os.path.join(_harness.SCRIPTS_DIR, "status", "audit-status.py")
-    done = subprocess.run([sys.executable, script, path, "--json"],
-                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                          cwd=plan_root, timeout=HOOK_TIMEOUT)
-    answer = _block(done.stdout.decode("utf-8", "replace")) or {}
-    check("dm46 the real audit-status --json says in_progress where the hook reads "
-          "it, and leaves that task out of READY NOW",
-          ((answer.get("tasks") or {}).get("byStatus") or {}).get("in_progress") == 1
-          and "P1.1" not in (answer.get("ready") or [None]),
-          "code=%r answer=%r err=%r" % (done.returncode, sorted(answer), done.stderr))
-
-
 # --- permission mode ----------------------------------------------------------
 def _permission_cases(check, root, real):
     plan = {"out": "t\n", "exit": real.AUTO_DONE}
@@ -675,76 +757,124 @@ def _permission_cases(check, root, real):
           code == 0 and out == "" and _calls(fx) == [],
           "code=%r out=%r err=%r calls=%r" % (code, out, err, _calls(fx)))
 
-    # THE ALLOW DIRECTION, for the mutation that passes through on any mode.
-    fx = _make(root, "mode-default", plan)
-    code, out, _err = _run(fx, _payload(fx, "/audit:run P1.1",
-                                        permission_mode="default"))
-    check("dm48 permission_mode default drives as before",
-          code == 0 and _blocks_with(out, "t") and len(_calls(fx)) == 1,
-          "code=%r out=%r calls=%r" % (code, out, _calls(fx)))
-
 
 # --- which tree ---------------------------------------------------------------
+# The linked worktree under the project, the one spot where the path-containment
+# shortcut in `_config` answers before git, is the placement that disagreed; the
+# sibling is the placement that always worked. Both are held to the real reader.
 def _worktree_cases(check, root, real):
-    plan = {"out": "t\n", "exit": real.AUTO_DONE, "status": json.dumps(STATUS_READY)}
+    plan = {"out": "t\n", "exit": real.AUTO_DONE, "markTree": True}
     ok, pair = _harness.attempt(_harness.worktree_pair, "drive-without-model-wt-")
     if not ok:
         check("dm49 builds a linked worktree fixture (%s)" % (pair,), False)
         return
-    _write(os.path.join(pair["main"], ".claude", "audit.config.json"),
-           json.dumps(WRITER))
+    main, sibling = pair["main"], pair["wt"]
+    nested = os.path.join(main, ".claude", "worktrees", "x")
+    made, why = _harness.attempt(_harness.git, main, "worktree", "add", "-q", nested,
+                                 "-b", "chore/nested",
+                                 prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+    if not made:
+        check("dm76 builds a worktree under the project (%s)" % (why,), False)
+        return
 
-    def driven(name, prompt):
-        fx = dict(_make(root, name, plan), project=pair["wt"])
-        stdin = _payload(fx, prompt).encode("utf-8")
-        env = dict(os.environ, CLAUDE_PROJECT_DIR=pair["main"])
-        done = subprocess.run([sys.executable, fx["hook"]], input=stdin,
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                              cwd=pair["wt"], env=env, timeout=HOOK_TIMEOUT)
-        return fx, done
+    def config(tree, value):
+        _write(os.path.join(tree, ".claude", "audit.config.json"), json.dumps(value))
 
-    fx, done = driven("wt-run", "/audit:run P48.1")
+    def drive(name, tree, prompt="/audit:run P41.1"):
+        fx = dict(_make(root, name, plan), project=tree)
+        return fx, _run_from(fx, _payload(fx, prompt), tree, main)
+
+    config(main, WRITER)
+    config(sibling, WRITER)
+    fx, answer = drive("wt-sibling", sibling)
     calls = _calls(fx)
-    args = real.build_parser().parse_args(calls[0]["argv"]) if calls else None
-    check("dm49 a session in a linked worktree drives that worktree when "
-          "CLAUDE_PROJECT_DIR names the main checkout, the tree _config.tree_for "
-          "answers",
-          args is not None and os.path.realpath(args.project_dir or "") == pair["wt"]
-          and os.path.realpath(calls[0]["project"] or "") == pair["wt"],
-          "calls=%r err=%r" % (calls, done.stderr))
+    check("dm49 a session in a sibling worktree drives that worktree when "
+          "CLAUDE_PROJECT_DIR names the main checkout",
+          len(calls) == 1 and _command_tree(real, calls[0]) == sibling,
+          "calls=%r answer=%r tree=%r"
+          % (calls, answer, calls and _command_tree(real, calls[0])))
 
-    fx, done = driven("wt-next", "/audit:next")
-    cwd_file = os.path.join(fx["scripts"], "status-cwd")
-    status_cwd = ""
-    if os.path.isfile(cwd_file):
-        with open(cwd_file, encoding="utf-8") as fh:
-            status_cwd = os.path.realpath(fh.read())
-    asked = os.path.join(fx["scripts"], "status-calls.jsonl")
-    status_argv = ""
-    if os.path.isfile(asked):
-        with open(asked, encoding="utf-8") as fh:
-            status_argv = fh.read()
-    check("dm50 /audit:next in a linked worktree asks audit-status about that "
-          "worktree's plan, not the main checkout's",
-          status_cwd == pair["wt"] and pair["main"] + os.sep not in status_argv,
-          "cwd=%r argv=%r err=%r" % (status_cwd, status_argv, done.stderr))
+    head = _harness.git(main, "rev-parse", "HEAD")
+    before = _harness.git(main, "status", "--porcelain")
+    config(nested, WRITER)
+    fx, answer = drive("wt-nested", nested)
+    calls = _calls(fx)
+    check("dm76 a session in a worktree under the project drives that worktree, "
+          "by the reader the command uses, with no project in auto's environment",
+          len(calls) == 1 and calls[0]["project"] is None
+          and "--project-dir" not in calls[0]["argv"]
+          and os.path.realpath(calls[0]["cwd"]) == nested
+          and _command_tree(real, calls[0]) == nested,
+          "calls=%r answer=%r tree=%r"
+          % (calls, answer, calls and _command_tree(real, calls[0])))
+    check("dm77 the main checkout is untouched by that drive",
+          not os.path.exists(os.path.join(main, "driven-here"))
+          and os.path.exists(os.path.join(nested, "driven-here"))
+          and _harness.git(main, "rev-parse", "HEAD") == head
+          and _harness.git(main, "status", "--porcelain") == before,
+          sorted(os.listdir(main)))
+
+    # BOTH DIRECTIONS of "read from that same tree": a hook reading CLAUDE_PROJECT_DIR
+    # is red in dm78 and in dm79, and one that ignores the setting is red only in dm78.
+    config(main, WRITER)
+    config(nested, {})
+    fx, answer = drive("wt-setting-off", nested)
+    check("dm78 the worktree's writerModel decides, not the main checkout's: "
+          "none in the worktree, so no drive",
+          answer[0] == 0 and answer[1] == "" and _calls(fx) == [],
+          "answer=%r calls=%r" % (answer, _calls(fx)))
+
+    config(main, {})
+    config(nested, WRITER)
+    fx, answer = drive("wt-setting-on", nested)
+    check("dm79 and a writerModel only the worktree sets drives there",
+          len(_calls(fx)) == 1 and _command_tree(real, _calls(fx)[0]) == nested,
+          "answer=%r calls=%r" % (answer, _calls(fx)))
+
+    config(main, WRITER)
+    os.remove(os.path.join(nested, "docs", "audit", "audit-plan.json"))
+    fx, answer = drive("wt-no-plan", nested)
+    check("dm80 no plan in the session's own tree passes the prompt on, though the "
+          "main checkout has one",
+          answer[0] == 0 and answer[1] == "" and _calls(fx) == [],
+          "answer=%r calls=%r" % (answer, _calls(fx)))
 
 
 # --- cases --------------------------------------------------------------------
+DRIVE_LABELS = (
+    "dm1", "dm65", "dm2", "dm3", "dm66", "dm4", "dm5", "dm6", "dm7", "dm8", "dm28",
+    "dm31", "dm32", "dm33", "dm34", "dm35", "dm37", "dm48", "dm41", "dm74", "dm49",
+    "dm76", "dm77", "dm78", "dm79", "dm80", "dm81", "dm82", "dm83",
+)
+
+
+def _drive_cases(check, root, real):
+    """Every case whose assertion needs the hook to act."""
+    if not hasattr(os, "killpg"):
+        for label in DRIVE_LABELS:
+            _harness.skip(check, label, "the hook stands aside on Windows", True)
+        return
+    _answer_cases(check, root, real)
+    _phase_verb_cases(check, root, real)
+    _drive_answer_cases(check, root, real)
+    _launcher_cases(check, root, real)
+    _windows_allow_case(check, root, real)
+    _early_stop_case(check, root, real)
+    _worktree_cases(check, root, real)
+
+
 def _cases(check):
     root = _harness.fixture_root("drive-without-model-")
     real = _loader.load_script("drive-phase.py")
-    _answer_cases(check, root, real)
-    _table_cases(check, root, real)
+    _drive_cases(check, root, real)
+    _table_cases(check, root)
+    _next_cases(check, root, real)
     _pass_through_cases(check, root, real)
     _prefilter_cases(check, root)
     _interrupt_cases(check, root, real)
-    _launcher_cases(check, root, real)
-    _platform_cases(check)
+    _windows_cases(check, root, real)
     _registration_cases(check)
-    _in_progress_cases(check, root, real)
     _permission_cases(check, root, real)
-    _worktree_cases(check, root, real)
 
 
 def _selftest():
