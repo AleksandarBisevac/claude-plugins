@@ -241,7 +241,7 @@
     {
       "id": "P159.3-pue",
       "title": "A wave runs under auto only when every member is a dispatch with a command, a step owing a board echo goes to the model, and an unreaped child or a closed terminal ends the drive honestly",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Phase code review of P159 (two read-only opus reviewers; each case below was run by the reviewer with the real driver and a stub claude). (1) drive-phase.py step_member (~7806) returns \"dispatch\" for any non-decide member, so inside a wave a wait-writer, wait-gate, wait-reviewer-session or follow-browser arrives at auto_answer (~11838) as a dispatch and its run: command is started again: a SIGKILLed session runner at waveWidth 2 started claude 6 times against 1 at width 1, and a follow-browser recipe is dropped. Classify by member: a wave is executed only when every member is a dispatch with a run: command; anything else ends needs-model and starts nothing. (2) ado_echo_lines (~11639) reads one step, and auto discards every step's text but the last, so an earlier task's board update is lost and on a done ending no model performs the last. A step that owes an echo ends needs-model, carrying it, so the existing command text does it; warnings a step said (a cancelled gate, a refused note, cannot-tell) reach the final text within the existing bound. (3) auto_report (~11902) raises TypeError on a child whose returncode is None, turning an interrupt into exit 2 with empty stdout; say the run was not reaped. (4) A direct auto arms no SIGHUP: closing a terminal leaves children running in their own sessions; arm it. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -265,14 +265,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-08T23:36:20Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -282,7 +282,13 @@
           "reads": "plugins/audit/scripts/governance/drive-phase.py",
           "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/governance/drive-phase.py - a section headed by its path"
         }
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-09T00:07:57Z.d3f568",
+        "status": "passed",
+        "at": "2026-11-09T00:07:57Z"
+      }
     },
     {
       "id": "P159.4-pue",

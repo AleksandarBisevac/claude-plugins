@@ -26,8 +26,13 @@ asks.
 a child process of its own, `auto` reads the signal `next` would have printed instead of a model reading it, and it ends with a distinct
 exit answer on `done`, on a stop, and on a step that needs a model - `auto --help` prints them.
 A `judge`, `ask`, `review`, an Agent dispatch or a wait on a command it never started is left
-exactly as `next` left it, so `next` continues from that step. SIGTERM or SIGINT ends a running
-child's whole process group and leaves the task in progress.
+exactly as `next` left it, so `next` continues from that step. A wave runs only when every member
+is a dispatch with a `run:` command; a member that waits or owes a browser recipe leaves the whole
+wave, started by nothing, to the model. A step that closed a task or a phase linked to a board ends
+on the same answer, before anything further runs, since only a model can make the update: the echo
+and any warning from the steps before it are the answer's own text and are kept for the `next`
+that follows, which prints them once. SIGTERM, SIGINT or SIGHUP ends a running child's whole
+process group and leaves the task in progress.
 
 ### The status guards of `/audit:run`
 

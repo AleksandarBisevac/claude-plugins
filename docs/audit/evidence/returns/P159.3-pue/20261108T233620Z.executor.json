@@ -1,0 +1,48 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__refs.py tools/_suite.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-08T23:58:03Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__refs.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 10 of 932 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - au30 (house FAIL), au36 (house FAIL), au37 (house FAIL), au37b (house FAIL), au37c (house FAIL), au32 (house FAIL), au33 (house FAIL), au33b (house FAIL) and 2 more: SELFTEST FAILED: 921/932 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: wave_said keeps each member's step/runs/prompts (signal_of members=, carried by signal()); auto_answer runs a dispatch-wave only when every member passes auto_member_runs (a dispatch with a run: command), a wave with no members recorded failing to the model. A step owing an ado echo ends needs-model before anything further runs, line + echo + warnings inside EXPLAIN_BYTES. New: warn/did_or_warn at the cancelled-gate (task and phase), refused-note, cannot-tell, could-not-tell and journal-not-written sites; auto gathers said['warnings'] across steps into the final text under its first line (auto_final_text) and the kept --explain. auto_report says 'run was not reaped' for a None returncode instead of raising. auto_arm adds SIGHUP where it exists. DESIGN NOTE beyond the task text: the hook drive-without-model.py prints nothing on needs-model, so stdout alone would lose the echo; auto therefore keeps it in .auto-owed.json beside the explain file (auto_leave_owed), next reads it (ado_echo_moved, render, signal) and removes it after printing (settle_auto_owed) - au33b/au33c hold that path. Docs: verbs-in-full.md and PLUGIN-BUILD-GUIDE.md's drive-phase section, auto --help. Tests: 15 new cases in two new blocks au30-block/au32-block, plus stub mode killrunner and a shared _auto_interrupted behind au6/au35. Runs: gate command exit 0 (3/3 files ok, 1259 cases); ruff check on both python files exit 0; test_drive_without_model.py 46/46 exit 0; both mutations in a throwaway rsync copy red (never clearing owed: au33 and au33c red; wave classifier inverted: au31 and au32 red). Dependants: plugins/audit/hooks/drive-without-model.py still correct - read_answer's three answers unchanged, its suite 46/46, and its discarding of needs-model stdout is what the sidecar answers. scripts/git/_worktrees.py and the importing suites (test__filed_returns, test__invariants, test__worktrees, test_audit_status, test_commit_task_work, test_detect_plan_skip) still correct - only additive names, no signature changed except signal_of's new keyword-defaulted members; I ran the first gate's suites only, not these, the sweep's full tree is the orchestrator's run. tests/test_drive_phase.py readers (.github/sweep-costs.json, ci.yml, test__runner_output, test_run_test_gate, test_stamp_verification, tools/affected.py, tools/reach-diff.py) still correct - two new STAGES rows have no cost figure and the costs table weighs an unlisted block by its suite's figure; _counting/_follower_cases/_actions/_bindings untouched. verbs-in-full.md and PLUGIN-BUILD-GUIDE.md: text added only, headings unchanged, so _areas/_manifest_vocab basename readers still correct; README and execute-task prose names were not touched by this task. COMPATIBILITY.md untouched: no config key or meta.version read changed. LEFT, by choice: other did-lines reporting a shortfall (work not carried, CI unread, tree kept, standing approval not used) are not warnings here - the task named cancelled gate, refused note and cannot-tell; I widened to could-not-tell and journal-not-written only. wave_said still prints a member's first line only, so a two-recipe follow-browser member's later recipes are missing from a wave's next print; auto no longer runs past such a wave, the print itself is outside this task and not fixed.",
+    "descriptive": "auto now starts a wave only when every member is a run: dispatch, stops for a board echo before the next step and keeps it for the next next, carries earlier warnings to its end, and answers honestly on an unreaped child or a closed terminal."
+  },
+  "testsAdded": [
+    "au30/au30b a wave with a wait, follow-browser or Agent member starts nothing and ends needs-model",
+    "au31 a wave of run: dispatches runs each once",
+    "au32/au32b a SIGKILLed runner in a wave is started once per member, against the width-1 baseline",
+    "au33/au33b/au33c a close owing a board echo ends needs-model carrying it for each of two linked tasks, reaches the next next, and is said once",
+    "au36 a child with no exit code yields the stop answer with stdout and a not-reaped report",
+    "au37/au37b/au37c/au37d a step's warning reaches done, bounded stop and needs-model endings, and warn/did_or_warn keep it",
+    "au38 a really refused note is carried as a warning from the real site",
+    "au35 SIGHUP tears the children down and answers stop"
+  ],
+  "casesAdded": [
+    [
+      "au30",
+      "au30b",
+      "au31",
+      "au32",
+      "au32b",
+      "au33",
+      "au33b",
+      "au33c",
+      "au35",
+      "au36",
+      "au37",
+      "au37b",
+      "au37c",
+      "au37d",
+      "au38"
+    ]
+  ],
+  "claims": "claims:\n1 auto_answer + auto_member_runs (drive-phase.py) are the wave classification the guide describes; auto_arm's names list is the SIGHUP arming; auto_needs_model + auto_leave_owed the echo carry; each sentence added to verbs-in-full.md and PLUGIN-BUILD-GUIDE.md names one of those functions or is read off them\n2 HEAD-code red: 4/15 passed before the fix, with au30, au32, au33, au33b, au35, au36, au37, au37b, au37c, au38 red; twins: settle_auto_owed never clearing -> au33, au33c red in a throwaway copy; wave classifier inverted -> au31 red (allow case); restored by deleting the copy\n3 grep -n 'not noted\\|refused' in drive-phase.py over did appends: no remaining site after the conversion; other shortfall did-lines (not carried, CI unread, kept tree, standing approval) left, named in the outcome; class also: the same stdout-only reading was in the hook path, answered by the sidecar\n4 no rule to an agent added; the behaviour sentences name the functions that do it\n5 n/a - no property recorded\n6 n/a - no guard\n7 no number written; .auto-owed.json and EXPLAIN_BYTES are named, not counted",
+  "stamp": "audit-stamp: {\"content\":\"sha256:bd504c3f3f0efac1bf0528f0eb90123e2e75ff3c2db4433adad64565f46f9f3a\",\"dirtyDigest\":\"sha256:2d7a07a1e3c9f0aaf80125c198c1ca15f14aa028fee745db09250db27eff7d14\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"d0b49b7b269e4982\",\"plugins/audit/reference/verbs-in-full.md\":\"9ee355918e0a42db\",\"plugins/audit/scripts/governance/drive-phase.py\":\"a68e32110e80facf\",\"tests/test_drive_phase.py\":\"b4a58d4a0dc31f13\"},\"head\":\"452e91bd\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:72a0bebbb5754153d59bb93c168d0edf75ad087f5b5885c6efb86287a1dd1960\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

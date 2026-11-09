@@ -1500,14 +1500,33 @@ def instruction(kind, lines, signal_fields=None):
     return out
 
 
-def signal_of(step, subject, basis, nxt, prompts=(), subjects=(), runs=()):
+def warn(ctx, text):
+    """Say `text` in this step's did-line and keep it as a warning: a line
+    reporting that something did not happen as it should, which `auto` must
+    still show at its end when it runs past this step without a model."""
+    ctx["did"].append(text)
+    ctx.setdefault("warnings", []).append(text)
+
+
+def did_or_warn(ctx, refused, text):
+    """`text` in the did-line, and a warning as well when `refused` holds the
+    refusal of a note the step owed."""
+    if refused is None:
+        ctx["did"].append(text)
+    else:
+        warn(ctx, text)
+
+
+def signal_of(step, subject, basis, nxt, prompts=(), subjects=(), runs=(),
+              members=()):
     """The fields of one signal line: the step (its verb is `SIGNAL_VERBS`'),
     what it is about, the basis, the one command to run next, the prompts a
-    dispatch sends, the commands it runs instead (a writer session's) and every
-    other id `--explain` answers for it."""
+    dispatch sends, the commands it runs instead (a writer session's), every
+    other id `--explain` answers for it, and - a wave's - each member's own
+    step, runs and prompts, which is what `auto` reads a wave's members by."""
     return {"step": step, "subject": subject, "basis": basis, "next": nxt,
             "prompts": list(prompts), "subjects": list(subjects),
-            "runs": list(runs)}
+            "runs": list(runs), "members": list(members)}
 
 
 def drive_target(ctx):
@@ -1617,7 +1636,11 @@ def wave_said(ctx, members):
                   "one Agent per member, in one message: brief --role <role> <id>",
                   prompts=[p for m in members for p in m["signal"]["prompts"]],
                   subjects=ids,
-                  runs=[r for m in members for r in m["signal"].get("runs") or []]))
+                  runs=[r for m in members for r in m["signal"].get("runs") or []],
+                  members=[{"step": m["signal"].get("step"),
+                            "runs": list(m["signal"].get("runs") or []),
+                            "prompts": list(m["signal"].get("prompts") or [])}
+                           for m in members]))
 
 
 def follow_said(ctx, task_id, recipes, tree):
@@ -1874,7 +1897,7 @@ def scope_gap(ctx, state, task):
             # entry it cannot classify (`node --test`, `python3 -m unittest`) may
             # be the one that runs this suite, so "no runner takes it" is not
             # known - say so once and let the start go on.
-            ctx["did"].append("could not tell whether the gate runs %s: no known "
+            warn(ctx, "could not tell whether the gate runs %s: no known "
                               "runner (%s) takes it and the entry %s is not one "
                               "this reading classifies" % (
                                   path, ", ".join(runners), _clip(unclassified[0], 60)))
@@ -1891,7 +1914,7 @@ def scope_gap(ctx, state, task):
         if any(a["answer"] == _runner_collects.COLLECTED for _r, a in answers):
             continue
         if any(a["answer"] == _runner_collects.COULD_NOT_TELL for _r, a in answers):
-            ctx["did"].append("could not tell whether %s collects %s: %s" % (
+            warn(ctx, "could not tell whether %s collects %s: %s" % (
                 answers[0][0], path, _clip(answers[0][1]["basis"], 100)))
             continue
         runner, got = answers[0]
@@ -1900,7 +1923,7 @@ def scope_gap(ctx, state, task):
             # A definite no from the runners this reading knows, beside a
             # browser runner whose config it does not read: the spec may be
             # that runner's, so the gate's answer is not known.
-            ctx["did"].append("could not tell whether the gate runs %s: %s does "
+            warn(ctx, "could not tell whether the gate runs %s: %s does "
                               "not collect it, and the entry %s runs playwright, "
                               "whose config this reading does not read" % (
                                   path, runner, _clip(browser[0], 60)))
@@ -2274,7 +2297,7 @@ def note_sessions(ctx, state, task, key="writer"):
             _mark(state, key, task, held)
             write_state(ctx, state)
             label = (run["session"] or "with no result")[:13]
-            ctx["did"].append("%s session %s round %d %s%s" % (
+            did_or_warn(ctx, refused, "%s session %s round %d %s%s" % (
                 who, label, each["round"], "noted" if refused is None
                 else "not noted (%s)" % (refused,), skills_said(run)))
 
@@ -2377,7 +2400,7 @@ def reviewer_unread(ctx, state, task, run, seq):
             + [run["session"]]
         _mark(state, REVIEWER_KEY, task, held)
         write_state(ctx, state)
-        ctx["did"].append("reviewer session %s opened no file: cannot-tell%s" % (
+        warn(ctx, "reviewer session %s opened no file: cannot-tell%s" % (
             run["session"][:8], "" if refused is None
             else " (not noted: %s)" % (refused,)))
     if held.get("redispatched", 0) < MAX_REVIEWER_REDISPATCH:
@@ -2976,7 +2999,7 @@ def gate_red_decision(ctx, state, manifest, phase, task, text, tree=None):
     if not held["capNoted"]:
         refused = note_task(ctx, task, cap_note(ctx, held, session))
         if refused is not None:
-            ctx["did"].append("the resume cap was not noted (%s)" % (refused,))
+            warn(ctx, "the resume cap was not noted (%s)" % (refused,))
         held["capNoted"] = True
         _mark(state, "writer", task, held)
         write_state(ctx, state)
@@ -3578,8 +3601,9 @@ def file_writer_return(ctx, state, manifest, phase, task, tree=None):
         said = ("clause coverage left out the carried commit(s) %s, so no clause "
                 "was covered by them" % ("; ".join(left),))
         refused = note_task(ctx, task, said)
-        ctx["did"].append("%s: %s%s" % (task["id"], said, "" if refused is None
-                                        else " (not noted: %s)" % (refused,)))
+        did_or_warn(ctx, refused, "%s: %s%s" % (
+            task["id"], said, "" if refused is None
+            else " (not noted: %s)" % (refused,)))
     if covered["declined"]:
         ctx["did"].append("%s: the writer reports clause %s as not delivered"
                           % (task["id"], ", ".join(str(n) for n in covered["declined"])))
@@ -4348,8 +4372,9 @@ def settle_aside(ctx, state, phase, task, paths, code, text):
             "declared work again, then asks the commit again"
             % (", ".join(plan_paths), rel))
     refused = note_task(ctx, task, said)
-    ctx["did"].append("%s: %s%s" % (task["id"], said, "" if refused is None
-                                    else " (not noted: %s)" % (refused,)))
+    did_or_warn(ctx, refused, "%s: %s%s" % (
+        task["id"], said, "" if refused is None
+        else " (not noted: %s)" % (refused,)))
     manifest, phase_now = load_phase(ctx)
     task_now = _mio.tasks_by_id(manifest).get(task["id"]) or task
     stop = prove_and_hold(ctx, state, manifest, phase_now, task_now,
@@ -5281,8 +5306,8 @@ def background_gate(ctx, state, phase, task, tree):
                               launched.get("argv") or []), None
     run_id, status = found
     if status == GATE_CANCELLED:
-        ctx["did"].append("gate %s run %s was cancelled before a verdict; "
-                          "launched again" % (task["id"], run_id))
+        warn(ctx, "gate %s run %s was cancelled before a verdict; "
+                  "launched again" % (task["id"], run_id))
         return launch_gate(ctx, state, phase, task, tree,
                            launched.get("argv")), None
     _spend(state, GATE_LAUNCH_KEY, task)
@@ -5464,7 +5489,7 @@ def wave_row(ctx, action, summary, details):
                        "via": "cli"}}
     written, why = _journal_io.append_from_cli_why(ctx["project"], entry)
     if not written:
-        ctx["did"].append("journal row %s not written (%s)" % (action, why))
+        warn(ctx, "journal row %s not written (%s)" % (action, why))
 
 
 def tree_path(ctx, task_id):
@@ -9407,7 +9432,7 @@ def validation_step(ctx, state, phase, head, candidates):
             held["asked"] = []
             _mark(state, VALIDATE_KEY, node, held)
             write_state(ctx, state)
-            ctx["did"].append("validation session %s opened no file" % (
+            warn(ctx, "validation session %s opened no file" % (
                 run["session"][:8],))
             return None, validation_dispatch(ctx, state, phase, head, candidates)
         return None, _stopped(ctx, "validation sessions for %s opened no file, so "
@@ -9639,8 +9664,8 @@ def review_fix_dispatch(ctx, state, phase, task, writer, brief, fix, tree=None):
         finding_list(fix.get("findings") or []), "a resume of session %s" % (
             session,) if session else "a fresh writer session", why)
     refused = note_task(ctx, task, "the phase review's confirmed finding(s) " + said)
-    ctx["did"].append(_clip(said, 120) + ("" if refused is None
-                                          else " (not noted: %s)" % (refused,)))
+    did_or_warn(ctx, refused, _clip(said, 120) + (
+        "" if refused is None else " (not noted: %s)" % (refused,)))
     return writer_said(ctx, task["id"], writer["model"],
                        project_relative(ctx, prompt), argv, resume=session)
 
@@ -9687,7 +9712,7 @@ def cap_stop(ctx, state, phase, head, blocking, rounds, cap):
                                     s for (_f, owners), s in zip(blocking, said)
                                     if tid in owners)))
             if refused is not None:
-                ctx["did"].append("%s not noted: %s" % (tid, refused))
+                warn(ctx, "%s not noted: %s" % (tid, refused))
         state[CAP_NOTED_FIELD] = head
         write_state(ctx, state)
     return _stopped(ctx, "review.maxRounds is %d and %d review round(s) are spent, "
@@ -9844,8 +9869,8 @@ def chosen_phase_gate(ctx, state, phase, head):
                               launched.get("argv") or []), None
     run_id, status = found
     if status == GATE_CANCELLED:
-        ctx["did"].append("phase gate run %s was cancelled before a verdict; "
-                          "launched again" % (run_id,))
+        warn(ctx, "phase gate run %s was cancelled before a verdict; "
+                  "launched again" % (run_id,))
         return launch_phase_gate(ctx, state, phase, head,
                                  launched.get("argv")), None
     state.pop(PHASE_GATE_LAUNCH_KEY, None)
@@ -11002,8 +11027,8 @@ def _journal_filed_return(ctx, task, role, path, red_status):
                     "via": "cli"}
     written, why = _journal_io.append_from_cli_why(ctx["project"], row)
     if not written:
-        ctx["did"].append("journal row %s not written (%s)"
-                          % (_fr.RETURN_FILED_ACTION, why))
+        warn(ctx, "journal row %s not written (%s)"
+                  % (_fr.RETURN_FILED_ACTION, why))
 
 
 def _utc_stamp():
@@ -11447,18 +11472,25 @@ def _ado_on(meta):
             and ado.get("echo") is not False)
 
 
-def ado_echo_lines(ctx):
-    """The echo owed for this call's transitions: every task it closed or
-    blocked, and the phase it signed off, that carries an `ado` link - the
-    board update the main loop makes, since no verb here sends one. Empty when
-    the plan has no board or nothing linked moved."""
-    moved = []
+def ado_echo_moved(ctx):
+    """The ids whose transition this call owes the board: what an `auto` left
+    owed and no `next` has printed yet, then every task this call closed or
+    blocked and the phase it signed off."""
+    moved = [str(i) for i in (ctx.get("owed") or {}).get("echo") or []]
     for did in ctx["did"]:
         word = did.split(" ", 1)
         if word[0] in (CLOSED, "blocked") and len(word) > 1:
             moved.append(word[1].split(" ", 1)[0])
         elif did == "signed off":
             moved.append(ctx["phase"])
+    return [i for n, i in enumerate(moved) if i not in moved[:n]]
+
+
+def ado_echo_lines(ctx):
+    """The echo owed for this call's transitions: `ado_echo_moved`'s ids that
+    carry an `ado` link - the board update the main loop makes, since no verb
+    here sends one. Empty when the plan has no board or nothing linked moved."""
+    moved = ado_echo_moved(ctx)
     if not moved:
         return []
     try:
@@ -11483,15 +11515,18 @@ def render(ctx, code, said):
         for script, args, rc, text in ctx["log"]:
             lines.append("$ %s %s  -> exit %d" % (script, " ".join(args), rc))
             lines.extend("  " + ln for ln in text.rstrip("\n").splitlines())
+    owed = ctx.get("owed") or {}
+    if ctx["did"]:
+        lines.append("%s %s: %s" % (PREFIX, ctx["phase"], "; ".join(ctx["did"])))
     if isinstance(said, dict):
-        if ctx["did"]:
-            lines.append("%s %s: %s" % (PREFIX, ctx["phase"], "; ".join(ctx["did"])))
         lines.extend(said["lines"])
         lines.extend(ado_echo_lines(ctx))
     else:
-        if ctx["did"]:
-            lines.append("%s %s: %s" % (PREFIX, ctx["phase"], "; ".join(ctx["did"])))
         lines.append(said)
+        # A stop's own print has never carried the echo; an echo `auto` left is
+        # a transition no other print will report once this one settles it.
+        lines.extend(ado_echo_lines(ctx) if owed.get("echo") else ())
+    lines.extend("warning: %s" % (w,) for w in owed.get("warnings") or [])
     return "\n".join(lines)
 
 
@@ -11639,6 +11674,9 @@ def signal(ctx, code, said):
     echo = ado_echo_lines(ctx)
     if echo:
         basis = "%s; %s" % (basis, echo[0])
+    carried = (ctx.get("owed") or {}).get("warnings") or []
+    if carried:
+        basis = "%s; warning: %s" % (basis, carried[0])
     prompts = list((fields or {}).get("prompts") or [])
     runs = list((fields or {}).get("runs") or [])
     verb = SIGNAL_VERBS.get(step, "stop")
@@ -11646,6 +11684,8 @@ def signal(ctx, code, said):
             "step": step, "verb": verb, "subject": subject,
             "prompts": prompts, "runs": runs,
             "subjects": [subject] + list((fields or {}).get("subjects") or []),
+            "members": list((fields or {}).get("members") or []),
+            "warnings": list(ctx.get("warnings") or []),
             "explain": "\n".join([full] + ["prompt: %s" % (p,) for p in prompts]
                                  + ["run: %s" % (r,) for r in runs])}
 
@@ -11794,6 +11834,7 @@ AUTO_DONE, AUTO_STOP, AUTO_NEEDS_MODEL = E_OK, E_STOPPED, 3
 AUTO_REPEAT_BOUND = 3
 AUTO_POLL_SECONDS = 0.1
 AUTO_LOG_SUFFIX = ".auto.log"
+AUTO_OWED_SUFFIX = ".auto-owed.json"
 AUTO_GATE_WHY = "auto runs every gate as a child it can stop"
 
 
@@ -11813,12 +11854,21 @@ def auto_next(args):
     ctx = context(args)
     ctx["auto"] = True
     ctx["carryTo"] = None
+    ctx["owed"] = read_auto_owed(ctx)
     code, said = one_next(ctx)
     said = signal(ctx, code, said)
     problem = write_explain(ctx, said)
     if problem:
         sys.stderr.write("drive-phase.py: %s\n" % (problem,))
     return ctx, code, said
+
+
+def auto_member_runs(member):
+    """Whether a wave's member is a dispatch `auto` may start itself: a `run:`
+    command and nothing a model sends. A member that waits, or owes a recipe,
+    is no dispatch, whatever step the wave as a whole was printed as."""
+    return (SIGNAL_VERBS.get(member.get("step")) == "dispatch"
+            and bool(member.get("runs")) and not member.get("prompts"))
 
 
 def auto_answer(said, ran):
@@ -11830,11 +11880,18 @@ def auto_answer(said, ran):
     session may be running it, and only a main loop that knows can say so.
     A dispatch naming an Agent, alone or beside a session in one wave, has no
     process of its own to run, so the model sends it - and the wave's `run:`
-    lines with it, since half a wave is no step of the drive's."""
+    lines with it, since half a wave is no step of the drive's. A wave is read
+    by its members, because the one signal step `dispatch-wave` it is printed
+    as says nothing about what each of them needs: a wave with no `members`
+    recorded fails the same way, to the model."""
     verb = said["verb"]
     if verb in ("done", "stop"):
         return verb
     if verb == "dispatch":
+        if said["step"] == "dispatch-wave" and not (
+                said.get("members") and all(
+                    auto_member_runs(m) for m in said["members"])):
+            return "needs-model"
         return "run" if said["runs"] and not said["prompts"] else "needs-model"
     if verb == "wait" and said["runs"] and all(r in ran for r in said["runs"]):
         return "child-exited"
@@ -11854,12 +11911,19 @@ def auto_arm(interrupted):
     """Install the stop handlers; return what they displaced. Each signal only
     appends its name to `interrupted`: a raise would land inside a verb's write
     in `drive`, and no child is signalled here but by the wait that watches
-    `interrupted`."""
+    `interrupted`.
+
+    SIGHUP joins `INTERRUPT_SIGNALS` here and nowhere else: the terminal closing
+    reaches this process alone, every child being in a session of its own, so
+    with no handler this process dies and the children run on. It is a POSIX
+    signal, absent on Windows, so it is armed only where it exists."""
     def note(signum, _frame):
         interrupted.append(_signals.Signals(signum).name)
+    names = [n for n in _proc_group.INTERRUPT_SIGNALS + ("SIGHUP",)
+             if hasattr(_signals, n)]
     return [(getattr(_signals, name),
              _signals.signal(getattr(_signals, name), note))
-            for name in _proc_group.INTERRUPT_SIGNALS]
+            for name in names]
 
 
 def auto_log_path(ctx):
@@ -11905,13 +11969,69 @@ def auto_report(ctx, said, results):
         if code != 0:
             sys.stderr.write("%s auto: %s %s: %s; output in %s; back through next\n"
                              % (PREFIX, said["step"], said["subject"],
-                                problem or "run exited %d" % (code,), where))
+                                problem or ("run was not reaped" if code is None
+                                            else "run exited %d" % (code,)), where))
 
 
-def auto_end(ctx, out, said, name, words):
+def auto_owed_path(ctx):
+    return explain_path(ctx)[:-len(EXPLAIN_SUFFIX)] + AUTO_OWED_SUFFIX
+
+
+def read_auto_owed(ctx):
+    """What the last needs-model `auto` left for a model, or {}: an unreadable
+    file is {} because the record of what was owed is gone either way, and the
+    drive runs on what the plan says."""
+    try:
+        with open(auto_owed_path(ctx), "r", encoding="utf-8") as fh:
+            body = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
+def auto_leave_owed(ctx, echo, warnings):
+    """Keep what a needs-model ending owes a model for the `next` that model
+    runs: this ending's stdout does not reach it under the hook, and `next`
+    says nothing of a transition a previous call made. What an earlier `auto`
+    left and no `next` has printed stays owed. Says on stderr when it could not
+    be kept."""
+    path = auto_owed_path(ctx)
+    earlier = (ctx.get("owed") or {}).get("warnings") or []
+    kept = list(earlier) + [w for w in warnings if w not in earlier]
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            json.dump({"echo": list(echo), "warnings": kept}, fh)
+    except OSError as exc:
+        sys.stderr.write("drive-phase.py: what this ending owes was not kept at "
+                         "%s (%s)\n" % (path, exc))
+
+
+def settle_auto_owed(ctx):
+    """Drop what `auto` left owed, once `next` has said it. Says on stderr when
+    the file stays, because the next `next` then says the same echo again."""
+    if not ctx.get("owed"):
+        return
+    try:
+        os.remove(auto_owed_path(ctx))
+    except OSError as exc:
+        sys.stderr.write("drive-phase.py: what auto left owed was printed and "
+                         "not cleared (%s)\n" % (exc,))
+
+
+def auto_final_text(said_text, warned):
+    """The ending's lines with the warnings of the steps before it, under its
+    first line - `explain_text` keeps the head first when the bound cuts."""
+    lines = said_text.splitlines()
+    fresh = [w for w in warned if w not in said_text]
+    return lines[:1] + ["warning: %s" % (w,) for w in fresh] + lines[1:]
+
+
+def auto_end(ctx, out, said, name, words, warned=()):
     """Answer stop on a stop of auto's own, named `name`, its text kept where
     `--explain` reads it."""
-    text = "%s %s: stopped - %s: %s" % (PREFIX, ctx["phase"], name, words)
+    text = "\n".join(auto_final_text(
+        "%s %s: stopped - %s: %s" % (PREFIX, ctx["phase"], name, words), warned))
     problem = write_explain(ctx, {"subjects": said["subjects"], "explain": text})
     if problem:
         sys.stderr.write("drive-phase.py: %s\n" % (problem,))
@@ -11919,32 +12039,62 @@ def auto_end(ctx, out, said, name, words):
     return AUTO_STOP
 
 
+def auto_ended(ctx, out, said, warned, code):
+    """Answer `code` with the step's whole text and the earlier warnings, kept
+    where `--explain` reads it, which is only rewritten when they added to it."""
+    lines = auto_final_text(said["explain"], warned)
+    text = "\n".join(lines)
+    if text != said["explain"]:
+        problem = write_explain(ctx, dict(said, explain=text))
+        if problem:
+            sys.stderr.write("drive-phase.py: %s\n" % (problem,))
+    out(explain_text(lines))
+    return code
+
+
+def auto_needs_model(ctx, out, said, echo, warned):
+    """Answer needs-model: the step's signal line, the echo it owes and the
+    warnings gathered, inside the bound, and left for the `next` a model runs."""
+    if echo or warned:
+        auto_leave_owed(ctx, ado_echo_moved(ctx) if echo else (), warned)
+    lines = ([said["line"]] + list(echo)
+             + ["warning: %s" % (w,) for w in warned])
+    out(explain_text(lines) if len(lines) > 1 else said["line"])
+    return AUTO_NEEDS_MODEL
+
+
 def auto_steps(args, out, interrupted):
     """The loop: one `next`, what it says done, until a step ends it."""
-    ran, seen = set(), {}
+    ran, seen, warned = set(), {}, []
     while True:
         ctx, _code, said = auto_next(args)
+        warned += [w for w in said.get("warnings") or [] if w not in warned]
+        echo = ado_echo_lines(ctx)
+        if echo:
+            # Whatever this step is, only a model can make the board update, and
+            # a later step's call has no record of this one's transition to owe.
+            return auto_needs_model(ctx, out, said, echo, warned)
         answer = auto_answer(said, ran)
         if answer in ("done", "stop"):
-            out(explain_text(said["explain"].splitlines()))
-            return AUTO_DONE if answer == "done" else AUTO_STOP
+            return auto_ended(ctx, out, said, warned,
+                              AUTO_DONE if answer == "done" else AUTO_STOP)
         if answer == "needs-model":
-            out(said["line"])
-            return AUTO_NEEDS_MODEL
+            return auto_needs_model(ctx, out, said, (), warned)
         again = "next %s --signal resumes it" % (drive_target(ctx),)
         if answer == "child-exited":
             return auto_end(ctx, out, said, "auto-child-exited", (
                 "the child for %s %s exited and the drive still waits on what "
-                "it should have written; %s" % (said["step"], said["subject"], again)))
+                "it should have written; %s" % (said["step"], said["subject"], again)),
+                warned)
         if interrupted:
             return auto_end(ctx, out, said, "auto-interrupted", (
                 "%s arrived before %s %s started; %s" % (
-                    interrupted[0], said["step"], said["subject"], again)))
+                    interrupted[0], said["step"], said["subject"], again)), warned)
         key = (said["step"], said["subject"], tuple(said["runs"]))
         if seen.get(key, 0) >= AUTO_REPEAT_BOUND:
             return auto_end(ctx, out, said, "auto-no-progress", (
                 "%s %s came back with the same command after %d runs of it; %s"
-                % (said["step"], said["subject"], AUTO_REPEAT_BOUND, again)))
+                % (said["step"], said["subject"], AUTO_REPEAT_BOUND, again)), warned)
         seen[key] = seen.get(key, 0) + 1
         results, confirmed = auto_run(ctx, said["runs"], interrupted)
         ran.update(said["runs"])
@@ -11954,7 +12104,7 @@ def auto_steps(args, out, interrupted):
                 "%s arrived while %s %s ran; its process group was torn down%s; "
                 "the task stays in progress and %s" % (
                     interrupted[0], said["step"], said["subject"],
-                    "" if confirmed else " (not confirmed)", again)))
+                    "" if confirmed else " (not confirmed)", again)), warned)
 
 
 def run_auto(args, out):
@@ -12027,10 +12177,11 @@ def build_parser():
                     "command, each a child of this process in its own group - "
                     "and end on the first that needs somebody. Exit %d: done, "
                     "stdout the text --explain prints. Exit %d: stop, stdout "
-                    "its text - SIGTERM or SIGINT ends a running child's "
+                    "its text - SIGTERM, SIGINT or SIGHUP ends a running child's "
                     "group and answers this, the task left in progress. Exit "
-                    "%d: a step needs a model or the human, stdout its one "
-                    "signal line; next continues from it. A step repeating "
+                    "%d: a step needs a model or the human, or owes the board "
+                    "an echo, stdout its signal line with what it owes; next "
+                    "continues from it. A step repeating "
                     "the same command %d times with no progress is a stop. "
                     "Exit %d: could not run." % (
                         AUTO_DONE, AUTO_STOP, AUTO_NEEDS_MODEL,
@@ -12301,16 +12452,19 @@ def main(argv, out=print, stdin=None):
         out(text)
         return code
     ctx["carryTo"] = args.carry_to
+    ctx["owed"] = read_auto_owed(ctx)
     fixes = [f.strip() for given in args.fix for f in given.split(",") if f.strip()]
     code, said = one_next(ctx, answer=args.answer, reason=args.reason, fixes=fixes)
     if not args.signal:
         out(render(ctx, code, said))
+        settle_auto_owed(ctx)
         return code
     said = signal(ctx, code, said)
     problem = write_explain(ctx, said)
     if problem:
         sys.stderr.write("drive-phase.py: %s\n" % (problem,))
     out(said["line"])
+    settle_auto_owed(ctx)
     return code
 
 

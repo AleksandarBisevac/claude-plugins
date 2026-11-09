@@ -4838,13 +4838,22 @@ builds - never its printed line - and classifies it through `SIGNAL_VERBS` (`aut
 `done` and a stop end it, `judge`/`ask`/`review` and an Agent dispatch end it as needs-model with
 the step left for `next`, and a `dispatch` whose instruction is only `run:` commands is run as a
 child of its own process group from an argv (`auto_argv`), never a shell, with every gate one of
-those children rather than an inline call (`gate_in_background` reads `ctx["auto"]`). A wait on a
-child it ran to exit is a named stop, a wait on a command it never started is the model's, and a
-command it has already run `AUTO_REPEAT_BOUND` times with no progress is a named stop; a child's
-non-zero exit goes to stderr and back through `next`. SIGTERM and SIGINT are only flagged
-(`auto_arm`), the child's group torn down and the task left in progress for `next` to resume.
-The exit answers are `auto --help`'s; stdout is what `--explain` prints on `done` and a stop, and
-the step's signal line on needs-model.
+those children rather than an inline call (`gate_in_background` reads `ctx["auto"]`). A wave is
+read by its members rather than by the one `dispatch-wave` step it is printed as (`wave_said` keeps
+each member's step, `auto_member_runs` judges them): anything but a dispatch with a `run:` command
+ends needs-model and starts nothing. A step whose transition owes a board echo ends needs-model
+before anything further runs, carrying the echo (`auto_needs_model`); a warning a step said
+(`warn`, `did_or_warn`: a cancelled gate, a refused note, cannot-tell) reaches the final text under
+its first line, inside `EXPLAIN_BYTES` (`auto_final_text`). Because the hook prints nothing on
+needs-model, what that answer owes is also kept in `.auto-owed.json` beside the explain file
+(`auto_leave_owed`) for the next `next`, which prints it and removes it (`settle_auto_owed`). A
+wait on a child it ran to exit is a named stop, a wait on a command it never started is the
+model's, and a command it has already run `AUTO_REPEAT_BOUND` times with no progress is a named
+stop; a child's non-zero exit goes to stderr and back through `next`, and a child with no exit
+code is said to be not reaped. SIGTERM, SIGINT and SIGHUP are only flagged (`auto_arm`), the
+child's group torn down and the task left in progress for `next` to resume. The exit answers are
+`auto --help`'s; stdout is what `--explain` prints on `done` and a stop, and the step's signal
+line, with what it owes, on needs-model.
 
 **Every step is an existing verb, run as a subprocess.** An entry point may not import another,
 so each verb is resolved by basename through `_loader.script_path` and run: `audit-lock.py

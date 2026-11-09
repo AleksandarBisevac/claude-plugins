@@ -809,6 +809,10 @@ import json, os, subprocess, sys, time
 prompt = sys.stdin.buffer.read().decode("utf-8")
 with open(os.environ["WS_LOG"], "a", encoding="utf-8") as fh:
     fh.write(json.dumps({"argv": sys.argv[1:], "stdin": prompt}) + "\n")
+if os.environ.get("WS_MODE") == "killrunner":
+    import signal
+    os.kill(os.getppid(), signal.SIGKILL)
+    os._exit(0)
 if os.environ.get("WS_MODE") == "sleep":
     held = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])
     with open(os.environ["WS_PIDS"], "w", encoding="utf-8") as fh:
@@ -932,8 +936,9 @@ def _flag(argv, flag):
 def _stub_environ(bindir, log, cost, session=WRITER_SESSION, mode="ok", edit=None,
                   result=None, commit=False, tools=0, reads=None):
     """This process's environment with the stub standing for `claude`. `mode`
-    `none` makes the stub exit 7 with no result event, and `sleep` makes it
-    write its pid and a child's to `WS_PIDS` and sleep. `edit` maps the paths
+    `none` makes the stub exit 7 with no result event, `sleep` makes it
+    write its pid and a child's to `WS_PIDS` and sleep, and `killrunner` makes it
+    SIGKILL the session runner that started it, the run already logged. `edit` maps the paths
     the stub writes to their text, `result` is its last message, `commit`
     has it commit what it wrote and `tools` is how many tool calls its stream
     holds, each a Read of src/mine.py - or, given `reads`, one Read of each
@@ -12061,10 +12066,11 @@ def _auto_real_cases(check):
         else _auto_sigterm_case(check, M, bindir, log)
 
 
-def _auto_sigterm_case(check, M, bindir, log):
-    """SIGTERM while a real session runs: auto ends the child's whole group,
-    answers stop, and leaves the task for `next`."""
-    root, mpath = _repo("auto-term", task_ids=TASKS[:1], executor=WRITER_EXECUTOR)
+def _auto_interrupted(M, bindir, log, prefix, signum):
+    """A real session under `auto`, `signum` delivered once it runs: the
+    process's answer, the session's and its child's pids, whether both ended,
+    and the signal line `next` gives after it."""
+    root, mpath = _repo(prefix, task_ids=TASKS[:1], executor=WRITER_EXECUTOR)
     pids = os.path.join(root, "stub.pids")
     with _Env(root):
         env = _stub_environ(bindir, log, "0.1", mode="sleep")
@@ -12081,7 +12087,7 @@ def _auto_sigterm_case(check, M, bindir, log):
                 held = tuple(int(n) for n in fh.read().split())
         except (OSError, ValueError):
             held = ()
-        proc.send_signal(signal.SIGTERM)
+        proc.send_signal(signum)
         out, err = proc.communicate(timeout=60)
     except BaseException:
         proc.kill()
@@ -12098,14 +12104,273 @@ def _auto_sigterm_case(check, M, bindir, log):
         except OSError:
             pass
     next_code, line = _signal_raw(M, root, mpath)
+    return {"code": code, "out": out, "err": err[-300:], "held": held, "gone": gone,
+            "next": next_code, "line": line,
+            "status": (tasks_of(mpath).get("P1.1") or {}).get("status")}
+
+
+def _auto_interrupt_holds(said, name):
+    """The shared reading of an interrupted `auto`: its children ended, the stop
+    answer naming the signal, and the task left for `next`."""
+    return (len(said["held"]) == 2 and said["gone"] and said["code"] == AUTO_STOP
+            and "auto-interrupted" in said["out"] and name in said["out"]
+            and said["status"] == "in_progress"
+            and said["next"] == 0 and " stop " not in said["line"])
+
+
+def _auto_sigterm_case(check, M, bindir, log):
+    """SIGTERM while a real session runs: auto ends the child's whole group,
+    answers stop, and leaves the task for `next`."""
+    said = _auto_interrupted(M, bindir, log, "auto-term", signal.SIGTERM)
     check("au6 SIGTERM during a child ends the child's process group, session and "
           "its own child included, answers stop with a line naming the interrupt "
-          "and how to resume, and leaves the task in progress for next: %r"
-          % ((code, out, err[-300:], held, gone, next_code, line),),
-          len(held) == 2 and gone and code == AUTO_STOP
-          and "auto-interrupted" in out and "SIGTERM" in out
-          and (tasks_of(mpath).get("P1.1") or {}).get("status") == "in_progress"
-          and next_code == 0 and " stop " not in line)
+          "and how to resume, and leaves the task in progress for next: %r" % (said,),
+          _auto_interrupt_holds(said, "SIGTERM"))
+
+
+# --- auto: what a wave may start, what a step owes, how it ends ------------------
+_AUTO_NOT_RUNNABLE = ("wait-writer", "wait-gate", "wait-reviewer-session",
+                      "follow-browser")
+
+
+def _auto_wave_member(M, step, subject, marks, word):
+    """A member as `advance` hands one to `wave_said`: its own step, and a
+    `run:` command unless it is a recipe the drive never runs."""
+    runs = [] if step == "follow-browser" else [_auto_command(marks, 0, word)]
+    return M.instruction("dispatch", ["%s %s: a member's line" % (step, subject)],
+                         M.signal_of(step, subject, "a basis", "wait", runs=runs))
+
+
+def _auto_wave_of(M, ctx, members):
+    """The step `auto_next` hands the loop for a wave of `members`."""
+    return M.signal(ctx, 0, M.wave_said(ctx, members))
+
+
+def _auto_clear(path):
+    if os.path.exists(path):
+        os.remove(path)
+
+
+def _auto_wave_cases(check):
+    """A wave `auto` was handed: run only when every member is a dispatch with a
+    command, and otherwise left whole to the model."""
+    M, why = _load("drive_phase_auto_wave")
+    if M is None:
+        check("au30 the driver loads: %r" % (why,), False)
+        return
+    root, mpath = _repo("auto-wave", task_ids=TASKS[:2])
+    marks = os.path.join(root, "marks.log")
+    ctx = _step_ctx()
+    held = []
+    for kind in _AUTO_NOT_RUNNABLE:
+        _auto_clear(marks)
+        wave = _auto_wave_of(M, ctx, [
+            _auto_wave_member(M, "dispatch-writer", "P1.1", marks, "first"),
+            _auto_wave_member(M, kind, "P1.2", marks, "second")])
+        answer = _auto_scripted(M, root, mpath, [wave, _auto_said(M, "done-task")])
+        held.append((kind, answer, _auto_marks(marks)))
+    check("au30 a wave holding a wait or a follow-browser member starts nothing - "
+          "the dispatch beside it included - and ends needs-model after one next: %r"
+          % (held,),
+          len(held) == len(_AUTO_NOT_RUNNABLE) and all(
+              a["code"] == AUTO_NEEDS_MODEL and a["nexts"] == 1 and got == []
+              for _k, a, got in held))
+    _auto_clear(marks)
+    wave = _auto_wave_of(M, ctx, [
+        _auto_wave_member(M, "dispatch-writer", "P1.1", marks, "first"),
+        M.instruction("dispatch", ["dispatch-executor P1.2: a member's line"],
+                      M.signal_of("dispatch-executor", "P1.2", "a basis", "wait",
+                                  prompts=["brief --role executor P1.2"]))])
+    agent = _auto_scripted(M, root, mpath, [wave, _auto_said(M, "done-task")])
+    check("au30b a wave beside a dispatch with no run: command starts nothing "
+          "and ends needs-model: %r" % ((agent, _auto_marks(marks)),),
+          agent["code"] == AUTO_NEEDS_MODEL and agent["nexts"] == 1
+          and _auto_marks(marks) == [])
+    _auto_clear(marks)
+    wave = _auto_wave_of(M, ctx, [
+        _auto_wave_member(M, "dispatch-writer", "P1.1", marks, "first"),
+        _auto_wave_member(M, "dispatch-gate", "P1.2", marks, "second")])
+    both = _auto_scripted(M, root, mpath, [wave, _auto_said(M, "done-task")])
+    check("au31 THE TWIN: a wave whose every member is a dispatch with a run: "
+          "command runs each once and asks next again: %r"
+          % ((both, _auto_marks(marks)),),
+          both["code"] == AUTO_DONE and both["nexts"] == 2
+          and sorted(_auto_marks(marks)) == ["0 first", "0 second"])
+
+    _auto_clear(marks)
+    real_run = M.auto_run
+
+    def unreaped(_ctx, commands, interrupted):
+        interrupted.append("SIGTERM")
+        return [(c, None, None) for c in commands], False
+    M.auto_run = unreaped
+    try:
+        stranded = _auto_scripted(M, root, mpath, [
+            _auto_said(M, "dispatch-writer", runs=[_auto_command(marks, 0, "kept")])])
+    finally:
+        M.auto_run = real_run
+    check("au36 a child still running when the run ended is the stop answer with "
+          "words on stdout and the run named as not reaped on stderr, never a "
+          "crash reading its exit code: %r" % ((stranded,),),
+          stranded["code"] == AUTO_STOP and "auto-interrupted" in stranded["out"]
+          and "not reaped" in stranded["err"])
+
+    warning = "gate P1.1 run r9 was cancelled before a verdict; launched again"
+    warned_step = dict(_auto_said(M, "dispatch-writer",
+                                  runs=[_auto_command(marks, 0, "w")]),
+                       warnings=[warning])
+    done = _auto_scripted(M, root, mpath, [warned_step, _auto_said(
+        M, "done-task", explain="done-task P1.1: closed\nthe rule under it")])
+    _c, kept = _explain_of(M, root, mpath, "P1.1")
+    check("au37 a warning an earlier step said is in the final text, under its "
+          "first line, and in what --explain keeps: %r" % ((done, kept),),
+          done["code"] == AUTO_DONE and warning in done["out"]
+          and done["out"].splitlines()[0] == "done-task P1.1: closed"
+          and done["out"] == kept)
+    long_text = "\n".join("line %d %s" % (n, "x" * 300) for n in range(40))
+    bounded = _auto_scripted(M, root, mpath, [warned_step, _auto_said(
+        M, "stopped", subject=PHASE, explain=long_text)])
+    check("au37b the warning survives a final text past the bound, which holds: %r"
+          % ((len(bounded["out"].encode("utf-8")),),),
+          bounded["code"] == AUTO_STOP and warning in bounded["out"]
+          and len(bounded["out"].encode("utf-8")) <= EXPLAIN_BYTES)
+    asked = _auto_scripted(M, root, mpath, [warned_step, _auto_said(M, "decide-triage")])
+    check("au37c a warning reaches a needs-model ending as well: %r" % ((asked,),),
+          asked["code"] == AUTO_NEEDS_MODEL and warning in asked["out"]
+          and asked["out"].splitlines()[0].startswith("audit "))
+    ctx_w = _step_ctx()
+    M.warn(ctx_w, "a warning")
+    M.did_or_warn(ctx_w, None, "a plain did-line")
+    M.did_or_warn(ctx_w, "the refusal", "a refused note")
+    check("au37d warn says the line and keeps it; did_or_warn keeps it only when "
+          "the note was refused: %r" % ((ctx_w["did"], ctx_w.get("warnings")),),
+          ctx_w["did"] == ["a warning", "a plain did-line", "a refused note"]
+          and ctx_w.get("warnings") == ["a warning", "a refused note"])
+
+
+def _auto_writer_wave_repo(prefix):
+    """`_wave_repo` at width 2 with the writer-session keys committed in its
+    config, so a member's dispatch is a real session command."""
+    root, mpath = _wave_repo(prefix, 2)
+    cfg_path = os.path.join(root, ".claude", "audit.config.json")
+    with open(cfg_path, encoding="utf-8") as fh:
+        cfg = json.load(fh)
+    cfg["executor"].update(WRITER_EXECUTOR)
+    with open(cfg_path, "w", encoding="utf-8") as fh:
+        json.dump(cfg, fh)
+    for argv in (["add", "-A"], ["commit", "-qm", "writer sessions"]):
+        _harness.git(root, *argv)
+    return root, mpath
+
+
+def _auto_boarded_repo(prefix):
+    """Two tasks each linked to a board item, on a plan that names the board."""
+    root, mpath = _repo(prefix, task_ids=TASKS[:2], per_task="phase",
+                        executor=WRITER_EXECUTOR)
+    with open(mpath, encoding="utf-8") as fh:
+        plan = json.load(fh)
+    plan["meta"]["ado"] = {"organization": "o", "project": "p"}
+    for n, task in enumerate(plan["phases"][0]["tasks"]):
+        task["ado"] = {"id": 4242 + n}
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(plan, fh, indent=2)
+    for argv in (["add", "-A"], ["commit", "-qm", "boarded"]):
+        _harness.git(root, *argv)
+    return root, mpath
+
+
+def _auto_wave_real_cases(check):
+    """The wave and board endings over real drives, the stub standing for
+    `claude`."""
+    M, why = _load("drive_phase_auto_wave_real")
+    if M is None:
+        check("au32 the driver loads: %r" % (why,), False)
+        return
+    if not hasattr(os, "killpg"):
+        _harness.skip(check, "au32 a killed session runner", "no SIGKILL here",
+                      True)
+    else:
+        bindir, log, _stubs = _auto_stub("auto-wkill-stub")
+        root, mpath = _auto_writer_wave_repo("auto-wkill")
+        code, out, err = _auto_process(root, mpath, PHASE, bindir, log,
+                                       mode="killrunner")
+        runs = [run for run in _stub_runs(log)]
+        check("au32 a session runner killed inside a wave of two is started once "
+              "per member: the drive does not start it again, and ends on an "
+              "answer that is neither done nor a crash: %r"
+              % ((code, out, err[-400:], len(runs)),),
+              len(runs) == 2 and code in (AUTO_STOP, AUTO_NEEDS_MODEL)
+              and bool(out.strip()))
+        one_bin, one_log, _one = _auto_stub("auto-wkill1-stub")
+        alone, alone_mpath = _repo("auto-wkill1", task_ids=TASKS[:1],
+                                   executor=WRITER_EXECUTOR)
+        code, out, err = _auto_process(alone, alone_mpath, PHASE, one_bin, one_log,
+                                       mode="killrunner")
+        check("au32b THE BASELINE: the same killed runner at width 1 is started "
+              "once, the count a wave's member is held to: %r"
+              % ((code, out, err[-400:], len(_stub_runs(one_log))),),
+              len(_stub_runs(one_log)) == 1)
+    board_bin, board_log, _board = _auto_stub("auto-board-stub")
+    boarded, board_mpath = _auto_boarded_repo("auto-board")
+    first = _auto_process(boarded, board_mpath, PHASE, board_bin, board_log,
+                          edit={"src/f1.txt": "changed by the writer\n"})
+    # Under the hook auto's stdout goes nowhere on this answer, so the next `next`
+    # is what the model reads; playing its printed session is the model's turn.
+    code_n, line_n = _signal_raw(M, boarded, board_mpath)
+    _c, whole_n = _explain_of(M, boarded, board_mpath, "P1.2")
+    played = _play_session(boarded, _run_argv(whole_n) or [sys.executable], board_bin,
+                           board_log, "0.33",
+                           edit={"src/f2.txt": "changed by the writer\n"})
+    second = _auto_process(boarded, board_mpath, PHASE, board_bin, board_log)
+    owed = [ln for ln in second[1].splitlines() if ln.startswith("ado echo owed:")]
+    check("au33 a close that owes its board an echo ends needs-model carrying it, "
+          "the first linked task's before the second session starts and the "
+          "second's on its own run, neither carrying the other's: %r"
+          % ((first, played, second, len(_stub_runs(board_log))),),
+          first[0] == AUTO_NEEDS_MODEL and "ado echo owed: P1.1" in first[1]
+          and "ado echo owed: P1.2" not in first[1]
+          and second[0] == AUTO_NEEDS_MODEL and owed == ["ado echo owed: P1.2"]
+          and len(_stub_runs(board_log)) == 2)
+    check("au33b the owed echo reaches the next next's signal and --explain, the "
+          "one reading a model has after this answer: %r" % ((code_n, line_n, whole_n),),
+          code_n == 0 and "ado echo owed: P1.1" in line_n
+          and "ado echo owed: P1.1" in whole_n)
+    code_m, line_m = _signal_raw(M, boarded, board_mpath)
+    check("au33c THE TWIN: that echo is said once - a later next no longer owes "
+          "the task whose echo it already carried: %r" % ((code_m, line_m),),
+          "P1.1" not in line_m.split(" | ")[1] if " | " in line_m else False)
+    note_bin, note_log, _note = _auto_stub("auto-refused-stub")
+    noted, noted_mpath = _repo("auto-refused", task_ids=TASKS[:1],
+                               executor=WRITER_EXECUTOR)
+    _signal_next(M, noted, noted_mpath)
+    _c, note_block = _explain_of(M, noted, noted_mpath, "P1.1")
+    _play_session(noted, _run_argv(note_block) or [], note_bin, note_log, "0.2")
+    real_verb = M.run_verb
+
+    def refusing(ctx, script, args, stdin=None, record=False):
+        if script == "audit-task.py" and "note" in args:
+            return 1, "[audit-task] REFUSED: a refusal this case stands in\n", ""
+        return real_verb(ctx, script, args, stdin=stdin, record=record)
+    M.run_verb = refusing
+    try:
+        args = M.build_parser().parse_args(
+            ["auto", PHASE, noted_mpath, "--project-dir", noted])
+        with _Env(noted):
+            _ctx, _code, step = M.auto_next(args)
+    finally:
+        M.run_verb = real_verb
+    check("au38 a note the verb refused is carried as a warning of the step that "
+          "said it, the real site and not a fixture's list: %r" % ((step,),),
+          any("not noted" in w for w in step.get("warnings") or []))
+    if not hasattr(signal, "SIGHUP"):
+        _harness.skip(check, "au35 SIGHUP during a child", "no SIGHUP here", True)
+        return
+    hup_bin, hup_log, _hup = _auto_stub("auto-hup-stub")
+    said = _auto_interrupted(M, hup_bin, hup_log, "auto-hup", signal.SIGHUP)
+    check("au35 SIGHUP - a closed terminal - during a child ends the child's "
+          "process group and answers stop naming it, the same as SIGTERM: %r"
+          % (said,),
+          _auto_interrupt_holds(said, "SIGHUP"))
 
 
 # --- the drive's planners, over facts and nothing else --------------------------
@@ -18323,6 +18588,8 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("sn5-block", "_signal_drive_cases"),
           ("au-block", "_auto_cases"),
           ("au20-block", "_auto_real_cases"),
+          ("au30-block", "_auto_wave_cases"),
+          ("au32-block", "_auto_wave_real_cases"),
           ("bc-block", "_brief_crlf_cases"),
           ("ce-block", "_close_evidence_cases"),
           ("fv-block", "_review_rules_cases"),
