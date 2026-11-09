@@ -22,10 +22,11 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [],
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "A typed /audit:run or /audit:phase whose writer is a headless session now runs the drive from a UserPromptSubmit hook with no model request unless a step needs judgement or the human; a hook failure, plan mode, Windows and /audit:next leave the command as it was. Three review rounds; fixes are P159.3 to P159.5.",
   "tasks": [
     {
       "id": "P159.1",
@@ -441,7 +442,7 @@
     {
       "id": "P159.5-pue",
       "title": "The prompt hook acts only when the prompt names its target, resolves the tree the command resolves, and stands aside on Windows until a stop is proven there",
-      "status": "in_progress",
+      "status": "done",
       "description": "Second review round of P159. The recurrences have one root each, so these are invariants rather than more shapes. (1) /audit:next chooses its target from state the drive itself changes: after an echo-owing close it ran a second paid task or stranded the echo and the phase lock (run with a stub claude), after the earlier interrupt and pending-decision fixes. The hook acts only when the prompt names its target: /audit:run <id> and /audit:phase <id>. Remove /audit:next from the table and everything only it used (first_ready and the audit-status read); /audit:next passes through and runs as it did. next.md goes back to its previous rules except for what still applies. (2) The hook and the command must resolve the same tree: from a cwd in <main>/.claude/worktrees/x with CLAUDE_PROJECT_DIR=<main> the hook drove and committed on main while the command resolves the worktree (_config within_root answers before git; tree_for docstring names this residual). Bash has no CLAUDE_PROJECT_DIR, so the command's drive-phase.py project_context reads cwd. The hook starts auto from the session cwd with CLAUDE_PROJECT_DIR removed and no --project-dir, so auto resolves by the one reader the command uses, and the hook reads the writerModel setting from that same tree. Whatever cannot be told to agree passes through. (3) Windows cannot deliver SIGTERM to another process, so Esc ends only the launcher and auto and its writers keep spending; parent_gone cannot see it and taskkill is unreachable from that path. Until a real Windows run proves a stop, the hook passes through on Windows, so the command runs as it did. Remove the Windows stop branch this makes dead, and state the limit in SECURITY.md, the README and the CHANGELOG. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/hooks/drive-without-model.py",
@@ -474,14 +475,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c7c2d52b8f30",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Hook (plugins/audit/hooks/drive-without-model.py): /audit:next removed from VERBS with first_ready, the audit-status read, its timeout and the takesId column; the byte prefilter now matches only the two remaining verbs (VERB_MARKS, line 87), so /audit:next never reaches _config. Tree: auto starts in the payload cwd (session_dir, line 142) with CLAUDE_PROJECT_DIR removed (line 276) and no --project-dir; settings read by _config.load(cwd); manifest_of_this_tree (line 149) passes through when the manifest lies outside cwd or under a nearer .git/.claude. Windows: signals_reach_children (hasattr(os, 'killpg'), line 136) is read right after the string check (line 296), every verb passes through silently; stop_command, the taskkill path and parent_gone's Windows arm removed, stop_process inlined. Docs: next.md back to its rules minus the hook sentences, keeping the in-progress rule (still true after an interrupt or stop); SECURITY.md, README (two places), CHANGELOG, PLUGIN-BUILD-GUIDE section updated. Tests: test_drive_without_model.py now 71 cases; retired dm9-12, dm43-46, dm50, dm52, dm53, dm55-59 (all about the removed code); cases that need the hook to act skip by name through _harness.skip where os.killpg is absent. Gate: `python3 tools/sweep-selftests.py tests/test_drive_without_model.py tests/test_hooks.py tests/test__deps.py tests/test__manifest_vocab.py tests/test__refs.py tools/_suite.py` exit 0, 6/6 files ok, 985 cases. Finding on my own first draft: simulating Windows with os.name='nt' left dm71-73 green on the old hook because pathlib turned to WindowsPath and the manifest was not found; the simulation now removes os.killpg, and the mutation below shows dm71/dm72 red when the check is dropped. Mutations in a throwaway copy of the tree (hook restored, copy deleted): check-never dm71,dm72; check-always dm1,dm65,dm2,dm3,dm66,dm4-8,dm28,dm31-35,dm37,dm48,dm41,dm74,dm49,dm76,dm77,dm79,dm38,dm51,dm39,dm40,dm54; keep env dm65,dm76; add --project-dir dm65,dm3,dm76; tree_for config dm78,dm79; manifest always agrees dm82,dm83; ignore nearer marker dm83; no pre-drive parent check dm81; /audit:next row re-added dm70; cwd not required dm67. NOT DONE, NEEDS SCOPE WIDENING: plugins/audit/schema/audit-config.schema.json:510 (driveWithoutModel description) still lists /audit:next; the file is outside this task's files and submit refuses a stray, so it is left and is now untrue on that one word. Process notes: I applied the test and hook edits through scratch python scripts rather than the Edit tool (no tool or gate refused anything), and one exploratory command included `git stash list`, read-only, with no effect on the tree. No gate other than the named sweep was run, per own-tests. Dependants: next.md - hook no longer names it and it no longer names the hook; test__refs _THIN and test_drive_phase rows still green in the sweep (test__refs 292 cases); tools/measure-context.py ceiling not re-run (not in my gate), file got shorter. SECURITY.md - fail-mode table row unchanged, paragraph gained the Windows limit; the guards reading it unaffected. Hook - hooks.json registration unchanged and test_hooks hk7a-c green with test_hooks.py unedited (no change was needed); tools/bench-hooks.py not re-run, fewer imports past the prefilter; resume.md:37 and README writerModel prose still correct. first_ready in _priority.py is an unrelated parameter name. test_drive_without_model.py - named in SECURITY.md and the guide, both still correct. test_hooks.py - unchanged. README, CHANGELOG, PLUGIN-BUILD-GUIDE - edited in place; their readers do not depend on the changed sentences.",
+        "descriptive": "The prompt hook acts only on /audit:run <id> and /audit:phase <id>, drives exactly the tree the command resolves, and passes every verb through on Windows until a stop is proven there."
       },
       "startedAt": "2026-11-09T00:48:01Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-09T01:07:36Z",
+      "verifiedBy": [
+        "/audit:next passes through in five states, starting nothing and reading no status (dm60-63, dm70)",
+        "/audit:run and /audit:phase still drive (dm1, dm8)",
+        "a worktree under the project is driven and main is untouched (dm76, dm77)",
+        "auto has no CLAUDE_PROJECT_DIR and no --project-dir, started in the payload's directory (dm65, dm66)",
+        "writerModel read from the same tree, both directions (dm78, dm79), plus no plan in that tree (dm80)",
+        "simulated Windows passes every verb through, with an allow direction (dm71-74), and the stop branch is gone (dm75)",
+        "cases that cannot be told to agree pass through (dm67, dm68, dm69, dm82, dm83) and a launcher gone before the drive starts no drive (dm81)"
+      ],
       "notes": [
         {
           "at": "2026-11-09T00:47:59Z",
@@ -539,14 +548,26 @@
         "runId": "2026-11-09T01:07:33Z.bf207c",
         "status": "passed",
         "at": "2026-11-09T01:07:33Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "c7c2d52b8f30",
+        "at": "2026-11-09T01:07:36Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-09T01:03:49Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_without_model.py tests/test_hooks.py tests/test__deps.py tests/test__manifest_vocab.py tests/test__refs.py tools/_suite.py` in a throwaway tree at HEAD exited 1 with 21 of 71 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dm65 (house FAIL), dm3 (house FAIL), dm76 (house FAIL), dm77 (house FAIL), dm78 (house FAIL), dm79 (house FAIL), dm80 (house FAIL), dm60 (house FAIL) and 13 more: SELFTEST FAILED: 50/71 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "988f3478-fc74-4a1e-a62b-7522b404c792",
-    "branch": "audit/p159-the-drive-without-a-model",
-    "at": "2026-11-08T21:24:02Z"
-  },
-  "startedAt": "2026-11-08T21:24:02Z"
+  "startedAt": "2026-11-08T21:24:02Z",
+  "testEvidence": {
+    "runId": "2026-11-09T01:28:09Z.db3cde",
+    "status": "passed",
+    "at": "2026-11-09T01:28:09Z"
+  }
 }
