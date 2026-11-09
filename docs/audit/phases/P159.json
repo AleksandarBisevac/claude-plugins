@@ -481,7 +481,59 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-09T00:47:59Z",
+          "text": "this task edits the row and limit for this hook in SECURITY.md and leaves the sentence this reader quotes as it is",
+          "waives": "plugins/audit/hooks/_config.py"
+        },
+        {
+          "at": "2026-11-09T00:47:59Z",
+          "text": "this task edits the row and limit for this hook in SECURITY.md and leaves the sentence this reader quotes as it is",
+          "waives": "tests/test__panel_page.py"
+        },
+        {
+          "at": "2026-11-09T00:47:59Z",
+          "text": "this task edits the row and limit for this hook in SECURITY.md and leaves the sentence this reader quotes as it is",
+          "waives": "tests/test_guard_secrets_read.py"
+        },
+        {
+          "at": "2026-11-09T00:47:59Z",
+          "text": "this task edits the row and limit for this hook in SECURITY.md and leaves the sentence this reader quotes as it is",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-09T00:47:59Z",
+          "text": "this task edits the row and limit for this hook in SECURITY.md and leaves the sentence this reader quotes as it is",
+          "waives": "tools/check-git-pipeline.py"
+        },
+        {
+          "at": "2026-11-09T00:47:59Z",
+          "text": "this task edits the row and limit for this hook in SECURITY.md and leaves the sentence this reader quotes as it is",
+          "waives": "tools/gate-parity.py"
+        },
+        {
+          "at": "2026-11-09T00:47:59Z",
+          "text": "this task edits the row and limit for this hook in SECURITY.md and leaves the sentence this reader quotes as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-09T00:47:59Z",
+          "text": "this task edits the row and limit for this hook in SECURITY.md and leaves the sentence this reader quotes as it is",
+          "waives": ".github/ISSUE_TEMPLATE/config.yml"
+        },
+        {
+          "at": "2026-11-09T00:47:59Z",
+          "text": "this task edits the row and limit for this hook in SECURITY.md and leaves the sentence this reader quotes as it is",
+          "waives": "docs/research/guard-ownership-design.md"
+        },
+        {
+          "at": "2026-11-09T00:47:59Z",
+          "text": "it reads the Unreleased heading of CHANGELOG.md, and this task edits a line under that heading",
+          "waives": "tools/release.py"
+        }
+      ]
     }
   ],
   "reviewPerTask": "signals",
