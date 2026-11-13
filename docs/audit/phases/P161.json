@@ -561,7 +561,7 @@
     {
       "id": "P161.7-toy",
       "title": "A takeover removes only the claim it judged, atomically, and every base-run claim is released once nothing names its launch",
-      "status": "in_progress",
+      "status": "done",
       "description": "A verification review of bfc818b2 found the following.\n\nMED 1. plugins/audit/scripts/governance/_locks.py _take_over (near lines 1077-1079): the removal is \"stat the file, check the stamp, unlink the path\", and nothing makes the check and the unlink one step. Two reclaimers judging the same dead claim A: R1's check passes and it is paused; R2 checks, unlinks A and links its live claim B; R1 resumes and unlinks B. Both believe they hold the claim. A human --takeover goes through the same lines. Required: make the removal atomic on the judged file. os.rename the path to a unique sibling in the lock directory, stamp the renamed file, and unlink it only if that stamp equals the judged one. Otherwise put it back with an exclusive os.link (never overwriting a claim created since), remove the sibling, and report the loss as the takeover's refusal. Cases red-first in tests/test__locks.py: a winner linked between the check and the removal is never displaced, and a restored claim is byte-identical. Correct the PLUGIN-BUILD-GUIDE.md sentence near line 3699 to state exactly what holds.\n\nLOW 2. plugins/audit/scripts/governance/drive-phase.py (near lines 3288 and 8705): a background mark from an earlier start is overwritten or spent with replaced/dropped None, so its claim is never released. A launch that is live when replaced and killed later also leaves its claim for good. Required: release the replaced launch's claim by reading the raw state value regardless of the start key. sweep_base_trees (or the drive's start) releases base- claims whose launch no mark names and whose holder _locks judges gone. Cases for both.\n\nLOW 3. plugins/audit/scripts/status/_doctor_hygiene.py (near lines 358-360): the advice says the next base-run reclaims the claim, unconditionally. Lead with \"may be deleted once no base-run of it is live\", and give the reclaim clause only for a launch still current, or let doctor check that. Fix the case.\n\nRed-first for every new case: mutate the fix, assert the mutation landed, see the case go red, and restore in the same command. Purge __pycache__. No F/P/BUG ids in comments. Claim in the commit's claims block only what the cases prove.",
       "files": [
         "plugins/audit/scripts/governance/_locks.py",
@@ -593,14 +593,18 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e8a0d4bc8d70",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "CHANGED THIS ROUND: prove-gates c1/a4 derived drive-phase's new release_orphan_claims as a lint. The cause was the NAME arm, not the walk arm: `_claims` is in _GATE_SHAPES, the prose-number lint's suffix, and walks_the_tree() is false for (ctx, state). not_a_gate_problems() rejects a NOT_A_GATE row for a name-derived function ('already derived by name'), so an exemption row would not have been accepted. The prover's docstring records that same case once before (render_violations, renamed), and the repair here is the same. I renamed the function to release_orphaned_launches(ctx, state), since it gives back the claims of launches no mark names. It is not a verdict, and its signature already takes the ctx and state it reads. The rename was applied at every site: the definition and the call in sweep_base_trees, the release_replaced docstring, and the PLUGIN-BUILD-GUIDE.md base-claim passage. No other new public name ends in a gate shape (claim_path, MUTEX_NAME and _dir_mutex do not). Sweep: tools/prove-gates.py 66 cases, tests/test__locks.py 172, tests/test_drive_phase.py 969, tests/test__doctor_hygiene.py 44; 4/4 files ok, exit 0. UNCHANGED FROM ATTEMPT 1: _locks.py's _dir_mutex (flock on POSIX, msvcrt byte 0 on Windows, bounded by MUTEX_SECONDS, refusing clearly with neither primitive) is held around every claim mutation (_claim/_place_claim, _take_over/_swap_claim, release/_remove_claim, _write_lock), and _claim_stamp carries the bytes. drive-phase gives back earlier-start launch claims through _marked_any_start, and the start-of-run sweep gives back orphaned base- claims once their holder is gone. The doctor advice leads with the deletion. Guide paragraphs updated. The two fixtures were adjusted (tk5's sneak-in writes plainly; _bk_files leaves out the mutex). SECURITY.md was not edited: its lock sentences still hold. Left for the orchestrator: a local process holding .mutex makes claim changes fail open with E_ERR after MUTEX_SECONDS, which SECURITY.md does not state. sweep-costs.json was not re-recorded. Dependants: as answered in attempt 1. The rename touches no caller outside drive-phase.py and the guide (git grep found no other reference).",
+        "descriptive": "The orphan-claim sweep is renamed to release_orphaned_launches, so the prover no longer reads it as a lint by its `_claims` suffix; the mutex, base-claim and doctor-advice fixes stand as filed."
       },
       "startedAt": "2026-11-13T19:38:07Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-13T19:57:12Z",
+      "verifiedBy": [
+        "mx1-mx12 in tests/test__locks.py: the AST invariant that every claim mutation sits under the directory mutex, two-process races over one dead claim, the mutex bound and no-primitive refusals, and the msvcrt branch",
+        "lc11-lc14 in tests/test_drive_phase.py: earlier-start launch claims given back, a replaced launch's claim given back after a kill, and the two claims the sweep leaves",
+        "dh6e in tests/test__doctor_hygiene.py: the base-claim advice leads with the deletion and gives the reclaim only on the current-launch condition"
+      ],
       "notes": [
         {
           "at": "2026-11-13T18:55:50Z",
@@ -632,7 +636,60 @@
         "runId": "2026-11-13T19:57:09Z.ba6e62",
         "status": "passed",
         "at": "2026-11-13T19:57:09Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "e8a0d4bc8d70",
+        "at": "2026-11-13T19:57:12Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-13T19:46:32Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__locks.py tests/test_drive_phase.py tests/test__doctor_hygiene.py` in a throwaway tree at HEAD exited 1 with 8 of 969 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dh6e (house FAIL), mx1 (house FAIL), mx5 (house FAIL), mx6 (house FAIL), mx7 (house FAIL), mx8 (house FAIL), lc11 (house FAIL), lc12 (house FAIL): SELFTEST FAILED: 967/969 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P161.8-toy",
+      "title": "A filesystem that refuses the kernel lock keeps every lock working, with one errno reading shared by both lock users",
+      "status": "pending",
+      "description": "A verification review of e8a0d4bc (the lock-directory mutex) found the following.\n\nMED 1. plugins/audit/scripts/governance/_locks.py _try_lock / _dir_mutex (near lines 976-1038): only contention errnos count as \"held\". Any other errno from the lock call (ENOLCK on NFS with lockd down, EOPNOTSUPP/ENOTSUP on a FUSE or SMB mount) is re-raised, so acquire answers E_ERR, every manifest-mutating command and panel write refuses, and release and takeover fail. Before e8a0d4bc the link/O_EXCL claim worked there. Required: classify a lock-call errno in ONE place shared with plugins/audit/scripts/usage/usage_ledger.py (its _try_lock/_CONTENDED/LOCK_UNAVAILABLE classification), not in two copies that disagree. A filesystem that refuses the kernel lock proceeds without the mutex (the pre-mutex behaviour) and says so in the answer's basis. Contention still waits up to the bound. Cases: a fake flock raising ENOLCK and EOPNOTSUPP, where acquire and release still work and the answer names the missing mutex; and usage_ledger reads the same classification.\n\nLOW 2. tests/test__locks.py race cases (near lines 1046-1136): the 2 s bound starts when .r2in is written, before the second racer's acquire. Under load the unprotected second racer can miss it, and mx5/mx6/mx7 then pass with no mutex. Have the second racer write .r2at when it reaches the critical section (wrap _take_over or _dir_mutex in _MX_CHILD), start the bound from it, and make mx6 require .r2at.\n\nLOW 3. _locks.py (near lines 1023-1024): .mutex is opened O_RDWR|O_CREAT with 0o644, which breaks a clone shared by two OS users (EACCES, then E_ERR). flock works on a read-only descriptor and Windows locking needs read access only: open with O_RDONLY|O_CREAT, create with 0o666 so the umask decides, and add a case.\n\nRed-first for every new case: mutate the fix, assert the mutation landed, see the case go red, and restore in the same command. Purge __pycache__. No F/P/BUG ids in comments. The SECURITY.md and PLUGIN-BUILD-GUIDE.md lock sentences state the degraded mode.",
+      "files": [
+        "plugins/audit/scripts/governance/_locks.py",
+        "tests/test__locks.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "tests/test_usage_ledger.py",
+        "SECURITY.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__locks.py: a lock call refused with ENOLCK or EOPNOTSUPP still lets acquire and release work and names the missing mutex; the race bound starts when the second racer reaches the section; a read-only .mutex still locks",
+          "tests/test_usage_ledger.py: the ledger lock reads the same errno classification"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__locks.py tests/test_usage_ledger.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "Fix the drive's base measurement: a base run that outlives the foreground bound must be measured in the background and decided from its row, and a base that cannot be known must stop the drive rather than resume the writer.",
