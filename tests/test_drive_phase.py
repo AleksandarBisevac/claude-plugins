@@ -21389,9 +21389,12 @@ def _bk_relaunch(M, ctx, task, phase):
 
 
 def _bk_files(root):
-    """Every file under `root`, by path."""
+    """Every file under `root`, by path - but the lock directory's mutex, which
+    the first claim taken there creates and no run leaves behind: it is the
+    directory's own file, held only while a claim changes."""
+    mutex = getattr(_locks, "MUTEX_NAME", ".mutex")
     return set(os.path.join(d, n) for d, _s, names in os.walk(root)
-               for n in names)
+               for n in names if n != mutex)
 
 
 def _bk_dead_claim(M, prefix):
@@ -21525,6 +21528,7 @@ def _base_claim_cases(check):
 
     _bk_released_cases(check, M)
     _bk_replaced_cases(check, M)
+    _bk_orphan_cases(check, M)
 
     with open(_loader.script_path(DRIVER), "r", encoding="utf-8") as fh:
         hits = hand_rolled_claims(fh.read())
@@ -21666,6 +21670,88 @@ def _bk_replaced_cases(check, M):
           holding == [] and len(held_by_child) == 1
           and after_drop3 == held_by_child
           and after_relaunch3 == held_by_child)
+
+
+def _bk_sweep(M, ctx):
+    """`(did, claims)`: the drive's start-of-run sweep over `ctx`'s state, the
+    lines it said, and the base-run claims left after it."""
+    c = dict(ctx, did=[])
+    M.sweep_base_trees(c, M.read_state(c))
+    return c["did"], _bk_base_locks(ctx)
+
+
+def _bk_orphan_cases(check, M):
+    """A claim of a launch no mark names any more is given back once its
+    holder is gone: one marked under an EARLIER start of the task, and one
+    replaced while its run still measured and killed afterwards. A claim the
+    current mark names stays for that launch's own base-run, and a live holder
+    keeps any claim."""
+    later = "2026-11-13T10:00:00Z"
+    ctx, task, phase, proc, left = _bk_dead_claim(M, "drive-bk-earlier-")
+    before = [p for p in left if os.path.exists(p)]
+    _bk_launch_over(M, ctx, dict(task, startedAt=later))
+    after_launch = [p for p in left if os.path.exists(p)]
+    ctx2, task2, phase2, proc2, left2 = _bk_dead_claim(M, "drive-bk-earlier-dr-")
+    before2 = [p for p in left2 if os.path.exists(p)]
+    task2b = dict(task2, startedAt=later)
+    try:
+        _bk_measure_base(M, ctx2, task2b, dict(phase2, tasks=[task2b]))
+        dropped = None
+    except Exception as exc:                                   # noqa: BLE001
+        dropped = "%s: %s" % (type(exc).__name__, exc)
+    after_drop = [p for p in left2 if os.path.exists(p)]
+    check("lc11 the claim a killed run left on a launch marked under an "
+          "EARLIER start of the task is given back when that launch is "
+          "replaced - launched again, and dropped by measure-base - since the "
+          "mark names its launch whatever start it was taken for: %r"
+          % ((left, before, after_launch, left2, before2, dropped,
+              after_drop),),
+          len(left) == 1 and before == left and after_launch == []
+          and len(left2) == 1 and before2 == left2 and dropped is None
+          and after_drop == [])
+
+    ctx3, task3, phase3 = _bk_world(M, "drive-bk-killed-later-")
+    _bi_launch(M, ctx3, task3)
+    proc3, _gate3 = _bk_child(ctx3, task3, phase3, "hold")
+    try:
+        held = _bk_base_locks(ctx3)
+        _bk_launch_over(M, ctx3, task3)
+        kept = _bk_base_locks(ctx3)
+        _did_live, swept_live = _bk_sweep(M, ctx3)
+    finally:
+        proc3.kill()
+        proc3.communicate()
+    did_dead, swept_dead = _bk_sweep(M, ctx3)
+    check("lc12 a launch replaced while its run still measured keeps its claim "
+          "while that run lives - through the replacement AND through the "
+          "drive's sweep - and the sweep gives it back once the run is killed, "
+          "saying so: %r" % ((held, kept, swept_live, swept_dead, did_dead),),
+          len(held) == 1 and kept == held and swept_live == held
+          and swept_dead == []
+          and any(held[0][:-len(".lock")] in ln for ln in did_dead))
+
+    ctx4, task4, phase4, proc4, left4 = _bk_dead_claim(M, "drive-bk-current-")
+    named = _bk_base_locks(ctx4)
+    _did4, swept4 = _bk_sweep(M, ctx4)
+    check("lc13 THE TWIN: a claim of the launch the current mark names is "
+          "left by the sweep even with its holder gone - that launch's own "
+          "base-run reclaims it, and a sweep that gave it back would read "
+          "every gone holder as an orphan: %r" % ((named, swept4),),
+          len(named) == 1 and swept4 == named)
+
+    ctx5, _task5, _phase5 = _bk_world(M, "drive-bk-unread-holder-")
+    ld5 = _locks.lock_dir(ctx5["project"])
+    os.makedirs(ld5, exist_ok=True)
+    stray = "base-%s.P1.1.2026-11-13T08-00-00Z-0a0b0c0d" % (PHASE,)
+    _locks._write_lock(os.path.join(ld5, stray + ".lock"),
+                       {"hostname": "another-host", "note": "base-run",
+                        "startedAt": "2026-11-13T08:00:00Z"})
+    _did5, swept5 = _bk_sweep(M, ctx5)
+    check("lc14 ...and a claim of a launch no mark names whose holder is NOT "
+          "read as gone - recorded on another host, with no pid or session a "
+          "release would refuse on - is left: only a holder seen gone is "
+          "given back: %r" % ((swept5,),),
+          swept5 == [stray + ".lock"])
 
 
 def _next_text(M, root, mpath):

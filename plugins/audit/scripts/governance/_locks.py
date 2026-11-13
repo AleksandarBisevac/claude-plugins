@@ -98,10 +98,24 @@ claim, the exclusive create decides who gets the name, and the loser is told it
 lost. What the row says is then bounded by what happened: a holder that let go on
 its own was displaced by nobody.
 
+EVERY CHANGE TO A CLAIM FILE IS MADE UNDER ONE KERNEL LOCK PER DIRECTORY. "Still
+that claim" is a check and the removal is an act, and every window this module
+closed one at a time was a check and an act some other taker could step between.
+So a create, a takeover's re-check and removal and create, a release's re-check
+and removal, and a fixture's rewrite each run inside `_dir_mutex`: an exclusive
+`flock` on POSIX, or `msvcrt.locking` on byte 0 on Windows, of `MUTEX_NAME` in the
+lock directory. The kernel drops it when its holder dies, so it needs no liveness
+judgement of its own; it is held for file operations only, and the liveness
+probe a verdict needs runs before it is taken, with the bytes re-checked under
+it. Only takers that come through this module hold it: a hand-run `rm` of a
+claim does not, and is not serialised. `tests/test__locks.py` holds the rule
+over this file's AST (`mx1`) and races two real processes over it.
+
 This module carries no `--selftest` of its own; its cases live in
 `tests/test__locks.py` — see `tests/_harness.py`.
 """
 import calendar
+import contextlib
 import errno
 import json
 import os
@@ -148,6 +162,15 @@ POLL_SECONDS = 0.05
 # whose claim is replaced on every ask is not a vanished holder, and the retry
 # skips the deadline check and the sleep, so without a count it never ends.
 REVISIT_LIMIT = 3
+# The file in a lock directory that every claim mutation there is serialised on
+# (`_dir_mutex`). Not a claim: no reader of claims lists a name that does not end
+# in `.lock`, and no lock name can be this one.
+MUTEX_NAME = ".mutex"
+# How long a claim mutation waits for that mutex before it is refused as the
+# error answer. It is held for file operations only, so a wait this long means a
+# holder stopped while it held it, and a bound is what turns that into an answer.
+MUTEX_SECONDS = 10.0
+MUTEX_POLL_SECONDS = 0.01
 # The exit codes `acquire`/`release` answer with. They live here rather than in
 # `audit-lock.py` because they are the CONTRACT of those two functions, and
 # `audit-task.py` branches on them - a caller that must read a code cannot be
@@ -737,6 +760,12 @@ def case_variant(ld, name):
     return None
 
 
+def claim_path(ld, name):
+    """The file the claim on `name` is kept in, in the lock directory `ld` - for
+    a caller outside this module, which then never spells the suffix itself."""
+    return os.path.join(ld, name + ".lock")
+
+
 def read_lock(path):
     try:
         with open(path, "r", encoding="utf-8") as fh:
@@ -904,19 +933,109 @@ def _holder_pid(pid, handed_off):
 
 
 def _write_lock(path, info):
-    """Write via a sibling temp + os.replace, so a reader never sees half a lock."""
+    """Write via a sibling temp + os.replace, so a reader never sees half a lock;
+    under the directory mutex, as every change to a claim file is."""
     d = os.path.dirname(path)
-    fd, tmp = tempfile.mkstemp(dir=d, prefix=".lock-", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
-            json.dump(info, fh)
-        _output.while_shared(lambda: os.replace(tmp, path))
-    except Exception:
+    with _dir_mutex(d or "."):
+        fd, tmp = tempfile.mkstemp(dir=d, prefix=".lock-", suffix=".tmp")
         try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
+                json.dump(info, fh)
+            _output.while_shared(lambda: os.replace(tmp, path))
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
+
+# --- the directory mutex ---------------------------------------------------------
+def _kernel_primitives():
+    """`(fcntl, msvcrt)` - the module of each kernel lock this interpreter has,
+    None for one it has not. Imported here rather than at the top: one of the two
+    is always absent, and a hook that only asks about a lock never needs either."""
+    try:
+        import fcntl
+    except ImportError:
+        fcntl = None
+    try:
+        import msvcrt
+    except ImportError:
+        msvcrt = None
+    return fcntl, msvcrt
+
+
+# The errors a non-blocking lock answers "another holder has it" with: `flock`
+# says EWOULDBLOCK (EAGAIN), `msvcrt.locking` says EACCES or EDEADLOCK.
+_HELD_ERRNOS = tuple(set(getattr(errno, n) for n in
+                         ("EAGAIN", "EWOULDBLOCK", "EACCES", "EDEADLK",
+                          "EDEADLOCK") if hasattr(errno, n)))
+
+
+def _try_lock(fd, fcntl, msvcrt):
+    """True once this call holds the kernel lock on `fd`, False while another
+    holder has it; any other refusal raises."""
+    try:
+        if fcntl is not None:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        else:
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+    except OSError as exc:
+        if exc.errno in _HELD_ERRNOS:
+            return False
         raise
+    return True
+
+
+def _unlock(fd, fcntl, msvcrt):
+    if fcntl is not None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    else:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+
+
+@contextlib.contextmanager
+def _dir_mutex(ld, primitives=None):
+    """Hold the mutex of the lock directory `ld` for the body of a `with`.
+
+    THE ONE PLACE A CLAIM FILE MAY CHANGE. Every create, removal and rewrite of a
+    claim in this module runs inside this block, so a check of what a claim is
+    and the act taken on it are one step to every other taker that comes through
+    here. `flock` on POSIX and `msvcrt.locking` of byte 0 on Windows, both
+    released by the kernel when the holder exits however it exits, so a holder
+    killed inside the block wedges nothing.
+
+    Raises OSError naming the mutex when it stays held past `MUTEX_SECONDS`, and
+    when this interpreter offers neither primitive - a claim is never changed
+    without it. `primitives` is `(fcntl, msvcrt)`, the modules to use; None asks
+    the interpreter (`_kernel_primitives`). Not re-entrant: a body that opened
+    the block again would wait on itself until the bound.
+    """
+    fcntl, msvcrt = primitives if primitives is not None else _kernel_primitives()
+    if fcntl is None and msvcrt is None:
+        raise OSError(errno.ENOLCK, "no kernel lock for the claim mutex in %s: "
+                      "this interpreter has neither fcntl.flock nor "
+                      "msvcrt.locking, and a claim is never changed without "
+                      "one" % (ld,))
+    mutex = os.path.join(ld, MUTEX_NAME)
+    fd = os.open(mutex, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        deadline = time.monotonic() + MUTEX_SECONDS
+        while not _try_lock(fd, fcntl, msvcrt):
+            if time.monotonic() >= deadline:
+                raise OSError(errno.EBUSY, "the claim mutex %s stayed held for "
+                              "%.1f s; nothing was changed" % (mutex,
+                                                                MUTEX_SECONDS))
+            time.sleep(MUTEX_POLL_SECONDS)
+        try:
+            yield
+        finally:
+            _unlock(fd, fcntl, msvcrt)
+    finally:
+        os.close(fd)
 
 
 def _link_into_place(tmp, path, link, info):
@@ -980,6 +1099,19 @@ def _claim(path, info, link=os.link):
         # a taker that reported "could not write" there would send its reader
         # after a permission problem instead of the run that holds the lock.
         return {"taken": False, "exists": True, "error": None}
+    try:
+        with _dir_mutex(os.path.dirname(path) or "."):
+            return _place_claim(path, info, link)
+    except OSError as exc:
+        if _output.sharing_denied(exc):
+            raise               # contention, for `_claim_shared` to wait out
+        return {"taken": False, "exists": False, "error": "%s" % (exc,)}
+
+
+def _place_claim(path, info, link):
+    """`_claim`'s body, for a caller already holding the directory mutex ->
+    `_claim`'s three answers; a sharing denial is raised for the caller to wait
+    out."""
     tmp = None                  # allocated inside the try, so the removal below
                                 # can tell "never created" from "created"
     try:
@@ -1021,19 +1153,21 @@ def _claim_shared(path, info, deadline=None, link=os.link):
 
 
 def _claim_stamp(path):
-    """Enough of a claim file's identity to tell it from its replacement.
+    """A claim file's identity and its bytes, to tell it from its replacement.
 
-    Not the bytes, because the question is not what the claim says: it is whether
-    the file judged a moment ago is still the file about to be removed, and an
-    inode that was swapped answers that without a second read and a second parse.
-    The mtime carries nanoseconds where the filesystem keeps them, and the size is
-    there for the one that does not. None when there is nothing to stamp.
+    The question is whether the file judged a moment ago is still the file about
+    to be removed. The inode, size and mtime answer it where the filesystem keeps
+    them apart; the bytes answer it where it does not - an inode reused at once,
+    or a clock too coarse to tell two writes apart - since every claim this
+    module writes carries a token of its own. None when there is nothing to stamp.
     """
     try:
         st = os.stat(path)
+        with open(path, "rb") as fh:
+            body = fh.read()
     except OSError:
         return None
-    return (st.st_ino, st.st_size, st.st_mtime_ns)
+    return (st.st_ino, st.st_size, st.st_mtime_ns, body)
 
 
 def _read_stamped(path):
@@ -1072,22 +1206,42 @@ def _take_over(path, info, stamp, record, link=os.link):
     holder that let go by itself was displaced by nobody, and a row saying
     otherwise carries a basis for an event no one observed -- which is worse than
     carrying none, because it outlives every reader who could have contradicted it.
+
+    THE CHECK, THE REMOVAL AND THE CREATE ARE ONE HOLD OF THE DIRECTORY MUTEX.
+    Checked and removed as two steps, a second taker could pass the same check,
+    remove the claim and land its own between them - and the first then removed
+    that live claim on its stale check. Under the mutex no other taker changes the
+    name between the three.
     """
+    try:
+        with _dir_mutex(os.path.dirname(path) or "."):
+            return _swap_claim(path, info, stamp, record, link)
+    except OSError as exc:
+        return {"taken": False, "exists": False, "error": "%s" % (exc,),
+                "displaced": False}
+
+
+def _swap_claim(path, info, stamp, record, link):
+    """`_take_over`'s body, for a caller holding the directory mutex."""
     displaced = False
     if stamp is not None and _claim_stamp(path) == stamp:
         try:
             _output.while_shared(lambda: os.unlink(path))
             displaced = True
         except FileNotFoundError:
-            pass                # the holder let go in that instant: the name is
-                                # free and nothing was taken from anybody
+            pass                # removed by something that does not take the
+                                # mutex: the name is free and nothing was taken
+                                # from anybody
         except OSError as exc:
             return {"taken": False, "exists": False, "error": "%s" % (exc,),
                     "displaced": False}
     if displaced:
         info = dict(info)
         info.update(record)
-    res = _claim_shared(path, info, link=link)
+    try:
+        res = _output.while_shared(lambda: _place_claim(path, info, link))
+    except OSError as exc:
+        res = {"taken": False, "exists": False, "error": "%s" % (exc,)}
     res["displaced"] = bool(displaced and res["taken"])
     return res
 
@@ -1678,7 +1832,7 @@ def release(project, name, session=None, pid=None, force=False, out=print):
     if not os.path.exists(path):
         out("[audit-lock] %s was not held -- nothing to release" % name)
         return 0
-    held = read_lock(path)
+    held, stamp = _read_stamped(path)
     conflict = _release_conflict(held, session, pid)
     # Releasing a lock that is no longer yours is how a session that was taken
     # over finds out -- today it deletes the winner's lock and neither ever knows.
@@ -1701,14 +1855,37 @@ def release(project, name, session=None, pid=None, force=False, out=print):
             out("             (this lock records taking over from you)")
         return E_LIVE
     try:
-        _output.while_shared(lambda: os.unlink(path))
+        removed = _remove_claim(path, stamp)
     except OSError as exc:
         out("[audit-lock] cannot remove %s: %s" % (path, exc))
         return E_ERR
+    if removed == "changed":
+        out("[audit-lock] %s is NOT released -- it changed hands while this "
+            "release was being decided, and nothing was removed" % (name,))
+        out("             `audit-lock.py status` says who holds it now.")
+        return E_LIVE
     if held.get("token"):
         _carry(held["token"], False)
-    out("[audit-lock] released %s" % name)
+    out("[audit-lock] released %s" % name if removed == "removed" else
+        "[audit-lock] %s was let go while this release was being decided -- "
+        "nothing to release" % (name,))
     return 0
+
+
+def _remove_claim(path, stamp):
+    """Remove the claim at `path` while it is still the one `stamp` names ->
+    "removed", "gone" when no claim is there, or "changed" when another one is
+    (a None stamp is never the one there). The re-check and the removal are one
+    hold of the directory mutex, so a claim landed since the release judged the
+    old one is never the one removed."""
+    with _dir_mutex(os.path.dirname(path) or "."):
+        now = _claim_stamp(path)
+        if now is None:
+            return "gone"
+        if stamp is None or now != stamp:
+            return "changed"
+        _output.while_shared(lambda: os.unlink(path))
+        return "removed"
 
 
 def collect(project):

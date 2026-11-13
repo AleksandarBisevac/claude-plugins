@@ -1,0 +1,49 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tools/prove-gates.py tests/test__locks.py tests/test_drive_phase.py tests/test__doctor_hygiene.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-13T19:46:32Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__locks.py tests/test_drive_phase.py tests/test__doctor_hygiene.py` in a throwaway tree at HEAD exited 1 with 8 of 969 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dh6e (house FAIL), mx1 (house FAIL), mx5 (house FAIL), mx6 (house FAIL), mx7 (house FAIL), mx8 (house FAIL), lc11 (house FAIL), lc12 (house FAIL): SELFTEST FAILED: 967/969 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "CHANGED THIS ROUND: prove-gates c1/a4 derived drive-phase's new release_orphan_claims as a lint. The cause was the NAME arm, not the walk arm: `_claims` is in _GATE_SHAPES, the prose-number lint's suffix, and walks_the_tree() is false for (ctx, state). not_a_gate_problems() rejects a NOT_A_GATE row for a name-derived function ('already derived by name'), so an exemption row would not have been accepted. The prover's docstring records that same case once before (render_violations, renamed), and the repair here is the same. I renamed the function to release_orphaned_launches(ctx, state), since it gives back the claims of launches no mark names. It is not a verdict, and its signature already takes the ctx and state it reads. The rename was applied at every site: the definition and the call in sweep_base_trees, the release_replaced docstring, and the PLUGIN-BUILD-GUIDE.md base-claim passage. No other new public name ends in a gate shape (claim_path, MUTEX_NAME and _dir_mutex do not). Sweep: tools/prove-gates.py 66 cases, tests/test__locks.py 172, tests/test_drive_phase.py 969, tests/test__doctor_hygiene.py 44; 4/4 files ok, exit 0. UNCHANGED FROM ATTEMPT 1: _locks.py's _dir_mutex (flock on POSIX, msvcrt byte 0 on Windows, bounded by MUTEX_SECONDS, refusing clearly with neither primitive) is held around every claim mutation (_claim/_place_claim, _take_over/_swap_claim, release/_remove_claim, _write_lock), and _claim_stamp carries the bytes. drive-phase gives back earlier-start launch claims through _marked_any_start, and the start-of-run sweep gives back orphaned base- claims once their holder is gone. The doctor advice leads with the deletion. Guide paragraphs updated. The two fixtures were adjusted (tk5's sneak-in writes plainly; _bk_files leaves out the mutex). SECURITY.md was not edited: its lock sentences still hold. Left for the orchestrator: a local process holding .mutex makes claim changes fail open with E_ERR after MUTEX_SECONDS, which SECURITY.md does not state. sweep-costs.json was not re-recorded. Dependants: as answered in attempt 1. The rename touches no caller outside drive-phase.py and the guide (git grep found no other reference).",
+    "descriptive": "The orphan-claim sweep is renamed to release_orphaned_launches, so the prover no longer reads it as a lint by its `_claims` suffix; the mutex, base-claim and doctor-advice fixes stand as filed."
+  },
+  "testsAdded": [
+    "mx1-mx12 in tests/test__locks.py: the AST invariant that every claim mutation sits under the directory mutex, two-process races over one dead claim, the mutex bound and no-primitive refusals, and the msvcrt branch",
+    "lc11-lc14 in tests/test_drive_phase.py: earlier-start launch claims given back, a replaced launch's claim given back after a kill, and the two claims the sweep leaves",
+    "dh6e in tests/test__doctor_hygiene.py: the base-claim advice leads with the deletion and gives the reclaim only on the current-launch condition"
+  ],
+  "casesAdded": [
+    [
+      "mx1",
+      "mx2",
+      "mx3",
+      "mx4",
+      "mx5",
+      "mx6",
+      "mx7",
+      "mx8",
+      "mx9",
+      "mx10",
+      "mx11",
+      "mx12"
+    ],
+    [
+      "lc11",
+      "lc12",
+      "lc13",
+      "lc14"
+    ],
+    [
+      "dh6e"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py release_orphaned_launches is the function the guide's base-claim passage names; the rename changes no behaviour; the other lines stand as in attempt 1\n2 attempt-1 mutations stand; the rename has no new check to break - prove-gates c1/a4, red before the rename, are green after it (66/66)\n3 the derivation reads a name suffix: grep of the new public names for _violations/_drift/_claims found only this one\n4 enforced by prove-gates' _derived_gates and not_a_gate_problems, which is how it was caught\n5 n/a - no property recorded this round\n6 n/a - no guard\n7 no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:c9e27b8cbb1b5d5b6ec6eb04bc3004543f7953fee8c24042dd0af50dcec1cd0f\",\"dirtyDigest\":\"sha256:09dcf2e418dd1119c5626206ece33faa356ad9f94c33e62ceffc30b8652c1a50\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"8b3a63dd4a1f4ce4\",\"plugins/audit/scripts/governance/_locks.py\":\"5befa85a38516f5f\",\"plugins/audit/scripts/governance/drive-phase.py\":\"6fe5717f4250b0de\",\"plugins/audit/scripts/status/_doctor_hygiene.py\":\"599668ef1e920719\",\"tests/test__doctor_hygiene.py\":\"38f1cef55eaa7853\",\"tests/test__locks.py\":\"5e54c70258100e4f\",\"tests/test_drive_phase.py\":\"140534d4502a596b\"},\"head\":\"bf4f59a0\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/scripts/governance/_locks.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/status/_doctor_hygiene.py\",\"tests/test__doctor_hygiene.py\",\"tests/test__locks.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:8187b828f1488df74891966136011ec5ccedccc9a01b27b10ed54e5b9f2c516f\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

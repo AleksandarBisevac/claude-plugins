@@ -3383,8 +3383,9 @@ The two questions about the working copy itself: what is HELD, and what is LEAKI
 called anything older than 60 minutes stale, which told the human a healthy 90-minute phase
 run had crashed. Its advice for a lock with no live holder is by namespace
 (`abandoned_advice`): a plugin lock is offered to a mutating /audit command, a `user-` lock to
-the tool that owns it, and a `base-` claim to the next `base-run` of its launch, which reclaims
-it - otherwise, with no `base-run` of it live, it may be deleted. `check_local_artifacts` (v0.35) catches what the self-ignoring writers
+the tool that owns it, and a `base-` claim may be deleted once no `base-run` of it is live - the
+next `base-run` of its launch reclaims it only while that launch is still the current one, which
+the doctor does not read, so that clause is given as the condition it is. `check_local_artifacts` (v0.35) catches what the self-ignoring writers
 cannot reach: the ledger, stateDir, logsDir or panel pidfile committed BEFORE the markers
 existed. The journal is deliberately not in that list — it is the opposite kind of artifact
 and must stay tracked, which is the reverse warning `_doctor_trail` carries.
@@ -3696,14 +3697,30 @@ a session id other than the caller's, is the caller's own process under an earli
 `audit-lock.py release` command, naming that earlier session and the pid, that lets it go
 (`_own_earlier_session`).
 
-**A takeover removes only the claim it judged.** `_take_over` unlinks a claim only while its
-stamp (`_claim_stamp`: inode, size, mtime) still matches the one it was handed, and that stamp
-has to belong to the bytes the verdict was reached on: stamped after the read, it could name a
-claim another reclaimer linked in between, whose stamp then matches while the dead verdict
-removes a live claim. So `acquire` and `refresh` read through `_read_stamped`, which stamps the
-file on both sides of the read and reads again until the two agree, a bounded number of times;
-a file that never holds still yields no stamp, and no stamp removes nothing. `rc5` and `rf9b` in
-`tests/test__locks.py` plant the other claim between the read and the stamp.
+**Every change to a claim file is made under one kernel lock per lock directory.**
+`_dir_mutex` holds `MUTEX_NAME` in the lock directory — an exclusive `flock` on POSIX,
+`msvcrt.locking` of byte 0 on Windows — around a claim's create, a takeover's re-check, removal
+and create, a release's re-check and removal, and `_write_lock`'s rewrite. The kernel drops it
+when its holder exits however it exits, so it needs no liveness judgement of its own. It is held
+for those file operations only: the liveness probe a verdict needs runs before it is taken.
+A mutex still held after `MUTEX_SECONDS` refuses the change as the error answer, and an
+interpreter with neither primitive is refused the same way, so a claim is never changed without
+it. It serialises only the takers that come through `_locks`: a hand-run `rm` of a claim
+does not take it. `mx1` in `tests/test__locks.py` reads the AST and fails on a removal, link,
+rename/replace or `O_EXCL` create made outside it, and `mx5`–`mx7` race two real processes over
+one dead claim; `mx11` drives the Windows half through a stand-in `msvcrt`, and the same races
+run on the Windows CI leg against the real one.
+
+**A takeover removes only the claim it judged.** `_take_over` removes a claim only while its
+stamp (`_claim_stamp`: inode, size, mtime and the bytes) still matches the one it was handed,
+and makes that check, the removal and the exclusive create in one hold of the mutex, so no other
+taker changes the name between them; `release` re-checks the same way before it removes. That
+stamp has to belong to the bytes the verdict was reached on: stamped after the read, it could
+name a claim another reclaimer linked in between, whose stamp then matches while the dead verdict
+removes a live claim. So `acquire`, `refresh` and `release` read through `_read_stamped`, which
+stamps the file on both sides of the read and reads again until the two agree, a bounded number
+of times; a file that never holds still yields no stamp, and no stamp removes nothing. `rc5` and
+`rf9b` in `tests/test__locks.py` plant the other claim between the read and the stamp.
 
 ### `plugins/audit/scripts/governance/audit-lock.py`
 The CLI over `_locks`: `acquire <name>`, `release <name>`, `status`, over the names
@@ -4942,10 +4959,17 @@ be read counts as live until the library's age bound, and a holder whose probe w
 as live. A run killed after it recorded that it ran has its claim given back when `next` folds its
 record (`drop_progress`); one killed before it recorded that it ran leaves a claim that only its
 own launch's next `base-run` takes over, so when that launch is replaced - dropped by
-`measure-base`, or launched again over the mark - its claim is given back (`release_replaced`),
-through `_locks.release`, which refuses a claim whose recorded process still runs. `lc8` holds
+`measure-base`, or launched again over the mark, whatever start of the task the mark was taken
+under (`_marked_any_start`) - its claim is given back (`release_replaced`), through
+`_locks.release`, which refuses a claim whose recorded process still runs. A run still measuring
+when its launch is replaced keeps its claim; killed after that, nothing names its launch, so the
+drive's start-of-run sweep gives back every `base-` claim of the phase whose launch no mark names
+once `_locks.holder_gone` reads its holder gone (`release_orphaned_launches`), and leaves a claim the
+current mark names to that launch's own `base-run`. `lc8` holds
 that no `base-` claim is left after a run that measured, one refused under its claim, and one
-whose measurement raised; `lc9` and `lc10` hold the replaced launch's release and its live twin. The drive makes no exclusive file of its own, and `lc5` in the suite
+whose measurement raised; `lc9` and `lc10` hold the replaced launch's release and its live twin,
+`lc11` the earlier start's, `lc12` the sweep after a kill, and `lc13` and `lc14` the claims it
+leaves - the current launch's, and one whose holder is not read as gone. The drive makes no exclusive file of its own, and `lc5` in the suite
 reads its source to hold that. Once the run has ended, the red's verdict is read back from the row it was launched
 for, through the same `read_back` the gate's background row goes through: a row no repeat may copy
 stands as recorded, and no rerun's `--no-reuse` is added; the dispatch and the wait are printed by the same builders as the gate's

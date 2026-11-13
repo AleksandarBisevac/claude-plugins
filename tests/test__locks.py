@@ -19,6 +19,7 @@ months. Only an identity assertion fails on that, and only if something makes it
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import ast
 import errno
 import json
 import os
@@ -927,6 +928,403 @@ def _cases(check):
     _harness.stage(check, "sd-block", _sharing_cases)
     _harness.stage(check, "ap-block", _ancestor_cases)
     _harness.stage(check, "zr-block", _refused_ps_cases)
+    _harness.stage(check, "mx-block", _mutex_cases)
+
+
+# --- every claim mutation under one kernel-held directory mutex -----------------
+# The scanner below is the invariant: a call that removes, links, renames or
+# exclusively creates a file in `_locks.py` stands lexically inside a
+# `with _dir_mutex(...)` block, or inside a private function every call of which
+# does. It reads the AST, so a comment naming those calls is not a call.
+_MUTATING_OS = ("unlink", "remove", "link", "rename", "replace")
+
+
+def _claim_op(call):
+    """The name of the claim-file mutation `call` makes, else None."""
+    f = call.func
+    if isinstance(f, ast.Name) and f.id == "link":
+        return "link (the seam)"
+    if not (isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name)
+            and f.value.id == "os"):
+        return None
+    if f.attr in _MUTATING_OS:
+        return "os.%s" % (f.attr,)
+    if f.attr == "open" and any(
+            isinstance(n, ast.Attribute) and n.attr == "O_EXCL"
+            for a in call.args[1:2] for n in ast.walk(a)):
+        return "os.open(O_EXCL)"
+    return None
+
+
+def _is_mutex_with(node, helper):
+    return isinstance(node, ast.With) and any(
+        isinstance(i.context_expr, ast.Call)
+        and isinstance(i.context_expr.func, ast.Name)
+        and i.context_expr.func.id == helper for i in node.items)
+
+
+def _mutex_reading(source, helper="_dir_mutex"):
+    """`{"ops", "calls", "defs"}` - every claim mutation as (function, line,
+    what, guarded), every call of a module function as (callee, caller,
+    guarded), and the module's top-level function names."""
+    tree = ast.parse(source)
+    defs = set(n.name for n in tree.body if isinstance(n, ast.FunctionDef))
+    ops, calls = [], []
+
+    def walk(node, owner, guarded):
+        for child in ast.iter_child_nodes(node):
+            inside = guarded or _is_mutex_with(child, helper)
+            if isinstance(child, ast.Call):
+                what = _claim_op(child)
+                if what:
+                    ops.append((owner, child.lineno, what, guarded))
+                if (isinstance(child.func, ast.Name) and child.func.id in defs
+                        and child.func.id != owner):
+                    calls.append((child.func.id, owner, guarded))
+            walk(child, owner, inside)
+
+    for fn in tree.body:
+        if isinstance(fn, ast.FunctionDef) and fn.name != helper:
+            walk(fn, fn.name, False)
+    return {"ops": ops, "calls": calls, "defs": defs}
+
+
+def unguarded_claim_ops(source, helper="_dir_mutex"):
+    """`[(line, function, what)]` - every claim mutation not held under the
+    directory mutex. A function's unguarded call is excused only where the
+    function is private and called, and every call of it is guarded or made
+    from a function that is itself excused; a function nothing calls excuses
+    nothing."""
+    got = _mutex_reading(source, helper)
+    callers = {}
+    for callee, caller, guarded in got["calls"]:
+        callers.setdefault(callee, []).append((caller, guarded))
+
+    def excused(fn, seen):
+        if fn in seen or not fn.startswith("_") or not callers.get(fn):
+            return False
+        return all(g or excused(c, seen | {fn}) for c, g in callers[fn])
+
+    return sorted((line, fn, what) for fn, line, what, guarded in got["ops"]
+                  if not guarded and not excused(fn, frozenset()))
+
+
+# The fixture modules the scanner is proven against: each plants one shape.
+_MX_PLANTED = {
+    "bare": ("import os\n\n\ndef _dir_mutex(ld):\n    pass\n\n\n"
+             "def bad(p):\n    os.unlink(p)\n"),
+    "excl": ("import os\n\n\ndef _dir_mutex(ld):\n    pass\n\n\n"
+             "def bad(p):\n    os.open(p, os.O_CREAT | os.O_EXCL, 0o644)\n"),
+    "leaky": ("import os\n\n\ndef _dir_mutex(ld):\n    pass\n\n\n"
+              "def _inner(a, p):\n    os.replace(a, p)\n\n\n"
+              "def outer(a, p):\n    with _dir_mutex('d'):\n        _inner(a, p)\n\n\n"
+              "def leaky(a, p):\n    _inner(a, p)\n"),
+    "held": ("import os\n\n\ndef _dir_mutex(ld):\n    pass\n\n\n"
+             "def _inner(a, p, link=os.link):\n    link(a, p)\n\n\n"
+             "def outer(a, p):\n    with _dir_mutex('d'):\n"
+             "        go = lambda: os.unlink(p)\n        go()\n"
+             "        _inner(a, p)\n"),
+}
+
+
+# A racer: one process taking (`acquire` with `reclaim`) or giving back
+# (`release`) the claim at `name`. A `paused` racer stops at its removal of the
+# claim file - its check already passed, its act not yet made - writing
+# `<gate>.checked` and waiting for `<gate>.go`; a plain one writes `<gate>.r2in`
+# just before it starts. Each prints `[code, lines]`.
+_MX_CHILD = r'''
+import json, os, sys, time
+args = json.loads(sys.argv[1])
+sys.path.insert(0, args["tests"])
+import _harness  # noqa: F401  (sys.path for scripts/ and hooks/)
+import _locks as M
+gate, claim = args["gate"], args["claim"]
+if args["paused"]:
+    real = os.unlink
+    seen = []
+
+    def paused(p, *a, **k):
+        if os.fspath(p) == claim and not seen:
+            seen.append(p)
+            open(gate + ".checked", "w").close()
+            deadline = time.time() + 60
+            while not os.path.exists(gate + ".go") and time.time() < deadline:
+                time.sleep(0.01)
+        return real(p, *a, **k)
+    os.unlink = paused
+else:
+    open(gate + ".r2in", "w").close()
+said = []
+if args["verb"] == "release":
+    code = M.release(args["proj"], args["name"], session=args["who"],
+                     out=said.append)
+else:
+    code = M.acquire(args["proj"], args["name"], session=args["who"], wait=0,
+                     reclaim=True, out=said.append)
+sys.stdout.write(json.dumps([code, said]))
+'''
+
+
+def _mx_racer(proj, name, claim, gate, who, verb, paused):
+    args = {"tests": os.path.dirname(os.path.abspath(__file__)), "proj": proj,
+            "name": name, "claim": claim, "gate": gate, "who": who,
+            "verb": verb, "paused": paused}
+    return subprocess.Popen([sys.executable, "-c", _MX_CHILD, json.dumps(args)],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+def _mx_wait_for(path, proc, seconds):
+    deadline = time.time() + seconds
+    while (not os.path.exists(path) and proc.poll() is None
+           and time.time() < deadline):
+        time.sleep(0.01)
+    return os.path.exists(path)
+
+
+def _mx_answer(proc):
+    try:
+        out, err = proc.communicate(timeout=90)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        out, err = proc.communicate()
+    try:
+        return json.loads(out.decode("utf-8", "replace"))
+    except ValueError:
+        return ["no answer", err.decode("utf-8", "replace")[-400:]]
+
+
+def _mx_race(proj, first_verb, first_who, second_who):
+    """Two real processes over one dead claim: the first stops between its
+    check and its removal, the second is started then, and is given
+    `_MX_BLOCKED_SECONDS` to finish before the first is let go.
+    -> `{"first", "second", "second_early", "on_disk", "checked"}`."""
+    name = "index"
+    ld = M.lock_dir(proj)
+    os.makedirs(ld, exist_ok=True)
+    claim = os.path.join(ld, name + ".lock")
+    M._write_lock(claim, {"sessionId": "s-DEAD", "pid": _gone_pid(),
+                          "hostname": platform.node(), "note": "dead",
+                          "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                                     time.gmtime())})
+    gate = os.path.join(tempfile.mkdtemp(prefix="audit-locks-mx-gate-"), "g")
+    first = _mx_racer(proj, name, claim, gate, first_who, first_verb, True)
+    second = None
+    try:
+        checked = _mx_wait_for(gate + ".checked", first, 60)
+        second = _mx_racer(proj, name, claim, gate, second_who, "acquire",
+                           False)
+        _mx_wait_for(gate + ".r2in", second, 60)
+        deadline = time.time() + _MX_BLOCKED_SECONDS
+        while second.poll() is None and time.time() < deadline:
+            time.sleep(0.02)
+        second_early = second.poll() is not None
+    finally:
+        open(gate + ".go", "w").close()
+    got = {"first": _mx_answer(first),
+           "second": _mx_answer(second) if second is not None else None,
+           "second_early": second_early, "checked": checked,
+           "on_disk": M.read_lock(claim).get("sessionId")
+           if os.path.exists(claim) else None}
+    shutil.rmtree(os.path.dirname(gate), ignore_errors=True)
+    _unlink_quietly(claim)
+    return got
+
+
+# How long the second racer is given to finish while the first holds its
+# check: long enough that a second racer under NO mutex has finished its whole
+# takeover, which is what a mutation that empties the mutex is caught by.
+_MX_BLOCKED_SECONDS = 2.0
+
+
+class _FakeMsvcrt(object):
+    """`msvcrt.locking` as Windows answers it: a byte already locked refuses
+    with OSError, `refusals` times, then is granted. Records every call."""
+    LK_NBLCK, LK_UNLCK, LK_LOCK = 2, 0, 1
+
+    def __init__(self, refusals):
+        self.refusals, self.calls = refusals, []
+
+    def locking(self, fd, mode, nbytes):
+        self.calls.append((mode, nbytes, os.lseek(fd, 0, os.SEEK_CUR)))
+        if mode == self.LK_NBLCK and self.refusals > 0:
+            self.refusals -= 1
+            raise OSError(errno.EACCES, "Permission denied")
+
+
+_MX_HOLDER = r'''
+import json, os, sys, time
+args = json.loads(sys.argv[1])
+sys.path.insert(0, args["tests"])
+import _harness  # noqa: F401
+import _locks as M
+with M._dir_mutex(args["dir"]):
+    open(args["gate"] + ".held", "w").close()
+    deadline = time.time() + 60
+    while not os.path.exists(args["gate"] + ".go") and time.time() < deadline:
+        time.sleep(0.01)
+'''
+
+
+def _mutex_cases(check):
+    """One kernel-held mutex per lock directory serialises every claim
+    mutation: the AST says none is made outside it, two real processes over one
+    dead claim end with exactly one holder, and the shim refuses clearly where
+    the kernel offers neither primitive."""
+    src_path = M.__file__
+    with open(src_path, "r", encoding="utf-8") as fh:
+        source = fh.read()
+    has_helper = callable(getattr(M, "_dir_mutex", None))
+    unguarded = unguarded_claim_ops(source)
+    seen = _mutex_reading(source)
+    check("mx1 no claim-file mutation in _locks.py - an unlink, a link, a "
+          "rename or replace, an O_EXCL create - is made outside the directory "
+          "mutex: each sits in a `with _dir_mutex(...)` block, or in a private "
+          "function every call of which does: %r" % (unguarded,),
+          has_helper and unguarded == [])
+    found = sorted(set(what for _f, _l, what, _g in seen["ops"]))
+    check("mx2 ...and that answer is about a scan that found the mutations: "
+          "the unlink, the link seam and the replace are all among them, so the "
+          "empty list above is not a scan that read nothing: %r" % (found,),
+          set(["os.unlink", "link (the seam)", "os.replace"]) <= set(found))
+    planted = dict((k, unguarded_claim_ops(v)) for k, v in _MX_PLANTED.items())
+    check("mx3 the scanner reports a planted unguarded unlink, an unguarded "
+          "O_EXCL create, and a private function called once under the mutex "
+          "and once outside it - while the allow case, every op under the "
+          "mutex directly, through a lambda or through a private function only "
+          "ever called under it, is quiet: %r" % (planted,),
+          [w for _l, _f, w in planted["bare"]] == ["os.unlink"]
+          and [w for _l, _f, w in planted["excl"]] == ["os.open(O_EXCL)"]
+          and [(f, w) for _l, f, w in planted["leaky"]]
+          == [("_inner", "os.replace")]
+          and planted["held"] == [])
+    excused = sorted(set(f for f, _l, _w, g in seen["ops"] if not g)
+                     - set(f for _l, f, _w in unguarded))
+    texts = [_mx_text(p) for p in _mx_product()]
+    leaked = [n for n in excused
+              if any(("_locks.%s(" % (n,)) in t for t in texts)]
+    check("mx4 ...and no module outside _locks.py calls a private function the "
+          "scanner excuses by its callers, which would make a mutation it "
+          "judged guarded reachable without the mutex: %r of %r"
+          % (leaked, excused), texts and leaked == [])
+
+    if not shutil.which("git"):
+        _harness.skip(check, "mx5 two real processes race over one dead claim",
+                      "git provides the shared directory a lock lives in", True)
+        return
+    proj = tempfile.mkdtemp(prefix="audit-locks-mx-")
+    try:
+        subprocess.call(["git", "init", "-q", proj])
+        race = _mx_race(proj, "acquire", "s-FIRST", "s-SECOND")
+        codes = [race["first"][0], race["second"][0]]
+        check("mx5 two takers in two processes over one dead claim, the second "
+              "started while the first stands between its check and its "
+              "removal: exactly ONE takes the lock, and the claim on disk names "
+              "it - the first, whose check was made under the mutex the second "
+              "then waited on: %r" % (race,),
+              race["checked"] and codes.count(0) == 1
+              and race["first"][0] == 0 and race["second"][0] == M.E_LIVE
+              and race["on_disk"] == "s-FIRST")
+        check("mx6 ...and the second did not finish while the first held its "
+              "check: it waited on the mutex, which is the whole of what makes "
+              "the check and the removal one step: %r" % (race,),
+              race["checked"] and race["second_early"] is False)
+        race = _mx_race(proj, "release", "s-DEAD", "s-TAKER")
+        check("mx7 a release and a takeover in two processes over one dead "
+              "claim, the taker started while the release stands between its "
+              "check and its removal: the release removes the claim it judged "
+              "and never the taker's, so the taker that was told it holds the "
+              "lock is the one the claim on disk names: %r" % (race,),
+              race["checked"] and race["first"][0] == 0
+              and race["second"][0] == 0 and race["on_disk"] == "s-TAKER"
+              and race["second_early"] is False)
+
+        ld = M.lock_dir(proj)
+        gate = os.path.join(tempfile.mkdtemp(prefix="audit-locks-mx-hold-"), "g")
+        holder = subprocess.Popen(
+            [sys.executable, "-c", _MX_HOLDER, json.dumps(
+                {"tests": os.path.dirname(os.path.abspath(__file__)),
+                 "dir": ld, "gate": gate})],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        had = M.MUTEX_SECONDS if has_helper else None
+        try:
+            _mx_wait_for(gate + ".held", holder, 60)
+            if has_helper:
+                M.MUTEX_SECONDS = 0.3
+            started = time.monotonic()
+            res = M._claim(os.path.join(ld, "usage.lock"), {"sessionId": "s"})
+            spent = time.monotonic() - started
+        finally:
+            if has_helper:
+                M.MUTEX_SECONDS = had
+            open(gate + ".go", "w").close()
+            _mx_answer(holder)
+            shutil.rmtree(os.path.dirname(gate), ignore_errors=True)
+        check("mx8 a mutex another process holds past the bound refuses the "
+              "claim AT the bound and as the error answer naming the mutex - "
+              "not as a lock somebody holds, and with no claim written: %r"
+              % ((res, round(spent, 3)),),
+              res["taken"] is False and res["exists"] is False
+              and "mutex" in (res["error"] or "") and 0.25 <= spent < 5.0
+              and not os.path.exists(os.path.join(ld, "usage.lock")))
+    finally:
+        shutil.rmtree(proj, ignore_errors=True)
+
+    tmp = tempfile.mkdtemp(prefix="audit-locks-mx-shim-")
+    try:
+        try:
+            with M._dir_mutex(tmp, primitives=(None, None)):
+                refused = None
+        except OSError as exc:
+            refused = "%s" % (exc,)
+        check("mx9 a kernel offering neither flock nor msvcrt.locking is "
+              "refused, naming both, rather than run without a mutex: %r"
+              % (refused,),
+              refused is not None and "fcntl" in refused
+              and "msvcrt" in refused)
+        real_prims = M._kernel_primitives
+        M._kernel_primitives = lambda: (None, None)
+        try:
+            res = M._claim(os.path.join(tmp, "index.lock"), {"sessionId": "s"})
+        finally:
+            M._kernel_primitives = real_prims
+        check("mx10 ...and a claim taken there is the error answer, not taken "
+              "and not held, with nothing written: %r" % (res,),
+              res["taken"] is False and res["exists"] is False
+              and "msvcrt" in (res["error"] or "")
+              and not os.path.exists(os.path.join(tmp, "index.lock")))
+        fake = _FakeMsvcrt(2)
+        with M._dir_mutex(tmp, primitives=(None, fake)):
+            inside = list(fake.calls)
+        check("mx11 the Windows half: byte 0 of the mutex file is locked with "
+              "the non-blocking mode, a refusal is asked again until granted, "
+              "and the same byte is unlocked on the way out: %r" % (fake.calls,),
+              [c[0] for c in inside] == [fake.LK_NBLCK] * 3
+              and [c[0] for c in fake.calls] == [fake.LK_NBLCK] * 3
+              + [fake.LK_UNLCK]
+              and all(c[1] == 1 and c[2] == 0 for c in fake.calls))
+        listed = sorted(os.listdir(tmp))
+        check("mx12 the mutex file is no lock: nothing that lists the lock "
+              "directory's `.lock` names sees it: %r" % (listed,),
+              listed and not any(n.endswith(".lock") for n in listed))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _mx_product():
+    """Every `.py` of the product but `_locks.py` itself."""
+    out = []
+    for d, _s, names in os.walk(_output.PLUGIN_ROOT):
+        out.extend(os.path.join(d, n) for n in names
+                   if n.endswith(".py") and n != "_locks.py")
+    return out
+
+
+def _mx_text(path):
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.read()
+    except (OSError, ValueError):
+        return ""
 
 
 # --- a claim held by the caller's own process under an earlier session --------
@@ -1692,8 +2090,13 @@ def _takeover_cases(check):
         stamp = M._claim_stamp(path)
 
         def _sneak_in(src, dst):
-            """Another run claims the name between the unlink and the link."""
-            M._write_lock(dst, {"sessionId": "s-FASTER"})
+            """A claim lands between the unlink and the link. No taker of this
+            module can do that under the directory mutex, so it is written
+            here the way only a writer outside the mutex could - plainly, and
+            not through `_write_lock`, which would wait on the mutex this
+            takeover holds."""
+            with open(dst, "w", encoding="utf-8") as fh:
+                json.dump({"sessionId": "s-FASTER"}, fh)
             return os.link(src, dst)
 
         res = M._take_over(path, {"sessionId": "s-LOSER"}, stamp,

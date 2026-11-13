@@ -1353,6 +1353,13 @@ def _marked(state, kind, task):
     return entry.get("value") if entry.get("start") == start_key(task) else None
 
 
+def _marked_any_start(state, kind, task):
+    """The value `kind` holds for `task`, whatever start it was marked under.
+    For a caller giving back what a mark named: a mark of an earlier start no
+    longer applies, and still names what it named."""
+    return ((state.get(kind) or {}).get(task["id"]) or {}).get("value")
+
+
 def _spend(state, kind, task):
     """`_marked`, and the mark dropped: a mark that holds for ONE use."""
     held = _marked(state, kind, task)
@@ -3140,10 +3147,15 @@ def base_progress_path(ctx, task_id, launch):
     """The record the background base run of `task_id`'s launch `launch`
     writes, beside the drive's state and in a directory of its own, so no
     reader of the phases' state files takes it for one."""
-    name = re.sub(r"[^A-Za-z0-9._-]", "-", "%s.%s.%s" % (
-        ctx["phase"], task_id, launch))
+    name = _lock_alphabet("%s.%s.%s" % (ctx["phase"], task_id, launch))
     return os.path.join(os.path.dirname(state_path(ctx)), BASE_PROGRESS_DIRNAME,
                         name + ".json")
+
+
+def _lock_alphabet(text):
+    """`text` in the alphabet a lock name may carry, one character for one -
+    so the spelling of a prefix is the prefix of the spelling."""
+    return re.sub(r"[^A-Za-z0-9._-]", "-", text)
 
 
 def read_base_progress(path):
@@ -3262,8 +3274,10 @@ def release_replaced(ctx, task_id, held):
     killed before it recorded that it ran would otherwise stay for good.
     Through `_locks.release`, which refuses a claim recording another process
     that still runs: a run still measuring keeps its claim, and gives it back
-    itself when it ends. A mark that is not a background launch names no
-    claim, and nothing is released for it."""
+    itself when it ends - or, killed first, the drive's sweep gives it back
+    (`release_orphaned_launches`). `held` is the mark whatever start it was taken
+    under (`_marked_any_start`). A mark that is not a background launch names
+    no claim, and nothing is released for it."""
     if not (isinstance(held, dict) and held.get("background")):
         return
     name = base_lock_name(base_progress_path(ctx, task_id, launch_key(held)))
@@ -3285,7 +3299,7 @@ def launch_base(ctx, state, task, row, tree, why, cut=None):
     inline run of it was stopped, kept for the reader."""
     argv = base_argv(ctx, task)
     at = _utc_stamp()
-    replaced = _marked(state, BASE_MEASURED, task)
+    replaced = _marked_any_start(state, BASE_MEASURED, task)
     held = {"of": row.get("runId"), "status": row.get("status"),
             "said": "launched", "verdict": None,
             "run": None, "atBase": [], "introduced": [], "background": True,
@@ -3578,6 +3592,42 @@ def sweep_base_trees(ctx, state):
         write_state(ctx, state)
     for path in spent:
         drop_progress(ctx, path)
+    release_orphaned_launches(ctx, state)
+
+
+def release_orphaned_launches(ctx, state):
+    """Give back each base-run claim of this phase whose launch no mark of the
+    phase names, once `_locks` reads its holder as gone; each one given back,
+    or refused, is a did-line.
+
+    A launch replaced while its run still measured keeps its claim then
+    (`release_replaced`), and a run killed after that leaves it with no launch
+    to reclaim it. A claim the current mark names is left: that launch's own
+    `base-run` reclaims it. A holder not read as gone - live, on another host,
+    unprobed - keeps its claim, and the release itself refuses a claim that
+    changed since it was read."""
+    named = set()
+    for task_id, entry in sorted((state.get(BASE_MEASURED) or {}).items()):
+        held = (entry or {}).get("value")
+        if isinstance(held, dict) and held.get("background"):
+            named.add(base_lock_name(base_progress_path(ctx, task_id,
+                                                        launch_key(held))))
+    prefix = _locks.BASE_PREFIX + _lock_alphabet("%s." % (ctx["phase"],))
+    ld = _locks.lock_dir(ctx["project"])
+    for row in _locks.collect(ctx["project"]):
+        name = row["name"]
+        if not name.startswith(prefix) or name in named or not ld:
+            continue
+        if not _locks.holder_gone(row["info"], _locks.claim_path(ld, name)):
+            continue
+        said = []
+        code = _locks.release(ctx["project"], name, out=said.append)
+        ctx["did"].append(
+            "base-run claim %s, of a launch no mark names, given back: %s"
+            % (name, row["basis"]) if code == 0 else
+            "base-run claim %s, of a launch no mark names, left: %s"
+            % (name, " ".join(ln.strip() for ln in said)
+               or "the lock answered %d" % (code,)))
 
 
 def gate_red_lines(text):
@@ -8702,7 +8752,8 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
         # mark still names belongs to a run that may still be measuring, and
         # what that run writes after is its own launch's record, which no mark
         # reads once its launch is gone (`fresh_keeper`).
-        dropped = _spend(state, BASE_MEASURED, task)
+        dropped = _marked_any_start(state, BASE_MEASURED, task)
+        _spend(state, BASE_MEASURED, task)
         write_state(ctx, state)
         release_replaced(ctx, task["id"], dropped)
         ctx["did"].append("%s's base measurement dropped, to be taken again"

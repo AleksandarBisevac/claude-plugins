@@ -348,16 +348,20 @@ def abandoned_advice(names):
     command. A `user-` lock belongs to the tool that took it, and advice to wait
     for an /audit command would wait for something that never comes. A
     `base-` claim is one background base launch's, and only that launch's own
-    `base-run` takes it over; no mutating command offers to.
+    `base-run` takes it over; no mutating command offers to. This reads no
+    drive state, so it cannot say whether the launch is still the current one:
+    a replaced launch is never run again, and the reclaim is offered only on
+    that condition, after the deletion that holds either way.
     """
     user = [n for n in names if _locks.is_user_name(n)]
     base = [n for n in names if n.startswith(_locks.BASE_PREFIX)]
     ours = [n for n in names if n not in user and n not in base]
     parts = []
     if base:
-        parts.append("%s: a background base launch's claim - the next base-run "
-                     "of that launch reclaims it; otherwise, with no base-run "
-                     "of it live, it may be deleted" % (", ".join(base),))
+        parts.append("%s: a background base launch's claim - it may be deleted "
+                     "once no base-run of it is live; only if its launch is "
+                     "still the current one does the next base-run of that "
+                     "launch reclaim it" % (", ".join(base),))
     if ours:
         parts.append("%s: a mutating /audit command will offer to take over; if "
                      "no run is live you can delete the file" % (", ".join(ours),))

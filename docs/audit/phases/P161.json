@@ -591,14 +591,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-11-13T18:55:52Z",
+      "startedAt": "2026-11-13T19:38:07Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -627,7 +627,12 @@
           "text": "Redirect, which supersedes MED 1 of the description. Do NOT add a rename/put-back sequence. The takeover race is now a recurring class: each round closed one window of a multi-step check-then-act on claim files. Fix it with an invariant. Every mutation of a claim in a lock directory runs inside one short critical section, held by a kernel advisory lock on a mutex file in that directory: fcntl.flock(fd, LOCK_EX) on POSIX, msvcrt.locking on byte 0 on Windows, both stdlib. The kernel drops it when the holder dies, so the mutex needs no liveness judgement. Mutations are claim create/link, takeover (read, judge, stamp check, unlink, link new), release, and shared claims.\n\nRequired:\n(1) _locks.py: one context helper for the directory mutex, a cross-platform shim that refuses clearly when neither primitive is available. Stdlib, 3.8, no annotations.\n(2) Every claim-file mutation in _locks.py goes through it. Hold it only around the file ops, never across a liveness ps call longer than a bounded probe. If a judge must run ps, run it, then re-check the bytes under the mutex before acting. The P161.6 stamp checks may be simplified or kept as defence.\n(3) An AST invariant case in tests/test__locks.py that fails if os.unlink, os.link, os.rename/os.replace or an O_EXCL open on a lock-dir path appears outside the helper's with block.\n(4) Red-first two-process racing cases (real processes, not threads) over a dead claim, with the winner planted between check and act, asserting exactly one holder. Mutate the helper to a no-op, assert the mutation landed, see the case go red, and restore in the same command. Purge __pycache__.\n(5) LOW 2 and LOW 3 stay as briefed.\n(6) The PLUGIN-BUILD-GUIDE.md and SECURITY.md sentences on lock semantics state exactly what holds, Windows included.\nIf the Windows half cannot be proven here, write the case for the Windows CI leg. If this needs more than _locks.py and its callers, stop and say so instead of submitting."
         }
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-13T19:57:09Z.ba6e62",
+        "status": "passed",
+        "at": "2026-11-13T19:57:09Z"
+      }
     }
   ],
   "request": "Fix the drive's base measurement: a base run that outlives the foreground bound must be measured in the background and decided from its row, and a base that cannot be known must stop the drive rather than resume the writer.",

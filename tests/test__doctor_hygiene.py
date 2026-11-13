@@ -164,6 +164,18 @@ def _cases(check):
                   and "deleted" in _base_part
                   and "offer to take over" not in _base_part
                   and "index: a mutating /audit command" in _mixed)
+            _lead = "it may be deleted once no base-run of it is live"
+            _cond = "only if its launch is still the current one"
+            check("dh6e ...and the advice LEADS with the deletion that is "
+                  "always true once no base-run of it is live, and gives the "
+                  "reclaim only on the condition that makes it true - a "
+                  "replaced launch is never run again, so nothing reclaims "
+                  "its claim: %r" % (_base_part,),
+                  _base_part.strip().startswith(
+                      "a background base launch's claim - " + _lead)
+                  and _cond in _base_part
+                  and _base_part.index(_lead) < _base_part.index(_cond)
+                  < _base_part.index("reclaim"))
             shutil.rmtree(ldir, ignore_errors=True)
 
             # --------------------------------------- check_local_artifacts
