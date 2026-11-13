@@ -4,7 +4,7 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
-## [Unreleased]
+## [3.9.0]
 
 ### Added
 - **A typed `/audit:run <id>` or `/audit:phase <id>` runs the drive with no model request when
@@ -22,6 +22,85 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   hook**: no process there can be sent a signal another process can catch, so Esc would end only
   the launcher while `auto` and its writers kept spending, and the hook stays out of the way until
   a real run proves a stop there.
+- **`drive-phase.py auto` runs the drive's mechanical steps itself** and ends with a distinct
+  answer on done, on stop, and on a step that needs a model; it is what the prompt hook above
+  starts. A wave runs under `auto` only when every member is a dispatch with a command, a step
+  that owes a board echo goes to the model, and an unreaped child or a closed terminal ends the
+  drive with an answer that says so.
+
+### Changed
+- **The cost phase: a task run through the plugin spends less before the writer does any work.**
+  - *The writer's skills are disclosed, not appended whole.* The writer's system prompt carries
+    each declared skill's name, its description and its `## Checklist` section when it has one,
+    instead of every `SKILL.md` in full; the session record names the skills the writer actually
+    invoked, and a resumed writer is not warned about a skill it invoked in an earlier round.
+  - *A slow gate step is left to the drive.* A gate step whose recorded mean outlives the Bash
+    tool's foreground bound is not handed to the writer to run; the brief names it once, with its
+    mean and how many runs measured it, and says the drive's gate runs it.
+  - *Every gate the drive runs inside `next` is chosen one way.* A gate whose recorded mean
+    outlives that bound, or that no run has measured, is dispatched to the background
+    (`dispatch-gate`, then `wait-gate`) and decided from its recorded row, so the CLI moving a
+    long command to the background can no longer kill it into a second measurement; a
+    measured-fast gate runs inline. The estimate weighs the affected suites `run-test-gate.py`
+    adds, and a mean counts only runs that measured.
+  - *The red excerpt is the failing cases.* The gate row and the drive's resume prompt read
+    failing cases through one reader, derived steps included, and say so when no case can be
+    read, instead of quoting the tail of the output.
+  - *A task's dependants include the documents that describe it.* The brief's `Who depends on
+    this` section also lists prose that names a decision, step or config key one of the task's
+    files defines, so a document the change would make stale is visible before the edit.
+- **The writer is always told which tests to run.** Every `tests.add` suite a task declares is
+  run by a command the writer brief lists, or the brief names the suite and says why it could
+  give no command. When every gate step is slow, the brief still lists the task's own suites; a
+  slow whole-tree step whose runner takes suite paths is narrowed to the task's suites. A
+  suite counts as run only by a command that really runs it: a filtered run is not a whole
+  run, a suite goes only to a runner the plan hands that kind of suite, and the derived command
+  keeps the step's own shell words.
+- **The base of a red gate is measured, and an unknown base stops instead of resuming the
+  writer.** When a task gate is red and no comparable base run is recorded, the drive measures
+  the red steps once per start at the base commit, in a detached tree it removes afterwards.
+  That measurement is a gate step like any other: past the foreground bound, unmeasured, or
+  under `auto` it runs in the background (`dispatch-base`, then `wait-base`) with no 120-second
+  cut, and the verdict is read back from its recorded row. A red step the gate derived is
+  measured through the failing suites its name lists, spelled the way the gate spelled them.
+  Red at base is decided only on cases both runs name.
+  - A red whose base fails every case it fails stops as `gate-red-base`, with no writer session
+    sent: `block`, `rerun`, or the owner commits over it with a reason.
+  - A base nobody can know - the base run left no reading, failed or was killed - stops as
+    `gate-red-base-unknown`, an `ask` the owner answers, with no session sent and no round
+    spent: `measure-base`, `rerun`, `block`, or commit over it. Before this release that red was
+    read as introduced by the task and sent back to the writer, spending rounds on a red the
+    task did not cause.
+  - A red whose base genuinely cannot be re-run (its runner named no failing suite, or nothing
+    can spell its suites) has no base reading and goes to the writer as before; such a base
+    decides no later red.
+  - One launch has one base run: a second `base-run` for the same launch refuses, and a claim
+    left by a base run that died is taken over by the next one, so a killed base run never
+    wedges the drive.
+
+### Fixed
+- **Taking over or releasing a lock claim is serialised by a kernel mutex in the lock
+  directory.** Every create, removal and rewrite of a claim runs under `flock` (POSIX) or
+  `msvcrt.locking` (Windows) on the lock directory's `.mutex` file, released by the kernel
+  however the holder exits, so two takers can no longer both believe they hold a claim. A
+  takeover removes only the claim it judged: it renames the file aside, checks it, and puts it
+  back with an exclusive link when it is not the one judged. A filesystem that refuses kernel
+  locks outright (`ENOLCK`, `EOPNOTSUPP`, `ENOTSUP`, `ENOSYS`) keeps the behaviour from before
+  the mutex existed and says so on a `mutex:` line in the answer; any other error from the lock
+  call is an error, never a silent skip. The usage ledger reads the same errno classification.
+- **A refused `ps` is a third answer, not "alive" or "dead".** Under a sandbox that refuses
+  `/bin/ps`, a process whose state cannot be read is `unverified`: it counts as live, its basis
+  names the refusal, and a lock holder is not taken over on it.
+- The simulated-Windows test cases no longer reach for the POSIX-only `os.killpg` when the suite
+  runs on a real Windows host.
+
+### Known limits
+- **The prompt hook passes through on Windows.** `/audit:run` and `/audit:phase` there run as
+  they did with no hook, with a model request, until a real run proves that Esc can stop the
+  drive and its writers.
+- **Cost against a plain session, as history:** an internal measurement taken on 2026-11-13 put the plugin's cost ratio against a plain Claude Code session (Q1) at
+  1.445 over 16 paired tasks. It is not re-derived by anything in this repository, and it is a
+  property of that task set rather than a promise about yours.
 
 ## [3.8.0]
 
