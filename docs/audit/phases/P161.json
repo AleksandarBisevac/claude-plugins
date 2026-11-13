@@ -30,7 +30,7 @@
     {
       "id": "P161.1",
       "title": "A red gate's base is measured in the background under the one gate rule, and an unknowable base stops the drive instead of resuming the writer",
-      "status": "in_progress",
+      "status": "done",
       "description": "plugins/audit/scripts/governance/drive-phase.py measures a red task gate's base inline: base_reading_for -> measure_base -> _base_in runs run-test-gate.py --base-of <runId> --record in a detached tree under run_verb_bounded(..., BASE_MEASURE_SECONDS) (around line 2780-2930). When that run outlives 120 s it is torn down and recorded verdict not-knowable, and gate_red_decision then treats the red as introduced and returns gate-red-writer (resume) - so a red the base reproduces spends writer rounds and the run stops at round 2/2. Observed on P128.38: the failing suite's base run under a sandbox takes longer than 120 s; the one failing case fails at the base, case for case.\n\nREQUIRED, as one rule rather than a special case:\n1. The base measurement is a drive gate step like the task gate: it goes through gate_in_background's decision (always a step of its own under auto; unmeasured or past the foreground bound -> background; measured under the bound -> may stay inline), is launched as a dispatch with a self-contained run: command (build the detached tree at the red run's head, run run-test-gate.py --base-of --record with no 120 s cut, tear the tree down through remove_base_tree, record the reading on the start's baseMeasured mark), waited on, and decided from what it recorded - the same launch/wait/read-back shape as launch_gate / background_gate / gate_wait_said. Reuse those helpers or factor a shared one; do not write a second copy of the launch-wait-readback machinery. The kill safety the inline path has (mark before the run naming the tree and pids, sweep_base_trees removing a killed run's tree) must hold for the background run too.\n2. A base reading that is not knowable (the base run produced no row, failed, or was really cut) must NOT fall through to gate-red-writer or spend a writer round. It stops as a distinct decision (name it e.g. gate-red-base-unknown) whose options are rerun (measure the gate again), measure-base (measure the base again, clearing the start's mark) and block (with --reason); add it to DECISIONS, the step text table, the decision kind map, --explain and every table the drive's own lints hold decisions to. no-base (no comparable base run and none measurable because HEAD moved) keeps its current meaning unless the same reasoning applies - state the choice in the outcome.\n3. drive-phase.py auto (the prompt hook's driver) must run the new step without a model, as it runs dispatch-gate/wait-gate today.\n4. Prose that describes the base measurement must say the new behaviour: plugins/audit/reference/execute-task.md (the recorded-gate step, around line 265), plugins/audit/reference/orchestrator.md (around line 16-19), PLUGIN-BUILD-GUIDE.md (around lines 4907 and 4957), and the comment block above BASE_MEASURE_VERDICTS. No F/P/BUG ids in comments.\n\nCASES (tests/test_drive_phase.py; tests/test_drive_without_model.py if auto is touched):\n- the k15n shape: a red task gate, a base run that outlives the foreground bound (simulate with a stub run-test-gate whose --base-of sleeps past a shortened bound or reports a long recorded mean - do not sleep 120 s in a suite), the base reproduces every failing case -> the drive dispatches the base measurement to the background, reads it back, and decides gate-red-base; no gate-red-writer, no resume, writer resumes counter unchanged.\n- a base that cannot be known -> the new stop decision with options rerun/measure-base/block, and no writer round spent.\n- measure-base clears the mark and measures again; a killed background base run leaves a tree that the next drive sweeps.\n- under auto the base step runs without a model.\nProve each red-first: mutate the fix (e.g. route not-knowable back to gate-red-writer; restore the inline bounded call), assert the mutation landed, and show the case goes red; restore in the same command. Purge __pycache__ between mutate/restore.\n\nDEPENDANTS (owe a check, each named in the outcome): tests/test_drive_phase.py, tests/test_drive_without_model.py (auto's step table), tests/test_run_test_gate.py and tests/test__evidence_io.py if --base-of or base_run change, tests/test__impact.py (reads drive-phase decision tables), tools/_suite.py, the decision tables gate-parity / lints hold to SECURITY.md and docs, plugins/audit/scripts/governance/run-test-gate.py (--base-of contract).",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -59,14 +59,21 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e4e4e4f653d4",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "ATTEMPT 2 - what changed this round: only plugins/audit/reference/orchestrator.md. Attempt 1's addition took the file to 62225 bytes against measure-context's DOC_CEILINGS 62000 (HEAD held 61995), which reddened mc24/mc34 in tools/measure-context.py and fb15 in tests/test_audit_task.py. The opening paragraph's gate sentence and my base sentences are now one statement: 'A gate or base unmeasured or past the Bash bound is a background step (`dispatch-gate`, `dispatch-base`); an unknowable base is `gate-red-base-unknown` (execute-task.md step 3).' The clauses dropped from HEAD's sentence ('background Bash, read from its ledger row', 'one measured under it runs inline') are carried by execute-task.md step 3, which the sentence now points to. The ceiling is not raised. measure-context.py --gate: exit 0, reference/orchestrator.md 61996 / 62000. Sweep over tools/measure-context.py tests/test_audit_task.py tests/test_drive_phase.py tests/test_drive_without_model.py tests/test__deps.py tests/test__refs.py: exit 0, 6/6 files ok, 2877 cases (measure-context 40, audit_task 1252, drive_phase 937, drive_without_model 72, _deps 284, _refs 292). mc24 and mc34 print PASS by name. ATTEMPT 1 WORK KEPT AS IS: the base measurement goes through gate_in_background. Past the bound, unmeasured, or under auto it is dispatch-base: a run: line for the new verb drive-phase.py base-run (no bound, kill-safe record on baseMeasured written through fresh_keeper), then wait-base, then a read-back from the record (base_gate, base_reading_for). An inline base past BASE_MEASURE_SECONDS is handed to the background. The new decision gate-red-base-unknown (rerun|measure-base|block) is in DECISIONS, STEPS, SIGNAL_VERBS and GATE_VERDICT_DECISIONS. It covers a measurable base run that left no reading, failed or was killed (cut_short), or whose reading names no base run (base_behind); measure-base drops the record. The no-base choice: a red run HEAD has left still goes to the writer, and so does a completed but incomparable not-knowable reading, as before. gate_said/gate_wait_said share background_dispatch/background_wait with base_said/base_wait_said. Other docs: execute-task.md step 3, PLUGIN-BUILD-GUIDE.md, module docstring and section comment. Tests: bq1-bq5, dm84, bt1/bt2 rewritten, sn1 corpus extended. DEPENDANTS (attempt 1, unchanged): test_run_test_gate 618 / test__evidence_io 335 / test__impact 44 / tools/_suite 35 / test__output_lints 182 green, still correct (run-test-gate.py and _evidence_io unedited). Now also tools/measure-context.py and tests/test_audit_task.py, which read orchestrator.md's size: changed in this round, green. KNOWN LIMIT unchanged: the state file has no writer lock, so a lost base-run write reads as an unknown stop or a wait, never the writer; this is stated in the section comment.",
+        "descriptive": "orchestrator.md brought back under its context ceiling (61996/62000) with the base rule in one sentence pointing to execute-task.md step 3; the background base measurement and gate-red-base-unknown from attempt 1 are kept."
       },
       "startedAt": "2026-11-13T08:37:11Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-13T08:57:34Z",
+      "verifiedBy": [
+        "bq1 k15n shape: base past the bound by recorded mean -> dispatch-base, wait-base, base-run played, gate-red-base; no inline run, no writer, resumes 0, no tree left",
+        "bq2 base run answered nothing -> gate-red-base-unknown with rerun|measure-base|block; rerun stops there again; no writer round",
+        "bq3 measure-base drops the mark and re-measures -> gate-red-base",
+        "bq4 background base-run killed mid-measure -> next sweeps its tree and stops gate-red-base-unknown",
+        "bq5 auto runs gate and base as children, ends needs-model on gate-red-base",
+        "dm84 the drive's dispatch-base/wait-base prints classify as run/child-exited under the real auto_answer"
+      ],
       "notes": [
         {
           "at": "2026-11-13T07:57:37Z",
@@ -99,7 +106,58 @@
         "runId": "2026-11-13T08:57:31Z.47bd7b",
         "status": "passed",
         "at": "2026-11-13T08:57:31Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "e4e4e4f653d4",
+        "at": "2026-11-13T08:57:34Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-13T08:46:54Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_drive_without_model.py` in a throwaway tree at HEAD exited 1 with 10 of 72 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sn1 (house FAIL) and 9 more: SELFTEST FAILED: 71/72 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P161.2-toy",
+      "title": "The background base run and next never lose each other's state, and the gate verdict after a base run is read back, never measured again inline",
+      "status": "pending",
+      "description": "The phase review of P161.1 (e4e4e4f6) found these in plugins/audit/scripts/governance/drive-phase.py. Fix the class, not each instance.\n\nMED 1. base-run (the background base measurement) and next both read-modify-write the one drive state file. base-run takes no lock (fresh_keeper, near line 3011). next reads the state once at drive() (near line 10918) and writes its copy back repeatedly: take_lock, sweep_base_trees, drive_locked, give_back_lock. A next during a running base-run is the normal case under wait-base and in waves, and it overwrites base-run's done/reading. cut_short then reads that as unknowable and gives a false gate-red-base-unknown. Or the lost ran=True makes base_waiting loop and start a second base run. Required: base-run writes its progress and result only to a file of its own per launch under the drive's state dir (keyed by task and launch), written atomically. next folds that file into the mark when it reads. No process but next writes the shared state file. Remove the comment that accepts the lost write.\n\nMED 2. write_state (near line 1309) opens the file with \"w\" and dumps into it, which is not atomic. Make every state write atomic: a temp file in the same directory, then os.replace. Move started(proc.pid) (near line 1189) inside run_verb_bounded's try, so a raising callback still tears the group down. The started callback must report a state failure, not raise.\n\nMED 3. base_gate (near line 3143) gets the red verdict back after a base run by calling task_gate/record_gate directly. When the red row cannot be repeated (a timed-out row, a rerun mark that adds --no-reuse, a changed tree), the whole slow gate runs inline and unbounded inside next, which is the shape this phase removes. Record the red run's id and status on the base mark at launch, and read the verdict back through read_back (unrepeatable_red for a row no repeat may copy), the same path background_gate uses.\n\nLOW, same change:\n(a) A mark the previous version wrote for a cut base ({verdict: not-knowable, run: None}, with no ran/background key) must read as unknowable, not fall to gate-red-writer.\n(b) Apply a mark's reading only to the red run it was measured for (held['of'] equals the row's run or the run it repeats). Otherwise it is unknowable.\n(c) gate-red-base-unknown's rule text names the owner's commit-task-work.py --override-verdict route, as gate-red-base does, and offers resume and retry as answers that are never recommended. A base that can never be measured must not be a dead end for a real regression. Nothing is sent without an explicit answer.\n\nCases for each, red-first: mutate the fix, assert the mutation landed, see the case go red, and restore in the same command. Purge __pycache__ between cycles. Simulate interleaving deterministically, by calling base-run's writer and next's read/write in a chosen order, not with sleeps. Dependants: tests/test_drive_without_model.py (auto runs base-run), tests/test__worktrees.py, and the prose in PLUGIN-BUILD-GUIDE.md and execute-task.md that describes the base run and the unknown stop. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "tests/test_drive_without_model.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/execute-task.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a next interleaved with a running base-run keeps the base reading; a half-written state file is never read; the verdict after a base run is read back and an unrepeatable red is not measured again; a mark from the previous version stops as unknown; a reading of another run does not decide this red"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_drive_without_model.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "Fix the drive's base measurement: a base run that outlives the foreground bound must be measured in the background and decided from its row, and a base that cannot be known must stop the drive rather than resume the writer.",

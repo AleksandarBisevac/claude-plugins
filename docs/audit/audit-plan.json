@@ -1984,7 +1984,8 @@
       "P159.4-pue",
       "P159.3-pue",
       "P159.5-pue",
-      "P161.1"
+      "P161.1",
+      "P161.2-toy"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -3452,7 +3453,8 @@
       "P155.29-gfj",
       "P156.8-3st",
       "P157.9-mwz",
-      "P161.1"
+      "P161.1",
+      "P161.2-toy"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -10922,7 +10924,8 @@
       "P157.12-mwz",
       "P159.1",
       "P159.3-pue",
-      "P161.1"
+      "P161.1",
+      "P161.2-toy"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -12980,7 +12983,8 @@
       "P157.12-mwz",
       "P159.1",
       "P159.3-pue",
-      "P161.1"
+      "P161.1",
+      "P161.2-toy"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -13456,7 +13460,8 @@
       "P159.4-pue",
       "P159.5-pue",
       "P160.1",
-      "P161.1"
+      "P161.1",
+      "P161.2-toy"
     ]
   },
   "bugs": [
