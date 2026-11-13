@@ -295,7 +295,7 @@
     {
       "id": "P161.4-toy",
       "title": "An unknown base is the owner's to answer, a base that could not be re-run never decides a later red, and one launch has one base run",
-      "status": "in_progress",
+      "status": "done",
       "description": "The second phase review of P161 (63a1fb5b, 25d80df7) found these. Fix them in one change.\n\nMED 1. plugins/audit/scripts/governance/drive-phase.py SIGNAL_VERBS (near line 901): decide-gate-red-base-unknown is a judge decision, and orchestrator.md lets the orchestrator answer a judge by itself. The decision now offers resume (a writer round) and retry (an attempt), so an orchestrator can spend a writer round on a red nothing blames on the task, which this phase exists to prevent. \"Never recommended\" lives only in the rule text. Required: signal it as ask, the way decide-gate-red-base is, so the owner answers it. Update every table the drive's lints hold signal kinds to, and the prose naming it. A case: the unknown stop signals ask.\n\nMED 2. base_reading_for (near lines 3301-3315) with base_measure_due (near line 2880). After a first red whose base could not be re-run (the mark holds measurable False, reading None, of = the first run), a writer round's next red has a new run id. base_measure_due is False because the mark exists, mine is False, and the not-mine branch stops as gate-red-base-unknown. So every later round of an unrunnable derived red, and of the HEAD-moved case, stops for the owner. Required: a mark with measurable False never decides a different red. Treat it as no mark for a red it was not taken for, so that red is measured again (and may now be runnable), or goes to the writer as no-base when it still cannot be run. A case: two unrunnable reds in one start, where the second gives gate-red-writer.\n\nLOW 3. run-test-gate.py _derived_at_base (near lines 5228-5236) spells the base command from the runner's failingSuites paths. The derivation at HEAD spelled it from the paths in the step's name. Map each named suite to the name-listed path it matches with _ev.listed_by(suite, _ev.derived_step_suites(name)) and spell that path. When none matches, put the step in notRun with that reason. A case: the runner prints a path relative to its own directory while the step name spells it from the repository root.\n\nLOW 4. base_run (near lines 3374-3391): two base-run processes for one launch both pass the ran check before either writes. Claim the launch's record first with an exclusive create (O_CREAT|O_EXCL on the record or a .claim beside it). A second process exits with a usage error naming the running one. A case: a second base-run for a claimed launch refuses and measures nothing.\n\nRed-first for each new case: mutate the fix, assert the mutation landed, see the case go red, and restore in the same command. Purge __pycache__ between cycles. Dependants: tests/test_drive_without_model.py (auto and the ask signal), plugins/audit/reference/orchestrator.md and execute-task.md, PLUGIN-BUILD-GUIDE.md. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -326,14 +326,21 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c78c89c5d6f1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Round 2 changes only what the drive's red named. (1) drive-phase.py claim_launch: os.fdopen(fd, 'w', encoding='utf-8', newline='\\n'). The write now passes the newline argument nw4 requires (line 3232). (2) reference/orchestrator.md: my header sentence is down to 'unknowable base is `gate-red-base-unknown`, an `ask` (execute-task.md).' The routing detail stays in execute-task.md step 3. HEAD's orchestrator.md measures 61996 against the 62000 ceiling, so the room was 4 bytes. My sentence adds ', an `ask`' and drops ' step 3' from the pointer, 3 bytes net. git grep found nothing pinning 'execute-task.md step 3'. The ceiling was not raised. Measured: `python3 tools/measure-context.py --gate` exit 0, 'reference/orchestrator.md 61999 / 62000'. Before the trim it was 62077, then 62006 (both BREACH). Sweep over tests/test__output_lints.py, tools/measure-context.py, tests/test_audit_task.py, tests/test_drive_phase.py, tests/test_run_test_gate.py and tests/test_drive_without_model.py: exit 0, '6/6 files ok, 3125 cases'. Everything from attempt 1 is unchanged: the ask verb, unmeasurable_elsewhere, the base-run claim and the name-listed derived spelling. Its dependants answer stands.",
+        "descriptive": "Fixed the two gates attempt 1 broke: the claim file's text write passes newline='\\n', and orchestrator.md is back under its context ceiling with a one-clause mention that the unknown-base stop is an ask."
       },
       "startedAt": "2026-11-13T17:11:47Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-13T17:31:18Z",
+      "verifiedBy": [
+        "bi12 the unknown stop signals ask",
+        "bdr4 a second unrunnable red in one start goes to gate-red-writer",
+        "bi13 a second base-run for a claimed launch refuses and measures nothing",
+        "bi14 an unmeasurable mark is no mark to another red; a repeat of its own red is not measured again",
+        "bod5 a runner-relative failing suite is spelled as the step name's path",
+        "bod6 a failing suite the name does not list leaves the step in notRun"
+      ],
       "notes": [
         {
           "at": "2026-11-13T16:37:52Z",
@@ -371,7 +378,55 @@
         "runId": "2026-11-13T17:31:15Z.15bd84",
         "status": "passed",
         "at": "2026-11-13T17:31:15Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "c78c89c5d6f1",
+        "at": "2026-11-13T17:31:18Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-13T17:20:56Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_run_test_gate.py tests/test_drive_without_model.py` in a throwaway tree at HEAD exited 1 with 6 of 624 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bdr4 (house FAIL), bi12 (house FAIL), bi13 (house FAIL), bi14 (house FAIL), bod5 (house FAIL), bod6 (house FAIL): SELFTEST FAILED: 622/624 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P161.5-toy",
+      "title": "A base-run claim left by a dead holder is taken over, so a killed base run never wedges the drive",
+      "status": "pending",
+      "description": "A verification review of c78c89c5 found a med regression in the exclusive claim on a base-run launch (plugins/audit/scripts/governance/drive-phase.py claim_launch near lines 3212-3234, the refusal in base_run near 3437-3444, base_waiting near 3046-3052).\n\nclaim_launch creates the .claim file before anything records that the run started: ran=True is written only by take_base's first keep, after the ledger read. Nothing checks whether the pid in the claim is alive, and only drop_progress removes the claim. If base-run dies between the claim and ran (Esc under auto tears the group down, a kill, or an exception after the claim file is created), what is left is a claim with a dead pid, no progress record, and a mark with background set and ran False. Every later next prints wait-base with the same run: line, every relaunch is refused with E_USAGE (\"pid N holds its claim\"), and measure-base cannot be answered, because nothing is pending during a wait. The drive is stuck until someone deletes the claim by hand. Before c78c89c5, relaunching the run: line was how a wait recovered.\n\nRequired: a claim whose holder is not alive (_locks.pid_alive answers False, read through the shared liveness rule, so a refused ps keeps its third answer and never counts as dead) is taken over by the next base-run. Remove it and create it again exclusively, then measure. A claim with no readable pid that is older than a short grace counts as abandoned in the same way. Two live base-runs still get exactly one claim. Cases, red-first: a claimant killed before ran, so the relaunch takes the claim over and measures; a live claimant, so the second run is refused; an unreadable claim. Mutate the fix, assert the mutation landed, see the case go red, and restore in the same command. Purge __pycache__. No F/P/BUG ids in comments. The commit's claims block must say what the cases prove; the previous one wrongly said no case was added.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a claim whose holder died before ran is taken over by the relaunch, which measures; a live claimant still refuses a second run; an unreadable claim past the grace is taken over"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "Fix the drive's base measurement: a base run that outlives the foreground bound must be measured in the background and decided from its row, and a base that cannot be known must stop the drive rather than resume the writer.",
