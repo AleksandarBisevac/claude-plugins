@@ -755,6 +755,11 @@
           "at": "2026-11-13T20:02:18Z",
           "text": "quotes a PLUGIN-BUILD-GUIDE.md passage unrelated to locks; the task edits only the _locks section's degraded-mode sentence",
           "waives": "tests/test_drive_phase.py"
+        },
+        {
+          "at": "2026-11-13T20:02:32Z",
+          "text": "reads PLUGIN-BUILD-GUIDE.md's generated module map; the task adds no module",
+          "waives": "tools/lints/_deps.py"
         }
       ]
     }
