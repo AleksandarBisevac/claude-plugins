@@ -204,7 +204,7 @@
     {
       "id": "P161.3-toy",
       "title": "A red in a derived gate step has its base measured through the failing suites it names, and a step that cannot be re-run is no-base, not an unknown stop",
-      "status": "in_progress",
+      "status": "done",
       "description": "A red in a step the gate derives (affected/related, affected/python and the like) cannot have its base measured: run-test-gate.py --base-of runs only the red steps whose command the row keeps verbatim (base_commands, near line 5209), and a derived step's row keeps digests only. So --base-of exits 2 \"nothing to run at its base\". Since P161.1 the drive reads that as an unknowable base and stops as gate-red-base-unknown. Before that it sent the red to the writer as no-base. Either way the question \"does the base fail the same cases\" goes unanswered for every derived step, which is where most task-gate reds land. It is the same class as a cut base run.\n\nREQUIRED, one rule:\n1. --base-of measures a derived red step at the base by running the failing suites that step's row names (its failing cases are per suite path), with the command the runner derives for those suites the way the gate itself derives it. Reuse the derivation run-test-gate uses for affected steps (_affected, _suite_at_base, base_red); do not write a second spelling of the runner command. The base row then reads like any other base run, and base_red compares case by case.\n2. Where a derived step's base genuinely cannot be re-run (no failing suite named, a runner with no per-suite command), --base-of says so per step in its JSON answer (notRun with the reason). The drive then treats that step's base as no-base, structurally unmeasurable like a moved HEAD: the red goes to the writer as it did before P161. It is not the unknown stop, which stays for a base run that was started and was cut, killed, or left no row. State the choice in the code comment above the decision.\n3. Cases (tests/test_run_test_gate.py, tests/test_drive_phase.py): a red affected step whose failing suite fails the same case at base gives gate-red-base with no writer round; a red affected step whose suite is green at base goes to the writer; a derived step that cannot be re-run gives no-base and goes to the writer, not gate-red-base-unknown. Red-first for each: mutate the fix, assert the mutation landed, and restore in the same command. Purge __pycache__.\n\nDependants: tests/test__evidence_io.py, tests/test__affected.py (if present), tests/test_drive_without_model.py, and the prose in PLUGIN-BUILD-GUIDE.md and plugins/audit/reference/execute-task.md that describes --base-of and the unknown stop. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -235,14 +235,17 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "25d80df7d7be",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "run-test-gate.py: base_commands(row, manifest, phase_id, tree) now returns (commands, published, left). A red step whose row keeps its command verbatim runs as recorded (and stays published). A red DERIVED step goes through the new _derived_at_base: its arm is read off the name, its suites are _ev.named_failing_suites([step]) (the suites its failing cases are recorded under), and the command comes from _affected.entries_for([{path, arm}], phase, meta, tree), the same derivation affected_steps/steps_for use, so the runner command is not spelled a second time. Derived commands stay unpublished, so the row keeps a digest as the task run did; _record_base_run now takes the published list. A step that cannot be re-run goes into left as {name, reason}. Reasons: arm not in _affected.ARMS, runner named no failing suite, entries_for's widen reason (no path-scoped spelling), no command spelled, declared step kept as a digest. _run_base_of passes row.phaseId or args.phase. When nothing can run, --json now prints the answer shape (steps [], notRun with reasons, baseRed null, runId null) and exits E_ASK as before; the text form names each step with its reason. notRun is now a list of {name, reason} instead of a list of names. git grep found no other reader of notRun or base_commands. drive-phase.py: new base_unrunnable(answer) returns the joined reasons only when the answer ran nothing (steps == []) and every red step is in notRun. _base_in returns a fourth value, measurable, which is False only on that answer. measure_base passes it through, so take_base marks measurable False and unknowable False, the row's no-base reading stands, and base_reading_for sends the red to the writer (gate-red-writer) and not to gate-red-base-unknown. That stop is kept for a base run that was cut, killed, failed or left no reading. The choice is stated in the section comment (\"A BASE NO COMMAND CAN RUN IS NOT A BASE NOBODY KNOWS\") and in a comment above the decision in _base_in. Docs: run-test-gate.py's --base-of section comment, PLUGIN-BUILD-GUIDE.md (the run-test-gate --base-of paragraph and the drive-phase unknown-stop paragraph) and execute-task.md step 3 now describe a derived step's base being measured, notRun, and an unrunnable base going to the writer. Tests: test_run_test_gate.py has a new bod-block (bod1 to bod4) with a real fixture: a plan with derived spelling and a related listing, a narrow gate, an affected/related step red, and --base-of run in a detached worktree at HEAD. test_drive_phase.py has a new bdr-block (bdr1 to bdr3) that drives the whole loop end to end (writer session, gate with a derived step, inline base measurement) and is registered in STAGES. Red-first, each mutation applied with its landing asserted, run, restored in the same command, and __pycache__ purged around it: M1 (derived branch disabled in base_commands) turned bod1-bod4 and bdr1-bdr3 red. M2 (base_unrunnable always None) turned bdr3 red with gate-red-base-unknown. M2b, the over-fire direction (any notRun read as unrunnable), turned bdr1 and bdr2 red. M3 (no JSON when nothing runs) turned bod3 red. Before the fix, bod1-bod3 failed by assertion with exit 2 'digests only', bod4 raised TypeError on the old signature, and bdr1-bdr3 were red. Sweeps: the three named suites exit 0 ('3/3 files ok, 1645 cases'). The lint and dependant suites test__deps, test__output_lints, test__refs, test__evidence_io and test__affected_tests exit 0 ('5/5 files ok, 1144 cases'). house_style_violations returned [], prose_number_claims and doc_prose_numbers report nothing in the changed files, and measure-context --gate exits 0 (GATE OK). Dependants: tests/test__evidence_io.py still correct (no _evidence_io change; swept green). tests/test__affected_tests.py still correct (entries_for is only called, not changed; swept green). tests/test_drive_without_model.py still correct (swept green, 72 cases). full-gate.py and the other importers of run-test-gate are still correct: no removed name, and base_commands/_record_base_run have no caller outside run-test-gate.py (git grep). The drive-phase importers are still correct: _base_in and measure_base are called only inside drive-phase.py, and measure_base's return keys are unchanged. PLUGIN-BUILD-GUIDE.md and execute-task.md are changed as described above. orchestrator.md was not touched (outside scope); its one-line summary 'unknowable base is gate-red-base-unknown' is still true, since an unrunnable base is not called unknowable.",
+        "descriptive": "--base-of now re-runs a red derived step's failing suites at the base through the gate's own derivation; a derived step that cannot be re-run is named in notRun and goes to the writer as no-base instead of stopping as gate-red-base-unknown"
       },
       "startedAt": "2026-11-13T16:03:10Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-13T16:30:52Z",
+      "verifiedBy": [
+        "bod1-bod4 in tests/test_run_test_gate.py: a derived red re-run at base reads base-only; the green-base twin reads introduced; a step whose runner named no failing suite is in notRun with nothing run and no base row recorded; with no path-scoped spelling, and for a digest-only declared step, each is in notRun with its own reason",
+        "bdr1-bdr3 in tests/test_drive_phase.py: a derived red the base reproduces stops gate-red-base with no writer round; the green-base twin goes to gate-red-writer; a derived step that cannot be re-run is marked measurable false, not unknowable, and goes to gate-red-writer, not gate-red-base-unknown"
+      ],
       "notes": [
         {
           "at": "2026-11-13T16:03:08Z",
@@ -275,7 +278,62 @@
         "runId": "2026-11-13T16:30:49Z.506a77",
         "status": "passed",
         "at": "2026-11-13T16:30:49Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "25d80df7d7be",
+        "at": "2026-11-13T16:30:52Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-13T16:20:40Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with 6 of 622 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bdr1 (house FAIL), bdr2 (house FAIL), bdr3 (house FAIL), bod1 (house FAIL), bod2 (house FAIL), bod3 (house FAIL): SELFTEST FAILED: 618/622 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P161.4-toy",
+      "title": "An unknown base is the owner's to answer, a base that could not be re-run never decides a later red, and one launch has one base run",
+      "status": "pending",
+      "description": "The second phase review of P161 (63a1fb5b, 25d80df7) found these. Fix them in one change.\n\nMED 1. plugins/audit/scripts/governance/drive-phase.py SIGNAL_VERBS (near line 901): decide-gate-red-base-unknown is a judge decision, and orchestrator.md lets the orchestrator answer a judge by itself. The decision now offers resume (a writer round) and retry (an attempt), so an orchestrator can spend a writer round on a red nothing blames on the task, which this phase exists to prevent. \"Never recommended\" lives only in the rule text. Required: signal it as ask, the way decide-gate-red-base is, so the owner answers it. Update every table the drive's lints hold signal kinds to, and the prose naming it. A case: the unknown stop signals ask.\n\nMED 2. base_reading_for (near lines 3301-3315) with base_measure_due (near line 2880). After a first red whose base could not be re-run (the mark holds measurable False, reading None, of = the first run), a writer round's next red has a new run id. base_measure_due is False because the mark exists, mine is False, and the not-mine branch stops as gate-red-base-unknown. So every later round of an unrunnable derived red, and of the HEAD-moved case, stops for the owner. Required: a mark with measurable False never decides a different red. Treat it as no mark for a red it was not taken for, so that red is measured again (and may now be runnable), or goes to the writer as no-base when it still cannot be run. A case: two unrunnable reds in one start, where the second gives gate-red-writer.\n\nLOW 3. run-test-gate.py _derived_at_base (near lines 5228-5236) spells the base command from the runner's failingSuites paths. The derivation at HEAD spelled it from the paths in the step's name. Map each named suite to the name-listed path it matches with _ev.listed_by(suite, _ev.derived_step_suites(name)) and spell that path. When none matches, put the step in notRun with that reason. A case: the runner prints a path relative to its own directory while the step name spells it from the repository root.\n\nLOW 4. base_run (near lines 3374-3391): two base-run processes for one launch both pass the ran check before either writes. Claim the launch's record first with an exclusive create (O_CREAT|O_EXCL on the record or a .claim beside it). A second process exits with a usage error naming the running one. A case: a second base-run for a claimed launch refuses and measures nothing.\n\nRed-first for each new case: mutate the fix, assert the mutation landed, see the case go red, and restore in the same command. Purge __pycache__ between cycles. Dependants: tests/test_drive_without_model.py (auto and the ask signal), plugins/audit/reference/orchestrator.md and execute-task.md, PLUGIN-BUILD-GUIDE.md. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "tests/test_drive_phase.py",
+        "tests/test_run_test_gate.py",
+        "tests/test_drive_without_model.py",
+        "plugins/audit/reference/orchestrator.md",
+        "plugins/audit/reference/execute-task.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: the unknown stop signals ask; a second unrunnable red in one start goes to the writer; a second base-run for a claimed launch refuses",
+          "tests/test_run_test_gate.py: a derived step's base command spells the step name's path for a suite the runner printed relative to its own directory"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_run_test_gate.py tests/test_drive_without_model.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "Fix the drive's base measurement: a base run that outlives the foreground bound must be measured in the background and decided from its row, and a base that cannot be known must stop the drive rather than resume the writer.",
