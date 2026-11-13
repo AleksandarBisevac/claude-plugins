@@ -105,7 +105,6 @@ import json
 import os
 import re
 import subprocess
-import errno
 import sys
 import time
 
@@ -142,6 +141,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _manifest_io  # noqa: E402  (one home for reading a manifest's shape)
+import _locks  # noqa: E402  (kernel_lock_refusal: one reading of a lock call's errno)
 # The module itself as well, for its private `_rate_via`: the `from` list below
 # must name exactly the public names it re-exports, which a suite reads by AST.
 import _usage_core as _core  # noqa: E402
@@ -1541,14 +1541,10 @@ MONTH_LOCK_WAIT_S = 3.0
 MONTH_LOCK_POLL_S = 0.005
 # What `lock_month` answers for a lock file the filesystem will not lock at
 # all: the caller goes on lock-free, as it would on a platform with no lock.
+# Which refusal is that and which is "someone else holds it" is read by
+# `_locks.kernel_lock_refusal`, the reading the claim mutex uses too, so the
+# two kernel locks cannot disagree about an errno.
 LOCK_UNAVAILABLE = "lock-unavailable"
-# The errnos that mean "someone else holds it" - the only refusal worth waiting
-# out. flock reports EWOULDBLOCK (EAGAIN on some systems); msvcrt.locking
-# reports EACCES, or EDEADLOCK where the platform names one.
-_CONTENDED = frozenset(e for e in (
-    errno.EWOULDBLOCK, errno.EAGAIN, errno.EACCES,
-    getattr(errno, "EDEADLOCK", None), getattr(errno, "EDEADLK", None))
-    if e is not None)
 
 
 # --- month lock ---
@@ -1577,8 +1573,9 @@ def lock_month(month_path, wait_s=None):
     """Take the month's exclusive lock -> the descriptor holding it; None when
     it was held by another past `wait_s` or the lock file cannot be opened;
     `LOCK_UNAVAILABLE` at once when the filesystem refuses to lock it at all
-    (an errno outside `_CONTENDED`), since waiting cannot change that answer
-    and a wait spent on it is the metering hook's whole budget.
+    (`_locks.kernel_lock_refusal` reads `LOCK_REFUSED`), since waiting cannot
+    change that answer and a wait spent on it is the metering hook's whole
+    budget.
 
     An OS lock rather than a lock FILE's existence: the kernel releases it when
     its holder dies, so a killed backfill never leaves appenders waiting on a
@@ -1595,7 +1592,7 @@ def lock_month(month_path, wait_s=None):
             _try_lock(fd)
             return fd
         except OSError as exc:
-            if exc.errno not in _CONTENDED:
+            if _locks.kernel_lock_refusal(exc) == _locks.LOCK_REFUSED:
                 os.close(fd)
                 return LOCK_UNAVAILABLE
             if time.monotonic() >= deadline:

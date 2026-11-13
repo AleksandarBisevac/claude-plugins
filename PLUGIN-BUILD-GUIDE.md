@@ -393,7 +393,7 @@ L5:
   _panel_settings -> _config_rules, _loader, _output
   _usage_viz -> _fmt, _output, _report_html
   _verdict_binding -> _evidence_io, _journal_io, _manifest_io, _output, _tree_stamp
-  usage_ledger -> _manifest_io, _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
+  usage_ledger -> _locks, _manifest_io, _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
 
 L6:
   _affected_tests -> _evidence_io, _gate_derive, _loader, _manifest_phases, _output, _proc_group
@@ -3704,8 +3704,14 @@ and create, a release's re-check and removal, and `_write_lock`'s rewrite. The k
 when its holder exits however it exits, so it needs no liveness judgement of its own. It is held
 for those file operations only: the liveness probe a verdict needs runs before it is taken.
 A mutex still held after `MUTEX_SECONDS` refuses the change as the error answer, and an
-interpreter with neither primitive is refused the same way, so a claim is never changed without
-it. It serialises only the takers that come through `_locks`: a hand-run `rm` of a claim
+interpreter with neither primitive is refused the same way. A filesystem that refuses the lock
+call itself is the one place a claim changes without it: `kernel_lock_refusal` reads the errno
+(ENOLCK on NFS with no lock daemon, EOPNOTSUPP or ENOTSUP on a FUSE or SMB mount) as
+`LOCK_REFUSED`, no taker there has a lock, so the change is made unserialised as it was before
+the mutex existed, and `acquire` and `release` name the missing mutex in their answer (`mx13`).
+That reading is the only one: `usage_ledger.lock_month` asks it too (`lf7`). The mutex file is
+opened read-write, or read-only where this user may not write it (`mx16`), and is created 0666
+for the umask to narrow. It serialises only the takers that come through `_locks`: a hand-run `rm` of a claim
 does not take it. `mx1` in `tests/test__locks.py` reads the AST and fails on a removal, link,
 rename/replace or `O_EXCL` create made outside it, and `mx5`–`mx7` race two real processes over
 one dead claim; `mx11` drives the Windows half through a stand-in `msvcrt`, and the same races

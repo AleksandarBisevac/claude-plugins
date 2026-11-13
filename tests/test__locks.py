@@ -1030,8 +1030,11 @@ _MX_PLANTED = {
 # A racer: one process taking (`acquire` with `reclaim`) or giving back
 # (`release`) the claim at `name`. A `paused` racer stops at its removal of the
 # claim file - its check already passed, its act not yet made - writing
-# `<gate>.checked` and waiting for `<gate>.go`; a plain one writes `<gate>.r2in`
-# just before it starts. Each prints `[code, lines]`.
+# `<gate>.checked` and waiting for `<gate>.go`; a plain one writes `<gate>.r2at`
+# when it reaches the directory mutex, the critical section the race is about,
+# so the bound the second racer is held to starts there and not at its launch,
+# which a loaded machine can stretch past the bound. Each prints
+# `[code, lines]`.
 _MX_CHILD = r'''
 import json, os, sys, time
 args = json.loads(sys.argv[1])
@@ -1053,7 +1056,13 @@ if args["paused"]:
         return real(p, *a, **k)
     os.unlink = paused
 else:
-    open(gate + ".r2in", "w").close()
+    reach = M._dir_mutex
+
+    def reached(*a, **k):
+        if not os.path.exists(gate + ".r2at"):
+            open(gate + ".r2at", "w").close()
+        return reach(*a, **k)
+    M._dir_mutex = reached
 said = []
 if args["verb"] == "release":
     code = M.release(args["proj"], args["name"], session=args["who"],
@@ -1096,8 +1105,9 @@ def _mx_answer(proc):
 def _mx_race(proj, first_verb, first_who, second_who):
     """Two real processes over one dead claim: the first stops between its
     check and its removal, the second is started then, and is given
-    `_MX_BLOCKED_SECONDS` to finish before the first is let go.
-    -> `{"first", "second", "second_early", "on_disk", "checked"}`."""
+    `_MX_BLOCKED_SECONDS`, from the moment it reaches the mutex, to finish
+    before the first is let go.
+    -> `{"first", "second", "second_early", "on_disk", "checked", "reached"}`."""
     name = "index"
     ld = M.lock_dir(proj)
     os.makedirs(ld, exist_ok=True)
@@ -1113,7 +1123,7 @@ def _mx_race(proj, first_verb, first_who, second_who):
         checked = _mx_wait_for(gate + ".checked", first, 60)
         second = _mx_racer(proj, name, claim, gate, second_who, "acquire",
                            False)
-        _mx_wait_for(gate + ".r2in", second, 60)
+        reached = _mx_wait_for(gate + ".r2at", second, 60)
         deadline = time.time() + _MX_BLOCKED_SECONDS
         while second.poll() is None and time.time() < deadline:
             time.sleep(0.02)
@@ -1123,6 +1133,7 @@ def _mx_race(proj, first_verb, first_who, second_who):
     got = {"first": _mx_answer(first),
            "second": _mx_answer(second) if second is not None else None,
            "second_early": second_early, "checked": checked,
+           "reached": reached,
            "on_disk": M.read_lock(claim).get("sessionId")
            if os.path.exists(claim) else None}
     shutil.rmtree(os.path.dirname(gate), ignore_errors=True)
@@ -1225,16 +1236,19 @@ def _mutex_cases(check):
               and race["first"][0] == 0 and race["second"][0] == M.E_LIVE
               and race["on_disk"] == "s-FIRST")
         check("mx6 ...and the second did not finish while the first held its "
-              "check: it waited on the mutex, which is the whole of what makes "
-              "the check and the removal one step: %r" % (race,),
-              race["checked"] and race["second_early"] is False)
+              "check: it reached the mutex and waited on it, which is the whole "
+              "of what makes the check and the removal one step - a second that "
+              "never reached the mutex inside the bound proves nothing: %r"
+              % (race,),
+              race["checked"] and race["reached"]
+              and race["second_early"] is False)
         race = _mx_race(proj, "release", "s-DEAD", "s-TAKER")
         check("mx7 a release and a takeover in two processes over one dead "
               "claim, the taker started while the release stands between its "
               "check and its removal: the release removes the claim it judged "
               "and never the taker's, so the taker that was told it holds the "
               "lock is the one the claim on disk names: %r" % (race,),
-              race["checked"] and race["first"][0] == 0
+              race["checked"] and race["reached"] and race["first"][0] == 0
               and race["second"][0] == 0 and race["on_disk"] == "s-TAKER"
               and race["second_early"] is False)
 
@@ -1266,6 +1280,32 @@ def _mutex_cases(check):
               res["taken"] is False and res["exists"] is False
               and "mutex" in (res["error"] or "") and 0.25 <= spent < 5.0
               and not os.path.exists(os.path.join(ld, "usage.lock")))
+
+        for code in _mx_refusing_errnos():
+            got = _mx_refused(proj, code)
+            check("mx13 a filesystem that refuses the lock call itself (%s) "
+                  "still takes and gives back a claim, without the mutex, as "
+                  "before the mutex existed: acquire and release answer 0, the "
+                  "claim lands and is removed, the refused lock is never "
+                  "unlocked, and each of the two answers names the missing "
+                  "mutex once, with the errno: %r"
+                  % (errno.errorcode.get(code, code), got),
+                  got["acquired"] == 0 and got["released"] == 0
+                  and got["held"] == "s-NOLOCK" and got["after"] is False
+                  and got["asked"] > 0 and got["unlocked"] == 0
+                  and len(got["unmutexed"]) == 2
+                  and all(os.strerror(code) in line
+                          for line in got["unmutexed"]))
+        said = []
+        took = M.acquire(proj, "index", session="s-KERNEL", wait=0,
+                         out=said.append)
+        gave = M.release(proj, "index", session="s-KERNEL", out=said.append)
+        # The second direction: a lock reading every refusal as "no mutex here"
+        # turns this red, since the real kernel's lock is taken.
+        check("mx14 ...and where the kernel lock is taken, neither answer says "
+              "a mutex is missing: %r" % ((took, gave, said),),
+              took == 0 and gave == 0 and said
+              and not [line for line in said if _MX_UNMUTEXED in line])
     finally:
         shutil.rmtree(proj, ignore_errors=True)
 
@@ -1306,8 +1346,136 @@ def _mutex_cases(check):
         check("mx12 the mutex file is no lock: nothing that lists the lock "
               "directory's `.lock` names sees it: %r" % (listed,),
               listed and not any(n.endswith(".lock") for n in listed))
+
+        held = _FakeFlock(errno.EWOULDBLOCK)
+        had = M.MUTEX_SECONDS
+        M.MUTEX_SECONDS = 0.3
+        started = time.monotonic()
+        try:
+            with M._dir_mutex(tmp, primitives=(held, None)):
+                waited = "entered"
+        except OSError as exc:
+            waited = exc.errno
+        finally:
+            M.MUTEX_SECONDS = had
+        spent = time.monotonic() - started
+        # The other direction from mx13: a reading that took every refusal for
+        # an unlockable filesystem would enter here at once.
+        check("mx15 ...while a lock somebody HOLDS is still waited out to the "
+              "bound and then refused as busy, never entered without the "
+              "mutex: %r" % ((waited, round(spent, 3), len(held.ops)),),
+              waited == errno.EBUSY and 0.25 <= spent < 5.0
+              and len(held.ops) > 1)
+        _mx_read_only_cases(check, tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+# What every answer made without the directory mutex says; `_mx_refused`
+# counts the lines carrying it.
+_MX_UNMUTEXED = "without the claim mutex"
+
+
+def _mx_refusing_errnos():
+    """The errnos a filesystem refuses the lock call itself with: ENOLCK (NFS
+    with no lock daemon) and EOPNOTSUPP, plus ENOTSUP where the platform keeps
+    it apart (a FUSE or SMB mount says either)."""
+    codes = [errno.ENOLCK, errno.EOPNOTSUPP]
+    if getattr(errno, "ENOTSUP", errno.EOPNOTSUPP) not in codes:
+        codes.append(errno.ENOTSUP)
+    return codes
+
+
+class _FakeFlock(object):
+    """`fcntl` on a filesystem answering every exclusive `flock` with `code`.
+    Records every operation asked for."""
+    LOCK_SH, LOCK_EX, LOCK_NB, LOCK_UN = 1, 2, 4, 8
+
+    def __init__(self, code):
+        self.code, self.ops = code, []
+
+    def flock(self, fd, op):
+        self.ops.append(op)
+        if op & self.LOCK_EX:
+            raise OSError(self.code, os.strerror(self.code))
+
+
+def _mx_refused(proj, code):
+    """Acquire and release `index` while every lock call is refused with
+    `code` -> the two answers, who the claim named, whether it outlived the
+    release, how often the lock was asked and unlocked, and the answer lines
+    naming the missing mutex."""
+    fake = _FakeFlock(code)
+    real = M._kernel_primitives
+    M._kernel_primitives = lambda: (fake, None)
+    said = []
+    path = os.path.join(M.lock_dir(proj), "index.lock")
+    try:
+        took = M.acquire(proj, "index", session="s-NOLOCK", wait=0,
+                         out=said.append)
+        held = (M.read_lock(path).get("sessionId")
+                if os.path.exists(path) else None)
+        gave = M.release(proj, "index", session="s-NOLOCK", out=said.append)
+    finally:
+        M._kernel_primitives = real
+    after = os.path.exists(path)
+    _unlink_quietly(path)
+    return {"acquired": took, "released": gave, "held": held, "after": after,
+            "asked": len([op for op in fake.ops if op & fake.LOCK_EX]),
+            "unlocked": len([op for op in fake.ops if op & fake.LOCK_UN]),
+            "unmutexed": [line for line in said if _MX_UNMUTEXED in line],
+            "said": said}
+
+
+def _mx_read_only_cases(check, tmp):
+    """The mutex file is opened for reading when writing it is refused, so a
+    clone two OS users share keeps locking; and it is created for the umask to
+    narrow, not narrowed here."""
+    mutex = os.path.join(tmp, M.MUTEX_NAME)
+    os.chmod(mutex, 0o444)
+    try:
+        if os.access(mutex, os.W_OK):
+            _harness.skip(check, "mx16 a read-only mutex file still locks",
+                          "this user may write a 0444 file (root), so the "
+                          "refusal the case is about cannot be made here", True)
+        else:
+            had = M.MUTEX_SECONDS
+            try:
+                with M._dir_mutex(tmp) as unheld:
+                    M.MUTEX_SECONDS = 0.3
+                    try:
+                        with M._dir_mutex(tmp):
+                            second = "entered"
+                    except OSError as exc:
+                        second = exc.errno
+                first = unheld
+            except OSError as exc:
+                first, second = "refused: %s" % (exc,), None
+            finally:
+                M.MUTEX_SECONDS = had
+            check("mx16 a mutex file this user may not write still locks: the "
+                  "holder takes the kernel lock on a read-only descriptor, and "
+                  "a second taker meanwhile waits out the bound and is refused "
+                  "as busy: holder=%r second=%r" % (first, second),
+                  first is None and second == errno.EBUSY)
+    finally:
+        os.chmod(mutex, 0o644)
+    if os.name == "nt":
+        _harness.skip(check, "mx17 the mutex file is created for the umask",
+                      "Windows keeps no group or other permission bits", True)
+        return
+    fresh = tempfile.mkdtemp(prefix="audit-locks-mx-umask-")
+    was = os.umask(0o002)
+    try:
+        with M._dir_mutex(fresh):
+            pass
+        mode = os.stat(os.path.join(fresh, M.MUTEX_NAME)).st_mode & 0o777
+    finally:
+        os.umask(was)
+        shutil.rmtree(fresh, ignore_errors=True)
+    check("mx17 the mutex file is created 0666 for the umask to narrow, so a "
+          "group-shared clone's umask leaves it group-writable: umask 002 "
+          "gives %o" % (mode,), mode == 0o664)
 
 
 def _mx_product():

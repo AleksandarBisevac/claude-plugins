@@ -108,7 +108,9 @@ lock directory. The kernel drops it when its holder dies, so it needs no livenes
 judgement of its own; it is held for file operations only, and the liveness
 probe a verdict needs runs before it is taken, with the bytes re-checked under
 it. Only takers that come through this module hold it: a hand-run `rm` of a
-claim does not, and is not serialised. `tests/test__locks.py` holds the rule
+claim does not, and is not serialised. Nor is a change on a filesystem that
+refuses the lock call itself: there `_dir_mutex` runs the change without it, as
+before the mutex existed, and the answer names the missing mutex. `tests/test__locks.py` holds the rule
 over this file's AST (`mx1`) and races two real processes over it.
 
 This module carries no `--selftest` of its own; its cases live in
@@ -968,14 +970,31 @@ def _kernel_primitives():
 
 # The errors a non-blocking lock answers "another holder has it" with: `flock`
 # says EWOULDBLOCK (EAGAIN), `msvcrt.locking` says EACCES or EDEADLOCK.
-_HELD_ERRNOS = tuple(set(getattr(errno, n) for n in
+_HELD_ERRNOS = frozenset(getattr(errno, n) for n in
                          ("EAGAIN", "EWOULDBLOCK", "EACCES", "EDEADLK",
-                          "EDEADLOCK") if hasattr(errno, n)))
+                          "EDEADLOCK") if hasattr(errno, n))
+# The two things a refused non-blocking kernel lock call can mean.
+# `LOCK_TAKEN` is the third answer `_try_lock` gives, for the call that got it.
+LOCK_HELD, LOCK_REFUSED, LOCK_TAKEN = "held", "refused", "taken"
+
+
+def kernel_lock_refusal(exc):
+    """What the OSError a non-blocking kernel lock call raised says ->
+    `LOCK_HELD` while another holder has the lock, the one refusal worth
+    waiting out; `LOCK_REFUSED` for any other errno, the filesystem declining to
+    lock at all - ENOLCK on NFS with no lock daemon, EOPNOTSUPP or ENOTSUP on a
+    FUSE or SMB mount - which no wait changes.
+
+    The one reading of that errno for both kernel locks the plugin takes: the
+    claim mutex here and the ledger's month lock (`usage_ledger.lock_month`),
+    which asks this rather than keeping a set of its own."""
+    return LOCK_HELD if exc.errno in _HELD_ERRNOS else LOCK_REFUSED
 
 
 def _try_lock(fd, fcntl, msvcrt):
-    """True once this call holds the kernel lock on `fd`, False while another
-    holder has it; any other refusal raises."""
+    """One non-blocking attempt at the kernel lock on `fd` -> `(answer, exc)`:
+    `LOCK_TAKEN` once this call holds it, else `kernel_lock_refusal`'s reading
+    of the OSError the call raised, which comes back beside it."""
     try:
         if fcntl is not None:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -983,10 +1002,8 @@ def _try_lock(fd, fcntl, msvcrt):
             os.lseek(fd, 0, os.SEEK_SET)
             msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
     except OSError as exc:
-        if exc.errno in _HELD_ERRNOS:
-            return False
-        raise
-    return True
+        return kernel_lock_refusal(exc), exc
+    return LOCK_TAKEN, None
 
 
 def _unlock(fd, fcntl, msvcrt):
@@ -1009,33 +1026,68 @@ def _dir_mutex(ld, primitives=None):
     killed inside the block wedges nothing.
 
     Raises OSError naming the mutex when it stays held past `MUTEX_SECONDS`, and
-    when this interpreter offers neither primitive - a claim is never changed
-    without it. `primitives` is `(fcntl, msvcrt)`, the modules to use; None asks
-    the interpreter (`_kernel_primitives`). Not re-entrant: a body that opened
-    the block again would wait on itself until the bound.
+    when this interpreter offers neither primitive. `primitives` is
+    `(fcntl, msvcrt)`, the modules to use; None asks the interpreter
+    (`_kernel_primitives`). Not re-entrant: a body that opened the block again
+    would wait on itself until the bound.
+
+    A FILESYSTEM THAT REFUSES THE LOCK CALL ITSELF (`kernel_lock_refusal` reads
+    `LOCK_REFUSED`) RUNS THE BODY WITHOUT IT, and the `with` target is then the
+    sentence saying so - None when the mutex is held. Such a mount has no lock
+    for any taker, so refusing there would leave the project with no claim at
+    all where it had one before the mutex existed; the body runs as it did then,
+    unserialised, and the caller puts the sentence in its answer.
+
+    The mutex file is opened for writing and, where this user may not write it
+    (a clone two OS users share), for reading: `flock` and `msvcrt.locking`
+    take a read-only descriptor, while an NFS mount emulating `flock` with
+    byte-range locks wants a writable one for an exclusive lock, so writing is
+    asked first. It is created 0666 for the umask to narrow.
     """
     fcntl, msvcrt = primitives if primitives is not None else _kernel_primitives()
     if fcntl is None and msvcrt is None:
         raise OSError(errno.ENOLCK, "no kernel lock for the claim mutex in %s: "
                       "this interpreter has neither fcntl.flock nor "
-                      "msvcrt.locking, and a claim is never changed without "
-                      "one" % (ld,))
+                      "msvcrt.locking, so no claim is changed here"
+                      % (ld,))
     mutex = os.path.join(ld, MUTEX_NAME)
-    fd = os.open(mutex, os.O_RDWR | os.O_CREAT, 0o644)
+    fd = _open_mutex(mutex)
     try:
         deadline = time.monotonic() + MUTEX_SECONDS
-        while not _try_lock(fd, fcntl, msvcrt):
+        answer, exc = _try_lock(fd, fcntl, msvcrt)
+        while answer == LOCK_HELD:
             if time.monotonic() >= deadline:
                 raise OSError(errno.EBUSY, "the claim mutex %s stayed held for "
                               "%.1f s; nothing was changed" % (mutex,
                                                                 MUTEX_SECONDS))
             time.sleep(MUTEX_POLL_SECONDS)
+            answer, exc = _try_lock(fd, fcntl, msvcrt)
+        if answer == LOCK_REFUSED:
+            yield _unmutexed(mutex, exc)
+            return
         try:
-            yield
+            yield None
         finally:
             _unlock(fd, fcntl, msvcrt)
     finally:
         os.close(fd)
+
+
+def _open_mutex(mutex):
+    """A descriptor on the mutex file: read-write, or read-only where this user
+    may not write it (`_dir_mutex` says why both)."""
+    try:
+        return os.open(mutex, os.O_RDWR | os.O_CREAT, 0o666)
+    except PermissionError:
+        return os.open(mutex, os.O_RDONLY | os.O_CREAT, 0o666)
+
+
+def _unmutexed(mutex, exc):
+    """The sentence an answer carries for a change made without the mutex."""
+    return ("no kernel lock on %s - the filesystem refused the lock call "
+            "(%s), so this change was made without the claim mutex, as every "
+            "claim was before it existed: a second taker at the same moment "
+            "is not serialised" % (mutex, exc))
 
 
 def _link_into_place(tmp, path, link, info):
@@ -1079,6 +1131,8 @@ def _claim(path, info, link=os.link):
     `exists`: somebody already has that name, and who they are is the caller's
     next question. `error`: the sentence naming what could not be done, which is
     a different fact from either of the other two and must be reported as one.
+    A fourth key, `mutex`, appears only where the filesystem refused the
+    directory mutex, carrying `_dir_mutex`'s sentence for the answer.
 
     THE RECORD LANDS WITH THE CLAIM OR THE FILE IS NOT THERE. A create followed
     by a write is two steps, and a run killed between them leaves a claim naming
@@ -1100,12 +1154,13 @@ def _claim(path, info, link=os.link):
         # after a permission problem instead of the run that holds the lock.
         return {"taken": False, "exists": True, "error": None}
     try:
-        with _dir_mutex(os.path.dirname(path) or "."):
-            return _place_claim(path, info, link)
+        with _dir_mutex(os.path.dirname(path) or ".") as unheld:
+            res = _place_claim(path, info, link)
     except OSError as exc:
         if _output.sharing_denied(exc):
             raise               # contention, for `_claim_shared` to wait out
         return {"taken": False, "exists": False, "error": "%s" % (exc,)}
+    return dict(res, mutex=unheld) if unheld else res
 
 
 def _place_claim(path, info, link):
@@ -1191,7 +1246,8 @@ def _read_stamped(path):
 
 
 def _take_over(path, info, stamp, record, link=os.link):
-    """Replace the claim `stamp` names -> `_claim`'s answers, plus `displaced`.
+    """Replace the claim `stamp` names -> `_claim`'s answers (`mutex` among
+    them), plus `displaced`.
 
     THE CREATE IS THE TEST HERE TOO, and that is the whole repair. Judging a claim
     and then writing over it is a read followed by a write, so two takers could
@@ -1214,11 +1270,12 @@ def _take_over(path, info, stamp, record, link=os.link):
     name between the three.
     """
     try:
-        with _dir_mutex(os.path.dirname(path) or "."):
-            return _swap_claim(path, info, stamp, record, link)
+        with _dir_mutex(os.path.dirname(path) or ".") as unheld:
+            res = _swap_claim(path, info, stamp, record, link)
     except OSError as exc:
         return {"taken": False, "exists": False, "error": "%s" % (exc,),
                 "displaced": False}
+    return dict(res, mutex=unheld) if unheld else res
 
 
 def _swap_claim(path, info, stamp, record, link):
@@ -1418,6 +1475,7 @@ def _replace_own(path, info, stamp, record, name, out):
             "-- it is NOT yours" % (name,))
         out("             `audit-lock.py status` says who holds it now.")
         return E_LIVE
+    _say_unmutexed(res.get("mutex"), out)
     return None
 
 
@@ -1627,6 +1685,7 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
                 _carry(info["token"], True)
             out("[audit-lock] acquired %s%s" % (name, "" if holder else
                                                 " (no pid recorded -- age rule applies)"))
+            _say_unmutexed(claim.get("mutex"), out)
             return 0
         if claim["error"]:
             # FAIL OPEN, AND SAY WHICH QUESTION WENT UNANSWERED. This lock is a
@@ -1753,9 +1812,11 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
     if not res["displaced"]:
         out("[audit-lock] acquired %s -- the claim this was to take over from "
             "was already gone, so nothing was displaced" % (name,))
+        _say_unmutexed(res.get("mutex"), out)
         return 0
     out("[audit-lock] took over %s from %s" % (name, who))
     out("             basis: %s" % basis)
+    _say_unmutexed(res.get("mutex"), out)
     if live:
         out("             WARNING: that run looked LIVE. Both sessions may now write.")
     return 0
@@ -1855,7 +1916,7 @@ def release(project, name, session=None, pid=None, force=False, out=print):
             out("             (this lock records taking over from you)")
         return E_LIVE
     try:
-        removed = _remove_claim(path, stamp)
+        removed, unheld = _remove_claim(path, stamp)
     except OSError as exc:
         out("[audit-lock] cannot remove %s: %s" % (path, exc))
         return E_ERR
@@ -1869,23 +1930,31 @@ def release(project, name, session=None, pid=None, force=False, out=print):
     out("[audit-lock] released %s" % name if removed == "removed" else
         "[audit-lock] %s was let go while this release was being decided -- "
         "nothing to release" % (name,))
+    _say_unmutexed(unheld, out)
     return 0
+
+
+def _say_unmutexed(unheld, out):
+    """Put a change made without the directory mutex into the answer."""
+    if unheld:
+        out("             mutex: %s" % (unheld,))
 
 
 def _remove_claim(path, stamp):
     """Remove the claim at `path` while it is still the one `stamp` names ->
-    "removed", "gone" when no claim is there, or "changed" when another one is
-    (a None stamp is never the one there). The re-check and the removal are one
-    hold of the directory mutex, so a claim landed since the release judged the
-    old one is never the one removed."""
-    with _dir_mutex(os.path.dirname(path) or "."):
+    `(verdict, unheld)`: "removed", "gone" when no claim is there, or "changed"
+    when another one is (a None stamp is never the one there), beside the
+    `_dir_mutex` sentence for a removal made without the mutex, else None. The
+    re-check and the removal are one hold of the directory mutex, so a claim
+    landed since the release judged the old one is never the one removed."""
+    with _dir_mutex(os.path.dirname(path) or ".") as unheld:
         now = _claim_stamp(path)
         if now is None:
-            return "gone"
+            return "gone", unheld
         if stamp is None or now != stamp:
-            return "changed"
+            return "changed", unheld
         _output.while_shared(lambda: os.unlink(path))
-        return "removed"
+        return "removed", unheld
 
 
 def collect(project):

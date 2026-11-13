@@ -1456,6 +1456,53 @@ def _cases(check):
               bool(_lf_timeouts) and all(isinstance(t, (int, float))
                                          for t in _lf_timeouts)
               and _lf_retry < M.MONTH_LOCK_WAIT_S <= min(_lf_timeouts) / 2.0)
+
+        # One reading of a lock call's refusal, shared with the claim mutex in
+        # `_locks`: the month lock asks it at the moment of the refusal, so a
+        # set of errnos kept here as well could only ever disagree with it.
+        import _locks
+
+        class _LfFlock(object):
+            LOCK_SH, LOCK_EX, LOCK_NB, LOCK_UN = 1, 2, 4, 8
+
+            def __init__(self, code):
+                self.code = code
+
+            def flock(self, _fd, op):
+                if op & self.LOCK_EX:
+                    raise OSError(self.code, os.strerror(self.code))
+
+        _lf_codes = [errno.EWOULDBLOCK, errno.EACCES, errno.ENOLCK,
+                     errno.EOPNOTSUPP]
+
+        def _lf_given_for(classify):
+            real = (M.fcntl, M.msvcrt, _locks.kernel_lock_refusal)
+            given = []
+            try:
+                _locks.kernel_lock_refusal = classify
+                M.msvcrt = None
+                for code in _lf_codes:
+                    M.fcntl = _LfFlock(code)
+                    given.append(M.lock_month(_lf_path, wait_s=0))
+            finally:
+                M.fcntl, M.msvcrt, _locks.kernel_lock_refusal = real
+            return given
+
+        _lf_shared = _lf_given_for(_locks.kernel_lock_refusal)
+        _lf_flipped = _lf_given_for(lambda _exc: _locks.LOCK_REFUSED)
+        _lf_expect = [M.LOCK_UNAVAILABLE
+                      if _locks.kernel_lock_refusal(OSError(c, "x"))
+                      == _locks.LOCK_REFUSED else None for c in _lf_codes]
+        check("lf7 the month lock reads a refusal through the reading the claim "
+              "mutex uses: a held lock (EWOULDBLOCK, EACCES) is waited for and "
+              "a refused one (ENOLCK, EOPNOTSUPP) is unavailable, as "
+              "`_locks.kernel_lock_refusal` says - and when that reading is "
+              "swapped for one calling every refusal unlockable, the ledger "
+              "follows it, which a copy of its own would not: shared=%r "
+              "swapped=%r" % (_lf_shared, _lf_flipped),
+              _lf_shared == _lf_expect
+              == [None, None, M.LOCK_UNAVAILABLE, M.LOCK_UNAVAILABLE]
+              and _lf_flipped == [M.LOCK_UNAVAILABLE] * len(_lf_codes))
     finally:
         _lf_restore()
         shutil.rmtree(_lf_tmp, ignore_errors=True)

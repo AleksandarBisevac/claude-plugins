@@ -669,6 +669,16 @@ matching too eagerly costs a missed denial, failing to match breaks the run.
 the `user-<name>` namespace for worktree tooling changes neither: its prefix keeps a user lock from
 being read as the plugin's, and nothing more.
 
+**The claim mutex is only as strong as the filesystem's kernel lock.** Every change to a claim
+file is serialised on one kernel lock per lock directory (`_locks._dir_mutex`). A filesystem that
+refuses the lock call itself — ENOLCK on NFS with no lock daemon, EOPNOTSUPP or ENOTSUP on a FUSE
+or SMB mount — offers that lock to no taker, so there the change is made without it, as every
+claim was before the mutex existed, and `acquire` and `release` say so in their answer with a
+`mutex:` line: two takers racing on such a mount are not serialised. A lock another holder has
+is still waited out to `MUTEX_SECONDS` and refused, never entered. Which errno is a refusal and
+which is contention is one reading, `_locks.kernel_lock_refusal`, which the usage ledger's month
+lock asks as well.
+
 It is scoped to `manifestPath` and `<manifest dir>/phases/*.json` and touches nothing else —
 ordinary source files remain entirely the plan gate's business. The point is narrow: two live
 sessions writing one shard in one working tree produce **no git conflict**, because git never
