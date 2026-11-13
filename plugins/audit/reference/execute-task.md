@@ -268,13 +268,17 @@ verb writes and refuses, and what the run commands leave behind, is
         row; a measured-fast one runs inline. A red with no comparable base run has
         its base measured once per start, chosen the same way over its red steps:
         past the bound, unmeasured, or under `auto` it is `dispatch-base` (a
-        `drive-phase.py base-run` in the background), then `wait-base`, decided from
-        the reading that run leaves on the start's mark; one measured fast runs
-        inline. A red whose base commit fails every case it fails stops as
-        `gate-red-base`, with no session sent. A base nobody can know - the base
-        run left no reading, failed or was killed - stops as
-        `gate-red-base-unknown`, with no session sent and no round spent:
-        `measure-base` measures the base again, `rerun` the gate. Any other red
+        `drive-phase.py base-run` in the background, which writes only a record of
+        its own that `next` folds into the start's mark), then `wait-base`, and the
+        red's verdict is read back from its recorded row as a background gate's is;
+        one measured fast runs inline. A red whose base commit fails every case it
+        fails stops as `gate-red-base`, with no session sent. A base nobody can
+        know - the base run left no reading, failed or was killed, or its reading
+        was taken for another red run - stops as `gate-red-base-unknown`, with no
+        session sent and no round spent: `measure-base` measures the base again,
+        `rerun` the gate, and the owner may commit over it with
+        `commit-task-work.py --override-verdict`; `resume` and `retry` are offered
+        for a base that can never be measured and never recommended. Any other red
         goes back to the recorded session (`gate-red-writer`) while a resume round
         is left; with no recorded session, or past the last round, it is the plain
         `gate-red`.

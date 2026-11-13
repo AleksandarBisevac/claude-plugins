@@ -601,7 +601,13 @@ STEPS = {
         "rule": ("No writer session is sent and no round is spent: nothing says "
                  "the task introduced the red. measure-base measures the base "
                  "again; rerun measures the gate again; block stops the task "
-                 "with the reason.",)},
+                 "with the reason; the owner may commit over it with "
+                 "commit-task-work.py --override-verdict and a reason.",
+                 "resume (the recorded writer session, a round spent) and retry "
+                 "(a fresh attempt, one spent) are offered for a base that can "
+                 "never be measured and a red known to be the task's own, and "
+                 "are never recommended: nothing is sent until one is "
+                 "answered.")},
     "decide-gate-red": {
         "line": "decide gate-red %(task)s: recorded gate red (%(why)s)%(run)s",
         "rule": ("rerun spends no attempt (GATE COULD NOT RUN); retry spends "
@@ -774,6 +780,9 @@ STEP_RULES = frozenset(rule for entry in STEPS.values() for rule in entry["rule"
 RESUME_KINDS = {"gate-red-writer": "red gate",
                 "red-refused-writer": "red-first proof",
                 "clauses-uncovered-writer": "clause coverage"}
+# The decisions whose `resume` is the writer's: the ones above, and a red whose
+# base is unknown, which spends a red gate's round when the owner answers it.
+RESUME_ROUTES = dict(RESUME_KINDS, **{"gate-red-base-unknown": "red gate"})
 
 # Each decision's options, and the ones that need `--reason`. A decision with no
 # options is one only the plan can change; nothing here answers it.
@@ -786,10 +795,13 @@ DECISIONS = {
     # fix it, so none is offered; the owner's commit over it is their own act.
     "gate-red-base": (("block", "rerun"), ("block",)),
     # A red gate whose base could not be known - the base run left no reading,
-    # or one naming no base run: no session is offered, since
-    # nothing says the task introduced it. `measure-base` drops the start's
-    # base mark so the base is measured again.
-    "gate-red-base-unknown": (("rerun", "measure-base", "block"), ("block",)),
+    # or one naming no base run: no session is sent unasked, since nothing
+    # says the task introduced it. `measure-base` drops the start's base mark
+    # so the base is measured again; `resume` and `retry` are the way past a
+    # base that can never be measured, offered and never recommended, and
+    # `resume` is refused where the red carries no writer session.
+    "gate-red-base-unknown": (("rerun", "measure-base", "block", "resume",
+                               "retry"), ("block",)),
     "no-executor-return": (("resume", "retry", "block"), ("block",)),
     # A writer session that committed the task's files past its dispatch:
     # nothing is filed until a human takes the commit out (`recheck`).
@@ -1176,18 +1188,18 @@ def run_verb_bounded(ctx, script, args, timeout, started=None):
     timed out and its group was torn down (`_proc_group.stop_and_drain`),
     with whatever it printed by then.
     `started(pid)` is called once the process exists, before the wait, so a
-    caller can record who is running before anything can kill it. An
-    interrupt during the wait tears the group down before it surfaces, so the
-    verb never outlives the drive that started it there."""
+    caller can record who is running before anything can kill it. A raise
+    from it, or an interrupt during the wait, tears the group down before it
+    surfaces, so the verb never outlives the drive that started it there."""
     cmd = [sys.executable, _loader.script_path(script)] + list(args)
     env = dict(os.environ)
     env["CLAUDE_PROJECT_DIR"] = ctx["project"]
     kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE}
     kwargs.update(_proc_group.group_kwargs())
     proc = subprocess.Popen(cmd, cwd=ctx["project"], env=env, **kwargs)
-    if started is not None:
-        started(proc.pid)
     try:
+        if started is not None:
+            started(proc.pid)
         raw_out, raw_err = proc.communicate(timeout=timeout)
         why = None
     except subprocess.TimeoutExpired:
@@ -1307,11 +1319,19 @@ def read_state(ctx):
 
 
 def write_state(ctx, state):
-    path = state_path(ctx)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8", newline="") as fh:
-        json.dump(state, fh, indent=2, sort_keys=True)
-        fh.write("\n")
+    write_json_atomic(state_path(ctx), state)
+
+
+def write_json_atomic(path, body):
+    """Write `body` as the whole JSON of `path`, or leave `path` as it was.
+
+    The repository's one sanctioned replace (`_mio.atomic_write_text`): a
+    temp file of this call's own in the same directory, swapped into place in
+    one step, so a reader opens the old file or the new one and never one cut
+    half-way by a full disk or a kill. A write that fails removes its temp
+    file and raises. The temp name ends in `.tmp`, never `.json`, so a reader
+    listing the directory's records skips it."""
+    _mio.atomic_write_text(path, json.dumps(body, indent=2, sort_keys=True) + "\n")
 
 
 def start_key(task):
@@ -2600,7 +2620,7 @@ def resume_writer(ctx, state, task, pending, tree=None):
             [("why", exc), ("prompt", prompt)]))
     _record, argv = open_dispatch(ctx, state, task, round_n, lambda record: writer_argv(
         ctx, task, writer, prompt, record, tree, resume=pending["session"]), tree,
-        kind=RESUME_KINDS.get(pending["decision"]))
+        kind=RESUME_ROUTES.get(pending["decision"]))
     held = writer_state(state, task)
     held["resumes"] = round_n
     _mark(state, "writer", task, held)
@@ -2801,8 +2821,9 @@ def rerun_alongside(ctx, state, manifest, pending):
 # foreground bound, unmeasured, or under `auto` it is a step of its own:
 # `dispatch-base` prints this script's `base-run` as the `run:` line - the tree
 # built, `run-test-gate.py --base-of --record` run with no bound, the tree taken
-# down, the reading kept on the start's mark - `wait-base` holds while that run
-# has not finished, and the red is decided from what the run left on the mark.
+# down, the reading kept in the launch's own record, which `next` folds into
+# the start's mark - `wait-base` holds while that run has not finished, and the
+# red is decided from what the run left.
 # Measured under the bound, it runs inside `next`, held to the bound; a run past
 # it there is stopped and handed to the background, never read.
 #
@@ -2822,13 +2843,25 @@ def rerun_alongside(ctx, state, manifest, pending):
 # background run killed during it is not followed by a second measurement, and
 # the tree a kill leaves (no `finally` runs under SIGKILL) is removed at the next
 # drive (`sweep_base_trees`), through the same removal question the run's own
-# teardown asks. The background run writes the mark by reading the state again
-# around each write, and only while the mark is still its launch's. A `next` that
-# wrote the state over in between loses what it wrote, which reads as a run that
-# left no reading - the unknown stop, or the wait - and never as the writer's.
+# teardown asks.
+#
+# ONE WRITER PER FILE. The drive's state file is `next`'s alone: `next` reads it
+# once and writes its copy back many times, so a second writer of that file
+# would lose a write whenever the two interleave - and a background base run
+# beside a `next` is the ordinary case under `wait-base` and in waves. So the
+# background run writes its progress and its answer to a record of its own,
+# keyed by the task and the launch (`base_progress_path`), and `next` folds that
+# record into the start's mark each time it reads the mark (`base_mark`). Every
+# write of either file replaces it whole (`write_json_atomic`).
+#
+# THE MARK DECIDES ONLY ITS OWN RED. A reading taken for one red run is applied
+# to that run, or to a repeat of it, and to no other; another red of the same
+# start is decided by its own row's reading, and is unknown where that names no
+# base run.
 BASE_MEASURE_VERDICTS = ("no-base", "not-knowable")
 BASE_TREE_PREFIX = "audit-base-"
 BASE_MEASURED = "baseMeasured"
+BASE_PROGRESS_DIRNAME = "base-runs"
 BASE_MEASURE_SECONDS = _evio.FOREGROUND_BOUND_MS // 1000
 BASE_RUN_VERB = "base-run"
 
@@ -2972,14 +3005,10 @@ def take_base(ctx, phase, task, row, tree, keep, bound):
     background. The outcome is `measure_base`'s."""
     pids = [os.getpid()]
     keep(ran=True, done=False, said="measuring", pids=list(pids))
-
-    def _started(pid):
-        pids.append(pid)
-        keep(pids=list(pids))
-
     got = measure_base(ctx, phase, row, tree,
                        placed=lambda holder: keep(tree=holder),
-                       started=_started, bound=bound)
+                       started=started_keeper(ctx, task["id"], keep, pids),
+                       bound=bound)
     ctx["did"].append(got["said"])
     if got["cut"] is not None:
         keep(tree=None, pids=[], said=got["said"], cut=got["cut"])
@@ -3008,20 +3037,111 @@ def mark_keeper(ctx, state, task, held):
     return keep
 
 
-def fresh_keeper(ctx, task, launched_at):
-    """`keep(**changes)` over the start's base mark as it stands on disk at
-    each call - a background run holds no drive state of its own - written
-    only while the mark is still the launch made at `launched_at`: a mark
-    spent by `measure-base`, or launched again, is no longer this run's to
-    write."""
+def started_keeper(ctx, task_id, keep, pids):
+    """`started(pid)` for a base run: `pid` added to `pids` and written through
+    `keep`. A write that fails is said as a warning naming the pid, never
+    raised: the callback runs while the run's process is alive, and what it
+    owes is the record, not the run."""
+    def started(pid):
+        pids.append(pid)
+        try:
+            keep(pids=list(pids))
+        except (OSError, ValueError) as exc:
+            warn(ctx, "%s's base run pid %s was not recorded on its mark "
+                      "(%s: %s); a drive killed now cannot name that process"
+                 % (task_id, pid, type(exc).__name__, exc))
+    return started
+
+
+def fresh_keeper(ctx, task, launch):
+    """`keep(**changes)` for a background base run: each call lays `changes`
+    over the run's own record (`base_progress_path`, keyed by the task and the
+    launch `launch`) and writes that record whole. The run writes no other
+    file - `next` folds the record into the start's mark when it reads it
+    (`base_mark`) - and a launch dropped by `measure-base`, or launched again,
+    carries another key, so what this run writes after that no mark reads."""
+    path = base_progress_path(ctx, task["id"], launch)
+
     def keep(**changes):
-        state = read_state(ctx)
-        held = _marked(state, BASE_MEASURED, task)
-        if not isinstance(held, dict) or held.get("at") != launched_at:
-            return
-        _mark(state, BASE_MEASURED, task, dict(held, **changes))
-        write_state(ctx, state)
+        write_json_atomic(path, dict(read_base_progress(path), **changes))
     return keep
+
+
+def launch_key(held):
+    """The key a base launch's own record is filed under: its `launch` id, or
+    the moment of a launch marked before launches carried one."""
+    held = held if isinstance(held, dict) else {}
+    return held.get("launch") or held.get("at")
+
+
+def base_progress_path(ctx, task_id, launch):
+    """The record the background base run of `task_id`'s launch `launch`
+    writes, beside the drive's state and in a directory of its own, so no
+    reader of the phases' state files takes it for one."""
+    name = re.sub(r"[^A-Za-z0-9._-]", "-", "%s.%s.%s" % (
+        ctx["phase"], task_id, launch))
+    return os.path.join(os.path.dirname(state_path(ctx)), BASE_PROGRESS_DIRNAME,
+                        name + ".json")
+
+
+def read_base_progress(path):
+    """The base run's record at `path`, `{}` when it has written none; a record
+    that will not read raises ValueError naming it, as the state does."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            body = json.load(fh)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as exc:
+        raise ValueError("a base run's record %s cannot be read (%s); remove it "
+                         "and answer measure-base" % (path, exc))
+    return body if isinstance(body, dict) else {}
+
+
+def fold_progress(ctx, task_id, held):
+    """`(mark, final)` - the base mark `held` with its background run's own
+    record laid over it, and that record's path when nothing will write it
+    again (else None): the run said it was done, or it ran and no process it
+    named is alive. A mark that is not a background launch, or that `next`
+    has closed, is returned as it is.
+
+    A run seen dead is read once more after the death was seen: a run that
+    wrote its answer and exited between the first read and the liveness
+    check left that answer in the file."""
+    if not (isinstance(held, dict) and held.get("background")) or held.get("done"):
+        return held, None
+    path = base_progress_path(ctx, task_id, launch_key(held))
+    progress = read_base_progress(path)
+    final = bool(progress.get("done"))
+    if not final and progress.get("ran") and not base_running(progress):
+        progress = read_base_progress(path)
+        final = True
+    return dict(held, **progress), (path if final else None)
+
+
+def base_mark(ctx, state, task):
+    """The start's base mark in `state` as `next` reads it: folded with what
+    its background run recorded (`fold_progress`) and kept in `state`. A
+    record nothing will write again is written into the drive's state and
+    then removed, so what it said outlives it."""
+    held, final = fold_progress(ctx, task["id"],
+                                _marked(state, BASE_MEASURED, task))
+    if not (isinstance(held, dict) and held.get("background")):
+        return held
+    _mark(state, BASE_MEASURED, task, held)
+    if final is not None:
+        write_state(ctx, state)
+        drop_progress(final)
+    return held
+
+
+def drop_progress(path):
+    """Remove a base run's record once the drive's state holds what it said;
+    one left behind is folded again and changes nothing."""
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
 
 def base_argv(ctx, task):
@@ -3038,9 +3158,12 @@ def launch_base(ctx, state, task, row, tree, why, cut=None):
     print its dispatch with `why` it goes to the background. `cut` is why an
     inline run of it was stopped, kept for the reader."""
     argv = base_argv(ctx, task)
-    held = {"of": row.get("runId"), "said": "launched", "verdict": None,
+    at = _utc_stamp()
+    held = {"of": row.get("runId"), "status": row.get("status"),
+            "said": "launched", "verdict": None,
             "run": None, "atBase": [], "introduced": [], "background": True,
-            "at": _utc_stamp(), "argv": argv, "memberTree": tree or None,
+            "at": at, "launch": "%s-%s" % (at, os.urandom(4).hex()),
+            "argv": argv, "memberTree": tree or None,
             "ran": False, "done": False}
     if cut is not None:
         held["cut"] = cut
@@ -3069,8 +3192,8 @@ def base_wait_said(ctx, task_id, since, argv):
 
 def cut_short(ctx, state, task, held):
     """Close the start's mark of a base run that stopped before it left a
-    reading - killed, or its writes lost - as unknowable: no reading charges
-    the red to either side. The mark, as written."""
+    reading - killed, or never able to write its answer - as unknowable: no
+    reading charges the red to either side. The mark, as written."""
     said = ("%s's base not measured: the run measuring it stopped before it "
             "left a reading" % (task["id"],))
     ctx["did"].append(said)
@@ -3078,6 +3201,22 @@ def cut_short(ctx, state, task, held):
     _mark(state, BASE_MEASURED, task, held)
     write_state(ctx, state)
     return held
+
+
+def red_runs(text, row):
+    """The run ids a red gate's output `text` stands for: the run it names,
+    and the run that measured it when that one is a repeat (`gate_row`)."""
+    found = _RUN_ID.search(text or "")
+    named = [found.group(1)] if found else []
+    return set(named + [(row or {}).get("runId")]) - set([None])
+
+
+def cut_before_ran(held):
+    """Whether `held` is a mark an earlier version of the drive wrote for a
+    measurement that left no base run: it carries neither `ran` nor
+    `background`, and its own reading names no run (`base_behind`)."""
+    return ("ran" not in held and "background" not in held
+            and not base_behind(held))
 
 
 def base_reading_for(ctx, state, phase, task, text, tree=None):
@@ -3088,11 +3227,13 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
     mark, read once; `unknown` is the sentence saying why the base cannot be
     known, else None.
 
-    A measurement is due once per start (`base_measure_due`); the mark kept
-    after it makes a later red of the same start read its own row, which then
-    finds that base run - unless the measurement could not know the base and
-    the row has no reading that charges the red either: that red is unknown
-    too, so a rerun never falls through to the writer."""
+    A measurement is due once per start (`base_measure_due`). Its reading
+    decides only the red it was measured for, or a repeat of that red
+    (`red_runs`); any other red of the start is decided by its own row's
+    reading, and is unknown where that names no base run. A measurement that
+    could not know the base leaves its own red unknown too, unless the row
+    has a reading that charges it, so a rerun never falls through to the
+    writer."""
     row = gate_row(ctx, text)
     reading = (row or {}).get(_evio.BASE_RED_KEY)
     reading = reading if isinstance(reading, dict) else None
@@ -3107,53 +3248,87 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
         if got["cut"] is not None:
             return launch_base(ctx, state, task, row, tree, "its run inside "
                                "next %s" % (got["cut"],), got["cut"]), None, None
-    held = _marked(state, BASE_MEASURED, task)
+    held = base_mark(ctx, state, task)
     if not isinstance(held, dict):
         return None, reading, None
     if base_waiting(held):
         return base_wait_said(ctx, task["id"], held.get("at"),
                               held.get("argv") or []), None, None
     if held.get("ran") and not held.get("done"):
+        # Its processes were seen gone after the fold above was read: fold
+        # again, since what such a run wrote last is final now.
+        held = base_mark(ctx, state, task)
+    if held.get("ran") and not held.get("done"):
         held = cut_short(ctx, state, task, held)
+    mine = held.get("of") in red_runs(text, row)
     fresh = None
     if not held.get("decided"):
         fresh = held.get("reading") if isinstance(held.get("reading"), dict) else None
         held = dict(held, decided=True)
         _mark(state, BASE_MEASURED, task, held)
         write_state(ctx, state)
-    use = fresh if fresh is not None else reading
-    if held.get("unknowable") and not base_behind(use):
+    use = fresh if (fresh is not None and mine) else reading
+    if base_behind(use):
+        return None, use, None
+    if not mine:
+        return None, use, ("the base measured for this start was taken for "
+                           "run %s, not for this red (%s), and this red's own "
+                           "reading names no base run" % (
+                               held.get("of"),
+                               ", ".join(sorted(red_runs(text, row))) or
+                               "no run named"))
+    if held.get("unknowable") or cut_before_ran(held):
         return None, use, held.get("said") or "no base reading was left"
     return None, use, None
+
+
+def red_status(ctx, held):
+    """The status of the red run a base launch was measured for: the one the
+    launch recorded, else the ledger row's - None when neither says."""
+    if held.get("status"):
+        return held["status"]
+    try:
+        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+    except Exception:                                          # noqa: BLE001
+        return None
+    return (_evio.row_by_run(rows, held.get("of")) or {}).get("status")
 
 
 def base_gate(ctx, state, phase, task, tree=None):
     """`(print, measured)` while a base measurement launched to the background
     is not decided on yet: the wait on it, or - once its run has ended - the
-    task gate's verdict repeated (`task_gate`, which on the same tree measures
-    nothing), so the red is decided from what the run left without the gate
-    being launched again. `(None, None)` otherwise."""
-    held = _marked(state, BASE_MEASURED, task)
+    verdict of the red run it was launched for, read back (`read_back`) as a
+    background gate's is: a verdict a repeat may copy is repeated by the
+    recorded gate's own call, which on the same tree measures nothing, and a
+    row of any other word stands as recorded (`unrepeatable_red`). Never a
+    rerun's `--no-reuse`: a verdict that does not repeat on this tree is
+    measured again by that call, as `read_back` says on its did-line, and
+    only then. `(None, None)` otherwise."""
+    held = base_mark(ctx, state, task)
     if not (isinstance(held, dict) and held.get("background")
             and not held.get("decided")):
         return None, None
     if base_waiting(held):
         return base_wait_said(ctx, task["id"], held.get("at"),
                               held.get("argv") or []), None
-    return None, task_gate(ctx, state, phase, task, tree)
+    return None, read_back(ctx, held.get("of"), red_status(ctx, held),
+                           lambda: record_gate(ctx, phase, task, tree),
+                           "gate %s" % (task["id"],))
 
 
 def base_run(ctx, task_id):
     """`(code, text)` for `base-run`: the base measurement `next` launched for
     `task_id`'s current start, taken with no bound - the background's command,
-    which no foreground bound holds - its outcome kept on the start's mark for
-    `next` to decide from. E_USAGE when no launch is marked for the current
-    start, or this one already ran; E_STOPPED when it left no reading."""
+    which no foreground bound holds - its outcome kept in the launch's own
+    record for `next` to fold into the start's mark (`fresh_keeper`). E_USAGE
+    when no launch is marked for the current start, or this one already ran;
+    E_STOPPED when it left no reading."""
     manifest, phase = load_phase(ctx)
     task = _mio.tasks_by_id(manifest).get(task_id)
     if task is None:
         return E_USAGE, "%s %s: no task %s" % (PREFIX, ctx["phase"], task_id)
-    held = _marked(read_state(ctx), BASE_MEASURED, task)
+    held, _final = fold_progress(ctx, task_id,
+                                 _marked(read_state(ctx), BASE_MEASURED, task))
     if not (isinstance(held, dict) and held.get("background")):
         return E_USAGE, ("%s %s: no base measurement is launched for %s's "
                          "current start; next launches one" % (
@@ -3162,7 +3337,7 @@ def base_run(ctx, task_id):
         return E_USAGE, ("%s %s: %s's base measurement already ran (%s); "
                          "--answer measure-base takes it again" % (
                              PREFIX, ctx["phase"], task_id, held.get("said")))
-    keep = fresh_keeper(ctx, task, held.get("at"))
+    keep = fresh_keeper(ctx, task, launch_key(held))
     try:
         rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
     except Exception as exc:                                   # noqa: BLE001
@@ -3188,11 +3363,18 @@ def sweep_base_trees(ctx, state):
     started - is left and said; any other is removed through
     `remove_base_tree`. A base tree no mark of this phase names is another
     run's and is never touched. Each answer is a did-line, and the marks are
-    written once when any changed."""
+    written once when any changed. A background run's own record is folded
+    in first (`fold_progress`), since the tree and the processes are named
+    there; one nothing will write again is removed once the state holds it."""
     marks = state.get(BASE_MEASURED) or {}
-    changed = False
+    changed, spent = False, []
     for task_id in sorted(marks):
-        value = (marks[task_id] or {}).get("value")
+        value, final = fold_progress(ctx, task_id,
+                                     (marks[task_id] or {}).get("value"))
+        if final is not None:
+            spent.append(final)
+            marks[task_id] = dict(marks[task_id], value=value)
+            changed = True
         holder = value.get("tree") if isinstance(value, dict) else None
         if not holder:
             continue
@@ -3218,6 +3400,8 @@ def sweep_base_trees(ctx, state):
         changed = True
     if changed:
         write_state(ctx, state)
+    for path in spent:
+        drop_progress(path)
 
 
 def gate_red_lines(text):
@@ -3248,10 +3432,16 @@ def gate_red_decision(ctx, state, manifest, phase, task, text, tree=None):
     verdict = {"verdict": verdict_taken(ctx, text, tree)}
     if (reading or {}).get("verdict") == "base-only":
         return decision(ctx, state, "gate-red-base", task, why, extra=verdict)
-    if unknown is not None:
-        return decision(ctx, state, "gate-red-base-unknown", task, "%s; %s" % (
-            head, _clip(unknown, 200)), extra=verdict)
     session = recorded_session(state, task)
+    if unknown is not None:
+        extra = dict(verdict)
+        if session is not None \
+                and writer_state(state, task)["resumes"] < MAX_RESUME_ROUNDS:
+            # What `--answer resume` sends, should the owner answer it.
+            extra.update(session=session,
+                         failing=failing_lines(gate_row(ctx, text), text))
+        return decision(ctx, state, "gate-red-base-unknown", task, "%s; %s" % (
+            head, _clip(unknown, 200)), extra=extra)
     if session is None:
         return decision(ctx, state, "gate-red", task, why, extra=verdict)
     held = writer_state(state, task)
@@ -8121,6 +8311,11 @@ def answer_refusal(ctx, pending, answer, reason, fixes=()):
     if answer in needs and not (reason or "").strip():
         return "--answer %s needs --reason: it is recorded with the %s" % (
             answer, "phase" if pending.get("task") is None else "task")
+    if answer == "resume" and pending["decision"] == "gate-red-base-unknown" \
+            and not pending.get("session"):
+        return ("no writer session is recorded for this red with a round left, "
+                "so --answer resume has none to send to; answer retry, or "
+                "measure-base")
     if pending["decision"] == "scope-gap" and answer == "widen" \
             and not pending.get("config"):
         return ("no runner config file exists to widen, so --answer widen has "
@@ -8313,7 +8508,7 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
             _mark(state, "writer", task, held)
             write_state(ctx, state)
         return None
-    if answer == "resume" and pending["decision"] in RESUME_KINDS:
+    if answer == "resume" and pending["decision"] in RESUME_ROUTES:
         # The task is not re-started, so no attempt is spent; the gate is not
         # marked as run, so the next `next` measures the session's fix. A
         # clause gap is asked at a GREEN gate, whose mark is spent here for it.
@@ -8329,7 +8524,8 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
         # gate's verdict is repeated rather than measured, its base measured
         # inline or as a step of its own, and no attempt is spent. A tree the
         # mark still names belongs to a run that may still be measuring, and
-        # that run writes no mark once its launch is gone (`fresh_keeper`).
+        # what that run writes after is its own launch's record, which no mark
+        # reads once its launch is gone (`fresh_keeper`).
         _spend(state, BASE_MEASURED, task)
         write_state(ctx, state)
         ctx["did"].append("%s's base measurement dropped, to be taken again"
@@ -8817,10 +9013,7 @@ def take_slice(ctx, phase, args, body):
     if problems:
         return None, _stopped(ctx, "the slice return does not file. Nothing "
                               "filed:\n%s" % ("\n".join("  " + p for p in problems)))
-    os.makedirs(os.path.dirname(held), exist_ok=True)
-    with open(held, "w", encoding="utf-8", newline="") as fh:
-        json.dump(body, fh, indent=2)
-        fh.write("\n")
+    write_json_atomic(held, body)
     ctx["did"].append("slice %d/%d of the phase review held" % (number, total))
     bodies = []
     for n in range(1, total + 1):
@@ -12012,9 +12205,8 @@ def write_explain(ctx, said):
     """Keep the text the last signal stands for; None, or why it was not kept."""
     path = explain_path(ctx)
     try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8", newline="") as fh:
-            json.dump({"subjects": said["subjects"], "text": said["explain"]}, fh)
+        write_json_atomic(path, {"subjects": said["subjects"],
+                                 "text": said["explain"]})
     except OSError as exc:
         return "the text --explain prints was not kept at %s (%s)" % (path, exc)
     return None
@@ -12294,9 +12486,7 @@ def auto_leave_owed(ctx, echo, warnings):
     earlier = (ctx.get("owed") or {}).get("warnings") or []
     kept = list(earlier) + [w for w in warnings if w not in earlier]
     try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8", newline="") as fh:
-            json.dump({"echo": list(echo), "warnings": kept}, fh)
+        write_json_atomic(path, {"echo": list(echo), "warnings": kept})
     except OSError as exc:
         sys.stderr.write("drive-phase.py: what this ending owes was not kept at "
                          "%s (%s)\n" % (path, exc))

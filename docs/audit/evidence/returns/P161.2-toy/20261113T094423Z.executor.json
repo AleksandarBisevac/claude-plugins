@@ -1,0 +1,38 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_drive_without_model.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test__deps.py tests/test_drive_phase.py tests/test_drive_without_model.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-13T15:52:18Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_drive_without_model.py` in a throwaway tree at HEAD exited 1 with 11 of 947 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bi1 (house FAIL), bi2 (house FAIL), bi3 (house FAIL), bi4 (house FAIL), bi5 (house FAIL), bi6 (house FAIL), bi7 (house FAIL), bi8 (house FAIL), bi9 (house FAIL) and 2 more: SELFTEST FAILED: 935/947 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "THIS ROUND: sw1 in tests/test__deps.py was red because write_json_atomic carried its own os.replace outside _deps.STATE_WRITERS. write_json_atomic now serialises the body (indent 2, sorted keys, trailing newline - the bytes write_state always wrote) and hands it to _mio.atomic_write_text, the sanctioned writer the lint's repair names (mkstemp temp of the call's own in the same directory, .tmp suffix, removed on failure, os.replace under _output.while_shared); no STATE_WRITERS row added, the existing writer serves. bi3's tear seam widened to match: _writes_torn(M) tears every file the driver opens for writing through its own open and through os.fdopen (the shared writer's), both restored in finally. state_write_violations() -> [], no drive-phase.py site in state_write_sites(); ruff clean; bi-block 11/11; mutation probe 12/12 red; python3 tools/sweep-selftests.py tests/test__deps.py tests/test_drive_phase.py tests/test_drive_without_model.py exit 0 (3/3 files ok, 1304 cases). KEPT FROM ATTEMPT 1: base-run writes only its per-launch record (base_progress_path), folded into the mark by next (fold_progress/base_mark, sweep_base_trees), so next is the shared state file's only writer; every drive-state JSON write (state, explain record, auto's owed record, held slice return) through write_json_atomic; started() inside run_verb_bounded's try and started_keeper warns instead of raising; launch records the red's status and base_gate reads the verdict back through read_back/record_gate (unrepeatable_red, no --no-reuse); a previous-version cut mark is unknown (cut_before_ran); a mark decides only its own red or a repeat (red_runs); gate-red-base-unknown names commit-task-work.py --override-verdict and offers resume/retry as never recommended, resume refused without a session, the session carried when a round is left; guide and execute-task.md prose updated. Dependants: drive-without-model.py hook and test_drive_without_model.py still correct - dm84 uses base_said/base_wait_said, unchanged, suite green; _worktrees.py and test__worktrees.py, test__filed_returns.py, test__invariants.py, test_audit_status.py, test_commit_task_work.py, test_detect_plan_skip.py read none of the changed names; audit-status lists drive/*.json and skips the base-runs directory and .tmp names; dependant sweep last round exit 0 (4/4 files). The brief now names P161.3-toy (pending) as the last declarer of four of these files.",
+    "descriptive": "The base run and next no longer overwrite each other's state, every drive-state write goes through the repository's sanctioned atomic writer, and the red after a base run is read back instead of measured inline."
+  },
+  "testsAdded": [
+    "bi-block in tests/test_drive_phase.py: bi1/bi2 interleaving keeps and decides on the run's reading; bi3 a torn state or run-record write is never read (seam now covers the shared atomic writer); bi4/bi5 a raising started callback tears the group down and a failed pid write warns; bi6/bi7 read-back after a base run, unrepeatable red not measured, no --no-reuse; bi8 a previous-version cut mark is unknown; bi9 another run's reading does not decide; bi10/bi11 the unknown stop's override route, unrecommended resume/retry, carried session"
+  ],
+  "casesAdded": [
+    [
+      "bi1",
+      "bi2",
+      "bi3",
+      "bi6",
+      "bi7",
+      "bi8",
+      "bi9",
+      "bi4",
+      "bi5",
+      "bi10",
+      "bi11"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py write_json_atomic calls _mio.atomic_write_text; its docstring says the sanctioned replace, which _manifest_io.py:1190-1220 does (mkstemp, os.replace, temp removed on failure)\n2 in-place write in write_json_atomic -> bi3 red (10/11) -> restored; the other 11 mutations red again this round; restored True\n3 sw1's class is an os.replace outside STATE_WRITERS: state_write_sites() shows no drive-phase.py site; state_write_violations() -> []\n4 n/a - no new rule to an agent this round\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written in prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:670a395fe9b231bd4fb5375443a6f631102e79fd07b70841fc98ad3b911434df\",\"dirtyDigest\":\"sha256:71fac58431a96555496bc8c2c94041e29d7ec56c8920b6267ed1919f7f5cfb44\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"f70695b21853041c\",\"plugins/audit/reference/execute-task.md\":\"6862b0133f122078\",\"plugins/audit/scripts/governance/drive-phase.py\":\"41b1ad94b2ab4c82\",\"tests/test_drive_phase.py\":\"17c49431c465db05\"},\"head\":\"dbc8c74a\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\",\"tests/test_drive_without_model.py\"],\"scopeDigest\":\"sha256:a3f4cb9ad7037af953770fc0d07b9fa446116c7f39f5306db4a29c8635383927\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

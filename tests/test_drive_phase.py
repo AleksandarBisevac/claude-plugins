@@ -18610,6 +18610,7 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("bm-block", "_base_measure_cases"),
           ("bt-block", "_base_bound_cases"),
           ("bq-block", "_base_background_cases"),
+          ("bi-block", "_base_interleave_cases"),
           ("tcc-block", "_committed_close_cases"),
           ("oc-block", "_own_commit_cases"),
           ("up-block", "_advance_plan_cases"),
@@ -20070,16 +20071,24 @@ _BASE_SCOPE = getattr(_evio, "BASE_SCOPE", "base")
 _BASE_OF_KEY = getattr(_evio, "BASE_OF_KEY", "baseOf")
 
 
-def _base_mark(root):
-    """The base reading the drive kept for P1.1's start, or {}."""
-    path = _fr.drive_state_path(os.path.join(root, ".claude", "state"), PHASE)
+def _base_mark(root, M=None):
+    """The base reading the drive kept for P1.1's start, or {} - with, given
+    the driver `M`, what its background run has recorded so far laid over it,
+    as `next` reads it (`fold_progress`)."""
+    where = os.path.join(root, ".claude", "state")
+    path = _fr.drive_state_path(where, PHASE)
     try:
         with open(path, encoding="utf-8") as fh:
             state = json.load(fh)
     except (OSError, ValueError):
         return {}
     marks = state.get("baseMeasured") or {}
-    return (marks.get("P1.1") or {}).get("value") or {}
+    value = (marks.get("P1.1") or {}).get("value") or {}
+    if M is None:
+        return value
+    folded, _final = M.fold_progress({"stateDir": where, "phase": PHASE},
+                                     "P1.1", value)
+    return folded or {}
 
 
 def _ledger_of(root):
@@ -20542,7 +20551,7 @@ def _base_killed_case(check, k02, slow_ms):
     proc = _base_popen(root, argv) if argv else None
     mark, deadline = {}, time.monotonic() + 30
     while proc is not None and time.monotonic() < deadline:
-        mark = _base_mark(root)
+        mark = _base_mark(root, M)
         if mark.get("tree") and len(mark.get("pids") or []) >= 2:
             break
         time.sleep(0.1)
@@ -20605,6 +20614,429 @@ def _base_auto_case(check, k02):
           and measured.get("verdict") == "base-only"
           and len(base_rows) == 1 and len(_stub_runs(log)) == 1
           and "P1.1's base measured at" in ran)
+
+
+# --- the base run beside next: one writer per file, read back after --------
+class _TornFile(object):
+    """A file opened for writing that takes the first half of a write and then
+    fails, as a write cut short by a full disk or a kill leaves it."""
+
+    def __init__(self, fh):
+        self.fh = fh
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.fh.close()
+        return False
+
+    def write(self, text):
+        self.fh.write(text[:max(1, len(text) // 2)])
+        self.fh.flush()
+        raise OSError("the write was cut short")
+
+    def close(self):
+        self.fh.close()
+
+
+def _torn_open(path, mode="r", *args, **kw):
+    """`open`, but a file opened for writing is a `_TornFile`."""
+    fh = open(path, mode, *args, **kw)
+    return _TornFile(fh) if "w" in mode else fh
+
+
+@contextlib.contextmanager
+def _writes_torn(M):
+    """Every file the driver opens for writing in the block is a `_TornFile`:
+    through its own `open`, and through `os.fdopen`, which the shared atomic
+    writer opens its temp file with. Both are put back on the way out."""
+    real_fdopen = os.fdopen
+
+    def _torn_fdopen(fd, mode="r", *args, **kw):
+        fh = real_fdopen(fd, mode, *args, **kw)
+        return _TornFile(fh) if "w" in mode else fh
+
+    M.open = _torn_open
+    os.fdopen = _torn_fdopen
+    try:
+        yield
+    finally:
+        os.fdopen = real_fdopen
+        del M.open
+
+
+def _dead_pid():
+    """The pid of a process that has exited and been reaped."""
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    proc.wait()
+    return proc.pid
+
+
+def _bi_world(M, prefix):
+    """`(ctx, task, phase)` of a drive with no repository: a state directory of
+    its own, and one started task."""
+    where = os.path.realpath(_harness.fixture_root(prefix))
+    ctx = {"stateDir": os.path.join(where, "state"), "phase": PHASE, "did": [],
+           "gitRoot": where, "project": where, "config": {}, "log": [],
+           "manifest": os.path.join(where, "plan.json")}
+    task = {"id": "P1.1", "status": "in_progress",
+            "startedAt": "2026-11-13T09:00:00Z"}
+    return ctx, task, {"id": PHASE, "tasks": [task]}
+
+
+def _bi_fold(M):
+    """The mark as `next` reads it: folded with its base run's own record where
+    the driver has one, else the shared mark alone."""
+    fold = getattr(M, "base_mark", None)
+    if fold is not None:
+        return fold
+    return lambda ctx, state, task: M._marked(state, M.BASE_MEASURED, task)
+
+
+def _bi_launch(M, ctx, task, run_id="r-red", status="failed"):
+    """Launch the background base measurement of the red run `run_id` the way
+    `next` does, and return the launch key its own record is filed under."""
+    state = {}
+    M.launch_base(ctx, state, task, {"runId": run_id, "status": status,
+                                     "taskId": task["id"]}, None, "a reason")
+    held = M._marked(M.read_state(ctx), M.BASE_MEASURED, task) or {}
+    key = getattr(M, "launch_key", None)
+    return key(held) if key is not None else held.get("at")
+
+
+_BI_READING = {"verdict": "base-only", "run": "r-base", "atBase": ["s1"],
+               "introduced": []}
+
+
+def _bi_finish(keep):
+    """The writes a base run that answered `base-only` makes, in its order."""
+    keep(done=True, tree=None, pids=[], said="measured", measurable=True,
+         reading=dict(_BI_READING), unknowable=False, verdict="base-only",
+         run="r-base", atBase=["s1"], introduced=[])
+
+
+def _bi_row(run_id="r-red", verdict="no-base", run=None):
+    return {"runId": run_id, "status": "failed", "taskId": "P1.1",
+            _evio.BASE_RED_KEY: {"verdict": verdict, "run": run}}
+
+
+def _bi_text(run_id):
+    return "GATE RED: 1 failed\n  evidence: recorded %s\n" % (run_id,)
+
+
+def _base_interleave_cases(check):
+    """The background base run and `next` share one drive, never one file: the
+    run writes its progress to a record of its own, `next` folds it in when it
+    reads, every write is a whole file or none, and the red is read back after
+    the run from the row it was measured for - never measured again inline.
+    The interleaving is played in a chosen order, with no sleep."""
+    M, why = _load("drive_phase_base_interleave")
+    if M is None:
+        check("bi1 the driver loads", False, why)
+        return
+    fold = _bi_fold(M)
+
+    # A `next` reads the state while the base run measures; the run finishes;
+    # the `next` writes the copy it read back. The run's answer must survive.
+    ctx, task, phase = _bi_world(M, "drive-bi-lost-")
+    launch = _bi_launch(M, ctx, task)
+    keep = M.fresh_keeper(ctx, task, launch)
+    shared = M.state_path(ctx)
+    with open(shared, "rb") as fh:
+        before = fh.read()
+    keep(ran=True, done=False, said="measuring", pids=[_dead_pid()])
+    seen_by_next = M.read_state(ctx)
+    _bi_finish(keep)
+    with open(shared, "rb") as fh:
+        after_run = fh.read()
+    M.write_state(ctx, seen_by_next)
+    held = fold(ctx, M.read_state(ctx), task) or {}
+    check("bi1 a next that read the state while the base run measured, and "
+          "wrote it back after the run finished, keeps the run's reading: the "
+          "run never wrote the shared state file, and the mark next reads is "
+          "done with the reading the run left: %r"
+          % ((held, before == after_run),),
+          before == after_run and held.get("done") is True
+          and (held.get("reading") or {}).get("verdict") == "base-only"
+          and held.get("run") == "r-base")
+
+    # The same order, decided on: the stale copy next holds says ran and not
+    # done, its pids are gone - that must not read as a run cut short.
+    ctx, task, phase = _bi_world(M, "drive-bi-decide-")
+    launch = _bi_launch(M, ctx, task)
+    keep = M.fresh_keeper(ctx, task, launch)
+    keep(ran=True, done=False, said="measuring", pids=[_dead_pid()])
+    stale = M.read_state(ctx)
+    fold(ctx, stale, task)
+    _bi_finish(keep)
+    real_row = M.gate_row
+    M.gate_row = lambda c, text: _bi_row()
+    try:
+        step, reading, unknown = M.base_reading_for(ctx, stale, phase, task,
+                                                    _bi_text("r-red"))
+    finally:
+        M.gate_row = real_row
+    check("bi2 a next holding the state it read while the base run measured "
+          "decides on the reading the run left once it ended - red at base - "
+          "and never on a run cut short (gate-red-base-unknown): %r"
+          % ((step, reading, unknown),),
+          step is None and unknown is None
+          and (reading or {}).get("verdict") == "base-only")
+
+    # A write cut half-way leaves the file it replaces whole.
+    ctx, task, phase = _bi_world(M, "drive-bi-torn-")
+    M.write_state(ctx, {"kept": 1})
+    torn = None
+    try:
+        with _writes_torn(M):
+            M.write_state(ctx, {"kept": 2, "pad": "x" * 4096})
+    except OSError as exc:
+        torn = "%s" % (exc,)
+    try:
+        reread = M.read_state(ctx)
+    except ValueError as exc:
+        reread = "unreadable: %s" % (exc,)
+    left = sorted(os.listdir(os.path.dirname(M.state_path(ctx))))
+    launch = _bi_launch(M, ctx, task)
+    keep = M.fresh_keeper(ctx, task, launch)
+    keep(ran=True, done=False, said="measuring", pids=[_dead_pid()])
+    try:
+        with _writes_torn(M):
+            _bi_finish(keep)
+    except OSError:
+        pass
+    try:
+        progress = fold(ctx, M.read_state(ctx), task) or {}
+    except ValueError as exc:
+        progress = {"unreadable": "%s" % (exc,)}
+    check("bi3 a state write cut half-way is never read: the file it was "
+          "replacing reads whole, no temp file is left beside it, and a base "
+          "run's own record cut the same way still reads as the write before "
+          "it: %r" % ((torn, reread, left, progress),),
+          torn is not None and reread == {"kept": 1}
+          and left == [os.path.basename(M.state_path(ctx))]
+          and progress.get("ran") is True and progress.get("done") is not True
+          and "unreadable" not in progress)
+
+    if not hasattr(os, "killpg"):
+        _harness.skip(check, "bi4", "os.killpg, to see a process group torn "
+                      "down", True)
+    else:
+        _bi_started_raises_case(check, M)
+
+    ctx, task, phase = _bi_world(M, "drive-bi-started-")
+    ctx["warnings"] = []
+    pids = [101]
+
+    def _refused(**changes):
+        raise OSError("the state could not be written")
+
+    sk = getattr(M, "started_keeper", None)
+    raised = None
+    if sk is not None:
+        try:
+            sk(ctx, task["id"], _refused, pids)(4242)
+        except Exception as exc:                               # noqa: BLE001
+            raised = "%s: %s" % (type(exc).__name__, exc)
+    check("bi5 the callback recording a base run's process reports a state "
+          "write it could not make as a warning naming the pid, and raises "
+          "nothing: %r" % ((sk is not None, raised, pids, ctx["warnings"]),),
+          sk is not None and raised is None and pids == [101, 4242]
+          and any("4242" in w for w in ctx["warnings"]))
+
+    _bi_read_back_cases(check, M, fold)
+    _bi_reading_cases(check, M)
+
+
+def _bi_started_raises_case(check, M):
+    """A `started` callback that raises still has the run's group torn down."""
+    ctx, _task, _phase = _bi_world(M, "drive-bi-group-")
+    sleeper = os.path.join(ctx["project"], "sleeper.py")
+    _write_lf(sleeper, "import time\ntime.sleep(60)\n")
+    seen = []
+
+    def _started(pid):
+        seen.append(pid)
+        raise RuntimeError("the callback failed")
+
+    real_loader = M._loader
+    M._loader = types.SimpleNamespace(script_path=lambda name: sleeper)
+    raised = None
+    try:
+        M.run_verb_bounded(ctx, "sleeper.py", [], 30, _started)
+    except RuntimeError as exc:
+        raised = "%s" % (exc,)
+    finally:
+        M._loader = real_loader
+    alive = None
+    if seen:
+        try:
+            os.kill(seen[0], 0)
+            alive = True
+        except OSError:
+            alive = False
+        if alive:
+            try:
+                os.killpg(os.getpgid(seen[0]), signal.SIGKILL)
+            except OSError:
+                pass
+    check("bi4 a started callback that raises still tears the run's process "
+          "group down before the raise surfaces: %r" % ((seen, raised, alive),),
+          len(seen) == 1 and raised == "the callback failed" and alive is False)
+
+
+def _bi_read_back_cases(check, M, fold):
+    """After the background base run, the red is the recorded row's: read back
+    through `read_back`, a row no repeat may copy standing as recorded, and no
+    rerun mark ever turning the read-back into a fresh measurement."""
+    asked = []
+
+    def _record(ctx, phase, task, tree=None, no_reuse=False):
+        asked.append(("record_gate", no_reuse))
+        return 1, "GATE VERDICT REUSED\n" + _bi_text("r-red"), ""
+
+    def _task(ctx, state, phase, task, tree=None):
+        asked.append(("task_gate", None))
+        return 1, _bi_text("r-fresh"), ""
+
+    real = (M.record_gate, M.task_gate)
+    M.record_gate, M.task_gate = _record, _task
+    try:
+        ctx, task, phase = _bi_world(M, "drive-bi-timeout-")
+        launch = _bi_launch(M, ctx, task, "r-to", "timed-out")
+        keep = M.fresh_keeper(ctx, task, launch)
+        keep(ran=True, pids=[])
+        _bi_finish(keep)
+        state = M.read_state(ctx)
+        said, measured = M.base_gate(ctx, state, phase, task)
+        timed = list(asked)
+        del asked[:]
+        ctx, task, phase = _bi_world(M, "drive-bi-repeat-")
+        launch = _bi_launch(M, ctx, task, "r-red", "failed")
+        keep = M.fresh_keeper(ctx, task, launch)
+        keep(ran=True, pids=[])
+        _bi_finish(keep)
+        state = M.read_state(ctx)
+        M._mark(state, "rerun", task)
+        said2, measured2 = M.base_gate(ctx, state, phase, task)
+        repeated = list(asked)
+    finally:
+        M.record_gate, M.task_gate = real
+    check("bi6 the verdict after a base run is read back: a timed-out red row, "
+          "which no repeat may copy, is decided from as it was recorded, with "
+          "no gate run at all: %r" % ((said, measured, timed),),
+          said is None and timed == []
+          and measured == M.unrepeatable_red("r-to", "timed-out"))
+    check("bi7 THE TWIN: a red row a repeat may copy is repeated once through "
+          "the recorded gate's own call, never with --no-reuse - a rerun mark "
+          "left on the start does not turn the read-back into a fresh "
+          "measurement: %r" % ((said2, measured2, repeated),),
+          said2 is None and repeated == [("record_gate", False)]
+          and measured2 is not None and measured2[0] == 1)
+
+
+def _bi_reading_cases(check, M):
+    """A mark decides only the red it was measured for, and a mark the previous
+    version wrote for a cut base is unknowable; the unknown stop offers the
+    owner's route past it and the writer's, never recommending either."""
+    def _decide(state, task, phase, row, text):
+        real_row = M.gate_row
+        M.gate_row = lambda c, t: row
+        try:
+            return M.base_reading_for(ctx, state, phase, task, text)
+        finally:
+            M.gate_row = real_row
+
+    ctx, task, phase = _bi_world(M, "drive-bi-legacy-")
+    legacy = {}
+    M._mark(legacy, M.BASE_MEASURED, task, {
+        "of": "r-red", "verdict": "not-knowable", "run": None, "atBase": [],
+        "introduced": []})
+    old = _decide(legacy, task, phase, _bi_row(verdict="not-knowable"),
+                  _bi_text("r-red"))
+    answered = {}
+    M._mark(answered, M.BASE_MEASURED, task, {
+        "of": "r-red", "verdict": "base-only", "run": "r-base", "atBase": ["s1"],
+        "introduced": []})
+    old_ok = _decide(answered, task, phase,
+                     _bi_row(verdict="base-only", run="r-base"),
+                     _bi_text("r-red"))
+    check("bi8 a mark the previous version wrote for a cut base - not-knowable, "
+          "naming no run, with no ran or background key - stops as unknown, "
+          "never falling to the writer; and THE TWIN, its mark for a base that "
+          "answered, decides on the row's reading as it did: %r"
+          % ((old, old_ok),),
+          old[0] is None and old[2] is not None
+          and old_ok[0] is None and old_ok[2] is None
+          and (old_ok[1] or {}).get("verdict") == "base-only")
+
+    ctx, task, phase = _bi_world(M, "drive-bi-other-")
+    launch = _bi_launch(M, ctx, task, "r-other")
+    keep = M.fresh_keeper(ctx, task, launch)
+    keep(ran=True, pids=[])
+    _bi_finish(keep)
+    other = _decide(M.read_state(ctx), task, phase, _bi_row("r-red"),
+                    _bi_text("r-red"))
+    ctx, task, phase = _bi_world(M, "drive-bi-same-")
+    launch = _bi_launch(M, ctx, task, "r-red")
+    keep = M.fresh_keeper(ctx, task, launch)
+    keep(ran=True, pids=[])
+    _bi_finish(keep)
+    repeat = _decide(M.read_state(ctx), task, phase, _bi_row("r-red"),
+                     _bi_text("r-repeat"))
+    check("bi9 a base reading measured for another red run does not decide "
+          "this one: it is unknown, never red at base; and THE TWIN, a repeat "
+          "of the run the mark was measured for is decided by it: %r"
+          % ((other, repeat),),
+          other[0] is None and other[2] is not None
+          and (other[1] or {}).get("verdict") != "base-only"
+          and repeat[0] is None and repeat[2] is None
+          and (repeat[1] or {}).get("verdict") == "base-only")
+
+    rule = " ".join(M.STEPS["decide-gate-red-base-unknown"]["rule"])
+    options, _needs = M.DECISIONS["gate-red-base-unknown"]
+    ctx, task, phase = _bi_world(M, "drive-bi-route-")
+    pend = {"decision": "gate-red-base-unknown", "task": "P1.1"}
+    no_session = M.answer_refusal(ctx, pend, "resume", "", ())
+    with_session = M.answer_refusal(ctx, dict(pend, session="s-1"), "resume",
+                                    "", ())
+    retry = M.answer_refusal(ctx, pend, "retry", "", ())
+    check("bi10 the unknown stop names the owner's commit-task-work.py "
+          "--override-verdict route and offers resume and retry, saying they "
+          "are never recommended; resume is refused where no writer session "
+          "is recorded for the red, and taken where one is: %r"
+          % ((rule, options, no_session, with_session, retry),),
+          "commit-task-work.py --override-verdict" in rule
+          and "never recommended" in rule
+          and "resume" in options and "retry" in options
+          and no_session is not None and with_session is None and retry is None)
+
+    state = {}
+    stubs = {"base_reading_for": lambda *a, **k: (None, None, "no reading"),
+             "base_red_why": lambda *a, **k: "",
+             "verdict_taken": lambda *a, **k: {},
+             "recorded_session": lambda s, t: "s-writer",
+             "failing_lines": lambda row, text: ["FAIL x"],
+             "gate_row": lambda c, t: None}
+    real = dict((name, getattr(M, name)) for name in stubs)
+    for name, fn in stubs.items():
+        setattr(M, name, fn)
+    try:
+        said = M.gate_red_decision(ctx, state, {}, phase, task,
+                                   _bi_text("r-red"))
+    finally:
+        for name, fn in real.items():
+            setattr(M, name, fn)
+    pending = state.get("pending") or {}
+    text = json.dumps(said, sort_keys=True)
+    check("bi11 the unknown stop carries the recorded writer session and its "
+          "failing lines, so a resume the owner answers has them: %r"
+          % ((pending,),),
+          pending.get("decision") == "gate-red-base-unknown"
+          and pending.get("session") == "s-writer"
+          and pending.get("failing") == ["FAIL x"]
+          and "resume" in text)
 
 
 def _next_text(M, root, mpath):
