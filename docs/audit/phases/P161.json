@@ -485,7 +485,7 @@
     {
       "id": "P161.6-toy",
       "title": "A takeover judges the very claim it removes, and a base-run claim is released on every path and when its launch is replaced",
-      "status": "in_progress",
+      "status": "done",
       "description": "A verification review of 3d8f2128 found the following.\n\nMED 1. plugins/audit/scripts/governance/_locks.py, the takeover loop in acquire (read_lock near line 1474, the stamp near line 1511, reached by reclaim near line 1566). Each pass reads the claim and only afterwards stamps the file. judge rules on the old contents, and _take_over checks against the newer stamp. Two reclaimers racing over a dead claim: B stamps, reclaims and links its live claim; A then stamps B's file, still judges the dead contents it read, its stamp matches, and it unlinks B's live claim. Both base runs measure, and with audit-usage two backfills both write the ledger. Required: the stamp handed to _take_over must belong to the bytes that were judged. Stamp before read_lock, re-stamp after the read, and re-read on a mismatch. A red-first case in tests/test__locks.py plants a winner between A's read and A's stamp and asserts A is refused and B keeps the claim.\n\nLOW 2. drive-phase.py base_run's finally (near line 3471): no case fails if release_launch is missing. Assert that the base- lock file is absent from _locks.lock_dir after a run that measured, a run that was refused, and a measure_launch stubbed to raise.\n\nLOW 3. A claim left by a run killed before it recorded ran is cleared only when the same launch runs again. measure-base mints a new launch, so the old base- claim stays in the lock directory forever, and /audit:doctor warns about it with advice that does not fit (_doctor_hygiene.py near line 355, abandoned_advice). Required: when a new launch replaces a background mark, release the replaced launch's base- claim (release still refuses a live holder). Give abandoned_advice a base- branch that says the next base-run of that launch reclaims it, and otherwise it may be deleted. Add a case for each.\n\nRed-first for every new case: mutate the fix, assert the mutation landed, see the case go red, and restore in the same command. Purge __pycache__. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/_locks.py",
@@ -516,14 +516,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "bfc818b2a368",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "MED 1: _locks._read_stamped(path) stamps the claim on both sides of read_lock and re-reads until the stamps agree (bounded by REVISIT_LIMIT+1), returning (claim, stamp) or (claim, None) when the file never holds still; acquire's loop now takes current and stamp from it (both the own-claim branch and the judge/takeover path), so the stamp _take_over checks belongs to the bytes judge ruled on. Same class at refresh(): it read, judged ours/gone, then stamped last before _rerecord - now reads through _read_stamped too (grep -n '_claim_stamp(' over plugins/audit: 6 hits - the def, the two inside _read_stamped, _take_over's own compare (that is the check itself), acquire's revisit compare (compares a fresh stamp to the paired one, correct), refresh's call (fixed)). LOW 2: lc8 asserts no base- lock in _locks.lock_dir after a run that measured, one refused under its claim (launch recorded ran), and one whose measure_launch raised (and that the raising run held one during). LOW 3: drive-phase release_replaced(ctx, task_id, held) gives back the claim of a background mark's launch via _locks.release (which refuses a live recorded holder); called in launch_base after the new mark is written (for the mark it replaced) and in apply_answer's measure-base after _spend. _doctor_hygiene.abandoned_advice has a base- branch: 'the next base-run of that launch reclaims it; otherwise, with no base-run of it live, it may be deleted', and base- names are no longer offered to a mutating /audit command. PLUGIN-BUILD-GUIDE.md: _locks section gains a 'takeover removes only the claim it judged' paragraph; drive-phase passage names release_replaced and lc8-lc10; _doctor_hygiene section names the namespace advice. Sweeps (exit 0): the five named suites 5/5 files ok; test__output_lints, test__deps, measure-context 3/3 ok; extra dependants test_audit_lock, test__evidence_io, test__status_facts, test__doctor_report 4/4 ok; ruff clean on the six touched .py. Dependants: _evidence_io, _invariants, _proc_group, audit-lock, stamp-verification, _proposals, audit-task (importers of _locks) - still correct: acquire/refresh/release signatures and return codes unchanged, only which stamp is handed to _take_over changed; test_audit_lock and test__evidence_io green. tests/test_audit_lock.py (_age_minutes), tests/test__status_facts.py (_identity) - untouched names. test__locks.py dependants (test_run_test_gate _cases/_selftest, sweep-costs, verify.sh, affected) - shape unchanged, cases added inside existing blocks (rc-block, refresh block). drive-phase importers (drive-without-model hook, _worktrees, test__filed_returns, etc.) - one new function, no signature changed; test_drive_without_model green; PLUGIN-BUILD-GUIDE/README/execute-task/orchestrator prose naming drive-phase decisions - no decision or step name changed. _doctor_hygiene dependants (audit-doctor, test__doctor_report, _deps, _doctor_trail via check_locks) - abandoned_advice signature unchanged, output gains a clause only for base- names; test__doctor_report green. test_drive_phase dependants (sweep-costs, ci.yml, affected, reach-diff) - new cases sit inside lc-block, no new block, so the cost table and shard split need no new row. PLUGIN-BUILD-GUIDE dependants - only prose inside three existing sections changed; test__deps and test__output_lints (enumeration and prose-number lints) green.",
+        "descriptive": "A reclaimer can no longer displace a winner that landed between its read and its stamp, a replaced base launch gives back the claim its killed run left, and the doctor advises an abandoned base- claim by what actually clears it."
       },
       "startedAt": "2026-11-13T18:27:08Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-13T18:52:28Z",
+      "verifiedBy": [
+        "rc5: a winner planted between a reclaimer's read of a dead claim and its stamp keeps the claim; the reclaimer is refused E_LIVE",
+        "rf9b: a claim that replaced this session's between refresh's read and its stamp is not re-recorded",
+        "lc8: no base- lock left after a measured, a refused and a raising base run",
+        "lc9: a replaced launch (measure-base drop, relaunch over the mark) gives back its dead run's claim",
+        "lc10: twin - a replaced launch whose run still measures keeps its claim",
+        "dh6d: an abandoned base- claim is advised as reclaimed by the next base-run of its launch, else deletable, never offered to a mutating /audit command"
+      ],
       "notes": [
         {
           "at": "2026-11-13T18:27:06Z",
@@ -537,7 +544,62 @@
         "runId": "2026-11-13T18:52:25Z.1d562b",
         "status": "passed",
         "at": "2026-11-13T18:52:25Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "bfc818b2a368",
+        "at": "2026-11-13T18:52:28Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-13T18:41:54Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__locks.py tests/test_drive_phase.py tests/test__doctor_hygiene.py` in a throwaway tree at HEAD exited 1 with 4 of 965 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - dh6d (house FAIL), rc5 (house FAIL), rf9b (house FAIL), lc9 (house FAIL): SELFTEST FAILED: 964/965 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P161.7-toy",
+      "title": "A takeover removes only the claim it judged, atomically, and every base-run claim is released once nothing names its launch",
+      "status": "pending",
+      "description": "A verification review of bfc818b2 found the following.\n\nMED 1. plugins/audit/scripts/governance/_locks.py _take_over (near lines 1077-1079): the removal is \"stat the file, check the stamp, unlink the path\", and nothing makes the check and the unlink one step. Two reclaimers judging the same dead claim A: R1's check passes and it is paused; R2 checks, unlinks A and links its live claim B; R1 resumes and unlinks B. Both believe they hold the claim. A human --takeover goes through the same lines. Required: make the removal atomic on the judged file. os.rename the path to a unique sibling in the lock directory, stamp the renamed file, and unlink it only if that stamp equals the judged one. Otherwise put it back with an exclusive os.link (never overwriting a claim created since), remove the sibling, and report the loss as the takeover's refusal. Cases red-first in tests/test__locks.py: a winner linked between the check and the removal is never displaced, and a restored claim is byte-identical. Correct the PLUGIN-BUILD-GUIDE.md sentence near line 3699 to state exactly what holds.\n\nLOW 2. plugins/audit/scripts/governance/drive-phase.py (near lines 3288 and 8705): a background mark from an earlier start is overwritten or spent with replaced/dropped None, so its claim is never released. A launch that is live when replaced and killed later also leaves its claim for good. Required: release the replaced launch's claim by reading the raw state value regardless of the start key. sweep_base_trees (or the drive's start) releases base- claims whose launch no mark names and whose holder _locks judges gone. Cases for both.\n\nLOW 3. plugins/audit/scripts/status/_doctor_hygiene.py (near lines 358-360): the advice says the next base-run reclaims the claim, unconditionally. Lead with \"may be deleted once no base-run of it is live\", and give the reclaim clause only for a launch still current, or let doctor check that. Fix the case.\n\nRed-first for every new case: mutate the fix, assert the mutation landed, see the case go red, and restore in the same command. Purge __pycache__. No F/P/BUG ids in comments. Claim in the commit's claims block only what the cases prove.",
+      "files": [
+        "plugins/audit/scripts/governance/_locks.py",
+        "tests/test__locks.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "plugins/audit/scripts/status/_doctor_hygiene.py",
+        "tests/test__doctor_hygiene.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__locks.py: a winner linked between a takeover's check and its removal is never displaced, and a restored claim is unchanged",
+          "tests/test_drive_phase.py: a claim of an earlier start's launch, and of a replaced launch killed later, is released once its holder is gone",
+          "tests/test__doctor_hygiene.py: the advice for an abandoned base- claim says it may be deleted once no base-run of it is live"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__locks.py tests/test_drive_phase.py tests/test__doctor_hygiene.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "Fix the drive's base measurement: a base run that outlives the foreground bound must be measured in the background and decided from its row, and a base that cannot be known must stop the drive rather than resume the writer.",
