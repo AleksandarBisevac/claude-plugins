@@ -830,7 +830,64 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-13T20:35:32Z",
+          "text": "quotes _output.py's rmtree line; the task adds an errno reading and touches no cleanup code",
+          "waives": ".claude/hooks/guard-release.py"
+        },
+        {
+          "at": "2026-11-13T20:35:32Z",
+          "text": "quotes a SECURITY.md passage unrelated to locks; the task edits only the lock-semantics sentence",
+          "waives": ".github/ISSUE_TEMPLATE/config.yml"
+        },
+        {
+          "at": "2026-11-13T20:35:32Z",
+          "text": "quotes a SECURITY.md passage unrelated to locks; the task edits only the lock-semantics sentence",
+          "waives": "plugins/audit/hooks/_config.py"
+        },
+        {
+          "at": "2026-11-13T20:35:32Z",
+          "text": "quotes a SECURITY.md passage unrelated to locks; the task edits only the lock-semantics sentence",
+          "waives": "tests/test__panel_page.py"
+        },
+        {
+          "at": "2026-11-13T20:35:32Z",
+          "text": "quotes a SECURITY.md passage unrelated to locks; the task edits only the lock-semantics sentence",
+          "waives": "tests/test_guard_secrets_read.py"
+        },
+        {
+          "at": "2026-11-13T20:35:32Z",
+          "text": "quotes a SECURITY.md passage unrelated to locks; the task edits only the lock-semantics sentence",
+          "waives": "tests/test_hooks.py"
+        },
+        {
+          "at": "2026-11-13T20:35:32Z",
+          "text": "quotes a SECURITY.md passage unrelated to locks; the task edits only the lock-semantics sentence",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-13T20:35:32Z",
+          "text": "quotes a SECURITY.md passage unrelated to locks; the task edits only the lock-semantics sentence",
+          "waives": "tools/check-git-pipeline.py"
+        },
+        {
+          "at": "2026-11-13T20:35:32Z",
+          "text": "quotes a SECURITY.md passage unrelated to locks; the task edits only the lock-semantics sentence",
+          "waives": "tools/gate-parity.py"
+        },
+        {
+          "at": "2026-11-13T20:35:32Z",
+          "text": "quotes a SECURITY.md passage unrelated to locks; the task edits only the lock-semantics sentence",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-13T20:35:32Z",
+          "text": "quotes a SECURITY.md passage unrelated to locks; the task edits only the lock-semantics sentence",
+          "waives": "docs/research/guard-ownership-design.md"
+        }
+      ]
     }
   ],
   "request": "Fix the drive's base measurement: a base run that outlives the foreground bound must be measured in the background and decided from its row, and a base that cannot be known must stop the drive rather than resume the writer.",
