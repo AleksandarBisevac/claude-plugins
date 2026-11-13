@@ -1466,6 +1466,33 @@ def _refresh_cases(check):
               code == M.E_OURS and got_dead.get("pid") == os.getpid()
               and code2 == M.E_OURS and got_none.get("pid") == os.getpid())
 
+        # A claim that lands between refresh's read of this session's dead
+        # claim and its stamp is another run's, and is not written over.
+        plant(dead.pid)
+        real_read = M.read_lock
+        swapped = []
+
+        def _other_lands_after_read(p):
+            got = real_read(p)
+            if p == path and not swapped:
+                swapped.append(got.get("sessionId"))
+                os.unlink(path)
+                M._write_lock(path, {"sessionId": "s-OTHER-RACED",
+                                     "pid": sleeper.pid, "hostname": here,
+                                     "note": "another run", "startedAt": stamp})
+            return got
+        M.read_lock = _other_lands_after_read
+        try:
+            code = M.refresh(proj, "phase-P1", session="s-A", pid=os.getpid(),
+                             out=lambda *_a, **_k: None)
+        finally:
+            M.read_lock = real_read
+        check("rf9b a claim that replaced this session's between refresh's "
+              "read and its stamp is left as it landed, not re-recorded under "
+              "the run asking: %r" % ((swapped, code, M.read_lock(path)),),
+              swapped == ["s-A"] and code != M.E_OURS
+              and M.read_lock(path).get("sessionId") == "s-OTHER-RACED")
+
         # THE $CLAUDE_PID RULE excludes another session, as the token rule does.
         shared = {"sessionId": "s-A", "pid": sleeper.pid, "hostname": here,
                   "handedOff": True, "token": "not-carried", "startedAt": stamp}
@@ -1853,6 +1880,41 @@ def _reclaim_cases(check):
               "holder's: %r" % ((code, M.read_lock(path), said),),
               code == M.E_LIVE and M.read_lock(path).get("sessionId") == "s-LIVE"
               and ("pid %d" % (live.pid,)) in " ".join(said))
+
+        # A RACING RECLAIMER LANDS BETWEEN THIS ONE'S READ AND ITS STAMP: the
+        # read saw the dead claim, the winner then took the name and linked a
+        # live claim of its own, and only then is the file stamped. The stamp
+        # handed to the takeover has to belong to the bytes that were judged,
+        # or the dead verdict removes the winner's live claim.
+        os.unlink(path)
+        _held_by(_gone_pid(), "s-KILLED")
+        real_read = M.read_lock
+        planted = []
+
+        def _winner_lands_after_read(p):
+            got = real_read(p)
+            if p == path and not planted:
+                planted.append(got.get("sessionId"))
+                os.unlink(path)
+                M._write_lock(path, {"sessionId": "s-WINNER-RACED",
+                                     "hostname": platform.node(),
+                                     "pid": live.pid, "note": "the winner",
+                                     "startedAt": time.strftime(
+                                         "%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+            return got
+        said = []
+        M.read_lock = _winner_lands_after_read
+        try:
+            code = M.acquire(proj, name, session="s-RACER", wait=0,
+                             per_call=True, reclaim=True, out=said.append)
+        finally:
+            M.read_lock = real_read
+        check("rc5 a winner that took the name between a reclaimer's read of "
+              "the dead claim and its stamp is never displaced: the reclaimer "
+              "is refused and the winner keeps the claim: %r"
+              % ((planted, code, M.read_lock(path), said),),
+              planted == ["s-KILLED"] and code == M.E_LIVE
+              and M.read_lock(path).get("sessionId") == "s-WINNER-RACED")
 
         os.unlink(path)
         with open(path, "w", encoding="utf-8") as fh:

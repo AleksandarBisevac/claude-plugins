@@ -21523,6 +21523,9 @@ def _base_claim_cases(check):
           len(left) == 1 and held.get("ran") is True
           and not any(os.path.exists(p) for p in left))
 
+    _bk_released_cases(check, M)
+    _bk_replaced_cases(check, M)
+
     with open(_loader.script_path(DRIVER), "r", encoding="utf-8") as fh:
         hits = hand_rolled_claims(fh.read())
     check("lc5 the drive's source makes no exclusive file of its own - no O_EXCL "
@@ -21537,6 +21540,132 @@ def _base_claim_cases(check):
           "written, and stays quiet on a `_locks.acquire` call: %r" % ((planted,),),
           [what for _line, what in planted]
           == ["os.O_EXCL", "the literal '.claim'"])
+
+
+def _bk_base_locks(ctx):
+    """Every base-run claim in the lock directory of `ctx`'s project, by name."""
+    ld = _locks.lock_dir(ctx["project"])
+    try:
+        names = os.listdir(ld)
+    except OSError:
+        return []
+    return sorted(n for n in names if n.startswith(_locks.BASE_PREFIX))
+
+
+def _bk_released_cases(check, M):
+    """A base run gives its launch's claim back however it ends short of a
+    kill: having measured, having been refused under the claim, and with its
+    measurement raising."""
+    ctx, task, phase = _bk_world(M, "drive-bk-released-")
+    launch = _bi_launch(M, ctx, task)
+    measured, after_measured = _bk_relaunch(M, ctx, task, phase)
+    left_measured = _bk_base_locks(ctx)
+    # Recorded as ran, so the next run is refused under the claim it took.
+    M.fresh_keeper(ctx, task, launch)(ran=True)
+    refused, after_refused = _bk_relaunch(M, ctx, task, phase)
+    left_refused = _bk_base_locks(ctx)
+
+    ctx2, task2, phase2 = _bk_world(M, "drive-bk-raised-")
+    _bi_launch(M, ctx2, task2)
+    held_during = []
+
+    def _raise(c, ph, t, launch):
+        held_during.append(_bk_base_locks(c))
+        raise RuntimeError("the measurement broke")
+
+    real = (M.measure_launch, M.load_phase)
+    M.measure_launch = _raise
+    M.load_phase = lambda c: ({"phases": [phase2]}, phase2)
+    try:
+        raised = M.base_run(dict(ctx2, did=[]), task2["id"])
+    except RuntimeError as exc:
+        raised = ("raised", "%s" % (exc,))
+    finally:
+        M.measure_launch, M.load_phase = real
+    left_raised = _bk_base_locks(ctx2)
+    check("lc8 no base-run claim is left in the lock directory after a run "
+          "that measured, one refused under the claim (the launch already "
+          "ran), or one whose measurement raised - and the raising run did "
+          "hold one while it measured, so its absence after is a release: %r"
+          % ((measured, left_measured, refused, left_refused, raised,
+              held_during, left_raised),),
+          measured[0] == M.E_OK and after_measured == ["r-red"]
+          and left_measured == []
+          and refused[0] == M.E_USAGE and after_refused == []
+          and left_refused == []
+          and raised[0] == "raised" and len(held_during) == 1
+          and len(held_during[0]) == 1 and left_raised == [])
+
+
+def _bk_measure_base(M, ctx, task, phase):
+    """Answer `measure-base` on `task`'s pending base-unknown decision, as the
+    orchestrator does, over the state the drive keeps."""
+    state = M.read_state(ctx)
+    return M.apply_answer(dict(ctx, did=[]), state, {"phases": [phase]}, phase,
+                          {"decision": "gate-red-base-unknown",
+                           "task": task["id"]}, "measure-base", "")
+
+
+def _bk_launch_over(M, ctx, task):
+    """Launch `task`'s base measurement again over the mark the drive's state
+    holds, as `next` does for another red."""
+    M.launch_base(ctx, M.read_state(ctx), task,
+                  {"runId": "r-again", "status": "failed",
+                   "taskId": task["id"]}, None, "a reason")
+
+
+def _bk_replaced_cases(check, M):
+    """A launch replaced - dropped by `measure-base`, or launched again over
+    the mark - gives back the claim its dead run left, and never the claim of
+    a run that still measures."""
+    ctx, task, phase, proc, left = _bk_dead_claim(M, "drive-bk-dropped-")
+    before = [p for p in left if os.path.exists(p)]
+    try:
+        _bk_measure_base(M, ctx, task, phase)
+        dropped = None
+    except Exception as exc:                                   # noqa: BLE001
+        dropped = "%s: %s" % (type(exc).__name__, exc)
+    after_drop = [p for p in left if os.path.exists(p)]
+
+    ctx2, task2, phase2, proc2, left2 = _bk_dead_claim(M, "drive-bk-relaunched-")
+    before2 = [p for p in left2 if os.path.exists(p)]
+    _bk_launch_over(M, ctx2, task2)
+    after_relaunch = [p for p in left2 if os.path.exists(p)]
+    check("lc9 a launch replaced gives back the claim its killed run left: "
+          "dropped by measure-base, and launched again over the mark: %r"
+          % ((left, before, dropped, after_drop, left2, before2,
+              after_relaunch),),
+          len(left) == 1 and before == left and dropped is None
+          and after_drop == []
+          and len(left2) == 1 and before2 == left2 and after_relaunch == [])
+
+    ctx3, task3, phase3 = _bk_world(M, "drive-bk-replaced-live-")
+    _bi_launch(M, ctx3, task3)
+    holding = _bk_base_locks(ctx3)
+    proc3, gate = _bk_child(ctx3, task3, phase3, "hold")
+    try:
+        held_by_child = _bk_base_locks(ctx3)
+        marked = M.read_state(ctx3)
+        _bk_launch_over(M, ctx3, task3)
+        after_relaunch3 = _bk_base_locks(ctx3)
+        # The mark naming the measuring run's launch, back for the other path.
+        M.write_state(ctx3, marked)
+        _bk_measure_base(M, ctx3, task3, phase3)
+        after_drop3 = _bk_base_locks(ctx3)
+    finally:
+        with open(gate + ".go", "w", encoding="utf-8") as fh:
+            fh.write("go")
+        try:
+            proc3.communicate(timeout=120)
+        except subprocess.TimeoutExpired:
+            proc3.kill()
+            proc3.communicate()
+    check("lc10 THE TWIN: a replaced launch whose run still measures keeps "
+          "its claim - the release refuses a live holder: %r"
+          % ((holding, held_by_child, after_drop3, after_relaunch3),),
+          holding == [] and len(held_by_child) == 1
+          and after_drop3 == held_by_child
+          and after_relaunch3 == held_by_child)
 
 
 def _next_text(M, root, mpath):

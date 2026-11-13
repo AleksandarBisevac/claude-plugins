@@ -1036,6 +1036,26 @@ def _claim_stamp(path):
     return (st.st_ino, st.st_size, st.st_mtime_ns)
 
 
+def _read_stamped(path):
+    """`(claim, stamp)` - the claim at `path` and the stamp of the very file
+    those bytes came from, or `(claim, None)` when the file kept changing.
+
+    A stamp taken after the read can belong to a claim that landed in between:
+    the verdict is then reached on the old bytes and handed to `_take_over`
+    with the new file's stamp, which matches, and a live claim is removed on a
+    dead claim's verdict. So the file is stamped on both sides of the read and
+    read again until the two agree, a bounded number of times. A None stamp
+    removes nothing (`_take_over`), so a file that never holds still is never
+    taken over.
+    """
+    for _ in range(REVISIT_LIMIT + 1):
+        before = _claim_stamp(path)
+        current = read_lock(path)
+        if _claim_stamp(path) == before:
+            return current, before
+    return current, None
+
+
 def _take_over(path, info, stamp, record, link=os.link):
     """Replace the claim `stamp` names -> `_claim`'s answers, plus `displaced`.
 
@@ -1313,7 +1333,7 @@ def refresh(project, name, session=None, pid=None, out=print):
         out(name_refusal(name))
         return E_USAGE
     path = os.path.join(ld, name + ".lock")
-    current = read_lock(path)
+    current, stamp = _read_stamped(path)
     mine = held_by_us(current, session=session, pid=pid)
     if not mine["ours"]:
         out("[audit-lock] %s is not this run's (%s) -- nothing re-recorded"
@@ -1337,7 +1357,7 @@ def refresh(project, name, session=None, pid=None, out=print):
         out("[audit-lock] %s is this session's and already names pid %s"
             % (name, live_pid))
         return E_OURS
-    return _rerecord(path, current, _claim_stamp(path), live_pid, name, out)
+    return _rerecord(path, current, stamp, live_pid, name, out)
 
 
 def taken_from(info, session=None):
@@ -1471,10 +1491,9 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
                 "work. Fall back to whatever guard you have, or fix %s." % (ld,))
             return E_ERR
 
-        current = read_lock(path)
+        current, stamp = _read_stamped(path)
         mine = held_by_us(current, session=session, pid=pid)
         if mine["ours"] and not is_user_name(name):
-            stamp = _claim_stamp(path)
             same_session = (bool(sid) and str(current.get("sessionId") or "")
                             == str(sid))
             if (handed_off and current.get("yields") and not yields
@@ -1508,7 +1527,6 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
             # A claim of this session naming a gone process, with no live pid
             # to re-record it under: judged below like any other claim, which
             # reads it dead.
-        stamp = _claim_stamp(path)
         live, basis = judge(current, path)
         if not live and not takeover:
             revisits += 1

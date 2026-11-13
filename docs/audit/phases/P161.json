@@ -485,7 +485,7 @@
     {
       "id": "P161.6-toy",
       "title": "A takeover judges the very claim it removes, and a base-run claim is released on every path and when its launch is replaced",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A verification review of 3d8f2128 found the following.\n\nMED 1. plugins/audit/scripts/governance/_locks.py, the takeover loop in acquire (read_lock near line 1474, the stamp near line 1511, reached by reclaim near line 1566). Each pass reads the claim and only afterwards stamps the file. judge rules on the old contents, and _take_over checks against the newer stamp. Two reclaimers racing over a dead claim: B stamps, reclaims and links its live claim; A then stamps B's file, still judges the dead contents it read, its stamp matches, and it unlinks B's live claim. Both base runs measure, and with audit-usage two backfills both write the ledger. Required: the stamp handed to _take_over must belong to the bytes that were judged. Stamp before read_lock, re-stamp after the read, and re-read on a mismatch. A red-first case in tests/test__locks.py plants a winner between A's read and A's stamp and asserts A is refused and B keeps the claim.\n\nLOW 2. drive-phase.py base_run's finally (near line 3471): no case fails if release_launch is missing. Assert that the base- lock file is absent from _locks.lock_dir after a run that measured, a run that was refused, and a measure_launch stubbed to raise.\n\nLOW 3. A claim left by a run killed before it recorded ran is cleared only when the same launch runs again. measure-base mints a new launch, so the old base- claim stays in the lock directory forever, and /audit:doctor warns about it with advice that does not fit (_doctor_hygiene.py near line 355, abandoned_advice). Required: when a new launch replaces a background mark, release the replaced launch's base- claim (release still refuses a live holder). Give abandoned_advice a base- branch that says the next base-run of that launch reclaims it, and otherwise it may be deleted. Add a case for each.\n\nRed-first for every new case: mutate the fix, assert the mutation landed, see the case go red, and restore in the same command. Purge __pycache__. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/_locks.py",
@@ -514,14 +514,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-13T18:27:08Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -531,7 +531,13 @@
           "reads": "plugins/audit/scripts/governance/_locks.py",
           "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/governance/_locks.py - a section headed by its path"
         }
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-13T18:52:25Z.1d562b",
+        "status": "passed",
+        "at": "2026-11-13T18:52:25Z"
+      }
     }
   ],
   "request": "Fix the drive's base measurement: a base run that outlives the foreground bound must be measured in the background and decided from its row, and a base that cannot be known must stop the drive rather than resume the writer.",

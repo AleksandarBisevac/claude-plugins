@@ -3381,7 +3381,10 @@ first receipt's `ts`. `--deep` adds the journal-in-commit cross-check.
 The two questions about the working copy itself: what is HELD, and what is LEAKING.
 `check_locks` delegates to `_locks` rather than re-deriving the verdict — this check once
 called anything older than 60 minutes stale, which told the human a healthy 90-minute phase
-run had crashed. `check_local_artifacts` (v0.35) catches what the self-ignoring writers
+run had crashed. Its advice for a lock with no live holder is by namespace
+(`abandoned_advice`): a plugin lock is offered to a mutating /audit command, a `user-` lock to
+the tool that owns it, and a `base-` claim to the next `base-run` of its launch, which reclaims
+it - otherwise, with no `base-run` of it live, it may be deleted. `check_local_artifacts` (v0.35) catches what the self-ignoring writers
 cannot reach: the ledger, stateDir, logsDir or panel pidfile committed BEFORE the markers
 existed. The journal is deliberately not in that list — it is the opposite kind of artifact
 and must stay tracked, which is the reverse warning `_doctor_trail` carries.
@@ -3692,6 +3695,15 @@ a session id other than the caller's, is the caller's own process under an earli
 `acquire` and `release` still refuse it, and their refusal says so and prints the whole
 `audit-lock.py release` command, naming that earlier session and the pid, that lets it go
 (`_own_earlier_session`).
+
+**A takeover removes only the claim it judged.** `_take_over` unlinks a claim only while its
+stamp (`_claim_stamp`: inode, size, mtime) still matches the one it was handed, and that stamp
+has to belong to the bytes the verdict was reached on: stamped after the read, it could name a
+claim another reclaimer linked in between, whose stamp then matches while the dead verdict
+removes a live claim. So `acquire` and `refresh` read through `_read_stamped`, which stamps the
+file on both sides of the read and reads again until the two agree, a bounded number of times;
+a file that never holds still yields no stamp, and no stamp removes nothing. `rc5` and `rf9b` in
+`tests/test__locks.py` plant the other claim between the read and the stamp.
 
 ### `plugins/audit/scripts/governance/audit-lock.py`
 The CLI over `_locks`: `acquire <name>`, `release <name>`, `status`, over the names
@@ -4928,7 +4940,12 @@ judged by the lock library's liveness rule and nothing of the drive's own: a hol
 or an empty claim, is taken over by the next `base-run` (`acquire`'s `reclaim`), one that cannot
 be read counts as live until the library's age bound, and a holder whose probe was refused counts
 as live. A run killed after it recorded that it ran has its claim given back when `next` folds its
-record (`drop_progress`). The drive makes no exclusive file of its own, and `lc5` in the suite
+record (`drop_progress`); one killed before it recorded that it ran leaves a claim that only its
+own launch's next `base-run` takes over, so when that launch is replaced - dropped by
+`measure-base`, or launched again over the mark - its claim is given back (`release_replaced`),
+through `_locks.release`, which refuses a claim whose recorded process still runs. `lc8` holds
+that no `base-` claim is left after a run that measured, one refused under its claim, and one
+whose measurement raised; `lc9` and `lc10` hold the replaced launch's release and its live twin. The drive makes no exclusive file of its own, and `lc5` in the suite
 reads its source to hold that. Once the run has ended, the red's verdict is read back from the row it was launched
 for, through the same `read_back` the gate's background row goes through: a row no repeat may copy
 stands as recorded, and no rerun's `--no-reuse` is added; the dispatch and the wait are printed by the same builders as the gate's

@@ -346,11 +346,18 @@ def abandoned_advice(names):
 
     Only the plugin's own names are ever offered for takeover by an /audit
     command. A `user-` lock belongs to the tool that took it, and advice to wait
-    for an /audit command would wait for something that never comes.
+    for an /audit command would wait for something that never comes. A
+    `base-` claim is one background base launch's, and only that launch's own
+    `base-run` takes it over; no mutating command offers to.
     """
     user = [n for n in names if _locks.is_user_name(n)]
-    ours = [n for n in names if n not in user]
+    base = [n for n in names if n.startswith(_locks.BASE_PREFIX)]
+    ours = [n for n in names if n not in user and n not in base]
     parts = []
+    if base:
+        parts.append("%s: a background base launch's claim - the next base-run "
+                     "of that launch reclaims it; otherwise, with no base-run "
+                     "of it live, it may be deleted" % (", ".join(base),))
     if ours:
         parts.append("%s: a mutating /audit command will offer to take over; if "
                      "no run is live you can delete the file" % (", ".join(ours),))

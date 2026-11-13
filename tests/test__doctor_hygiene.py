@@ -150,6 +150,20 @@ def _cases(check):
                   "with no user-tooling clause invented",
                   "user tooling" not in M.abandoned_advice(["index"])
                   and "offer to take over" in M.abandoned_advice(["index"]))
+            _base = "base-P1.P1.1.2026-11-13T09-00-00Z-0a1b2c3d"
+            _mixed = M.abandoned_advice([_base, "index"])
+            _base_part = _mixed.split("%s:" % (_base,))[-1].split("; index:")[0]
+            check("dh6d an abandoned base-run claim is advised by what clears "
+                  "it - the next base-run of that launch reclaims it, otherwise "
+                  "it may be deleted - and is never promised to a mutating "
+                  "/audit command, which takes no base-run claim over; THE "
+                  "TWIN, a plugin lock beside it keeps its own advice: %r"
+                  % (_mixed,),
+                  _mixed.count(_base) == 1
+                  and "next base-run" in _base_part
+                  and "deleted" in _base_part
+                  and "offer to take over" not in _base_part
+                  and "index: a mutating /audit command" in _mixed)
             shutil.rmtree(ldir, ignore_errors=True)
 
             # --------------------------------------- check_local_artifacts

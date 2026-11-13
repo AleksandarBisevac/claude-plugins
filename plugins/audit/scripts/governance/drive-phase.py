@@ -3254,6 +3254,22 @@ def release_launch(ctx, name):
     return " ".join(ln.strip() for ln in said) or "the lock answered %d" % (code,)
 
 
+def release_replaced(ctx, task_id, held):
+    """Give back the claim on the launch the base mark `held` names, once that
+    launch is replaced - dropped by `measure-base`, or launched again over the
+    mark. Only that launch's own `base-run` takes such a claim over, and a
+    replaced launch is never run again, so a claim its run left when it was
+    killed before it recorded that it ran would otherwise stay for good.
+    Through `_locks.release`, which refuses a claim recording another process
+    that still runs: a run still measuring keeps its claim, and gives it back
+    itself when it ends. A mark that is not a background launch names no
+    claim, and nothing is released for it."""
+    if not (isinstance(held, dict) and held.get("background")):
+        return
+    name = base_lock_name(base_progress_path(ctx, task_id, launch_key(held)))
+    _locks.release(ctx["project"], name, out=lambda _line: None)
+
+
 def base_argv(ctx, task):
     """The background base measurement's command, every path absolute: the
     orchestrator's shell may stand anywhere."""
@@ -3269,6 +3285,7 @@ def launch_base(ctx, state, task, row, tree, why, cut=None):
     inline run of it was stopped, kept for the reader."""
     argv = base_argv(ctx, task)
     at = _utc_stamp()
+    replaced = _marked(state, BASE_MEASURED, task)
     held = {"of": row.get("runId"), "status": row.get("status"),
             "said": "launched", "verdict": None,
             "run": None, "atBase": [], "introduced": [], "background": True,
@@ -3279,6 +3296,9 @@ def launch_base(ctx, state, task, row, tree, why, cut=None):
         held["cut"] = cut
     _mark(state, BASE_MEASURED, task, held)
     write_state(ctx, state)
+    # After the new mark is written, so a run of the replaced launch that takes
+    # the claim from here on reads its launch as replaced and measures nothing.
+    release_replaced(ctx, task["id"], replaced)
     return base_said(ctx, task["id"], row.get("runId"), argv, why)
 
 
@@ -8682,8 +8702,9 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
         # mark still names belongs to a run that may still be measuring, and
         # what that run writes after is its own launch's record, which no mark
         # reads once its launch is gone (`fresh_keeper`).
-        _spend(state, BASE_MEASURED, task)
+        dropped = _spend(state, BASE_MEASURED, task)
         write_state(ctx, state)
+        release_replaced(ctx, task["id"], dropped)
         ctx["did"].append("%s's base measurement dropped, to be taken again"
                           % (task["id"],))
         return None
