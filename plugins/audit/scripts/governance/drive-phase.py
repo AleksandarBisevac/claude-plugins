@@ -174,7 +174,9 @@ Bash tool's foreground bound, or that no run has measured, is no call inside
 `next` but a step of its own: `dispatch-gate` prints the recorded gate run as
 a `run:` line for the background, `wait-gate` holds until a row of it exists,
 and the verdict is that row's, repeated rather than measured again; one
-measured under the bound runs inline. A red task gate on a task with a
+measured under the bound runs inline. A red's base measurement is chosen the
+same way, as `dispatch-base` and `wait-base`, read back off the start's mark
+(`base_reading_for`). A red task gate on a task with a
 recorded session asks `gate-red-writer`, whose recommended `resume` sends the
 gate's failing lines to the latest session and spends no attempt; once
 `MAX_RESUME_ROUNDS` are spent the plain `gate-red` is asked, after a note naming
@@ -517,6 +519,15 @@ STEPS = {
         "rule": ("Started: wait for it to exit, then next. Killed or not "
                  "started: run the run: line --explain prints, in the "
                  "background.",)},
+    "dispatch-base": {
+        "line": "dispatch drive-phase.py base-run %(task)s: the base of red run "
+                "%(run)s, measured in the background",
+        "rule": (WRITER_RULE,)},
+    "wait-base": {
+        "line": "wait %(task)s: the base measurement launched %(since)s has "
+                "left no reading yet",
+        "rule": ("Started: wait for it to exit, then next. Not started: run "
+                 "the run: line --explain prints, in the background.",)},
     "dispatch-reviewer-session": {
         "line": "dispatch run-agent-session.py --role reviewer --task %(task)s "
                 "--model %(model)s prompt=%(prompt)s",
@@ -584,6 +595,13 @@ STEPS = {
                  "cases. block stops the task with the reason; rerun measures "
                  "the gate again; the owner may commit over it with "
                  "commit-task-work.py --override-verdict and a reason.",)},
+    "decide-gate-red-base-unknown": {
+        "line": "decide gate-red-base-unknown %(task)s: recorded gate red, and "
+                "whether its base is red too is not knowable (%(why)s)%(run)s",
+        "rule": ("No writer session is sent and no round is spent: nothing says "
+                 "the task introduced the red. measure-base measures the base "
+                 "again; rerun measures the gate again; block stops the task "
+                 "with the reason.",)},
     "decide-gate-red": {
         "line": "decide gate-red %(task)s: recorded gate red (%(why)s)%(run)s",
         "rule": ("rerun spends no attempt (GATE COULD NOT RUN); retry spends "
@@ -767,6 +785,11 @@ DECISIONS = {
     # A red gate whose base commit fails every case it fails: no session can
     # fix it, so none is offered; the owner's commit over it is their own act.
     "gate-red-base": (("block", "rerun"), ("block",)),
+    # A red gate whose base could not be known - the base run left no reading,
+    # or one naming no base run: no session is offered, since
+    # nothing says the task introduced it. `measure-base` drops the start's
+    # base mark so the base is measured again.
+    "gate-red-base-unknown": (("rerun", "measure-base", "block"), ("block",)),
     "no-executor-return": (("resume", "retry", "block"), ("block",)),
     # A writer session that committed the task's files past its dispatch:
     # nothing is filed until a human takes the commit out (`recheck`).
@@ -863,9 +886,10 @@ SIGNAL_VERBS = {
     "dispatch-wave": "dispatch", "dispatch-phase-review": "dispatch",
     "resume-executor": "dispatch", "dispatch-writer": "dispatch",
     "resume-writer": "dispatch", "decide-gate-red-writer": "judge",
-    "decide-gate-red-base": "ask",
+    "decide-gate-red-base": "ask", "decide-gate-red-base-unknown": "judge",
     "wait-writer": "wait", "decide-writer-committed": "ask",
     "dispatch-gate": "dispatch", "wait-gate": "wait",
+    "dispatch-base": "dispatch", "wait-base": "wait",
     "dispatch-reviewer-session": "dispatch", "wait-reviewer-session": "wait",
     "dispatch-validation": "dispatch", "wait-validation": "wait",
     "decide-head-moved": "judge", "decide-head-unknown": "judge",
@@ -1147,9 +1171,10 @@ def run_verb(ctx, script, args, stdin=None, record=False):
 
 def run_verb_bounded(ctx, script, args, timeout, started=None):
     """`(code, stdout, stderr, why)` of one verb run as `run_verb` runs it,
-    but as a process group held to `timeout` seconds: `why` is None for a run
-    that ended, else the sentence saying it timed out and its group was torn
-    down (`_proc_group.stop_and_drain`), with whatever it printed by then.
+    but as a process group held to `timeout` seconds - to none when `timeout`
+    is None: `why` is None for a run that ended, else the sentence saying it
+    timed out and its group was torn down (`_proc_group.stop_and_drain`),
+    with whatever it printed by then.
     `started(pid)` is called once the process exists, before the wait, so a
     caller can record who is running before anything can kill it. An
     interrupt during the wait tears the group down before it surfaces, so the
@@ -2593,7 +2618,8 @@ def resume_writer(ctx, state, task, pending, tree=None):
 # `regated`) carry the same record and are asked the same question
 # (`stored_green`), so no stored verdict is shown past a change of what its gate
 # resolves to or of the tree it was taken in.
-GATE_VERDICT_DECISIONS = ("gate-red", "gate-red-writer", "gate-red-base")
+GATE_VERDICT_DECISIONS = ("gate-red", "gate-red-writer", "gate-red-base",
+                          "gate-red-base-unknown")
 
 
 def verdict_taken(ctx, text, tree=None):
@@ -2770,18 +2796,41 @@ def rerun_alongside(ctx, state, manifest, pending):
 # commit alone - no `executor.worktreeSetup`, no ignored dependency directory - so
 # a step needing those fails there differently, which reads as not reproduced.
 #
-# THE RUN IS BOUNDED, AND ITS MARK IS WRITTEN FIRST. It runs inside `next`, a
-# foreground command, so it is held to the foreground bound and a base run past
-# it is stopped and read as not knowable - the writer resumes, as with no base
-# at all. The start's mark is on disk before the run, naming the tree, so a
-# `next` killed during it does not measure again, and the tree a kill leaves
-# (no `finally` runs under SIGTERM) is removed at the next drive
-# (`sweep_base_trees`), through the same removal question the run's own
-# teardown asks.
+# THE BASE RUN IS A GATE STEP, CHOSEN AS EVERY GATE IS. `gate_in_background` reads
+# the recorded mean of its steps - the red ones of the recorded run - and past the
+# foreground bound, unmeasured, or under `auto` it is a step of its own:
+# `dispatch-base` prints this script's `base-run` as the `run:` line - the tree
+# built, `run-test-gate.py --base-of --record` run with no bound, the tree taken
+# down, the reading kept on the start's mark - `wait-base` holds while that run
+# has not finished, and the red is decided from what the run left on the mark.
+# Measured under the bound, it runs inside `next`, held to the bound; a run past
+# it there is stopped and handed to the background, never read.
+#
+# A BASE NOBODY CAN KNOW STOPS THE DRIVE. A measurement that left no reading - the
+# tree could not be built, the run failed or answered nothing, or it was killed -
+# or a reading with no base run behind it (`base_behind`) is
+# `gate-red-base-unknown`, and no writer round is spent on a red nothing says the
+# task introduced. A base run that ran and was compared goes to the writer as it
+# always did when its cases cannot be charged either way (`not-knowable` naming a
+# run): the base answered, only not case by case. A red run HEAD has since left
+# keeps reading `no-base` and goes to the writer too, as a red with no base
+# reading always did: no base can be measured for it, and the next gate runs at
+# the new HEAD.
+#
+# THE MARK IS WRITTEN FIRST, WHEREVER THE RUN IS. It is on disk before the run,
+# naming the tree and every process that may be measuring in it, so a `next` or a
+# background run killed during it is not followed by a second measurement, and
+# the tree a kill leaves (no `finally` runs under SIGKILL) is removed at the next
+# drive (`sweep_base_trees`), through the same removal question the run's own
+# teardown asks. The background run writes the mark by reading the state again
+# around each write, and only while the mark is still its launch's. A `next` that
+# wrote the state over in between loses what it wrote, which reads as a run that
+# left no reading - the unknown stop, or the wait - and never as the writer's.
 BASE_MEASURE_VERDICTS = ("no-base", "not-knowable")
 BASE_TREE_PREFIX = "audit-base-"
 BASE_MEASURED = "baseMeasured"
 BASE_MEASURE_SECONDS = _evio.FOREGROUND_BOUND_MS // 1000
+BASE_RUN_VERB = "base-run"
 
 
 def base_measure_due(state, task, row):
@@ -2795,35 +2844,41 @@ def base_measure_due(state, task, row):
             and _marked(state, BASE_MEASURED, task) is None)
 
 
-def measure_base(ctx, phase, row, tree=None, placed=None, started=None):
-    """`(reading, said, kept)` - the red run `row` read against a run of its
-    red steps at its base, measured in a detached tree at that commit and
-    recorded, the did-line saying what was done, and the holder of a tree the
-    teardown kept (None when nothing was kept). `reading` is None, beside the
-    reason, when no base run could be taken: HEAD is no longer the run's head,
-    the tree could not be built outside the repository, or the run did not
-    answer; a run stopped at `BASE_MEASURE_SECONDS` reads `not-knowable`.
-    `placed(holder)` is called once the holder exists and before any tree is
-    built in it, `started(pid)` once the run's process does, so the caller can
-    record both before anything can kill the run."""
+def measure_base(ctx, phase, row, tree=None, placed=None, started=None,
+                 bound=BASE_MEASURE_SECONDS):
+    """`{reading, said, kept, cut, measurable}` - the red run `row` read
+    against a run of its red steps at its base, measured in a detached tree
+    at that commit and recorded; the did-line saying what was done; the
+    holder of a tree the teardown kept (None when nothing was kept); why a
+    run held to `bound` seconds was stopped there (None when it ended - and
+    always with `bound` None, which holds it to none); and whether a base run
+    could be taken at all, False when HEAD is no longer the run's head.
+    `reading` is None, beside the reason, when no base run answered: the tree
+    could not be built outside the repository, the run was stopped, or it did
+    not answer. `placed(holder)` is called once the holder exists and before
+    any tree is built in it, `started(pid)` once the run's process does, so
+    the caller can record both before anything can kill the run."""
     want = (row.get(_evio.BASE_RED_KEY) or {}).get("head")
     head = tree_head(ctx, tree)
     if not head or not _evio.same_head(head, want):
-        return None, ("%s's base not measured: the red run was at %s and HEAD "
-                      "is %s now" % (row.get("taskId"), want, head or "unknown")
-                      ), None
+        return {"reading": None, "kept": None, "cut": None, "measurable": False,
+                "said": "%s's base not measured: the red run was at %s and "
+                        "HEAD is %s now" % (row.get("taskId"), want,
+                                            head or "unknown")}
     holder = tempfile.mkdtemp(prefix=BASE_TREE_PREFIX)
     try:
         if placed is not None:
             placed(holder)
-        reading, said = _base_in(ctx, phase, row, head, holder, started)
+        reading, said, cut = _base_in(ctx, phase, row, head, holder, started,
+                                      bound)
     finally:
         kept, left = remove_base_tree(ctx, holder)
     if kept is not None:
         said += "; its tree %s is kept: %s" % (holder, kept)
     elif left:
         said += "; its tree %s is left behind" % (holder,)
-    return reading, said, (holder if kept is not None else None)
+    return {"reading": reading, "said": said, "cut": cut, "measurable": True,
+            "kept": holder if kept is not None else None}
 
 
 def remove_base_tree(ctx, holder):
@@ -2848,28 +2903,26 @@ def remove_base_tree(ctx, holder):
     return None, os.path.exists(holder)
 
 
-def _base_in(ctx, phase, row, head, holder, started=None):
-    """`measure_base`'s run itself, in the tree it builds under `holder`."""
+def _base_in(ctx, phase, row, head, holder, started=None,
+             bound=BASE_MEASURE_SECONDS):
+    """`measure_base`'s run itself, in the tree it builds under `holder`:
+    `(reading, said, cut)`."""
     path = os.path.join(holder, "tree")
     if _worktrees.within_tree(ctx["gitRoot"], holder):
         return None, ("%s's base not measured: the temp directory %s is inside "
-                      "the repository" % (row.get("taskId"), holder))
+                      "the repository" % (row.get("taskId"), holder)), None
     code, _out, err = carry_git(ctx["gitRoot"], [
         "worktree", "add", "--detach", "--quiet", path, head])
     if code != 0:
         return None, ("%s's base not measured: git could not build a tree at %s "
-                      "(%s)" % (row.get("taskId"), head[:8], err))
-    code, out, err, timed_out = run_verb_bounded(ctx, "run-test-gate.py", [
+                      "(%s)" % (row.get("taskId"), head[:8], err)), None
+    code, out, err, cut = run_verb_bounded(ctx, "run-test-gate.py", [
         ctx["manifest"], phase["id"], "--base-of", row["runId"], "--record",
         "--json", "--project-dir", ctx["project"],
-        "--tree", member_project(ctx, path)], BASE_MEASURE_SECONDS, started)
-    if timed_out is not None:
-        said = ("%s's base not measured: run-test-gate.py --base-of %s, so "
-                "whether the base is red too is not knowable"
-                % (row.get("taskId"), timed_out))
-        return {"run": None, "head": head, "task": None, "atBase": [],
-                "introduced": [], "unknown": [], "verdict": "not-knowable",
-                "basis": said}, said
+        "--tree", member_project(ctx, path)], bound, started)
+    if cut is not None:
+        return None, ("%s's base not measured inside next: run-test-gate.py "
+                      "--base-of %s" % (row.get("taskId"), cut)), cut
     try:
         answer = json.loads(out)
     except ValueError:
@@ -2879,56 +2932,263 @@ def _base_in(ctx, phase, row, head, holder, started=None):
     if code != E_OK or not isinstance(reading, dict):
         return None, ("%s's base not measured: run-test-gate.py --base-of "
                       "exited %d (%s)" % (row.get("taskId"), code,
-                                          _clip((err or out).strip(), 160)))
+                                          _clip((err or out).strip(), 160))), None
     return reading, "%s's base measured at %s in run %s: %s" % (
-        row.get("taskId"), head[:8], answer.get("runId"), reading.get("verdict"))
+        row.get("taskId"), head[:8], answer.get("runId"),
+        reading.get("verdict")), None
 
 
-def base_reading_for(ctx, state, phase, task, text, tree=None):
-    """The base reading a red gate is decided on: the recorded run's own, or -
-    when it has no comparable base run and none was measured for this start -
-    the one `measure_base` takes, kept on the start's mark so a later red of
-    the same start reads its own row, which then finds that base run.
+def base_behind(reading):
+    """Whether the base reading `reading` stands on a base run: a measurement
+    that answered, and was read against what it recorded. `no-base` and a
+    ledger nobody could read name none."""
+    return isinstance(reading, dict) and bool(reading.get("run"))
 
-    The mark is written before the run and again as its tree and its process
-    come to exist, so a drive killed at any point leaves a mark that stops a
-    second measurement and names the tree for `sweep_base_trees`."""
-    row = gate_row(ctx, text)
-    reading = (row or {}).get(_evio.BASE_RED_KEY)
-    if not base_measure_due(state, task, row):
-        return reading if isinstance(reading, dict) else None
-    held = {"of": row.get("runId"), "said": "measuring", "verdict": None,
-            "run": None, "atBase": [], "introduced": [], "pids": [os.getpid()]}
 
-    def _keep(**changes):
+def base_running(held):
+    """The pids the base mark `held` names whose run may still be going: every
+    one but this process's, unless it is known to be gone."""
+    return [pid for pid in (held or {}).get("pids") or []
+            if pid != os.getpid() and _locks.pid_alive(pid) is not False]
+
+
+def base_waiting(held):
+    """Whether the base mark `held` is a measurement launched to the background
+    that is still to be waited on: not finished, and either not started yet
+    or started by a process that may still run."""
+    return (isinstance(held, dict) and bool(held.get("background"))
+            and not held.get("done")
+            and (not held.get("ran") or bool(base_running(held))))
+
+
+def take_base(ctx, phase, task, row, tree, keep, bound):
+    """`measure_base` under the start's mark, written through `keep(**changes)`
+    before anything can kill the run - the process measuring, the tree, the
+    base run's own process - and once more with what the run answered:
+    `done`, the reading and its parts, `measurable`, and `unknowable` when a
+    base was measurable and the run left no reading with a base run behind it
+    (`base_behind`). A run stopped at `bound` is not finished: its
+    mark keeps `cut`, the reason, for the caller to hand the base to the
+    background. The outcome is `measure_base`'s."""
+    pids = [os.getpid()]
+    keep(ran=True, done=False, said="measuring", pids=list(pids))
+
+    def _started(pid):
+        pids.append(pid)
+        keep(pids=list(pids))
+
+    got = measure_base(ctx, phase, row, tree,
+                       placed=lambda holder: keep(tree=holder),
+                       started=_started, bound=bound)
+    ctx["did"].append(got["said"])
+    if got["cut"] is not None:
+        keep(tree=None, pids=[], said=got["said"], cut=got["cut"])
+        return got
+    fresh = got["reading"] if isinstance(got["reading"], dict) else None
+    verdict = (fresh or {}).get("verdict")
+    changes = {"done": True, "tree": None, "pids": [], "said": got["said"],
+               "measurable": got["measurable"], "reading": fresh,
+               "unknowable": bool(got["measurable"]) and not base_behind(fresh),
+               "verdict": verdict, "run": (fresh or {}).get("run"),
+               "atBase": list((fresh or {}).get("atBase") or []),
+               "introduced": list((fresh or {}).get("introduced") or [])}
+    if got["kept"] is not None:
+        changes["kept"] = got["kept"]
+    keep(**changes)
+    return got
+
+
+def mark_keeper(ctx, state, task, held):
+    """`keep(**changes)` over the start's base mark in `state`, the state this
+    drive holds: each call updates `held` and writes the state."""
+    def keep(**changes):
         held.update(changes)
         _mark(state, BASE_MEASURED, task, dict(held))
         write_state(ctx, state)
+    return keep
 
-    _keep()
-    fresh, said, kept = measure_base(
-        ctx, phase, row, tree, placed=lambda holder: _keep(tree=holder),
-        started=lambda pid: _keep(pids=held["pids"] + [pid]))
+
+def fresh_keeper(ctx, task, launched_at):
+    """`keep(**changes)` over the start's base mark as it stands on disk at
+    each call - a background run holds no drive state of its own - written
+    only while the mark is still the launch made at `launched_at`: a mark
+    spent by `measure-base`, or launched again, is no longer this run's to
+    write."""
+    def keep(**changes):
+        state = read_state(ctx)
+        held = _marked(state, BASE_MEASURED, task)
+        if not isinstance(held, dict) or held.get("at") != launched_at:
+            return
+        _mark(state, BASE_MEASURED, task, dict(held, **changes))
+        write_state(ctx, state)
+    return keep
+
+
+def base_argv(ctx, task):
+    """The background base measurement's command, every path absolute: the
+    orchestrator's shell may stand anywhere."""
+    return ["python3", _loader.script_path("drive-phase.py"), BASE_RUN_VERB,
+            task["id"], os.path.abspath(ctx["manifest"]),
+            "--project-dir", os.path.abspath(ctx["project"])]
+
+
+def launch_base(ctx, state, task, row, tree, why, cut=None):
+    """Mark the launch of the base measurement of the red run `row` on the
+    start's mark - the moment, the command, the tree it is measured from - and
+    print its dispatch with `why` it goes to the background. `cut` is why an
+    inline run of it was stopped, kept for the reader."""
+    argv = base_argv(ctx, task)
+    held = {"of": row.get("runId"), "said": "launched", "verdict": None,
+            "run": None, "atBase": [], "introduced": [], "background": True,
+            "at": _utc_stamp(), "argv": argv, "memberTree": tree or None,
+            "ran": False, "done": False}
+    if cut is not None:
+        held["cut"] = cut
+    _mark(state, BASE_MEASURED, task, held)
+    write_state(ctx, state)
+    return base_said(ctx, task["id"], row.get("runId"), argv, why)
+
+
+def base_said(ctx, task_id, run_id, argv, why=None):
+    """The dispatch of `task_id`'s base measurement of the red run `run_id`."""
+    return background_dispatch(
+        "dispatch-base", task_id, argv,
+        step_text("dispatch-base", task=task_id, run=run_id),
+        "the base of run %s, measured in the background" % (run_id,), why)
+
+
+def base_wait_said(ctx, task_id, since, argv):
+    """The wait on a base measurement launched at `since` that has left no
+    reading yet, with its command printed again as the `run:` line."""
+    return background_wait(
+        "wait-base", task_id, step_text("wait-base", task=task_id, since=since),
+        "no base reading for %s since %s" % (task_id, since),
+        "wait for the base run to exit, then next %s --signal"
+        % (drive_target(ctx),), argv)
+
+
+def cut_short(ctx, state, task, held):
+    """Close the start's mark of a base run that stopped before it left a
+    reading - killed, or its writes lost - as unknowable: no reading charges
+    the red to either side. The mark, as written."""
+    said = ("%s's base not measured: the run measuring it stopped before it "
+            "left a reading" % (task["id"],))
     ctx["did"].append(said)
-    held.pop("tree", None)
-    held.pop("pids", None)
-    if kept is not None:
-        held["kept"] = kept
-    _keep(said=said, verdict=(fresh or {}).get("verdict"),
-          run=(fresh or {}).get("run"),
-          atBase=list((fresh or {}).get("atBase") or []),
-          introduced=list((fresh or {}).get("introduced") or []))
-    return fresh if fresh is not None else reading
+    held = dict(held, done=True, unknowable=True, measurable=True, said=said)
+    _mark(state, BASE_MEASURED, task, held)
+    write_state(ctx, state)
+    return held
+
+
+def base_reading_for(ctx, state, phase, task, text, tree=None):
+    """`(print, reading, unknown)` - what a red gate is decided on. `print` is
+    the base measurement's dispatch, or the wait on it, while it is a step of
+    its own; the other two are then None. Else `reading` is the recorded
+    run's own, or the one a measurement for this start left on the start's
+    mark, read once; `unknown` is the sentence saying why the base cannot be
+    known, else None.
+
+    A measurement is due once per start (`base_measure_due`); the mark kept
+    after it makes a later red of the same start read its own row, which then
+    finds that base run - unless the measurement could not know the base and
+    the row has no reading that charges the red either: that red is unknown
+    too, so a rerun never falls through to the writer."""
+    row = gate_row(ctx, text)
+    reading = (row or {}).get(_evio.BASE_RED_KEY)
+    reading = reading if isinstance(reading, dict) else None
+    if base_measure_due(state, task, row):
+        due, why = gate_in_background(ctx, _evio.red_step_names(row))
+        if due:
+            return launch_base(ctx, state, task, row, tree, why), None, None
+        held = {"of": row.get("runId"), "verdict": None, "run": None,
+                "atBase": [], "introduced": []}
+        got = take_base(ctx, phase, task, row, tree,
+                        mark_keeper(ctx, state, task, held), BASE_MEASURE_SECONDS)
+        if got["cut"] is not None:
+            return launch_base(ctx, state, task, row, tree, "its run inside "
+                               "next %s" % (got["cut"],), got["cut"]), None, None
+    held = _marked(state, BASE_MEASURED, task)
+    if not isinstance(held, dict):
+        return None, reading, None
+    if base_waiting(held):
+        return base_wait_said(ctx, task["id"], held.get("at"),
+                              held.get("argv") or []), None, None
+    if held.get("ran") and not held.get("done"):
+        held = cut_short(ctx, state, task, held)
+    fresh = None
+    if not held.get("decided"):
+        fresh = held.get("reading") if isinstance(held.get("reading"), dict) else None
+        held = dict(held, decided=True)
+        _mark(state, BASE_MEASURED, task, held)
+        write_state(ctx, state)
+    use = fresh if fresh is not None else reading
+    if held.get("unknowable") and not base_behind(use):
+        return None, use, held.get("said") or "no base reading was left"
+    return None, use, None
+
+
+def base_gate(ctx, state, phase, task, tree=None):
+    """`(print, measured)` while a base measurement launched to the background
+    is not decided on yet: the wait on it, or - once its run has ended - the
+    task gate's verdict repeated (`task_gate`, which on the same tree measures
+    nothing), so the red is decided from what the run left without the gate
+    being launched again. `(None, None)` otherwise."""
+    held = _marked(state, BASE_MEASURED, task)
+    if not (isinstance(held, dict) and held.get("background")
+            and not held.get("decided")):
+        return None, None
+    if base_waiting(held):
+        return base_wait_said(ctx, task["id"], held.get("at"),
+                              held.get("argv") or []), None
+    return None, task_gate(ctx, state, phase, task, tree)
+
+
+def base_run(ctx, task_id):
+    """`(code, text)` for `base-run`: the base measurement `next` launched for
+    `task_id`'s current start, taken with no bound - the background's command,
+    which no foreground bound holds - its outcome kept on the start's mark for
+    `next` to decide from. E_USAGE when no launch is marked for the current
+    start, or this one already ran; E_STOPPED when it left no reading."""
+    manifest, phase = load_phase(ctx)
+    task = _mio.tasks_by_id(manifest).get(task_id)
+    if task is None:
+        return E_USAGE, "%s %s: no task %s" % (PREFIX, ctx["phase"], task_id)
+    held = _marked(read_state(ctx), BASE_MEASURED, task)
+    if not (isinstance(held, dict) and held.get("background")):
+        return E_USAGE, ("%s %s: no base measurement is launched for %s's "
+                         "current start; next launches one" % (
+                             PREFIX, ctx["phase"], task_id))
+    if held.get("ran"):
+        return E_USAGE, ("%s %s: %s's base measurement already ran (%s); "
+                         "--answer measure-base takes it again" % (
+                             PREFIX, ctx["phase"], task_id, held.get("said")))
+    keep = fresh_keeper(ctx, task, held.get("at"))
+    try:
+        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+    except Exception as exc:                                   # noqa: BLE001
+        rows, why = [], "the evidence ledger could not be read (%s)" % (exc,)
+    else:
+        why = "the red run %s is not in the evidence ledger" % (held.get("of"),)
+    row = _evio.row_by_run(rows, held.get("of"))
+    row = _evio.measured_row(rows, row) or row
+    if row is None:
+        said = "%s's base not measured: %s" % (task_id, why)
+        keep(ran=True, done=True, unknowable=True, measurable=True, said=said)
+        return E_STOPPED, "%s %s: %s" % (PREFIX, ctx["phase"], said)
+    got = take_base(ctx, phase, task, row, held.get("memberTree"), keep, None)
+    code = E_OK if isinstance(got["reading"], dict) else E_STOPPED
+    return code, "%s %s: %s" % (PREFIX, ctx["phase"], got["said"])
 
 
 def sweep_base_trees(ctx, state):
     """Remove the base tree a killed drive of this phase left: a mark that
     still names its tree was written by a measurement that never finished,
     since a finished one drops the name. A tree whose recorded run is still
-    alive - another `next`, or the base run it started - is left and said;
-    any other is removed through `remove_base_tree`. A base tree no mark of
-    this phase names is another run's and is never touched. Each answer is a
-    did-line, and the marks are written once when any changed."""
+    alive - another `next`, a background `base-run`, or the base run either
+    started - is left and said; any other is removed through
+    `remove_base_tree`. A base tree no mark of this phase names is another
+    run's and is never touched. Each answer is a did-line, and the marks are
+    written once when any changed."""
     marks = state.get(BASE_MEASURED) or {}
     changed = False
     for task_id in sorted(marks):
@@ -2936,8 +3196,7 @@ def sweep_base_trees(ctx, state):
         holder = value.get("tree") if isinstance(value, dict) else None
         if not holder:
             continue
-        running = [pid for pid in value.get("pids") or []
-                   if pid != os.getpid() and _locks.pid_alive(pid) is not False]
+        running = base_running(value)
         if running:
             ctx["did"].append("%s's base tree %s is left: the run that measured "
                               "it may still be going (pid %s)" % (
@@ -2973,18 +3232,25 @@ def gate_red_lines(text):
 
 def gate_red_decision(ctx, state, manifest, phase, task, text, tree=None):
     """The decision a red task gate asks: red at base (`gate-red-base`) when
-    the base commit fails every case it fails, so no session is sent; else
+    the base commit fails every case it fails, so no session is sent; a base
+    nobody can know (`gate-red-base-unknown`), which sends none either; else
     resume of the recorded writer session while a round is left, carrying the
     failing lines; past the last round, the plain gate-red, after a note on the
     task naming each resumed run. Every one carries the run it stands on
-    (`verdict_taken`)."""
+    (`verdict_taken`). While the base measurement is a step of its own, its
+    dispatch or the wait on it is printed instead."""
     said = gate_red_lines(text)
-    reading = base_reading_for(ctx, state, phase, task, text, tree)
-    why = ((said[0].strip() if said else "exit 1")[:80]
-           + base_red_why(ctx, text, manifest, phase, task, reading))
+    step, reading, unknown = base_reading_for(ctx, state, phase, task, text, tree)
+    if step is not None:
+        return step
+    head = (said[0].strip() if said else "exit 1")[:80]
+    why = head + base_red_why(ctx, text, manifest, phase, task, reading)
     verdict = {"verdict": verdict_taken(ctx, text, tree)}
     if (reading or {}).get("verdict") == "base-only":
         return decision(ctx, state, "gate-red-base", task, why, extra=verdict)
+    if unknown is not None:
+        return decision(ctx, state, "gate-red-base-unknown", task, "%s; %s" % (
+            head, _clip(unknown, 200)), extra=verdict)
     session = recorded_session(state, task)
     if session is None:
         return decision(ctx, state, "gate-red", task, why, extra=verdict)
@@ -5042,7 +5308,9 @@ def gate_step(ctx, state, manifest, phase, task, tree=None):
             stop = refresh_member_records(ctx, state, task, tree)
         if stop is not None:
             return stop
-    said, measured = chosen_task_gate(ctx, state, phase, task, tree, manifest)
+    said, measured = base_gate(ctx, state, phase, task, tree)
+    if said is None and measured is None:
+        said, measured = chosen_task_gate(ctx, state, phase, task, tree, manifest)
     if said is not None:
         return said
     code, out, err = measured
@@ -5191,27 +5459,43 @@ def gate_said(ctx, subject, argv, phase_gate=False, why=None):
     """The dispatch of `subject`'s recorded gate - a task's, or with
     `phase_gate` the phase's - its command whole as the `run:` line
     `--explain` prints, and `why` (`gate_in_background`'s reason) under it."""
-    command = " ".join(shlex.quote(word) for word in argv)
     scope = subject if phase_gate else "--task %s" % (subject,)
-    lines = step_text("dispatch-gate", scope=scope,
-                      which="phase" if phase_gate else "task")
-    if why:
-        lines = lines[:1] + ["  in the background because %s" % (why,)] + lines[1:]
-    return instruction("dispatch", lines, signal_of(
-        "dispatch-gate", subject, "run-test-gate.py %s --record, in the "
-        "background" % (scope,), command, runs=[command]))
+    return background_dispatch(
+        "dispatch-gate", subject, argv,
+        step_text("dispatch-gate", scope=scope,
+                  which="phase" if phase_gate else "task"),
+        "run-test-gate.py %s --record, in the background" % (scope,), why)
 
 
 def gate_wait_said(ctx, task_id, since, argv):
     """The wait on a gate launched at `since` that has recorded no row yet,
     with its command printed again as the `run:` line."""
+    return background_wait(
+        "wait-gate", task_id, step_text("wait-gate", task=task_id, since=since),
+        "no gate row for %s since %s" % (task_id, since),
+        "wait for the gate to exit, then next %s --signal" % (drive_target(ctx),),
+        argv)
+
+
+def background_dispatch(step, subject, argv, lines, basis, why=None):
+    """The one shape of a gate step left to the background - a task's gate,
+    the phase's, a red's base: its command whole as the `run:` line the
+    signal's `next` names, and `why` it is not run inline under the step's
+    first line."""
     command = " ".join(shlex.quote(word) for word in argv)
-    return instruction("wait", step_text("wait-gate", task=task_id, since=since),
-                       signal_of("wait-gate", task_id, "no gate row for %s since "
-                                 "%s" % (task_id, since),
-                                 "wait for the gate to exit, then next %s "
-                                 "--signal" % (drive_target(ctx),),
-                                 runs=[command]))
+    if why:
+        lines = lines[:1] + ["  in the background because %s" % (why,)] + lines[1:]
+    return instruction("dispatch", lines, signal_of(step, subject, basis, command,
+                                                    runs=[command]))
+
+
+def background_wait(step, subject, lines, basis, nxt, argv):
+    """The wait on a gate step left to the background, with its command
+    printed again as the `run:` line - the one `auto` ran, or the one a
+    killed or never-started run is started with."""
+    command = " ".join(shlex.quote(word) for word in argv)
+    return instruction("wait", lines, signal_of(step, subject, basis, nxt,
+                                                runs=[command]))
 
 
 def subject_run_ids(ctx, key):
@@ -8040,6 +8324,17 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
         # The dispatch mark stays, so a return still unfiled is asked about
         # again on the next `next`; no attempt is spent.
         return resume_said(ctx, task["id"])
+    if answer == "measure-base":
+        # The start's base mark is dropped, so the red's base is due again: the
+        # gate's verdict is repeated rather than measured, its base measured
+        # inline or as a step of its own, and no attempt is spent. A tree the
+        # mark still names belongs to a run that may still be measuring, and
+        # that run writes no mark once its launch is gone (`fresh_keeper`).
+        _spend(state, BASE_MEASURED, task)
+        write_state(ctx, state)
+        ctx["did"].append("%s's base measurement dropped, to be taken again"
+                          % (task["id"],))
+        return None
     if answer == "rerun":
         # The gate is not marked as run for this start, so the drive measures
         # again - with `--no-reuse`, through the mark `task_gate` spends - and
@@ -12227,6 +12522,15 @@ def build_parser():
                      help="passed to the red-first helper; needs a test command")
     sbm.add_argument("--verbose", action="store_true",
                      help="print each verb's run above the result")
+    bsr = sub.add_parser(BASE_RUN_VERB, help="measure the base of a red task "
+                         "gate that next launched to the background: the "
+                         "run: line of its dispatch-base step")
+    bsr.add_argument("id", help="the task id the dispatch named")
+    bsr.add_argument("manifest", nargs="?", default=None,
+                     help="the manifest (default: the project's configured one)")
+    bsr.add_argument("--project-dir", dest="project_dir", default=None)
+    bsr.add_argument("--verbose", action="store_true",
+                     help="print each verb's run above the result")
     rst = sub.add_parser("restore", help="put a wave task tree's work back from "
                          "the copy a killed move left beside it, as a stop names")
     rst.add_argument("id", help="the task id whose tree the stop named")
@@ -12386,6 +12690,26 @@ def run_restore(args, out):
     return code
 
 
+def run_base_run(args, out):
+    """`base-run <task>`: `base_run` for the one task id the command names."""
+    args.phase, args.task_only = args.id, False
+    try:
+        ctx = context(args)
+    except Exception as exc:                                   # noqa: BLE001
+        sys.stderr.write("drive-phase.py: %s\n" % (exc,))
+        return E_USAGE
+    if ctx["only"] != args.id:
+        out("drive-phase.py: %s takes a task id; %s is a phase"
+            % (BASE_RUN_VERB, args.id))
+        return E_USAGE
+    try:
+        code, text = base_run(ctx, args.id)
+    except ValueError as exc:
+        code, text = E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], exc)
+    out(text)
+    return code
+
+
 def handback_lines(code):
     """The line `submit` ends on: hand back the filed line, or the refusal."""
     return step_text("handback-filed" if code == E_OK else "handback-refused")
@@ -12428,6 +12752,8 @@ def main(argv, out=print, stdin=None):
         return run_brief(args, out)
     if args.action == "restore" and cmd is None:
         return run_restore(args, out)
+    if args.action == BASE_RUN_VERB and cmd is None:
+        return run_base_run(args, out)
     if args.action == "auto" and cmd is None:
         return run_auto(args, out)
     if cmd is not None:

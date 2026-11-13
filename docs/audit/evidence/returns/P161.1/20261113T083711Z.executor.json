@@ -1,0 +1,39 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_drive_without_model.py": "pass",
+    "python3 tools/measure-context.py --gate": "pass",
+    "python3 tools/sweep-selftests.py tools/measure-context.py tests/test_audit_task.py tests/test_drive_phase.py tests/test_drive_without_model.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-13T08:46:54Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_drive_without_model.py` in a throwaway tree at HEAD exited 1 with 10 of 72 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sn1 (house FAIL) and 9 more: SELFTEST FAILED: 71/72 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "ATTEMPT 2 - what changed this round: only plugins/audit/reference/orchestrator.md. Attempt 1's addition took the file to 62225 bytes against measure-context's DOC_CEILINGS 62000 (HEAD held 61995), which reddened mc24/mc34 in tools/measure-context.py and fb15 in tests/test_audit_task.py. The opening paragraph's gate sentence and my base sentences are now one statement: 'A gate or base unmeasured or past the Bash bound is a background step (`dispatch-gate`, `dispatch-base`); an unknowable base is `gate-red-base-unknown` (execute-task.md step 3).' The clauses dropped from HEAD's sentence ('background Bash, read from its ledger row', 'one measured under it runs inline') are carried by execute-task.md step 3, which the sentence now points to. The ceiling is not raised. measure-context.py --gate: exit 0, reference/orchestrator.md 61996 / 62000. Sweep over tools/measure-context.py tests/test_audit_task.py tests/test_drive_phase.py tests/test_drive_without_model.py tests/test__deps.py tests/test__refs.py: exit 0, 6/6 files ok, 2877 cases (measure-context 40, audit_task 1252, drive_phase 937, drive_without_model 72, _deps 284, _refs 292). mc24 and mc34 print PASS by name. ATTEMPT 1 WORK KEPT AS IS: the base measurement goes through gate_in_background. Past the bound, unmeasured, or under auto it is dispatch-base: a run: line for the new verb drive-phase.py base-run (no bound, kill-safe record on baseMeasured written through fresh_keeper), then wait-base, then a read-back from the record (base_gate, base_reading_for). An inline base past BASE_MEASURE_SECONDS is handed to the background. The new decision gate-red-base-unknown (rerun|measure-base|block) is in DECISIONS, STEPS, SIGNAL_VERBS and GATE_VERDICT_DECISIONS. It covers a measurable base run that left no reading, failed or was killed (cut_short), or whose reading names no base run (base_behind); measure-base drops the record. The no-base choice: a red run HEAD has left still goes to the writer, and so does a completed but incomparable not-knowable reading, as before. gate_said/gate_wait_said share background_dispatch/background_wait with base_said/base_wait_said. Other docs: execute-task.md step 3, PLUGIN-BUILD-GUIDE.md, module docstring and section comment. Tests: bq1-bq5, dm84, bt1/bt2 rewritten, sn1 corpus extended. DEPENDANTS (attempt 1, unchanged): test_run_test_gate 618 / test__evidence_io 335 / test__impact 44 / tools/_suite 35 / test__output_lints 182 green, still correct (run-test-gate.py and _evidence_io unedited). Now also tools/measure-context.py and tests/test_audit_task.py, which read orchestrator.md's size: changed in this round, green. KNOWN LIMIT unchanged: the state file has no writer lock, so a lost base-run write reads as an unknown stop or a wait, never the writer; this is stated in the section comment.",
+    "descriptive": "orchestrator.md brought back under its context ceiling (61996/62000) with the base rule in one sentence pointing to execute-task.md step 3; the background base measurement and gate-red-base-unknown from attempt 1 are kept."
+  },
+  "testsAdded": [
+    "bq1 k15n shape: base past the bound by recorded mean -> dispatch-base, wait-base, base-run played, gate-red-base; no inline run, no writer, resumes 0, no tree left",
+    "bq2 base run answered nothing -> gate-red-base-unknown with rerun|measure-base|block; rerun stops there again; no writer round",
+    "bq3 measure-base drops the mark and re-measures -> gate-red-base",
+    "bq4 background base-run killed mid-measure -> next sweeps its tree and stops gate-red-base-unknown",
+    "bq5 auto runs gate and base as children, ends needs-model on gate-red-base",
+    "dm84 the drive's dispatch-base/wait-base prints classify as run/child-exited under the real auto_answer"
+  ],
+  "casesAdded": [
+    [
+      "bq1",
+      "bq2",
+      "bq3",
+      "bq4",
+      "bq5"
+    ],
+    "dm84"
+  ],
+  "claims": "claims:\n1 orchestrator.md:17-19 states what base_reading_for/gate_in_background/gate_red_decision do in drive-phase.py; detail in execute-task.md step 3\n2 no case changed this round; attempt 1's M1-M6 stand; mc24/mc34 PASS and fb15's suite ok after the trim\n3 grep of the bare figure 62000 shows the ceiling in tools/measure-context.py DOC_CEILINGS only; the fix trims the document, the ceiling is left as it is\n4 n/a - no rule addressed to an agent\n5 measure-context --gate run once after the edit: 61996 / 62000 (a byte count of a static file, so it doesn't vary between runs)\n6 n/a - no guard\n7 no number written into prose; 61996/62000 appear only in this return, beside the command that prints them",
+  "stamp": "audit-stamp: {\"content\":\"sha256:fa23b53c4a427111219701375911055bfb17640d6f6860d2ab63ac62c0520989\",\"dirtyDigest\":\"sha256:4a6b18692d881aa454829bbbfefe83965a9ea9501c59ba1b0107dfe6c5caffa0\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"8fc317a49843d530\",\"plugins/audit/reference/execute-task.md\":\"6587bc74dd9bbf13\",\"plugins/audit/reference/orchestrator.md\":\"02733f167594df40\",\"plugins/audit/scripts/governance/drive-phase.py\":\"b98c42dbf89cfada\",\"tests/test_drive_phase.py\":\"3d11b6ded288ac81\",\"tests/test_drive_without_model.py\":\"20d5dbe2e2c1daae\"},\"head\":\"9b938803\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/reference/orchestrator.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\",\"tests/test_drive_without_model.py\"],\"scopeDigest\":\"sha256:382df3612ffcf8b184af6d7c536bd42a67973b4e70b094ae5ca8e70fbdcdb747\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

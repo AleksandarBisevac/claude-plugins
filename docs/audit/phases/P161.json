@@ -1,7 +1,7 @@
 {
   "id": "P161",
   "title": "The base of a red gate is measured like any gate",
-  "status": "pending",
+  "status": "in_progress",
   "description": "On a paid measurement (P128.38, two (iii) runs) the drive's inline base measurement (run-test-gate.py --base-of, bounded by BASE_MEASURE_SECONDS = the 120 s foreground bound) was torn down, recorded not-knowable, and the drive then took the no-base path and resumed the writer twice over a red the base reproduces case for case. The base measurement is the one gate the drive still runs inline past the one background rule.",
   "desiredOutcome": "A red task gate whose base run outlives the Bash foreground bound is measured in the background and stops as gate-red-base when the base reproduces it, with no writer session resumed; a base that cannot be known stops the drive with its own answer",
   "testGate": [
@@ -16,8 +16,8 @@
     "vitest"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "9b93880399de7b62351486070c7060226c203115",
+  "branch": "audit/p161-the-base-of-a-red-gate-is-meas",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -30,7 +30,7 @@
     {
       "id": "P161.1",
       "title": "A red gate's base is measured in the background under the one gate rule, and an unknowable base stops the drive instead of resuming the writer",
-      "status": "pending",
+      "status": "in_progress",
       "description": "plugins/audit/scripts/governance/drive-phase.py measures a red task gate's base inline: base_reading_for -> measure_base -> _base_in runs run-test-gate.py --base-of <runId> --record in a detached tree under run_verb_bounded(..., BASE_MEASURE_SECONDS) (around line 2780-2930). When that run outlives 120 s it is torn down and recorded verdict not-knowable, and gate_red_decision then treats the red as introduced and returns gate-red-writer (resume) - so a red the base reproduces spends writer rounds and the run stops at round 2/2. Observed on P128.38: the failing suite's base run under a sandbox takes longer than 120 s; the one failing case fails at the base, case for case.\n\nREQUIRED, as one rule rather than a special case:\n1. The base measurement is a drive gate step like the task gate: it goes through gate_in_background's decision (always a step of its own under auto; unmeasured or past the foreground bound -> background; measured under the bound -> may stay inline), is launched as a dispatch with a self-contained run: command (build the detached tree at the red run's head, run run-test-gate.py --base-of --record with no 120 s cut, tear the tree down through remove_base_tree, record the reading on the start's baseMeasured mark), waited on, and decided from what it recorded - the same launch/wait/read-back shape as launch_gate / background_gate / gate_wait_said. Reuse those helpers or factor a shared one; do not write a second copy of the launch-wait-readback machinery. The kill safety the inline path has (mark before the run naming the tree and pids, sweep_base_trees removing a killed run's tree) must hold for the background run too.\n2. A base reading that is not knowable (the base run produced no row, failed, or was really cut) must NOT fall through to gate-red-writer or spend a writer round. It stops as a distinct decision (name it e.g. gate-red-base-unknown) whose options are rerun (measure the gate again), measure-base (measure the base again, clearing the start's mark) and block (with --reason); add it to DECISIONS, the step text table, the decision kind map, --explain and every table the drive's own lints hold decisions to. no-base (no comparable base run and none measurable because HEAD moved) keeps its current meaning unless the same reasoning applies - state the choice in the outcome.\n3. drive-phase.py auto (the prompt hook's driver) must run the new step without a model, as it runs dispatch-gate/wait-gate today.\n4. Prose that describes the base measurement must say the new behaviour: plugins/audit/reference/execute-task.md (the recorded-gate step, around line 265), plugins/audit/reference/orchestrator.md (around line 16-19), PLUGIN-BUILD-GUIDE.md (around lines 4907 and 4957), and the comment block above BASE_MEASURE_VERDICTS. No F/P/BUG ids in comments.\n\nCASES (tests/test_drive_phase.py; tests/test_drive_without_model.py if auto is touched):\n- the k15n shape: a red task gate, a base run that outlives the foreground bound (simulate with a stub run-test-gate whose --base-of sleeps past a shortened bound or reports a long recorded mean - do not sleep 120 s in a suite), the base reproduces every failing case -> the drive dispatches the base measurement to the background, reads it back, and decides gate-red-base; no gate-red-writer, no resume, writer resumes counter unchanged.\n- a base that cannot be known -> the new stop decision with options rerun/measure-base/block, and no writer round spent.\n- measure-base clears the mark and measures again; a killed background base run leaves a tree that the next drive sweeps.\n- under auto the base step runs without a model.\nProve each red-first: mutate the fix (e.g. route not-knowable back to gate-red-writer; restore the inline bounded call), assert the mutation landed, and show the case goes red; restore in the same command. Purge __pycache__ between mutate/restore.\n\nDEPENDANTS (owe a check, each named in the outcome): tests/test_drive_phase.py, tests/test_drive_without_model.py (auto's step table), tests/test_run_test_gate.py and tests/test__evidence_io.py if --base-of or base_run change, tests/test__impact.py (reads drive-phase decision tables), tools/_suite.py, the decision tables gate-parity / lints hold to SECURITY.md and docs, plugins/audit/scripts/governance/run-test-gate.py (--base-of contract).",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -57,14 +57,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-13T08:37:11Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -93,9 +93,22 @@
           "text": "reads PLUGIN-BUILD-GUIDE.md's generated module map; the task adds no module, so the map is unchanged",
           "waives": "tools/lints/_deps.py"
         }
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-13T08:57:31Z.47bd7b",
+        "status": "passed",
+        "at": "2026-11-13T08:57:31Z"
+      }
     }
   ],
   "request": "Fix the drive's base measurement: a base run that outlives the foreground bound must be measured in the background and decided from its row, and a base that cannot be known must stop the drive rather than resume the writer.",
-  "openChoices": []
+  "openChoices": [],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "988f3478-fc74-4a1e-a62b-7522b404c792",
+    "branch": "audit/p161-the-base-of-a-red-gate-is-meas",
+    "at": "2026-11-13T07:57:43Z"
+  },
+  "startedAt": "2026-11-13T07:57:43Z"
 }

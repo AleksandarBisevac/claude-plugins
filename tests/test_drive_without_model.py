@@ -865,9 +865,40 @@ def _drive_cases(check, root, real):
     _worktree_cases(check, root, real)
 
 
+def _base_step_case(check, real):
+    """What the real drive prints for a base measurement it leaves to the
+    background is a step the real `auto` the hook starts runs itself: a
+    dispatch whose whole instruction is its `run:` command, and a wait on it
+    that auto ends on once its own child exited - never a step for a model."""
+    ctx = {"phase": "P1", "only": None}
+    argv = ["python3", "drive-phase.py", "base-run", "P1.1", "plan.json"]
+    command = " ".join(argv)
+    try:
+        printed = [real.base_said(ctx, "P1.1", "r-red", argv, "a reason"),
+                   real.base_wait_said(ctx, "P1.1", "2026-11-13T08:00:00Z", argv)]
+    except Exception as exc:                                   # noqa: BLE001
+        printed = "%s: %s" % (type(exc).__name__, exc)
+    answers = []
+    if isinstance(printed, list):
+        for said, ran in zip(printed, (set(), set([command]))):
+            fields = said.get("signal") or {}
+            step = fields.get("step")
+            answers.append((step, real.auto_answer({
+                "verb": real.SIGNAL_VERBS.get(step), "step": step,
+                "runs": fields.get("runs") or [],
+                "prompts": fields.get("prompts") or []}, ran)))
+    check("dm84 auto runs the base measurement without a model: the dispatch "
+          "the drive prints for it is one auto runs as a child, and its wait "
+          "is one auto ends on as that child's exit: %r" % (printed if not
+                                                             answers else answers,),
+          answers == [("dispatch-base", "run"), ("wait-base", "child-exited")]
+          and [said["signal"]["runs"] for said in printed] == [[command]] * 2)
+
+
 def _cases(check):
     root = _harness.fixture_root("drive-without-model-")
     real = _loader.load_script("drive-phase.py")
+    _base_step_case(check, real)
     _drive_cases(check, root, real)
     _table_cases(check, root)
     _next_cases(check, root, real)

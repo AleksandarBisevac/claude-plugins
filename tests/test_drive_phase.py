@@ -10763,6 +10763,14 @@ def _signal_corpus(M, mpath):
     out.append(("dispatch-gate", M.gate_said(ctx, "P125.55-0h5", gate_argv), {}))
     out.append(("wait-gate", M.gate_wait_said(
         ctx, "P125.55-0h5", "2026-10-14T18:24:20Z", gate_argv), {}))
+    base_argv = ["python3", "/a/long/plugin/path/" * 8 + "drive-phase.py",
+                 "base-run", "P125.55-0h5", "/a/long/manifest/path/plan.json",
+                 "--project-dir", "/a/long/project/path"]
+    out.append(("dispatch-base", M.base_said(
+        ctx, "P125.55-0h5", "2026-10-14T18:24:20Z.4aac44", base_argv,
+        "no recorded run has measured every step of it"), {}))
+    out.append(("wait-base", M.base_wait_said(
+        ctx, "P125.55-0h5", "2026-10-14T18:24:20Z", base_argv), {}))
     out.append(("dispatch-reviewer-session", M.writer_said(
         ctx, "P125.55-0h5", "claude-sonnet-4-5-20250929", brief,
         session_argv[:2] + ["--role", "reviewer", "--task", "P125.55-0h5"],
@@ -18601,6 +18609,7 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("bb-block", "_base_red_drive_cases"),
           ("bm-block", "_base_measure_cases"),
           ("bt-block", "_base_bound_cases"),
+          ("bq-block", "_base_background_cases"),
           ("tcc-block", "_committed_close_cases"),
           ("oc-block", "_own_commit_cases"),
           ("up-block", "_advance_plan_cases"),
@@ -20015,16 +20024,20 @@ raise SystemExit(1 if "\nFAIL  " in "\n" + text else 0)
 
 
 def _base_measure_repo(M, prefix, base_text, task_text, sleep=None,
-                       play_gate=True):
+                       play_gate=True, seed_ms=None):
     """A one-task writer fixture whose gate prints `task_text` over the writer's
     work and `base_text` at HEAD - after sleeping `sleep` seconds there, when
     given - played up to the gate run after the writer's session: `(root,
     mpath, log, line, block)` - `line` the `next` that ran that gate, `block`
     the explain of the task after it; both None when `play_gate` is False and
-    the fixture stops before that `next`."""
+    the fixture stops before that `next`. `seed_ms` records one run of the
+    gate's step that long (`_seed_gate_ms`), the mean a real gate choice
+    reads for the task gate and for its base alike."""
     gate = '"%s" gate_k02.py' % (sys.executable.replace("\\", "/"),)
     root, mpath = _repo(prefix, task_ids=TASKS[:1], gate=(gate,),
                         executor=WRITER_EXECUTOR)
+    if seed_ms is not None:
+        _seed_gate_ms(root, mpath, [gate], seed_ms)
     planted = (("gate_k02.py", _BASE_GATE_SCRIPT),
                ("gate-out/base.txt", base_text),
                ("gate-out/task.txt", task_text))
@@ -20196,20 +20209,26 @@ def _base_bound_cases(check):
     took = time.monotonic() - started
     _t, slow_base = _ledger_of(root)
     slow_mark = _base_mark(root)
-    check("bt1 a base run past its bound is stopped there and read as not "
-          "knowable: the writer resumes, the start's mark says the run timed "
-          "out, the base run's only row says it was cancelled and holds no "
-          "step a later reading could take as the base, and no base tree is "
-          "left: %r"
-          % ((slow, round(took, 1), slow_mark, _base_trees(root),
+    _c, slow_block = _explain_of(M, root, mpath, "P1.1")
+    slow_run = _run_argv(slow_block) or []
+    check("bt1 an inline base run past its bound is stopped there and handed "
+          "to the background, never read as a red the task introduced: no "
+          "writer resumes, the step is the base's dispatch, the start's mark "
+          "is a launch that says the inline run timed out, the base run's "
+          "only row says it was cancelled and holds no step a later reading "
+          "could take as the base, and no base tree is left: %r"
+          % ((slow, round(took, 1), slow_mark, slow_run[1:3], _base_trees(root),
               [(r.get("status"), [(st.get("name"), st.get("exit"),
                                    st.get("outcome"))
                                   for st in r.get("steps") or []])
                for r in slow_base]),),
-          "gate-red-writer" in slow and "gate-red-base" not in slow
+          "gate-red-writer" not in slow and " dispatch P1.1" in slow
           and took < 20
-          and slow_mark.get("verdict") == "not-knowable"
-          and "timed out" in (slow_mark.get("said") or "")
+          and [os.path.basename(w) for w in slow_run[1:3]]
+          == ["drive-phase.py", "base-run"]
+          and slow_mark.get("background") is True
+          and not slow_mark.get("done")
+          and "timed out" in (slow_mark.get("cut") or "")
           and not slow_mark.get("tree")
           and all(r.get("status") == "cancelled" and not r.get("steps")
                   for r in slow_base)
@@ -20287,11 +20306,13 @@ def _base_bound_cases(check):
     _t, killed_base = _ledger_of(root)
     check("bt2 the start's mark is written before the base run, so a next "
           "killed during it leaves the mark naming its tree, and the next "
-          "drive measures no second time and resumes the writer: %r"
+          "drive measures no second time and stops on a base nobody can "
+          "know, resuming no writer: %r"
           % ((killed, mark, first_runs, len(base_runs), after),),
           killed == "SIGTERM" and first_runs == 1 and leftover
           and len(base_runs) == 1 and killed_base == []
-          and "gate-red-writer" in after and "gate-red-base" not in after)
+          and "gate-red-base-unknown" in after
+          and "gate-red-writer" not in after)
     real_holder = os.path.realpath(holder) if holder else ""
     check("bt3 a base tree a killed run left is removed at the next drive, "
           "after the shared removal question was asked of it - its directory "
@@ -20338,6 +20359,252 @@ def _base_bound_cases(check):
           any(os.path.realpath(t) == os.path.realpath(os.path.join(live, "tree"))
               for t in live_trees)
           and live_mark.get("tree") == live)
+
+
+def _drive_state(root):
+    """The fixture's drive state for the phase, or {}."""
+    path = _fr.drive_state_path(os.path.join(root, ".claude", "state"), PHASE)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def _writer_resumes(root):
+    """The resume rounds the drive has spent on P1.1's writer: 0 when no round
+    was ever recorded."""
+    held = (((_drive_state(root).get("writer") or {}).get("P1.1") or {})
+            .get("value") or {})
+    return held.get("resumes", 0) if isinstance(held, dict) else 0
+
+
+def _base_run_argv(M, root, mpath):
+    """The argv of the base measurement the drive printed for P1.1, read off
+    its `--explain`; [] when it printed none."""
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    argv = _run_argv(block) or []
+    is_base = (len(argv) > 2 and os.path.basename(argv[1]) == "drive-phase.py"
+               and argv[2] == "base-run")
+    return argv if is_base else []
+
+
+def _base_popen(root, argv):
+    """Start a printed base measurement as the orchestrator's background Bash
+    does - its interpreter word replaced by this one, in a session of its own
+    so a case can stop its whole group. Only that command is started: any
+    other `run:` line would be a session or a gate this helper is not for."""
+    if not (len(argv) > 2 and os.path.basename(argv[1]) == "drive-phase.py"
+            and argv[2] == "base-run"):
+        raise ValueError("not a base measurement, so not run: %r" % (argv[:3],))
+    env = dict(os.environ)
+    env["CLAUDE_PROJECT_DIR"] = root
+    env["CLAUDE_CODE_SESSION_ID"] = SESSION
+    kw = {"start_new_session": True} if hasattr(os, "killpg") else {}
+    return subprocess.Popen([sys.executable] + list(argv[1:]), cwd=root, env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            **kw)
+
+
+def _play_base(root, argv, timeout=120):
+    """`(code, output)` of a printed base measurement run to its end; `(None,
+    why)` for a command that is not one."""
+    try:
+        proc = _base_popen(root, argv)
+    except ValueError as exc:
+        return None, "%s" % (exc,)
+    out, _err = proc.communicate(timeout=timeout)
+    return proc.returncode, (out or b"").decode("utf-8", "replace")
+
+
+def _base_background_cases(check):
+    """A red task gate's base is measured like any gate: past the foreground
+    bound by its recorded mean it is a dispatch of its own, waited on and read
+    back from the mark its run leaves, so a base that reproduces every failing
+    case stops as red at base with no writer round spent; a base nobody can
+    know stops on a decision of its own, which `measure-base` answers by
+    measuring again; a killed background run's tree is swept by the next
+    drive; and `auto` runs the base step with no model."""
+    M, why = _load("drive_phase_base_bg", real_gate_choice=True)
+    if M is None:
+        check("bq1 the driver loads", False, why)
+        return
+    import test_run_test_gate as _rtg_cases
+    fails = _rtg_cases.K03R_FAILS
+    k02 = _rtg_cases.sweep_red(fails)
+    slow_ms = 10 * 60 * 1000
+    inline = []
+    real_bounded = M.run_verb_bounded
+
+    def _counted(ctx, script, args, *rest, **kw):
+        if "--base-of" in list(args):
+            inline.append(list(args))
+        return real_bounded(ctx, script, args, *rest, **kw)
+
+    M.run_verb_bounded = _counted
+    root, mpath, log, line, _block = _base_measure_repo(
+        M, "base-k15n", k02, k02, seed_ms=slow_ms)
+    argv = _base_run_argv(M, root, mpath)
+    _t, before = _ledger_of(root)
+    launched = _base_mark(root)
+    wait_code, waiting = _signal_raw(M, root, mpath)
+    played = _play_base(root, argv) if argv else (None, "no base run printed")
+    after_code, after = _signal_next(M, root, mpath)
+    _t, base_rows = _ledger_of(root)
+    measured = _base_mark(root)
+    check("bq1 THE k15n SHAPE: a red task gate whose base run is past the "
+          "foreground bound by its recorded mean dispatches the base to the "
+          "background - no inline base run, no base row yet - waits on it, "
+          "and once its run ends reads the reading it left on the start's "
+          "mark: every failing case red at base, so gate-red-base, no writer "
+          "session sent, no resume round spent, and no base tree left: %r"
+          % ((line, argv[1:4], launched, waiting, played, after, measured,
+              len(inline), len(before), len(base_rows),
+              len(_stub_runs(log)), _writer_resumes(root), _base_trees(root)),),
+          bool(argv) and " dispatch P1.1" in line
+          and "gate-red-writer" not in line + waiting + after
+          and inline == [] and before == []
+          and launched.get("background") is True and not launched.get("done")
+          and wait_code == 0 and " wait P1.1" in waiting
+          and played[0] == 0
+          and after_code == 0 and "gate-red-base" in after
+          and "gate-red-base-unknown" not in after
+          and measured.get("verdict") == "base-only" and measured.get("done")
+          and len(base_rows) == 1 and measured.get("run") == base_rows[0].get("runId")
+          and len(_stub_runs(log)) == 1 and _writer_resumes(root) == 0
+          and _base_trees(root) == [])
+
+    M2, why = _load("drive_phase_base_unknown")
+    if M2 is None:
+        check("bq2 the driver loads", False, why)
+        return
+    refuse = {"on": True}
+    real_bounded2 = M2.run_verb_bounded
+
+    def _refused(ctx, script, args, *rest, **kw):
+        if refuse["on"] and "--base-of" in list(args):
+            return 2, "", "the base run answered nothing", None
+        return real_bounded2(ctx, script, args, *rest, **kw)
+
+    M2.run_verb_bounded = _refused
+    root2, mpath2, log2, unknown, block2 = _base_measure_repo(
+        M2, "base-unknown", k02, k02)
+    first_mark = _base_mark(root2)
+    _rc, rerun = _signal_next(M2, root2, mpath2, "--answer", "rerun")
+    _t, refused_rows = _ledger_of(root2)
+    check("bq2 a base that cannot be known - its run answered nothing - stops "
+          "on gate-red-base-unknown, offering rerun, measure-base and block; "
+          "no writer session is sent and no resume round spent, and a rerun "
+          "of the gate stops there again rather than falling to the writer: %r"
+          % ((unknown, block2, first_mark, rerun, len(_stub_runs(log2)),
+              _writer_resumes(root2)),),
+          "gate-red-base-unknown" in unknown and "gate-red-writer" not in unknown
+          and "answer: next %s --answer rerun|measure-base|block" % (PHASE,)
+          in block2
+          and first_mark.get("done") and first_mark.get("unknowable") is True
+          and "gate-red-base-unknown" in rerun and "gate-red-writer" not in rerun
+          and refused_rows == []
+          and len(_stub_runs(log2)) == 1 and _writer_resumes(root2) == 0)
+
+    refuse["on"] = False
+    _mc, again = _signal_next(M2, root2, mpath2, "--answer", "measure-base")
+    _t, again_rows = _ledger_of(root2)
+    remeasured = _base_mark(root2)
+    check("bq3 measure-base clears the start's mark and measures the base "
+          "again: this time it answers, every failing case red at base, so "
+          "gate-red-base, still with no writer session sent: %r"
+          % ((again, remeasured, len(again_rows), len(_stub_runs(log2))),),
+          "gate-red-base" in again and "gate-red-base-unknown" not in again
+          and remeasured.get("verdict") == "base-only"
+          and remeasured.get("unknowable") is not True
+          and len(again_rows) == 1
+          and len(_stub_runs(log2)) == 1 and _writer_resumes(root2) == 0)
+
+    if not hasattr(os, "killpg"):
+        _harness.skip(check, "bq4", "os.killpg, to stop a base run's whole "
+                      "process group", True)
+    else:
+        _base_killed_case(check, k02, slow_ms)
+    _base_auto_case(check, k02)
+
+
+def _base_killed_case(check, k02, slow_ms):
+    """A background base run killed - its own process and the gate run it
+    started - leaves its tree; the next drive sweeps it and stops on a base
+    nobody can know."""
+    M, why = _load("drive_phase_base_bg_killed", real_gate_choice=True)
+    if M is None:
+        check("bq4 the driver loads", False, why)
+        return
+    root, mpath, log, line, _block = _base_measure_repo(
+        M, "base-bg-killed", k02, k02, sleep=20, seed_ms=slow_ms)
+    argv = _base_run_argv(M, root, mpath)
+    proc = _base_popen(root, argv) if argv else None
+    mark, deadline = {}, time.monotonic() + 30
+    while proc is not None and time.monotonic() < deadline:
+        mark = _base_mark(root)
+        if mark.get("tree") and len(mark.get("pids") or []) >= 2:
+            break
+        time.sleep(0.1)
+    holder = mark.get("tree") or ""
+    built = bool(holder) and os.path.isdir(os.path.join(holder, "tree"))
+    for pid in list(mark.get("pids") or []) + ([proc.pid] if proc else []):
+        try:
+            os.killpg(os.getpgid(pid), signal.SIGKILL)
+        except OSError:
+            pass
+    if proc is not None:
+        proc.wait()
+    _code, after = _signal_next(M, root, mpath)
+    swept = _base_mark(root)
+    check("bq4 a background base run killed while it measures leaves its tree "
+          "named on the start's mark; the next drive removes that tree - its "
+          "directory and git's registration both gone - and stops on "
+          "gate-red-base-unknown, sending no writer: %r"
+          % ((line, holder, built, after, swept, _base_trees(root),
+              len(_stub_runs(log))),),
+          built and "gate-red-base-unknown" in after
+          and "gate-red-writer" not in after
+          and not os.path.exists(holder) and _base_trees(root) == []
+          and not swept.get("tree") and swept.get("unknowable") is True
+          and len(_stub_runs(log)) == 1)
+
+
+def _base_auto_case(check, k02):
+    """`auto` past a writer's session: the task gate and then its base are each
+    a child it runs itself, and it ends on the decision the base answers."""
+    M, why = _load("drive_phase_base_auto", real_gate_choice=True)
+    if M is None:
+        check("bq5 the driver loads", False, why)
+        return
+    root, mpath, log, _line, _block = _base_measure_repo(
+        M, "base-auto", k02, k02, play_gate=False)
+    said = []
+    with _Env(root):
+        code = M.main(["auto", PHASE, mpath, "--project-dir", root],
+                      out=said.append)
+    text = "\n".join(said)
+    _t, base_rows = _ledger_of(root)
+    measured = _base_mark(root)
+    try:
+        with open(M.auto_log_path(dict(M.context(argparse.Namespace(
+                phase=PHASE, manifest=mpath, project_dir=root, verbose=False,
+                task_only=False)), phase=PHASE)), encoding="utf-8",
+                errors="replace") as fh:
+            ran = fh.read()
+    except (OSError, ValueError) as exc:
+        ran = "no auto log: %s" % (exc,)
+    check("bq5 auto runs the base measurement as a child of its own with no "
+          "model: the base is recorded once, read back off the start's mark, "
+          "and auto ends needing a model only for gate-red-base, with no "
+          "writer session sent: %r"
+          % ((code, text, measured, len(base_rows), len(_stub_runs(log))),),
+          code == M.AUTO_NEEDS_MODEL and "gate-red-base" in text
+          and "gate-red-base-unknown" not in text
+          and measured.get("background") is True
+          and measured.get("verdict") == "base-only"
+          and len(base_rows) == 1 and len(_stub_runs(log)) == 1
+          and "P1.1's base measured at" in ran)
 
 
 def _next_text(M, root, mpath):

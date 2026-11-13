@@ -4904,9 +4904,14 @@ reading for the task gate and the phase gate). A red read back names its verdict
 repeat's banner (`gate_red_lines`, read by the gate-red decision, the re-gate on the phase
 tree and the phase gate's stop). A phase gate launched by a sign-off answer resumes that sign-off
 at the same head and is forgotten at another. A wave print carries the rules of each member with a `run:` line once.
-The base measurement a red asks for still runs inside `next`: its reading is `run-test-gate.py`'s
-own `base_red` over the base run, which no recorded row carries. The `bg`, `gc`, `gs`, `ge` and
-`ga` cases in `tests/test_drive_phase.py` drive each arm against the real `run-test-gate.py`.
+The base measurement a red asks for is chosen the same way, over the red steps of the recorded
+run: past the bound, unmeasured, or under `auto` it is `dispatch-base`, whose `run:` line is this
+script's own `base-run` verb, and `wait-base` holds until that run has left its reading on the
+start's mark. Its reading is `run-test-gate.py`'s own `base_red` over the base run, which no
+recorded row carries, so the mark, not a ledger row, is what it is read back from; the dispatch and
+the wait are printed by the same builders as the gate's (`background_dispatch`,
+`background_wait`). The `bg`, `gc`, `gs`, `ge` and `ga` cases in `tests/test_drive_phase.py` drive
+each arm against the real `run-test-gate.py`, and `bq1`-`bq5` the base's.
 
 **Deciding on facts: named planners, and no single `decide()`.** The drive's planners sit
 under `# --- deciding a step on facts ---`: `_advance_plan`
@@ -4957,14 +4962,23 @@ the ready tasks' own gates, and only those steps' suites are read (`gate_step_na
 whose reading has no comparable base run (`no-base`, `not-knowable`) has its base measured once
 per start (`base_reading_for`, `measure_base`): `run-test-gate.py --base-of` over the red run, in a
 detached tree at its HEAD built outside the repository and removed after (`remove_base_tree`, through
-`_worktrees.tree_unsettled`). The run is held to `BASE_MEASURE_SECONDS` and a run stopped there reads
-`not-knowable`; the start's mark is written before it and names the tree, so a `next` killed during
-it measures no second time, and the next drive removes the tree it left (`sweep_base_trees`) unless
-the run the mark names is still alive. `bt1`-`bt4` drive the bound, the mark and the sweep. When the
-reading taken
+`_worktrees.tree_unsettled`). Where it runs is `gate_in_background`'s answer over the red steps:
+past the foreground bound, unmeasured, or under `auto` it is `dispatch-base`, run in the background
+by `drive-phase.py base-run` with no bound and read back off the start's mark (`base_gate`,
+`wait-base`); measured under the bound it runs inside `next`, held to `BASE_MEASURE_SECONDS`, and a
+run stopped there is handed to the background rather than read. The start's mark is written before
+the run, wherever it is, and names the tree and every process measuring in it, so a run killed
+during it is not followed by a second measurement, and the next drive removes the tree it left
+(`sweep_base_trees`) unless a process the mark names is still alive. `bt1`-`bt4` drive the bound,
+the mark and the sweep, `bq1` and `bq4` the background run and its kill. When the reading taken
 again is `base-only` the decision is `gate-red-base`, which sends no writer session and offers
 `block` and `rerun` - the owner's commit over the red is `commit-task-work.py --override-verdict`,
-their own act. `bm1`-`bm4` drive it. A recorded gate run while sibling executors edit the same tree measures their
+their own act. `bm1`-`bm4` drive it. A base nobody can know - the run left no reading, failed, or
+was killed, or its reading names no base run (`base_behind`) - is
+`gate-red-base-unknown`, which sends no writer session either and offers `rerun`, `measure-base`
+(the start's mark dropped, so the base is measured again) and `block`; a later red of the same
+start whose own row finds no base run stops there too. A red run HEAD has since left keeps reading
+`no-base` and goes to the writer as before. `bq2` and `bq3` drive it. A recorded gate run while sibling executors edit the same tree measures their
 unfinished work, so the driver never has two tasks between dispatch and gate at once.
 
 **What the driver keeps.** `stateDir/drive/<phaseId>.json` holds what no verb records: which
