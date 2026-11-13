@@ -1,0 +1,37 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_drive_without_model.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-13T09:24:45Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_drive_without_model.py` in a throwaway tree at HEAD exited 1 with 11 of 947 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bi1 (house FAIL), bi2 (house FAIL), bi3 (house FAIL), bi4 (house FAIL), bi5 (house FAIL), bi6 (house FAIL), bi7 (house FAIL), bi8 (house FAIL), bi9 (house FAIL) and 2 more: SELFTEST FAILED: 935/947 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "plugins/audit/scripts/governance/drive-phase.py: (MED1) the background base run writes only a per-launch record of its own (base_progress_path: <stateDir>/drive/base-runs/<phase>.<task>.<launch>.json; launch_key: a new random `launch` id on the mark, falling back to `at`); fresh_keeper writes that record; fold_progress lays it over the mark (re-reading once after a run is seen dead), base_mark folds it on every read in next (base_reading_for, base_gate) and writes it into the state then removes it once final; sweep_base_trees folds before judging a tree; base_run reads folded without writing. Only next writes the shared state file; the comment accepting the lost write is replaced by ONE WRITER PER FILE. base_reading_for folds again before cut_short. (MED2) write_state -> write_json_atomic (temp in the same dir ending .tmp, os.replace, temp removed on failure); the explain record, auto's owed record and a held slice return now go through it too. run_verb_bounded calls started() inside the try; take_base uses started_keeper, which warns (naming the pid) instead of raising on a failed write. (MED3) launch_base records the red run's status; base_gate reads the verdict back through read_back(of, red_status, record_gate) - unrepeatable_red for a row no repeat may copy, never task_gate, never --no-reuse. (LOW a) cut_before_ran: a mark with no ran/background whose reading names no base run is unknown. (LOW b) red_runs(text,row): the mark's reading applies only when held.of is the named run or the run it repeats; otherwise the row's own reading decides, unknown where it names no base run. (LOW c) gate-red-base-unknown rule names commit-task-work.py --override-verdict and offers resume and retry as never recommended; DECISIONS adds resume, retry; RESUME_ROUTES routes resume to the writer (a red gate round); answer_refusal refuses resume when the pending carries no session; gate_red_decision carries session+failing on the unknown stop when a round is left. tests/test_drive_phase.py: new bi-block (_base_interleave_cases, bi1-bi11) with a section marker, STAGES row; _base_mark(root, M) folds the run's record (bq4 polls through it). PLUGIN-BUILD-GUIDE.md and reference/execute-task.md: base-run prose updated (own record folded by next, atomic writes, read-back, of-check, legacy mark, resume/retry/override). Checks: ruff 0, vermin 0, house_style/depth_sensitive/entries_missing_guard [], doc_prose_numbers/prose_number_claims 0 hits; sweep over both suites exit 0 (2/2 files ok, 1020 cases); dependants tests/test__worktrees.py, test_audit_status.py, test_commit_task_work.py, test__filed_returns.py through the sweep exit 0 (4/4 files ok, 950 cases).",
+    "descriptive": "The background base run and next no longer overwrite each other's state, state writes are atomic, and the red after a base run is read back instead of measured inline; the unknown stop gains the owner's override route and an unrecommended resume/retry exit."
+  },
+  "testsAdded": [
+    "bi-block in tests/test_drive_phase.py: bi1/bi2 next interleaved with a base run keeps and decides on its reading; bi3 a half-written state or run record is never read; bi4/bi5 a raising started callback tears the group down / a failed pid write warns; bi6/bi7 the verdict after a base run is read back, an unrepeatable red not measured, no --no-reuse; bi8 a previous-version cut mark is unknown (twin: an answered one decides); bi9 a reading of another run does not decide (twin: a repeat does); bi10/bi11 the unknown stop's override route, unrecommended resume/retry, and the session it carries"
+  ],
+  "casesAdded": [
+    [
+      "bi1",
+      "bi2",
+      "bi3",
+      "bi6",
+      "bi7",
+      "bi8",
+      "bi9",
+      "bi4",
+      "bi5",
+      "bi10",
+      "bi11"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py fresh_keeper writes only base_progress_path's record (write_json_atomic); base_mark/fold_progress fold it; write_state -> write_json_atomic; run_verb_bounded's try opens before started(); base_gate returns read_back(...record_gate...); guide/execute-task wording rewritten after noticing read_back measures again on a changed tree (no 'never measured again' claim kept)\n2 12 mutations via /tmp/bi-probe/mutations.py, each landed, each red on its cases, restored True; twins bi7/bi8/bi9 kept for the over-fire direction (mine=False -> bi2,bi9 red)\n3 grep of open(..\"w\") and json.dump( in drive-phase.py: 10 hits - state write, explain record, auto owed record, held slice return now atomic; four .md prompt writes left, they are prompt text, not drive state; the old tmp/at keyed fresh_keeper the only other writer of the shared file, now gone\n4 rule 'nothing is sent until one is answered' is enforced by decision() pending + answer_refusal (resume refused without session); 'never recommended' is rule text the orchestrator reads, enforced by nothing - the signal verb stays judge (orchestrator.md not in this task's files)\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written in prose (case id ranges only)",
+  "stamp": "audit-stamp: {\"content\":\"sha256:634ebd9acc5eb5834912cd9664bdef9babc7acffce3c2b52327bd251ae37517f\",\"dirtyDigest\":\"sha256:71fac58431a96555496bc8c2c94041e29d7ec56c8920b6267ed1919f7f5cfb44\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"f70695b21853041c\",\"plugins/audit/reference/execute-task.md\":\"6862b0133f122078\",\"plugins/audit/scripts/governance/drive-phase.py\":\"52da37d7cec04536\",\"tests/test_drive_phase.py\":\"151f5c5bf7134001\"},\"head\":\"3705356e\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\",\"tests/test_drive_without_model.py\"],\"scopeDigest\":\"sha256:ca438568dd5541defe613df7f895a04236fb40a00b87d0388421151ca790cb5f\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
