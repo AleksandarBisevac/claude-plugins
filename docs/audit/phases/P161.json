@@ -493,7 +493,8 @@
         "plugins/audit/scripts/governance/drive-phase.py",
         "tests/test_drive_phase.py",
         "plugins/audit/scripts/status/_doctor_hygiene.py",
-        "tests/test__doctor_hygiene.py"
+        "tests/test__doctor_hygiene.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -522,7 +523,15 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-13T18:27:06Z",
+          "reader": "PLUGIN-BUILD-GUIDE.md",
+          "reads": "plugins/audit/scripts/governance/_locks.py",
+          "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/governance/_locks.py - a section headed by its path"
+        }
+      ]
     }
   ],
   "request": "Fix the drive's base measurement: a base run that outlives the foreground bound must be measured in the background and decided from its row, and a base that cannot be known must stop the drive rather than resume the writer.",
