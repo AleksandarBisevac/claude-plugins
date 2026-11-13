@@ -1,7 +1,7 @@
 {
   "id": "P161",
   "title": "The base of a red gate is measured like any gate",
-  "status": "in_progress",
+  "status": "done",
   "description": "On a paid measurement (P128.38, two (iii) runs) the drive's inline base measurement (run-test-gate.py --base-of, bounded by BASE_MEASURE_SECONDS = the 120 s foreground bound) was torn down, recorded not-knowable, and the drive then took the no-base path and resumed the writer twice over a red the base reproduces case for case. The base measurement is the one gate the drive still runs inline past the one background rule.",
   "desiredOutcome": "A red task gate whose base run outlives the Bash foreground bound is measured in the background and stops as gate-red-base when the base reproduces it, with no writer session resumed; a base that cannot be known stops the drive with its own answer",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "9b93880399de7b62351486070c7060226c203115",
   "branch": "audit/p161-the-base-of-a-red-gate-is-meas",
-  "mergedAt": null,
+  "mergedAt": "2026-11-13T21:29:41Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -925,5 +925,6 @@
     "runId": "2026-11-13T21:22:11Z.0d527c",
     "status": "passed",
     "at": "2026-11-13T21:22:11Z"
-  }
+  },
+  "mergedHead": "9b2e026b3c71138671185e80b2b98d72171249e3"
 }
