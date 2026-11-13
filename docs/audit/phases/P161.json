@@ -653,7 +653,7 @@
     {
       "id": "P161.8-toy",
       "title": "A filesystem that refuses the kernel lock keeps every lock working, with one errno reading shared by both lock users",
-      "status": "in_progress",
+      "status": "done",
       "description": "A verification review of e8a0d4bc (the lock-directory mutex) found the following.\n\nMED 1. plugins/audit/scripts/governance/_locks.py _try_lock / _dir_mutex (near lines 976-1038): only contention errnos count as \"held\". Any other errno from the lock call (ENOLCK on NFS with lockd down, EOPNOTSUPP/ENOTSUP on a FUSE or SMB mount) is re-raised, so acquire answers E_ERR, every manifest-mutating command and panel write refuses, and release and takeover fail. Before e8a0d4bc the link/O_EXCL claim worked there. Required: classify a lock-call errno in ONE place shared with plugins/audit/scripts/usage/usage_ledger.py (its _try_lock/_CONTENDED/LOCK_UNAVAILABLE classification), not in two copies that disagree. A filesystem that refuses the kernel lock proceeds without the mutex (the pre-mutex behaviour) and says so in the answer's basis. Contention still waits up to the bound. Cases: a fake flock raising ENOLCK and EOPNOTSUPP, where acquire and release still work and the answer names the missing mutex; and usage_ledger reads the same classification.\n\nLOW 2. tests/test__locks.py race cases (near lines 1046-1136): the 2 s bound starts when .r2in is written, before the second racer's acquire. Under load the unprotected second racer can miss it, and mx5/mx6/mx7 then pass with no mutex. Have the second racer write .r2at when it reaches the critical section (wrap _take_over or _dir_mutex in _MX_CHILD), start the bound from it, and make mx6 require .r2at.\n\nLOW 3. _locks.py (near lines 1023-1024): .mutex is opened O_RDWR|O_CREAT with 0o644, which breaks a clone shared by two OS users (EACCES, then E_ERR). flock works on a read-only descriptor and Windows locking needs read access only: open with O_RDONLY|O_CREAT, create with 0o666 so the umask decides, and add a case.\n\nRed-first for every new case: mutate the fix, assert the mutation landed, see the case go red, and restore in the same command. Purge __pycache__. No F/P/BUG ids in comments. The SECURITY.md and PLUGIN-BUILD-GUIDE.md lock sentences state the degraded mode.",
       "files": [
         "plugins/audit/scripts/governance/_locks.py",
@@ -682,14 +682,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f8d8dc03e03a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_locks.py: new kernel_lock_refusal(exc) -> LOCK_HELD | LOCK_REFUSED (the one errno reading, over _HELD_ERRNOS now a frozenset); _try_lock returns (LOCK_TAKEN|LOCK_HELD|LOCK_REFUSED, exc). _dir_mutex waits out LOCK_HELD to MUTEX_SECONDS as before, and on LOCK_REFUSED runs the body without the mutex, yielding the _unmutexed() sentence (None when held). _claim and _take_over add a `mutex` key ONLY when that sentence exists, so the three-key answer the existing pins compare stays byte-equal; _remove_claim returns (verdict, unheld); acquire (fresh take, takeover, already-gone), _replace_own and release print `             mutex: <sentence>` via _say_unmutexed. The mutex file opens through _open_mutex: O_RDWR|O_CREAT 0o666, falling back to O_RDONLY|O_CREAT on PermissionError. Deviation from the brief's literal O_RDONLY: writing is asked first because Linux NFS emulates flock with byte-range locks and wants a writable descriptor for an exclusive one (flock(2) NOTES, from memory: not verified on an NFS mount here); a refusal there now degrades rather than erring anyway. The no-primitive error now says 'so no claim is changed here' instead of 'a claim is never changed without one'; the module docstring names the degraded mode. usage_ledger.py: imports _locks, removes _CONTENDED and the now-unused errno import; lock_month returns LOCK_UNAVAILABLE when _locks.kernel_lock_refusal(exc) == _locks.LOCK_REFUSED, so its answers for every errno are what they were (same held set). tests/test__locks.py: _MX_CHILD's plain racer wraps M._dir_mutex and writes <gate>.r2at on its first call; _mx_race starts the bound from it and returns `reached`; mx6 and mx7 require it. New mx13 (per refusing errno), mx14, mx15, mx16, mx17 plus _FakeFlock, _mx_refused, _mx_read_only_cases. tests/test_usage_ledger.py: lf7. SECURITY.md: a paragraph stating the degraded mode. PLUGIN-BUILD-GUIDE.md: the _locks mutex paragraph states the degraded mode, the shared reading, the read-only fallback and the 0666 create; the module-map fence regenerated with `python3 tools/lints/_deps.py --write-map` (one line: usage_ledger -> _locks added), which test__deps g1 required. Runs: tools/sweep-selftests.py over the 33 suites importing _locks or usage_ledger (grep of tests/), plus tests/test_meter_usage.py, tests/test__output_lints.py, tests/test__deps.py, tools/measure-context.py -> exit 0, 36/36 files ok, 7702 cases (after the map regen; the first run was red only on test__deps g1). Final gate run: test__locks 179, test_usage_ledger 138, test_audit_lock 87, test__output_lints 183, test__deps -> 5/5 files ok, exit 0. tools/bench-hooks.py --gate exit 0 (11 hooks within budget, measured on 3.14.7 only; 3.8-3.13 not measured, no interpreter here). ruff check on the four .py files: all checks passed. vermin -t=3.8- --violations on them: exit 0. Dependants: _evidence_io, _invariants, _proc_group, audit-lock.py, drive-phase.py, stamp-verification.py, _proposals.py, audit-task.py still correct: acquire/release exit codes and _claim's three-key answer are unchanged wherever the kernel lock works; only a refusing filesystem adds a mutex line or key, and no module outside _locks calls _remove_claim (grep). Tests using _age_minutes/_claim_stamp/_dir_mutex/_displaced_record still pass (179/179, test_audit_lock 87/87). usage_ledger dependants (meter-usage hook, _invariants, commit-task-work, _panel_page, _panel_viewer, _usage_load, audit-status, audit-usage) still correct: lock_month's answers are unchanged per errno, nothing outside read _CONTENDED (grep), the hook import budget gate passes, and their suites are in the 36/36 sweep. tests/test_usage_ledger.py dependants (_selftest name) unchanged. SECURITY.md / PLUGIN-BUILD-GUIDE.md basename/prose dependants: no section they point at changed meaning; audit-lock.py's prose naming _locks.py makes no mutex claim (grep). No file outside the declared six was edited.",
+        "descriptive": "A filesystem that refuses the kernel lock (ENOLCK, EOPNOTSUPP/ENOTSUP) now takes and releases claims without the mutex and says so, through one errno reading shared with the usage ledger; the race bound starts at the mutex; a read-only .mutex still locks and is created for the umask."
       },
       "startedAt": "2026-11-13T20:02:34Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-13T20:31:13Z",
+      "verifiedBy": [
+        "mx13: per refusing errno (ENOLCK, EOPNOTSUPP, ENOTSUP where distinct) acquire and release answer 0, the claim lands and is removed, the refused lock is never unlocked, and exactly two answer lines name the missing mutex with the errno text",
+        "mx14: with the real kernel lock, neither answer carries the missing-mutex line (the over-fire direction)",
+        "mx15: a fake flock answering EWOULDBLOCK is waited out to the bound and refused EBUSY, never entered",
+        "mx6/mx7 tightened: the second racer must have reached the mutex (.r2at) and the bound starts there",
+        "mx16: a 0444 .mutex still locks on a read-only descriptor and a second taker meanwhile is refused EBUSY (skipped, with reason, where this user may write a 0444 file)",
+        "mx17: under umask 002 a fresh .mutex is 0664 (skipped on Windows)",
+        "lf7: lock_month answers per errno as _locks.kernel_lock_refusal reads it, and follows a swapped reading, which a private copy would not"
+      ],
       "notes": [
         {
           "at": "2026-11-13T20:02:18Z",
@@ -767,7 +775,62 @@
         "runId": "2026-11-13T20:31:10Z.b49535",
         "status": "passed",
         "at": "2026-11-13T20:31:10Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "f8d8dc03e03a",
+        "at": "2026-11-13T20:31:13Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-13T20:20:20Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__locks.py tests/test_usage_ledger.py` in a throwaway tree at HEAD exited 1 with 5 of 115 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - mx13 (house FAIL), mx13 (house FAIL), mx13 (house FAIL), mx16 (house FAIL), mx17 (house FAIL): SELFTEST FAILED: 114/115 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P161.9-toy",
+      "title": "Only a filesystem that refuses kernel locks skips the mutex, and the shared errno reading costs the hook path nothing",
+      "status": "pending",
+      "description": "A verification review of f8d8dc03 found the following.\n\nMED 1. plugins/audit/scripts/governance/_locks.py kernel_lock_refusal (near line 991, used near 1057-1081): every errno that is not a \"held\" errno is read as LOCK_REFUSED, so the mutex is skipped for ANY lock-call error, not only a filesystem that refuses kernel locks. Example: Linux NFS emulates flock with byte-range locks, which need a write-capable descriptor. A second OS user's read-only .mutex fallback gets EBADF and then runs takeovers and releases without the mutex, while the first user's takers hold it. That reopens the race between them. Transient EIO/EINVAL, or a later poll's ENOLCK during a wait, does the same. Required: only an explicit set (ENOLCK, EOPNOTSUPP, ENOTSUP, ENOSYS, and EINVAL only where it means \"not supported\" on msvcrt) reads as refused-by-filesystem. Every other errno raises as before into _claim's error answer. EBADF on a read-only descriptor raises with a message naming the descriptor mode as the cause. A refusal that arrives after the mutex was once seen held during the same wait is an error, never a skip. The ledger keeps its \"anything not held is lock-free\" behaviour by asking the shared reading for \"held\", not for \"refused\".\n\nLOW 2. plugins/audit/scripts/usage/usage_ledger.py (near line 144) now imports the whole of _locks for one function, and hooks/meter-usage.py loads usage_ledger on every hook event it is registered for. Move the shared errno reading (the held set and the classification) into _output.py, the anchor both import already, or another module already on both paths. Do not add a new module. Neither _locks nor usage_ledger keeps its own copy. Check python3 tools/bench-hooks.py --gate.\n\nCases, red-first: EBADF raises (no skip) and names the mode; EIO raises; a refusal after a held answer within one wait is an error; ENOLCK/EOPNOTSUPP still degrade; and usage_ledger imports no _locks (assert on sys.modules after a fresh import in a subprocess). Mutate the fix, assert the mutation landed, see the case go red, and restore in the same command. Purge __pycache__. No F/P/BUG ids in comments. The docs sentence on the degraded mode names the explicit set.",
+      "files": [
+        "plugins/audit/scripts/governance/_locks.py",
+        "tests/test__locks.py",
+        "plugins/audit/scripts/usage/usage_ledger.py",
+        "tests/test_usage_ledger.py",
+        "plugins/audit/scripts/_output.py",
+        "tests/test__output.py",
+        "SECURITY.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__locks.py: EBADF and EIO from the lock call raise instead of skipping the mutex; a refusal after a held answer in one wait is an error; ENOLCK and EOPNOTSUPP still degrade",
+          "tests/test_usage_ledger.py: importing the ledger loads no _locks"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__locks.py tests/test_usage_ledger.py tests/test__output.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "Fix the drive's base measurement: a base run that outlives the foreground bound must be measured in the background and decided from its row, and a base that cannot be known must stop the drive rather than resume the writer.",

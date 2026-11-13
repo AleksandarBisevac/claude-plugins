@@ -1991,7 +1991,8 @@
       "P161.5-toy",
       "P161.6-toy",
       "P161.7-toy",
-      "P161.8-toy"
+      "P161.8-toy",
+      "P161.9-toy"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2094,7 +2095,8 @@
       "P159.5-pue",
       "P161.5-toy",
       "P161.7-toy",
-      "P161.8-toy"
+      "P161.8-toy",
+      "P161.9-toy"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -3901,7 +3903,8 @@
       "P130.9",
       "P131.1",
       "P131.2",
-      "P131.15-dau"
+      "P131.15-dau",
+      "P161.9-toy"
     ],
     "plugins/audit/scripts/_refs.py": [
       "P23.1",
@@ -4427,7 +4430,8 @@
       "P161.5-toy",
       "P161.6-toy",
       "P161.7-toy",
-      "P161.8-toy"
+      "P161.8-toy",
+      "P161.9-toy"
     ],
     "plugins/audit/scripts/governance/_policy.py": [
       "P15.4",
@@ -6418,7 +6422,8 @@
       "P131.2",
       "P143.10-z9j",
       "P152.6",
-      "P161.8-toy"
+      "P161.8-toy",
+      "P161.9-toy"
     ],
     "plugins/audit/templates/audit-plan.starter.json": [
       "P1.5"
@@ -12423,7 +12428,8 @@
       "P161.5-toy",
       "P161.6-toy",
       "P161.7-toy",
-      "P161.8-toy"
+      "P161.8-toy",
+      "P161.9-toy"
     ],
     "tests/test__machine_paths.py": [
       "P131.1",
@@ -12499,7 +12505,8 @@
       "P131.19-dau",
       "P132.5-5mm",
       "P142.8",
-      "P148.4"
+      "P148.4",
+      "P161.9-toy"
     ],
     "tests/test__panel_composition.py": [
       "P131.1"
@@ -13273,7 +13280,8 @@
       "P131.2",
       "P148.4",
       "P152.6",
-      "P161.8-toy"
+      "P161.8-toy",
+      "P161.9-toy"
     ],
     "tests/test_validate_config.py": [
       "P131.1"
