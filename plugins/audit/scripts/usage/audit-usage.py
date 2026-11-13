@@ -954,11 +954,14 @@ def acquire_lock(project):
 
     A CRASHED BACKFILL STILL DOES NOT KEEP THE NEXT ONE OUT, which was this
     lock's own reason for being written and is why the retake is here rather
-    than left to a human. `E_STALE` is the library's answer for a holder it
-    probed and did not find, and the takeover under it removes the judged claim
+    than left to a human. ONE call takes it: `reclaim` takes over, inside the
+    acquire that judged it, a claim the library reads as not live, removing it
     only while it is still that claim -- so a run that took the name in between
-    is refused instead of overwritten. A LIVE holder is never taken over: that
-    is the answer this lock exists to give.
+    is refused instead of overwritten. Answering `E_STALE` with a second call
+    under `takeover` did not do that: the second call judged again, and
+    `takeover` takes over whatever it finds, a live run that won the name in
+    the gap included. A LIVE holder is never taken over: that is the answer
+    this lock exists to give.
 
     `available()` FIRST, because `acquire` says `E_ERR` both for a project with
     no lock scheme and for a claim it could not write. There is nothing to
@@ -969,10 +972,7 @@ def acquire_lock(project):
     if not lock.available(project):
         return {"held": False, "release": False, "why": NO_SCHEME}, None
     code = lock.acquire(project, LOCK_NAME, note=LOCK_NOTE,
-                        session=_session(), out=_quiet)
-    if code == lock.E_STALE:
-        code = lock.acquire(project, LOCK_NAME, note=LOCK_NOTE,
-                            session=_session(), takeover=True, out=_quiet)
+                        session=_session(), reclaim=True, out=_quiet)
     if not lock.held(code):
         return None, lock.refusal(code, LOCK_NAME)
     # `took`, not `held`: a claim this run already had is not this call's to

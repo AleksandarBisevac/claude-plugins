@@ -342,7 +342,7 @@ the later write replaces the earlier. `_locks.held_by_us` is the rule, and nothi
 parallel calls. A lock a verb takes for its own write is different: every other process waits
 for it, your own session's included.
 
-Every lock this script can take has one of these names. `index` and `usage` are the fixed
+Every lock you take has one of these names. `index` and `usage` are the fixed
 names; `phase-<phaseId>` also works — **take the narrowest one that covers your writes:**
 
 - **`index`** — held **briefly** for STRUCTURAL writes and id allocation: `init`, `task`, `bug`,

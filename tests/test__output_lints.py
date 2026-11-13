@@ -15,6 +15,7 @@ The cases for what stayed in `_output.py` are in `tests/test__output.py`.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import ast
 import os
 import re
 import sys
@@ -2069,12 +2070,19 @@ def _cases(check):
             _lk_callers.append(_lk_rel)
             _lk_src_of[_lk_rel] = _lk_src
     for _rel in _lk_callers:
-        for _line in _lk_src_of[_rel].splitlines():
-            _st = _line.strip()
-            if _st.startswith("#"):
-                continue
-            if "isinstance(" in _st and ("handle" in _st or "code" in _st):
-                _lk_bad[_rel] = _st[:70]
+        _lk_misread = _acquire_misreads(_lk_src_of[_rel])
+        if _lk_misread:
+            _lk_bad[_rel] = _lk_misread
+    _lk_planted = _acquire_misreads(
+        "handle = _locks.acquire(p, n)\n"
+        "if isinstance(handle, dict):\n    pass\n"
+        "code = run(p)\n"
+        "if code != 0 or not isinstance(line, str):\n    pass\n")
+    check("lk4b the misreading is read off the name an acquire result is bound "
+          "to: `isinstance` of that name is named, and an `isinstance` of "
+          "something else on a line that happens to hold `code` is not: %r"
+          % (_lk_planted,),
+          _lk_planted == ["line 2: isinstance(handle, ...)"])
     # THE FLOOR, NOT A COUNT. What follows is not today's tally - run the walk
     # to see that - it is the least this case accepts before treating itself as
     # having stopped matching the source, rather than the tree having actually
@@ -2089,6 +2097,30 @@ def _cases(check):
           "`dict` reading disables both while raising nothing: %r" % (_lk_bad,),
           not _lk_bad and len(_lk_callers) >= _lk_floor)
 
+
+
+def _acquire_misreads(source):
+    """`["line N: isinstance(<name>, ...)"]` - every `isinstance` test of a name
+    `source` binds to an `acquire(...)` result, which is an int on every path;
+    `["does not parse (...)"]` when `source` is no Python. Read off the binding,
+    not off the words on a line: a caller's unrelated exit code tested beside an
+    `isinstance` is not an acquire result."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        return ["does not parse (%s)" % (exc,)]
+    bound = set()
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Attribute)
+                and node.value.func.attr == "acquire"):
+            bound.update(t.id for t in node.targets if isinstance(t, ast.Name))
+    return sorted("line %d: isinstance(%s, ...)" % (node.lineno, node.args[0].id)
+                  for node in ast.walk(tree)
+                  if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                  and node.func.id == "isinstance" and node.args
+                  and isinstance(node.args[0], ast.Name)
+                  and node.args[0].id in bound)
 
 
 def _ts_order_cases(check):

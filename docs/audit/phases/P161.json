@@ -453,7 +453,12 @@
           "text": "Scope widened for the lock-name lists and lk4 (the writer's report). Also in scope: plugins/audit/scripts/usage/audit-usage.py acquires E_STALE and then calls again with takeover=True, which judges twice and can displace a live run that took the name in between. Use the new reclaim=True single call, fix the docstring, and add a red-first case in tests/test_audit_usage.py."
         }
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-13T18:22:14Z.e70e12",
+        "status": "passed",
+        "at": "2026-11-13T18:22:14Z"
+      }
     }
   ],
   "request": "Fix the drive's base measurement: a base run that outlives the foreground bound must be measured in the background and decided from its row, and a base that cannot be known must stop the drive rather than resume the writer.",

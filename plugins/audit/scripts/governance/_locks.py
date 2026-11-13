@@ -4,8 +4,10 @@ Where a lock lives, what its name may be, and whether the run holding it is aliv
 
 EVERY LOCK THIS PRODUCT TAKES IS TAKEN HERE. `acquire` and `release` below are
 the only implementation; `audit-lock.py` wraps them for a shell, the panel's
-write path and the manifest commands call them in process, and the usage
-backfill takes the name it guards the monthly ledger files with. Everything that
+write path and the manifest commands call them in process, the usage
+backfill takes the name it guards the monthly ledger files with, and a
+background base measurement (`drive-phase.py base-run`) takes the claim on its
+launch. Everything that
 only ever ASKS about a lock asks here too -- `_panel_state` badges one in the
 panel, `audit-doctor` lists what is held, and `hooks/_config.py` answers "is
 someone else writing this shard" on tool calls.
@@ -619,6 +621,13 @@ def lock_dir(project):
 # else can be refused by.
 FIXED_NAMES = ("index", "usage")
 
+# The claim on ONE background base measurement of a red gate: `drive-phase.py
+# base-run` takes `base-<phase>.<task>.<launch>` before it measures, so two runs
+# started for one launch measure once, and a run killed holding it is taken over
+# by the next (`acquire`'s `reclaim`). No reader decides anything from this
+# prefix; it is listed by name beside the others.
+BASE_PREFIX = "base-"
+
 # The namespace user tooling takes this directory's locks under -- an e2e guard
 # driving one backend from several worktrees of one clone is the shape it is for.
 # The prefix is what keeps it apart from the plugin's names: every reader that
@@ -652,17 +661,19 @@ _ASCII_ID = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
 
 
 def is_plugin_name(name):
-    """A name the plugin itself issues: one of `FIXED_NAMES`, or `phase-<id>`
-    with the id restricted to ASCII `[A-Za-z0-9._-]` so it cannot escape the dir.
+    """A name the plugin itself issues: one of `FIXED_NAMES`, or `phase-<id>` or
+    `base-<id>` (`BASE_PREFIX`) with the id restricted to ASCII `[A-Za-z0-9._-]`
+    so it cannot escape the dir.
 
     ASCII, not `str.isalnum()`, which admits letters of every script - and a
     filesystem may normalise those, so two ids could meet in one file.
     """
     if name in FIXED_NAMES:
         return True
-    if not name.startswith("phase-"):
+    prefix = next((p for p in ("phase-", BASE_PREFIX) if name.startswith(p)), None)
+    if prefix is None:
         return False
-    rest = name[len("phase-"):]
+    rest = name[len(prefix):]
     return bool(rest) and all(c in _ASCII_ID for c in rest)
 
 
@@ -693,9 +704,9 @@ def valid_name(name):
 def name_refusal(name):
     """The line a refused name gets, from acquire and release alike."""
     return ("[audit-lock] bad lock name %r -- expected one of %s, or `phase-<id>`,"
-            " or for user tooling %s"
+            " or `%s<id>` for a background base run, or for user tooling %s"
             % (name, ", ".join("`%s`" % (n,) for n in FIXED_NAMES),
-               USER_NAME_RULES))
+               BASE_PREFIX, USER_NAME_RULES))
 
 
 def _listed(ld, name):
@@ -1344,7 +1355,8 @@ def taken_from(info, session=None):
 
 
 def acquire(project, name, note=None, takeover=False, session=None, pid=None,
-            out=print, wait=None, handed_off=False, per_call=False, yields=False):
+            out=print, wait=None, handed_off=False, per_call=False, yields=False,
+            reclaim=False):
     """Take `name` for this project -> an exit code, which `held()` reads.
 
     `wait` is how long a LIVE holder is waited out before the refusal is printed,
@@ -1374,6 +1386,15 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
     `handed_off` acquire that re-records it holds it from then on and answers
     `0` - the resumed run that asked is the one to give it back; any other
     caller is answered `E_OURS`.
+
+    `reclaim` takes over a claim `judge` reads as NOT live - a gone holder, an
+    empty claim, one past the age bound - where the default answers `E_STALE`
+    for a human to confirm, and refuses a live one exactly as the default does.
+    It is not `takeover`: the verdict is the one reached on the claim the
+    takeover then removes only while it is still that claim (`_take_over`), so
+    a run that took the name in between is refused, never displaced. Asking
+    `E_STALE` first and then calling again with `takeover` judges twice, and
+    the second call takes over whatever it finds, a live run included.
 
     Superseding a yielding claim needs the caller to NAME the claim's session:
     a caller with no session id and the holder's `$CLAUDE_PID` is "ours" to
@@ -1523,7 +1544,7 @@ def acquire(project, name, note=None, takeover=False, session=None, pid=None,
         out("             basis: %s" % basis)
         out("             Stop. Do not take this over; wait for it or ask its owner.")
         return E_LIVE
-    if not live and not takeover:
+    if not live and not takeover and not reclaim:
         out("[audit-lock] %s looks abandoned -- %s" % (name, who))
         out("             doing: %s" % what)
         out("             basis: %s" % basis)

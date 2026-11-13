@@ -20,7 +20,9 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import json
 import os
+import platform
 import re
+import subprocess
 import sys
 import time
 
@@ -1142,6 +1144,19 @@ def _cases(check):
               "judged claim only while it is still that claim: %r" % (err3,),
               got3 is not None and err3 is None and got3.get("release"))
         M.release_lock(_lk, got3)
+        _between = _usage_lock_race(M, _lk, lpath, "between")
+        _inside = _usage_lock_race(M, _lk, lpath, "inside")
+        check("ur1 a run that takes the usage lock between the judgement of a "
+              "dead holder and the retake is never displaced: planted after an "
+              "acquire answered E_STALE, or after the judgement inside the one "
+              "acquire that retakes, the winner's claim is still on disk and "
+              "this backfill is refused; with no winner planted the dead "
+              "holder is retaken: %r" % ((_between, _inside),),
+              all((r["planted"] and r["held"] is False
+                   and r["owner"] == "the-winner")
+                  or (not r["planted"] and r["held"] is True)
+                  for r in (_between, _inside))
+              and _inside["planted"])
         # THE THIRD ANSWER, said rather than papered over. A project with no
         # repository has no lock scheme and never had one, so there is nothing
         # to coordinate through - and a backfill that invented a second
@@ -1160,6 +1175,56 @@ def _cases(check):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     _harness.stage(check, "bw0 the backfill-window block", _backfill_window_cases)
+
+
+def _usage_lock_race(M, project, lpath, where):
+    """`{"planted", "held", "owner"}` of one `acquire_lock` over a claim whose
+    holder is dead, with a live run's claim written into the name at `where`:
+    `between` - once an `acquire` has answered E_STALE, the window a second
+    call to retake would judge again in - or `inside` - once `judge` has read
+    the holder dead, inside the call that would take it over. `owner` is the
+    session the claim on disk names afterwards. The lock library's own
+    functions are wrapped for the one call and put back."""
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    _locks._write_lock(lpath, {"hostname": platform.node(), "pid": dead.pid,
+                               "startedAt": stamp, "note": "usage backfill"})
+    winner = {"hostname": platform.node(), "pid": os.getppid(),
+              "sessionId": "the-winner", "startedAt": stamp,
+              "note": "usage backfill"}
+    planted = []
+    real = (_locks.acquire, _locks.judge, _locks.WAIT_SECONDS)
+
+    def _plant():
+        if not planted:
+            _locks._write_lock(lpath, winner)
+            planted.append(where)
+
+    def _acquire(*args, **kwargs):
+        code = real[0](*args, **kwargs)
+        if where == "between" and code == _locks.E_STALE:
+            _plant()
+        return code
+
+    def _judge(info, path, host=None):
+        got = real[1](info, path, host)
+        if where == "inside" and not got[0]:
+            _plant()
+        return got
+
+    _locks.acquire, _locks.judge, _locks.WAIT_SECONDS = _acquire, _judge, 0
+    try:
+        got, _err = M.acquire_lock(project)
+    finally:
+        _locks.acquire, _locks.judge, _locks.WAIT_SECONDS = real
+    owner = _locks.read_lock(lpath).get("sessionId")
+    if got and got.get("release"):
+        M.release_lock(project, got)
+    if os.path.exists(lpath):
+        os.unlink(lpath)
+    return {"planted": bool(planted), "held": bool(got and got.get("held")),
+            "owner": owner}
 
 
 # --- backfill against concurrent appenders -------------------------------------

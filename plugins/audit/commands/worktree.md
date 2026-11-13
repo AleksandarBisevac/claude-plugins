@@ -172,8 +172,9 @@ confirmed is dead, never a way past a live one.
 **The name rules are the library's, not this page's.** `_locks.valid_name` decides and
 `_locks.USER_NAME_RULES` states them; a refused name prints that sentence, from `acquire` and
 `release` alike. The `user-` prefix is what keeps the namespace apart: the plugin's own names are
-`index`, `usage` and `phase-<id>`, every reader that decides something from a name keys on those,
-and a user name whose own part would read as one of them (`user-index`, `user-phase-p1`) is refused
+`index`, `usage`, `phase-<id>` and the `base-<id>` a background base measurement claims its launch
+under, every reader that decides something from a name keys on the first three, and a user name
+whose own part would read as one of them (`user-index`, `user-phase-p1`, `user-base-p1`) is refused
 as well, so no user lock can pass for the plugin's. `audit-lock.py status`, `/audit:status` and
 `/audit:doctor` list user locks beside the plugin's by name; the doctor's advice for an abandoned one
 is the `--takeover` above, since no `/audit` command takes a user lock over.

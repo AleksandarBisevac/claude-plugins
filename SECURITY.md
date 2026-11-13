@@ -665,7 +665,7 @@ compares against all three ids and treats any match as its own lock. The tie goe
 matching too eagerly costs a missed denial, failing to match breaks the run.
 
 **A lock name is a coordination convention, not an access boundary.** Any process that can run
-`audit-lock.py` can take `index` or a `phase-<id>`, or remove any claim with `release --force`, and
+`audit-lock.py` can take `index`, a `phase-<id>` or a `base-<id>`, or remove any claim with `release --force`, and
 the `user-<name>` namespace for worktree tooling changes neither: its prefix keeps a user lock from
 being read as the plugin's, and nothing more.
 

@@ -72,6 +72,7 @@ import _loader                                     # noqa: E402  (script_path, l
 import _manifest_io as _mio                        # noqa: E402  (load_manifest, tasks_by_id)
 import _manifest_vocab as _vocab                   # noqa: E402  (LINT_PROBE_KEY: the key the driver and the default gate share)
 import _evidence_io as _evio                       # noqa: E402  (read_rows, project_config_for)
+import _locks                                      # noqa: E402  (STALE_MINUTES: the age bound a claim naming no pid is judged by)
 import _tree_stamp                                 # noqa: E402  (the dirty digest a row records)
 import _filed_returns as _fr                       # noqa: E402  (return_path)
 import _machine_paths as _mpaths                   # noqa: E402  (machine_path_shape)
@@ -18612,6 +18613,7 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("bt-block", "_base_bound_cases"),
           ("bq-block", "_base_background_cases"),
           ("bi-block", "_base_interleave_cases"),
+          ("lc-block", "_base_claim_cases"),
           ("tcc-block", "_committed_close_cases"),
           ("oc-block", "_own_commit_cases"),
           ("up-block", "_advance_plan_cases"),
@@ -21266,7 +21268,7 @@ def _bi_claim_case(check, M):
     first has claimed the launch and not yet written that it ran - the window
     the ran check alone left open - and refuses, naming the first, with
     nothing measured; the first measures."""
-    ctx, task, phase = _bi_world(M, "drive-bi-claim-")
+    ctx, task, phase = _bk_world(M, "drive-bi-claim-")
     _bi_launch(M, ctx, task)
     row = _bi_row()
     measured, inner = [], []
@@ -21297,6 +21299,244 @@ def _bi_claim_case(check, M):
           measured == ["r-red"] and first[0] == M.E_OK
           and second[0] == M.E_USAGE
           and ("pid %d" % (os.getpid(),)) in str(second[1]))
+
+
+def _bk_world(M, prefix):
+    """`_bi_world` in a git repository of its own: the claim on a base launch is
+    a lock, and a lock lives in the clone's shared git directory."""
+    ctx, task, phase = _bi_world(M, prefix)
+    _harness.git(None, "init", "-q", ctx["project"])
+    return ctx, task, phase
+
+
+# A `base-run` in a process of its own, over the launch the parent marked. Its
+# measurement says it is in (`<gate>.in`, holding its pid) and then either dies
+# on the spot - before anything records that it ran, as a kill or an Esc that
+# tears the group down leaves it - or holds until `<gate>.go` appears and
+# answers. It prints `[code, text]` of the run when it answers.
+_BK_CHILD = r'''
+import json, os, sys, time
+args = json.loads(sys.argv[1])
+sys.path.insert(0, args["tests"])
+import _harness  # noqa: F401  (sys.path for scripts/ and hooks/)
+import _loader
+M = _loader.load_script("drive-phase.py", "drive_phase_bk_child", cache=False)
+phase, row, gate = args["phase"], args["row"], args["gate"]
+M.load_phase = lambda c: ({"phases": [phase]}, phase)
+M._evio.read_rows = lambda *a, **k: {"rows": [row]}
+
+
+def _take(c, ph, t, r, tree, keep, bound):
+    with open(gate + ".in", "w", encoding="utf-8") as fh:
+        fh.write("%d" % (os.getpid(),))
+    if args["mode"] == "die":
+        os._exit(9)
+    deadline = time.time() + 120
+    while not os.path.exists(gate + ".go") and time.time() < deadline:
+        time.sleep(0.02)
+    keep(done=True, tree=None, pids=[], said="measured", measurable=True,
+         reading=dict(args["reading"]), unknowable=False)
+    return {"reading": dict(args["reading"]), "said": "measured", "cut": None,
+            "kept": None, "measurable": True}
+
+
+M.take_base = _take
+code, text = M.base_run(dict(args["ctx"], did=[]), args["task"])
+sys.stdout.write(json.dumps([code, text]))
+'''
+
+
+def _bk_child(ctx, task, phase, mode):
+    """`(proc, gate)`: a `base-run` of `task`'s launch in a process of its own
+    (`_BK_CHILD`), returned once its measurement has begun - it has taken the
+    launch's claim by then - or once it exited without beginning one."""
+    gate = os.path.join(os.path.realpath(_harness.fixture_root("drive-bk-gate-")),
+                        "gate")
+    args = {"tests": os.path.dirname(os.path.abspath(__file__)), "ctx": ctx,
+            "task": task["id"], "phase": phase, "row": _bi_row(), "mode": mode,
+            "gate": gate, "reading": _BI_READING}
+    proc = subprocess.Popen([sys.executable, "-c", _BK_CHILD, json.dumps(args)],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    deadline = time.time() + 60
+    while (not os.path.exists(gate + ".in") and proc.poll() is None
+           and time.time() < deadline):
+        time.sleep(0.02)
+    return proc, gate
+
+
+def _bk_relaunch(M, ctx, task, phase):
+    """`(code_text, measured)`: `base-run` of the launch again, in this process,
+    with a measurement that answers `base-only` and records the run it took."""
+    measured = []
+
+    def _take(c, ph, t, r, tree, keep, bound):
+        measured.append(r.get("runId"))
+        _bi_finish(keep)
+        return {"reading": dict(_BI_READING), "said": "measured", "cut": None,
+                "kept": None, "measurable": True}
+
+    real = (M.take_base, M.load_phase, M._evio.read_rows)
+    M.take_base = _take
+    M.load_phase = lambda c: ({"phases": [phase]}, phase)
+    M._evio.read_rows = lambda *a, **k: {"rows": [_bi_row()]}
+    try:
+        got = M.base_run(dict(ctx, did=[]), task["id"])
+    except Exception as exc:                                   # noqa: BLE001
+        got = ("raised", "%s: %s" % (type(exc).__name__, exc))
+    finally:
+        M.take_base, M.load_phase, M._evio.read_rows = real
+    return got, measured
+
+
+def _bk_files(root):
+    """Every file under `root`, by path."""
+    return set(os.path.join(d, n) for d, _s, names in os.walk(root)
+               for n in names)
+
+
+def _bk_dead_claim(M, prefix):
+    """`(ctx, task, phase, proc, left)`: a launch whose first `base-run` died
+    after taking its claim and before it recorded that it ran, and the files
+    that run left behind it - the claim, wherever it is kept."""
+    ctx, task, phase = _bk_world(M, prefix)
+    _bi_launch(M, ctx, task)
+    before = _bk_files(ctx["project"])
+    proc, _gate = _bk_child(ctx, task, phase, "die")
+    try:
+        proc.communicate(timeout=60)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+    return ctx, task, phase, proc, sorted(_bk_files(ctx["project"]) - before)
+
+
+def hand_rolled_claims(source):
+    """`[(line, what)]` - every place `source` makes an exclusive file of its
+    own: an `O_EXCL` create, a hard or symbolic link, a directory made as a
+    flag, an open in exclusive mode, or a literal naming a claim or lock file.
+    The drive coordinates its runs through `_locks` and nothing else, so an
+    empty list is the only answer its source may give."""
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+                and node.value.id == "os"
+                and node.attr in ("O_EXCL", "link", "symlink", "mkdir")):
+            found.append((node.lineno, "os.%s" % (node.attr,)))
+        elif (isinstance(node, ast.Constant) and isinstance(node.value, str)
+              and node.value.rstrip().endswith((".claim", ".lock"))):
+            found.append((node.lineno, "the literal %r" % (node.value,)))
+        elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+              and node.func.id == "open"):
+            modes = [a for a in list(node.args[1:2])
+                     + [k.value for k in node.keywords if k.arg == "mode"]
+                     if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+            if any("x" in m.value for m in modes):
+                found.append((node.lineno, "open(..., %r)" % (modes[0].value,)))
+    return sorted(found)
+
+
+def _base_claim_cases(check):
+    """The claim on a background base launch is the lock library's, so a run
+    killed after taking it never wedges the drive: a dead holder is taken
+    over and the base measured, a live one still refuses, and a claim that
+    cannot be read is judged by the library's own rule - live while young,
+    taken over once past its age bound, and an empty one at once. The drive's
+    source makes no exclusive file of its own."""
+    M, why = _load("drive_phase_base_claim")
+    if M is None:
+        check("lc1 the driver loads", False, why)
+        return
+
+    ctx, task, phase, proc, left = _bk_dead_claim(M, "drive-bk-dead-")
+    got, measured = _bk_relaunch(M, ctx, task, phase)
+    check("lc1 a base-run killed after taking its claim and before it recorded "
+          "that it ran leaves a claim the relaunch takes over: the relaunch "
+          "measures once and answers: %r"
+          % ((proc.returncode, left, got, measured),),
+          proc.returncode == 9 and len(left) == 1
+          and got[0] == M.E_OK and measured == ["r-red"])
+
+    ctx, task, phase = _bk_world(M, "drive-bk-live-")
+    _bi_launch(M, ctx, task)
+    proc, gate = _bk_child(ctx, task, phase, "hold")
+    try:
+        got, measured = _bk_relaunch(M, ctx, task, phase)
+    finally:
+        with open(gate + ".go", "w", encoding="utf-8") as fh:
+            fh.write("go")
+        try:
+            out, err = proc.communicate(timeout=120)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            out, err = proc.communicate()
+    try:
+        first = json.loads(out.decode("utf-8") or "null")
+    except ValueError:
+        first = None
+    check("lc2 THE TWIN: a claim whose holder still runs - another process, "
+          "measuring - is not taken over: the second base-run refuses with a "
+          "usage error naming the holder's pid and measures nothing, and the "
+          "holder answers: %r"
+          % ((got, measured, first, err.decode("utf-8", "replace")[-400:]),),
+          got[0] == M.E_USAGE and measured == []
+          and ("pid %d" % (proc.pid,)) in str(got[1])
+          and isinstance(first, list) and first[0] == M.E_OK)
+
+    ctx, task, phase, proc, left = _bk_dead_claim(M, "drive-bk-unread-")
+    for path in left:
+        with open(path, "wb") as fh:
+            fh.write(b"\x00 not a claim anyone can parse \x00")
+    young, young_measured = _bk_relaunch(M, ctx, task, phase)
+    aged = time.time() - (_locks.STALE_MINUTES * 60 + 1800)
+    for path in left:
+        os.utime(path, (aged, aged))
+    old, old_measured = _bk_relaunch(M, ctx, task, phase)
+    check("lc3 a claim that cannot be read is judged by the lock library's age "
+          "rule: young, something wrote it and the relaunch refuses, measuring "
+          "nothing; past the bound it is taken over and the base measured: %r"
+          % ((left, young, young_measured, old, old_measured),),
+          len(left) == 1 and young[0] == M.E_USAGE and young_measured == []
+          and old[0] == M.E_OK and old_measured == ["r-red"])
+
+    ctx, task, phase, proc, left = _bk_dead_claim(M, "drive-bk-empty-")
+    for path in left:
+        with open(path, "wb"):
+            pass
+    got, measured = _bk_relaunch(M, ctx, task, phase)
+    check("lc4 an empty claim - a take that never recorded who took it - is "
+          "taken over at once and the base measured: %r"
+          % ((left, got, measured),),
+          len(left) == 1 and got[0] == M.E_OK and measured == ["r-red"])
+
+    ctx, task, phase, proc, left = _bk_dead_claim(M, "drive-bk-spent-")
+    keep = M.fresh_keeper(ctx, task, M.launch_key(
+        M._marked(M.read_state(ctx), M.BASE_MEASURED, task)))
+    keep(ran=True, done=False, said="measuring", pids=[proc.pid])
+    try:
+        held = M.base_mark(ctx, M.read_state(ctx), task) or {}
+    except Exception as exc:                                   # noqa: BLE001
+        held = {"raised": "%s: %s" % (type(exc).__name__, exc)}
+    check("lc7 a run killed after it recorded that it ran is folded as final, "
+          "and the claim it left is given back with its record, so nothing it "
+          "took outlives it: %r" % ((left, held, [p for p in left
+                                                  if os.path.exists(p)]),),
+          len(left) == 1 and held.get("ran") is True
+          and not any(os.path.exists(p) for p in left))
+
+    with open(_loader.script_path(DRIVER), "r", encoding="utf-8") as fh:
+        hits = hand_rolled_claims(fh.read())
+    check("lc5 the drive's source makes no exclusive file of its own - no O_EXCL "
+          "create, link, flag directory, exclusive open or claim/lock literal - "
+          "so every exclusion it takes is a `_locks` lock: %r" % ((hits,),),
+          hits == [])
+    planted = hand_rolled_claims(
+        "import os\n"
+        "fd = os.open(p + '.claim', os.O_CREAT | os.O_EXCL)\n"
+        "code = _locks.acquire(project, name, wait=0)\n")
+    check("lc6 THE TWIN: the scan names a hand-rolled claim where one is "
+          "written, and stays quiet on a `_locks.acquire` call: %r" % ((planted,),),
+          [what for _line, what in planted]
+          == ["os.O_EXCL", "the literal '.claim'"])
 
 
 def _next_text(M, root, mpath):

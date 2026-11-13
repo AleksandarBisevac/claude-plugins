@@ -20,7 +20,9 @@ This module carries no inline `--selftest` any more; its cases live in
 0, pointing there.
 
   <name> is `phase-<phaseId>` or one of `_locks.FIXED_NAMES` -- `index` for a
-  structural write, `usage` for the ledger backfill. `_locks.valid_name` is what
+  structural write, `usage` for the ledger backfill -- or a `base-<id>`, which
+  `drive-phase.py base-run` takes for one launch of a background base
+  measurement and which no step takes by hand. `_locks.valid_name` is what
   decides, so a name listed there is a name this command accepts.
   `user-<name>` is the namespace for tooling that is not the plugin's -- an e2e
   guard driving one backend from several worktrees takes `user-e2e` here and is

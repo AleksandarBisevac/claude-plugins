@@ -4919,16 +4919,23 @@ script's own `base-run` verb, and `wait-base` holds until that run has left its 
 reading is `run-test-gate.py`'s own `base_red` over the base run, which no recorded row carries,
 so the run keeps it in a record of its own, one per launch beside the drive's state
 (`base_progress_path`), which `next` folds into the start's mark each time it reads the mark
-(`base_mark`). A `base-run` claims its launch's record before it reads whether the launch ran - an
-exclusive create of a file beside it (`claim_launch`) - so of two started for one launch, both of
-which would find the record not yet saying it ran, the second refuses with a usage error naming
-the first's pid and measures nothing. Once the run has ended, the red's verdict is read back from the row it was launched
+(`base_mark`). A `base-run` claims its launch before it reads whether the launch ran, and reads
+the mark again once it holds the claim (`claim_launch`, `measure_launch`) - so of two started for
+one launch, both of which would find the record not yet saying it ran, the second refuses with a
+usage error naming the first's pid and measures nothing. The claim is a `_locks` lock named
+`base-<phase>.<task>.<launch>`, held for that one call and given back when it ends, so it is
+judged by the lock library's liveness rule and nothing of the drive's own: a holder that is gone,
+or an empty claim, is taken over by the next `base-run` (`acquire`'s `reclaim`), one that cannot
+be read counts as live until the library's age bound, and a holder whose probe was refused counts
+as live. A run killed after it recorded that it ran has its claim given back when `next` folds its
+record (`drop_progress`). The drive makes no exclusive file of its own, and `lc5` in the suite
+reads its source to hold that. Once the run has ended, the red's verdict is read back from the row it was launched
 for, through the same `read_back` the gate's background row goes through: a row no repeat may copy
 stands as recorded, and no rerun's `--no-reuse` is added; the dispatch and the wait are printed by the same builders as the gate's
 (`background_dispatch`, `background_wait`). The `bg`, `gc`, `gs`, `ge` and `ga` cases in
 `tests/test_drive_phase.py` drive each arm against the real `run-test-gate.py`, `bq1`-`bq5` the
-base's, and the `bi` cases the base run and `next` interleaved in a chosen order (`bi13` the
-claim).
+base's, the `bi` cases the base run and `next` interleaved in a chosen order (`bi13` the
+claim), and the `lc` cases the claim's holder killed, live, unreadable or empty.
 
 **Deciding on facts: named planners, and no single `decide()`.** The drive's planners sit
 under `# --- deciding a step on facts ---`: `_advance_plan`

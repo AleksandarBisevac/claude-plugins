@@ -386,7 +386,7 @@ import _scope_companions  # noqa: E402  (derive: the runner config a widen decla
 import _worktrees  # noqa: E402  (read_provenance: whether a kept tree's marker names its task; advance_task_tree: a member's tree brought to the phase head)
 import _scoped_commit  # noqa: E402  (plugin_owned_rels: the one table of what the plugin owns under .claude/)
 import _proc_group  # noqa: E402  (shell_invocation, stop_and_drain: the lint probe and the base run as one stoppable tree)
-import _locks  # noqa: E402  (pid_alive: whether the run a base tree's mark names still runs)
+import _locks  # noqa: E402  (pid_alive: whether the run a base tree's mark names still runs; acquire/release: the one claim on a base launch)
 import _task_outputs  # noqa: E402  (covers: the one rule for whether a declared path covers a changed one)
 
 E_OK, E_STOPPED, E_USAGE = 0, 1, 2
@@ -2881,7 +2881,6 @@ BASE_MEASURED = "baseMeasured"
 BASE_PROGRESS_DIRNAME = "base-runs"
 BASE_MEASURE_SECONDS = _evio.FOREGROUND_BOUND_MS // 1000
 BASE_RUN_VERB = "base-run"
-BASE_CLAIM_SUFFIX = ".claim"
 
 
 def base_measure_due(state, task, row, runs):
@@ -3194,44 +3193,65 @@ def base_mark(ctx, state, task):
     _mark(state, BASE_MEASURED, task, held)
     if final is not None:
         write_state(ctx, state)
-        drop_progress(final)
+        drop_progress(ctx, final)
     return held
 
 
-def drop_progress(path, claim_only=False):
+def drop_progress(ctx, path):
     """Remove a base run's record once the drive's state holds what it said,
-    and the claim beside it (`claim_launch`); one left behind is folded again
-    and changes nothing. `claim_only` removes the claim alone."""
-    for name in ([] if claim_only else [path]) + [path + BASE_CLAIM_SUFFIX]:
-        try:
-            os.remove(name)
-        except OSError:
-            pass
-
-
-def claim_launch(path):
-    """None once this process holds the claim on the base run whose record is
-    `path` - a file beside it, created exclusively, holding this pid - else
-    the sentence naming who holds it (`pid N`), or why the claim could not be
-    read or made, which refuses the run as well. The
-    claim stays until the record is dropped (`drop_progress`), so a run
-    started after the first finished is refused here or by its ran check."""
-    claim = path + BASE_CLAIM_SUFFIX
+    and give back the claim on its launch (`claim_launch`) - a run killed
+    after it recorded that it ran leaves one - through `_locks.release`,
+    which refuses a claim recording another process that still runs. One left
+    behind is folded again and changes nothing."""
     try:
-        os.makedirs(os.path.dirname(claim), exist_ok=True)
-        fd = os.open(claim, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-    except FileExistsError:
-        try:
-            with open(claim, "r", encoding="utf-8") as fh:
-                pid = fh.read().strip()
-        except OSError as exc:
-            return "its claim %s cannot be read (%s)" % (claim, exc)
-        return "pid %s holds its claim %s" % (pid or "unknown", claim)
-    except OSError as exc:
-        return "its claim %s could not be made (%s)" % (claim, exc)
-    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write("%d\n" % (os.getpid(),))
-    return None
+        os.remove(path)
+    except OSError:
+        pass
+    _locks.release(ctx["project"], base_lock_name(path), out=lambda _line: None)
+
+
+def base_lock_name(path):
+    """The `_locks` name of the claim on the launch whose own record is `path`
+    (`base_progress_path`): the record's name, which already carries the
+    phase, the task and the launch in the lock alphabet."""
+    return _locks.BASE_PREFIX + os.path.splitext(os.path.basename(path))[0]
+
+
+def claim_launch(ctx, name):
+    """None once this call holds `name`, the claim on one base launch, else
+    the sentence saying why it does not - another run holds it, with the
+    lock library's basis, or no claim could be made - which refuses the run.
+
+    THE CLAIM IS A `_locks` LOCK, judged and taken over by its rules alone. A
+    holder that is gone, or an empty claim, is taken over at once
+    (`reclaim`), so a run killed between its claim and its first record never
+    keeps the next one out; a live holder is refused at once, a holder whose
+    state the probe could not read counts as live, and a claim naming no
+    holder that can be probed is judged by the library's age bound. It is
+    held for THIS call
+    (`per_call`): a second `base-run` in the same process or session is
+    refused like any other."""
+    if not _locks.available(ctx["project"]):
+        return ("no claim can be taken in %s - it is not a git repository, "
+                "where the lock library keeps its claims" % (ctx["project"],))
+    said = []
+    code = _locks.acquire(ctx["project"], name, note="%s %s" % (
+        BASE_RUN_VERB, name), wait=0, per_call=True, reclaim=True,
+        out=said.append)
+    if _locks.took(code):
+        return None
+    return " ".join(ln.strip() for ln in said) or "the lock answered %d" % (code,)
+
+
+def release_launch(ctx, name):
+    """Give back the claim `claim_launch` took -> None, or the sentence saying
+    it was not this run's to give back any more: taken over while it measured,
+    so another run may have measured beside it."""
+    said = []
+    code = _locks.release(ctx["project"], name, out=said.append)
+    if code == 0:
+        return None
+    return " ".join(ln.strip() for ln in said) or "the lock answered %d" % (code,)
 
 
 def base_argv(ctx, task):
@@ -3420,9 +3440,12 @@ def base_run(ctx, task_id):
     launch's claim (`claim_launch`), or this one already ran; E_STOPPED when
     it left no reading.
 
-    THE CLAIM COMES BEFORE THE RAN CHECK. Two processes started for one launch
-    both read a record that does not yet say it ran, so the ran check alone
-    lets both measure; the exclusive create lets one."""
+    THE CLAIM COMES BEFORE THE RAN CHECK, AND THE MARK IS READ AGAIN UNDER
+    IT. Two processes started for one launch both read a record that does not
+    yet say it ran, so the ran check alone lets both measure; the claim lets
+    one, and the second reads what the first recorded once it holds the
+    claim. The claim is given back when this run ends, however it ends short
+    of a kill, and a kill leaves it to the next run's takeover."""
     manifest, phase = load_phase(ctx)
     task = _mio.tasks_by_id(manifest).get(task_id)
     if task is None:
@@ -3433,21 +3456,44 @@ def base_run(ctx, task_id):
         return E_USAGE, ("%s %s: no base measurement is launched for %s's "
                          "current start; next launches one" % (
                              PREFIX, ctx["phase"], task_id))
-    record = base_progress_path(ctx, task_id, launch_key(held))
-    holder = claim_launch(record)
+    launch = launch_key(held)
+    name = base_lock_name(base_progress_path(ctx, task_id, launch))
+    holder = claim_launch(ctx, name)
     if holder is not None:
         return E_USAGE, ("%s %s: %s's base measurement for launch %s is not "
                          "this run's: %s; this run measures nothing, and "
                          "--answer measure-base launches it again if that one "
                          "is gone"
-                         % (PREFIX, ctx["phase"], task_id, launch_key(held),
-                            holder))
+                         % (PREFIX, ctx["phase"], task_id, launch, holder))
+    try:
+        code, text = measure_launch(ctx, phase, task, launch)
+    finally:
+        lost = release_launch(ctx, name)
+    if lost is not None:
+        text = ("%s; WARNING: the claim on launch %s was not this run's when "
+                "it ended (%s), so another run may have measured beside it"
+                % (text, launch, lost))
+    return code, text
+
+
+def measure_launch(ctx, phase, task, launch):
+    """`(code, text)` of `base_run` once it holds the claim on `launch`: the
+    mark read again under the claim, refused when it is no longer that launch
+    or the launch already ran, else measured."""
+    task_id = task["id"]
+    held, _final = fold_progress(ctx, task_id,
+                                 _marked(read_state(ctx), BASE_MEASURED, task))
+    if not (isinstance(held, dict) and held.get("background")
+            and launch_key(held) == launch):
+        return E_USAGE, ("%s %s: %s's base launch %s was replaced while this "
+                         "run took its claim (%s now); this run measures "
+                         "nothing" % (PREFIX, ctx["phase"], task_id, launch,
+                                      launch_key(held)))
     if held.get("ran"):
-        drop_progress(record, claim_only=True)
         return E_USAGE, ("%s %s: %s's base measurement already ran (%s); "
                          "--answer measure-base takes it again" % (
                              PREFIX, ctx["phase"], task_id, held.get("said")))
-    keep = fresh_keeper(ctx, task, launch_key(held))
+    keep = fresh_keeper(ctx, task, launch)
     try:
         rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
     except Exception as exc:                                   # noqa: BLE001
@@ -3511,7 +3557,7 @@ def sweep_base_trees(ctx, state):
     if changed:
         write_state(ctx, state)
     for path in spent:
-        drop_progress(path)
+        drop_progress(ctx, path)
 
 
 def gate_red_lines(text):

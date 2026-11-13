@@ -918,6 +918,7 @@ def _cases(check):
     _harness.stage(check, "tk-block", _takeover_cases)
     _harness.stage(check, "dd-block", _death_cases)
     _harness.stage(check, "rw-block", _row_cases)
+    _harness.stage(check, "rc-block", _reclaim_cases)
     _harness.stage(check, "re-block", _reentry_cases)
     _harness.stage(check, "wt-block", _wait_cases)
     _harness.stage(check, "rk-block", _token_cases)
@@ -1800,6 +1801,93 @@ def _row_cases(check):
               repr(got))
     finally:
         shutil.rmtree(proj, ignore_errors=True)
+
+
+# --- `reclaim`: a claim judged not live is taken over, a live one never -------
+def _reclaim_cases(check):
+    """`acquire(reclaim=True)` takes over what `judge` reads as not live in the
+    one call that judged it, and refuses a live holder as the default does."""
+    if not shutil.which("git"):
+        _harness.skip(check, "rc1 a gone holder is reclaimed",
+                      "git provides the shared directory a lock lives in", True)
+        return
+    proj = tempfile.mkdtemp(prefix="audit-locks-reclaim-")
+    live = subprocess.Popen([sys.executable, "-c",
+                             "import time; time.sleep(120)"])
+    try:
+        subprocess.call(["git", "init", "-q", proj])
+        quiet = lambda *_a, **_k: None                      # noqa: E731
+        ld = M.lock_dir(proj)
+        os.makedirs(ld, exist_ok=True)
+        name = "base-P1.P1.1.2026-11-13T09-00-00Z-0a1b2c3d"
+        path = os.path.join(ld, name + ".lock")
+
+        def _held_by(pid, sid):
+            M._write_lock(path, {"sessionId": sid, "hostname": platform.node(),
+                                 "pid": pid, "note": "a base run",
+                                 "startedAt": time.strftime(
+                                     "%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+
+        _held_by(_gone_pid(), "s-KILLED")
+        stale = M.acquire(proj, name, session="s-NEXT", wait=0, out=quiet)
+        kept = M.read_lock(path).get("sessionId")
+        code = M.acquire(proj, name, session="s-NEXT", wait=0, per_call=True,
+                         reclaim=True, out=quiet)
+        got = M.read_lock(path)
+        check("rc1 a holder that is gone is taken over by a `reclaim` acquire "
+              "in the call that judged it, and the claim names who it was taken "
+              "from; THE TWIN, the same claim without `reclaim` is still "
+              "answered E_STALE and left in place for a human to confirm: %r"
+              % ((stale, kept, code, got),),
+              stale == M.E_STALE and kept == "s-KILLED" and code == 0
+              and got.get("sessionId") == "s-NEXT"
+              and (got.get("takenOverFrom") or {}).get("sessionId") == "s-KILLED")
+
+        os.unlink(path)
+        _held_by(live.pid, "s-LIVE")
+        said = []
+        code = M.acquire(proj, name, session="s-NEXT", wait=0, per_call=True,
+                         reclaim=True, out=said.append)
+        check("rc2 ...and a holder that still runs is refused, not taken over: "
+              "`reclaim` is not `takeover`, and a live claim stays its "
+              "holder's: %r" % ((code, M.read_lock(path), said),),
+              code == M.E_LIVE and M.read_lock(path).get("sessionId") == "s-LIVE"
+              and ("pid %d" % (live.pid,)) in " ".join(said))
+
+        os.unlink(path)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("{not json")
+        young = M.acquire(proj, name, wait=0, per_call=True, reclaim=True,
+                          out=quiet)
+        aged = time.time() - (M.STALE_MINUTES + 30) * 60
+        os.utime(path, (aged, aged))
+        old = M.acquire(proj, name, wait=0, per_call=True, reclaim=True,
+                        out=quiet)
+        check("rc3 ...and a claim that will not parse keeps the age rule: young "
+              "it counts as live and is refused, past the bound it is "
+              "reclaimed: %r" % ((young, old, M.read_lock(path)),),
+              young == M.E_LIVE and old == 0
+              and "never named" in (M.read_lock(path).get("takenOverFound")
+                                    or ""))
+
+        _named = [n for n in (name, "base-x") if not M.valid_name(n)]
+        _wrong = [n for n in ("base-", "base-a/b", "base-../x", "user-base-p1")
+                  if M.valid_name(n)]
+        check("rc4 a `base-<id>` is a name the library issues, under the ASCII "
+              "id rule `phase-<id>` keeps, and a user name reading as one is "
+              "refused: %r" % ((_named, _wrong),),
+              _named == [] and _wrong == [])
+    finally:
+        live.kill()
+        live.wait()
+        shutil.rmtree(proj, ignore_errors=True)
+
+
+def _gone_pid():
+    """The pid of a process that has exited and been reaped."""
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    return dead.pid
 
 
 # --- a lock this run already holds --------------------------------------------
