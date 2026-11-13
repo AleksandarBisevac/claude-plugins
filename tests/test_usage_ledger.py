@@ -1457,11 +1457,11 @@ def _cases(check):
                                          for t in _lf_timeouts)
               and _lf_retry < M.MONTH_LOCK_WAIT_S <= min(_lf_timeouts) / 2.0)
 
-        # One reading of a lock call's refusal, shared with the claim mutex in
-        # `_locks`: the month lock asks it at the moment of the refusal, so a
-        # set of errnos kept here as well could only ever disagree with it.
-        import _locks
-
+        # One reading of a lock call's errno, in the anchor the claim mutex in
+        # `_locks` reads too: the month lock asks it at the moment of the
+        # refusal, so a set of errnos kept here as well could only ever
+        # disagree with it. The ledger asks it for "held" alone - anything else
+        # goes on lock-free, a lock call that FAILED (EIO) included.
         class _LfFlock(object):
             LOCK_SH, LOCK_EX, LOCK_NB, LOCK_UN = 1, 2, 4, 8
 
@@ -1473,41 +1473,65 @@ def _cases(check):
                     raise OSError(self.code, os.strerror(self.code))
 
         _lf_codes = [errno.EWOULDBLOCK, errno.EACCES, errno.ENOLCK,
-                     errno.EOPNOTSUPP]
+                     errno.EOPNOTSUPP, errno.EIO]
 
         def _lf_given_for(classify):
-            real = (M.fcntl, M.msvcrt, _locks.kernel_lock_refusal)
+            real = (M.fcntl, M.msvcrt, _output.kernel_lock_refusal)
             given = []
             try:
-                _locks.kernel_lock_refusal = classify
+                _output.kernel_lock_refusal = classify
                 M.msvcrt = None
                 for code in _lf_codes:
                     M.fcntl = _LfFlock(code)
                     given.append(M.lock_month(_lf_path, wait_s=0))
             finally:
-                M.fcntl, M.msvcrt, _locks.kernel_lock_refusal = real
+                M.fcntl, M.msvcrt, _output.kernel_lock_refusal = real
             return given
 
-        _lf_shared = _lf_given_for(_locks.kernel_lock_refusal)
-        _lf_flipped = _lf_given_for(lambda _exc: _locks.LOCK_REFUSED)
-        _lf_expect = [M.LOCK_UNAVAILABLE
-                      if _locks.kernel_lock_refusal(OSError(c, "x"))
-                      == _locks.LOCK_REFUSED else None for c in _lf_codes]
-        check("lf7 the month lock reads a refusal through the reading the claim "
-              "mutex uses: a held lock (EWOULDBLOCK, EACCES) is waited for and "
-              "a refused one (ENOLCK, EOPNOTSUPP) is unavailable, as "
-              "`_locks.kernel_lock_refusal` says - and when that reading is "
-              "swapped for one calling every refusal unlockable, the ledger "
-              "follows it, which a copy of its own would not: shared=%r "
-              "swapped=%r" % (_lf_shared, _lf_flipped),
+        _lf_shared = _lf_given_for(_output.kernel_lock_refusal)
+        _lf_flipped = _lf_given_for(
+            lambda _exc, msvcrt_call=False: _output.LOCK_HELD)
+        _lf_expect = [None if _output.kernel_lock_refusal(OSError(c, "x"))
+                      == _output.LOCK_HELD else M.LOCK_UNAVAILABLE
+                      for c in _lf_codes]
+        check("lf7 the month lock reads a refusal through the anchor's "
+              "reading, the one the claim mutex uses: a held lock (EWOULDBLOCK, "
+              "EACCES) is waited for, and a refused (ENOLCK, EOPNOTSUPP) or "
+              "failed (EIO) one is unavailable - and when that reading is "
+              "swapped for one calling every refusal held, the ledger follows "
+              "it, which a copy of its own would not: shared=%r swapped=%r"
+              % (_lf_shared, _lf_flipped),
               _lf_shared == _lf_expect
-              == [None, None, M.LOCK_UNAVAILABLE, M.LOCK_UNAVAILABLE]
-              and _lf_flipped == [M.LOCK_UNAVAILABLE] * len(_lf_codes))
+              == [None, None] + [M.LOCK_UNAVAILABLE] * 3
+              and _lf_flipped == [None] * len(_lf_codes))
     finally:
         _lf_restore()
         shutil.rmtree(_lf_tmp, ignore_errors=True)
 
-    # --- rx: the re-export this module exists to keep serving ---------------
+    # The metering hook loads the ledger on every event it is registered for,
+    # so the errno reading it needs lives in the anchor it already imports
+    # rather than in the lock library. A fresh interpreter, because this one
+    # has long since loaded `_locks` for its own reasons.
+    import subprocess
+    _lf_probe = subprocess.run(
+        [sys.executable, "-c",
+         "import json, sys; sys.path.insert(0, sys.argv[1]); import _output; "
+         "_output.install_path(); import usage_ledger; "
+         "print(json.dumps(sorted(m for m in ('_locks', 'usage_ledger', "
+         "'_output') if m in sys.modules)))", _output.SCRIPTS_DIR],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        universal_newlines=True)
+    try:
+        _lf_loaded = json.loads(_lf_probe.stdout)
+    except ValueError:
+        _lf_loaded = None
+    check("lf8 importing the ledger in a fresh interpreter loads no `_locks`: "
+          "loaded=%r exit=%r stderr=%r"
+          % (_lf_loaded, _lf_probe.returncode, _lf_probe.stderr[-300:]),
+          _lf_probe.returncode == 0
+          and _lf_loaded == ["_output", "usage_ledger"])
+
+    # --- rx:the re-export this module exists to keep serving ---------------
     # Nothing imports `usage_ledger` by name: every consumer loads it BY PATH and
     # reads attributes off the module object. A name that quietly stopped being
     # served would therefore fail at a call site in another file, at runtime, in

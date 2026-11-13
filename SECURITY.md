@@ -671,13 +671,18 @@ being read as the plugin's, and nothing more.
 
 **The claim mutex is only as strong as the filesystem's kernel lock.** Every change to a claim
 file is serialised on one kernel lock per lock directory (`_locks._dir_mutex`). A filesystem that
-refuses the lock call itself — ENOLCK on NFS with no lock daemon, EOPNOTSUPP or ENOTSUP on a FUSE
-or SMB mount — offers that lock to no taker, so there the change is made without it, as every
-claim was before the mutex existed, and `acquire` and `release` say so in their answer with a
-`mutex:` line: two takers racing on such a mount are not serialised. A lock another holder has
-is still waited out to `MUTEX_SECONDS` and refused, never entered. Which errno is a refusal and
-which is contention is one reading, `_locks.kernel_lock_refusal`, which the usage ledger's month
-lock asks as well.
+refuses the lock call itself offers that lock to no taker, so there the change is made without
+it, as every claim was before the mutex existed, and `acquire` and `release` say so in their
+answer with a `mutex:` line: two takers racing on such a mount are not serialised. That degraded
+mode is entered for an explicit set of errnos only — ENOLCK (NFS with no lock daemon),
+EOPNOTSUPP or ENOTSUP (a FUSE or SMB mount), ENOSYS, and EINVAL from `msvcrt.locking` alone,
+which is how the Windows runtime reports an unsupported lock. Every other errno — EIO, or EBADF
+where an NFS mount emulating `flock` refuses a read-only descriptor — is the error answer naming
+the descriptor's mode, and so is a refusal arriving after the same wait saw the mutex held. A
+lock another holder has is still waited out to `MUTEX_SECONDS` and refused, never entered. Which
+errno is contention, which is a refusal and which is a failure is one reading,
+`_output.kernel_lock_refusal`, which the usage ledger's month lock asks as well — for contention
+alone, since the ledger goes on lock-free on every other answer.
 
 It is scoped to `manifestPath` and `<manifest dir>/phases/*.json` and touches nothing else —
 ordinary source files remain entirely the plan gate's business. The point is narrow: two live

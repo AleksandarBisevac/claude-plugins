@@ -1369,6 +1369,7 @@ def _mutex_cases(check):
         _mx_read_only_cases(check, tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+    _mx_errno_cases(check)
 
 
 # What every answer made without the directory mutex says; `_mx_refused`
@@ -1398,6 +1399,164 @@ class _FakeFlock(object):
         self.ops.append(op)
         if op & self.LOCK_EX:
             raise OSError(self.code, os.strerror(self.code))
+
+
+class _SequencedFlock(_FakeFlock):
+    """`fcntl` whose exclusive `flock` answers each errno of `codes` in turn,
+    the last one for every call after it."""
+
+    def __init__(self, codes):
+        _FakeFlock.__init__(self, codes[0])
+        self.codes = list(codes)
+
+    def flock(self, fd, op):
+        if op & self.LOCK_EX:
+            self.code = self.codes.pop(0) if len(self.codes) > 1 \
+                else self.codes[0]
+        _FakeFlock.flock(self, fd, op)
+
+
+class _RefusingMsvcrt(object):
+    """`msvcrt.locking` answering every non-blocking lock with `code`."""
+    LK_NBLCK, LK_UNLCK, LK_LOCK = 2, 0, 1
+
+    def __init__(self, code):
+        self.code, self.calls = code, []
+
+    def locking(self, _fd, mode, _nbytes):
+        self.calls.append(mode)
+        if mode == self.LK_NBLCK:
+            raise OSError(self.code, os.strerror(self.code))
+
+
+def _mx_enter(ld, prims):
+    """Open `_dir_mutex` once with `prims` -> ("entered", its target) when the
+    body ran, or ("raised", errno, message) when it refused."""
+    try:
+        with M._dir_mutex(ld, primitives=prims) as unheld:
+            return ("entered", unheld)
+    except OSError as exc:
+        return ("raised", exc.errno, "%s" % (exc,))
+
+
+def _mx_claim_with(ld, prims):
+    """`_claim` an index lock in `ld` while the interpreter's primitives are
+    `prims` -> its answer, and whether a claim file was left."""
+    real = M._kernel_primitives
+    M._kernel_primitives = lambda: prims
+    path = os.path.join(ld, "index.lock")
+    try:
+        res = M._claim(path, {"sessionId": "s-ERRNO"})
+    finally:
+        M._kernel_primitives = real
+    left = os.path.exists(path)
+    _unlink_quietly(path)
+    return res, left
+
+
+def _mx_errno_cases(check):
+    """Only a filesystem that refuses kernel locks skips the mutex: every other
+    errno the lock call raises is the error answer, and a refusal arriving in a
+    wait that already saw the mutex held is one too."""
+    tmp = tempfile.mkdtemp(prefix="audit-locks-mx-errno-")
+    try:
+        # EBADF on a descriptor this user could only open for reading - the
+        # shape an NFS mount emulating flock with byte-range locks gives.
+        ro = os.path.join(tmp, "ro")
+        os.mkdir(ro)
+        with M._dir_mutex(ro):
+            pass
+        os.chmod(os.path.join(ro, M.MUTEX_NAME), 0o444)
+        try:
+            if os.access(os.path.join(ro, M.MUTEX_NAME), os.W_OK):
+                _harness.skip(check, "mx18 EBADF on a read-only mutex "
+                              "descriptor raises", "this user may write a "
+                              "0444 file (root), so the descriptor is not "
+                              "read-only here", True)
+            else:
+                got = _mx_enter(ro, (_FakeFlock(errno.EBADF), None))
+                res, left = _mx_claim_with(ro, (_FakeFlock(errno.EBADF), None))
+                check("mx18 EBADF from the lock call on a read-only mutex "
+                      "descriptor raises rather than skipping the mutex, naming "
+                      "the descriptor's mode as the cause - and a claim taken "
+                      "there is the error answer with no claim written: "
+                      "%r %r left=%r" % (got, res, left),
+                      got[0] == "raised" and got[1] == errno.EBADF
+                      and "read-only" in got[2]
+                      and res["taken"] is False and res["exists"] is False
+                      and "read-only" in (res["error"] or "")
+                      and "mutex" not in res and left is False)
+        finally:
+            os.chmod(os.path.join(ro, M.MUTEX_NAME), 0o644)
+
+        failed = dict((errno.errorcode.get(c, c),
+                       (_mx_enter(tmp, (_FakeFlock(c), None)),
+                        _mx_claim_with(tmp, (_FakeFlock(c), None))))
+                      for c in (errno.EIO, errno.EBADF, errno.EINVAL))
+        check("mx19 EIO, EBADF on a read-write descriptor and EINVAL from "
+              "flock are no filesystem refusing locks: each raises with its "
+              "errno, the read-write EBADF naming that mode, and a claim taken "
+              "under each is the error answer with no claim written and no "
+              "`mutex` sentence: %r" % (failed,),
+              all(got[0] == "raised" and got[1] == getattr(errno, name)
+                  and res["taken"] is False and res["error"]
+                  and "mutex" not in res and left is False
+                  for name, (got, (res, left)) in failed.items())
+              and "read-write" in failed["EBADF"][0][2])
+
+        seq = _SequencedFlock([errno.EWOULDBLOCK, errno.EWOULDBLOCK,
+                               errno.ENOLCK])
+        late = _mx_enter(tmp, (seq, None))
+        check("mx20 a refusal arriving in a wait that already saw the mutex "
+              "held is an error, never a skip - the lock exists and somebody "
+              "has it: %r after %d attempts"
+              % (late, len([op for op in seq.ops if op & seq.LOCK_EX])),
+              late[0] == "raised" and late[1] == errno.ENOLCK
+              and "held" in late[2]
+              and len([op for op in seq.ops if op & seq.LOCK_EX]) == 3)
+
+        win = dict((errno.errorcode.get(c, c),
+                    _mx_enter(tmp, (None, _RefusingMsvcrt(c))))
+                   for c in (errno.EINVAL, errno.EIO))
+        degraded = dict((errno.errorcode.get(c, c),
+                         _mx_enter(tmp, (_FakeFlock(c), None)))
+                        for c in _mx_refusing_errnos() + [errno.ENOSYS])
+        # Both directions: a reading that skipped on every errno turns the
+        # EIO halves red; one that skipped on none turns the degraded half red.
+        check("mx21 ENOLCK, EOPNOTSUPP, ENOTSUP and ENOSYS from flock still "
+              "run the body without the mutex and say so, and so does EINVAL "
+              "from msvcrt.locking, which is how the Windows runtime spells "
+              "an unsupported lock - while EIO from msvcrt raises: "
+              "flock=%r msvcrt=%r" % (degraded, win),
+              all(got[0] == "entered" and _MX_UNMUTEXED in (got[1] or "")
+                  for got in degraded.values())
+              and win["EINVAL"][0] == "entered"
+              and _MX_UNMUTEXED in (win["EINVAL"][1] or "")
+              and win["EIO"][0] == "raised" and win["EIO"][1] == errno.EIO)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    reading = _output.kernel_lock_refusal
+    # Keyed by name: EAGAIN and EWOULDBLOCK share a value on Linux, as do
+    # ENOTSUP and EOPNOTSUPP.
+    table = dict((n, reading(OSError(getattr(errno, n), "x")))
+                 for n in ("EWOULDBLOCK", "EAGAIN", "EACCES", "ENOLCK",
+                           "EOPNOTSUPP", "ENOSYS", "EBADF", "EIO", "EINVAL"))
+    table["EINVAL/msvcrt"] = reading(OSError(errno.EINVAL, "x"),
+                                     msvcrt_call=True)
+    check("mx22 one reading of a lock call's errno, in the anchor both lock "
+          "users import: contention is held, the explicit unsupported set is "
+          "refused, EINVAL is refused only from msvcrt, and anything else is "
+          "a failure: %r" % (table,),
+          [table[n] for n in ("EWOULDBLOCK", "EAGAIN", "EACCES")]
+          == [_output.LOCK_HELD] * 3
+          and [table[n] for n in ("ENOLCK", "EOPNOTSUPP", "ENOSYS",
+                                  "EINVAL/msvcrt")]
+          == [_output.LOCK_REFUSED] * 4
+          and [table[n] for n in ("EBADF", "EIO", "EINVAL")]
+          == [_output.LOCK_FAILED] * 3
+          and not hasattr(M, "_HELD_ERRNOS")
+          and not hasattr(M, "kernel_lock_refusal"))
 
 
 def _mx_refused(proj, code):

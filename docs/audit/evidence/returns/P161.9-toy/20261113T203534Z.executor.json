@@ -1,0 +1,44 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__locks.py tests/test_usage_ledger.py tests/test__output.py": "pass",
+    "python3 tools/sweep-selftests.py <every tests/test_*.py naming _locks or usage_ledger> tests/test_audit_usage.py tests/test__output_lints.py tests/test__deps.py tests/test__output.py tools/measure-context.py": "pass",
+    "python3 tools/bench-hooks.py --gate": "pass",
+    "ruff check (the five touched .py)": "pass",
+    "vermin -t=3.8- (the five touched .py)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-13T20:47:38Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__locks.py tests/test_usage_ledger.py tests/test__output.py` in a throwaway tree at HEAD exited 1 with 4 of 115 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - mx18 (house FAIL), mx19 (house FAIL), mx20 (house FAIL), mx21 (house FAIL): SELFTEST FAILED: 114/115 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "MED 1: _output.py gains a section `what a refused kernel lock call means`: LOCK_HELD/LOCK_REFUSED/LOCK_FAILED, LOCK_HELD_ERRNOS (moved from _locks), LOCK_REFUSED_ERRNOS = {ENOLCK, EOPNOTSUPP, ENOTSUP, ENOSYS} where defined, and kernel_lock_refusal(exc, msvcrt_call=False), which reads EINVAL as refused only when msvcrt_call is set; everything else is LOCK_FAILED. _locks.py keeps only LOCK_TAKEN; _try_lock passes msvcrt_call=(fcntl is None); _dir_mutex tracks seen_held, degrades only on LOCK_REFUSED with no held answer earlier in the same wait, and otherwise raises _lock_call_failed(mutex, mode, exc, seen_held), which keeps the call's errno and names the descriptor mode (read-only EBADF names the NFS byte-range cause; the case where the mutex was seen held says so). _open_mutex now returns (fd, mode). _claim/_take_over/_remove_claim catch that OSError into the error answer as before (sharing_denied is EACCES only, and EACCES is always read as held, so it never reaches the raise). LOW 2: usage_ledger no longer imports _locks; lock_month asks _output.kernel_lock_refusal(exc, msvcrt_call=msvcrt is not None) != LOCK_HELD, so anything not held, a failed call included, stays lock-free as before. Docs: SECURITY.md and PLUGIN-BUILD-GUIDE.md now name the explicit set and the error cases, and the guide's module map no longer shows the usage_ledger -> _locks edge. Tests: test__locks.py adds mx18-mx22 (helpers _SequencedFlock, _RefusingMsvcrt, _mx_enter, _mx_claim_with, _mx_errno_cases); test_usage_ledger.py rewrites lf7 against _output (EIO added: expected unavailable; the swapped reading is now always-held -> all None) and adds lf8 (a fresh interpreter imports usage_ledger; sys.modules holds _output and usage_ledger and no _locks). Results: test__locks 189 cases, test_usage_ledger 140 cases, test__output 91 cases, all ok; a 46-file sweep (every tests/test_*.py naming _locks or usage_ledger, plus test_audit_usage, test__output_lints, test__deps, test__output, tools/measure-context.py) exit 0, 46/46 files ok; bench-hooks --gate exit 0, measured once on 3.14.7 only (3.8-3.13 not measured, as the tool prints). Not verified: that the Windows CRT reports an unsupported volume lock as EINVAL. That is the task's premise and the CRT's default _dosmaperr mapping, and it was not run on Windows. Dependants: _evidence_io, _invariants, _proc_group, audit-lock, drive-phase, stamp-verification, _proposals and audit-task still hold, because none of them names kernel_lock_refusal, LOCK_HELD, LOCK_REFUSED or _HELD_ERRNOS (grep across plugins/tools/.claude/hooks finds no hits outside the declared files) and _claim's answer shape is unchanged. tests/test_audit_lock.py, test_audit_task.py and test_run_test_gate.py are green in the sweep. usage_ledger's dependants (meter-usage hook, _invariants, commit-task-work, _panel_page, _panel_viewer, _usage_load, audit-status, audit-usage) are green in the sweep; the ledger's public names are unchanged and it now loads one module fewer. _output's dependants: additions only, no name changed, test__output_lints, test__deps and test__output green. SECURITY.md and PLUGIN-BUILD-GUIDE.md readers: changed prose only, and the prose lints are green. No file outside the declared set was edited; the docs/audit journal and phase-file changes in the tree are the orchestrator's.",
+    "descriptive": "Only ENOLCK/EOPNOTSUPP/ENOTSUP/ENOSYS (and msvcrt EINVAL) skip the claim mutex now; every other lock errno, and a refusal after a held answer, is an error naming the descriptor mode, and the ledger reads the shared errno set from _output without loading _locks on the hook path."
+  },
+  "testsAdded": [
+    "mx18: EBADF on a read-only mutex descriptor raises, names read-only, and _claim is the error answer with no claim written",
+    "mx19: EIO, read-write EBADF (naming read-write) and flock EINVAL each raise; _claim is the error answer with no mutex sentence and no claim",
+    "mx20: EWOULDBLOCK, EWOULDBLOCK, then ENOLCK in one wait raises naming the held mutex instead of skipping",
+    "mx21: ENOLCK/EOPNOTSUPP/ENOTSUP/ENOSYS from flock and EINVAL from msvcrt still degrade with the sentence; msvcrt EIO raises",
+    "mx22: the anchor's classification table, and _locks keeps no copy of the reading",
+    "lf7 (rewritten): the ledger follows _output's reading and asks it for held alone (EIO is unavailable)",
+    "lf8: a fresh import of usage_ledger loads no _locks"
+  ],
+  "casesAdded": [
+    [
+      "mx18",
+      "mx19",
+      "mx20",
+      "mx21",
+      "mx22"
+    ],
+    [
+      "lf8"
+    ]
+  ],
+  "claims": "claims:\n1 _output.py kernel_lock_refusal is the explicit set the SECURITY.md/guide sentences name; _locks._dir_mutex `if answer == _output.LOCK_REFUSED and not seen_held` is the degrade, `raise _lock_call_failed(...)` the error; usage_ledger.lock_month `!= _output.LOCK_HELD` is the lock-free reading the docs describe\n2 mutation probe in a throwaway copy, ten rows, each landed, red on its target and restored equal: m1 skip-on-any -> mx18,mx19,mx21; m2 never-degrade -> mx13,mx21 (second direction); m3 drop seen_held -> mx20; m4 FAILED->REFUSED -> mx18,mx19,mx22; m5 drop msvcrt EINVAL -> mx21,mx22; m6 msvcrt flag False -> mx21; m7 mode not named -> mx18; m8 drop ENOSYS -> mx21,mx22; m9 ledger asks ==REFUSED -> lf7; m10 ledger imports _locks -> lf8\n3 grep -rnE 'EWOULDBLOCK|LOCK_NB|LK_NBLCK|ENOLCK|EOPNOTSUPP' plugins tools .claude/hooks: the errno sets now appear only in _output.py; the two lock attempts (_locks._try_lock, usage_ledger._try_lock) both classify through it; _locks.py:1034 raises ENOLCK and reads none, so it was left as is\n4 n/a - no rule addressed to an agent\n5 bench-hooks --gate measured once, on 3.14.7 only; no property recorded in a document\n6 n/a - no guard\n7 n/a - no count written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:9469c82b74b3b61ce472580390f987fb7b914f0fabdf3d90e2c8e64c17814220\",\"dirtyDigest\":\"sha256:80a1313e1d8de670c4475ed7d1c3a0564e4a6a3c1b5ce730d30371f01f8d6dd4\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"a68a6b67d809e88a\",\"SECURITY.md\":\"4f69659015a37f75\",\"plugins/audit/scripts/_output.py\":\"d8dc519d9317a806\",\"plugins/audit/scripts/governance/_locks.py\":\"ac2bc0652972e995\",\"plugins/audit/scripts/usage/usage_ledger.py\":\"88ff1880ad4a3dc2\",\"tests/test__locks.py\":\"8cf23b6d6460cdd7\",\"tests/test_usage_ledger.py\":\"aa20ea1db9f7e854\"},\"head\":\"30788925\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/scripts/_output.py\",\"plugins/audit/scripts/governance/_locks.py\",\"plugins/audit/scripts/usage/usage_ledger.py\",\"tests/test__locks.py\",\"tests/test__output.py\",\"tests/test_usage_ledger.py\"],\"scopeDigest\":\"sha256:ee702361c6b84ad4007a5391ec75c05249c6ca05122909d151a11c826fcbb9a5\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

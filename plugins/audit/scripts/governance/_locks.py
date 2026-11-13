@@ -968,33 +968,15 @@ def _kernel_primitives():
     return fcntl, msvcrt
 
 
-# The errors a non-blocking lock answers "another holder has it" with: `flock`
-# says EWOULDBLOCK (EAGAIN), `msvcrt.locking` says EACCES or EDEADLOCK.
-_HELD_ERRNOS = frozenset(getattr(errno, n) for n in
-                         ("EAGAIN", "EWOULDBLOCK", "EACCES", "EDEADLK",
-                          "EDEADLOCK") if hasattr(errno, n))
-# The two things a refused non-blocking kernel lock call can mean.
-# `LOCK_TAKEN` is the third answer `_try_lock` gives, for the call that got it.
-LOCK_HELD, LOCK_REFUSED, LOCK_TAKEN = "held", "refused", "taken"
-
-
-def kernel_lock_refusal(exc):
-    """What the OSError a non-blocking kernel lock call raised says ->
-    `LOCK_HELD` while another holder has the lock, the one refusal worth
-    waiting out; `LOCK_REFUSED` for any other errno, the filesystem declining to
-    lock at all - ENOLCK on NFS with no lock daemon, EOPNOTSUPP or ENOTSUP on a
-    FUSE or SMB mount - which no wait changes.
-
-    The one reading of that errno for both kernel locks the plugin takes: the
-    claim mutex here and the ledger's month lock (`usage_ledger.lock_month`),
-    which asks this rather than keeping a set of its own."""
-    return LOCK_HELD if exc.errno in _HELD_ERRNOS else LOCK_REFUSED
+# What `_try_lock` answers for the call that got the lock; a refused call is
+# answered with `_output.kernel_lock_refusal`'s reading of its errno.
+LOCK_TAKEN = "taken"
 
 
 def _try_lock(fd, fcntl, msvcrt):
     """One non-blocking attempt at the kernel lock on `fd` -> `(answer, exc)`:
-    `LOCK_TAKEN` once this call holds it, else `kernel_lock_refusal`'s reading
-    of the OSError the call raised, which comes back beside it."""
+    `LOCK_TAKEN` once this call holds it, else `_output.kernel_lock_refusal`'s
+    reading of the OSError the call raised, which comes back beside it."""
     try:
         if fcntl is not None:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -1002,7 +984,7 @@ def _try_lock(fd, fcntl, msvcrt):
             os.lseek(fd, 0, os.SEEK_SET)
             msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
     except OSError as exc:
-        return kernel_lock_refusal(exc), exc
+        return _output.kernel_lock_refusal(exc, msvcrt_call=fcntl is None), exc
     return LOCK_TAKEN, None
 
 
@@ -1031,12 +1013,15 @@ def _dir_mutex(ld, primitives=None):
     (`_kernel_primitives`). Not re-entrant: a body that opened the block again
     would wait on itself until the bound.
 
-    A FILESYSTEM THAT REFUSES THE LOCK CALL ITSELF (`kernel_lock_refusal` reads
-    `LOCK_REFUSED`) RUNS THE BODY WITHOUT IT, and the `with` target is then the
-    sentence saying so - None when the mutex is held. Such a mount has no lock
-    for any taker, so refusing there would leave the project with no claim at
-    all where it had one before the mutex existed; the body runs as it did then,
-    unserialised, and the caller puts the sentence in its answer.
+    A FILESYSTEM THAT REFUSES THE LOCK CALL ITSELF (`_output.kernel_lock_refusal`
+    reads `LOCK_REFUSED`, its explicit set of unsupported-lock errnos) RUNS THE
+    BODY WITHOUT IT, and the `with` target is then the sentence saying so - None
+    when the mutex is held. Such a mount has no lock for any taker, so refusing
+    there would leave the project with no claim at all where it had one before
+    the mutex existed; the body runs as it did then, unserialised, and the
+    caller puts the sentence in its answer. Every other errno (`LOCK_FAILED`)
+    raises, naming the descriptor's mode, and so does a refusal arriving after
+    this wait saw the mutex held: that lock exists, and somebody has it.
 
     The mutex file is opened for writing and, where this user may not write it
     (a clone two OS users share), for reading: `flock` and `msvcrt.locking`
@@ -1051,20 +1036,24 @@ def _dir_mutex(ld, primitives=None):
                       "msvcrt.locking, so no claim is changed here"
                       % (ld,))
     mutex = os.path.join(ld, MUTEX_NAME)
-    fd = _open_mutex(mutex)
+    fd, mode = _open_mutex(mutex)
     try:
         deadline = time.monotonic() + MUTEX_SECONDS
         answer, exc = _try_lock(fd, fcntl, msvcrt)
-        while answer == LOCK_HELD:
+        seen_held = False
+        while answer == _output.LOCK_HELD:
+            seen_held = True
             if time.monotonic() >= deadline:
                 raise OSError(errno.EBUSY, "the claim mutex %s stayed held for "
                               "%.1f s; nothing was changed" % (mutex,
                                                                 MUTEX_SECONDS))
             time.sleep(MUTEX_POLL_SECONDS)
             answer, exc = _try_lock(fd, fcntl, msvcrt)
-        if answer == LOCK_REFUSED:
+        if answer == _output.LOCK_REFUSED and not seen_held:
             yield _unmutexed(mutex, exc)
             return
+        if answer != LOCK_TAKEN:
+            raise _lock_call_failed(mutex, mode, exc, seen_held)
         try:
             yield None
         finally:
@@ -1074,12 +1063,31 @@ def _dir_mutex(ld, primitives=None):
 
 
 def _open_mutex(mutex):
-    """A descriptor on the mutex file: read-write, or read-only where this user
-    may not write it (`_dir_mutex` says why both)."""
+    """A descriptor on the mutex file -> `(fd, mode)`: read-write, or read-only
+    where this user may not write it (`_dir_mutex` says why both); `mode` names
+    which, for an error the lock call raises on it."""
     try:
-        return os.open(mutex, os.O_RDWR | os.O_CREAT, 0o666)
+        return os.open(mutex, os.O_RDWR | os.O_CREAT, 0o666), "read-write"
     except PermissionError:
-        return os.open(mutex, os.O_RDONLY | os.O_CREAT, 0o666)
+        return os.open(mutex, os.O_RDONLY | os.O_CREAT, 0o666), "read-only"
+
+
+def _lock_call_failed(mutex, mode, exc, seen_held):
+    """The OSError for a lock call `_dir_mutex` may not go on without: one the
+    filesystem did not refuse as unsupported, or a refusal after this wait saw
+    the mutex held. It keeps the call's errno and names the descriptor mode."""
+    if seen_held:
+        why = ("the lock call was refused after this wait saw the mutex held, "
+               "so the lock exists and somebody has it")
+    elif exc.errno == errno.EBADF and mode == "read-only":
+        why = ("the descriptor is read-only, and a filesystem emulating flock "
+               "with byte-range locks (NFS) takes an exclusive lock only on a "
+               "writable one")
+    else:
+        why = "that is no filesystem declining kernel locks"
+    return OSError(exc.errno, "the claim mutex %s could not be locked on a %s "
+                   "descriptor (%s): %s; nothing was changed"
+                   % (mutex, mode, exc, why))
 
 
 def _unmutexed(mutex, exc):

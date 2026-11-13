@@ -457,6 +457,47 @@ def while_shared(op, deadline=None, clock=time.monotonic):
         time.sleep(SHARING_PAUSE_SECONDS)
 
 
+# --- what a refused kernel lock call means --------------------------------------
+# Two kernel locks read the errno of a refused non-blocking lock call: the claim
+# mutex (`_locks`) and the ledger's month lock (`usage_ledger`). The reading lives
+# in the anchor because both already import it, and the metering hook loads the
+# ledger on every event it is registered for - a lock library imported for one
+# function would be paid on each of them.
+#
+# Three answers, kept apart because each asks for a different act. HELD: another
+# holder has the lock, the one refusal worth waiting out. REFUSED: the filesystem
+# offers no kernel lock at all - an explicit set, never "whatever is left" - so
+# the lock does not exist for any taker there. FAILED: anything else, from an EIO
+# to an EBADF on a descriptor the lock call will not take; that is an error to
+# report, never a reason to go on without the lock.
+LOCK_HELD, LOCK_REFUSED, LOCK_FAILED = "held", "refused", "failed"
+# `flock` says EWOULDBLOCK (EAGAIN), `msvcrt.locking` says EACCES or EDEADLOCK.
+LOCK_HELD_ERRNOS = frozenset(getattr(errno, n) for n in
+                             ("EAGAIN", "EWOULDBLOCK", "EACCES", "EDEADLK",
+                              "EDEADLOCK") if hasattr(errno, n))
+# ENOLCK: NFS with no lock daemon. EOPNOTSUPP or ENOTSUP: a FUSE or SMB mount.
+# ENOSYS: a kernel or emulation with no lock call.
+LOCK_REFUSED_ERRNOS = frozenset(getattr(errno, n) for n in
+                                ("ENOLCK", "EOPNOTSUPP", "ENOTSUP", "ENOSYS")
+                                if hasattr(errno, n))
+
+
+def kernel_lock_refusal(exc, msvcrt_call=False):
+    """What the OSError a non-blocking kernel lock call raised says ->
+    `LOCK_HELD`, `LOCK_REFUSED` or `LOCK_FAILED` (the section above says which
+    errno is which).
+
+    `msvcrt_call` says the call was `msvcrt.locking`: the Windows runtime maps a
+    lock request the volume does not support to EINVAL, so there, and only
+    there, EINVAL is a refusal - from `flock` it is a bad request."""
+    code = getattr(exc, "errno", None)
+    if code in LOCK_HELD_ERRNOS:
+        return LOCK_HELD
+    if code in LOCK_REFUSED_ERRNOS or (msvcrt_call and code == errno.EINVAL):
+        return LOCK_REFUSED
+    return LOCK_FAILED
+
+
 # --- naming a bounded set without hiding the rest -------------------------------
 # ONE renderer for every "N things: a, b, c" line this plugin prints. `_doctor_completions`
 # once told a live client repo that four tasks were

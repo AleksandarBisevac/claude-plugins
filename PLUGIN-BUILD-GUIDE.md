@@ -393,7 +393,7 @@ L5:
   _panel_settings -> _config_rules, _loader, _output
   _usage_viz -> _fmt, _output, _report_html
   _verdict_binding -> _evidence_io, _journal_io, _manifest_io, _output, _tree_stamp
-  usage_ledger -> _locks, _manifest_io, _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
+  usage_ledger -> _manifest_io, _output, _usage_core, _usage_coverage, _usage_economics, _usage_routing, _usage_spend
 
 L6:
   _affected_tests -> _evidence_io, _gate_derive, _loader, _manifest_phases, _output, _proc_group
@@ -3705,11 +3705,18 @@ when its holder exits however it exits, so it needs no liveness judgement of its
 for those file operations only: the liveness probe a verdict needs runs before it is taken.
 A mutex still held after `MUTEX_SECONDS` refuses the change as the error answer, and an
 interpreter with neither primitive is refused the same way. A filesystem that refuses the lock
-call itself is the one place a claim changes without it: `kernel_lock_refusal` reads the errno
-(ENOLCK on NFS with no lock daemon, EOPNOTSUPP or ENOTSUP on a FUSE or SMB mount) as
-`LOCK_REFUSED`, no taker there has a lock, so the change is made unserialised as it was before
-the mutex existed, and `acquire` and `release` name the missing mutex in their answer (`mx13`).
-That reading is the only one: `usage_ledger.lock_month` asks it too (`lf7`). The mutex file is
+call itself is the one place a claim changes without it: `_output.kernel_lock_refusal` reads
+the errno as `LOCK_REFUSED` for an explicit set only — ENOLCK (NFS with no lock daemon),
+EOPNOTSUPP or ENOTSUP (a FUSE or SMB mount), ENOSYS, and EINVAL from `msvcrt.locking` alone,
+which is how the Windows runtime spells an unsupported lock (`mx21`, `mx22`). No taker there has
+a lock, so the change is made unserialised as it was before the mutex existed, and `acquire`
+and `release` name the missing mutex in their answer (`mx13`). Every other errno is
+`LOCK_FAILED` and raises into `_claim`'s error answer, naming the descriptor's mode — an EBADF
+on a read-only descriptor among them (`mx18`, `mx19`) — and a refusal arriving after the same
+wait saw the mutex held is an error too, never a skip (`mx20`). That reading lives in the
+anchor, not in `_locks`, so `usage_ledger.lock_month` asks it without loading the lock library
+on the metering hook's path (`lf7`, `lf8`); the ledger asks it for `LOCK_HELD` alone and goes
+on lock-free on every other answer. The mutex file is
 opened read-write, or read-only where this user may not write it (`mx16`), and is created 0666
 for the umask to narrow. It serialises only the takers that come through `_locks`: a hand-run `rm` of a claim
 does not take it. `mx1` in `tests/test__locks.py` reads the AST and fails on a removal, link,

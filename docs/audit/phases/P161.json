@@ -792,7 +792,7 @@
     {
       "id": "P161.9-toy",
       "title": "Only a filesystem that refuses kernel locks skips the mutex, and the shared errno reading costs the hook path nothing",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A verification review of f8d8dc03 found the following.\n\nMED 1. plugins/audit/scripts/governance/_locks.py kernel_lock_refusal (near line 991, used near 1057-1081): every errno that is not a \"held\" errno is read as LOCK_REFUSED, so the mutex is skipped for ANY lock-call error, not only a filesystem that refuses kernel locks. Example: Linux NFS emulates flock with byte-range locks, which need a write-capable descriptor. A second OS user's read-only .mutex fallback gets EBADF and then runs takeovers and releases without the mutex, while the first user's takers hold it. That reopens the race between them. Transient EIO/EINVAL, or a later poll's ENOLCK during a wait, does the same. Required: only an explicit set (ENOLCK, EOPNOTSUPP, ENOTSUP, ENOSYS, and EINVAL only where it means \"not supported\" on msvcrt) reads as refused-by-filesystem. Every other errno raises as before into _claim's error answer. EBADF on a read-only descriptor raises with a message naming the descriptor mode as the cause. A refusal that arrives after the mutex was once seen held during the same wait is an error, never a skip. The ledger keeps its \"anything not held is lock-free\" behaviour by asking the shared reading for \"held\", not for \"refused\".\n\nLOW 2. plugins/audit/scripts/usage/usage_ledger.py (near line 144) now imports the whole of _locks for one function, and hooks/meter-usage.py loads usage_ledger on every hook event it is registered for. Move the shared errno reading (the held set and the classification) into _output.py, the anchor both import already, or another module already on both paths. Do not add a new module. Neither _locks nor usage_ledger keeps its own copy. Check python3 tools/bench-hooks.py --gate.\n\nCases, red-first: EBADF raises (no skip) and names the mode; EIO raises; a refusal after a held answer within one wait is an error; ENOLCK/EOPNOTSUPP still degrade; and usage_ledger imports no _locks (assert on sys.modules after a fresh import in a subprocess). Mutate the fix, assert the mutation landed, see the case go red, and restore in the same command. Purge __pycache__. No F/P/BUG ids in comments. The docs sentence on the degraded mode names the explicit set.",
       "files": [
         "plugins/audit/scripts/governance/_locks.py",
@@ -821,14 +821,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-13T20:35:34Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -887,7 +887,13 @@
           "text": "quotes a SECURITY.md passage unrelated to locks; the task edits only the lock-semantics sentence",
           "waives": "docs/research/guard-ownership-design.md"
         }
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-13T20:58:37Z.5e3ac8",
+        "status": "passed",
+        "at": "2026-11-13T20:58:37Z"
+      }
     }
   ],
   "request": "Fix the drive's base measurement: a base run that outlives the foreground bound must be measured in the background and decided from its row, and a base that cannot be known must stop the drive rather than resume the writer.",
