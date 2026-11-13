@@ -561,7 +561,7 @@
     {
       "id": "P161.7-toy",
       "title": "A takeover removes only the claim it judged, atomically, and every base-run claim is released once nothing names its launch",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A verification review of bfc818b2 found the following.\n\nMED 1. plugins/audit/scripts/governance/_locks.py _take_over (near lines 1077-1079): the removal is \"stat the file, check the stamp, unlink the path\", and nothing makes the check and the unlink one step. Two reclaimers judging the same dead claim A: R1's check passes and it is paused; R2 checks, unlinks A and links its live claim B; R1 resumes and unlinks B. Both believe they hold the claim. A human --takeover goes through the same lines. Required: make the removal atomic on the judged file. os.rename the path to a unique sibling in the lock directory, stamp the renamed file, and unlink it only if that stamp equals the judged one. Otherwise put it back with an exclusive os.link (never overwriting a claim created since), remove the sibling, and report the loss as the takeover's refusal. Cases red-first in tests/test__locks.py: a winner linked between the check and the removal is never displaced, and a restored claim is byte-identical. Correct the PLUGIN-BUILD-GUIDE.md sentence near line 3699 to state exactly what holds.\n\nLOW 2. plugins/audit/scripts/governance/drive-phase.py (near lines 3288 and 8705): a background mark from an earlier start is overwritten or spent with replaced/dropped None, so its claim is never released. A launch that is live when replaced and killed later also leaves its claim for good. Required: release the replaced launch's claim by reading the raw state value regardless of the start key. sweep_base_trees (or the drive's start) releases base- claims whose launch no mark names and whose holder _locks judges gone. Cases for both.\n\nLOW 3. plugins/audit/scripts/status/_doctor_hygiene.py (near lines 358-360): the advice says the next base-run reclaims the claim, unconditionally. Lead with \"may be deleted once no base-run of it is live\", and give the reclaim clause only for a launch still current, or let doctor check that. Fix the case.\n\nRed-first for every new case: mutate the fix, assert the mutation landed, see the case go red, and restore in the same command. Purge __pycache__. No F/P/BUG ids in comments. Claim in the commit's claims block only what the cases prove.",
       "files": [
         "plugins/audit/scripts/governance/_locks.py",
@@ -570,7 +570,8 @@
         "tests/test_drive_phase.py",
         "plugins/audit/scripts/status/_doctor_hygiene.py",
         "tests/test__doctor_hygiene.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "SECURITY.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -590,14 +591,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-13T18:55:52Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -620,8 +621,13 @@
           "at": "2026-11-13T18:55:50Z",
           "text": "quotes PLUGIN-BUILD-GUIDE.md's scope-position spelling passage; the task edits only the _locks takeover sentence",
           "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-13T18:56:59Z",
+          "text": "Redirect, which supersedes MED 1 of the description. Do NOT add a rename/put-back sequence. The takeover race is now a recurring class: each round closed one window of a multi-step check-then-act on claim files. Fix it with an invariant. Every mutation of a claim in a lock directory runs inside one short critical section, held by a kernel advisory lock on a mutex file in that directory: fcntl.flock(fd, LOCK_EX) on POSIX, msvcrt.locking on byte 0 on Windows, both stdlib. The kernel drops it when the holder dies, so the mutex needs no liveness judgement. Mutations are claim create/link, takeover (read, judge, stamp check, unlink, link new), release, and shared claims.\n\nRequired:\n(1) _locks.py: one context helper for the directory mutex, a cross-platform shim that refuses clearly when neither primitive is available. Stdlib, 3.8, no annotations.\n(2) Every claim-file mutation in _locks.py goes through it. Hold it only around the file ops, never across a liveness ps call longer than a bounded probe. If a judge must run ps, run it, then re-check the bytes under the mutex before acting. The P161.6 stamp checks may be simplified or kept as defence.\n(3) An AST invariant case in tests/test__locks.py that fails if os.unlink, os.link, os.rename/os.replace or an O_EXCL open on a lock-dir path appears outside the helper's with block.\n(4) Red-first two-process racing cases (real processes, not threads) over a dead claim, with the winner planted between check and act, asserting exactly one holder. Mutate the helper to a no-op, assert the mutation landed, see the case go red, and restore in the same command. Purge __pycache__.\n(5) LOW 2 and LOW 3 stay as briefed.\n(6) The PLUGIN-BUILD-GUIDE.md and SECURITY.md sentences on lock semantics state exactly what holds, Windows included.\nIf the Windows half cannot be proven here, write the case for the Windows CI leg. If this needs more than _locks.py and its callers, stop and say so instead of submitting."
         }
-      ]
+      ],
+      "reviewPerTask": "signals"
     }
   ],
   "request": "Fix the drive's base measurement: a base run that outlives the foreground bound must be measured in the background and decided from its row, and a base that cannot be known must stop the drive rather than resume the writer.",
