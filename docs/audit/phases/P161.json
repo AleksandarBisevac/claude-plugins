@@ -395,7 +395,7 @@
     {
       "id": "P161.5-toy",
       "title": "A base-run claim left by a dead holder is taken over, so a killed base run never wedges the drive",
-      "status": "in_progress",
+      "status": "done",
       "description": "A verification review of c78c89c5 found a med regression in the exclusive claim on a base-run launch (plugins/audit/scripts/governance/drive-phase.py claim_launch near lines 3212-3234, the refusal in base_run near 3437-3444, base_waiting near 3046-3052).\n\nclaim_launch creates the .claim file before anything records that the run started: ran=True is written only by take_base's first keep, after the ledger read. Nothing checks whether the pid in the claim is alive, and only drop_progress removes the claim. If base-run dies between the claim and ran (Esc under auto tears the group down, a kill, or an exception after the claim file is created), what is left is a claim with a dead pid, no progress record, and a mark with background set and ran False. Every later next prints wait-base with the same run: line, every relaunch is refused with E_USAGE (\"pid N holds its claim\"), and measure-base cannot be answered, because nothing is pending during a wait. The drive is stuck until someone deletes the claim by hand. Before c78c89c5, relaunching the run: line was how a wait recovered.\n\nRequired: a claim whose holder is not alive (_locks.pid_alive answers False, read through the shared liveness rule, so a refused ps keeps its third answer and never counts as dead) is taken over by the next base-run. Remove it and create it again exclusively, then measure. A claim with no readable pid that is older than a short grace counts as abandoned in the same way. Two live base-runs still get exactly one claim. Cases, red-first: a claimant killed before ran, so the relaunch takes the claim over and measures; a live claimant, so the second run is refused; an unreadable claim. Mutate the fix, assert the mutation landed, see the case go red, and restore in the same command. Purge __pycache__. No F/P/BUG ids in comments. The commit's claims block must say what the cases prove; the previous one wrongly said no case was added.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -429,14 +429,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3d8f212880e9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "WHAT CHANGED, BY FILE, AND WHY IT IS HERE. (1) plugins/audit/scripts/governance/drive-phase.py, the task's subject: BASE_CLAIM_SUFFIX and claim_launch's O_EXCL file are removed. claim_launch(ctx, name) is _locks.acquire(project, 'base-<phase>.<task>.<launch>', wait=0, per_call=True, reclaim=True), refusing with the library's own lines. base_run takes the claim, reads the mark again under it (new measure_launch: refuses a replaced launch or one that already ran), and gives the claim back in `finally` (release_launch), adding a WARNING if the release is refused because it was taken over. base_lock_name derives the name from the record's basename. drop_progress(ctx, path) also releases the launch's lock through _locks.release, which refuses a claim recording another process that still runs. (2) plugins/audit/scripts/governance/_locks.py, where the note puts the primitive: BASE_PREFIX, a `base-<ascii id>` name shape in is_plugin_name/name_refusal, and acquire(reclaim=True). reclaim takes over a claim judge() reads as not live, in the call that judged it, through the stamped _take_over, and refuses a live one as the default does. (3) plugins/audit/scripts/usage/audit-usage.py, from note 3: acquire_lock's E_STALE-then-takeover=True retake is now one acquire(..., reclaim=True). Its docstring was corrected: it claimed the two-step refused a run that took the name in between, but the second call judged again and took over whatever it found. (4) tests/test_drive_phase.py: the new lc-block (lc1-lc7). Each case uses a real child process running base_run that either dies with os._exit after the claim and before `ran`, or holds until released. The block also has an AST scan of drive-phase.py's source (hand_rolled_claims) and its twin. bi13 now runs in a git-initialised world (_bk_world), because a lock lives in the clone's git dir. (5) tests/test__locks.py: the new rc-block, rc1-rc4: reclaim against a gone holder (twin: the default still answers E_STALE), a live holder, an unreadable claim young and aged, and base- name validity, with user-base-* refused. (6) tests/test_audit_usage.py: ur1. It wraps _locks.acquire and _locks.judge for one acquire_lock call and plants a live winner in each window: after an acquire answers E_STALE, and after judge reads the holder dead inside the retaking call. The winner must never be displaced. (7) tests/test__output_lints.py: lk4 read every caller of `_locks.acquire(` as text and flagged any line holding `isinstance(` and `code`. Once the driver called acquire, that flagged six unrelated driver lines, so the scan now reads the AST through _acquire_misreads: names bound to an acquire(...) result that are then tested with isinstance. lk4b is its twin. (8) PLUGIN-BUILD-GUIDE.md: the drive-phase section's claim paragraph now describes the _locks claim, its takeover and the lc cases. (9) SECURITY.md, plugins/audit/commands/worktree.md and plugins/audit/scripts/governance/audit-lock.py (docstring only): each lists the plugin's lock names, and base-<id> is now one. (10) plugins/audit/reference/orchestrator.md: 'Every lock this script can take' became 'Every lock you take', because audit-lock.py now accepts base-<id>, which the list does not name. I did not add a paragraph because the file is at its measure-context ceiling: 61987 / 62000 now, under `measure-context.py --gate` exit 0. LIVENESS IS THE LIBRARY'S: _locks.liveness/judge decide; a refused ps reads 'unverified' and counts as live; an unparseable claim counts as live until STALE_MINUTES; an empty claim is taken over at once. No other hand-rolled exclusion exists in the P161 diff: base_running reads _locks.pid_alive, which is a liveness read, not an exclusion. DEPENDANTS: drive-without-model.py hook, _worktrees.py, test__filed_returns, test__invariants, test__worktrees, test_audit_status, test_commit_task_work and test_detect_plan_skip import the driver, and none calls drop_progress or claim_launch (git grep finds callers only in drive-phase.py and its suite). They are unchanged and their sweep is green. test_drive_phase.py's path dependants (sweep-costs.json, ci.yml, affected.py, reach-diff.py, test__runner_output, test_run_test_gate, test_stamp_verification) are unchanged in meaning. lc-block is a new staged block with no recorded cost, which the sweep weighs by the suite's figure over its blocks. PLUGIN-BUILD-GUIDE.md's dependants (_doctor_hygiene.py, test__deps and the eval/basename readers) are green; test__doctor_hygiene and test__deps both pass. HOW EDITS WERE MADE: early shell-heredoc edits to audit-lock.py, SECURITY.md and worktree.md drew a bash-write-guard notice. I restored those three files with git checkout (the diff was only mine, checked by --stat) and redid them with Edit, which the plan gate allowed. Later _locks.py edits were shell-written after an allowed Edit on that file. Every file is inside the widened scope.",
+        "descriptive": "The base-run claim is a _locks lock: a killed holder is taken over by the next base-run and the base is measured, a live holder still refuses, and the driver's source is scanned so that it makes no exclusive file of its own. The usage backfill's retake is one reclaiming acquire, so it no longer displaces a run that won the lock in between."
       },
       "startedAt": "2026-11-13T17:35:45Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-13T18:22:17Z",
+      "verifiedBy": [
+        "lc1: a child base-run killed (os._exit) after its claim and before ran leaves one claim; the relaunch takes it over and measures once",
+        "lc2: a live child holding the claim makes the second base-run refuse with E_USAGE, naming its pid and measuring nothing; the child then answers E_OK",
+        "lc3: an unparseable claim is refused while young, and taken over and measured once aged past _locks.STALE_MINUTES",
+        "lc4: an empty claim is taken over at once and measured",
+        "lc5/lc6: an AST scan of drive-phase.py finds no O_EXCL, link, mkdir, exclusive open or .claim/.lock literal; its twin names a planted O_EXCL claim and stays quiet on _locks.acquire",
+        "lc7: a record folded as final after its run was killed gives its claim back",
+        "rc1-rc4 (test__locks.py): reclaim takes over a gone holder while the default answers E_STALE; it refuses a live one; an unreadable claim keeps the age rule; base-<id> names are valid and user-base-* is refused",
+        "ur1 (test_audit_usage.py): a live run that takes the usage lock between the judgement of a dead holder and the retake, in either window, is never displaced",
+        "lk4b (test__output_lints.py): the acquire-misread scan reads the bound name, not the words on a line"
+      ],
       "notes": [
         {
           "at": "2026-11-13T17:35:43Z",
@@ -458,7 +468,61 @@
         "runId": "2026-11-13T18:22:14Z.e70e12",
         "status": "passed",
         "at": "2026-11-13T18:22:14Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "3d8f212880e9",
+        "at": "2026-11-13T18:22:17Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-13T18:11:46Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with 4 of 962 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - lc1 (house FAIL), lc3 (house FAIL), lc4 (house FAIL), lc5 (house FAIL): SELFTEST FAILED: 958/962 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P161.6-toy",
+      "title": "A takeover judges the very claim it removes, and a base-run claim is released on every path and when its launch is replaced",
+      "status": "pending",
+      "description": "A verification review of 3d8f2128 found the following.\n\nMED 1. plugins/audit/scripts/governance/_locks.py, the takeover loop in acquire (read_lock near line 1474, the stamp near line 1511, reached by reclaim near line 1566). Each pass reads the claim and only afterwards stamps the file. judge rules on the old contents, and _take_over checks against the newer stamp. Two reclaimers racing over a dead claim: B stamps, reclaims and links its live claim; A then stamps B's file, still judges the dead contents it read, its stamp matches, and it unlinks B's live claim. Both base runs measure, and with audit-usage two backfills both write the ledger. Required: the stamp handed to _take_over must belong to the bytes that were judged. Stamp before read_lock, re-stamp after the read, and re-read on a mismatch. A red-first case in tests/test__locks.py plants a winner between A's read and A's stamp and asserts A is refused and B keeps the claim.\n\nLOW 2. drive-phase.py base_run's finally (near line 3471): no case fails if release_launch is missing. Assert that the base- lock file is absent from _locks.lock_dir after a run that measured, a run that was refused, and a measure_launch stubbed to raise.\n\nLOW 3. A claim left by a run killed before it recorded ran is cleared only when the same launch runs again. measure-base mints a new launch, so the old base- claim stays in the lock directory forever, and /audit:doctor warns about it with advice that does not fit (_doctor_hygiene.py near line 355, abandoned_advice). Required: when a new launch replaces a background mark, release the replaced launch's base- claim (release still refuses a live holder). Give abandoned_advice a base- branch that says the next base-run of that launch reclaims it, and otherwise it may be deleted. Add a case for each.\n\nRed-first for every new case: mutate the fix, assert the mutation landed, see the case go red, and restore in the same command. Purge __pycache__. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/_locks.py",
+        "tests/test__locks.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "plugins/audit/scripts/status/_doctor_hygiene.py",
+        "tests/test__doctor_hygiene.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__locks.py: a winner planted between a reclaimer's read and its stamp is never displaced",
+          "tests/test_drive_phase.py: no base- lock is left after a measured, refused or raising base run; a replaced launch's claim is released",
+          "tests/test__doctor_hygiene.py: an abandoned base- claim gets advice that fits it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__locks.py tests/test_drive_phase.py tests/test__doctor_hygiene.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "request": "Fix the drive's base measurement: a base run that outlives the foreground bound must be measured in the background and decided from its row, and a base that cannot be known must stop the drive rather than resume the writer.",

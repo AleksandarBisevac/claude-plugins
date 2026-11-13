@@ -4419,7 +4419,8 @@
       "P153.1",
       "P156.12-3st",
       "P157.1",
-      "P161.5-toy"
+      "P161.5-toy",
+      "P161.6-toy"
     ],
     "plugins/audit/scripts/governance/_policy.py": [
       "P15.4",
@@ -5908,7 +5909,8 @@
       "P130.8",
       "P131.1",
       "P131.2",
-      "P148.15-xpz"
+      "P148.15-xpz",
+      "P161.6-toy"
     ],
     "plugins/audit/scripts/status/_doctor_policy.py": [
       "P18.6",
@@ -10942,7 +10944,8 @@
       "P161.2-toy",
       "P161.3-toy",
       "P161.4-toy",
-      "P161.5-toy"
+      "P161.5-toy",
+      "P161.6-toy"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -12283,7 +12286,8 @@
     ],
     "tests/test__doctor_hygiene.py": [
       "P131.1",
-      "P148.15-xpz"
+      "P148.15-xpz",
+      "P161.6-toy"
     ],
     "tests/test__doctor_policy.py": [
       "P131.1",
@@ -12405,7 +12409,8 @@
       "P153.2",
       "P156.12-3st",
       "P157.1",
-      "P161.5-toy"
+      "P161.5-toy",
+      "P161.6-toy"
     ],
     "tests/test__machine_paths.py": [
       "P131.1",
@@ -13006,7 +13011,8 @@
       "P161.2-toy",
       "P161.3-toy",
       "P161.4-toy",
-      "P161.5-toy"
+      "P161.5-toy",
+      "P161.6-toy"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
