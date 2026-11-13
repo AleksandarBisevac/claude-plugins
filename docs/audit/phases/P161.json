@@ -399,7 +399,8 @@
       "description": "A verification review of c78c89c5 found a med regression in the exclusive claim on a base-run launch (plugins/audit/scripts/governance/drive-phase.py claim_launch near lines 3212-3234, the refusal in base_run near 3437-3444, base_waiting near 3046-3052).\n\nclaim_launch creates the .claim file before anything records that the run started: ran=True is written only by take_base's first keep, after the ledger read. Nothing checks whether the pid in the claim is alive, and only drop_progress removes the claim. If base-run dies between the claim and ran (Esc under auto tears the group down, a kill, or an exception after the claim file is created), what is left is a claim with a dead pid, no progress record, and a mark with background set and ran False. Every later next prints wait-base with the same run: line, every relaunch is refused with E_USAGE (\"pid N holds its claim\"), and measure-base cannot be answered, because nothing is pending during a wait. The drive is stuck until someone deletes the claim by hand. Before c78c89c5, relaunching the run: line was how a wait recovered.\n\nRequired: a claim whose holder is not alive (_locks.pid_alive answers False, read through the shared liveness rule, so a refused ps keeps its third answer and never counts as dead) is taken over by the next base-run. Remove it and create it again exclusively, then measure. A claim with no readable pid that is older than a short grace counts as abandoned in the same way. Two live base-runs still get exactly one claim. Cases, red-first: a claimant killed before ran, so the relaunch takes the claim over and measures; a live claimant, so the second run is refused; an unreadable claim. Mutate the fix, assert the mutation landed, see the case go red, and restore in the same command. Purge __pycache__. No F/P/BUG ids in comments. The commit's claims block must say what the cases prove; the previous one wrongly said no case was added.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
-        "tests/test_drive_phase.py"
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -426,7 +427,15 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-13T17:35:43Z",
+          "reader": "PLUGIN-BUILD-GUIDE.md",
+          "reads": "plugins/audit/scripts/governance/drive-phase.py",
+          "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/governance/drive-phase.py - a section headed by its path"
+        }
+      ]
     }
   ],
   "request": "Fix the drive's base measurement: a base run that outlives the foreground bound must be measured in the background and decided from its row, and a base that cannot be known must stop the drive rather than resume the writer.",
