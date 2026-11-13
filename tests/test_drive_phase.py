@@ -18608,6 +18608,7 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("np-block", "_nested_project_cases"),
           ("bb-block", "_base_red_drive_cases"),
           ("bm-block", "_base_measure_cases"),
+          ("bdr-block", "_base_derived_cases"),
           ("bt-block", "_base_bound_cases"),
           ("bq-block", "_base_background_cases"),
           ("bi-block", "_base_interleave_cases"),
@@ -20174,6 +20175,139 @@ def _base_measure_cases(check):
           and "red the task introduced: %s" % (suites[0],) in some_block
           and len(some_base) == 1
           and _base_mark(some_root).get("verdict") == "introduced")
+
+
+# The gate a derived step runs: base or task by what `src/f1.txt` holds, the
+# planted red text only when it is handed the suite the related arm selects,
+# and the planted green text otherwise - so the declared step is green and
+# only the derived one is red.
+_DERIVED_GATE_SCRIPT = r'''
+import sys
+with open("src/f1.txt", encoding="utf-8") as fh:
+    which = "base" if fh.read() == "v0\n" else "task"
+with open("gate-out/green.txt", encoding="utf-8") as fh:
+    green = fh.read()
+text = green
+if "tests/test_other.py" in sys.argv[1:]:
+    with open("gate-out/%s.txt" % (which,), encoding="utf-8") as fh:
+        text = fh.read()
+sys.stdout.write(text)
+raise SystemExit(0 if text == green else 1)
+'''
+
+
+def _derived_base_repo(M, prefix, base_text, task_text):
+    """`_base_measure_repo`'s fixture with the red in a DERIVED step: the
+    plan's related listing selects `tests/test_other.py` for the writer's
+    change, its path-scoped spelling runs it, and that step prints
+    `task_text` over the work and `base_text` at HEAD, while the task's
+    declared gate stays green. `(root, mpath, log, line, block)`."""
+    import test_run_test_gate as _rtg_cases
+    py = '"%s"' % (sys.executable.replace("\\", "/"),)
+    runner = py + " gate_derived.py"
+    # The declared gate is the runner with an option, never its bare call: a
+    # bare call runs every suite, so the selection would add no step beside it.
+    gate = runner + " --own"
+    root, mpath = _repo(prefix, task_ids=TASKS[:1], gate=(gate,),
+                        phase_gate=(gate, runner + " --phase"),
+                        executor=WRITER_EXECUTOR)
+    with open(mpath, encoding="utf-8") as fh:
+        plan = json.load(fh)
+    plan["meta"]["phaseGate"] = {"derived": {
+        "spelling": runner + " {paths}",
+        "listing": {"related": "printf '%s\\n' tests/test_other.py # {paths}"},
+        "verifiedOn": {"command": "echo v1", "answer": "v1"}}}
+    planted = (("gate_derived.py", _DERIVED_GATE_SCRIPT),
+               ("tests/test_other.py", "pass\n"),
+               ("gate-out/green.txt", _rtg_cases.sweep_red({})),
+               ("gate-out/base.txt", base_text),
+               ("gate-out/task.txt", task_text),
+               ("docs/audit/audit-plan.json", json.dumps(plan, indent=2)))
+    for rel, text in planted:
+        path = os.path.join(root, *rel.split("/"))
+        if not os.path.isdir(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path))
+        _write_lf(path, text)
+    for argv in (["add", "-A"], ["commit", "-qm", "the derived gate"]):
+        _harness.git(root, *argv)
+    stubs = os.path.realpath(_harness.fixture_root("drive-derived-stub-"))
+    bindir = _writer_stub(stubs)
+    log = os.path.join(stubs, "runs.jsonl")
+    _signal_next(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    _play_session(root, _run_argv(block) or [], bindir, log, WRITER_COSTS[0],
+                  edit={"src/f1.txt": "changed by the writer\n"})
+    _code, line = _signal_next(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    return root, mpath, log, line, block
+
+
+def _base_derived_cases(check):
+    """A red in a DERIVED step - the affected suites a task's run adds beside
+    its declared gate, whose row keeps no command verbatim - has its base
+    measured through the failing suites it names: a base failing the same
+    case stops the task as red at base with no writer round, a green base
+    goes to the writer, and a derived step that cannot be run again (its
+    runner named no failing suite) is a base no command can measure, which
+    goes to the writer as a red with no base reading - never the stop for a
+    base nobody can know."""
+    M, why = _load("drive_phase_base_derived")
+    if M is None:
+        check("bdr1 the driver loads", False, why)
+        return
+    import test_run_test_gate as _rtg_cases
+    suite = "tests/test_other.py"
+    derived = "%srelated: %s" % (_evio.DERIVED_STEP_PREFIX, suite)
+    red = _rtg_cases.sweep_red({suite: ("FAIL c1 a case the base fails too",)})
+    root, mpath, log, line, block = _derived_base_repo(M, "derived-red", red, red)
+    task_rows, base_rows = _ledger_of(root)
+    task_rows = [r for r in task_rows if r.get(_evio.VERDICT_SOURCE) != _evio.REUSED]
+    red_step = ([st for st in (task_rows[-1] if task_rows else {}).get("steps")
+                 or [] if st.get("name") == derived] or [{}])[0]
+    measured = _base_mark(root)
+    check("bdr1 a red derived step whose failing suite fails the same case at "
+          "the base is measured there and returns gate-red-base, with no "
+          "writer round: the base run re-ran the step's suite, and the reading "
+          "charges it to the base: %r"
+          % ((line, red_step.get("exit"), "command" in red_step,
+              [[st.get("name") for st in r.get("steps") or []]
+               for r in base_rows], measured, len(_stub_runs(log))),),
+          red_step.get("exit") == 1 and "command" not in red_step
+          and "gate-red-base" in line and "gate-red-base-unknown" not in line
+          and "gate-red-writer" not in line
+          and "run-agent-session.py" not in line
+          and len(_stub_runs(log)) == 1 and len(base_rows) == 1
+          and [st.get("name") for st in base_rows[0].get("steps") or []]
+          == [derived]
+          and measured.get("verdict") == "base-only"
+          and measured.get("atBase") == [suite])
+
+    g_root, _gm, _gl, green, _gb = _derived_base_repo(
+        M, "derived-green", _rtg_cases.sweep_red({}), red)
+    _gt, green_base = _ledger_of(g_root)
+    check("bdr2 THE TWIN: the same derived step green at the base was "
+          "measured once and goes to the writer: %r / %r"
+          % (green, _base_mark(g_root)),
+          "gate-red-writer" in green and "gate-red-base" not in green
+          and len(green_base) == 1
+          and _base_mark(g_root).get("verdict") == "introduced")
+
+    u_root, _um, _ul, unnamed, u_block = _derived_base_repo(
+        M, "derived-unnamed", red, "the runner died before it named a suite\n")
+    _ut, unnamed_base = _ledger_of(u_root)
+    u_mark = _base_mark(u_root)
+    check("bdr3 a red derived step that cannot be re-run at the base - its "
+          "runner named no failing suite - is a base no command can measure: "
+          "no base run is recorded, the mark is not unknowable, and the red "
+          "goes to the writer, not to gate-red-base-unknown: %r / %r / %r"
+          % (unnamed, u_mark, u_block),
+          "gate-red-writer" in unnamed
+          and "gate-red-base-unknown" not in unnamed
+          and "gate-red-base " not in unnamed
+          and unnamed_base == [] and u_mark.get("done") is True
+          and u_mark.get("measurable") is False
+          and not u_mark.get("unknowable")
+          and "named no failing suite" in str(u_mark.get("said")))
 
 
 def _base_trees(root):

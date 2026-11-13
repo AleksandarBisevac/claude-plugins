@@ -271,8 +271,13 @@ verb writes and refuses, and what the run commands leave behind, is
         `drive-phase.py base-run` in the background, which writes only a record of
         its own that `next` folds into the start's mark), then `wait-base`, and the
         red's verdict is read back from its recorded row as a background gate's is;
-        one measured fast runs inline. A red whose base commit fails every case it
-        fails stops as `gate-red-base`, with no session sent. A base nobody can
+        one measured fast runs inline. A derived step's red is measured too: its
+        failing suites are run again at the base, spelled as the gate spelled them.
+        A red whose base commit fails every case it fails stops as
+        `gate-red-base`, with no session sent. A red no step of which can be run
+        again at the base - its runner named no failing suite, or nothing can spell
+        its suites - has no base reading and goes to the writer like any such red;
+        that is not the unknown stop. A base nobody can
         know - the base run left no reading, failed or was killed, or its reading
         was taken for another red run - stops as `gate-red-base-unknown`, with no
         session sent and no round spent: `measure-base` measures the base again,

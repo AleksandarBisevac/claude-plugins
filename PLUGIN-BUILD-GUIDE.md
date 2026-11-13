@@ -4649,8 +4649,14 @@ suites it ran (`_evidence_io.step_runs_suite`), never by its name. A task gate i
 - it runs on HEAD plus the work - so **`--base-of <runId>`** takes one: the red steps of that
 recorded run, by the names and commands its row keeps, run in `--tree` (a checkout of the base
 commit) with no task id, recorded under `_evidence_io.BASE_SCOPE` with no pointer, and the run read
-against its base again printed (`--json` for the drive). `bc1`-`bc4` and `be1`-`be5` drive the
-comparison; the drive's `bm` and `bt` cases drive `--base-of`.
+against its base again printed (`--json` for the drive). A derived step's row keeps only a digest
+of its command, so its command is spelled again for the failing suites the step names, by the
+derivation that spelled it on the task's run (`base_commands`, `_affected_tests.entries_for`). A
+red step that cannot run again - its runner named no failing suite, the plan has no path-scoped
+spelling, a declared step kept as a digest - is named in the answer's `notRun` with its reason,
+and when that is every red step nothing runs and the answer still prints, with an empty `steps`.
+`bc1`-`bc4` and `be1`-`be5` drive the comparison; `bod1`-`bod4` the derived step's base; the
+drive's `bm`, `bdr` and `bt` cases drive `--base-of`.
 
 ### `plugins/audit/scripts/governance/record-outside-run.py`
 `record-outside-run.py <manifest> --label TEXT --started <ISO> [--ended <ISO> | --duration-ms N]
@@ -4989,7 +4995,11 @@ was killed, or its reading names no base run (`base_behind`) - is
 red of the same start whose own row finds no base run stops there too. A mark's reading decides
 only the red run it was measured for or a repeat of it, and a mark an earlier version wrote for
 a cut base (no `ran`, no `background`, no base run named) reads as unknown. A red run HEAD has since left keeps reading
-`no-base` and goes to the writer as before. `bq2` and `bq3` drive it. A recorded gate run while sibling executors edit the same tree measures their
+`no-base` and goes to the writer as before, and so does a red whose steps `--base-of` answered it
+cannot run again at all (`base_unrunnable`: every red step in `notRun`): no later measurement could
+answer either, so neither is the unknown stop, which stays for a base run that was started and
+then cut, killed, failed or left no row. `bq2` and `bq3` drive it, `bdr1`-`bdr3` a derived step's
+red. A recorded gate run while sibling executors edit the same tree measures their
 unfinished work, so the driver never has two tasks between dispatch and gate at once.
 
 **What the driver keeps.** `stateDir/drive/<phaseId>.json` holds what no verb records: which

@@ -5184,11 +5184,14 @@ def _write_own_log(manifest_path, project_dir, step_text):
 # gate is never one: it runs on HEAD plus the work, so its row is dirty, and a
 # ledger holding only task runs answers `no-base` for every task. `--base-of
 # <runId>` takes the measurement that question lacks: the red steps of that
-# recorded run - their names and commands as its row keeps them - run again in
-# `--tree`, a checkout of the base commit, with no task id, and recorded under
-# `_evidence_io.BASE_SCOPE`, which no pointer is written for and no subject's
-# evidence is read from. What it answers is the run read against its base again
-# (`base_reading`), which a later run of the same task at that head finds too.
+# recorded run - their names and commands as its row keeps them, and a derived
+# step's command spelled again for the failing suites it names, since its row
+# keeps a digest (`base_commands`) - run again in `--tree`, a checkout of the
+# base commit, with no task id, and recorded under `_evidence_io.BASE_SCOPE`,
+# which no pointer is written for and no subject's evidence is read from. What it
+# answers is the run read against its base again (`base_reading`), which a later
+# run of the same task at that head finds too; a red step that cannot be run
+# again is named in the answer's `notRun` with its reason.
 def base_of_refusal(args, tree):
     """Why `--base-of` refuses these arguments, or None."""
     if args.task is not None:
@@ -5206,32 +5209,80 @@ def base_of_refusal(args, tree):
     return None
 
 
-def base_commands(row):
-    """`(commands, left)` - `(name, command)` for every red step of the recorded
-    `row` whose command it keeps verbatim, and the names of the red steps it
-    keeps only a digest of, which nothing can run again."""
-    commands, left = [], []
+def _derived_at_base(step, manifest, phase_id, tree):
+    """`(commands, why)` - the commands that run a red DERIVED step's failing
+    suites in `tree`, spelled by the derivation that spelled the step on the
+    task's run (`_affected_tests.entries_for`), or why there are none.
+
+    A derived step's row keeps a digest of its command, never the command, so
+    it is spelled again - for the suites its runner NAMED failing, which is
+    what its failing cases are recorded under, rather than every suite its
+    name lists. A step whose runner named none has nothing to spell; one of an
+    arm the selection does not spell for (the phase-gate arm carries a gate
+    entry, kept verbatim like any declared step's) has no derivation here."""
+    arm = str(step.get("name"))[len(_ev.DERIVED_STEP_PREFIX):].partition(": ")[0]
+    if arm not in _affected.ARMS:
+        return [], ("its arm `%s` is not one the affected selection spells "
+                    "suites for, and its row keeps a digest of the command"
+                    % (arm,))
+    suites = _ev.named_failing_suites([step])
+    if not suites:
+        return [], ("its runner named no failing suite, so no suite of it can "
+                    "be run again at the base")
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    commands, why = _affected.entries_for(
+        [{"path": path, "arm": arm} for path in suites],
+        _phase_by_id(manifest, phase_id) or {}, meta, tree)
+    if why:
+        return [], "its suites cannot be spelled again: %s" % (why,)
+    if not commands:
+        return [], ("the plan's path-scoped spelling gave no command for %s"
+                    % (", ".join(suites),))
+    return commands, None
+
+
+def base_commands(row, manifest, phase_id, tree):
+    """`(commands, published, left)` - `(name, command)` for every red step of
+    the recorded `row` that can run again in `tree`, the ones among them the
+    row keeps verbatim, and `{name, reason}` for every red step that cannot.
+
+    A step whose command the row keeps verbatim runs as recorded. A derived
+    step's command is spelled again for its failing suites
+    (`_derived_at_base`) and stays unpublished, as it was on the task's run.
+    Any other red step keeps only a digest, which nothing can run again."""
+    commands, published, left = [], [], []
     for step in row.get("steps") or []:
         if not _ev._counts_as_failed(step):
             continue
+        name = str(step.get("name"))
         if isinstance(step.get("command"), str) and step["command"].strip():
-            commands.append((str(step.get("name")), step["command"]))
-        else:
-            left.append(str(step.get("name")))
-    return commands, left
+            commands.append((name, step["command"]))
+            published.append(step["command"])
+            continue
+        if _ev.is_derived_step(name):
+            derived, why = _derived_at_base(step, manifest, phase_id, tree)
+            commands += derived
+            if why:
+                left.append({"name": name, "reason": why})
+            continue
+        left.append({"name": name, "reason": "its row keeps a digest of the "
+                                             "command, which cannot be run again"})
+    return commands, published, left
 
 
-def _record_base_run(project, args, res, commands, out=print):
+def _record_base_run(project, args, res, published, out=print):
     """Record a `BASE_SCOPE` row - no ids, no pointer, no evidence boundary, as
     a full run is recorded (`_record_full_run`): it is no subject's evidence.
-    The commands are published already, since the row they were read off kept
-    them verbatim. The row, or None when it could not be stored."""
+    `published` are the commands the row they were read off kept verbatim,
+    kept verbatim again; a derived step's command, spelled again, is kept as
+    a digest as it was on the task's run. The row, or None when it could not
+    be stored."""
     identity = {"runId": _ev.new_run_id(), "via": "cli",
                 "sessionId": os.environ.get("CLAUDE_CODE_SESSION_ID") or None,
                 "attempt": None, _ev.STARTED_KEY: res.get("startedAt")}
     try:
         recorded = _ev.record(project, res, _ev.BASE_SCOPE, {}, identity,
-                              published=[c for _name, c in commands],
+                              published=list(published),
                               writer=args.writer)
     except Exception as exc:                                   # noqa: BLE001
         out("  evidence: NOT recorded - %s" % (exc,))
@@ -5261,12 +5312,22 @@ def _run_base_of(project, args, manifest, tree, out=print):
         out("[run-test-gate] --base-of: no run %s is recorded in the ledger"
             % (args.base_of,))
         return E_ASK
-    commands, left = base_commands(row)
+    commands, published, left = base_commands(
+        row, manifest, row.get("phaseId") or args.phase, tree)
     if not commands:
-        out("[run-test-gate] --base-of: run %s has no red step whose command "
-            "its row keeps verbatim%s, so there is nothing to run at its base"
-            % (args.base_of, " (digests only: %s)" % (", ".join(left),)
-               if left else ""))
+        # NOTHING RAN, AND THAT IS AN ANSWER, not a refusal: under --json it is
+        # printed in the answer's shape, each red step in `notRun` with its
+        # reason, so a caller can tell a base no command can measure from a
+        # run that failed or was cut - which it cannot from the exit alone.
+        if args.as_json:
+            out(json.dumps({"baseOf": args.base_of, "recorded": False,
+                            "runId": None, "head": None, "status": None,
+                            "notRun": left, "steps": [],
+                            _ev.BASE_RED_KEY: None}, indent=2, sort_keys=True))
+            return E_ASK
+        out("[run-test-gate] --base-of: run %s has no red step that can run "
+            "again at its base%s" % (args.base_of, "".join(
+                "; %s: %s" % (n["name"], n["reason"]) for n in left)))
         return E_ASK
     say = _say_on_stderr if args.as_json else out
     previous = _arm_interrupt()
@@ -5280,13 +5341,13 @@ def _run_base_of(project, args, manifest, tree, out=print):
     if isinstance(res.get("testedState"), dict):
         res["testedState"]["tree"] = {"key": _ev.tree_key(tree)}
     res[_ev.BASE_OF_KEY] = args.base_of
-    base_row = _record_base_run(project, args, res, commands, say) \
+    base_row = _record_base_run(project, args, res, published, say) \
         if args.record else None
     # Read against the rows as they stood plus this run's own, so the answer
     # does not hang on a second read of a ledger other writers append to.
     measured = base_row if base_row is not None else _ev.row_for(
         project, res, _ev.BASE_SCOPE, {}, {"runId": "unrecorded"},
-        published=[c for _name, c in commands])
+        published=published)
     reading = base_reading(row, row.get("taskId"), lambda: rows + [measured])
     answer = {"baseOf": args.base_of, "recorded": base_row is not None,
               "runId": base_row.get("runId") if base_row else None,
@@ -5302,7 +5363,7 @@ def _run_base_of(project, args, manifest, tree, out=print):
     out("[run-test-gate] base of %s: %d red step(s) measured at %s in %s"
         % (args.base_of, len(commands), answer["head"], tree))
     for name in left:
-        out("  not run: %s (its row keeps a digest of the command)" % (name,))
+        out("  not run: %s (%s)" % (name["name"], name["reason"]))
     for line in base_red_lines(reading):
         out(line)
     out("  verdict: %s" % ((reading or {}).get("verdict"),))

@@ -2838,6 +2838,17 @@ def rerun_alongside(ctx, state, manifest, pending):
 # reading always did: no base can be measured for it, and the next gate runs at
 # the new HEAD.
 #
+# A BASE NO COMMAND CAN RUN IS NOT A BASE NOBODY KNOWS. `--base-of` spells a
+# derived step again for the failing suites its row names; where it cannot - the
+# runner named no failing suite, the plan has no path-scoped spelling, a step
+# keeps only a digest - it runs nothing and names each red step in `notRun`
+# with its reason (`base_unrunnable`). That is structural, like a moved HEAD: no
+# later measurement can answer it either, so stopping on it would stop every
+# such red for good with nothing for `measure-base` to change. So it is
+# `measurable` False and keeps reading `no-base`, and the red goes to the writer
+# as a red with no base reading always did. The unknown stop stays for a base
+# run that was started and then cut, killed, failed, or left no row.
+#
 # THE MARK IS WRITTEN FIRST, WHEREVER THE RUN IS. It is on disk before the run,
 # naming the tree and every process that may be measuring in it, so a `next` or a
 # background run killed during it is not followed by a second measurement, and
@@ -2885,8 +2896,10 @@ def measure_base(ctx, phase, row, tree=None, placed=None, started=None,
     holder of a tree the teardown kept (None when nothing was kept); why a
     run held to `bound` seconds was stopped there (None when it ended - and
     always with `bound` None, which holds it to none); and whether a base run
-    could be taken at all, False when HEAD is no longer the run's head.
-    `reading` is None, beside the reason, when no base run answered: the tree
+    could be taken at all, False when HEAD is no longer the run's head and
+    when the run answered that no red step can be run again at the base
+    (`base_unrunnable`). `reading` is None, beside the reason, when no base
+    run answered: the tree
     could not be built outside the repository, the run was stopped, or it did
     not answer. `placed(holder)` is called once the holder exists and before
     any tree is built in it, `started(pid)` once the run's process does, so
@@ -2902,15 +2915,16 @@ def measure_base(ctx, phase, row, tree=None, placed=None, started=None,
     try:
         if placed is not None:
             placed(holder)
-        reading, said, cut = _base_in(ctx, phase, row, head, holder, started,
-                                      bound)
+        reading, said, cut, measurable = _base_in(ctx, phase, row, head,
+                                                  holder, started, bound)
     finally:
         kept, left = remove_base_tree(ctx, holder)
     if kept is not None:
         said += "; its tree %s is kept: %s" % (holder, kept)
     elif left:
         said += "; its tree %s is left behind" % (holder,)
-    return {"reading": reading, "said": said, "cut": cut, "measurable": True,
+    return {"reading": reading, "said": said, "cut": cut,
+            "measurable": measurable,
             "kept": holder if kept is not None else None}
 
 
@@ -2939,36 +2953,60 @@ def remove_base_tree(ctx, holder):
 def _base_in(ctx, phase, row, head, holder, started=None,
              bound=BASE_MEASURE_SECONDS):
     """`measure_base`'s run itself, in the tree it builds under `holder`:
-    `(reading, said, cut)`."""
+    `(reading, said, cut, measurable)` - `measurable` False only when the run
+    answered that no red step of `row` can be run again at the base
+    (`base_unrunnable`)."""
     path = os.path.join(holder, "tree")
     if _worktrees.within_tree(ctx["gitRoot"], holder):
         return None, ("%s's base not measured: the temp directory %s is inside "
-                      "the repository" % (row.get("taskId"), holder)), None
+                      "the repository" % (row.get("taskId"), holder)), None, True
     code, _out, err = carry_git(ctx["gitRoot"], [
         "worktree", "add", "--detach", "--quiet", path, head])
     if code != 0:
         return None, ("%s's base not measured: git could not build a tree at %s "
-                      "(%s)" % (row.get("taskId"), head[:8], err)), None
+                      "(%s)" % (row.get("taskId"), head[:8], err)), None, True
     code, out, err, cut = run_verb_bounded(ctx, "run-test-gate.py", [
         ctx["manifest"], phase["id"], "--base-of", row["runId"], "--record",
         "--json", "--project-dir", ctx["project"],
         "--tree", member_project(ctx, path)], bound, started)
     if cut is not None:
         return None, ("%s's base not measured inside next: run-test-gate.py "
-                      "--base-of %s" % (row.get("taskId"), cut)), cut
+                      "--base-of %s" % (row.get("taskId"), cut)), cut, True
     try:
         answer = json.loads(out)
     except ValueError:
         answer = None
+    # No red step can be run again at the base: structural, as a moved HEAD
+    # is, so not measurable and never the unknown stop - the red keeps its
+    # `no-base` reading and goes to the writer.
+    unrunnable = base_unrunnable(answer)
+    if unrunnable is not None:
+        return None, ("%s's base cannot be re-run at %s, so no base reading "
+                      "is owed: %s" % (row.get("taskId"), head[:8],
+                                       _clip(unrunnable, 240))), None, False
     reading = (answer or {}).get(_evio.BASE_RED_KEY) \
         if isinstance(answer, dict) else None
     if code != E_OK or not isinstance(reading, dict):
         return None, ("%s's base not measured: run-test-gate.py --base-of "
                       "exited %d (%s)" % (row.get("taskId"), code,
-                                          _clip((err or out).strip(), 160))), None
+                                          _clip((err or out).strip(), 160))), \
+            None, True
     return reading, "%s's base measured at %s in run %s: %s" % (
         row.get("taskId"), head[:8], answer.get("runId"),
-        reading.get("verdict")), None
+        reading.get("verdict")), None, True
+
+
+def base_unrunnable(answer):
+    """The reasons, joined, when `run-test-gate.py --base-of`'s JSON `answer`
+    ran nothing because no red step of the run can be run again at its base
+    (every one in `notRun`, each with its reason); None for any other answer,
+    a run that ran a step or an answer that is not that shape included."""
+    if not isinstance(answer, dict) or answer.get("steps") != []:
+        return None
+    left = [n for n in answer.get("notRun") or [] if isinstance(n, dict)]
+    if not left:
+        return None
+    return "; ".join("%s: %s" % (n.get("name"), n.get("reason")) for n in left)
 
 
 def base_behind(reading):

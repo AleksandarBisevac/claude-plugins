@@ -204,7 +204,7 @@
     {
       "id": "P161.3-toy",
       "title": "A red in a derived gate step has its base measured through the failing suites it names, and a step that cannot be re-run is no-base, not an unknown stop",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A red in a step the gate derives (affected/related, affected/python and the like) cannot have its base measured: run-test-gate.py --base-of runs only the red steps whose command the row keeps verbatim (base_commands, near line 5209), and a derived step's row keeps digests only. So --base-of exits 2 \"nothing to run at its base\". Since P161.1 the drive reads that as an unknowable base and stops as gate-red-base-unknown. Before that it sent the red to the writer as no-base. Either way the question \"does the base fail the same cases\" goes unanswered for every derived step, which is where most task-gate reds land. It is the same class as a cut base run.\n\nREQUIRED, one rule:\n1. --base-of measures a derived red step at the base by running the failing suites that step's row names (its failing cases are per suite path), with the command the runner derives for those suites the way the gate itself derives it. Reuse the derivation run-test-gate uses for affected steps (_affected, _suite_at_base, base_red); do not write a second spelling of the runner command. The base row then reads like any other base run, and base_red compares case by case.\n2. Where a derived step's base genuinely cannot be re-run (no failing suite named, a runner with no per-suite command), --base-of says so per step in its JSON answer (notRun with the reason). The drive then treats that step's base as no-base, structurally unmeasurable like a moved HEAD: the red goes to the writer as it did before P161. It is not the unknown stop, which stays for a base run that was started and was cut, killed, or left no row. State the choice in the code comment above the decision.\n3. Cases (tests/test_run_test_gate.py, tests/test_drive_phase.py): a red affected step whose failing suite fails the same case at base gives gate-red-base with no writer round; a red affected step whose suite is green at base goes to the writer; a derived step that cannot be re-run gives no-base and goes to the writer, not gate-red-base-unknown. Red-first for each: mutate the fix, assert the mutation landed, and restore in the same command. Purge __pycache__.\n\nDependants: tests/test__evidence_io.py, tests/test__affected.py (if present), tests/test_drive_without_model.py, and the prose in PLUGIN-BUILD-GUIDE.md and plugins/audit/reference/execute-task.md that describes --base-of and the unknown stop. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -233,14 +233,14 @@
       "dependsOn": [
         "P161.2-toy"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-13T16:03:10Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -269,7 +269,13 @@
           "text": "quotes PLUGIN-BUILD-GUIDE.md's scope-position spelling passage; the task edits only the base-measurement paragraphs",
           "waives": "tools/prove-gates.py"
         }
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-13T16:30:49Z.506a77",
+        "status": "passed",
+        "at": "2026-11-13T16:30:49Z"
+      }
     }
   ],
   "request": "Fix the drive's base measurement: a base run that outlives the foreground bound must be measured in the background and decided from its row, and a base that cannot be known must stop the drive rather than resume the writer.",

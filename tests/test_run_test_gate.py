@@ -10459,6 +10459,177 @@ def _affected_scope_cases(check):
                   for ln in lines))
 
 
+# The fake sweep a derived step runs: base or task by what `pkg/core.py` holds,
+# the planted red text only when it is handed the suite the related arm
+# selects, and the planted green text otherwise.
+_DERIVED_SWEEP = r'''
+import sys
+with open("pkg/core.py", encoding="utf-8") as fh:
+    which = "base" if fh.read() == "X = 1\n" else "task"
+with open("gate-out/green.txt", encoding="utf-8") as fh:
+    green = fh.read()
+text = green
+if "tests/test_other.py" in sys.argv[1:]:
+    with open("gate-out/%s.txt" % (which,), encoding="utf-8") as fh:
+        text = fh.read()
+sys.stdout.write(text)
+raise SystemExit(0 if text == green else 1)
+'''
+
+
+def _derived_base_repo(prefix, base_text, task_text):
+    """A one-task plan whose narrow gate gains `affected/related:
+    tests/test_other.py` for a change to `pkg/core.py`, that step printing
+    `task_text` over the change and `base_text` at HEAD: `(root, mpath, plan,
+    row)` - `row` the recorded task run, taken with the change in place."""
+    root = _harness.fixture_root(prefix)
+    for sub in (("docs", "audit", "phases"), (".claude",), ("tools",),
+                ("tests",), ("pkg",), ("gate-out",)):
+        os.makedirs(os.path.join(root, *sub))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    sweep = "python3 tools/sweep.py"
+    plan = {"meta": {"version": 3, "buildCommands": {"selftests": sweep},
+                     "phaseGate": {"derived": {
+                         "spelling": sweep + " {paths}",
+                         "listing": {"related": "printf '%s\\n' "
+                                                "tests/test_other.py # {paths}"},
+                         "verifiedOn": {"command": "echo v1", "answer": "v1"}}}},
+            "phases": [{"id": "P1", "title": "one", "shard": "phases/P1.json"}]}
+    with open(mpath, "w") as fh:
+        json.dump(plan, fh)
+    phase = {"id": "P1", "title": "one", "status": "in_progress",
+             "testGate": ["selftests"], "tasks": [
+                 {"id": "P1.1", "title": "narrow", "status": "in_progress",
+                  "files": ["pkg/core.py", "tests/test_own.py"],
+                  "tests": {"mode": "regression",
+                            "gate": [sweep + " tests/test_own.py"]}}]}
+    with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
+              "w") as fh:
+        json.dump(phase, fh)
+    for rel, body in (("tools/sweep.py", _DERIVED_SWEEP),
+                      ("pkg/__init__.py", ""), ("pkg/core.py", "X = 1\n"),
+                      ("tests/test_other.py", "pass\n"),
+                      ("tests/test_own.py", "pass\n"),
+                      ("gate-out/green.txt", sweep_red({})),
+                      ("gate-out/base.txt", base_text),
+                      ("gate-out/task.txt", task_text)):
+        with open(os.path.join(root, rel), "w", newline="\n") as fh:
+            fh.write(body)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
+    for arg in (["add", "--", "."],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
+    with open(os.path.join(root, "pkg", "core.py"), "w", newline="\n") as fh:
+        fh.write("X = 2\n")
+    M.main([mpath, "P1", "--task", "P1.1", "--project-dir", root, "--record"],
+           out=lambda _line: None)
+    rows = [r for r in _recorded_rows(os.path.join(root, "docs", "audit",
+                                                    "evidence"))
+            if r.get("taskId") == "P1.1"]
+    return root, mpath, plan, (rows[-1] if rows else {})
+
+
+def _base_of_answer(root, mpath, run_id):
+    """`(exit, answer, lines)` of `--base-of run_id --record --json`, run in a
+    detached tree at the fixture's HEAD - the base commit."""
+    holder = _harness.fixture_root("rtg-derived-base-tree-")
+    tree = os.path.join(holder, "tree")
+    _harness.git(root, "worktree", "add", "--detach", "--quiet", tree, "HEAD",
+                 prefix=_PLAIN_GIT)
+    lines = []
+    code = M.main([mpath, "P1", "--base-of", run_id, "--record", "--json",
+                   "--project-dir", root, "--tree", tree], out=lines.append)
+    try:
+        answer = json.loads(lines[-1]) if lines else None
+    except ValueError:
+        answer = None
+    return code, answer if isinstance(answer, dict) else {}, lines
+
+
+def _base_of_derived_cases(check):
+    """`--base-of` measures a red DERIVED step at its base: the step's row
+    keeps only a digest of its command, so the command is spelled again for
+    the suites the step's runner named failing, the way the gate derived it
+    (`_affected_tests.entries_for`), and run in the base tree. Where it cannot
+    be spelled - the runner named no failing suite, or the plan has no
+    path-scoped spelling - the answer names the step in `notRun` with the
+    reason."""
+    derived = "%srelated: tests/test_other.py" % (_ev_io.DERIVED_STEP_PREFIX,)
+    fails = {"tests/test_other.py": ("FAIL c1 a case the base fails too",)}
+    red = sweep_red(fails)
+    root, mpath, plan, row = _derived_base_repo("rtg-derived-red-", red, red)
+    task_step = ([st for st in row.get("steps") or []
+                  if st.get("name") == derived] or [{}])[0]
+    code, answer, lines = _base_of_answer(root, mpath, row.get("runId"))
+    reading = answer.get(_ev_io.BASE_RED_KEY) or {}
+    base_rows = [r for r in _recorded_rows(os.path.join(
+        root, "docs", "audit", "evidence")) if r.get("scope") == _ev_io.BASE_SCOPE]
+    check("bod1 a red derived step whose failing suite fails the same case at "
+          "the base is re-run there through its suites, recorded as a base run, "
+          "and read base-only, with nothing left unrun: task step %r / exit %r "
+          "/ answer %r / base rows %r"
+          % ((task_step.get("exit"), "command" in task_step,
+              task_step.get("failingSuites")), code, answer,
+             [[st.get("name") for st in r.get("steps") or []]
+              for r in base_rows]),
+          task_step.get("exit") == 1 and "command" not in task_step
+          and code == M.E_OK and answer.get("notRun") == []
+          and [st.get("name") for st in answer.get("steps") or []] == [derived]
+          and reading.get("verdict") == "base-only"
+          and reading.get("atBase") == ["tests/test_other.py"]
+          and reading.get("run") == answer.get("runId") is not None
+          and len(base_rows) == 1)
+
+    g_root, g_mpath, _gp, g_row = _derived_base_repo(
+        "rtg-derived-green-", sweep_red({}), red)
+    g_code, g_answer, _gl = _base_of_answer(g_root, g_mpath, g_row.get("runId"))
+    g_reading = g_answer.get(_ev_io.BASE_RED_KEY) or {}
+    check("bod2 THE TWIN: the same derived step green at the base is re-run "
+          "there and read as the task's own red: exit %r / answer %r"
+          % (g_code, g_answer),
+          g_code == M.E_OK and g_answer.get("notRun") == []
+          and g_reading.get("verdict") == "introduced"
+          and g_reading.get("introduced") == ["tests/test_other.py"])
+
+    u_root, u_mpath, _up, u_row = _derived_base_repo(
+        "rtg-derived-unnamed-", red,
+        "the runner died before it named a suite\n")
+    u_code, u_answer, u_lines = _base_of_answer(u_root, u_mpath,
+                                                u_row.get("runId"))
+    not_run = u_answer.get("notRun") or []
+    u_base = [r for r in _recorded_rows(os.path.join(
+        u_root, "docs", "audit", "evidence")) if r.get("scope") == _ev_io.BASE_SCOPE]
+    check("bod3 a red derived step whose runner named no failing suite cannot "
+          "be re-run at the base: the JSON answer names it in notRun with that "
+          "reason, runs nothing and records no base run: exit %r / answer %r / "
+          "lines %r" % (u_code, u_answer, u_lines),
+          u_code == M.E_ASK and u_answer.get("steps") == []
+          and u_answer.get("runId") is None and u_base == []
+          and [n.get("name") for n in not_run] == [derived]
+          and "named no failing suite" in str(not_run[0].get("reason")))
+
+    bare = {"meta": {"version": 3,
+                     "buildCommands": plan["meta"]["buildCommands"]},
+            "phases": [{"id": "P1", "title": "one", "tasks": []}]}
+    digest_only = {"name": "selftests", "exit": 1}
+    commands, published, left = M.base_commands(
+        dict(row, steps=list(row.get("steps") or []) + [digest_only]),
+        bare, "P1", root)
+    reasons = dict((n.get("name"), str(n.get("reason"))) for n in left)
+    check("bod4 a plan with no path-scoped spelling cannot spell a derived "
+          "step's suites again, and a declared step whose row keeps a digest "
+          "cannot be run either - each is in notRun with its own reason: "
+          "%r / %r / %r" % (commands, published, left),
+          commands == [] and published == []
+          and sorted(reasons) == sorted([derived, "selftests"])
+          and "no path-scoped spelling" in reasons.get(derived, "")
+          and "digest" in reasons.get("selftests", ""))
+
+
 def _member_records_cases(check):
     """A wave member's tree holds the phase tree's records once the drive has
     refreshed them, and those bytes are the plan's, not the task's change: the
@@ -12148,6 +12319,7 @@ def _selftest():
         _harness.stage(check, "sl-block", _success_line_cases)
         _harness.stage(check, "ag-block", _affected_cases)
         _harness.stage(check, "as-block", _affected_scope_cases)
+        _harness.stage(check, "bod-block", _base_of_derived_cases)
         _harness.stage(check, "rp-block", _member_records_cases)
         _harness.stage(check, "rs-block", _shared_records_cases)
         _group_cases(check)
