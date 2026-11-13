@@ -599,7 +599,29 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-13T18:55:50Z",
+          "text": "quotes PLUGIN-BUILD-GUIDE.md's 'related listing' passage; the task edits only the _locks takeover sentence",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-13T18:55:50Z",
+          "text": "quotes PLUGIN-BUILD-GUIDE.md's doctor-trail passage; the task edits only the _locks takeover sentence",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-13T18:55:50Z",
+          "text": "reads PLUGIN-BUILD-GUIDE.md's generated module map; the task adds no module",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-13T18:55:50Z",
+          "text": "quotes PLUGIN-BUILD-GUIDE.md's scope-position spelling passage; the task edits only the _locks takeover sentence",
+          "waives": "tools/prove-gates.py"
+        }
+      ]
     }
   ],
   "request": "Fix the drive's base measurement: a base run that outlives the foreground bound must be measured in the background and decided from its row, and a base that cannot be known must stop the drive rather than resume the writer.",
