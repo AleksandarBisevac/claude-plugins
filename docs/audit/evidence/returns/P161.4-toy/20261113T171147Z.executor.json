@@ -1,0 +1,41 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_run_test_gate.py tests/test_drive_without_model.py": "pass",
+    "python3 tools/measure-context.py --gate": "pass",
+    "python3 tools/sweep-selftests.py tests/test__output_lints.py tools/measure-context.py tests/test_audit_task.py tests/test_drive_phase.py tests/test_run_test_gate.py tests/test_drive_without_model.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-13T17:20:56Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_run_test_gate.py tests/test_drive_without_model.py` in a throwaway tree at HEAD exited 1 with 6 of 624 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bdr4 (house FAIL), bi12 (house FAIL), bi13 (house FAIL), bi14 (house FAIL), bod5 (house FAIL), bod6 (house FAIL): SELFTEST FAILED: 622/624 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Round 2 changes only what the drive's red named. (1) drive-phase.py claim_launch: os.fdopen(fd, 'w', encoding='utf-8', newline='\\n'). The write now passes the newline argument nw4 requires (line 3232). (2) reference/orchestrator.md: my header sentence is down to 'unknowable base is `gate-red-base-unknown`, an `ask` (execute-task.md).' The routing detail stays in execute-task.md step 3. HEAD's orchestrator.md measures 61996 against the 62000 ceiling, so the room was 4 bytes. My sentence adds ', an `ask`' and drops ' step 3' from the pointer, 3 bytes net. git grep found nothing pinning 'execute-task.md step 3'. The ceiling was not raised. Measured: `python3 tools/measure-context.py --gate` exit 0, 'reference/orchestrator.md 61999 / 62000'. Before the trim it was 62077, then 62006 (both BREACH). Sweep over tests/test__output_lints.py, tools/measure-context.py, tests/test_audit_task.py, tests/test_drive_phase.py, tests/test_run_test_gate.py and tests/test_drive_without_model.py: exit 0, '6/6 files ok, 3125 cases'. Everything from attempt 1 is unchanged: the ask verb, unmeasurable_elsewhere, the base-run claim and the name-listed derived spelling. Its dependants answer stands.",
+    "descriptive": "Fixed the two gates attempt 1 broke: the claim file's text write passes newline='\\n', and orchestrator.md is back under its context ceiling with a one-clause mention that the unknown-base stop is an ask."
+  },
+  "testsAdded": [
+    "bi12 the unknown stop signals ask",
+    "bdr4 a second unrunnable red in one start goes to gate-red-writer",
+    "bi13 a second base-run for a claimed launch refuses and measures nothing",
+    "bi14 an unmeasurable mark is no mark to another red; a repeat of its own red is not measured again",
+    "bod5 a runner-relative failing suite is spelled as the step name's path",
+    "bod6 a failing suite the name does not list leaves the step in notRun"
+  ],
+  "casesAdded": [
+    [
+      "bi12",
+      "bdr4",
+      "bi13",
+      "bi14"
+    ],
+    [
+      "bod5",
+      "bod6"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py:3232 is the newline='\\n' write; the orchestrator.md:19 clause claims only the verb, which is SIGNAL_VERBS' 'ask' entry\n2 n/a this round - no case added; the existing nw4/mc24/mc34/fb15 were seen red by the drive and green here (sweep exit 0)\n3 grep 'open(\\|fdopen(' over my diff: one text-mode write I added (claim_launch), now fixed. The orchestrator.md size breach was caused only by my sentence, now 3 bytes net.\n4 n/a - the orchestrator.md clause gives no rule; the routing sentence in execute-task.md is from attempt 1 and says nothing in the drive checks who answered\n5 measured once - 61999 / 62000 from measure-context --gate; deterministic bytes, not a timing\n6 n/a - no guard\n7 the numbers 61996/61999/62000 appear only in this return, each beside the command that printed it; none written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:e98b22882d0d1dade97bb317e8c546a46dd05ecf98686f5e341764736c089f8c\",\"dirtyDigest\":\"sha256:c48eaffb7cf8a2beab64b570b45e4dde93233c43ffa0242004091e452d9e2413\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"b0b792748c1ba506\",\"plugins/audit/reference/execute-task.md\":\"ba146d14c9c285d7\",\"plugins/audit/reference/orchestrator.md\":\"8d560fc6e9804a87\",\"plugins/audit/scripts/governance/drive-phase.py\":\"5529cd160c865bf1\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"8e77bc1804041f73\",\"tests/test_drive_phase.py\":\"fbae2895b3b3dfc4\",\"tests/test_run_test_gate.py\":\"1e7741b88ecab087\"},\"head\":\"35355d1f\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/reference/orchestrator.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"tests/test_drive_phase.py\",\"tests/test_drive_without_model.py\",\"tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:0ed71cf4325f2326e074c53761fbb35b3b695d331b4c13ce42e37de3dc6cd4cd\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

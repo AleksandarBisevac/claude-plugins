@@ -799,7 +799,10 @@ DECISIONS = {
     # says the task introduced it. `measure-base` drops the start's base mark
     # so the base is measured again; `resume` and `retry` are the way past a
     # base that can never be measured, offered and never recommended, and
-    # `resume` is refused where the red carries no writer session.
+    # `resume` is refused where the red carries no writer session. Its signal
+    # is `ask` (`SIGNAL_VERBS`): two of its options spend a writer round or an
+    # attempt on a red nothing blames on the task, so the pipeline commands put
+    # it to the human; nothing here checks who answers.
     "gate-red-base-unknown": (("rerun", "measure-base", "block", "resume",
                                "retry"), ("block",)),
     "no-executor-return": (("resume", "retry", "block"), ("block",)),
@@ -898,7 +901,7 @@ SIGNAL_VERBS = {
     "dispatch-wave": "dispatch", "dispatch-phase-review": "dispatch",
     "resume-executor": "dispatch", "dispatch-writer": "dispatch",
     "resume-writer": "dispatch", "decide-gate-red-writer": "judge",
-    "decide-gate-red-base": "ask", "decide-gate-red-base-unknown": "judge",
+    "decide-gate-red-base": "ask", "decide-gate-red-base-unknown": "ask",
     "wait-writer": "wait", "decide-writer-committed": "ask",
     "dispatch-gate": "dispatch", "wait-gate": "wait",
     "dispatch-base": "dispatch", "wait-base": "wait",
@@ -2868,24 +2871,46 @@ def rerun_alongside(ctx, state, manifest, pending):
 # THE MARK DECIDES ONLY ITS OWN RED. A reading taken for one red run is applied
 # to that run, or to a repeat of it, and to no other; another red of the same
 # start is decided by its own row's reading, and is unknown where that names no
-# base run.
+# base run. A mark whose base could not be measured at all (`measurable` False)
+# is no mark to any other red (`unmeasurable_elsewhere`): that red's base is
+# measured on its own, and goes to the writer as no-base where it still cannot
+# be run - else every later round of an unrunnable red would stop for the owner.
 BASE_MEASURE_VERDICTS = ("no-base", "not-knowable")
 BASE_TREE_PREFIX = "audit-base-"
 BASE_MEASURED = "baseMeasured"
 BASE_PROGRESS_DIRNAME = "base-runs"
 BASE_MEASURE_SECONDS = _evio.FOREGROUND_BOUND_MS // 1000
 BASE_RUN_VERB = "base-run"
+BASE_CLAIM_SUFFIX = ".claim"
 
 
-def base_measure_due(state, task, row):
-    """Whether the red run `row` is to have its base measured: its reading has
-    no comparable base run, names the head it ran at, and no base was measured
-    for this start yet."""
+def base_measure_due(state, task, row, runs):
+    """Whether the red run `row` - standing for the red runs `runs`
+    (`red_runs`) - is to have its base measured: its reading has no comparable
+    base run, names the head it ran at, and the start holds no base mark that
+    could decide it (`unmeasurable_elsewhere`)."""
     reading = (row or {}).get(_evio.BASE_RED_KEY)
+    held = _marked(state, BASE_MEASURED, task)
     return (isinstance(reading, dict) and bool((row or {}).get("runId"))
             and reading.get("verdict") in BASE_MEASURE_VERDICTS
             and bool(reading.get("head"))
-            and _marked(state, BASE_MEASURED, task) is None)
+            and (held is None or unmeasurable_elsewhere(held, runs)))
+
+
+def unmeasurable(held):
+    """Whether the base mark `held` is a finished measurement that could not
+    be taken at all - HEAD had left the red's head, or no red step could be
+    run again at the base (`measure_base`'s `measurable` False)."""
+    return (isinstance(held, dict) and bool(held.get("done"))
+            and held.get("measurable") is False)
+
+
+def unmeasurable_elsewhere(held, runs):
+    """Whether `held` is an unmeasurable mark (`unmeasurable`) taken for a red
+    run other than `runs`. Such a mark says nothing about any other red: the
+    head has moved since, or the work has, so the other red may be runnable
+    at its base where the first was not. It is read as no mark at all."""
+    return unmeasurable(held) and held.get("of") not in runs
 
 
 def measure_base(ctx, phase, row, tree=None, placed=None, started=None,
@@ -3173,13 +3198,40 @@ def base_mark(ctx, state, task):
     return held
 
 
-def drop_progress(path):
-    """Remove a base run's record once the drive's state holds what it said;
-    one left behind is folded again and changes nothing."""
+def drop_progress(path, claim_only=False):
+    """Remove a base run's record once the drive's state holds what it said,
+    and the claim beside it (`claim_launch`); one left behind is folded again
+    and changes nothing. `claim_only` removes the claim alone."""
+    for name in ([] if claim_only else [path]) + [path + BASE_CLAIM_SUFFIX]:
+        try:
+            os.remove(name)
+        except OSError:
+            pass
+
+
+def claim_launch(path):
+    """None once this process holds the claim on the base run whose record is
+    `path` - a file beside it, created exclusively, holding this pid - else
+    the sentence naming who holds it (`pid N`), or why the claim could not be
+    read or made, which refuses the run as well. The
+    claim stays until the record is dropped (`drop_progress`), so a run
+    started after the first finished is refused here or by its ran check."""
+    claim = path + BASE_CLAIM_SUFFIX
     try:
-        os.remove(path)
-    except OSError:
-        pass
+        os.makedirs(os.path.dirname(claim), exist_ok=True)
+        fd = os.open(claim, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        try:
+            with open(claim, "r", encoding="utf-8") as fh:
+                pid = fh.read().strip()
+        except OSError as exc:
+            return "its claim %s cannot be read (%s)" % (claim, exc)
+        return "pid %s holds its claim %s" % (pid or "unknown", claim)
+    except OSError as exc:
+        return "its claim %s could not be made (%s)" % (claim, exc)
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("%d\n" % (os.getpid(),))
+    return None
 
 
 def base_argv(ctx, task):
@@ -3265,7 +3317,9 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
     mark, read once; `unknown` is the sentence saying why the base cannot be
     known, else None.
 
-    A measurement is due once per start (`base_measure_due`). Its reading
+    A measurement is due once per start (`base_measure_due`), and again for
+    another red when the one taken could not be taken at all
+    (`unmeasurable_elsewhere`), which is read as no mark. Its reading
     decides only the red it was measured for, or a repeat of that red
     (`red_runs`); any other red of the start is decided by its own row's
     reading, and is unknown where that names no base run. A measurement that
@@ -3275,7 +3329,11 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
     row = gate_row(ctx, text)
     reading = (row or {}).get(_evio.BASE_RED_KEY)
     reading = reading if isinstance(reading, dict) else None
-    if base_measure_due(state, task, row):
+    runs = red_runs(text, row)
+    # Folded first: a background run that finished unmeasurable says so only
+    # in its own record, and the due question reads the mark in `state`.
+    base_mark(ctx, state, task)
+    if base_measure_due(state, task, row, runs):
         due, why = gate_in_background(ctx, _evio.red_step_names(row))
         if due:
             return launch_base(ctx, state, task, row, tree, why), None, None
@@ -3287,7 +3345,7 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
             return launch_base(ctx, state, task, row, tree, "its run inside "
                                "next %s" % (got["cut"],), got["cut"]), None, None
     held = base_mark(ctx, state, task)
-    if not isinstance(held, dict):
+    if not isinstance(held, dict) or unmeasurable_elsewhere(held, runs):
         return None, reading, None
     if base_waiting(held):
         return base_wait_said(ctx, task["id"], held.get("at"),
@@ -3298,7 +3356,7 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
         held = base_mark(ctx, state, task)
     if held.get("ran") and not held.get("done"):
         held = cut_short(ctx, state, task, held)
-    mine = held.get("of") in red_runs(text, row)
+    mine = held.get("of") in runs
     fresh = None
     if not held.get("decided"):
         fresh = held.get("reading") if isinstance(held.get("reading"), dict) else None
@@ -3313,8 +3371,7 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
                            "run %s, not for this red (%s), and this red's own "
                            "reading names no base run" % (
                                held.get("of"),
-                               ", ".join(sorted(red_runs(text, row))) or
-                               "no run named"))
+                               ", ".join(sorted(runs)) or "no run named"))
     if held.get("unknowable") or cut_before_ran(held):
         return None, use, held.get("said") or "no base reading was left"
     return None, use, None
@@ -3359,8 +3416,13 @@ def base_run(ctx, task_id):
     `task_id`'s current start, taken with no bound - the background's command,
     which no foreground bound holds - its outcome kept in the launch's own
     record for `next` to fold into the start's mark (`fresh_keeper`). E_USAGE
-    when no launch is marked for the current start, or this one already ran;
-    E_STOPPED when it left no reading."""
+    when no launch is marked for the current start, another process holds the
+    launch's claim (`claim_launch`), or this one already ran; E_STOPPED when
+    it left no reading.
+
+    THE CLAIM COMES BEFORE THE RAN CHECK. Two processes started for one launch
+    both read a record that does not yet say it ran, so the ran check alone
+    lets both measure; the exclusive create lets one."""
     manifest, phase = load_phase(ctx)
     task = _mio.tasks_by_id(manifest).get(task_id)
     if task is None:
@@ -3371,7 +3433,17 @@ def base_run(ctx, task_id):
         return E_USAGE, ("%s %s: no base measurement is launched for %s's "
                          "current start; next launches one" % (
                              PREFIX, ctx["phase"], task_id))
+    record = base_progress_path(ctx, task_id, launch_key(held))
+    holder = claim_launch(record)
+    if holder is not None:
+        return E_USAGE, ("%s %s: %s's base measurement for launch %s is not "
+                         "this run's: %s; this run measures nothing, and "
+                         "--answer measure-base launches it again if that one "
+                         "is gone"
+                         % (PREFIX, ctx["phase"], task_id, launch_key(held),
+                            holder))
     if held.get("ran"):
+        drop_progress(record, claim_only=True)
         return E_USAGE, ("%s %s: %s's base measurement already ran (%s); "
                          "--answer measure-base takes it again" % (
                              PREFIX, ctx["phase"], task_id, held.get("said")))

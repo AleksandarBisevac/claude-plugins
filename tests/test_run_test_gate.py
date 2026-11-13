@@ -10629,6 +10629,31 @@ def _base_of_derived_cases(check):
           and "no path-scoped spelling" in reasons.get(derived, "")
           and "digest" in reasons.get("selftests", ""))
 
+    # A runner printing the failing suite relative to its own directory: the
+    # step's name spells it from the repository root, and the base run must
+    # spell the name's path, the one the derivation at HEAD spelled.
+    red_step = dict(task_step, failingSuites=["test_other.py"])
+    relative = dict(row, steps=[red_step if st.get("name") == derived else st
+                                for st in row.get("steps") or []])
+    r_commands, _rp, r_left = M.base_commands(relative, plan, "P1", root)
+    spelled = " ".join(cmd for _n, cmd in r_commands)
+    check("bod5 a derived step whose runner printed its failing suite relative "
+          "to its own directory is spelled at the base from the path the "
+          "step's name lists, under the step's own name, with nothing left "
+          "unrun: %r / %r" % (r_commands, r_left),
+          [n for n, _c in r_commands] == [derived] and r_left == []
+          and "tests/test_other.py" in spelled.split())
+
+    stray = dict(task_step, failingSuites=["test_elsewhere.py"])
+    unlisted = dict(row, steps=[stray if st.get("name") == derived else st
+                                for st in row.get("steps") or []])
+    s_commands, _sp, s_left = M.base_commands(unlisted, plan, "P1", root)
+    check("bod6 THE TWIN: a failing suite the step's name lists nowhere spells "
+          "nothing at the base - the step is in notRun, the reason naming the "
+          "suite: %r / %r" % (s_commands, s_left),
+          s_commands == [] and [n.get("name") for n in s_left] == [derived]
+          and "test_elsewhere.py" in str(s_left[0].get("reason")))
+
 
 def _member_records_cases(check):
     """A wave member's tree holds the phase tree's records once the drive has

@@ -5219,16 +5219,36 @@ def _derived_at_base(step, manifest, phase_id, tree):
     what its failing cases are recorded under, rather than every suite its
     name lists. A step whose runner named none has nothing to spell; one of an
     arm the selection does not spell for (the phase-gate arm carries a gate
-    entry, kept verbatim like any declared step's) has no derivation here."""
+    entry, kept verbatim like any declared step's) has no derivation here.
+
+    EACH NAMED SUITE IS SPELLED AS THE STEP'S NAME LISTS IT. The derivation at
+    HEAD spelled the paths in the name, from the repository root; a runner may
+    print a suite relative to its own directory, and that spelling run at the
+    base names a file that is not there, or another one. So each named suite
+    is mapped to the one name-listed path it matches (`_ev.resolve_named`,
+    `listed_by` path by path), and a suite matching none, or several, leaves
+    the step unrun with the reason."""
     arm = str(step.get("name"))[len(_ev.DERIVED_STEP_PREFIX):].partition(": ")[0]
     if arm not in _affected.ARMS:
         return [], ("its arm `%s` is not one the affected selection spells "
                     "suites for, and its row keeps a digest of the command"
                     % (arm,))
-    suites = _ev.named_failing_suites([step])
-    if not suites:
+    named = _ev.named_failing_suites([step])
+    if not named:
         return [], ("its runner named no failing suite, so no suite of it can "
                     "be run again at the base")
+    listed = _ev.derived_step_suites(str(step.get("name")))
+    suites, unmatched = [], []
+    for suite in named:
+        path, why = _ev.resolve_named(suite, listed)
+        if path is None:
+            unmatched.append("%s (%s)" % (suite, why))
+        elif path not in suites:
+            suites.append(path)
+    if unmatched:
+        return [], ("a failing suite its runner named is not one path its "
+                    "name lists, so it cannot be spelled as the derivation "
+                    "spelled it: %s" % ("; ".join(unmatched),))
     meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
     commands, why = _affected.entries_for(
         [{"path": path, "arm": arm} for path in suites],

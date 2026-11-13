@@ -20309,6 +20309,31 @@ def _base_derived_cases(check):
           and not u_mark.get("unknowable")
           and "named no failing suite" in str(u_mark.get("said")))
 
+    # The writer is resumed and the gate is red again, still unrunnable at the
+    # base, under a run id of its own: the first red's mark was taken for
+    # another run and could not be measured, so it decides nothing here.
+    stubs = os.path.realpath(_harness.fixture_root("drive-derived-again-"))
+    bindir = _writer_stub(stubs)
+    again_log = os.path.join(stubs, "runs.jsonl")
+    _signal_next(M, u_root, _um, "--answer", "resume")
+    _c, r_block = _explain_of(M, u_root, _um, "P1.1")
+    _play_session(u_root, _run_argv(r_block) or [], bindir, again_log,
+                  WRITER_COSTS[1],
+                  edit={"src/f1.txt": "changed again by the writer\n"})
+    _c, second = _signal_next(M, u_root, _um)
+    again_rows, _again_base = _ledger_of(u_root)
+    runs = [r.get("runId") for r in again_rows
+            if r.get(_evio.VERDICT_SOURCE) != _evio.REUSED]
+    s_mark = _base_mark(u_root)
+    check("bdr4 a second unrunnable red in one start, under a new run id, goes "
+          "to the writer as no-base: the first red's unmeasurable mark decides "
+          "no other red, so the second is measured again, never stopped as "
+          "gate-red-base-unknown: %r / %r / %r" % (second, runs, s_mark),
+          "gate-red-writer" in second
+          and "gate-red-base-unknown" not in second
+          and len(set(runs)) >= 2 and s_mark.get("of") == runs[-1]
+          and s_mark.get("measurable") is False)
+
 
 def _base_trees(root):
     """The worktrees git has registered for `root` whose directory sits under
@@ -21171,6 +21196,107 @@ def _bi_reading_cases(check, M):
           and pending.get("session") == "s-writer"
           and pending.get("failing") == ["FAIL x"]
           and "resume" in text)
+
+    verbs = getattr(M, "SIGNAL_VERBS", {})
+    try:
+        shown = M.signal(dict(ctx, did=[], verbose=False), 0, said)
+    except Exception as exc:                                   # noqa: BLE001
+        shown = {"line": "raised %s: %s" % (type(exc).__name__, exc)}
+    check("bi12 the unknown stop signals ask, as red at base does: its options "
+          "spend a writer round or an attempt on a red nothing blames on the "
+          "task, so the owner answers it, never the orchestrator alone: %r"
+          % ((verbs.get("decide-gate-red-base-unknown"), shown.get("verb"),
+              shown.get("line")),),
+          verbs.get("decide-gate-red-base-unknown") == "ask"
+          and verbs.get("decide-gate-red-base") == "ask"
+          and shown.get("verb") == "ask"
+          and (" ask P1.1 " in str(shown.get("line"))))
+    _bi_claim_case(check, M)
+    _bi_unmeasurable_case(check, M)
+
+
+def _bi_unmeasurable_case(check, M):
+    """A mark whose base could not be measured at all is no mark to another
+    red, which is measured on its own; and THE TWIN, the over-fire direction:
+    a repeat of the red that mark was taken for is decided by it, with no
+    second measurement."""
+    def _read(run_id):
+        ctx, task, phase = _bi_world(M, "drive-bi-unmeasurable-")
+        state = {}
+        M._mark(state, M.BASE_MEASURED, task, {
+            "of": "r-red", "done": True, "measurable": False, "ran": True,
+            "reading": None, "verdict": None, "run": None, "atBase": [],
+            "introduced": [], "said": "no red step can be run again"})
+        row = dict(_bi_row(run_id), **{_evio.BASE_RED_KEY: {
+            "verdict": "no-base", "run": None, "head": "abc1234"}})
+        taken = []
+
+        def _take(c, ph, t, r, tree, keep, bound):
+            taken.append(r.get("runId"))
+            keep(ran=True, done=True, measurable=False, reading=None,
+                 unknowable=False, said="still unrunnable")
+            return {"reading": None, "said": "still unrunnable", "cut": None,
+                    "kept": None, "measurable": False}
+
+        real = (M.gate_row, M.take_base, M.gate_in_background)
+        M.gate_row = lambda c, t: row
+        M.take_base = _take
+        M.gate_in_background = lambda c, names: (False, "")
+        try:
+            got = M.base_reading_for(ctx, state, phase, task, _bi_text(run_id))
+        except Exception as exc:                               # noqa: BLE001
+            got = ("raised", "%s: %s" % (type(exc).__name__, exc), None)
+        finally:
+            M.gate_row, M.take_base, M.gate_in_background = real
+        return got, taken
+
+    other, other_taken = _read("r-second")
+    repeat, repeat_taken = _read("r-red")
+    check("bi14 an unmeasurable mark taken for one red is no mark to another: "
+          "the other red is measured on its own and, still unrunnable, is "
+          "never unknown; THE TWIN, a repeat of the red the mark was taken "
+          "for is decided by it with no second measurement: %r"
+          % ((other, other_taken, repeat, repeat_taken),),
+          other_taken == ["r-second"] and other[0] is None and other[2] is None
+          and repeat_taken == [] and repeat[0] is None and repeat[2] is None)
+
+
+def _bi_claim_case(check, M):
+    """Two `base-run` processes for one launch: the second starts while the
+    first has claimed the launch and not yet written that it ran - the window
+    the ran check alone left open - and refuses, naming the first, with
+    nothing measured; the first measures."""
+    ctx, task, phase = _bi_world(M, "drive-bi-claim-")
+    _bi_launch(M, ctx, task)
+    row = _bi_row()
+    measured, inner = [], []
+
+    def _take(c, ph, t, r, tree, keep, bound):
+        measured.append(r.get("runId"))
+        if len(measured) == 1:
+            inner.append(M.base_run(dict(ctx, did=[]), task["id"]))
+        _bi_finish(keep)
+        return {"reading": dict(_BI_READING), "said": "measured", "cut": None,
+                "kept": None, "measurable": True}
+
+    real = (M.take_base, M.load_phase, M._evio.read_rows)
+    M.take_base = _take
+    M.load_phase = lambda c: ({"phases": [phase]}, phase)
+    M._evio.read_rows = lambda *a, **k: {"rows": [row]}
+    try:
+        first = M.base_run(dict(ctx, did=[]), task["id"])
+    except Exception as exc:                                   # noqa: BLE001
+        first = ("raised", "%s: %s" % (type(exc).__name__, exc))
+    finally:
+        M.take_base, M.load_phase, M._evio.read_rows = real
+    second = inner[0] if inner else (None, "")
+    check("bi13 a second base-run for a launch the first has claimed refuses "
+          "with a usage error naming the running one and measures nothing; "
+          "THE TWIN, the first measures once and answers: %r"
+          % ((first, second, measured),),
+          measured == ["r-red"] and first[0] == M.E_OK
+          and second[0] == M.E_USAGE
+          and ("pid %d" % (os.getpid(),)) in str(second[1]))
 
 
 def _next_text(M, root, mpath):

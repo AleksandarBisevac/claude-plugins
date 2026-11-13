@@ -1,0 +1,39 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_run_test_gate.py tests/test_drive_without_model.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-13T16:55:21Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_run_test_gate.py tests/test_drive_without_model.py` in a throwaway tree at HEAD exited 1 with 6 of 624 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bdr4 (house FAIL), bi12 (house FAIL), bi13 (house FAIL), bi14 (house FAIL), bod5 (house FAIL), bod6 (house FAIL): SELFTEST FAILED: 622/624 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: SIGNAL_VERBS decide-gate-red-base-unknown 'judge' -> 'ask'. New unmeasurable(held) and unmeasurable_elsewhere(held, runs). base_measure_due(state, task, row, runs) now treats an unmeasurable mark taken for another red run as no mark. base_reading_for folds the background record first (base_mark), computes runs = red_runs once, and returns the row's own reading when the mark is unmeasurable and was taken elsewhere. base_run claims the launch's record with O_CREAT|O_EXCL on '<record>.claim' (claim_launch, BASE_CLAIM_SUFFIX) before the ran check; a second run gets E_USAGE naming 'pid N' and measures nothing. drop_progress also removes the claim, and claim_only=True releases it when the ran check refuses. run-test-gate.py _derived_at_base maps each named failing suite to the one path the step name lists via _ev.resolve_named (listed_by path by path). If any suite matches none, or several, the step goes in notRun with the reason. Docs: execute-task.md step 3, orchestrator.md header, PLUGIN-BUILD-GUIDE.md (drive-phase base paragraphs and the --base-of paragraph). Gate: sweep exit 0, '3/3 files ok, 1651 cases'. Stage runs: bi-block 14/14, bdr-block passing, bod-block 624/624. ruff exit 0, vermin 3.8 exit 0. house_style_violations, prose_number_claims and doc_prose_numbers report nothing for the changed files. Dependants: drive-without-model.py and tests/test_drive_without_model.py are still correct. auto_step_action sends every verb other than done/stop/dispatch/wait to needs-model, so judge and ask behave the same under auto (72/72 cases). The other importers of drive-phase.py (_worktrees.py, test__filed_returns, test__invariants, test__worktrees, test_audit_status, test_commit_task_work, test_detect_plan_skip) are still correct: base_measure_due has one caller, which was updated, and drop_progress keeps its old call shape. run-test-gate importers (drive-phase, full-gate, test__evidence_io, test__panel_composition, test__proc_group, test_audit_lookup, test_commit_task_work, test_derive_phase_gate) are still correct: base_commands keeps its signature, and only the derived spelling changed. orchestrator.md, execute-task.md and PLUGIN-BUILD-GUIDE.md were changed as listed above. README.md does not name gate-red-base-unknown (grep). No test pins the doc wording I changed (grep of tests/tools/.claude/hooks).",
+    "descriptive": "The unknown-base stop now goes to the owner as an ask. A base that could not be run no longer decides a later red, which is measured again. A derived step's base command uses the path in the step's name. Only one base-run process can claim a launch."
+  },
+  "testsAdded": [
+    "bi12 the unknown stop signals ask (table and signal() line)",
+    "bdr4 end to end: a second unrunnable red in one start, under a new run id, goes to gate-red-writer and the mark is retaken for it",
+    "bi13 a second base-run for a claimed launch refuses with E_USAGE naming the pid and measures nothing; the first measures once",
+    "bi14 unit pair: an unmeasurable mark is no mark to another red (measured again), and a repeat of its own red is decided with no second measurement (the over-fire twin)",
+    "bod5 a runner-relative failing suite is spelled at the base as the step name's repository-root path",
+    "bod6 twin: a failing suite the name does not list leaves the step in notRun with a reason naming it"
+  ],
+  "casesAdded": [
+    [
+      "bi12",
+      "bdr4",
+      "bi13",
+      "bi14"
+    ],
+    [
+      "bod5",
+      "bod6"
+    ]
+  ],
+  "claims": "claims:\n1 drive-phase.py SIGNAL_VERBS entry; unmeasurable_elsewhere used in base_measure_due and base_reading_for; base_run's claim_launch call before the ran check; run-test-gate.py _derived_at_base resolve_named loop. Doc sentences rewritten to say only what these lines do.\n2 M1-M5 in /tmp/p1614probe/probe.py: each mutation asserted landed, its case went red (bi12; bdr4+bi14; bod5+bod6; bi13; bi14 for the over-fire), and the file was restored in finally with __pycache__ purged. The over-fire of M4 (claim always refuses) is held by bi13's twin, first == E_OK.\n3 grep -n 'gate-red-base-unknown' over the tree, docs/audit excluded: 3 doc hits (PLUGIN-BUILD-GUIDE, execute-task, orchestrator), all updated; the code hits are the step/decision tables and the decision site, unchanged except the verb; the test hits are existing cases, still green. grep 'red_runs(text, row)' in base_reading_for: 2 hits, both replaced by runs. The rest of the class (another site spelling a runner-printed path): none in base_commands; other readers of failingSuites already go through resolve_named (its docstring lists them), left as they are.\n4 rule 'the owner answers the unknown stop': the mechanism is the pipeline commands' routing of `ask` to AskUserQuestion (commands/*.md). Each prose sentence now says nothing in the drive checks who answered.\n5 n/a - no property measured or recorded\n6 n/a - no guard; the claim reads the filesystem's exclusive create, not text\n7 n/a - no number written into prose; case ranges in the guide replaced by 'the bi/bdr/bod cases'",
+  "stamp": "audit-stamp: {\"content\":\"sha256:3ed3c2dec47ac6396b93affa8e064a02a7ae2c1b97177bec6fbd3dfaa39dcbdd\",\"dirtyDigest\":\"sha256:c48eaffb7cf8a2beab64b570b45e4dde93233c43ffa0242004091e452d9e2413\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"b0b792748c1ba506\",\"plugins/audit/reference/execute-task.md\":\"ba146d14c9c285d7\",\"plugins/audit/reference/orchestrator.md\":\"fe8fe2208261544a\",\"plugins/audit/scripts/governance/drive-phase.py\":\"4845e01e69af1d28\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"8e77bc1804041f73\",\"tests/test_drive_phase.py\":\"fbae2895b3b3dfc4\",\"tests/test_run_test_gate.py\":\"1e7741b88ecab087\"},\"head\":\"35355d1f\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/reference/orchestrator.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"tests/test_drive_phase.py\",\"tests/test_drive_without_model.py\",\"tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:d3a7b32810ea5ab6ea73e0968735007bd56fd0284e8db243706918213c696475\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

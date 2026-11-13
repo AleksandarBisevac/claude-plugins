@@ -271,19 +271,26 @@ verb writes and refuses, and what the run commands leave behind, is
         `drive-phase.py base-run` in the background, which writes only a record of
         its own that `next` folds into the start's mark), then `wait-base`, and the
         red's verdict is read back from its recorded row as a background gate's is;
-        one measured fast runs inline. A derived step's red is measured too: its
-        failing suites are run again at the base, spelled as the gate spelled them.
+        one measured fast runs inline. Of two `base-run`s started for one launch,
+        the second refuses, measuring nothing: each claims the launch's record by an
+        exclusive create first. A derived step's red is measured too: its failing
+        suites are run again at the base, spelled as the gate spelled them, by the
+        paths the step's name lists.
         A red whose base commit fails every case it fails stops as
         `gate-red-base`, with no session sent. A red no step of which can be run
         again at the base - its runner named no failing suite, or nothing can spell
         its suites - has no base reading and goes to the writer like any such red;
-        that is not the unknown stop. A base nobody can
+        that is not the unknown stop, and such a base decides no later red of the
+        start, which is measured on its own. A base nobody can
         know - the base run left no reading, failed or was killed, or its reading
         was taken for another red run - stops as `gate-red-base-unknown`, with no
         session sent and no round spent: `measure-base` measures the base again,
         `rerun` the gate, and the owner may commit over it with
         `commit-task-work.py --override-verdict`; `resume` and `retry` are offered
-        for a base that can never be measured and never recommended. Any other red
+        for a base that can never be measured and never recommended. Its signal is
+        `ask` (`SIGNAL_VERBS`), which every pipeline command puts to the human
+        (AskUserQuestion) before its `next:`; nothing in the drive checks who
+        answered. Any other red
         goes back to the recorded session (`gate-red-writer`) while a resume round
         is left; with no recorded session, or past the last round, it is the plain
         `gate-red`.

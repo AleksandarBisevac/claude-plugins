@@ -16,7 +16,7 @@ A headless role run: `run-agent-session.py`; under `executor.writerModel` each w
 per-task reviewer runs through it (the drive files the reviewer's return), and a red its base
 does not share resumes the session up to `MAX_RESUME_ROUNDS` times. A gate or base
 unmeasured or past the Bash bound is a background step (`dispatch-gate`, `dispatch-base`); an
-unknowable base is `gate-red-base-unknown` (execute-task.md step 3).
+unknowable base is `gate-red-base-unknown`, an `ask` (execute-task.md).
 
 ## At a glance
 

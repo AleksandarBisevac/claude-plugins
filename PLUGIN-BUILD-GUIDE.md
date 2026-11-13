@@ -4651,11 +4651,14 @@ recorded run, by the names and commands its row keeps, run in `--tree` (a checko
 commit) with no task id, recorded under `_evidence_io.BASE_SCOPE` with no pointer, and the run read
 against its base again printed (`--json` for the drive). A derived step's row keeps only a digest
 of its command, so its command is spelled again for the failing suites the step names, by the
-derivation that spelled it on the task's run (`base_commands`, `_affected_tests.entries_for`). A
-red step that cannot run again - its runner named no failing suite, the plan has no path-scoped
-spelling, a declared step kept as a digest - is named in the answer's `notRun` with its reason,
+derivation that spelled it on the task's run (`base_commands`, `_affected_tests.entries_for`) - each
+suite the runner named spelled as the path the step's name lists, which it matches through
+`_evidence_io.resolve_named`, since a runner may print a suite relative to its own directory. A
+red step that cannot run again - its runner named no failing suite, a suite it named matches no
+one path its name lists, the plan has no path-scoped spelling, a declared step kept as a digest -
+is named in the answer's `notRun` with its reason,
 and when that is every red step nothing runs and the answer still prints, with an empty `steps`.
-`bc1`-`bc4` and `be1`-`be5` drive the comparison; `bod1`-`bod4` the derived step's base; the
+`bc1`-`bc4` and `be1`-`be5` drive the comparison; the `bod` cases the derived step's base; the
 drive's `bm`, `bdr` and `bt` cases drive `--base-of`.
 
 ### `plugins/audit/scripts/governance/record-outside-run.py`
@@ -4916,12 +4919,16 @@ script's own `base-run` verb, and `wait-base` holds until that run has left its 
 reading is `run-test-gate.py`'s own `base_red` over the base run, which no recorded row carries,
 so the run keeps it in a record of its own, one per launch beside the drive's state
 (`base_progress_path`), which `next` folds into the start's mark each time it reads the mark
-(`base_mark`). Once the run has ended, the red's verdict is read back from the row it was launched
+(`base_mark`). A `base-run` claims its launch's record before it reads whether the launch ran - an
+exclusive create of a file beside it (`claim_launch`) - so of two started for one launch, both of
+which would find the record not yet saying it ran, the second refuses with a usage error naming
+the first's pid and measures nothing. Once the run has ended, the red's verdict is read back from the row it was launched
 for, through the same `read_back` the gate's background row goes through: a row no repeat may copy
 stands as recorded, and no rerun's `--no-reuse` is added; the dispatch and the wait are printed by the same builders as the gate's
 (`background_dispatch`, `background_wait`). The `bg`, `gc`, `gs`, `ge` and `ga` cases in
 `tests/test_drive_phase.py` drive each arm against the real `run-test-gate.py`, `bq1`-`bq5` the
-base's, and `bi1`-`bi11` the base run and `next` interleaved in a chosen order.
+base's, and the `bi` cases the base run and `next` interleaved in a chosen order (`bi13` the
+claim).
 
 **Deciding on facts: named planners, and no single `decide()`.** The drive's planners sit
 under `# --- deciding a step on facts ---`: `_advance_plan`
@@ -4991,15 +4998,22 @@ was killed, or its reading names no base run (`base_behind`) - is
 `gate-red-base-unknown`, which sends no writer session either and offers `rerun`, `measure-base`
 (the start's mark dropped, so the base is measured again) and `block`, names the owner's
 `commit-task-work.py --override-verdict` route as `gate-red-base` does, and offers `resume` and
-`retry` for a base that can never be measured, which its rule says are never recommended; a later
-red of the same start whose own row finds no base run stops there too. A mark's reading decides
+`retry` for a base that can never be measured, which its rule says are never recommended. Its
+signal is `ask`, as `gate-red-base`'s is (`SIGNAL_VERBS`): two of its options spend a writer
+round or an attempt on a red nothing blames on the task, so every pipeline command puts it to the
+human before its `next:` - the commands' routing of `ask`; nothing in the drive checks who answered
+(`bi12` holds the verb). A later red of the same start whose own row finds no base run stops
+there too, unless the start's mark is one whose base could not be measured at all (`measurable`
+False): that mark is no mark to any red but its own (`unmeasurable_elsewhere`), so the later red is
+measured on its own and goes to the writer as no-base while it still cannot be run (`bdr4`,
+`bi14`). A mark's reading decides
 only the red run it was measured for or a repeat of it, and a mark an earlier version wrote for
 a cut base (no `ran`, no `background`, no base run named) reads as unknown. A red run HEAD has since left keeps reading
 `no-base` and goes to the writer as before, and so does a red whose steps `--base-of` answered it
 cannot run again at all (`base_unrunnable`: every red step in `notRun`): no later measurement could
 answer either, so neither is the unknown stop, which stays for a base run that was started and
-then cut, killed, failed or left no row. `bq2` and `bq3` drive it, `bdr1`-`bdr3` a derived step's
-red. A recorded gate run while sibling executors edit the same tree measures their
+then cut, killed, failed or left no row. `bq2` and `bq3` drive it, the `bdr` cases a derived
+step's red. A recorded gate run while sibling executors edit the same tree measures their
 unfinished work, so the driver never has two tasks between dispatch and gate at once.
 
 **What the driver keeps.** `stateDir/drive/<phaseId>.json` holds what no verb records: which
