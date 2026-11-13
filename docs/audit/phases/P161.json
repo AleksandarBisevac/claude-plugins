@@ -333,7 +333,39 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-13T16:37:52Z",
+          "text": "quotes run-test-gate.py's 'the work under test declares no files' wording; the task changes only the derived base command's path spelling",
+          "waives": "tools/check-example-ledgers.py"
+        },
+        {
+          "at": "2026-11-13T16:37:52Z",
+          "text": "quotes orchestrator.md's git-push rule; the task edits only the base-measurement sentence",
+          "waives": ".claude/hooks/guard-uncommitted.py"
+        },
+        {
+          "at": "2026-11-13T16:37:52Z",
+          "text": "quotes orchestrator.md's Reporting heading; the task edits only the base-measurement sentence",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-13T16:37:52Z",
+          "text": "quotes PLUGIN-BUILD-GUIDE.md's 'related listing' passage; the task edits only the base-measurement paragraphs",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-13T16:37:52Z",
+          "text": "quotes PLUGIN-BUILD-GUIDE.md's doctor-trail passage; the task edits only the base-measurement paragraphs",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-13T16:37:52Z",
+          "text": "reads PLUGIN-BUILD-GUIDE.md's generated module map; the task adds no module",
+          "waives": "tools/lints/_deps.py"
+        }
+      ]
     }
   ],
   "request": "Fix the drive's base measurement: a base run that outlives the foreground bound must be measured in the background and decided from its row, and a base that cannot be known must stop the drive rather than resume the writer.",
