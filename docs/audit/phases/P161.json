@@ -22,10 +22,11 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [],
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "The base of a red gate is measured as a background gate step decided from its recorded row; an unknowable base stops with its own decision; base-run claims ride _locks under one kernel directory mutex with an explicit refused-errno set; task reviews R1-R7 closed via P161.2-P161.9, last review found one cosmetic low.",
   "tasks": [
     {
       "id": "P161.1",
@@ -792,7 +793,7 @@
     {
       "id": "P161.9-toy",
       "title": "Only a filesystem that refuses kernel locks skips the mutex, and the shared errno reading costs the hook path nothing",
-      "status": "in_progress",
+      "status": "done",
       "description": "A verification review of f8d8dc03 found the following.\n\nMED 1. plugins/audit/scripts/governance/_locks.py kernel_lock_refusal (near line 991, used near 1057-1081): every errno that is not a \"held\" errno is read as LOCK_REFUSED, so the mutex is skipped for ANY lock-call error, not only a filesystem that refuses kernel locks. Example: Linux NFS emulates flock with byte-range locks, which need a write-capable descriptor. A second OS user's read-only .mutex fallback gets EBADF and then runs takeovers and releases without the mutex, while the first user's takers hold it. That reopens the race between them. Transient EIO/EINVAL, or a later poll's ENOLCK during a wait, does the same. Required: only an explicit set (ENOLCK, EOPNOTSUPP, ENOTSUP, ENOSYS, and EINVAL only where it means \"not supported\" on msvcrt) reads as refused-by-filesystem. Every other errno raises as before into _claim's error answer. EBADF on a read-only descriptor raises with a message naming the descriptor mode as the cause. A refusal that arrives after the mutex was once seen held during the same wait is an error, never a skip. The ledger keeps its \"anything not held is lock-free\" behaviour by asking the shared reading for \"held\", not for \"refused\".\n\nLOW 2. plugins/audit/scripts/usage/usage_ledger.py (near line 144) now imports the whole of _locks for one function, and hooks/meter-usage.py loads usage_ledger on every hook event it is registered for. Move the shared errno reading (the held set and the classification) into _output.py, the anchor both import already, or another module already on both paths. Do not add a new module. Neither _locks nor usage_ledger keeps its own copy. Check python3 tools/bench-hooks.py --gate.\n\nCases, red-first: EBADF raises (no skip) and names the mode; EIO raises; a refusal after a held answer within one wait is an error; ENOLCK/EOPNOTSUPP still degrade; and usage_ledger imports no _locks (assert on sys.modules after a fresh import in a subprocess). Mutate the fix, assert the mutation landed, see the case go red, and restore in the same command. Purge __pycache__. No F/P/BUG ids in comments. The docs sentence on the degraded mode names the explicit set.",
       "files": [
         "plugins/audit/scripts/governance/_locks.py",
@@ -823,14 +824,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "74deba32daea",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "MED 1: _output.py gains a section `what a refused kernel lock call means`: LOCK_HELD/LOCK_REFUSED/LOCK_FAILED, LOCK_HELD_ERRNOS (moved from _locks), LOCK_REFUSED_ERRNOS = {ENOLCK, EOPNOTSUPP, ENOTSUP, ENOSYS} where defined, and kernel_lock_refusal(exc, msvcrt_call=False), which reads EINVAL as refused only when msvcrt_call is set; everything else is LOCK_FAILED. _locks.py keeps only LOCK_TAKEN; _try_lock passes msvcrt_call=(fcntl is None); _dir_mutex tracks seen_held, degrades only on LOCK_REFUSED with no held answer earlier in the same wait, and otherwise raises _lock_call_failed(mutex, mode, exc, seen_held), which keeps the call's errno and names the descriptor mode (read-only EBADF names the NFS byte-range cause; the case where the mutex was seen held says so). _open_mutex now returns (fd, mode). _claim/_take_over/_remove_claim catch that OSError into the error answer as before (sharing_denied is EACCES only, and EACCES is always read as held, so it never reaches the raise). LOW 2: usage_ledger no longer imports _locks; lock_month asks _output.kernel_lock_refusal(exc, msvcrt_call=msvcrt is not None) != LOCK_HELD, so anything not held, a failed call included, stays lock-free as before. Docs: SECURITY.md and PLUGIN-BUILD-GUIDE.md now name the explicit set and the error cases, and the guide's module map no longer shows the usage_ledger -> _locks edge. Tests: test__locks.py adds mx18-mx22 (helpers _SequencedFlock, _RefusingMsvcrt, _mx_enter, _mx_claim_with, _mx_errno_cases); test_usage_ledger.py rewrites lf7 against _output (EIO added: expected unavailable; the swapped reading is now always-held -> all None) and adds lf8 (a fresh interpreter imports usage_ledger; sys.modules holds _output and usage_ledger and no _locks). Results: test__locks 189 cases, test_usage_ledger 140 cases, test__output 91 cases, all ok; a 46-file sweep (every tests/test_*.py naming _locks or usage_ledger, plus test_audit_usage, test__output_lints, test__deps, test__output, tools/measure-context.py) exit 0, 46/46 files ok; bench-hooks --gate exit 0, measured once on 3.14.7 only (3.8-3.13 not measured, as the tool prints). Not verified: that the Windows CRT reports an unsupported volume lock as EINVAL. That is the task's premise and the CRT's default _dosmaperr mapping, and it was not run on Windows. Dependants: _evidence_io, _invariants, _proc_group, audit-lock, drive-phase, stamp-verification, _proposals and audit-task still hold, because none of them names kernel_lock_refusal, LOCK_HELD, LOCK_REFUSED or _HELD_ERRNOS (grep across plugins/tools/.claude/hooks finds no hits outside the declared files) and _claim's answer shape is unchanged. tests/test_audit_lock.py, test_audit_task.py and test_run_test_gate.py are green in the sweep. usage_ledger's dependants (meter-usage hook, _invariants, commit-task-work, _panel_page, _panel_viewer, _usage_load, audit-status, audit-usage) are green in the sweep; the ledger's public names are unchanged and it now loads one module fewer. _output's dependants: additions only, no name changed, test__output_lints, test__deps and test__output green. SECURITY.md and PLUGIN-BUILD-GUIDE.md readers: changed prose only, and the prose lints are green. No file outside the declared set was edited; the docs/audit journal and phase-file changes in the tree are the orchestrator's.",
+        "descriptive": "Only ENOLCK/EOPNOTSUPP/ENOTSUP/ENOSYS (and msvcrt EINVAL) skip the claim mutex now; every other lock errno, and a refusal after a held answer, is an error naming the descriptor mode, and the ledger reads the shared errno set from _output without loading _locks on the hook path."
       },
       "startedAt": "2026-11-13T20:35:34Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-13T20:58:40Z",
+      "verifiedBy": [
+        "mx18: EBADF on a read-only mutex descriptor raises, names read-only, and _claim is the error answer with no claim written",
+        "mx19: EIO, read-write EBADF (naming read-write) and flock EINVAL each raise; _claim is the error answer with no mutex sentence and no claim",
+        "mx20: EWOULDBLOCK, EWOULDBLOCK, then ENOLCK in one wait raises naming the held mutex instead of skipping",
+        "mx21: ENOLCK/EOPNOTSUPP/ENOTSUP/ENOSYS from flock and EINVAL from msvcrt still degrade with the sentence; msvcrt EIO raises",
+        "mx22: the anchor's classification table, and _locks keeps no copy of the reading",
+        "lf7 (rewritten): the ledger follows _output's reading and asks it for held alone (EIO is unavailable)",
+        "lf8: a fresh import of usage_ledger loads no _locks"
+      ],
       "notes": [
         {
           "at": "2026-11-13T20:35:32Z",
@@ -893,16 +902,28 @@
         "runId": "2026-11-13T20:58:37Z.5e3ac8",
         "status": "passed",
         "at": "2026-11-13T20:58:37Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "74deba32daea",
+        "at": "2026-11-13T20:58:40Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-13T20:47:38Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__locks.py tests/test_usage_ledger.py tests/test__output.py` in a throwaway tree at HEAD exited 1 with 4 of 115 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - mx18 (house FAIL), mx19 (house FAIL), mx20 (house FAIL), mx21 (house FAIL): SELFTEST FAILED: 114/115 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
   "request": "Fix the drive's base measurement: a base run that outlives the foreground bound must be measured in the background and decided from its row, and a base that cannot be known must stop the drive rather than resume the writer.",
   "openChoices": [],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "988f3478-fc74-4a1e-a62b-7522b404c792",
-    "branch": "audit/p161-the-base-of-a-red-gate-is-meas",
-    "at": "2026-11-13T07:57:43Z"
-  },
-  "startedAt": "2026-11-13T07:57:43Z"
+  "startedAt": "2026-11-13T07:57:43Z",
+  "testEvidence": {
+    "runId": "2026-11-13T21:22:11Z.0d527c",
+    "status": "passed",
+    "at": "2026-11-13T21:22:11Z"
+  }
 }
