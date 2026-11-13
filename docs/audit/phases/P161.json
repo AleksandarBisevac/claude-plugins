@@ -402,7 +402,14 @@
         "tests/test_drive_phase.py",
         "PLUGIN-BUILD-GUIDE.md",
         "plugins/audit/scripts/governance/_locks.py",
-        "tests/test__locks.py"
+        "tests/test__locks.py",
+        "SECURITY.md",
+        "plugins/audit/commands/worktree.md",
+        "plugins/audit/scripts/governance/audit-lock.py",
+        "plugins/audit/reference/orchestrator.md",
+        "tests/test__output_lints.py",
+        "plugins/audit/scripts/usage/audit-usage.py",
+        "tests/test_audit_usage.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -440,6 +447,10 @@
         {
           "at": "2026-11-13T17:36:40Z",
           "text": "Redirect, which supersedes the narrow fix in the description. Do not add a pid-alive check to claim_launch. Coordinating the background base run with an ad-hoc mechanism of its own is now a class that has recurred inside this phase: lost state writes, then a hand-rolled .claim with no liveness check. Fix the class with the repository's one primitive, plugins/audit/scripts/governance/_locks.py. Make the base-run claim a _locks lock (acquire/release, held_by_us) with one owner, liveness judged by _locks.liveness/judge (a refused ps stays 'unverified' and never counts as dead), and a dead holder taken over by _locks' own takeover rule. Any other base-run/next exclusion added since P161.1 that is also hand-rolled becomes a _locks lock too. A change in _locks.py itself is in scope if it is needed. Add an invariant case that fails if drive-phase.py creates a claim or lock file outside _locks (an AST or text scan of drive-phase.py's source for O_EXCL/.claim/lock-file creation outside _locks calls), red-first. The acceptance cases from the description still hold: a holder killed before ran is taken over and the base is measured, a live holder refuses a second run, and an unreadable claim is handled by _locks' rule."
+        },
+        {
+          "at": "2026-11-13T18:00:57Z",
+          "text": "Scope widened for the lock-name lists and lk4 (the writer's report). Also in scope: plugins/audit/scripts/usage/audit-usage.py acquires E_STALE and then calls again with takeover=True, which judges twice and can displace a live run that took the name in between. Use the new reclaim=True single call, fix the docstring, and add a red-first case in tests/test_audit_usage.py."
         }
       ],
       "reviewPerTask": "signals"

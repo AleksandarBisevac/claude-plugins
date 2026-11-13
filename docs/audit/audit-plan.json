@@ -2088,7 +2088,8 @@
       "P142.1",
       "P159.2",
       "P159.4-pue",
-      "P159.5-pue"
+      "P159.5-pue",
+      "P161.5-toy"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -2963,7 +2964,8 @@
       "P131.2",
       "P155.41-gfj",
       "P155.48-gfj",
-      "P156.3"
+      "P156.3",
+      "P161.5-toy"
     ],
     "plugins/audit/hooks/_config.py": [
       "P1.1",
@@ -3596,7 +3598,8 @@
       "P157.8-mwz",
       "P159.1",
       "P161.1",
-      "P161.4-toy"
+      "P161.4-toy",
+      "P161.5-toy"
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
@@ -4533,7 +4536,8 @@
       "P123.65-64p",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P161.5-toy"
     ],
     "plugins/audit/scripts/governance/commit-audit-state.py": [
       "P28.2",
@@ -6362,7 +6366,8 @@
       "P130.8",
       "P130.12-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P161.5-toy"
     ],
     "plugins/audit/scripts/usage/usage_ledger.py": [
       "P14.1",
@@ -12831,7 +12836,8 @@
       "P156.20-3st"
     ],
     "tests/test_audit_usage.py": [
-      "P131.1"
+      "P131.1",
+      "P161.5-toy"
     ],
     "tests/test_audit_version.py": [
       "P131.1"
@@ -13347,7 +13353,8 @@
       "P148.12-xpz",
       "P152.10",
       "P155.17-gfj",
-      "P155.30-gfj"
+      "P155.30-gfj",
+      "P161.5-toy"
     ],
     "tests/test__ui_theme_lints.py": [
       "P131.2"
