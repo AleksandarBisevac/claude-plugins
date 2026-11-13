@@ -4415,7 +4415,8 @@
       "P143.7-z9j",
       "P153.1",
       "P156.12-3st",
-      "P157.1"
+      "P157.1",
+      "P161.5-toy"
     ],
     "plugins/audit/scripts/governance/_policy.py": [
       "P15.4",
@@ -12398,7 +12399,8 @@
       "P153.1",
       "P153.2",
       "P156.12-3st",
-      "P157.1"
+      "P157.1",
+      "P161.5-toy"
     ],
     "tests/test__machine_paths.py": [
       "P131.1",
