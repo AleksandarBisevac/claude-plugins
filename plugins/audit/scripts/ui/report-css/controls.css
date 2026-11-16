@@ -19,18 +19,24 @@
    offset it computed from --sticky-2 — no sentinel element, no second observer. */
 .sectools.stuck{box-shadow:var(--shadow-sm)}
 @media print{.sectools{display:none!important}}
-/* The pinned bar holds one line at a laptop width, and the two controls whose
-   width is elastic by nature are the ones that give way: the search box and
-   the count. A wrapping flex line is filled by each item's BASIS before
-   anything shrinks, so at a 15rem search basis and a count as wide as its
-   sentence, the count moved onto a line of its own at 1512px once the
-   phase-status chips or the Sort select took more of the row - a whole line of
-   pinned bar for one sentence (nw1 in tools/check-report-interactive.mjs
-   measures the bar with and without the count). Placed at small bases, both
-   grow back into what the line has left; short of room, the count wraps its own
-   words onto a second line of text, and at this line height two of them still
-   fit in the row the search box sets. */
-#audit-count{flex:1 1 6rem;min-width:0;line-height:1.25}
+/* The count never breaks its own words. Given a small basis and leave to wrap,
+   it held the bar to one flex line by taking two or three lines of text inside
+   it - the bar still grew, and a check that measured the bar's lines could not
+   see it. Unbroken, it is one line of text at its natural width, and the flex
+   line it lands on is the one that has room for all of it; what keeps that
+   short is that the view's name is not drawn (the .vh below). lm3 and lm4 in
+   tools/check-report-interactive.mjs read the count's lines off its text, and
+   the bar's lines against what its controls need, at every size and state. */
+#audit-count{flex:0 0 auto;white-space:nowrap}
+/* Said to a screen reader, drawn to nobody: the count's view name, which the
+   View select beside it already shows. The panel's base-controls.css carries
+   the same rule under the same name; the two are a pair until the surfaces
+   share a stylesheet part. */
+.vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;
+  overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+/* The search box gives way first: a wrapping flex line is filled by each item's
+   BASIS before anything shrinks, so a 15rem basis pushed the rest of the bar's
+   controls onto a line of their own at a laptop width. */
 #audit-q{flex:1 1 9rem;min-width:8rem;max-width:15rem;padding:.5rem .75rem;font:inherit;color:var(--text);
   background:var(--bg);border:1px solid var(--border);border-radius:var(--pill);
   transition:border-color var(--dur),box-shadow var(--dur)}
@@ -86,7 +92,7 @@
    toggle handler in page-state.js reads this back). The gap is the smallest
    step, so a disclosure inside the STUCK bar - whose top sits the bar's padding
    below --sticky-2 - already counts as on screen and the page never moves. */
-.fdetails{position:relative;scroll-margin-top:calc(var(--sticky-2) + var(--sp-0))}
+.fdetails{scroll-margin-top:calc(var(--sticky-2) + var(--sp-0))}
 .fdetails>summary{cursor:pointer;font:inherit;font-size:.82rem;line-height:1;
   display:inline-flex;align-items:center;gap:.4em;padding:.5rem .75rem;
   border-radius:var(--pill);border:1px solid var(--field-border);background:var(--surface);
@@ -104,9 +110,14 @@
    hides an active filter behind a fold is how a reader concludes the report is
    missing rows; the summary has to say that something is on. */
 .fdetails .fcount{font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
-/* Hung from its control's RIGHT edge, because this control sits near the right of
-   the bar: anchored left, a panel this wide ran off the side of the viewport and
-   took its last column with it.
+/* Hung from the BAR's right edge, under the bar. Anchored left, a panel this wide
+   ran off the side of the viewport and took its last column with it; hung from
+   its own control's right edge it did the same thing the other way whenever the
+   control wrapped to the left of a second line: at 1024x768 in the Archived view
+   the panel spanned x=-26 to 486 (lm6 in tools/check-report-interactive.mjs).
+   `.fdetails` is therefore not positioned, so the panel's containing block is the
+   sticky `.sectools`, whose right edge is on the screen whichever line the
+   control lands on.
 
    The floor was 19rem, then 27rem — the width at which the date row (then
    "Worked between: [date] and [date]") stopped wrapping after its middle word

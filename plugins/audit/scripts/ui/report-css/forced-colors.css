@@ -62,13 +62,14 @@
      own filter bar it held more than half of a 390x844 screen over the rows
      before this rule. Held sideways the same phone is wider than 52rem and only
      390px tall, and the width query alone left the bar pinned there: three
-     quarters of the screen. ph1 in tools/check-report-interactive.mjs measures
-     both stacks by hit-test and prints their share of the screen. None of the
+     quarters of the screen. lm1 in tools/check-report-interactive.mjs measures
+     the stack by hit-test at every size it reads, both of these among them, and
+     prints its share of the screen. None of the
      bar's lines is what a reader needs while reading a table row; the strip
      (where am I) and the table's bar (what is filtering it) are, and they stay
      pinned. A viewport query rather than a container query because the cost is a
      share of the SCREEN, and the bar is as wide as the screen anyway. 32rem
-     (512px) tall sits above the phone held sideways that ph1 measures, and below
+     (512px) tall sits above the phone held sideways that lm1 measures, and below
      the viewport a 768px-tall laptop screen leaves under the browser's bars.
      measureStack() reads the bar's computed position and publishes a zero offset
      while it is static; the token below is the same answer for a page whose

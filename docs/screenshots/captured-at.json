@@ -2,13 +2,13 @@
   "note": "Written by tools/capture-screenshots.mjs. Each entry is the plugin version that was in the picture when that file was written, the hash of the bytes it was written as, the surface it is a picture of, and the digest of the page that surface sends at the moment of the shutter (_surface_digest.py). _refs.screenshot_capture_drift() compares all of them; an entry missing the digest is a finding, not silence.",
   "images": {
     "areas.png": {
-      "sha256": "96ed48d9194bec54876b4629b22ede183104bdc6b313b508dee079c3207b025f",
+      "sha256": "430b460cfabb8ddfd0a85ca0b4b8851c2225cc476e2846a9f12ec70d6b0dd670",
       "version": "3.8.0",
       "surface": "report",
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "e6d978b9bf37b4b5ddeb9678a60ee3800d7aee3195cc74f36046e8d4f9bb18bd"
+      "uiDigest": "504bc5d6550bc2a0dd43e8e64f60b3762d1dc4a74ee3611555c3cfc7e292b62f"
     },
     "authors.png": {
       "sha256": "e6875873000df220468c74f3e05308b28c895f897a77cb2640bc19a0bb937fc4",
@@ -17,61 +17,61 @@
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "e6d978b9bf37b4b5ddeb9678a60ee3800d7aee3195cc74f36046e8d4f9bb18bd"
+      "uiDigest": "504bc5d6550bc2a0dd43e8e64f60b3762d1dc4a74ee3611555c3cfc7e292b62f"
     },
     "dark.png": {
-      "sha256": "1cacebcddfd12e9a334fbd31900dc42f50244c8e9e051bed37c2af6de7aef767",
+      "sha256": "33320a7ad16f297dcf22d5274c60eeb92dcc6ee50814230a4f3bf948dcbc30af",
       "version": "3.8.0",
       "surface": "report",
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "e6d978b9bf37b4b5ddeb9678a60ee3800d7aee3195cc74f36046e8d4f9bb18bd"
+      "uiDigest": "504bc5d6550bc2a0dd43e8e64f60b3762d1dc4a74ee3611555c3cfc7e292b62f"
     },
     "expanded.png": {
-      "sha256": "f2084bdcfcac9d25d50c3edd2e5cf81fb0aa477c3e3de1c1fbf12773a29749fc",
+      "sha256": "8a9fd0d40d295dcffff4b5a97ce37156420da0278ef58ddecfcd07e1be8a47b2",
       "version": "3.8.0",
       "surface": "report",
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "e6d978b9bf37b4b5ddeb9678a60ee3800d7aee3195cc74f36046e8d4f9bb18bd"
+      "uiDigest": "504bc5d6550bc2a0dd43e8e64f60b3762d1dc4a74ee3611555c3cfc7e292b62f"
     },
     "filtered.png": {
-      "sha256": "192582de0c74e26b8094a9177679c70c1edc75d0702c9d3370bf2071d83219e8",
+      "sha256": "636b5bccf00af985085ecf6cc41a68a3fe64685f6e5baa187fa833c8c94ff731",
       "version": "3.8.0",
       "surface": "report",
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "e6d978b9bf37b4b5ddeb9678a60ee3800d7aee3195cc74f36046e8d4f9bb18bd"
+      "uiDigest": "504bc5d6550bc2a0dd43e8e64f60b3762d1dc4a74ee3611555c3cfc7e292b62f"
     },
     "filters.png": {
-      "sha256": "79fac6bd241e0a6a56c08825d199d340cfa461a5a0f56639ccee203b677697d9",
+      "sha256": "d369bb698fe1b2fd1ca83039cefd0f78194757b3d09aa6374a64b05fb16eae2f",
       "version": "3.8.0",
       "surface": "report",
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "e6d978b9bf37b4b5ddeb9678a60ee3800d7aee3195cc74f36046e8d4f9bb18bd"
+      "uiDigest": "504bc5d6550bc2a0dd43e8e64f60b3762d1dc4a74ee3611555c3cfc7e292b62f"
     },
     "mobile.png": {
-      "sha256": "7ce97cde82b639758dd3465e30eb16ffe58692fef76c3a1f595e2797f6d04bbe",
+      "sha256": "1e3f84a63bcf3294775152ca0ed89f3b843c97dddd85a9ceca7e0d18c233515b",
       "version": "3.8.0",
       "surface": "report",
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "e6d978b9bf37b4b5ddeb9678a60ee3800d7aee3195cc74f36046e8d4f9bb18bd"
+      "uiDigest": "504bc5d6550bc2a0dd43e8e64f60b3762d1dc4a74ee3611555c3cfc7e292b62f"
     },
     "overview.png": {
-      "sha256": "1798f82babe0dc8caced799af4c78d7fda8c2a3c54d2e32667abddc747302a5d",
+      "sha256": "aa054e6269df13ccdf6aeb6ed0669d6ba8d3f6be413ff51793dce701f6586cf2",
       "version": "3.8.0",
       "surface": "report",
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "e6d978b9bf37b4b5ddeb9678a60ee3800d7aee3195cc74f36046e8d4f9bb18bd"
+      "uiDigest": "504bc5d6550bc2a0dd43e8e64f60b3762d1dc4a74ee3611555c3cfc7e292b62f"
     },
     "panel-appearance.png": {
       "sha256": "2f9a033fe30681c7aa2aed6fe9cde4fe38605b0f811f522fd56d00788ecaabc6",

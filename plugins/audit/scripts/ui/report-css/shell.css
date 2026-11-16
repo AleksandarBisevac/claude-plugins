@@ -85,6 +85,21 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
 /* The scope beside a label: which section the control narrows. Part of the
    label, quieter than it, so the control's name still reads first. */
 .gfilters .gfscope{color:var(--muted);font-size:var(--t-label);font-weight:400}
+/* Between the tablet breakpoint and a small laptop the bar is still pinned and
+   the row is a line short of its labels: at an iPad's 834px the scopes pushed
+   the date range onto a second line, and the pinned bar from 122px to 160px.
+   So there each scope sits UNDER its label rather than beside it, in two short
+   lines inside the height the controls already set; it is still drawn and still
+   the first words of each control's accessible name. The selects give up the
+   width an author's address or a long area name would take, which the scopes
+   alone left a few pixels short of on the example. Above 64rem the row has
+   the room, and at 52rem and below the bar is not pinned. lm5 in
+   tools/check-report-interactive.mjs holds the pinned row to one line. */
+@media (52rem < width <= 64rem){
+  .gfilters .gf>.tbl{display:inline-flex;flex-direction:column;line-height:1.1}
+  .gfilters>.gfscope{max-width:6em;line-height:1.1}
+  .gfilters select{max-width:9rem}
+}
 .gfilters .btn{font-size:.72rem;padding:.3rem .55rem}
 .shell{display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr);gap:var(--shell-gap);
   max-width:96rem;margin:0 auto;padding:1.25rem 1.5rem 4rem;align-items:start}

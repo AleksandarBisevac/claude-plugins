@@ -506,8 +506,9 @@ def _topbar_block(manifest, meta, summary, usage, owners):
                 (' · <span class="stampv" title="The plugin version that '
                  'rendered this file">audit %s</span>' % e(ver)) if ver else "")]
     # The header filter row (C1/C2): author, area and the date range, inside
-    # the top bar, sticky above 52rem so they stay reachable however far the
-    # reader has scrolled; on a phone the bar scrolls with the page. Why the bar and not a new floating row is argued where the row
+    # the top bar, sticky so they stay reachable however far the reader has
+    # scrolled; on a narrow or a short screen the bar scrolls with the page
+    # (report-css/forced-colors.css). Why the bar and not a new floating row is argued where the row
     # is built (_report_html._global_filter_row). Inputs: authors by spend
     # (matching the Usage chips' order), tags first-seen (matching the panel
     # chips), and the date bounds from ALL data actually present — task

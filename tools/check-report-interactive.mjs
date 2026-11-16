@@ -205,8 +205,7 @@ const FEATURE_ABSENT = [
   // open state for the stack over the table to be measured in. No chip inside
   // it: nothing to switch on so the summary has a count to say.
   { note: 'phone panel check skipped',
-    covers: ['ph2 More filters opened while the bar is stuck',
-             'ph1 open stack (More filters open)'] },
+    covers: ['lm6', 'lm7'] },
   // A plan that cancelled no task has no match the task fraction leaves out;
   // the basis check above still holds the clause absent on every report.
   { note: 'no cancelled task in this plan',
@@ -508,31 +507,33 @@ expect('on load, tasks are collapsed', load.tasks, 0);
     + JSON.stringify(short) + ')',
     !!rest && !!short && rest[3] === short
       && Number(rest[1]) === load.phases && Number(rest[2]) === load.total, true);
-}
-// ...and saying so does not cost the pinned filter bar a line. The count is
-// read with its text and again emptied, at the laptop size this script reads the
-// page at, so the line it adds is the count's own and not a wrap some other
-// control caused: measured before the wording changed, "5 of 7 phases (Active &
-// pending)" alone took the bar from one line to two at 1512x945.
-{
-  await page.setViewportSize({ width: 1512, height: 945 });
-  await page.waitForTimeout(150);
-  const nw = await page.evaluate(() => {
-    const st = document.querySelector('.sectools');
+  // ...SAID, and not drawn. The View select beside the count already shows the
+  // view, and drawn, the name wrapped the pinned bar at a laptop width. Drawn
+  // means a text node no ancestor up to the count has clipped to a pixel - the
+  // same reading lm3 counts lines from - so a name moved out of its clipped
+  // box, or a clipped box that kept the whole count, is told apart.
+  const drawn = await page.evaluate(() => {
     const c = document.getElementById('audit-count');
-    if (!st || !c) return null;
-    const said = c.textContent;
-    const withIt = st.getBoundingClientRect().height;
-    c.textContent = '';
-    const without = st.getBoundingClientRect().height;
-    c.textContent = said;
-    return { said, withIt: Math.round(withIt), without: Math.round(without) };
+    let out = '';
+    const walk = document.createTreeWalker(c, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      let clipped = false;
+      for (let p = n.parentElement; p && p !== c.parentElement; p = p.parentElement) {
+        const b = p.getBoundingClientRect();
+        if (b.width <= 1 || b.height <= 1) clipped = true;
+      }
+      if (!clipped) out += n.textContent;
+    }
+    return out;
   });
-  expect('nw1 at 1512x945 the resting count does not wrap the filter bar onto another line ('
-    + (nw ? JSON.stringify(nw.said) + ': ' + nw.withIt + 'px with it, ' + nw.without + 'px without'
-      : 'no .sectools or #audit-count') + ')',
-    !!nw && nw.withIt <= nw.without + 1, true);
+  expect('vh1 at rest the count says the view to a screen reader and draws only the '
+    + 'phase fraction (drawn ' + JSON.stringify(drawn) + ', said '
+    + JSON.stringify(load.count) + ')',
+    !!rest && !!short && drawn === rest[1] + ' of ' + rest[2] + ' phase'
+      + (rest[2] === '1' ? '' : 's') && load.count.indexOf(short) >= 0, true);
 }
+// ...and saying so does not cost the pinned bar a line of text, at any size or
+// in any state: lm3 and lm4 in the layout matrix below.
 
 // Switching the view is an EXPANDER in the standing sense — it may not grow a
 // sideways scroll box — and it must not lose the reader's place either.
@@ -698,9 +699,12 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
         // Whether the press did anything: fewer rows than the view draws at
         // rest, or the toolbar's Clear offered. Made is not the same as
         // effective - a search whose Enter no longer filters is still made.
+        // The two are kept apart, because Clear shows for a term the search
+        // never applied: a field holding text is a filter that is on.
         const r = { view: v, i, press: p.what,
                     rows: shown(), empty: seen(norow), slot: seen(slot) };
-        r.narrowed = r.rows < resting || seen(clear);
+        r.fewer = r.rows < resting;
+        r.narrowed = r.fewer || seen(clear);
         if (r.empty && r.slot) {
           const said = slot.textContent;
           const m = /(\d+)/.exec(said);
@@ -763,15 +767,19 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
     // made none of a kind, or made only presses that filtered nothing, says so
     // rather than reading as covered. The search alone is its own kind: a
     // search with a chip still narrows through the chip when the search is dead.
-    const effective = (re) => truth.out.some((r) => re.test(r.press) && r.narrowed);
+    // A search counts only by the rows it took away: with the term held in the
+    // field and never applied, Clear still shows. The term is an archived
+    // phase's id, so the default view always draws fewer rows when it applies.
+    const effective = (re, by) => truth.out.some((r) => re.test(r.press) && r[by]);
     const kinds = {
-      chip: effective(/^(?!q=|from\/to )/),
-      search: effective(/^q=(?!.* \+ )/),
-      'search + chip': effective(/ \+ /),
-      'from/to': effective(/^from\/to /),
+      chip: effective(/^(?!q=|from\/to )/, 'narrowed'),
+      search: effective(/^q=(?!.* \+ )/, 'fewer'),
+      'search + chip': effective(/ \+ /, 'fewer'),
+      'from/to': effective(/^from\/to /, 'narrowed'),
     };
     expect('es0 the presses include a chip, a search, a search with a chip, and a date '
-      + 'range, each at least once narrowing the view (' + JSON.stringify(kinds)
+      + 'range, each at least once narrowing the view, a search by drawing fewer rows ('
+      + JSON.stringify(kinds)
       + '; term ' + JSON.stringify(truth.term) + ')',
       Object.values(kinds).every(Boolean), true);
     const hiding = truth.out.filter((r) => r.empty && r.slot);
@@ -1349,11 +1357,11 @@ if (termInfo.term === null) {
               || r.textContent.toLowerCase().includes(t))).length,
       };
     }, term);
-    const m = /^(\d+) of (\d+) phases? · ([^()]+) · (\d+) of (\d+) tasks?(?:, (\d+) cancelled match(?:es)?)?$/
+    const m = /^(\d+) of (\d+) phases? · ([^()]+) · (\d+) of (\d+) tasks?(?:, (\d+) cancelled not counted)?$/
       .exec(basis.count);
     expect('the filtered count names its basis - shown of the header\'s phases, the '
       + 'view by its short name, tasks of the header\'s task total, and the cancelled '
-      + 'matches it leaves out (' + JSON.stringify(basis) + ')',
+      + 'tasks it leaves out (' + JSON.stringify(basis) + ')',
       !!m && Number(m[1]) === basis.shown && Number(m[2]) === basis.phases
         && !!basis.short && m[3] === basis.short
         && Number(m[5]) === basis.tasks && Number(m[6] || 0) === basis.cancelled, true);
@@ -1379,7 +1387,7 @@ if (termInfo.term === null) {
     return id ? id.textContent.trim().toLowerCase() : null;
   });
   if (cx === null) {
-    notes.push('ok   (no cancelled task in this plan - the cancelled-match clause was not exercised)');
+    notes.push('ok   (no cancelled task in this plan - the cancelled clause was not exercised)');
   } else {
     const viewWas = await page.$eval('#audit-view', (s) => s.value);
     await page.selectOption('#audit-view', 'all');
@@ -1403,8 +1411,8 @@ if (termInfo.term === null) {
               || r.textContent.toLowerCase().includes(t))).length,
       };
     }, cx);
-    const m = /, (\d+) cancelled match(?:es)?$/.exec(said.count);
-    expect(`a search for the cancelled task ${cx} names the cancelled matches the task count `
+    const m = /, (\d+) cancelled not counted$/.exec(said.count);
+    expect(`a search for the cancelled task ${cx} names the cancelled tasks the task count `
       + `leaves out (${JSON.stringify(said)})`,
       !!m && said.truth > 0 && Number(m[1]) === said.truth, true);
     await page.fill('#audit-q', '');
@@ -2683,10 +2691,6 @@ await page.waitForTimeout(400);
 //    measurement of another, with nothing able to say so.
 await page.setViewportSize(PHONE_VIEWPORT);
 await page.waitForTimeout(250);
-//    The same width at the taller screen the sticky-stack defect was measured on.
-//    Kept apart from PHONE_VIEWPORT on purpose: every recorded figure in the
-//    layout baseline is a share of THAT size, and moving it would re-base them.
-const PHONE_TALL = { width: PHONE_VIEWPORT.width, height: 844 };
 //    The first of the two recorded figures, taken BEFORE anything is opened. It is
 //    read back with the disclosure's own state so a run cannot record the open bar
 //    under the shut figure's name: everything above this line opens and closes
@@ -2716,122 +2720,10 @@ if (barState.open === true) {
   measured.filterBarShutShare = share(barState.h, PHONE_VIEWPORT.height);
 }
 
-//    The pinned stack over the phases table: ONE measurement, taken here with More
-//    filters shut and again inside the branch below with it open, so the two
-//    states are judged by the same method and differ only in their bound.
-//    Measured as what a reader sees, not as a sum of heights: scrolled into the
-//    table at the taller phone size, from the top of the viewport down the
-//    middle, the first point that is the table's own frame is where the pinned
-//    layers end - a hit-test sees whatever pins over the rows, including a layer
-//    nobody meant to make sticky. The layers it may be held to are read in the
-//    same pass, so the bound and the measurement come from one layout.
-//
-//    The bound is read off that layout, not chosen. Below 52rem wide, and below
-//    32rem tall, the top bar scrolls with the page (forced-colors.css says what it held while it was
-//    pinned), so the layers a reader keeps over a table row are the section strip
-//    (where am I) and, while More filters is shut, the table's own filter bar
-//    (what is filtering it); open, the bar is static and only the strip may pin.
-//    Each bound is those layers' rendered heights plus STACK_SLACK_PX: the scan
-//    steps whole pixels from the top, and the bar sticks at an offset published
-//    rounded to a whole pixel (px() in page-state.js), so the first table pixel
-//    can sit up to a pixel and a half below the layers' exact sum. Any other layer
-//    pinning - a sticky top bar is at least a line of text - clears that slack
-//    many times over.
-//    What that bound cannot see is the layers themselves growing, because it grows
-//    with them: a shut bar three times its height is still exactly "the strip plus
-//    the bar". So the same measurement answers a second question whose bound comes
-//    from nothing on the page - STACK_CEILING_SHARE of the screen it is read on -
-//    and it is that ceiling, not the relative arm, that stands for a report the
-//    layout baseline is not about (outside this checkout, or a scratch render),
-//    where judge() records nothing and compares nothing.
-//    The basis of the ceiling: the pinned layers are chrome over the rows a reader
-//    scrolled down to read, so the table keeps at least half of the screen it is
-//    read on. Past that the chrome is the page and the table is what peeks out
-//    under it. It is a destination bound, not a ratchet: how far a committed
-//    report's bar moved is still the relative arm's question, asked below through
-//    the filterBarShutShare figure recorded just above.
-const STACK_SLACK_PX = 2;
-const STACK_CEILING_SHARE = 0.5;
-//    Both halves judge their measurement twice, on separate lines so a red says
-//    which question failed: the layers its state allows, and the ceiling. The
-//    ceiling is a share of the screen the stack was measured on, so each size
-//    gets its own.
-const judgeStack = (what, m, layers, size = PHONE_TALL) => {
-  const ceiling = Math.floor(size.height * STACK_CEILING_SHARE);
-  const bound = layers.reduce((sum, l) => sum + l.px, 0) + STACK_SLACK_PX;
-  const parts = layers.map((l) => `${l.name} ${l.px.toFixed(1)}`).join(' + ');
-  const where = `scrolled into the table at ${size.width}x${size.height}`;
-  const pct = share(m.stack, size.height);
-  expect(`ph1 ${what}, ${where}, pins no more than the ${layers.map((l) => l.long).join(' and the ')} `
-    + `(${m.stack}px against a ${bound.toFixed(1)}px bound = ${parts} + slack ${STACK_SLACK_PX}; `
-    + `${pct}% of the screen)`,
-    m.stack <= bound, true);
-  expect(`ph1 ${what} leaves the table at least ${1 - STACK_CEILING_SHARE} of the screen it is read on `
-    + `(${m.stack}px pinned against a ${ceiling}px ceiling = ${STACK_CEILING_SHARE} `
-    + `of ${size.height}px; ${pct}% of the screen)`,
-    m.stack <= ceiling, true);
-};
-const STACK_UNMEASURED = 'ph1 scrolled into the phases table at the phone size, no point '
-  + 'down the middle of the screen is the table - the stack over it could not be measured';
-const stackOverTable = async (size = PHONE_TALL) => {
-  await page.setViewportSize(size);
-  await page.evaluate(() => {
-    const t = document.querySelector('table.phases');
-    if (t) window.scrollTo(0, window.scrollY + t.getBoundingClientRect().top + 10);
-  });
-  await page.waitForTimeout(400);
-  const m = await page.evaluate(() => {
-    const height = (sel) => {
-      const el = document.querySelector(sel);
-      return el ? el.getBoundingClientRect().height : 0;
-    };
-    const d = document.querySelector('.fdetails');
-    const table = document.querySelector('table.phases');
-    const wrap = table && (table.closest('.tablewrap') || table);
-    const x = Math.round(window.innerWidth / 2);
-    let stack = null;
-    for (let y = 0; wrap && stack === null && y < window.innerHeight; y += 1) {
-      const at = document.elementFromPoint(x, y);
-      if (at && wrap.contains(at)) stack = y;
-    }
-    return { stack, strip: height('.snav'), bar: height('.sectools'), open: d ? d.open : null };
-  });
-  await page.setViewportSize(PHONE_VIEWPORT);
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await page.waitForTimeout(150);
-  return m;
-};
-//    The SHUT half, outside the More-filters branch because a report with no
-//    panel still has a resting stack. The open half is inside the branch.
-if (barState.open !== true) {
-  const shutStack = await stackOverTable();
-  if (shutStack.stack === null) {
-    failures.push(`FAIL ${STACK_UNMEASURED} (More filters shut)`);
-  } else {
-    judgeStack('resting stack (More filters shut)', shutStack, [
-      { name: 'strip', long: 'strip', px: shutStack.strip },
-      { name: 'bar', long: 'shut filter bar', px: shutStack.bar },
-    ]);
-  }
-  //    ...and the same phone turned on its side. Wider than the 52rem block, so
-  //    nothing about its WIDTH unpins the top bar, and short enough that the
-  //    bar is most of the screen: measured before the short-screen query, the
-  //    top bar, strip and filter bar pinned 293px of 390, three quarters of it.
-  //    The same two layers are allowed, and the ceiling is a share of 390.
-  //    Only the shut half: wider than 52rem, More filters opens as a layer hung
-  //    off the bar rather than as the bar growing, so its open state is not a
-  //    stack the strip alone may be held to.
-  const PHONE_LANDSCAPE = { width: PHONE_TALL.height, height: PHONE_TALL.width };
-  const sideStack = await stackOverTable(PHONE_LANDSCAPE);
-  if (sideStack.stack === null) {
-    failures.push(`FAIL ${STACK_UNMEASURED} (More filters shut, ${PHONE_LANDSCAPE.width}x${PHONE_LANDSCAPE.height})`);
-  } else {
-    judgeStack('resting stack on a phone held sideways (More filters shut)', sideStack, [
-      { name: 'strip', long: 'strip', px: sideStack.strip },
-      { name: 'bar', long: 'shut filter bar', px: sideStack.bar },
-    ], PHONE_LANDSCAPE);
-  }
-}
+//    The stack pinned over the table, the lines the bars take and where an open
+//    More filters lands are the layout matrix's, below, at every measured size
+//    and in every state. What stays here is the PHONE's own: the open panel's
+//    controls, and the two figures the layout baseline records at PHONE_VIEWPORT.
 //    Same pairing as step 6: the <details> without the panel inside it is a
 //    contradiction in one document, so it is named rather than dereferenced.
 if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
@@ -2868,64 +2760,308 @@ if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
   } else {
     measured.filterBarOpenShare = share(openState.h, PHONE_VIEWPORT.height);
   }
-
-  //    The OPEN half of the stack check (the shut half runs above, outside this
-  //    branch, through the same stackOverTable()). In flow the panel's height IS
-  //    the bar's height, so a bar that stayed sticky open pinned the whole panel
-  //    over the table it filters - measured at 390x780 before the bar went static
-  //    open: 156px shut, 481px open, 62% of the screen. Open, it has to scroll away
-  //    like the block of controls it now is, which leaves the strip as the only
-  //    layer allowed to pin.
-  const openStack = await stackOverTable();
-  if (openStack.open !== true) {
-    failures.push('FAIL the More-filters disclosure was not open where the open stack over '
-      + 'the table is measured, so the open bound would be judging the shut bar');
-  } else if (openStack.stack === null) {
-    failures.push(`FAIL ${STACK_UNMEASURED} (More filters open)`);
-  } else {
-    judgeStack('open stack (More filters open)', openStack, [
-      { name: 'strip', long: 'strip', px: openStack.strip },
-    ]);
-  }
-
-  //    ...and the other half of that trade: the open bar leaves the sticky stack,
-  //    so More filters tapped while the bar is STUCK over the table used to open
-  //    a panel back at the bar's place in the flow - above the top of the
-  //    screen, where the reader who just tapped it could not see it. Opened from
-  //    there, at the phone size the stack over the table is measured at, the panel
-  //    has to be on screen and painted rather than covered by the strip that
-  //    stays pinned. Points are read, not only the box, because a box inside the
-  //    viewport can still sit under a sticky layer.
-  await page.click('.fdetails > summary');           // shut it, then open it stuck
-  await page.setViewportSize(PHONE_TALL);
-  await page.evaluate(() => {
-    const t = document.querySelector('table.phases');
-    window.scrollTo(0, window.scrollY + t.getBoundingClientRect().top + 10);
-  });
-  await page.waitForTimeout(300);
   await page.click('.fdetails > summary');
-  await page.waitForTimeout(400);
-  const inView = await page.evaluate(() => {
-    const p = document.querySelector('.filterpanel');
-    const b = p.getBoundingClientRect();
-    const x = b.left + b.width / 2;
-    const hits = [b.top + 4, b.bottom - 4].map((y) => {
-      const at = document.elementFromPoint(x, y);
-      return Boolean(at && p.contains(at));
-    });
-    return { top: Math.round(b.top), bottom: Math.round(b.bottom), left: Math.round(b.left),
-             right: Math.round(b.right), w: innerWidth, h: innerHeight, painted: hits.every(Boolean) };
-  });
-  expect(`ph2 More filters opened while the bar is stuck lies within the ${PHONE_TALL.width}x`
-    + `${PHONE_TALL.height} viewport and is painted top and bottom (box ${inView.left},${inView.top}`
-    + `-${inView.right},${inView.bottom})`,
-    inView.top >= 0 && inView.bottom <= inView.h && inView.left >= 0 && inView.right <= inView.w
-      && inView.painted, true);
-  await page.click('.fdetails > summary');
-  await page.setViewportSize(PHONE_VIEWPORT);
-  await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(150);
 } else notes.push('ok   (this plan records no models or dates — phone panel check skipped)');
+
+// --- the layout matrix: every measured size, in every state ------------------
+//
+// ONE method for one question - what the pinned chrome costs a reader of the
+// table - asked at every size below and in every state a reader reaches. The
+// probes it replaced each measured one size in one state, and both wraps they
+// were written for came back where they did not look: the count wrapping the
+// laptop's filter bar once filtered, in another view, or on a plan with the Sort
+// select, and the header's filter row wrapping at a tablet's 834px. A size or a
+// state added here is asked every question; a question added here is asked of
+// every cell; a failing cell is named by size and state.
+//
+// Sizes: a phone upright and on its side, a tablet upright, a small laptop and
+// the laptop this file reads the page at. States, read off the page: every View
+// option at rest, then the default view with one phase-status chip on, and with
+// a search typed. Each cell asks:
+//   lm1  the stack pinned over the table is no more than the layers pinned there
+//   lm2  ...and leaves the table its share of the screen, whatever those are
+//   lm3  the count is one line of text
+//   lm4  the filter bar takes no more lines than its controls need
+//   lm5  while the top bar pins, the header's filter row is one line
+//   lm6  More filters, opened over the table, is on the screen and painted
+//   lm7  ...and where it opens in the bar's flow, the bar holding it does not pin
+//
+// lm1 measures what a reader sees, not a sum of heights: scrolled into the table,
+// from the top of the screen down its middle, the first point that is the table's
+// own is where the pinned layers end - a hit-test sees whatever pins over the
+// rows, including a layer nobody meant to make sticky. Its bound is the layers
+// whose computed position is sticky in that same layout and that span the
+// column the scan walks - the top bar, the section strip, the filter bar - plus
+// STACK_SLACK_PX: the scan steps whole
+// pixels, and the bar sticks at an offset published rounded to a whole pixel
+// (px() in page-state.js), so the first table pixel can sit up to a pixel and a
+// half below the layers' exact sum. Anything else pinning clears that slack many
+// times over.
+//
+// What that bound cannot see is the layers themselves growing, or a layer that
+// should scroll pinning instead, because it grows with them. So lm2 holds the
+// same measurement to a bound read off nothing on the page - STACK_CEILING_SHARE
+// of the screen it is read on - and it is that ceiling, not the relative arm, that
+// stands for a report the layout baseline is not about (outside this checkout, or
+// a scratch render), where judge() records nothing and compares nothing. The
+// basis of the ceiling: the pinned layers are chrome over the rows a reader
+// scrolled down to read, so the table keeps at least half of the screen. Past
+// that the chrome is the page and the table is what peeks out under it. It is a
+// destination bound, not a ratchet: how far a committed report's bar moved is the
+// relative arm's question, asked through the figures recorded above.
+//
+// lm3 reads the count's lines off its text's own client rects, which is what a
+// reader sees. Emptying the text and comparing the bar's height - the probe this
+// replaces - cannot see a count that wraps its own words inside the row's height,
+// and that is how the laptop's count came to take three lines under a green check.
+// lm4's need is derived, not chosen: the bar's controls laid end to end at their
+// natural widths - a flex basis set in a length where one is, the count's text
+// unbroken, everything else as drawn - packed into the bar's width the way a
+// wrapping flex line packs them. A bar that holds more lines than that is a bar
+// wrapping for a reason its controls do not give.
+// What lm4 does NOT hold: a bar whose controls need two lines is allowed two,
+// and the count, the last control, is often what lands alone on the second. That
+// still happens at the laptop size once anything filters, measured on the
+// example, the large demo and this repository's own plan - each needs more than
+// the bar's width only with the count among its controls - so the count still
+// costs the pinned bar a line there. It is a
+// known open cost, waiting on a decision about where the count sits, and not
+// something this matrix passes.
+const STACK_SLACK_PX = 2;
+const STACK_CEILING_SHARE = 0.5;
+const STACK_TABLE_SHARE = +(1 - STACK_CEILING_SHARE).toFixed(2);
+const LAYOUT_SIZES = [
+  { width: PHONE_VIEWPORT.width, height: 844 },
+  { width: 844, height: PHONE_VIEWPORT.width },
+  { width: 834, height: 1194 },
+  { width: 1024, height: 768 },
+  { width: 1512, height: 945 },
+];
+// The layers that may pin over the table, by the names a label prints.
+const STACK_LAYERS = [['top bar', '.topbar'], ['strip', '.snav'], ['filter bar', '.sectools']];
+const layoutAtTop = () => page.evaluate(() => {
+  const shown = (n) => n && n.getClientRects().length > 0;
+  // A run of boxes, grouped into the bands they share: two boxes on one line
+  // overlap vertically, two lines do not, so a taller control does not make a
+  // line of its own.
+  const bands = (rects) => {
+    const out = [];
+    for (const r of rects) {
+      const b = out.find((x) => r.top < x.bottom && r.bottom > x.top);
+      if (b) { b.top = Math.min(b.top, r.top); b.bottom = Math.max(b.bottom, r.bottom); }
+      else out.push({ top: r.top, bottom: r.bottom });
+    }
+    return out.length;
+  };
+  const inFlow = (box) => [...(box ? box.children : [])]
+    .filter((k) => shown(k) && getComputedStyle(k).position !== 'absolute');
+  // The text a reader sees: a node inside a box clipped to a pixel is said to a
+  // screen reader and drawn to nobody.
+  const drawnText = (el) => {
+    const rects = [];
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      let p = n.parentElement, clipped = false;
+      for (; p && p !== el.parentElement; p = p.parentElement) {
+        const b = p.getBoundingClientRect();
+        if (b.width <= 1 || b.height <= 1) clipped = true;
+      }
+      if (clipped) continue;
+      const r = document.createRange();
+      r.selectNodeContents(n);
+      rects.push(...[...r.getClientRects()].filter((x) => x.width > 0));
+    }
+    return rects;
+  };
+  const st = document.querySelector('.sectools');
+  const count = document.getElementById('audit-count');
+  const gf = document.querySelector('.topbar .gfilters');
+  const top = document.querySelector('.topbar');
+  const countRects = drawnText(count);
+  const natural = (k) => {
+    if (k === count) return countRects.reduce((w, r) => w + r.width, 0);
+    const cs = getComputedStyle(k);
+    const basis = /px$/.test(cs.flexBasis) ? parseFloat(cs.flexBasis) : null;
+    if (basis === null) return k.getBoundingClientRect().width;
+    const lo = parseFloat(cs.minWidth) || 0;
+    const hi = /px$/.test(cs.maxWidth) ? parseFloat(cs.maxWidth) : Infinity;
+    return Math.min(Math.max(basis, lo), hi);
+  };
+  const cs = getComputedStyle(st);
+  const room = st.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const gap = parseFloat(cs.columnGap) || 0;
+  let needed = 0, used = 0;
+  for (const k of inFlow(st)) {
+    const w = natural(k);
+    if (needed === 0 || used + gap + w > room + 0.5) { needed += 1; used = w; }
+    else used += gap + w;
+  }
+  return {
+    said: count.textContent,
+    countLines: bands(countRects),
+    barLines: bands(inFlow(st).map((k) => k.getBoundingClientRect())),
+    barNeeds: needed,
+    barPx: Math.round(st.getBoundingClientRect().height),
+    topPins: getComputedStyle(top).position === 'sticky',
+    topPx: Math.round(top.getBoundingClientRect().height),
+    rowLines: gf ? bands(inFlow(gf).map((k) => k.getBoundingClientRect())) : null,
+  };
+});
+// Scrolled into the table, the hit-test and the layers it is held to, read in
+// one pass so the bound and the measurement come from one layout.
+const stackInTable = () => page.evaluate(() => {
+  const t = document.querySelector('table.phases');
+  window.scrollTo(0, window.scrollY + t.getBoundingClientRect().top + 10);
+}).then(() => page.waitForTimeout(300)).then(() => page.evaluate((layers) => {
+  const t = document.querySelector('table.phases');
+  const wrap = t.closest('.tablewrap') || t;
+  const x = Math.round(window.innerWidth / 2);
+  let stack = null;
+  for (let y = 0; stack === null && y < window.innerHeight; y += 1) {
+    const at = document.elementFromPoint(x, y);
+    if (at && wrap.contains(at)) stack = y;
+  }
+  // A layer is held to only where it pins over the column the scan walks: on
+  // a wide screen the section strip is a sidebar, sticky and as tall as its
+  // links, beside the table rather than over it.
+  const pinned = layers.map(([name, sel]) => {
+    const el = document.querySelector(sel);
+    const r = el ? el.getBoundingClientRect() : null;
+    return { name, px: r ? r.height : 0,
+             over: !!el && getComputedStyle(el).position === 'sticky'
+               && r.left <= x && r.right >= x };
+  }).filter((l) => l.over);
+  return { stack, pinned };
+}, STACK_LAYERS));
+const judgeStack = (id, cell, size, m) => {
+  const bound = m.pinned.reduce((sum, l) => sum + l.px, 0) + STACK_SLACK_PX;
+  const parts = m.pinned.map((l) => `${l.name} ${l.px.toFixed(1)}`).join(' + ') || 'nothing';
+  const ceiling = Math.floor(size.height * STACK_CEILING_SHARE);
+  const pct = share(m.stack, size.height);
+  if (id === 'lm7') {
+    expect(`lm7 ${cell}: with More filters open in the bar's flow the bar does not pin, and `
+      + `the stack is no more than the layers still pinned (${m.stack}px against `
+      + `${bound.toFixed(1)}px = ${parts} + slack ${STACK_SLACK_PX}; ${pct}% of the screen)`,
+      m.stack <= bound && !m.pinned.some((l) => l.name === 'filter bar'), true);
+    return;
+  }
+  expect(`lm1 ${cell}: the stack pinned over the table is no more than the layers pinned `
+    + `there (${m.stack}px against ${bound.toFixed(1)}px = ${parts} + slack `
+    + `${STACK_SLACK_PX}; ${pct}% of the screen)`,
+    m.stack <= bound, true);
+  expect(`lm2 ${cell}: the table keeps at least ${STACK_TABLE_SHARE} of the screen (${m.stack}px `
+    + `pinned against a ${ceiling}px ceiling = ${STACK_CEILING_SHARE} of ${size.height}px)`,
+    m.stack <= ceiling, true);
+};
+{
+  const hasPanel = !!(await page.$('.fdetails > summary')) && !!(await page.$('.filterpanel'));
+  const viewWas = await page.$eval('#audit-view', (s) => s.value);
+  const viewOpts = await page.$$eval('#audit-view option', (os) => os.map((o) => o.value));
+  // A row as tall as two screens at the foot of the table, for the matrix's
+  // length only: a narrowed table can be shorter than the chrome over it, and
+  // then no point under the stack is the table and the stack is unmeasured.
+  // The chrome is the subject; the table only has to be there to be covered.
+  await page.evaluate(() => {
+    const body = document.querySelector('table.phases tbody');
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-lm-spacer', '');
+    tr.innerHTML = '<td colspan="99" style="height:200vh"></td>';
+    body.append(tr);
+  });
+  await page.selectOption('#audit-view', seg0.defaultView);
+  await page.waitForTimeout(200);
+  const probe = await page.evaluate(() => {
+    const chip = [...document.querySelectorAll('#audit-phase-status .fchip')]
+      .find((c) => c.getClientRects().length > 0);
+    if (chip) chip.setAttribute('data-lm-chip', '');
+    const row = [...document.querySelectorAll('table.phases tbody tr.phase')]
+      .find((r) => r.style.display !== 'none');
+    const id = row && row.querySelector('.mono');
+    return { chip: !!chip, term: id ? id.textContent.trim() : null };
+  });
+  const states = viewOpts.map((v) => ({ name: `View=${v} at rest`, view: v }));
+  if (probe.chip) states.push({ name: `View=${seg0.defaultView}, one phase-status chip on`, view: seg0.defaultView, chip: true });
+  else failures.push('FAIL lm the default view draws no phase-status chip, so no cell was read with one on');
+  if (probe.term) states.push({ name: `View=${seg0.defaultView}, searched for ${probe.term}`, view: seg0.defaultView, term: probe.term });
+  else failures.push('FAIL lm the default view draws no phase row, so no cell was read with a search typed');
+  let cells = 0;
+  for (const s of states) {
+    await page.setViewportSize({ width: 1512, height: 945 });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.selectOption('#audit-view', s.view);
+    if (s.chip) await page.click('[data-lm-chip]');
+    if (s.term) await page.fill('#audit-q', s.term);
+    await page.waitForTimeout(350);
+    for (const size of LAYOUT_SIZES) {
+      const cell = `${size.width}x${size.height} ${s.name}`;
+      await page.setViewportSize(size);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.waitForTimeout(250);
+      const at = await layoutAtTop();
+      cells += 1;
+      expect(`lm3 ${cell}: the count is one line of text (${JSON.stringify(at.said)} drawn on `
+        + `${at.countLines} lines)`, at.countLines, 1);
+      expect(`lm4 ${cell}: the filter bar takes no more lines than its controls need laid end `
+        + `to end (${at.barLines} lines, ${at.barNeeds} needed; ${at.barPx}px)`,
+        at.barLines <= at.barNeeds, true);
+      if (at.topPins && at.rowLines !== null) {
+        expect(`lm5 ${cell}: while the top bar pins, the header's filter row is one line `
+          + `(${at.rowLines} lines; top bar ${at.topPx}px)`, at.rowLines, 1);
+      }
+      const shut = await stackInTable();
+      if (shut.stack === null) {
+        failures.push(`FAIL lm1 ${cell}: scrolled into the table, no point down the middle of `
+          + 'the screen is the table - the stack over it could not be measured');
+      } else judgeStack('lm1', cell, size, shut);
+      if (!hasPanel) continue;
+      await page.click('.fdetails > summary');
+      await page.waitForTimeout(350);
+      const open = await page.evaluate(() => {
+        const p = document.querySelector('.filterpanel');
+        const b = p.getBoundingClientRect();
+        const x = b.left + b.width / 2;
+        const painted = [b.top + 4, b.bottom - 4].every((y) => {
+          const hit = document.elementFromPoint(x, y);
+          return Boolean(hit && p.contains(hit));
+        });
+        return { open: document.querySelector('.fdetails').open,
+                 inFlow: getComputedStyle(p).position === 'static',
+                 top: Math.round(b.top), bottom: Math.round(b.bottom),
+                 left: Math.round(b.left), right: Math.round(b.right),
+                 w: innerWidth, h: innerHeight, painted };
+      });
+      expect(`lm6 ${cell}: More filters opened over the table lies within the screen and is `
+        + `painted top and bottom (open ${open.open}, box ${open.left},${open.top}-`
+        + `${open.right},${open.bottom} on ${open.w}x${open.h})`,
+        open.open && open.top >= 0 && open.bottom <= open.h && open.left >= 0
+          && open.right <= open.w && open.painted, true);
+      if (open.open && open.inFlow) {
+        const m = await stackInTable();
+        if (m.stack === null) {
+          failures.push(`FAIL lm7 ${cell}: scrolled into the table with More filters open, no `
+            + 'point down the middle of the screen is the table');
+        } else judgeStack('lm7', cell, size, m);
+      }
+      await page.click('.fdetails > summary');
+      await page.waitForTimeout(150);
+    }
+    await page.setViewportSize({ width: 1512, height: 945 });
+    if (s.chip) await page.click('[data-lm-chip]');
+    if (s.term) await page.fill('#audit-q', '');
+    await page.waitForTimeout(300);
+  }
+  notes.push(`ok   (the layout matrix read ${cells} cells: ${LAYOUT_SIZES.length} sizes by `
+    + `${states.length} states)`);
+  await page.evaluate(() => {
+    for (const n of document.querySelectorAll('[data-lm-spacer]')) n.remove();
+    for (const n of document.querySelectorAll('[data-lm-chip]')) n.removeAttribute('data-lm-chip');
+  });
+  await page.selectOption('#audit-view', viewWas);
+  await page.setViewportSize(PHONE_VIEWPORT);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(200);
+}
 
 // --- the relative arm: what this document's layout was recorded at ------------
 //

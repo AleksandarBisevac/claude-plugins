@@ -179,17 +179,93 @@
         "severity": "med",
         "file": "plugins/audit/scripts/ui/report/filters.js:239 (with tools/check-report-interactive.mjs:497-502)",
         "issue": "contradicts task clause \"R13 (low): give the counter a short view name with no nested brackets\": the diff gives the counter no view name at all - it now reads '5 of 7 phases in view'. The phase outcome is 'the counter names its basis', and the basis was the view; #audit-count is aria-live=polite, so the announcement a screen reader hears no longer says which view it counts in, only that a view exists. The gate's at-rest check dropped `rest[3] === label` and now holds the counter only to the literal words 'in view' plus the select existing, so nothing checks that the count names the view any more. The executor's reason (short names misname 'Active & pending', and 'Active & pending' alone wanted 224px against ~173 free) was measured before the same diff gave #audit-count `flex:1 1 6rem;min-width:0;line-height:1.25`, which lets the count wrap its own words inside the row's height. That change takes away the width argument.",
-        "resolution": "Carry a short, bracket-free view name per option (e.g. a data-short on each <option>: 'active & pending', 'archived', 'all'), and render it into the count without brackets ('5 of 7 phases · active & pending', or '5 of 7 active & pending phases'). Restore the gate's at-rest check that the name in the count is the selected option's short name, and keep nw1 holding the 1512x945 bar to one line. Bring c5b into step."
+        "resolution": "fixed in P163.14-d6t (d5f2d6a56d8e): Carry a short, bracket-free view name per option (e.g. a data-short on each <option>: 'active & pending', 'archived', 'all'), and render it into the count without brackets ('5 of 7 phases · active & pending', or '5 of 7 active & pending phases'). Restore the gate's at-rest check that the name in the count is the selected option's short name, and keep nw1 holding the 1512x945 bar to one line. Bring c5b into step.",
+        "fixTask": "P163.14-d6t",
+        "commit": "d5f2d6a56d8e",
+        "status": "fixed"
       },
       {
         "id": "P163-R17",
         "severity": "low",
         "file": "tools/check-report-interactive.mjs:750-757",
         "issue": "es0 counts a kind of press as covered once it is recorded in `truth.out`, and the search and from/to presses' `on()` always return true. So a search press that no longer filters (Enter's keydown no longer calling refresh()) or a date press that does nothing (the change listeners on #audit-from/#audit-to removed) still turns es0 green. The test asserts that a press was made, not that it was effective.",
-        "resolution": "Record per press whether it narrowed anything (drawn rows below the view's resting count, or the toolbar's Clear shown), and require each kind in `kinds` to have at least one press that did. Prove that red by making the search press set the value without dispatching Enter."
+        "resolution": "fixed in P163.14-d6t (d5f2d6a56d8e): Record per press whether it narrowed anything (drawn rows below the view's resting count, or the toolbar's Clear shown), and require each kind in `kinds` to have at least one press that did. Prove that red by making the search press set the value without dispatching Enter.",
+        "fixTask": "P163.14-d6t",
+        "commit": "d5f2d6a56d8e",
+        "status": "fixed"
+      },
+      {
+        "id": "P163-R18",
+        "severity": "med",
+        "file": "plugins/audit/scripts/ui/report-css/controls.css:33 (with tools/check-report-interactive.mjs:531)",
+        "issue": "R13 is not fixed: flex:1 1 6rem;min-width:0 makes the count wrap its own words. At 1512x945 acme at rest takes 2 lines, filtered 3 lines (bar 60px to 74px); this repo's own report at rest takes 3 lines (bar 74px) and nw1 fails there; View=all or filtered gives 87px. nw1 runs only at rest in the default view and empties the count's text, so it cannot see a wrap on the shipped fixtures.",
+        "resolution": "Keep the view's name in the live region but visually hidden (the View select beside it shows it), so the visible count stays short. Make nw1 require a single-line count and a single-line bar at rest, filtered and in every view, on a fixture that carries the Sort select."
+      },
+      {
+        "id": "P163-R19",
+        "severity": "low",
+        "file": "plugins/audit/scripts/ui/report-css/forced-colors.css:58",
+        "issue": "R10's iPad half is unaddressed: at 834x1194 (wider than 52rem, tall) the bar stays sticky at 160px against 122px elsewhere; no gate size falls in the 52-64rem band.",
+        "resolution": "Compact the scope labels between 52rem and 64rem so the header row does not wrap, and add 834x1194 to the stack check with a bound."
+      },
+      {
+        "id": "P163-R20",
+        "severity": "low",
+        "file": "tools/check-report-interactive.mjs:703",
+        "issue": "es0 counts a press as narrowing when Clear merely shows: with refresh's search term forced empty, es0 stays green with search:true.",
+        "resolution": "For the search kinds require drawn rows below the resting count (the term is an archived phase id, so the default view always hides rows)."
+      },
+      {
+        "id": "P163-R21",
+        "severity": "low",
+        "file": "plugins/audit/scripts/ui/report/filters.js:254",
+        "issue": "The cancelled clause appears under any filter: pressing one phase's 'cancelled' chip reads '... 90 cancelled matches' though 89 belong to phases nobody filtered; it also lengthens the count.",
+        "resolution": "Word it as 'N cancelled not counted' (true under any filter), or emit it only when a search or task-level filter selected those tasks."
+      },
+      {
+        "id": "P163-R22",
+        "severity": "low",
+        "file": "plugins/audit/scripts/report/_report_page.py:509; tests/test_render_report.py:1105",
+        "issue": "Prose and the st4 label still say the top bar is sticky above 52rem; at 900x500 it is static because the short-screen query unpins it too.",
+        "resolution": "Say 'narrow or short screen', in the words of forced-colors.css and page-state.js:118."
+      },
+      {
+        "id": "P163-R23",
+        "severity": "low",
+        "file": "tools/check-report-interactive.mjs:2769",
+        "issue": "The R9 label prints float noise for other constants (0.30000000000000004 at 0.7).",
+        "resolution": "Print +(1 - STACK_CEILING_SHARE).toFixed(2), or state only the ceiling."
+      },
+      {
+        "id": "P163-R24",
+        "severity": "med",
+        "file": "tools/check-report-interactive.mjs:2844-2846,2943-2945 (lm4)",
+        "issue": "contradicts task clause: clause 1 says each cell asserts 'the filter bar and the count are each one line', and R18's resolution (which clause 2 implements) asks for 'a single-line bar at rest, filtered and in every view'. lm4 instead asserts `at.barLines <= at.barNeeds` - the bar may take as many lines as its controls need packed end to end - and its own comment says the 1512x945 bar still takes a second line once anything filters on acme, demo-large and the live plan (92px against 60px at rest, per the executor's measurement). The count is one line (lm3); the bar is not, and the check written for it was relaxed to pass.",
+        "resolution": "Take the design decision the executor named (the count out of the pinned bar's flow - e.g. its own line under the bar that scrolls, or into the strip - or expand/Clear out of the bar), then make lm4 assert barLines === 1 at the laptop sizes (and say where a phone is exempt and why), so the matrix holds the clause rather than describing the shortfall."
+      },
+      {
+        "id": "P163-R25",
+        "severity": "med",
+        "file": "plugins/audit/scripts/ui/report-css/controls.css:30",
+        "issue": "`#audit-count{flex:0 0 auto;white-space:nowrap}` removes the count's only way to fit a line narrower than its text. Judged from reading, not run: on this repo's plan filtered the count reads like '6 of 166 phases · 4 of 1543 tasks, 3 cancelled not counted' - the executor measured it at 391px at 1512 (15px), so about 378px at the phone's 14.5px - while the bar's content box at 390px wide is roughly 342px (body padding .75rem each side plus the bar's .75rem padding). Unbreakable and unshrinkable, it overflows the bar's card sideways (and may give the page a horizontal scroll). No matrix question can see it: lm3 counts lines (one), and lm4's packer starts a new line for a control wider than the room, so a too-wide count raises `barNeeds` and passes.",
+        "resolution": "Add a per-cell matrix question that every in-flow control of .sectools, and the count's drawn rects, lie inside the bar's content box and that document.scrollingElement.scrollWidth <= innerWidth; prove it red on the live render at 390x844 with a chip on. Then let the count wrap where the bar is a phone's width (e.g. white-space:normal under max-width:40rem, where the bar is not the laptop's one-line problem), or shorten the filtered clause."
+      },
+      {
+        "id": "P163-R26",
+        "severity": "med",
+        "file": "tools/check-report-interactive.mjs:2964-2971 (stackInTable `pinned`), plugins/audit/scripts/ui/report-css/forced-colors.css:65-67",
+        "issue": "lm1's allowed layers are whatever is computed `position:sticky` over the scan column, the top bar included. So lm1 cannot see the top bar pinning where the forced-colors.css rule says it must scroll (max-width:52rem or max-height:32rem): the bound grows with it. The executor's own mutation 'top bar sticky on phones' went red only on lm2 (520px against the 422px ceiling), not lm1. The ph1 it replaced held the phone stacks to the strip and the shut filter bar explicitly, so it caught any top-bar pinning, not only one large enough to cross half the screen. The forced-colors.css comment still names lm1 as what measures this rule.",
+        "resolution": "In stackInTable, read matchMedia('(max-width:52rem),(max-height:32rem)') and, where it matches, drop the top bar from the allowed layers (fail lm1 if it is sticky there), keeping the computed-sticky derivation for wider and taller cells. Re-run the 'top bar sticky on phones' mutation and confirm lm1 itself goes red."
+      },
+      {
+        "id": "P163-R27",
+        "severity": "low",
+        "file": "tools/check-report-interactive.mjs:2918-2930 (matrix states)",
+        "issue": "Clause 1 requires the gate to run on a fixture carrying the Sort select. The chosen fixture is the live render in verify.sh's rendered_plan_legs, which carries #audit-sort only while _report_html.any_phase_pinned() is true for this plan (it is today). Nothing in the matrix or the leg asserts or notes that #audit-sort was present, so the day no phase is pinned the Sort-select coverage disappears with every cell still green.",
+        "resolution": "Have the matrix note per run whether #audit-sort was drawn, and either make the live leg fail when it is absent or add a committed fixture with a pinned phase to the gate's fixture list."
       }
     ],
-    "outcome": "[findings: 17 - 0 high, 6 med, 11 low; 15 with a recorded fix commit]"
+    "outcome": "[findings: 27 - 0 high, 10 med, 17 low; 17 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1244,7 +1320,7 @@
     {
       "id": "P163.14-d6t",
       "title": "The counter names its view again without brackets, and the empty-state check counts only presses that narrowed",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes P163-R16 (med) and P163-R17 (low), filed on P163.13-d6t. Their full text and resolutions are in docs/audit/phases/P163.json review.findings.\n\nR16: the counter now reads '5 of 7 phases in view' and has lost the view's name. The phase outcome is that the counter names its basis, and #audit-count is aria-live, so a screen reader no longer hears which view is counted.\n- Give each View <option> a short, bracket-free name (e.g. data-short: 'active & pending', 'archived', 'all') and render it into the count without brackets.\n- Restore the gate's at-rest check that the count names the selected option's short name. Keep nw1 holding the 1512x945 bar to one line, and bring c5b into step.\n- Prove the restored check red against HEAD 78b03410.\n\nR17: es0 counts a press kind as covered once recorded, but the search and from/to presses always report on. Record per press whether it narrowed anything (drawn rows below the view's resting count, or the toolbar Clear shown), and require each kind to have at least one effective press. Prove it red by making the search press set the value without dispatching Enter, and restore that change in the same command.\n\nRun node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html yourself; it is phase-gate-only. Refresh the rendered followers: examples/report.sh, docs/demo-large.html per tools/check-rendered-artifacts.py --how, and node tools/capture-screenshots.mjs. Then confirm tests/test__refs.py is green. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/ui/report/filters.js",
@@ -1276,14 +1352,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d5f2d6a56d8e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "R16: _report_page.py gives each View <option> a data-short ('active &amp; pending', 'archived', 'all'). filters.js adds viewShort() (the selected option's data-short, falling back to viewName()) and the count now reads visP + ' of ' + plural(n,'phase') + ' · ' + viewShort(), e.g. '5 of 7 phases · active & pending', filtered '1 of 7 phases · all · 4 of 14 tasks'. check-report-interactive.mjs: the at-rest check again requires the count's view name === the selected option's data-short, with no brackets; the filtered-total regex and the filtered-basis check now carry the view name too, and the basis check compares it with the selected short name. nw1 unchanged and green: 1512x945 bar 60px with the count and 60px without it, on acme and on demo-large. test_render_report.py: c5b pins the new construct (counted once) and the data-short read; new vw1b, beside vw1, counts every option's data-short off the rendered toolbar and rejects a bracket. R17: the empty-state press loop records `narrowed` per press (rows drawn below the view's resting count, read before the press, or the toolbar Clear visible); es0 now requires an effective press of each kind and adds the search alone as its own kind, because a search+chip press still narrows through the chip when the search is dead. Followers refreshed: examples/report.sh (acme html + md, the md changes only its generated timestamp), docs/demo-large.html per --how, docs/index.html copied, node tools/capture-screenshots.mjs (7 pngs + captured-at.json). Results: task gate 4/4 files, 821 cases; browser gate acme 239 checks, demo-large 245, exit 0; check-rendered-artifacts --before-commit OK; capture --check OK; tests/test__refs.py green after the re-capture (it was red only on sc1/sc2 screenshot digests before it); ruff clean; test__output_lints + test__ui_theme_lints 203 cases; test__deps + test__output 375 cases; vitest tools/ui-tests/test-gate-filter.test.mjs 11 passed. Dependants: filters.js -> tools/redfirst.sh, _report_ui.py, test__output.py, _ui_theme_lints.py, test-gate-filter.test.mjs, README.md: still correct (no assembly, token or exported-name change; the README row for filters.js says nothing about the counter wording); _report_html.py: unchanged in this attempt; its importers are unaffected. _report_page.py: only the option markup changed; render-report.py, test__evidence_view.py, test__report_page.py, where.py still correct; PLUGIN-BUILD-GUIDE.md:6682 section does not describe the view options, still true. test_render_report.py / test__report_html.py / test__report_page.py: sweep-costs.json and affected.py names unchanged (no new suite, no renamed function). check-report-interactive.mjs -> demo-large, index, acme, controls.css, forced-colors.css, test__report_html.py, test__report_usage.py, test_audit_lookup.py: all re-run or untouched and green; no CSS changed. examples / docs/index.html / docs/demo-large.html / docs/screenshots: regenerated, check-rendered-artifacts and capture --check green. Left on purpose: page-state.js:748-752 (viewName's docstring says the counter and the empty state name the basis through it); it is outside this task's files, and it stays true because the counter falls back to viewName() when an option has no data-short.",
+        "descriptive": "The phase count names its view again ('5 of 7 phases · active & pending') with no brackets, the gate holds it to the selected option's short name, and es0 counts only presses that actually narrowed the table."
       },
       "startedAt": "2026-11-16T20:17:27Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-16T20:51:55Z",
+      "verifiedBy": [
+        "vw1b in tests/test_render_report.py: every View option carries a bracket-free data-short, counted in order off the rendered toolbar",
+        "gate: the at-rest count check is restored to compare the count's view name with the selected option's data-short",
+        "gate: es0 requires one effective press per kind and adds the search alone as a kind"
+      ],
       "notes": [
         {
           "at": "2026-11-16T20:17:25Z",
@@ -1306,6 +1386,102 @@
         "runId": "2026-11-16T20:51:51Z.66fac9",
         "status": "passed",
         "at": "2026-11-16T20:51:51Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "d5f2d6a56d8e",
+        "at": "2026-11-16T20:51:55Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "status": "proved",
+        "basis": "Gate-only task, no tests.add; red watched by hand, not through the helper. R16: the new gate run against HEAD 78b03410's committed examples/acme-store/acme-store-audit.html (git diff --quiet confirmed it was HEAD's) exited 1 with three FAIL lines: 'FAIL at rest the count names the view the View select sets, by its short name and without brackets (\"5 of 7 phases in view\", short name null)', 'FAIL the count reports the filtered total: got \"1 of 7 phases in view · 4 of 14 tasks\"', and 'FAIL the filtered count names its basis ...'. R17: with the gate's search() helper set to assign q.value without dispatching the Enter keydown (mutation asserted applied: Enter-dispatch count 0), the gate over the fresh acme render exited 1 with the one line 'FAIL es0 the presses include a chip, a search, a search with a chip, and a date range, each at least once narrowing the view ({\"chip\":true,\"search\":false,\"search + chip\":true,\"from/to\":true}; term \"p0\")'; restored in the same command (count back to 1). Under that mutation HEAD's es0 kinds (chip, search + chip, from/to) are all true, so the old check passed. String pins: count assignment reverted to the ' in view' form plus data-short dropped from the archived option -> 'FAIL c5b' and 'FAIL vw1b ... [(active, active &amp; pending), (all, all)]'; restored with __pycache__ purged -> test_render_report.py 315 cases green.",
+        "at": "2026-11-16T20:21:32Z (R16 against HEAD), 2026-11-16T20:24:11Z (es0 mutation)"
+      }
+    },
+    {
+      "id": "P163.15-d6t",
+      "title": "The filter bar and its count stay one line at every measured size, and the checks that say so read every state",
+      "status": "in_progress",
+      "description": "Fixes P163-R18 to R23, filed on P163 by review round 2. Read their full text and resolutions in docs/audit/phases/P163.json review.findings.\n\nR10 and R13 were 'fixed' and came back, because each check measured one viewport in one state. That is a recurring class, so fix it by construction, not per size.\n\n1. ONE layout matrix in check-report-interactive.mjs, replacing the scattered single-size probes (ph1, nw1 and the phone stack). The matrix covers:\n   - viewports 390x844, 844x390, 834x1194, 1024x768 and 1512x945;\n   - states: at rest, one chip filtered, search filtered, and each View option;\n   - every fixture the gate is run on.\n   For each cell it asserts:\n   - the pinned stack over the table is within its layer-derived bound and the ceiling;\n   - the filter bar and the count are each one line (line count read from getClientRects or the line-height, not text emptied);\n   - More filters, when open, lies within the viewport.\n   Report each failing cell by name. The gate must also be run on a fixture that carries the Sort select (docs/demo-large.html or this repo's own render). Say which, and add that run to wherever the browser gate's fixtures are listed (verify.sh / ci) only if that file is in scope; otherwise say it is owed.\n2. R18 (med): keep the view's name in the live region but visually hidden, so the visible count stays short. The View select beside it shows the view.\n3. R19: compact the scope labels between 52rem and 64rem so the header row does not wrap at 834px.\n4. R20: es0's search kinds require drawn rows below the resting count.\n5. R21: word the cancelled clause so it is true under any filter.\n6. R22: fix the stale 'sticky above 52rem' prose and the st4 label.\n7. R23: format the ceiling label's fraction.\n\nProve the matrix red against HEAD d5f2d6a5. It must fail on the 1512x945 count wrap with the own-plan or demo fixture, and on 834x1194. Quote the failing cells in the return. Run node tools/check-report-interactive.mjs on examples/acme-store/acme-store-audit.html and on the Sort-select fixture yourself; it is phase-gate-only. If report-layout-baseline.json needs re-recording, use the tool's own recording path, never a hand edit. Refresh the rendered followers: examples/report.sh, docs/demo-large.html per check-rendered-artifacts.py --how, and node tools/capture-screenshots.mjs. Confirm tests/test__refs.py is green. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/ui/report-css/controls.css",
+        "plugins/audit/scripts/ui/report-css/forced-colors.css",
+        "plugins/audit/scripts/ui/report-css/shell.css",
+        "plugins/audit/scripts/ui/report/filters.js",
+        "plugins/audit/scripts/ui/report/page-state.js",
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/scripts/report/_report_page.py",
+        "plugins/audit/scripts/ui/report/README.md",
+        "tools/check-report-interactive.mjs",
+        "tools/ui-checks/layout-baseline.mjs",
+        "tools/ui-tests/layout-baseline.test.mjs",
+        "tools/ui-checks/report-layout-baseline.json",
+        "tests/test_render_report.py",
+        "tests/test__report_html.py",
+        "tests/test__report_page.py",
+        "examples",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [
+          "plugins/audit/scripts/ui/report-css/controls.css: #audit-q interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .btn interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .btn-primary interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .fchip interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .fdetails>summary interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .frow input[type=date] interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .gfilters input[type=date] interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .gfilters select interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .tf-chip interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/shell.css: .snav a interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_render_report.py tests/test__report_html.py tests/test__report_page.py tests/test__refs.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-16T21:13:29Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T21:13:27Z",
+          "text": "its sections on the report modules describe each module's role; layout rules and a count's wording change nothing they state",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
+        },
+        {
+          "at": "2026-11-16T21:13:27Z",
+          "text": "it quotes docs/index.html as an exempt path name; a re-rendered copy changes no path",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-16T21:13:27Z",
+          "text": "it greps docs/demo-large.html for a phase row marker the renderer keeps",
+          "waives": "tools/verify.sh"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-16T22:22:44Z.1ab624",
+        "status": "passed",
+        "at": "2026-11-16T22:22:44Z"
       }
     }
   ],

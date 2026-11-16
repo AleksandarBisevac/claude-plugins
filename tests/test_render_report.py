@@ -895,10 +895,15 @@ def _cases(check):
     check("c5: the date picker opens on the months the plan actually covers",
           re.search(r'id="audit-from"[^>]*min="\d{4}-\d{2}-\d{2}"[^>]*'
                     r'max="\d{4}-\d{2}-\d{2}"', html_out) is not None)
+    # A construct pin: that the panel lands on the screen at every size and
+    # wherever its control wraps to is lm6's, in the browser gate.
     check("c5: the panel is out of flow, so opening it cannot move the sticky "
-          "stack every anchor and column header is pinned against",
+          "stack every anchor and column header is pinned against - and hung "
+          "from the bar rather than from its own control, which is not "
+          "positioned",
           ".filterpanel{position:absolute" in M._CSS
-          and ".fdetails{position:relative;scroll-margin-top:" in M._CSS)
+          and ".fdetails{scroll-margin-top:" in M._CSS
+          and ".fdetails{position:" not in M._CSS)
     # The panel is a popover, so it answers to the two things every popover
     # answers to. A <details> does neither on its own — it closes only through its
     # own summary — and this one is absolutely positioned, so left open it covers
@@ -1070,8 +1075,9 @@ def _cases(check):
     # header's filter row, and on a phone those wrap onto lines that pinned
     # more than half the screen over the table - held upright or sideways. On a
     # narrow or a short screen the bar scrolls with the page, and the measured
-    # offset says so. ph1 in the browser gate measures both stacks; this pins
-    # the query they rest on, and that it is the only home of the rule.
+    # offset says so. lm1 in the browser gate measures the stack at every size
+    # it reads, both of these among them; this pins the query they rest on, and
+    # that it is the only home of the rule.
     _below = M._CSS[M._CSS.index("@media (max-width:52rem),(max-height:32rem){\n"):]
     _below = _below[:_below.index("\n}\n")]
     check("st1 below 52rem wide or 32rem tall the top bar scrolls with the page, "
@@ -1093,23 +1099,23 @@ def _cases(check):
           "open bar leaves the sticky stack, so a panel opened while it was stuck "
           "would otherwise open above the top of the screen",
           "scrollIntoView({ block: 'nearest' })" in M._SCRIPT
-          and ".fdetails{position:relative;scroll-margin-top:" in M._CSS)
+          and ".fdetails{scroll-margin-top:" in M._CSS)
     # The reason the bar stops pinning is written twice - in the row's docstring
     # and in the rule's own comment - and it is the measurement: the pinned stack
     # held MORE than half the screen. "Nearly half" argues against the rule it
-    # explains. The stylesheet's figure is ph1's to print, so the comment names
-    # ph1 rather than carrying a before-figure of its own. Whitespace is folded
+    # explains. The stylesheet's figure is lm1's to print, so the comment names
+    # lm1 rather than carrying a before-figure of its own. Whitespace is folded
     # because both texts wrap mid-phrase.
     _phone_reason = [" ".join(t.split()) for t in
                      (_report_html._global_filter_row.__doc__, _below)]
     check("st4 the docstring and the stylesheet give one reason the top bar "
-          "scrolls below 52rem - the stack held more than half the screen - and "
-          "the stylesheet points at ph1 for the measured share: %r"
+          "scrolls on a narrow or a short screen - the stack held more than half "
+          "the screen - and the stylesheet points at lm1 for the measured share: %r"
           % ([(t.count("more than half"), t.count("nearly half"))
               for t in _phone_reason],),
           [(t.count("more than half"), t.count("nearly half"))
            for t in _phone_reason] == [(1, 0), (1, 0)]
-          and "ph1" in _below)
+          and "lm1" in _below)
 
     # --- rd: Ready now as a definition list (C4) --------------------------------
     check("rd1 Ready now is a definition list naming the ready task, and the "
@@ -1143,15 +1149,21 @@ def _cases(check):
     # count of "165 phases" over a table showing five was the defect: the view
     # was a gate on the rows and on nothing the counter said.
     # A construct pin: the wording's behaviour - the count matches the rows
-    # drawn, names the selected option's short name, and does not wrap the
-    # pinned bar at 1512px - is the browser gate's ("at rest the count names
-    # the view the View select sets", nw1).
+    # drawn, names the selected option's short name, and is one line of text
+    # at every size and in every state - is the browser gate's ("at rest the
+    # count names the view the View select sets", lm3).
     check("c5b: the phase count names the view it counts in, at rest as well as "
-          "filtered - by the option's bracket-free short name, never a bare "
-          "total beside a narrowed table, and never the View select's wording "
-          "in brackets beside it",
+          "filtered - by the option's bracket-free short name, said in the live "
+          "region and drawn to nobody (the View select beside it shows it), never "
+          "a bare total beside a narrowed table, and never the View select's "
+          "wording in brackets beside it",
           M._SCRIPT.count(
-              "visP + ' of ' + plural(phaseRows.length, 'phase') + ' · ' + viewShort()") == 1
+              "count.textContent = visP + ' of ' + plural(phaseRows.length, 'phase');") == 1
+          and M._SCRIPT.count("countView.textContent = ' · ' + viewShort();") == 1
+          and "countView.className = 'vh';" in M._SCRIPT
+          and M._SCRIPT.count("count.appendChild(countView);") == 1
+          and re.search(r"(?m)^\.vh\{position:absolute;width:1px;height:1px;", M._CSS)
+              is not None
           and "opt.getAttribute('data-short')" in M._SCRIPT
           and "' (' + viewName() + ')'" not in M._SCRIPT
           and "(phaseRows.length + ' phases')" not in M._SCRIPT)
@@ -1167,11 +1179,12 @@ def _cases(check):
     # The browser gate holds the clause's number to the cancelled rows a search
     # draws, in both directions; this is the construct it rests on.
     check("c5d: what that basis leaves out of the drawn phases - cancelled "
-          "tasks that match - is counted apart and named in the count, not "
-          "dropped",
+          "tasks that match - is counted apart and named in the count as left "
+          "out, which is true whichever filter drew them, not called matches",
           "else nLeftOut++;" in M._SCRIPT
           and "visX += nLeftOut;" in M._SCRIPT
-          and "plural(visX, 'cancelled match', 'cancelled matches')" in M._SCRIPT)
+          and "visX + ' cancelled not counted'" in M._SCRIPT
+          and "cancelled match" not in M._SCRIPT)
     # Same trap as tr.taskfilter: with no script running every row is shown, so an
     # empty state that rendered by default would be a statement contradicted by
     # the table directly beneath it.

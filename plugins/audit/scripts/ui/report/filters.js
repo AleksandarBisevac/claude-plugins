@@ -93,6 +93,9 @@
     const opt = viewSel ? [...viewSel.options].find((o) => o.value === viewMode) : null;
     return (opt && opt.getAttribute('data-short')) || viewName();
   };
+  // The count's view name: said to a screen reader, drawn to nobody (`.vh`).
+  const countView = document.createElement('span');
+  countView.className = 'vh';
 
   /**
    * Apply every filter to the whole table in one pass, then repaint the counts,
@@ -241,17 +244,23 @@
     if (count) {
       // The view is the basis at rest as well as filtered: "165 phases" over a
       // table showing five read as the size of the table, and the view was why
-      // it was not. Named, because the count is a live region and a screen
-      // reader hears it without the select beside it; by the option's short
-      // name, because its full wording in brackets wrapped the pinned bar onto
-      // a second line at 1512px. Tasks join the phases once something filters,
-      // since a filter can narrow a phase from the inside while the phase count
-      // barely moves; and cancelled matches the task fraction leaves out are
-      // named, so a phase drawn for one of them does not sit under a count of
-      // zero.
-      count.textContent = visP + ' of ' + plural(phaseRows.length, 'phase') + ' · ' + viewShort()
-        + (anyFilter ? ' · ' + visT + ' of ' + plural(totT, 'task')
-          + (visX ? ', ' + plural(visX, 'cancelled match', 'cancelled matches') : '') : '');
+      // it was not. The count is a live region, so a screen reader hears it
+      // without the select beside it, and it names the view by the option's
+      // short name - inside a box clipped to nothing, because a sighted reader
+      // has the View select right beside it, and drawn, the name wrapped the
+      // pinned bar at a laptop width once anything filtered. Tasks join the
+      // phases once something filters, since a filter can narrow a phase from
+      // the inside while the phase count barely moves. The cancelled tasks the
+      // task fraction leaves out of the drawn phases are named as left out,
+      // which stays true whichever filter drew them: called "matches", the
+      // clause claimed tasks in phases no filter had touched.
+      count.textContent = visP + ' of ' + plural(phaseRows.length, 'phase');
+      countView.textContent = ' · ' + viewShort();
+      count.appendChild(countView);
+      if (anyFilter) {
+        count.appendChild(document.createTextNode(' · ' + visT + ' of ' + plural(totT, 'task')
+          + (visX ? ', ' + visX + ' cancelled not counted' : '')));
+      }
     }
     // Filtered down to nothing, the table was an empty frame with no explanation
     // and no way back except undoing each control by hand.
