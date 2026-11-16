@@ -19,7 +19,19 @@
    offset it computed from --sticky-2 — no sentinel element, no second observer. */
 .sectools.stuck{box-shadow:var(--shadow-sm)}
 @media print{.sectools{display:none!important}}
-#audit-q{flex:0 1 15rem;min-width:8rem;padding:.5rem .75rem;font:inherit;color:var(--text);
+/* The pinned bar holds one line at a laptop width, and the two controls whose
+   width is elastic by nature are the ones that give way: the search box and
+   the count. A wrapping flex line is filled by each item's BASIS before
+   anything shrinks, so at a 15rem search basis and a count as wide as its
+   sentence, the count moved onto a line of its own at 1512px once the
+   phase-status chips or the Sort select took more of the row - a whole line of
+   pinned bar for one sentence (nw1 in tools/check-report-interactive.mjs
+   measures the bar with and without the count). Placed at small bases, both
+   grow back into what the line has left; short of room, the count wraps its own
+   words onto a second line of text, and at this line height two of them still
+   fit in the row the search box sets. */
+#audit-count{flex:1 1 6rem;min-width:0;line-height:1.25}
+#audit-q{flex:1 1 9rem;min-width:8rem;max-width:15rem;padding:.5rem .75rem;font:inherit;color:var(--text);
   background:var(--bg);border:1px solid var(--border);border-radius:var(--pill);
   transition:border-color var(--dur),box-shadow var(--dur)}
 #audit-q::placeholder{color:var(--muted)}

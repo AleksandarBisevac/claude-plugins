@@ -282,9 +282,15 @@ def _filter_axis_cases(check):
           "registry's decode is the one reader",
           bool(keys) and not hash_reads, repr(hash_reads))
     ts = [a for a in axes if "data-ts" in (a["attrs"] or [])]
-    check("rx9 the per-phase task-status chips count on the panel and offer "
-          "Clear like every other axis",
-          len(ts) == 1 and ts[0]["counts"] == "true"
+    # The badge on More filters counts what is folded away inside that panel;
+    # these chips sit in the table rows. The behaviour - a count exactly while
+    # a control inside the panel is on - is cl10 in the browser gate, which
+    # derives the panel's controls off the page; this is the declaration it
+    # rests on.
+    check("rx9 the per-phase task-status chips are not counted on More "
+          "filters, which does not hold them, and still offer Clear (a table "
+          "scope, not the Usage-only one)",
+          len(ts) == 1 and ts[0]["counts"] == "false"
           and ts[0]["scope"] not in ("usage",), repr(ts))
 
 
@@ -1062,16 +1068,17 @@ def _cases(check):
           M._CSS.count("outline:none") == 0)
     # The phone stack. The bar carries the title, the document actions and the
     # header's filter row, and on a phone those wrap onto lines that pinned
-    # more than half the screen over the table. Below the breakpoint the bar scrolls
-    # with the page, and the measured offset says so.
-    # The block that opens on its own line; tables.css has a one-line rule under
-    # the same query, and a slice from that one would read the wrong block.
-    _below = M._CSS[M._CSS.index("@media (max-width:52rem){\n"):]
+    # more than half the screen over the table - held upright or sideways. On a
+    # narrow or a short screen the bar scrolls with the page, and the measured
+    # offset says so. ph1 in the browser gate measures both stacks; this pins
+    # the query they rest on, and that it is the only home of the rule.
+    _below = M._CSS[M._CSS.index("@media (max-width:52rem),(max-height:32rem){\n"):]
     _below = _below[:_below.index("\n}\n")]
-    check("st1 below 52rem the top bar scrolls with the page, and with no script "
-          "the offset the strip pins under is zero to match",
+    check("st1 below 52rem wide or 32rem tall the top bar scrolls with the page, "
+          "and with no script the offset the strip pins under is zero to match",
           ".topbar{position:static}" in _below
-          and ":root{--topbar-h:0px}" in _below)
+          and ":root{--topbar-h:0px}" in _below
+          and M._CSS.count(".topbar{position:static}") == 1)
     check("st2 measureStack() and the scroll-spy's fold count the bar's height "
           "only while the bar is actually sticky - one helper read off the "
           "layout, not a second copy of the breakpoint",
@@ -1135,10 +1142,15 @@ def _cases(check):
     # The counter's basis, pinned as the construct each half of it rests on. A
     # count of "165 phases" over a table showing five was the defect: the view
     # was a gate on the rows and on nothing the counter said.
-    check("c5b: the phase count names the view it counts in, at rest as well as "
-          "filtered - one sentence, never a bare total beside a narrowed table",
-          "visP + ' of ' + plural(phaseRows.length, 'phase') + ' (' + viewName() + ')'"
+    # A construct pin: the wording's behaviour - the count matches the rows
+    # drawn, and does not wrap the pinned bar at 1512px - is the browser gate's
+    # ("at rest the count says it counts in the view", nw1).
+    check("c5b: the phase count says it counts in the view, at rest as well as "
+          "filtered - one sentence, never a bare total beside a narrowed table, "
+          "and never the View select's wording repeated in brackets beside it",
+          "visP + ' of ' + plural(phaseRows.length, 'phase') + ' in view'"
           in M._SCRIPT
+          and "' (' + viewName() + ')'" not in M._SCRIPT
           and "(phaseRows.length + ' phases')" not in M._SCRIPT)
     check("c5c: the task denominator is the header's - cancelled work counted on "
           "neither side of the fraction, exactly as the header's task total "
@@ -1148,6 +1160,14 @@ def _cases(check):
           and "if (counted) nCounted++;" in M._SCRIPT
           and "visT += nCounted;" in M._SCRIPT
           and "totT += tasks.length;" not in M._SCRIPT)
+    # The browser gate holds the clause's number to the cancelled rows a search
+    # draws, in both directions; this is the construct it rests on.
+    check("c5d: what that basis leaves out of the drawn phases - cancelled "
+          "tasks that match - is counted apart and named in the count, not "
+          "dropped",
+          "else nLeftOut++;" in M._SCRIPT
+          and "visX += nLeftOut;" in M._SCRIPT
+          and "plural(visX, 'cancelled match', 'cancelled matches')" in M._SCRIPT)
     # Same trap as tr.taskfilter: with no script running every row is shown, so an
     # empty state that rendered by default would be a statement contradicted by
     # the table directly beneath it.

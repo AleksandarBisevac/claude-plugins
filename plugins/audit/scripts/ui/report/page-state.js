@@ -114,10 +114,11 @@
 
   /**
    * The height an element pins over the content: its rendered height while it
-   * is sticky, and nothing while it scrolls with the page. Below 52rem the top
-   * bar is not sticky, and an offset still carrying its height would leave the
-   * strip, the filter bar and every anchor hanging a bar's height below the
-   * top of the screen with nothing above them. Read off the computed style so
+   * is sticky, and nothing while it scrolls with the page. On a screen below
+   * 52rem wide or 32rem tall the top bar is not sticky, and an offset still
+   * carrying its height would leave the strip, the filter bar and every
+   * anchor hanging a bar's height below the top of the screen with nothing
+   * above them. Read off the computed style so
    * the stylesheet stays the one place that says where the bar sticks.
    * @param {Element|null} el
    * @returns {number}
@@ -410,6 +411,10 @@
   const norowOutside = norow ? norow.querySelector('[data-outside]') : null;
   const norowOutsideSays = norow ? norow.querySelector('[data-outside-says]') : null;
   const showAllBtn = norow ? norow.querySelector('[data-showall]') : null;
+  // The empty state's own copy of Clear, apart from the toolbar's: it is the
+  // one that hides with the row it sits in, so it is the one that has to hand
+  // the keyboard on.
+  const norowClear = norow ? norow.querySelector('[data-clear]') : null;
 
   // The author chips live in the Usage section and scope ONLY it: tasks record
   // no author, so these never enter refresh() or touch the task table.
@@ -450,7 +455,9 @@
    *   rows), `tasks` (tasks, hiding a phase none of whose tasks survive),
    *   `drill` (tasks inside one phase only) or `usage` (the Usage section, never
    *   the table).
-   * - `counts`: whether the More-filters badge counts it.
+   * - `counts`: whether the More-filters badge counts it - true exactly when
+   *   the axis has a control folded away inside that panel, since the badge
+   *   is how a reader learns something is on behind the closed disclosure.
    * - `on`, `reset`, `paint`, `encode`, `decode`: is it filtering; return it to
    *   its default; repaint every control that shows it; its values for `keys`;
    *   take its state from the decoded link, saying whether there was any.
@@ -556,7 +563,10 @@
       id: 'task-status', attrs: ['data-ts'], keys: [],
       unkept: 'keyed by phase id, so the link would carry a list as long as '
         + 'the plan to describe a drill-down inside one row',
-      scope: 'drill', counts: true,
+      // Not counted: these chips sit in the table rows, not in More filters,
+      // and a badge over a panel with nothing pressed in it sends the reader
+      // looking for a filter that is not there. Clear still lifts them.
+      scope: 'drill', counts: false,
       on: () => Object.keys(taskStatus).some((pid) => taskStatus[pid] !== ''),
       reset: () => { taskStatus = Object.create(null); },
       paint: () => {

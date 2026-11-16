@@ -79,14 +79,20 @@
         "severity": "med",
         "file": "tools/check-report-interactive.mjs:2558-2572 (with tools/ui-checks/layout-baseline.mjs:316-332)",
         "issue": "The shut bound is strip + shut bar + slack, read from the same layout it judges, so it grows with the bar. No check now caps how much of the phone the resting filters cover. The removed ph1 block capped the stack at 50% of PHONE_TALL. Now a shut .sectools of any height passes the absolute arm. The relative arm only catches that for the committed documents it has a row for. For a report outside the checkout or an untracked scratch render, judge() returns early with the note 'the relative arm did not run for it (the absolute bar above did)'. For those reports nothing asserts the phase outcome 'on a 390px phone the filters do not cover the table'. A shut bar covering 80% of the screen goes green. The new comment says so ('What this bound cannot see is the shut bar itself growing'), but its pointer to the relative arm does not hold for those documents.",
-        "resolution": "Keep the layer-derived bound and the single stackOverTable() measurement. On the same shutStack result, add a ceiling: a share of PHONE_TALL with its basis stated in the comment, e.g. the table keeps at least half of the screen it is read on. That keeps one method and still bounds the destination. If no such ceiling is wanted, judge()'s unrecorded-document notes must stop telling the reader that an absolute bar covered the document. They should say instead that the shut bar's height went unbounded on this run."
+        "resolution": "fixed in P163.12-d6t (4d094a5b8863): Keep the layer-derived bound and the single stackOverTable() measurement. On the same shutStack result, add a ceiling: a share of PHONE_TALL with its basis stated in the comment, e.g. the table keeps at least half of the screen it is read on. That keeps one method and still bounds the destination. If no such ceiling is wanted, judge()'s unrecorded-document notes must stop telling the reader that an absolute bar covered the document. They should say instead that the shut bar's height went unbounded on this run.",
+        "fixTask": "P163.12-d6t",
+        "commit": "4d094a5b8863",
+        "status": "fixed"
       },
       {
         "id": "P163-R7",
         "severity": "low",
         "file": "tools/ui-checks/layout-baseline.mjs:4-8,17-19,24-33,42-47,318,329",
         "issue": "The diff makes this file's prose about the absolute arm false. The header says the gate 'bounds the share of a phone screen an OPEN filter panel may pin'. It says the absolute arm 'saturates — the gate scrolls a fixed distance past the bar'. It says 'the absolute arm catches the DESTINATION', and that 'The shut figure has NO absolute bar'. After this diff the absolute arm is a hit-test of what pins over the table, both shut and open, against layer-derived bounds. It no longer scrolls a fixed distance, and the shut state does have a bound. The executor reports this in its outcome, refused by the plan gate (the file is declared by P125.56-0h5), so it is disclosed, not hidden. It is still a stale claim the diff created, and it crosses the gate/relative-arm boundary this file exists to describe.",
-        "resolution": "Rewrite the header and the two '(the absolute bar above did)' notes in a task that owns tools/ui-checks/layout-baseline.mjs (P163.7-d6t is pending on the same file), stating the new absolute arm: one hit-test, shut and open, each bounded by the layers allowed to pin."
+        "resolution": "fixed in P163.12-d6t (4d094a5b8863): Rewrite the header and the two '(the absolute bar above did)' notes in a task that owns tools/ui-checks/layout-baseline.mjs (P163.7-d6t is pending on the same file), stating the new absolute arm: one hit-test, shut and open, each bounded by the layers allowed to pin.",
+        "fixTask": "P163.12-d6t",
+        "commit": "4d094a5b8863",
+        "status": "fixed"
       },
       {
         "id": "P163-R8",
@@ -104,9 +110,65 @@
         "file": "tools/check-report-interactive.mjs:2551-2554",
         "issue": "The ceiling's expect label hard-codes the word 'half' ('leaves the table at least half the screen it is read on') while the bound it judges is STACK_CEILING_SHARE, a named constant printed two words later. Change the constant to 0.4 and the line still says 'half' while printing '= 0.4 of 844px', so the label's claim and its own basis would disagree.",
         "resolution": "Derive the wording from the constant, for example 'leaves the table at least ${1 - STACK_CEILING_SHARE} of the screen it is read on', or drop the fraction word and keep only the printed '<px> ceiling = <share> of <height>px' basis."
+      },
+      {
+        "id": "P163-R10",
+        "severity": "med",
+        "file": "plugins/audit/scripts/report/_report_html.py:1493 (with ui/report-css/forced-colors.css:70)",
+        "issue": "The new scope labels ('(usage)', '(phases)', '(phases & usage)', 'Worked from') lengthen the header filter row, and the rule that unpins the top bar applies only below 52rem. On a landscape phone (844x390) the bar grows from 122px to 145px and the pinned layers cover 292 of 390px (75%, was 69%). On an iPad portrait (834x1194) the row wraps to two lines (bar 122px to 160px). ph1 measures only 390x844.",
+        "resolution": "Unpin the bar on short screens too (@media (max-width:52rem), (max-height:32rem)); pinnedPx() already handles a non-sticky bar. Or make the scope text compact enough not to wrap at 52-64rem. Add a landscape size (844x390) to the phone stack check."
+      },
+      {
+        "id": "P163-R11",
+        "severity": "med",
+        "file": "plugins/audit/scripts/ui/report/page-state.js:559",
+        "issue": "The per-phase task-status axis has scope 'drill', counts: true, so More filters reads '· 1' after a phase's 'blocked' chip is pressed while the panel shows nothing pressed. The badge counts filters folded away inside the panel; these chips live in the table rows.",
+        "resolution": "counts: false for the task-status axis (it still offers Clear through anyFilter); keep the registry pins in step."
+      },
+      {
+        "id": "P163-R12",
+        "severity": "low",
+        "file": "plugins/audit/scripts/ui/report/filters.js:138,230",
+        "issue": "Matching cancelled tasks are shown but not counted: searching a cancelled task id shows its phase while the counter says '0 of 1450 tasks'; the per-phase 'N of M match' badge still counts cancelled tasks, so two counts on one screen use different bases.",
+        "resolution": "Keep the header's denominator and name what it leaves out when a cancelled task matches (e.g. '0 of 1450 tasks, 1 cancelled match'), or give the per-phase badge the same basis."
+      },
+      {
+        "id": "P163-R13",
+        "severity": "low",
+        "file": "plugins/audit/scripts/ui/report/filters.js:230",
+        "issue": "At 1512x945 the counter '5 of 7 phases (Active & pending)' wraps to its own line: the pinned filter bar grows from 60px to 92px. The parenthesis repeats the View select beside it, and the Archived view reads '(Archived (done & cancelled))'.",
+        "resolution": "Use a short view name in the counter (no nested brackets), and add a desktop check that the pinned filter bar does not wrap at a common laptop width."
+      },
+      {
+        "id": "P163-R14",
+        "severity": "low",
+        "file": "plugins/audit/scripts/ui/report/filters.js:276",
+        "issue": "After 'Show all phases' (and the empty state's Clear), keyboard focus stays on a button inside the now-hidden empty-state row; the next Tab skips the whole table.",
+        "resolution": "After either empty-state button acts, move focus to #audit-view (or the first visible phase row)."
+      },
+      {
+        "id": "P163-R15",
+        "severity": "low",
+        "file": "tools/check-report-interactive.mjs:585 (comment :568)",
+        "issue": "The empty-state case lists five attributes by hand while its comment says it reads them off the page; a new chip axis is not covered, and the date range, presets and search+chip combinations are never pressed.",
+        "resolution": "Derive the list from the wired attributes the cl* block already reads, and add a search-plus-chip pass and a from/to pass."
+      },
+      {
+        "id": "P163-R16",
+        "severity": "med",
+        "file": "plugins/audit/scripts/ui/report/filters.js:239 (with tools/check-report-interactive.mjs:497-502)",
+        "issue": "contradicts task clause \"R13 (low): give the counter a short view name with no nested brackets\": the diff gives the counter no view name at all - it now reads '5 of 7 phases in view'. The phase outcome is 'the counter names its basis', and the basis was the view; #audit-count is aria-live=polite, so the announcement a screen reader hears no longer says which view it counts in, only that a view exists. The gate's at-rest check dropped `rest[3] === label` and now holds the counter only to the literal words 'in view' plus the select existing, so nothing checks that the count names the view any more. The executor's reason (short names misname 'Active & pending', and 'Active & pending' alone wanted 224px against ~173 free) was measured before the same diff gave #audit-count `flex:1 1 6rem;min-width:0;line-height:1.25`, which lets the count wrap its own words inside the row's height. That change takes away the width argument.",
+        "resolution": "Carry a short, bracket-free view name per option (e.g. a data-short on each <option>: 'active & pending', 'archived', 'all'), and render it into the count without brackets ('5 of 7 phases · active & pending', or '5 of 7 active & pending phases'). Restore the gate's at-rest check that the name in the count is the selected option's short name, and keep nw1 holding the 1512x945 bar to one line. Bring c5b into step."
+      },
+      {
+        "id": "P163-R17",
+        "severity": "low",
+        "file": "tools/check-report-interactive.mjs:750-757",
+        "issue": "es0 counts a kind of press as covered once it is recorded in `truth.out`, and the search and from/to presses' `on()` always return true. So a search press that no longer filters (Enter's keydown no longer calling refresh()) or a date press that does nothing (the change listeners on #audit-from/#audit-to removed) still turns es0 green. The test asserts that a press was made, not that it was effective.",
+        "resolution": "Record per press whether it narrowed anything (drawn rows below the view's resting count, or the toolbar's Clear shown), and require each kind in `kinds` to have at least one press that did. Prove that red by making the search press set the value without dispatching Enter."
       }
     ],
-    "outcome": "[findings: 9 - 0 high, 3 med, 6 low; 6 with a recorded fix commit]"
+    "outcome": "[findings: 17 - 0 high, 6 med, 11 low; 8 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -994,7 +1056,7 @@
     {
       "id": "P163.12-d6t",
       "title": "The phone stack check bounds what the resting filters may cover, and layout-baseline's prose states the new absolute arm",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes review findings P163-R6 (med) and P163-R7 (low), filed on P163.5-d6t.\n\nR6: tools/check-report-interactive.mjs:2558-2572 with tools/ui-checks/layout-baseline.mjs:316-332. The shut bound is strip + shut bar + slack, read from the same layout it judges, so it grows with the bar. Nothing now caps how much of the phone the resting filters cover. For a report outside the checkout or an untracked render, judge() returns early, so a shut bar covering 80% of the screen passes.\nFIX: keep the layer-derived bound and the single stackOverTable() measurement. On the same shutStack result, add a ceiling: a share of PHONE_TALL with its basis stated in a comment, for example 'the table keeps at least half of the screen it is read on'. Prove it red by inflating .sectools' height in a scratch copy of the acme report.\n\nR7: tools/ui-checks/layout-baseline.mjs header (lines 4-8, 17-19, 24-33, 42-47) and notes at 318 and 329. The prose describes the old absolute arm: an open panel only, a fixed scroll distance, 'the shut figure has NO absolute bar'. Rewrite it to state the new arm: one hit-test, shut and open, each bounded by the layers allowed to pin, plus the ceiling above. The '(the absolute bar above did)' notes must be true.\n\nRun node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html yourself; it is phase-gate-only here. No F/P/BUG ids in comments.",
       "files": [
         "tools/check-report-interactive.mjs",
@@ -1018,13 +1080,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4d094a5b8863",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "R6, tools/check-report-interactive.mjs step 9: stackOverTable() is still the only measurement and the layer-derived bounds are kept. A new judgeStack(what, m, layers) judges each half's result twice, on separate expect lines: (a) the existing bound, sum of the allowed layers + STACK_SLACK_PX, with the expect label byte-identical to before for both halves; (b) a ceiling, STACK_CEILING_PX = floor(PHONE_TALL.height * STACK_CEILING_SHARE), STACK_CEILING_SHARE = 0.5, labelled 'ph1 <half> leaves the table at least half the screen it is read on (Npx pinned against a 422px ceiling = 0.5 of 844px; N% of the screen)'. The comment above the constants states the basis: the pinned layers are chrome over the rows the reader scrolled to, so the table keeps at least half of the screen it is read on. It also says this ceiling, not the relative arm, covers reports the baseline is not about. The ceiling applies to the open half too, because that bound (strip + slack) also grows with the layer it reads. That is the same class: a strip that grew is invisible to it. The relative-arm comment above judge() and the import comment were reworded to name the ceiling. R7, tools/ui-checks/layout-baseline.mjs: the header is rewritten. History now says the gate ONCE bounded only the open panel by scrolling a fixed distance. The absolute question is now one hit-test, shut and (when the report has the panel) open, each judged against the layers that state allows and against the ceiling. The 'saturates' paragraph is replaced by why the two arms measure different quantities, and creep is now said to end at the ceiling. The 'shut figure has NO absolute bar' paragraph is replaced by ceiling = coarse destination bound vs recorded figure = fine movement detector. Both unrecorded-document notes now say '(the absolute stack check above did, against its layers and its ceiling)', which is true because the shut half and its ceiling run on every report, outside the More-filters branch. The relative failure message now reads 'whether the stack over the table pins too much of the screen is a separate line above', keeping the /separate line above/ phrase the test pins. CONTRIBUTING.md:525-527 is the same stale class ('bounds the share of the screen an open filter panel may pin'): it is rewritten to the new arm. It is not a declared file, but the plan gate allowed the edit. EVIDENCE: acme gate exit 0, 231 checks. Resting 279px vs layer bound 280.9 and vs ceiling 422 (33%); open 49 vs 50.4 and vs 422 (6%). The before-run on the base gave identical figures. docs/demo-large.html exit 0, 237 checks: resting 337 (40%), open 49. RED, scratch copies of acme in mktemp outside the checkout, so judge() takes the not-in-checkout path, deleted after: (1) '.sectools{min-height:600px}' injected into the one <style> (count asserted 1): exit 1. The layer line stays ok at 648 vs 650.4 (77%), exactly the reviewer's scenario that used to pass. The single FAIL is 'ph1 resting stack (More filters shut) leaves the table at least half the screen ... (648px pinned against a 422px ceiling ...; 77%)'. The note printed is 'the absolute stack check above did, against its layers and its ceiling'. (2) '.snav{min-height:480px}': exit 1. Both layer lines stay ok (711 vs 712.5, 480 vs 482.0), and both ceiling lines FAIL (84%, 57%), plus ph2 (the panel box under the tall strip). OVER-FIRE: the clean acme and demo-large reports keep both ceiling lines green, with 89px of headroom on the taller one. vitest layout-baseline 30/30 pass, run again after the final comment reflow. node --check passes on both .mjs files. _deps.doc_prose_numbers() and _output_lints.prose_number_claims() both return []. The rendered report is unchanged (only the gate and docs changed), so no follower re-render is owed. DEPENDANTS: tests/test__report_html.py 181 ok, tests/test__report_usage.py 111 ok, tests/test_audit_lookup.py 188 ok, all via sweep --only, exit 0. They name the gate by path and pin no stack label; the layer labels are unchanged anyway. tests/test_drive_phase.py: in this worktree it failed twice on bq4 (a background base-run kill case, 976/977). The suite names the gate only as a command string at line 16252. A git-archive export of base 77b76c7f passes 977/977, and the same export with this diff applied also passes 977/977 (exit 0), so bq4's red is this worktree's environment, not this change. docs/demo-large.html, docs/index.html, examples/acme-store/acme-store-audit.html: unchanged and still green (two of them run above). forced-colors.css: unchanged; the layers the bound reads are still those its 52rem block lets pin. tools/check-report-interactive.mjs imports judge/share/PHONE_VIEWPORT, whose signatures are unchanged. tools/ui-tests/layout-baseline.test.mjs is unchanged and green, and its 'absolute bar' comments are still true: the ceiling is an upper bound and cannot see a shrink or a missing panel. CONTRIBUTING.md: changed, as above.",
+        "descriptive": "The phone stack check now caps what the pinned filters may cover at half the screen, shut and open, so an inflated bar fails even on reports with no recorded baseline; layout-baseline's prose and CONTRIBUTING describe the arm as it is."
       },
       "startedAt": "2026-11-16T18:30:34Z",
-      "completedAt": null,
+      "completedAt": "2026-11-16T19:01:20Z",
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
@@ -1037,7 +1099,108 @@
           "at": "2026-11-16T18:58:36Z",
           "text": "files widened by CONTRIBUTING.md: named outside its files at its executor's submit, widened by the answer"
         }
-      ]
+      ],
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "4d094a5b8863",
+        "at": "2026-11-16T19:01:20Z",
+        "return": "docs/audit/evidence/returns/P163.12-d6t/20261116T183034Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task with expectRedFirst false and no test added. The ceiling itself was shown red by hand, see outcome.technical: an inflated .sectools in a scratch acme copy outside the checkout fails the ceiling line alone while the layer-derived line stays green.",
+        "at": "2026-11-16"
+      }
+    },
+    {
+      "id": "P163.13-d6t",
+      "title": "Fix the phase review's findings on the report filters: no wrap that pins the screen, a truthful badge and counter, focus after the empty state, a derived empty-state check",
+      "status": "in_progress",
+      "description": "Fixes P163-R9..R15, filed on P163 by the phase code review. Each is listed with its resolution in docs/audit/phases/P163.json review.findings: read them there first.\n- R10 (med): the scope labels make the header row wrap at 52-64rem, and on short screens the bar stays pinned. Measured: 844x390 has 75% covered; 834x1194 wraps to two lines. Unpin on short screens too, or compact the labels. Add 844x390 to the phone stack check.\n- R11 (med): the task-status axis must not count in the More filters badge (counts:false). It still offers Clear.\n- R12 (low): name cancelled matches the counter leaves out, or align the per-phase badge's basis.\n- R13 (low): give the counter a short view name with no nested brackets, so it does not wrap at 1512x945. Add a desktop no-wrap check.\n- R14 (low): after either empty-state button (Show all phases, Clear), move focus to #audit-view.\n- R15 (low): derive the empty-state check's axis list from the wired attributes the cl* block reads. Add a search+chip pass and a from/to pass.\n- R9 (low): derive the ceiling label's fraction from STACK_CEILING_SHARE.\n\nProve each med red against HEAD before fixing: run the browser gate yourself, node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html. It is phase-gate-only. Quote the failing lines in the return. Refresh the rendered followers: examples/report.sh (which also refreshes docs/index.html), docs/demo-large.html per tools/check-rendered-artifacts.py --how, and node tools/capture-screenshots.mjs. Then confirm tests/test__refs.py is green. If tools/ui-checks/report-layout-baseline.json needs re-recording, say so rather than editing it by hand. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/scripts/ui/report-css/forced-colors.css",
+        "plugins/audit/scripts/ui/report-css/shell.css",
+        "plugins/audit/scripts/ui/report-css/controls.css",
+        "plugins/audit/scripts/ui/report/page-state.js",
+        "plugins/audit/scripts/ui/report/filters.js",
+        "plugins/audit/scripts/ui/report/README.md",
+        "tools/check-report-interactive.mjs",
+        "tools/ui-checks/layout-baseline.mjs",
+        "tests/test_render_report.py",
+        "tests/test__report_html.py",
+        "tests/test__report_page.py",
+        "examples",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots",
+        "tools/ui-checks/report-layout-baseline.json",
+        "tools/ui-tests/layout-baseline.test.mjs"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [
+          "plugins/audit/scripts/ui/report-css/controls.css: #audit-q interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .btn interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .btn-primary interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .fchip interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .fdetails>summary interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .frow input[type=date] interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .gfilters input[type=date] interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .gfilters select interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .tf-chip interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/shell.css: .snav a interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_render_report.py tests/test__report_html.py tests/test__report_page.py tests/test__refs.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-16T19:13:23Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T19:13:10Z",
+          "text": "its _report_html.py and page-state.js sections describe each part's role; label wording, a media query and a counts flag change nothing they state",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
+        },
+        {
+          "at": "2026-11-16T19:13:10Z",
+          "text": "it quotes docs/index.html as an exempt path name; a re-rendered copy changes no path",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-16T19:13:10Z",
+          "text": "it greps docs/demo-large.html for a phase row marker the renderer keeps",
+          "waives": "tools/verify.sh"
+        },
+        {
+          "at": "2026-11-16T19:13:20Z",
+          "reader": "tools/ui-tests/layout-baseline.test.mjs",
+          "reads": "tools/ui-checks/layout-baseline.mjs",
+          "text": "declared to answer a reading: tools/ui-tests/layout-baseline.test.mjs reads tools/ui-checks/layout-baseline.mjs - its own suite"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-16T20:13:48Z.6519ba",
+        "status": "passed",
+        "at": "2026-11-16T20:13:48Z"
+      }
     }
   ],
   "request": "Users report the filters at the top of the HTML report do not work. Fix every filter defect found by the live diagnosis: Clear filters leaves the test-gate and observed filters on (and storage brings them back); the default view hides task-level matches while the empty state says none exist; the counter states no basis; the phone layout covers most of the screen; filter scopes are invisible; and the a11y gaps.",

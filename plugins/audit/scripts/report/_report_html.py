@@ -1447,7 +1447,8 @@ def _global_filter_row(authors, tags, dmin, dmax, owners=None):
     """The compact header filter row — author, area, date range — or "".
 
     DESIGN DECISION (C2, delegated): this row is a second line INSIDE the
-    existing `.topbar` (sticky above 52rem), not a separate floating/anchored bar. Three
+    existing `.topbar` (sticky unless the screen is narrow or short), not a
+    separate floating/anchored bar. Three
     reasons, in the order they decided it:
 
       * The report is long and its sticky stack is already measured geometry —
@@ -1462,9 +1463,10 @@ def _global_filter_row(authors, tags, dmin, dmax, owners=None):
         can never reach paper — the active range prints instead as the named
         line in the Usage section (#audit-urange).
       * Mobile width exists: inside the topbar the row wraps under the title
-        with `flex-wrap` and compact controls. Below 52rem the whole bar stops
-        being sticky (report-css/forced-colors.css) - wrapped, its title,
-        actions and this row pinned more than half a phone screen over the table -
+        with `flex-wrap` and compact controls. Below 52rem wide or 32rem tall
+        the whole bar stops being sticky (report-css/forced-colors.css) -
+        wrapped, its title, actions and this row pinned more than half a phone
+        screen over the table, upright or held sideways -
         and measureStack() publishes a zero offset while it is not, so there is
         still no breakpoint arithmetic and no second bar to place.
 

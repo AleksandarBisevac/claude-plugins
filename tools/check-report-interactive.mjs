@@ -207,6 +207,10 @@ const FEATURE_ABSENT = [
   { note: 'phone panel check skipped',
     covers: ['ph2 More filters opened while the bar is stuck',
              'ph1 open stack (More filters open)'] },
+  // A plan that cancelled no task has no match the task fraction leaves out;
+  // the basis check above still holds the clause absent on every report.
+  { note: 'no cancelled task in this plan',
+    covers: ['a search for the cancelled task'] },
   { note: 'its announced count skipped',
     covers: ['ax3 with one filter on, More filters is announced'] },
   { note: 'nothing is ready in this plan',
@@ -221,11 +225,14 @@ const FEATURE_ABSENT = [
   // ready task in a tagged phase keeps being checked.
   { note: 'no ready task sits in a tagged phase',
     covers: ['tasks of tagged phases wear the area chips'] },
-  // A plan where no single chip empties a narrowed view while phases outside it
-  // match: the truth rule above still runs over every press, and only the
-  // half that proves it was exercised has nothing to point at.
-  { note: 'no chip empties a view while phases outside it match',
-    covers: ['...and a view hiding every match is among the presses'] },
+  // A plan where no single press empties a narrowed view while phases outside
+  // it match: the truth rule above still runs over every press, and only the
+  // halves that prove it was exercised have nothing to point at.
+  { note: 'no press empties a view while phases outside it match',
+    covers: ['...and a view hiding every match is among the presses',
+             'es2 after Show all phases the keyboard is on the View select'] },
+  { note: 'no press empties the table',
+    covers: ['es1 after the Clear inside the empty state'] },
   { note: 'no status chips in this report',
     covers: ['no matches-outside-this-view notice shows while rows do',
              '...and choosing All phases from the View select reaches them instead',
@@ -364,6 +371,11 @@ const state = () => page.evaluate(() => {
 // pass so an old report names everything it is missing at once, instead of one
 // element per run.
 const source = readFileSync(path, 'utf8');
+// The chip attributes the page's own script wires, read off the document. The
+// empty-state block presses every chip carrying one, and the Clear block reports
+// a wired attribute no exercised chip carries, so neither keeps a list by hand.
+const WIRED_CHIP_ATTRS = [...new Set([...source.matchAll(/wireChips\([^,()]+, '(data-[a-z]+)'/g)]
+  .map((m) => m[1]))].sort();
 const REQUIRED = [
   ['table.phases', 'the phase table'],
   ['table.phases thead', 'its column headers'],
@@ -479,15 +491,38 @@ if (seg0.defaultView === 'active') {
 expect('on load, tasks are collapsed', load.tasks, 0);
 // At rest too, the count says what it counts IN. A bare "165 phases" over a
 // table showing five read as the size of the table, and the view was the reason.
+// It points at the View select rather than repeating its wording: the select sits
+// beside the count, and its longest option inside brackets wrapped the bar.
 {
-  const rest = /^(\d+) of (\d+) phases? \((.+)\)$/.exec(load.count);
-  const label = await page.evaluate(() => {
-    const sel = document.getElementById('audit-view');
-    return sel ? sel.options[sel.selectedIndex].textContent : null;
+  const rest = /^(\d+) of (\d+) phases? in view$/.exec(load.count);
+  const hasView = await page.evaluate(() => !!document.getElementById('audit-view'));
+  expect('at rest the count says it counts in the view the View select sets ('
+    + JSON.stringify(load.count) + ')',
+    !!rest && hasView && Number(rest[1]) === load.phases && Number(rest[2]) === load.total, true);
+}
+// ...and saying so does not cost the pinned filter bar a line. The count is
+// read with its text and again emptied, at the laptop size this script reads the
+// page at, so the line it adds is the count's own and not a wrap some other
+// control caused: measured before the wording changed, "5 of 7 phases (Active &
+// pending)" alone took the bar from one line to two at 1512x945.
+{
+  await page.setViewportSize({ width: 1512, height: 945 });
+  await page.waitForTimeout(150);
+  const nw = await page.evaluate(() => {
+    const st = document.querySelector('.sectools');
+    const c = document.getElementById('audit-count');
+    if (!st || !c) return null;
+    const said = c.textContent;
+    const withIt = st.getBoundingClientRect().height;
+    c.textContent = '';
+    const without = st.getBoundingClientRect().height;
+    c.textContent = said;
+    return { said, withIt: Math.round(withIt), without: Math.round(without) };
   });
-  expect('at rest the count names the view it counts in (' + JSON.stringify(load.count) + ')',
-    !!rest && Number(rest[1]) === load.phases && Number(rest[2]) === load.total
-      && rest[3] === label, true);
+  expect('nw1 at 1512x945 the resting count does not wrap the filter bar onto another line ('
+    + (nw ? JSON.stringify(nw.said) + ': ' + nw.withIt + 'px with it, ' + nw.without + 'px without'
+      : 'no .sectools or #audit-count') + ')',
+    !!nw && nw.withIt <= nw.without + 1, true);
 }
 
 // Switching the view is an EXPANDER in the standing sense — it may not grow a
@@ -561,16 +596,28 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
 // THE EMPTY STATE IS TRUE. "No phase matches these filters" was printed over a
 // view that hid every match: on acme-store, Test gate "Before recording" emptied
 // the default view while the archived phase held both matching tasks. So for
-// every chip a reader can press, in each narrowed view, whenever the empty state
+// every press a reader can make, in each narrowed view, whenever the empty state
 // shows: either View=All shows no phase either and the plain sentence is the
 // truth, or the sentence names exactly the count View=All shows and its button
 // lands there. And while rows show, the slot that names hidden matches stays
-// hidden. The chips are read off the DOM, so a new filter axis is covered
-// without this block naming it, and everything runs inside one evaluate: a
-// refresh is synchronous, and a round trip per chip would make this the
-// slowest block in the file for no extra truth.
+// hidden. Everything runs inside one evaluate: a refresh is synchronous, and a
+// round trip per press would make this the slowest block in the file for no
+// extra truth.
+//
+// The presses are DERIVED, never listed: every chip in the table's toolbar that
+// carries an attribute the page's own script wires (WIRED_CHIP_ATTRS, the list
+// the Clear block reads too), each again on top of a search, the search alone,
+// and the date range set to a single day at either end of the span the date
+// inputs allow. A chip axis added tomorrow is pressed here without this block
+// naming it. The search term is a phase id from the archive when there is one,
+// so in the default view the search alone already hides every match it has.
+//
+// The two buttons of the empty state then have to hand the keyboard somewhere
+// that is still on the page: each hides the row it sits in, and a focus left on
+// a hidden button sends the next Tab past the whole table. The View select is
+// that place - the control that says which phases are drawn.
 {
-  const truth = await page.evaluate(() => {
+  const truth = await page.evaluate((wired) => {
     const viewSel = document.getElementById('audit-view');
     const norow = document.querySelector('tr.norows');
     const clear = document.querySelector('.sectools [data-clear]');
@@ -578,22 +625,67 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
     const before = viewSel.value;
     const slot = norow.querySelector('[data-outside]');
     const btn = norow.querySelector('[data-showall]');
+    const norowClear = norow.querySelector('[data-clear]');
+    const q = document.getElementById('audit-q');
+    const from = document.getElementById('audit-from');
+    const to = document.getElementById('audit-to');
     const seen = (el) => !!el && el.getClientRects().length > 0;
     const shown = () => [...document.querySelectorAll('table.phases tbody tr.phase')]
       .filter((r) => r.style.display !== 'none').length;
     const pick = (v) => { viewSel.value = v; viewSel.dispatchEvent(new Event('change')); };
-    const ATTRS = ['data-ps', 'data-a', 'data-m', 'data-tev', 'data-tevf'];
+    // Enter, not an input event: typing is debounced, and Enter is the key the
+    // search filters on at once.
+    const search = (v) => {
+      q.value = v;
+      q.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    };
+    const setDate = (el, v) => {
+      el.value = v;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    };
     const chips = [...document.querySelectorAll('.sectools button')]
-      .map((c) => ({ c, attr: ATTRS.find((a) => c.hasAttribute(a)) }))
+      .map((c) => ({ c, attr: wired.find((a) => c.hasAttribute(a)) }))
       .filter((x) => x.attr);
+    const termRow = document.querySelector('table.phases tbody tr.phase[data-seg="archived"]')
+      || document.querySelector('table.phases tbody tr.phase');
+    const term = q && termRow
+      ? (termRow.getAttribute('data-phase') || '').toLowerCase() : '';
+    const presses = [];
+    const chipPress = ({ c, attr }, withTerm) => ({
+      what: (withTerm ? 'q=' + withTerm + ' + ' : '') + attr + '=' + c.getAttribute(attr),
+      on: () => {
+        if (c.hidden) return false;   // a chip this view does not offer
+        if (withTerm) search(withTerm);
+        c.click();
+        return true;
+      },
+      // Released by its own second press, not by Clear alone: this block
+      // proves the empty state, and leaning on Clear would make it a second
+      // test of Clear that fails wherever Clear does.
+      off: () => {
+        if (c.getAttribute('aria-pressed') === 'true') c.click();
+        if (withTerm) search('');
+      },
+    });
+    chips.forEach((x) => presses.push(chipPress(x, '')));
+    if (term) {
+      presses.push({ what: 'q=' + term, on: () => { search(term); return true; },
+                     off: () => search('') });
+      chips.forEach((x) => presses.push(chipPress(x, term)));
+    }
+    const span = from && to && from.min && from.max ? [from.min, from.max] : [];
+    span.forEach((day) => presses.push({
+      what: 'from/to ' + day,
+      on: () => { setDate(from, day); setDate(to, day); return true; },
+      off: () => { setDate(from, ''); setDate(to, ''); },
+    }));
     const out = [];
     ['active', 'archived'].forEach((v) => {
-      chips.forEach(({ c, attr }) => {
+      presses.forEach((p, i) => {
         clear.click();
         pick(v);
-        if (c.hidden) return;         // a chip this view does not offer
-        c.click();
-        const r = { view: v, chip: attr + '=' + c.getAttribute(attr),
+        if (!p.on()) return;
+        const r = { view: v, i, press: p.what,
                     rows: shown(), empty: seen(norow), slot: seen(slot) };
         if (r.empty && r.slot) {
           const said = slot.textContent;
@@ -608,19 +700,38 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
           r.all = shown();
         }
         out.push(r);
-        // Released by its own second press, not by Clear alone: this block
-        // proves the empty state, and leaning on Clear would make it a second
-        // test of Clear that fails wherever Clear does.
         pick(v);
-        if (c.getAttribute('aria-pressed') === 'true') c.click();
+        p.off();
       });
     });
+    // Where the keyboard lands after each empty-state button, from a press
+    // that put the reader in front of it. Focus is moved OFF the select first,
+    // so a select that merely kept a focus it already had cannot pass.
+    const landsOnView = (r, act) => {
+      clear.click();
+      pick(r.view);
+      presses[r.i].on();
+      if (document.activeElement) document.activeElement.blur();
+      act();
+      const ok = document.activeElement === viewSel;
+      pick(r.view);
+      presses[r.i].off();
+      return ok;
+    };
+    const emptied = out.find((r) => r.empty);
+    const hid = out.find((r) => r.empty && r.slot);
+    const focus = {
+      clear: emptied && norowClear ? { press: emptied.view + ':' + emptied.press,
+        onView: landsOnView(emptied, () => norowClear.click()) } : null,
+      showAll: hid ? { press: hid.view + ':' + hid.press,
+        onView: landsOnView(hid, () => btn.click()) } : null,
+    };
     // Back to the view this block found, not the default: the steps below were
     // written against the view the search block above left behind.
     clear.click();
     pick(before);
-    return { chips: chips.length, out };
-  });
+    return { presses: presses.length, term, dates: span.length > 0, out, focus };
+  }, WIRED_CHIP_ATTRS);
   if (!truth) {
     failures.push('FAIL the empty state, the View select and a Clear button are all on the page');
   } else {
@@ -634,15 +745,35 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
     const noisy = truth.out.filter((r) => r.rows > 0 && r.slot);
     expect('...and no press that leaves rows drawn shows the hidden-matches slot ('
       + JSON.stringify(noisy) + ')', noisy.length, 0);
+    // Which kinds of press were made, so a pass that silently made none of a
+    // kind says so rather than reading as covered.
+    const kinds = {
+      chip: truth.out.some((r) => !/^q=|^from\/to /.test(r.press)),
+      'search + chip': truth.out.some((r) => / \+ /.test(r.press)),
+      'from/to': truth.out.some((r) => /^from\/to /.test(r.press)),
+    };
+    expect('es0 the presses include a chip, a search with a chip, and a date range '
+      + '(' + JSON.stringify(kinds) + '; term ' + JSON.stringify(truth.term) + ')',
+      Object.values(kinds).every(Boolean), true);
     const hiding = truth.out.filter((r) => r.empty && r.slot);
     if (hiding.length) {
       expect('...and a view hiding every match is among the presses, so the rule '
         + 'above was exercised and not satisfied by never emptying a view ('
-        + hiding.map((r) => r.view + ':' + r.chip + ' says ' + JSON.stringify(r.said))
+        + hiding.map((r) => r.view + ':' + r.press + ' says ' + JSON.stringify(r.said))
           .join('; ') + ')', hiding.length > 0, true);
+      expect('es2 after Show all phases the keyboard is on the View select, not on '
+        + 'the hidden button (' + truth.focus.showAll.press + ')',
+        truth.focus.showAll.onView, true);
     } else {
-      notes.push('ok   (no chip empties a view while phases outside it match - '
+      notes.push('ok   (no press empties a view while phases outside it match - '
         + 'the hidden-matches sentence was not exercised)');
+    }
+    if (truth.focus.clear) {
+      expect('es1 after the Clear inside the empty state the keyboard is on the View select, '
+        + 'not on the hidden button (' + truth.focus.clear.press + ')',
+        truth.focus.clear.onView, true);
+    } else {
+      notes.push('ok   (no press empties the table - the Clear inside the empty state was not pressed)');
     }
   }
 }
@@ -1160,33 +1291,49 @@ if (termInfo.term === null) {
   if (hit.phases < 1 || hit.phases >= load.total) {
     failures.push(`FAIL filtering by "${term}" narrows the list: got ${hit.phases} of ${load.total}${guardNote}`);
   } else notes.push(`ok   filtering by "${term}" narrows the list: ${hit.phases} of ${load.total}${guardNote}`);
-  if (!/\d+ of \d+ phases? \(/.test(hit.count)) {
+  if (!/\d+ of \d+ phases? in view/.test(hit.count)) {
     failures.push(`FAIL the count reports the filtered total: got "${hit.count}"`);
   } else notes.push(`ok   the count reports the filtered total: "${hit.count}"`);
-  // The counter's BASIS, read against the two things it must agree with: the
-  // header's own totals (whose task total leaves cancelled work out) and the
-  // View select's own wording. "165 phases" over a table showing five, and a
-  // task denominator counting what the header did not, were the defect.
+  // The counter's BASIS, read against what it must agree with: the header's own
+  // totals (whose task total leaves cancelled work out), and the cancelled
+  // matches it leaves out named rather than dropped - counted here off the rows
+  // the page shows, so a clause that is missing and one that is invented both
+  // disagree. "165 phases" over a table showing five, and a task denominator
+  // counting what the header did not, were the defect.
   {
-    const basis = await page.evaluate(() => {
-      const sel = document.getElementById('audit-view');
+    const basis = await page.evaluate((t) => {
       const meta = (document.querySelector('.tb-id .meta') || {}).textContent || '';
       const hp = /(\d+) phases? · (\d+) tasks?/.exec(meta);
+      const shownRows = [...document.querySelectorAll('table.phases tbody tr.phase')]
+        .filter((r) => r.style.display !== 'none');
+      // A task is a match when its own row OR its phase's row holds the term:
+      // a phase found by its title brings every one of its tasks with it. The
+      // row's match badge is left out - the page read the row's words before
+      // any filter wrote one.
+      const own = (r) => {
+        const badge = r.querySelector('.pmatch');
+        return r.textContent.replace(badge ? badge.textContent : '', '').toLowerCase();
+      };
+      const phaseHit = new Map(shownRows.map((r) =>
+        [r.getAttribute('data-phase'), own(r).includes(t)]));
       return {
         count: (document.getElementById('audit-count') || {}).textContent || '',
-        view: sel ? sel.options[sel.selectedIndex].textContent : null,
         phases: hp ? Number(hp[1]) : null,
         tasks: hp ? Number(hp[2]) : null,
-        shown: [...document.querySelectorAll('table.phases tbody tr.phase')]
-          .filter((r) => r.style.display !== 'none').length,
+        shown: shownRows.length,
+        cancelled: [...document.querySelectorAll('table.phases tbody tr.task[data-status="cancelled"]')]
+          .filter((r) => phaseHit.has(r.getAttribute('data-phase'))
+            && (phaseHit.get(r.getAttribute('data-phase'))
+              || r.textContent.toLowerCase().includes(t))).length,
       };
-    });
-    const m = /^(\d+) of (\d+) phases? \((.*)\) · (\d+) of (\d+) tasks?$/.exec(basis.count);
+    }, term);
+    const m = /^(\d+) of (\d+) phases? in view · (\d+) of (\d+) tasks?(?:, (\d+) cancelled match(?:es)?)?$/
+      .exec(basis.count);
     expect('the filtered count names its basis - shown of the header\'s phases, in '
-      + 'the view the select names, and tasks of the header\'s task total ('
-      + JSON.stringify(basis) + ')',
+      + 'the view, tasks of the header\'s task total, and the cancelled matches it '
+      + 'leaves out (' + JSON.stringify(basis) + ')',
       !!m && Number(m[1]) === basis.shown && Number(m[2]) === basis.phases
-        && m[3] === basis.view && Number(m[5]) === basis.tasks, true);
+        && Number(m[4]) === basis.tasks && Number(m[5] || 0) === basis.cancelled, true);
   }
   // A TEXT filter is the one that used to force its matches open — one character
   // typed grew the page by screens and scrolled away what was being read, and
@@ -1196,6 +1343,51 @@ if (termInfo.term === null) {
   expect('a text filter does not auto-expand the phases it matches', hit.tasks, 0);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(250);
+}
+
+// A cancelled task a search finds is shown in its phase, and the task fraction
+// leaves it out - so the count has to say it is there, or the screen holds a
+// match the count calls zero. Searched by the task's own id, in View=All so its
+// phase is drawn whatever segment it files under.
+{
+  const cx = await page.evaluate(() => {
+    const r = document.querySelector('table.phases tbody tr.task[data-status="cancelled"]');
+    const id = r && r.querySelector('td.tid');
+    return id ? id.textContent.trim().toLowerCase() : null;
+  });
+  if (cx === null) {
+    notes.push('ok   (no cancelled task in this plan - the cancelled-match clause was not exercised)');
+  } else {
+    const viewWas = await page.$eval('#audit-view', (s) => s.value);
+    await page.selectOption('#audit-view', 'all');
+    await page.fill('#audit-q', cx);
+    await page.waitForTimeout(300);
+    const said = await page.evaluate((t) => {
+      // The same rule as the basis check above: its own row or its phase's,
+      // the phase's match badge left out.
+      const own = (r) => {
+        const badge = r.querySelector('.pmatch');
+        return r.textContent.replace(badge ? badge.textContent : '', '').toLowerCase();
+      };
+      const phaseHit = new Map([...document.querySelectorAll('table.phases tbody tr.phase')]
+        .filter((r) => r.style.display !== 'none')
+        .map((r) => [r.getAttribute('data-phase'), own(r).includes(t)]));
+      return {
+        count: document.getElementById('audit-count').textContent,
+        truth: [...document.querySelectorAll('table.phases tbody tr.task[data-status="cancelled"]')]
+          .filter((r) => phaseHit.has(r.getAttribute('data-phase'))
+            && (phaseHit.get(r.getAttribute('data-phase'))
+              || r.textContent.toLowerCase().includes(t))).length,
+      };
+    }, cx);
+    const m = /, (\d+) cancelled match(?:es)?$/.exec(said.count);
+    expect(`a search for the cancelled task ${cx} names the cancelled matches the task count `
+      + `leaves out (${JSON.stringify(said)})`,
+      !!m && said.truth > 0 && Number(m[1]) === said.truth, true);
+    await page.fill('#audit-q', '');
+    await page.selectOption('#audit-view', viewWas);
+    await page.waitForTimeout(250);
+  }
 }
 
 // ...and the closed row has to say WHY it survived, which is what replaces the
@@ -1690,8 +1882,8 @@ if (await page.$('#audit-area-select')) {
 }
 
 // The new chrome must not grow any scroll box (the assertHintsFit rule): the
-// filter row lives in the top bar at every width (sticky above 52rem, scrolling
-// with the page below it), so at no width may the PAGE scroll sideways because
+// filter row lives in the top bar at every width (sticky above 52rem unless the
+// screen is under 32rem tall, scrolling with the page otherwise), so at no width may the PAGE scroll sideways because
 // of it. 390px is the width that found the last
 // such defect (the filter panel).
 for (const w of [1512, 390]) {
@@ -2511,8 +2703,8 @@ if (barState.open === true) {
 //    nobody meant to make sticky. The layers it may be held to are read in the
 //    same pass, so the bound and the measurement come from one layout.
 //
-//    The bound is read off that layout, not chosen. Below 52rem the top bar
-//    scrolls with the page (forced-colors.css says what it held while it was
+//    The bound is read off that layout, not chosen. Below 52rem wide, and below
+//    32rem tall, the top bar scrolls with the page (forced-colors.css says what it held while it was
 //    pinned), so the layers a reader keeps over a table row are the section strip
 //    (where am I) and, while More filters is shut, the table's own filter bar
 //    (what is filtering it); open, the bar is static and only the strip may pin.
@@ -2537,27 +2729,29 @@ if (barState.open === true) {
 //    the filterBarShutShare figure recorded just above.
 const STACK_SLACK_PX = 2;
 const STACK_CEILING_SHARE = 0.5;
-const STACK_CEILING_PX = Math.floor(PHONE_TALL.height * STACK_CEILING_SHARE);
 //    Both halves judge their measurement twice, on separate lines so a red says
-//    which question failed: the layers its state allows, and the ceiling.
-const judgeStack = (what, m, layers) => {
+//    which question failed: the layers its state allows, and the ceiling. The
+//    ceiling is a share of the screen the stack was measured on, so each size
+//    gets its own.
+const judgeStack = (what, m, layers, size = PHONE_TALL) => {
+  const ceiling = Math.floor(size.height * STACK_CEILING_SHARE);
   const bound = layers.reduce((sum, l) => sum + l.px, 0) + STACK_SLACK_PX;
   const parts = layers.map((l) => `${l.name} ${l.px.toFixed(1)}`).join(' + ');
-  const where = `scrolled into the table at ${PHONE_TALL.width}x${PHONE_TALL.height}`;
-  const pct = share(m.stack, PHONE_TALL.height);
+  const where = `scrolled into the table at ${size.width}x${size.height}`;
+  const pct = share(m.stack, size.height);
   expect(`ph1 ${what}, ${where}, pins no more than the ${layers.map((l) => l.long).join(' and the ')} `
     + `(${m.stack}px against a ${bound.toFixed(1)}px bound = ${parts} + slack ${STACK_SLACK_PX}; `
     + `${pct}% of the screen)`,
     m.stack <= bound, true);
-  expect(`ph1 ${what} leaves the table at least half the screen it is read on `
-    + `(${m.stack}px pinned against a ${STACK_CEILING_PX}px ceiling = ${STACK_CEILING_SHARE} `
-    + `of ${PHONE_TALL.height}px; ${pct}% of the screen)`,
-    m.stack <= STACK_CEILING_PX, true);
+  expect(`ph1 ${what} leaves the table at least ${1 - STACK_CEILING_SHARE} of the screen it is read on `
+    + `(${m.stack}px pinned against a ${ceiling}px ceiling = ${STACK_CEILING_SHARE} `
+    + `of ${size.height}px; ${pct}% of the screen)`,
+    m.stack <= ceiling, true);
 };
 const STACK_UNMEASURED = 'ph1 scrolled into the phases table at the phone size, no point '
   + 'down the middle of the screen is the table - the stack over it could not be measured';
-const stackOverTable = async () => {
-  await page.setViewportSize(PHONE_TALL);
+const stackOverTable = async (size = PHONE_TALL) => {
+  await page.setViewportSize(size);
   await page.evaluate(() => {
     const t = document.querySelector('table.phases');
     if (t) window.scrollTo(0, window.scrollY + t.getBoundingClientRect().top + 10);
@@ -2595,6 +2789,24 @@ if (barState.open !== true) {
       { name: 'strip', long: 'strip', px: shutStack.strip },
       { name: 'bar', long: 'shut filter bar', px: shutStack.bar },
     ]);
+  }
+  //    ...and the same phone turned on its side. Wider than the 52rem block, so
+  //    nothing about its WIDTH unpins the top bar, and short enough that the
+  //    bar is most of the screen: measured before the short-screen query, the
+  //    top bar, strip and filter bar pinned 293px of 390, three quarters of it.
+  //    The same two layers are allowed, and the ceiling is a share of 390.
+  //    Only the shut half: wider than 52rem, More filters opens as a layer hung
+  //    off the bar rather than as the bar growing, so its open state is not a
+  //    stack the strip alone may be held to.
+  const PHONE_LANDSCAPE = { width: PHONE_TALL.height, height: PHONE_TALL.width };
+  const sideStack = await stackOverTable(PHONE_LANDSCAPE);
+  if (sideStack.stack === null) {
+    failures.push(`FAIL ${STACK_UNMEASURED} (More filters shut, ${PHONE_LANDSCAPE.width}x${PHONE_LANDSCAPE.height})`);
+  } else {
+    judgeStack('resting stack on a phone held sideways (More filters shut)', sideStack, [
+      { name: 'strip', long: 'strip', px: sideStack.strip },
+      { name: 'bar', long: 'shut filter bar', px: sideStack.bar },
+    ], PHONE_LANDSCAPE);
   }
 }
 //    Same pairing as step 6: the <details> without the panel inside it is a
@@ -3577,10 +3789,8 @@ if (!STRESS) {
   const CL_CHIPS = '.sectools [aria-pressed], .tf-chips [aria-pressed], .auchips [aria-pressed]';
   const CL_FIELDS = '.sectools input, .gfilters input, .gfilters select';
   const CL_ALL = CL_CHIPS + ', ' + CL_FIELDS;
-  // The chip attributes the page's own script wires, read off the document. A
-  // wired attribute no exercised chip carries is reported as not exercised.
-  const wiredAttrs = [...new Set([...source.matchAll(/wireChips\([^,()]+, '(data-[a-z]+)'/g)]
-    .map((m) => m[1]))].sort();
+  // A wired attribute no exercised chip carries is reported as not exercised.
+  const wiredAttrs = WIRED_CHIP_ATTRS;
   const cctx = await browser.newContext({ viewport: { width: 1512, height: 945 } });
   const cp = await cctx.newPage();
   const clErrors = [];
@@ -3616,6 +3826,11 @@ if (!STRESS) {
       fields: [...document.querySelectorAll(all)].filter((e) => 'value' in e && !e.hasAttribute('aria-pressed'))
         .map((e) => e.value).join('\u0001'),
       clear: !!document.querySelector('.sectools [data-clear]:not([hidden])'),
+      // What More filters folds away and has switched on: a pressed chip or a
+      // field holding a value inside the disclosure. Its badge is about these.
+      panelOn: [...document.querySelectorAll('.fdetails [aria-pressed], .fdetails input, .fdetails select')]
+        .filter((e) => (e.hasAttribute('aria-pressed')
+          ? e.getAttribute('aria-pressed') === 'true' : !!e.value)).length,
     };
   }, { all: CL_ALL, chips: CL_CHIPS });
   const describe = (s) => [
@@ -3630,7 +3845,8 @@ if (!STRESS) {
   await fresh();
   const atLoad = await clSnap();
   const n = await cp.evaluate((all) => document.querySelectorAll(all).length, CL_ALL);
-  const left = { offer: [], pressed: [], fcount: [], hash: [], stored: [], phases: [], fields: [], reload: [] };
+  const left = { offer: [], pressed: [], fcount: [], hash: [], stored: [], phases: [], fields: [], reload: [],
+                 badge: [] };
   const idle = [];
   const unseen = [];
   const exercised = new Set();
@@ -3696,6 +3912,15 @@ if (!STRESS) {
       await fresh();
       continue;
     }
+    // The More-filters badge counts what is on INSIDE it, and only that: a
+    // count over a panel with nothing pressed sends the reader looking for a
+    // filter that is not there, and no count over a pressed one hides it.
+    // Judged here, past the branch above, so only a control that is filtering
+    // is asked: the All-time preset lights a chip and filters nothing.
+    if (Boolean(on.fcount) !== (on.panelOn > 0)) {
+      left.badge.push(prep.label + ' (More filters says ' + JSON.stringify(on.fcount)
+        + ' with ' + on.panelOn + ' of its own controls on)');
+    }
     await cp.click('.sectools [data-clear]');
     const cleared = await clSnap();
     if (cleared.pressed.length) left.pressed.push(prep.label + ' (still pressed: ' + cleared.pressed.join(' ') + ')');
@@ -3733,6 +3958,8 @@ if (!STRESS) {
     left.fields.join(' · ') || 'none', 'none');
   expect('cl8 Clear lifts every axis - the cleared view is still clear after a reload',
     left.reload.join(' · ') || 'none', 'none');
+  expect('cl10 More filters counts a filter exactly while one of its own controls is on',
+    left.badge.join(' · ') || 'none', 'none');
   expect('cl9 Clear lifts every axis - the page raised no error while being driven',
     clErrors.slice(0, 2).join(' | ') || 'none', 'none');
   const notExercised = wiredAttrs.filter((a) => !exercised.has(a));

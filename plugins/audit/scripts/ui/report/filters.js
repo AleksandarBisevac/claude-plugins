@@ -119,9 +119,12 @@
     // `totT` and `visT` leave cancelled tasks out on BOTH sides of the
     // fraction, which is the header's own basis for its task total: a
     // denominator that counted what the header did not was a second number for
-    // one question. `outP` counts the phases that match but sit outside the
-    // view, off the verdict below rather than a second filter pass.
-    let visP = 0, visT = 0, totT = 0, outP = 0;
+    // one question. `visX` is what that basis leaves out of the drawn phases -
+    // cancelled tasks that match - so the count can name them instead of
+    // calling a phase drawn for one of them a phase with no match. `outP`
+    // counts the phases that match but sit outside the view, off the verdict
+    // below rather than a second filter pass.
+    let visP = 0, visT = 0, totT = 0, visX = 0, outP = 0;
     const outSegs = [];
     // Plain `{}` on purpose, and the one map here that keeps its prototype:
     // the key is `data-seg`, which Python's `_seg_of` emits from a closed
@@ -133,7 +136,7 @@
       const tasks = tasksOf(pid);
       const tf = taskStatus[pid] || '';
       const pText = textHit(pr, term);
-      let anyTaskText = false, nMatch = 0, nCounted = 0;
+      let anyTaskText = false, nMatch = 0, nCounted = 0, nLeftOut = 0;
       tasks.forEach((t) => {
         const counted = t.getAttribute('data-status') !== 'cancelled';
         if (counted) totT++;
@@ -154,6 +157,7 @@
         if (t.__hit) {
           nMatch++;
           if (counted) nCounted++;
+          else nLeftOut++;
         }
       });
       // phase-level: status + area gates + text (phase title OR any task matches)
@@ -169,7 +173,7 @@
                   && inView(pr.__seg);
       pr.style.display = showP ? '' : 'none';
       if (showP) {
-        visP++; visT += nCounted;
+        visP++; visT += nCounted; visX += nLeftOut;
         segVis[pr.__seg] = (segVis[pr.__seg] || 0) + 1;
       }
       // A match the view is hiding: it would have shown under All phases.
@@ -223,12 +227,18 @@
     bugRows.forEach((b) => { b.style.display = textHit(b, term) ? '' : 'none'; });
 
     if (count) {
-      // The view is named at rest as well as filtered: "165 phases" over a table
-      // showing five read as the size of the table, and the view was why it was
-      // not. Tasks join the phases once something filters, since a filter can
-      // narrow a phase from the inside while the phase count barely moves.
-      count.textContent = visP + ' of ' + plural(phaseRows.length, 'phase') + ' (' + viewName() + ')'
-        + (anyFilter ? ' · ' + visT + ' of ' + plural(totT, 'task') : '');
+      // The view is the basis at rest as well as filtered: "165 phases" over a
+      // table showing five read as the size of the table, and the view was why
+      // it was not. Pointed at rather than repeated - the View select beside
+      // the count already names it, and its wording in brackets wrapped the
+      // pinned bar onto a second line at 1512px. Tasks join the phases once
+      // something filters, since a filter can narrow a phase from the inside
+      // while the phase count barely moves; and cancelled matches the task
+      // fraction leaves out are named, so a phase drawn for one of them does
+      // not sit under a count of zero.
+      count.textContent = visP + ' of ' + plural(phaseRows.length, 'phase') + ' in view'
+        + (anyFilter ? ' · ' + visT + ' of ' + plural(totT, 'task')
+          + (visX ? ', ' + plural(visX, 'cancelled match', 'cancelled matches') : '') : '');
     }
     // Filtered down to nothing, the table was an empty frame with no explanation
     // and no way back except undoing each control by hand.
@@ -272,9 +282,20 @@
   // Show all phases takes the View control's own path - the select set and its
   // change dispatched - so the stored view, the link and the select cannot
   // disagree about what is on screen.
+  //
+  // Both buttons of the empty state hide the row they sit in, so each hands
+  // the keyboard to the View select on the way out: a focus left on a hidden
+  // button sends the next Tab past the whole table. The select is the control
+  // that says which phases are now drawn. The Clear here is the second copy of
+  // the toolbar's, whose own press is wired with the others in date-range.js;
+  // only the empty state's copy moves focus, because only it disappears.
   if (showAllBtn && viewSel) {
     showAllBtn.addEventListener('click', () => {
       viewSel.value = 'all';
       viewSel.dispatchEvent(new Event('change'));
+      viewSel.focus();
     });
+  }
+  if (norowClear && viewSel) {
+    norowClear.addEventListener('click', () => { viewSel.focus(); });
   }

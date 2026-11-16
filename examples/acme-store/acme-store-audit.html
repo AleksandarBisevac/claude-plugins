@@ -437,7 +437,19 @@ h2{font-size:.82rem;font-weight:700;letter-spacing:.06em;text-transform:uppercas
    offset it computed from --sticky-2 — no sentinel element, no second observer. */
 .sectools.stuck{box-shadow:var(--shadow-sm)}
 @media print{.sectools{display:none!important}}
-#audit-q{flex:0 1 15rem;min-width:8rem;padding:.5rem .75rem;font:inherit;color:var(--text);
+/* The pinned bar holds one line at a laptop width, and the two controls whose
+   width is elastic by nature are the ones that give way: the search box and
+   the count. A wrapping flex line is filled by each item's BASIS before
+   anything shrinks, so at a 15rem search basis and a count as wide as its
+   sentence, the count moved onto a line of its own at 1512px once the
+   phase-status chips or the Sort select took more of the row - a whole line of
+   pinned bar for one sentence (nw1 in tools/check-report-interactive.mjs
+   measures the bar with and without the count). Placed at small bases, both
+   grow back into what the line has left; short of room, the count wraps its own
+   words onto a second line of text, and at this line height two of them still
+   fit in the row the search box sets. */
+#audit-count{flex:1 1 6rem;min-width:0;line-height:1.25}
+#audit-q{flex:1 1 9rem;min-width:8rem;max-width:15rem;padding:.5rem .75rem;font:inherit;color:var(--text);
   background:var(--bg);border:1px solid var(--border);border-radius:var(--pill);
   transition:border-color var(--dur),box-shadow var(--dur)}
 #audit-q::placeholder{color:var(--muted)}
@@ -1026,19 +1038,25 @@ h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
      rule and keeps the panel fix above — the selector is a lower bar than the
      `color-mix()` this sheet already paints every status pill with. */
   .sectools:has(.fdetails[open]){position:static}
-  /* The top bar scrolls with the page here. Wrapped onto a phone it is three
-     lines - the title, the document actions and the header's filter row - and
-     pinned with the section strip and the table's own filter bar it held more
-     than half of a 390x844 screen over the rows before this rule; ph1 in
-     tools/check-report-interactive.mjs measures that stack by hit-test and
-     prints its share of the screen. None of those
-     three lines is what a reader needs while reading a table row; the strip
+}
+@media (max-width:52rem),(max-height:32rem){
+  /* The top bar scrolls with the page on a narrow screen AND on a short one.
+     Wrapped onto a phone it is three lines - the title, the document actions and
+     the header's filter row - and pinned with the section strip and the table's
+     own filter bar it held more than half of a 390x844 screen over the rows
+     before this rule. Held sideways the same phone is wider than 52rem and only
+     390px tall, and the width query alone left the bar pinned there: three
+     quarters of the screen. ph1 in tools/check-report-interactive.mjs measures
+     both stacks by hit-test and prints their share of the screen. None of the
+     bar's lines is what a reader needs while reading a table row; the strip
      (where am I) and the table's bar (what is filtering it) are, and they stay
-     pinned. A viewport query rather than a container query because the cost is
-     a share of the SCREEN, and the bar is as wide as the screen anyway.
-     measureStack() reads the bar's computed position and publishes a zero
-     offset while it is static; the token below is the same answer for a page
-     whose script did not run. */
+     pinned. A viewport query rather than a container query because the cost is a
+     share of the SCREEN, and the bar is as wide as the screen anyway. 32rem
+     (512px) tall sits above the phone held sideways that ph1 measures, and below
+     the viewport a 768px-tall laptop screen leaves under the browser's bars.
+     measureStack() reads the bar's computed position and publishes a zero offset
+     while it is static; the token below is the same answer for a page whose
+     script did not run. */
   .topbar{position:static}
   :root{--topbar-h:0px}
 }
@@ -1048,7 +1066,8 @@ h1,.meta,.overall,.summary{animation:fadeUp .5s var(--ease) both}
   .vd-word{font-size:1.75rem}
   .overall,.summary{padding:.75rem 1rem}
   .toolbar{gap:.5rem .5rem}
-  #audit-q{flex-basis:100%;order:-1}
+  /* The full row, so no cap: the laptop rule's max-width is about sharing a line. */
+  #audit-q{flex-basis:100%;order:-1;max-width:none}
   .bar{max-width:52vw}
   /* A date field is the widest control the panel has and the one with the most to
      lose from being squeezed: below its intrinsic width the UA elides the picker
@@ -1550,7 +1569,7 @@ details.more>summary:hover{color:var(--text)}
 }
 </style>
 <div id="audit-nojs" class="nojs" role="status"><strong>This report is interactive, and its scripts are not running here.</strong> Filtering, search, sorting and expanding a phase all need them. An IDE preview pane usually blocks inline scripts — open this file in a real browser and it will work.</div>
-<header class="topbar"><div class="tb-id"><h1>ACME Store — security &amp; correctness audit</h1><p class="meta">acme-store · 7 phases · 14 tasks · 5 bugs · generated 2026-11-16 17:59 UTC · <span class="stampv" title="The plugin version that rendered this file">audit 3.8.0</span></p></div>
+<header class="topbar"><div class="tb-id"><h1>ACME Store — security &amp; correctness audit</h1><p class="meta">acme-store · 7 phases · 14 tasks · 5 bugs · generated 2026-11-16 19:43 UTC · <span class="stampv" title="The plugin version that rendered this file">audit 3.8.0</span></p></div>
 <div class="toolbar tb-actions"><button type="button" id="audit-print" class="btn btn-primary" title="Print / Save as PDF — the whole plan, every phase expanded. Paper size and orientation are yours to pick in the print dialog.">Save as PDF</button><button type="button" id="audit-dl-md" class="btn">Download .md</button><button type="button" id="audit-theme" class="btn btn-icon" aria-label="Toggle light/dark theme" title="Toggle light/dark theme">☾</button></div><div class="gfilters" role="group" aria-label="Report filters, each naming the section it narrows"><label class="gf"><span class="tbl">Author <span class="gfscope">(usage)</span></span><select id="audit-au-select" aria-label="Author (usage): scope the Usage section&#39;s per-author views to one author"><option value="">All authors</option><option value="sara@acme.example">sara@acme.example</option><option value="milos@acme.example">milos@acme.example</option><option value="alex@acme.example">alex@acme.example</option></select></label><label class="gf"><span class="tbl">Area <span class="gfscope">(phases)</span></span><select id="audit-area-select" aria-label="Area (phases): show only phases tagged with this area"><option value="">All areas</option><option value="storefront">storefront</option><option value="auth">auth</option><option value="checkout">checkout</option><option value="worker">worker</option></select></label><label class="gf"><span class="tbl">Worked from</span><input type="date" id="audit-gfrom" aria-label="Worked from (phases &amp; usage): start of the date range scoping the phases table and the usage charts" min="2026-05-26" max="2026-07-21"></label><label class="gf"><span class="tbl">to</span><input type="date" id="audit-gto" aria-label="to (phases &amp; usage): end of the date range scoping the phases table and the usage charts" min="2026-05-26" max="2026-07-21"></label><span class="gfscope">(phases &amp; usage)</span><button type="button" class="btn" id="audit-gclear" hidden title="Clear the date range - back to all time">All time</button></div></header>
 <div class="shell"><nav class="snav" aria-label="Report sections"><p class="snav-title">Contents</p><ol><li class="item"><a href="#gate">Gate</a></li><li class="item"><a href="#phases">Phases<span class="n">7</span></a></li><li class="item"><a href="#usage">Usage</a></li><li class="sub-item"><a href="#usage-trend">Tokens per day</a></li><li class="sub-item"><a href="#usage-budget">Budget</a></li><li class="item"><a href="#bugs">Bugs<span class="n">3</span></a></li><li class="item"><a href="#ready">Ready now<span class="n">3</span></a></li></ol></nav><main class="content">
 <div class="topgrid">
@@ -1769,7 +1788,7 @@ claude-sonnet-5	1.46M</title></rect></svg></div></div></div><h4 class="sub">Phas
 <div class="tablewrap"><table class="data bugs"><thead><tr><th>id</th><th>title</th><th>status</th><th>severity</th><th>task</th><th>fixedIn</th><th data-col="tests">test gate</th><th>ADO</th></tr></thead><tbody><tr data-status="open"><td class=mono>BUG-1</td><td>Product images 404 intermittently on Safari</td><td><span class="chip" data-status="open">Open</span></td><td>med</td><td class=mono>—</td><td class=mono>—</td><td class="tevcell"><span class="muted">no fix task yet</span></td><td><span class="muted">—</span></td></tr><tr data-status="triaged"><td class=mono>BUG-2</td><td>Checkout is slow on 3G mobile</td><td><span class="chip" data-status="triaged">Triaged</span></td><td>low</td><td class=mono>—</td><td class=mono>—</td><td class="tevcell"><span class="muted">no fix task yet</span></td><td><span class="muted">—</span></td></tr><tr data-status="in_progress"><td class=mono>BUG-3</td><td>Cart total off-by-one with stacked discounts</td><td><span class="chip" data-status="in_progress">In progress</span></td><td>med</td><td class=mono>BF1.1</td><td class=mono>—</td><td class="tevcell"><span class="chip tev" data-tev="no-checks" title="run 2026-07-20T13:22:00Z.a05d29 recorded 2026-07-20T13:22:00Z">No checks ran</span><span class="tevf" data-tevf="coverage-unknown">coverage unknown</span> <span class="muted">via BF1.1</span></td><td><a href="https://dev.azure.com/acme/store/_workitems/edit/1508">#1508</a></td></tr><tr data-status="fixed"><td class=mono>BUG-4</td><td>Logout does not clear the session cookie</td><td><span class="chip" data-status="fixed">Fixed</span></td><td>high</td><td class=mono>BF1.2</td><td class=mono>—</td><td class="tevcell"><span class="chip tev" data-tev="passed" title="run 2026-07-21T18:01:00Z.7c4e0b recorded 2026-07-21T18:01:00Z">Passed</span> <span class="muted">via BF1.2</span></td><td><span class="muted">—</span></td></tr><tr data-status="wontfix"><td class=mono>BUG-5</td><td>Dark-mode label contrast below AA</td><td><span class="chip" data-status="wontfix">Won’t fix</span></td><td>low</td><td class=mono>—</td><td class=mono>—</td><td class="tevcell"><span class="muted">no fix task yet</span></td><td><span class="muted">—</span></td></tr></tbody></table></div>
 <h2 id="ready">Ready now</h2><dl class="ready"><dt><code class="mono">P2.4</code> <strong>Add zod schemas for cart mutations</strong> <span class="area-tag">storefront</span> <span class="area-tag">checkout</span></dt><dd>In <span class="mono">P2</span> — Input validation. Cleared: depends on P2.1 (done)</dd><dt><code class="mono">P4.1</code> <strong>Write down the auth and checkout invariants</strong> <span class="area-tag">auth</span> <span class="area-tag">checkout</span></dt><dd>In <span class="mono">P4</span> — Documentation. Nothing blocked it — ready from the start.</dd><dt><code class="mono">P5.1</code> <strong>Cap the retry backoff</strong> <span class="area-tag">worker</span></dt><dd>In <span class="mono">P5</span> — Sync worker resilience. Nothing blocked it — ready from the start.</dd></dl>
 </main></div>
-<script>window.AUDIT_MD_B64="IyBBQ01FIFN0b3JlIOKAlCBzZWN1cml0eSAmIGNvcnJlY3RuZXNzIGF1ZGl0CgpyZXBvOiBhY21lLXN0b3JlIMK3IGdlbmVyYXRlZCAyMDI2LTExLTE2IDE3OjU5IFVUQwoKPiBQaGFzZSAwIChmcmFtZXdvcmsgdXBncmFkZSkgd2FzIGZpbmlzaGVkIGJlZm9yZSB0aGlzIHByb2plY3Qgc3RhcnRlZCByZWNvcmRpbmcgdGVzdCBydW5zLCBzbyBub3RoaW5nIGluIGl0IHBvaW50cyBhdCBvbmUg4oCUIHRoZSB0ZXN0LWdhdGUgY29sdW1uIHNheXMgJ0JlZm9yZSByZWNvcmRpbmcnIHJhdGhlciB0aGFuICdObyBldmlkZW5jZScsIGFuZCB0aGUgbm8tdGVzdC1ldmlkZW5jZSBnYXRlIGV4Y3VzZXMgaXQgaW5zdGVhZCBvZiBmYWlsaW5nIGl0LiBQaGFzZSAxIChhdXRoIGhhcmRlbmluZykgaXMgc2lnbmVkIG9mZiBhbmQgbWVyZ2VkOiBwYXNzd29yZHMgbm93IHVzZSBBcmdvbjJpZCBhbmQgbG9naW4gaXMgcmF0ZS1saW1pdGVkLiBQaGFzZSAyIChpbnB1dCB2YWxpZGF0aW9uKSBpcyBpbiBwcm9ncmVzcyB3aXRoIG9uZSB0YXNrIGJsb2NrZWQgb24gYSBzaGFyZWQgdGVtcGxhdGUtZXNjYXBpbmcgZGVjaXNpb24uIFBoYXNlIDMgKHBlcmZvcm1hbmNlKSBpcyBnYXRlZCBiZWhpbmQgUGhhc2UgMiwgYW5kIFBoYXNlIDQgd3JpdGVzIGRvd24gdGhlIGludmFyaWFudHMgdGhlIGF1ZGl0IHJlbGllZCBvbiDigJQgZG9jdW1lbnRhdGlvbiB3b3JrLCBzbyBpdCBkZWNsYXJlcyBubyB0ZXN0IGdhdGUgYXQgYWxsLiBPZiBmaXZlIHRyYWNrZWQgYnVncywgdGhlIGxvZ291dCBzZXNzaW9uIGxlYWsgKEJVRy00KSBpcyBmaXhlZCBhbmQgdGhlIGNhcnQgb2ZmLWJ5LW9uZSAoQlVHLTMpIGlzIGJlaW5nIGZpeGVkIHJlZC1maXJzdDsgbm8gaGlnaC1zZXZlcml0eSBidWdzIHJlbWFpbiB1bnJlc29sdmVkLiBQaGFzZSA1IChzeW5jIHdvcmtlciByZXNpbGllbmNlKSBpcyBxdWV1ZWQgYmVoaW5kIHRoZSBzdG9yZWZyb250IHdvcmssIGluIGEgZGlmZmVyZW50IHBhcnQgb2YgdGhlIHN0YWNrIOKAlCBhIGJhY2tncm91bmQgR28gc2VydmljZSByYXRoZXIgdGhhbiB0aGUgc3RvcmVmcm9udCdzIFR5cGVTY3JpcHQg4oCUIGFuZCBpdHMgZ2F0ZSBpcyBhIHJ1bm5lciBuYW1lZCBmb3Igd2hhdCBpdCBpczogZ28gdGVzdCByYXRoZXIgdGhhbiBucG0gdGVzdC4KCioqT3ZlcmFsbDoqKiA2LzE0IHRhc2tzIGRvbmUgwrcgMi83IHBoYXNlcyBzaWduZWQgb2ZmIMK3IDMgb3BlbiBidWcocykgwrcgMyByZWFkeSBub3cKCiMjIFAwIOKAlCBGcmFtZXdvcmsgdXBncmFkZSAoZG9uZSwgMi8yKQpfVGhlIHN0b3JlZnJvbnQgcnVucyBvbiB0aGUgc3VwcG9ydGVkIGZyYW1ld29yayBsaW5lLCBzbyB0aGUgc2VjdXJpdHkgZml4ZXMgdGhlIGF1ZGl0IGRlcGVuZHMgb24gYXJlIGFjdHVhbGx5IGF2YWlsYWJsZS5fCgp8IGlkIHwgdGl0bGUgfCBzdGF0dXMgfCBtb2RlbCB8IHJpc2sgfCBjb21taXQgfCBkb25lIHwgdGVzdHMgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18CnwgUDAuMSB8IE1vdmUgdGhlIGFwcCBib290c3RyYXAgb250byB0aGUgbmV3IGZyYW1ld29yayBlbnRyeSBwb2ludCB8IGRvbmUgfCBzb25uZXQgfCBtZWQgfCDigJQgfCAyMDI2LTA1LTI3IHwgYmVmb3JlLXJlY29yZGluZyB8IOKAlCB8CnwgUDAuMiB8IFBvcnQgdGhlIHJvdXRlIHRhYmxlIHRvIHRoZSBuZXcgcm91dGVyIEFQSSB8IGRvbmUgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IDIwMjYtMDUtMjggfCBiZWZvcmUtcmVjb3JkaW5nIHwg4oCUIHwKCiMjIFAxIOKAlCBBdXRoIGhhcmRlbmluZyAoZG9uZSwgMi8yKQpfQ3JlZGVudGlhbHMgYXJlIHN0b3JlZCBhbmQgY2hlY2tlZCBzYWZlbHk6IG1vZGVybiBwYXNzd29yZCBoYXNoaW5nIGFuZCBhIHJhdGUtbGltaXRlZCBsb2dpbiBwYXRoLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCB0ZXN0cyB8IEFETyB8CnwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMS4xIHwgSGFzaCBwYXNzd29yZHMgd2l0aCBBcmdvbjJpZCB8IGRvbmUgfCBvcHVzIHwgaGlnaCB8IOKAlCB8IDIwMjYtMDYtMDIgfCBwYXNzZWQgfCAjMTQyMSB8CnwgUDEuMiB8IFJhdGUtbGltaXQgdGhlIGxvZ2luIGVuZHBvaW50IHwgZG9uZSB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IDIwMjYtMDYtMDkgfCBwYXNzZWQgfCDigJQgfAoKIyMgUDIg4oCUIElucHV0IHZhbGlkYXRpb24gKGluX3Byb2dyZXNzLCAxLzQpCl9FdmVyeSByZXF1ZXN0IHBheWxvYWQgYW5kIHVzZXItc3VwcGxpZWQgc3RyaW5nIGlzIHZhbGlkYXRlZCBvciBlc2NhcGVkIGJlZm9yZSBpdCByZWFjaGVzIGJ1c2luZXNzIGxvZ2ljIG9yIGEgdGVtcGxhdGUuXwoKfCBpZCB8IHRpdGxlIHwgc3RhdHVzIHwgbW9kZWwgfCByaXNrIHwgY29tbWl0IHwgZG9uZSB8IHRlc3RzIHwgQURPIHwKfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfAp8IFAyLjEgfCBWYWxpZGF0ZSB0aGUgY2hlY2tvdXQgcGF5bG9hZCB8IGRvbmUgfCBzb25uZXQgfCBtZWQgfCBjODlmZjBhMTQgfCAyMDI2LTA2LTIzIHwgZ2F0ZS1tdXRhdGVkIHwg4oCUIHwKfCBQMi4yIHwgU2FuaXRpemUgdGhlIHByb2R1Y3Qtc2VhcmNoIHF1ZXJ5IHwgaW5fcHJvZ3Jlc3MgfCBvcHVzIHwgaGlnaCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0wNiB8IG5vLWV2aWRlbmNlIHwg4oCUIHwKfCBQMi4zIHwgRXNjYXBlIHNlcnZlci1yZW5kZXJlZCB0ZW1wbGF0ZSBvdXRwdXQgfCBibG9ja2VkIHwgc29ubmV0IHwgbWVkIHwg4oCUIHwgc3RhcnRlZCAyMDI2LTA3LTEzIHwgZmFpbGVkIHwg4oCUIHwKfCBQMi40IHwgQWRkIHpvZCBzY2hlbWFzIGZvciBjYXJ0IG11dGF0aW9ucyB8IHBlbmRpbmcgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IOKAlCB8IG5vLWV2aWRlbmNlIHwg4oCUIHwKCiMjIFAzIOKAlCBQZXJmb3JtYW5jZSBwYXNzIChwZW5kaW5nLCAwLzIpCl9UaGUgY2F0YWxvZyBhbmQgcHJvZHVjdCBwYWdlcyByZW5kZXIgd2l0aG91dCB0aGUga25vd24gcmVkdW5kYW50IHdvcmsgYW5kIGhlYXZ5IGFib3ZlLXRoZS1mb2xkIGltYWdlcy5fCgp8IGlkIHwgdGl0bGUgfCBzdGF0dXMgfCBtb2RlbCB8IHJpc2sgfCBjb21taXQgfCBkb25lIHwgdGVzdHMgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18CnwgUDMuMSB8IE1lbW9pemUgdGhlIHByb2R1Y3QtbGlzdCBzZWxlY3RvciB8IHBlbmRpbmcgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IOKAlCB8IG5vLWV2aWRlbmNlIHwg4oCUIHwKfCBQMy4yIHwgTGF6eS1sb2FkIGJlbG93LXRoZS1mb2xkIGltYWdlcyB8IHBlbmRpbmcgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IOKAlCB8IG5vLWV2aWRlbmNlIHwg4oCUIHwKCiMjIEJGMSDigJQgQnVnZml4IGJhdGNoIDEgKGluX3Byb2dyZXNzLCAxLzIpCl9SZXBvcnRlZCBidWdzIGFyZSByZXByb2R1Y2VkIHJlZC1maXJzdCBhbmQgZml4ZWQuXwoKfCBpZCB8IHRpdGxlIHwgc3RhdHVzIHwgbW9kZWwgfCByaXNrIHwgY29tbWl0IHwgZG9uZSB8IHRlc3RzIHwgQURPIHwKfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfAp8IEJGMS4xIHwgRml4IEJVRy0zOiBjYXJ0IHRvdGFsIG9mZi1ieS1vbmUgd2l0aCBzdGFja2VkIGRpc2NvdW50cyB8IGluX3Byb2dyZXNzIHwgc29ubmV0IHwgbWVkIHwg4oCUIHwgc3RhcnRlZCAyMDI2LTA3LTIwIHwgbm8tY2hlY2tzIHwg4oCUIHwKfCBCRjEuMiB8IEZpeCBCVUctNDogbG9nb3V0IGxlYXZlcyB0aGUgc2Vzc2lvbiBjb29raWUgfCBkb25lIHwgb3B1cyB8IGhpZ2ggfCDigJQgfCAyMDI2LTA3LTIxIHwgcGFzc2VkIHwg4oCUIHwKCiMjIFA0IOKAlCBEb2N1bWVudGF0aW9uIChwZW5kaW5nLCAwLzEpCl9UaGUgaW52YXJpYW50cyBQaGFzZSAxIGFuZCBQaGFzZSAyIGVzdGFibGlzaGVkIGFyZSB3cml0dGVuIGRvd24gd2hlcmUgdGhlIG5leHQgcmVhZGVyIHdpbGwgbG9vayBmb3IgdGhlbSwgc28gdGhlIG5leHQgYXVkaXQgZG9lcyBub3QgcmVkaXNjb3ZlciB0aGVtLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCB0ZXN0cyB8IEFETyB8CnwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQNC4xIHwgV3JpdGUgZG93biB0aGUgYXV0aCBhbmQgY2hlY2tvdXQgaW52YXJpYW50cyB8IHBlbmRpbmcgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IOKAlCB8IG5vLWdhdGUgfCDigJQgfAoKIyMgUDUg4oCUIFN5bmMgd29ya2VyIHJlc2lsaWVuY2UgKHBlbmRpbmcsIDAvMSkKX0EgZmFpbGVkIGludmVudG9yeSBzeW5jIHJldHJpZXMgd2l0aCBjYXBwZWQgZXhwb25lbnRpYWwgYmFja29mZiBpbnN0ZWFkIG9mIGhhbW1lcmluZyB0aGUgc3VwcGxpZXIgZmVlZCBpbW1lZGlhdGVseSBhbmQgZm9yZXZlci5fCgp8IGlkIHwgdGl0bGUgfCBzdGF0dXMgfCBtb2RlbCB8IHJpc2sgfCBjb21taXQgfCBkb25lIHwgdGVzdHMgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18CnwgUDUuMSB8IENhcCB0aGUgcmV0cnkgYmFja29mZiB8IHBlbmRpbmcgfCBzb25uZXQgfCBtZWQgfCDigJQgfCDigJQgfCBuby1ldmlkZW5jZSB8IOKAlCB8CgojIyBCdWdzCgp8IGlkIHwgdGl0bGUgfCBzdGF0dXMgfCBzZXZlcml0eSB8IHRhc2sgfCBmaXhlZEluIHwKfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfAp8IEJVRy0xIHwgUHJvZHVjdCBpbWFnZXMgNDA0IGludGVybWl0dGVudGx5IG9uIFNhZmFyaSB8IG9wZW4gfCBtZWQgfCDigJQgfCDigJQgfAp8IEJVRy0yIHwgQ2hlY2tvdXQgaXMgc2xvdyBvbiAzRyBtb2JpbGUgfCB0cmlhZ2VkIHwgbG93IHwg4oCUIHwg4oCUIHwKfCBCVUctMyB8IENhcnQgdG90YWwgb2ZmLWJ5LW9uZSB3aXRoIHN0YWNrZWQgZGlzY291bnRzIHwgaW5fcHJvZ3Jlc3MgfCBtZWQgfCBCRjEuMSB8IOKAlCB8CnwgQlVHLTQgfCBMb2dvdXQgZG9lcyBub3QgY2xlYXIgdGhlIHNlc3Npb24gY29va2llIHwgZml4ZWQgfCBoaWdoIHwgQkYxLjIgfCDigJQgfAp8IEJVRy01IHwgRGFyay1tb2RlIGxhYmVsIGNvbnRyYXN0IGJlbG93IEFBIHwgd29udGZpeCB8IGxvdyB8IOKAlCB8IOKAlCB8CgojIyBSZWFkeSBub3cKClAyLjQsIFA0LjEsIFA1LjEKCgojIyBVc2FnZQoKKipUb3RhbDoqKiA5MC4zTSB0b2tlbnMgwrcgfiQxMDIuNjAgZXF1aXYgwrcgMSwyODIgbXNncyDCtyA1IHNlc3Npb24ocykgwrcgY2FjaGUgaGl0IDkzJSDCtyByYXRlcyBhcyBvZiAyMDI2LTA4LTA2LCB0aGUgcHJvamVjdCdzIHVzYWdlLnByaWNpbmcgaW4gLmNsYXVkZS9hdWRpdC5jb25maWcuanNvbjsgcm93cyBhcmUgcHJpY2VkIGF0IGdsb2JhbCByb3V0aW5nOyB0aGUgbGVkZ2VyIGRvZXMgbm90IHJlYWQgYSByZXF1ZXN0J3MgaW5mZXJlbmNlIGdlbzsgMCByb3cocykgYXQgdGhlIHJhdGUgc3RhbXBlZCB3aGVuIHdyaXR0ZW4sIDIzMiBwcmljZWQgYWdhaW4gYXQgdGhlIHJhdGUgaW4gZWZmZWN0IG9uIHRoZWlyIGRhdGUKCiMjIyBCeSBwaGFzZQoKfCBwaGFzZSB8IHRva2VucyB8IGNvc3QgfCBtc2dzIHwKfC0tLXwtLS06fC0tLTp8LS0tOnwKfCBQMCB8IDMyLjdNIHwgJDE5LjgwIHwgMzUyIHwKfCBQMSB8IDMxLjZNIHwgJDI5LjEzIHwgMjY2IHwKfCBCRjEgfCAxNS41TSB8ICQyMC4xOCB8IDEyNyB8CnwgUDIgfCA2LjRNIHwgJDI3LjQwIHwgMzQzIHwKfCBVbmNhdGVnb3JpemVkIHwgNC4wTSB8ICQ2LjA5IHwgMTk0IHwKCiMjIyBCeSBtb2RlbAoKfCBtb2RlbCB8IHRva2VucyB8IGNvc3QgfCBtc2dzIHwKfC0tLXwtLS06fC0tLTp8LS0tOnwKfCBjbGF1ZGUtc29ubmV0LTUgfCA1NC45TSB8ICQ1My4xOCB8IDY5NCB8CnwgY2xhdWRlLW9wdXMtNSB8IDI1LjhNIHwgJDQzLjk2IHwgMzc0IHwKfCBjbGF1ZGUtaGFpa3UtNC01IHwgOC45TSB8ICQyLjQ3IHwgMTgyIHwKfCBjbGF1ZGUtZmFibGUtNSB8IDc2NS4zSyB8ICQyLjk5IHwgMzIgfAoKIyMjIEJ5IGF1dGhvcgoKfCBhdXRob3IgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8Cnwgc2FyYUBhY21lLmV4YW1wbGUgfCAzMS4yTSB8ICQzMi4yMCB8IDQxNCB8CnwgbWlsb3NAYWNtZS5leGFtcGxlIHwgMzAuOU0gfCAkMzcuNjMgfCAzNjggfAp8IGFsZXhAYWNtZS5leGFtcGxlIHwgMjguMk0gfCAkMzIuNzcgfCA1MDAgfAoKIyMjIE1vbnRoIGJ5IG1vbnRoCgpQbGFuIGNvbHVtbnMgY291bnQgdGhlIHdob2xlIHByb2plY3QgYnkgZXZlbnQgbW9udGggKHRhc2sgY29tcGxldGVkQXQsIGJ1ZyByZXBvcnRlZEF0LCB0aGUgbGlua2VkIHRhc2sncyBjb21wbGV0ZWRBdCBmb3IgYSBmaXgsIHBoYXNlIG1lcmdlZEF0KS4KCnwgbW9udGggfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8IHRhc2tzIGRvbmUgfCBidWdzIHwgZml4ZWQgfCBtZXJnZWQgfAp8LS0tfC0tLTp8LS0tOnwtLS06fC0tLTp8LS0tOnwtLS06fC0tLTp8CnwgMjAyNi0wNSB8IDMzLjFNIHwgJDIwLjI2IHwgMzc0IHwgMiB8IDAgfCAwIHwgMSB8CnwgMjAyNi0wNiB8IDM3LjFNIHwgJDQ0Ljg0IHwgNjA1IHwgMyB8IDMgfCAwIHwgMSB8CnwgMjAyNi0wNyB8IDIwLjBNIHwgJDM3LjQ5IHwgMzAzIHwgMSB8IDIgfCAxIHwgMCB8CgojIyMgRWNvbm9taWNzCgotICoqQ2FjaGU6KiogOTMlIGhpdDsgdGhlIGlucHV0IHNpZGUgYmlsbHMgYXQgMjAlIG9mIGZyZXNoLXRva2VuIHJhdGVzLgotICoqTG93ZXN0IGNhY2hlIHBoYXNlOioqIFAyIGF0IDYyJS4KLSAqKkF0dHJpYnV0aW9uOioqIDk2JSBvZiBzcGVuZCBhdHRyaWJ1dGVkICg4NyUgdG8gYSBzcGVjaWZpYyB0YXNrKS4KLSAqKkNvc3QgcGVyIGNvbXBsZXRlZCB0YXNrOioqICQxMS40MSBhY3Jvc3MgNiB0YXNrKHMpLiBPZiB0aGUgcGxhbidzIDYgZG9uZSB0YXNrKHMpLCA2IGFyZSBwcmljZWQ7IG1haW4tbG9vcCBzcGVuZCBpcyBub3QgYXR0cmlidXRlZCB0byBhIHRhc2suCi0gKipQcm9qZWN0aW9uOioqIHJlbWFpbmluZyA4IHRhc2socykgYXQgdGhlIHAyNS1wNzUgcmF0ZSA9ICQ3NS42OSB0byAkMTI1Ljk1LgotICoqUmV0cmllZCB0YXNrczoqKiAkNS4zNiBhY3Jvc3MgMSB0YXNrKHMpICg1JSBvZiBzcGVuZCkuIE5vdCB0aGUgc2FtZSBhcyB3YXN0ZWQgc3BlbmQg4oCUIHRoZSBsZWRnZXIgYnVja2V0cyBieSBob3VyLCBub3QgYnkgYXR0ZW1wdC4KLSAqKkJsb2NrZWQgdGFza3M6KiogJDUuMzYgYWNyb3NzIDEgdGFzayhzKSDigJQgc3BlbmQgd2l0aCBubyBvdXRjb21lLgoKIyMjIE1vZGVsIGNvc3Qgd2l0aGluIGVhY2ggcmlzayBiYW5kCgpDb21wYXJlZCBpbnNpZGUgYSBiYW5kIG9uIHB1cnBvc2U6IGhhcmQgd29yayBpcyByb3V0ZWQgdG8gdGhlIHN0cm9uZ2VyIG1vZGVsIGRlbGliZXJhdGVseSwgc28gYSByYXcgc3BlbmQtcGVyLXRhc2sgY29tcGFyaXNvbiBhY3Jvc3MgYmFuZHMgd291bGQgZmxhZyB0aGF0IHdvcmtpbmcgc3lzdGVtIGFzIGEgZmF1bHQuCgpPZiB0aGUgcGxhbidzIDYgZG9uZSB0YXNrKHMpLCA2IGFyZSBwcmljZWQ7IG1haW4tbG9vcCBzcGVuZCBpcyBub3QgYXR0cmlidXRlZCB0byBhIHRhc2suCgp8IHJpc2sgfCBtb2RlbCB8IHRhc2tzIHwgY29zdC90YXNrIHwgbWVhbiBhdHRlbXB0cyB8CnwtLS18LS0tfC0tLTp8LS0tOnwtLS06fAp8IGhpZ2ggfCBjbGF1ZGUtb3B1cy01IHwgMyB8ICQxMS4xOSB8IDEuMCB8CnwgbWVkIHwgY2xhdWRlLXNvbm5ldC01IHwgNSB8ICQxMC4wMSB8IDEuNCB8CnwgbG93IHwgY2xhdWRlLWhhaWt1LTQtNSB8IDEgfCAkMS43NCB8IDEuMCB8Cg==";window.AUDIT_MD_NAME="acme-store-audit.md";</script>
+<script>window.AUDIT_MD_B64="IyBBQ01FIFN0b3JlIOKAlCBzZWN1cml0eSAmIGNvcnJlY3RuZXNzIGF1ZGl0CgpyZXBvOiBhY21lLXN0b3JlIMK3IGdlbmVyYXRlZCAyMDI2LTExLTE2IDE5OjQzIFVUQwoKPiBQaGFzZSAwIChmcmFtZXdvcmsgdXBncmFkZSkgd2FzIGZpbmlzaGVkIGJlZm9yZSB0aGlzIHByb2plY3Qgc3RhcnRlZCByZWNvcmRpbmcgdGVzdCBydW5zLCBzbyBub3RoaW5nIGluIGl0IHBvaW50cyBhdCBvbmUg4oCUIHRoZSB0ZXN0LWdhdGUgY29sdW1uIHNheXMgJ0JlZm9yZSByZWNvcmRpbmcnIHJhdGhlciB0aGFuICdObyBldmlkZW5jZScsIGFuZCB0aGUgbm8tdGVzdC1ldmlkZW5jZSBnYXRlIGV4Y3VzZXMgaXQgaW5zdGVhZCBvZiBmYWlsaW5nIGl0LiBQaGFzZSAxIChhdXRoIGhhcmRlbmluZykgaXMgc2lnbmVkIG9mZiBhbmQgbWVyZ2VkOiBwYXNzd29yZHMgbm93IHVzZSBBcmdvbjJpZCBhbmQgbG9naW4gaXMgcmF0ZS1saW1pdGVkLiBQaGFzZSAyIChpbnB1dCB2YWxpZGF0aW9uKSBpcyBpbiBwcm9ncmVzcyB3aXRoIG9uZSB0YXNrIGJsb2NrZWQgb24gYSBzaGFyZWQgdGVtcGxhdGUtZXNjYXBpbmcgZGVjaXNpb24uIFBoYXNlIDMgKHBlcmZvcm1hbmNlKSBpcyBnYXRlZCBiZWhpbmQgUGhhc2UgMiwgYW5kIFBoYXNlIDQgd3JpdGVzIGRvd24gdGhlIGludmFyaWFudHMgdGhlIGF1ZGl0IHJlbGllZCBvbiDigJQgZG9jdW1lbnRhdGlvbiB3b3JrLCBzbyBpdCBkZWNsYXJlcyBubyB0ZXN0IGdhdGUgYXQgYWxsLiBPZiBmaXZlIHRyYWNrZWQgYnVncywgdGhlIGxvZ291dCBzZXNzaW9uIGxlYWsgKEJVRy00KSBpcyBmaXhlZCBhbmQgdGhlIGNhcnQgb2ZmLWJ5LW9uZSAoQlVHLTMpIGlzIGJlaW5nIGZpeGVkIHJlZC1maXJzdDsgbm8gaGlnaC1zZXZlcml0eSBidWdzIHJlbWFpbiB1bnJlc29sdmVkLiBQaGFzZSA1IChzeW5jIHdvcmtlciByZXNpbGllbmNlKSBpcyBxdWV1ZWQgYmVoaW5kIHRoZSBzdG9yZWZyb250IHdvcmssIGluIGEgZGlmZmVyZW50IHBhcnQgb2YgdGhlIHN0YWNrIOKAlCBhIGJhY2tncm91bmQgR28gc2VydmljZSByYXRoZXIgdGhhbiB0aGUgc3RvcmVmcm9udCdzIFR5cGVTY3JpcHQg4oCUIGFuZCBpdHMgZ2F0ZSBpcyBhIHJ1bm5lciBuYW1lZCBmb3Igd2hhdCBpdCBpczogZ28gdGVzdCByYXRoZXIgdGhhbiBucG0gdGVzdC4KCioqT3ZlcmFsbDoqKiA2LzE0IHRhc2tzIGRvbmUgwrcgMi83IHBoYXNlcyBzaWduZWQgb2ZmIMK3IDMgb3BlbiBidWcocykgwrcgMyByZWFkeSBub3cKCiMjIFAwIOKAlCBGcmFtZXdvcmsgdXBncmFkZSAoZG9uZSwgMi8yKQpfVGhlIHN0b3JlZnJvbnQgcnVucyBvbiB0aGUgc3VwcG9ydGVkIGZyYW1ld29yayBsaW5lLCBzbyB0aGUgc2VjdXJpdHkgZml4ZXMgdGhlIGF1ZGl0IGRlcGVuZHMgb24gYXJlIGFjdHVhbGx5IGF2YWlsYWJsZS5fCgp8IGlkIHwgdGl0bGUgfCBzdGF0dXMgfCBtb2RlbCB8IHJpc2sgfCBjb21taXQgfCBkb25lIHwgdGVzdHMgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18CnwgUDAuMSB8IE1vdmUgdGhlIGFwcCBib290c3RyYXAgb250byB0aGUgbmV3IGZyYW1ld29yayBlbnRyeSBwb2ludCB8IGRvbmUgfCBzb25uZXQgfCBtZWQgfCDigJQgfCAyMDI2LTA1LTI3IHwgYmVmb3JlLXJlY29yZGluZyB8IOKAlCB8CnwgUDAuMiB8IFBvcnQgdGhlIHJvdXRlIHRhYmxlIHRvIHRoZSBuZXcgcm91dGVyIEFQSSB8IGRvbmUgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IDIwMjYtMDUtMjggfCBiZWZvcmUtcmVjb3JkaW5nIHwg4oCUIHwKCiMjIFAxIOKAlCBBdXRoIGhhcmRlbmluZyAoZG9uZSwgMi8yKQpfQ3JlZGVudGlhbHMgYXJlIHN0b3JlZCBhbmQgY2hlY2tlZCBzYWZlbHk6IG1vZGVybiBwYXNzd29yZCBoYXNoaW5nIGFuZCBhIHJhdGUtbGltaXRlZCBsb2dpbiBwYXRoLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCB0ZXN0cyB8IEFETyB8CnwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQMS4xIHwgSGFzaCBwYXNzd29yZHMgd2l0aCBBcmdvbjJpZCB8IGRvbmUgfCBvcHVzIHwgaGlnaCB8IOKAlCB8IDIwMjYtMDYtMDIgfCBwYXNzZWQgfCAjMTQyMSB8CnwgUDEuMiB8IFJhdGUtbGltaXQgdGhlIGxvZ2luIGVuZHBvaW50IHwgZG9uZSB8IHNvbm5ldCB8IG1lZCB8IOKAlCB8IDIwMjYtMDYtMDkgfCBwYXNzZWQgfCDigJQgfAoKIyMgUDIg4oCUIElucHV0IHZhbGlkYXRpb24gKGluX3Byb2dyZXNzLCAxLzQpCl9FdmVyeSByZXF1ZXN0IHBheWxvYWQgYW5kIHVzZXItc3VwcGxpZWQgc3RyaW5nIGlzIHZhbGlkYXRlZCBvciBlc2NhcGVkIGJlZm9yZSBpdCByZWFjaGVzIGJ1c2luZXNzIGxvZ2ljIG9yIGEgdGVtcGxhdGUuXwoKfCBpZCB8IHRpdGxlIHwgc3RhdHVzIHwgbW9kZWwgfCByaXNrIHwgY29tbWl0IHwgZG9uZSB8IHRlc3RzIHwgQURPIHwKfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfAp8IFAyLjEgfCBWYWxpZGF0ZSB0aGUgY2hlY2tvdXQgcGF5bG9hZCB8IGRvbmUgfCBzb25uZXQgfCBtZWQgfCBjODlmZjBhMTQgfCAyMDI2LTA2LTIzIHwgZ2F0ZS1tdXRhdGVkIHwg4oCUIHwKfCBQMi4yIHwgU2FuaXRpemUgdGhlIHByb2R1Y3Qtc2VhcmNoIHF1ZXJ5IHwgaW5fcHJvZ3Jlc3MgfCBvcHVzIHwgaGlnaCB8IOKAlCB8IHN0YXJ0ZWQgMjAyNi0wNy0wNiB8IG5vLWV2aWRlbmNlIHwg4oCUIHwKfCBQMi4zIHwgRXNjYXBlIHNlcnZlci1yZW5kZXJlZCB0ZW1wbGF0ZSBvdXRwdXQgfCBibG9ja2VkIHwgc29ubmV0IHwgbWVkIHwg4oCUIHwgc3RhcnRlZCAyMDI2LTA3LTEzIHwgZmFpbGVkIHwg4oCUIHwKfCBQMi40IHwgQWRkIHpvZCBzY2hlbWFzIGZvciBjYXJ0IG11dGF0aW9ucyB8IHBlbmRpbmcgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IOKAlCB8IG5vLWV2aWRlbmNlIHwg4oCUIHwKCiMjIFAzIOKAlCBQZXJmb3JtYW5jZSBwYXNzIChwZW5kaW5nLCAwLzIpCl9UaGUgY2F0YWxvZyBhbmQgcHJvZHVjdCBwYWdlcyByZW5kZXIgd2l0aG91dCB0aGUga25vd24gcmVkdW5kYW50IHdvcmsgYW5kIGhlYXZ5IGFib3ZlLXRoZS1mb2xkIGltYWdlcy5fCgp8IGlkIHwgdGl0bGUgfCBzdGF0dXMgfCBtb2RlbCB8IHJpc2sgfCBjb21taXQgfCBkb25lIHwgdGVzdHMgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18CnwgUDMuMSB8IE1lbW9pemUgdGhlIHByb2R1Y3QtbGlzdCBzZWxlY3RvciB8IHBlbmRpbmcgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IOKAlCB8IG5vLWV2aWRlbmNlIHwg4oCUIHwKfCBQMy4yIHwgTGF6eS1sb2FkIGJlbG93LXRoZS1mb2xkIGltYWdlcyB8IHBlbmRpbmcgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IOKAlCB8IG5vLWV2aWRlbmNlIHwg4oCUIHwKCiMjIEJGMSDigJQgQnVnZml4IGJhdGNoIDEgKGluX3Byb2dyZXNzLCAxLzIpCl9SZXBvcnRlZCBidWdzIGFyZSByZXByb2R1Y2VkIHJlZC1maXJzdCBhbmQgZml4ZWQuXwoKfCBpZCB8IHRpdGxlIHwgc3RhdHVzIHwgbW9kZWwgfCByaXNrIHwgY29tbWl0IHwgZG9uZSB8IHRlc3RzIHwgQURPIHwKfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfAp8IEJGMS4xIHwgRml4IEJVRy0zOiBjYXJ0IHRvdGFsIG9mZi1ieS1vbmUgd2l0aCBzdGFja2VkIGRpc2NvdW50cyB8IGluX3Byb2dyZXNzIHwgc29ubmV0IHwgbWVkIHwg4oCUIHwgc3RhcnRlZCAyMDI2LTA3LTIwIHwgbm8tY2hlY2tzIHwg4oCUIHwKfCBCRjEuMiB8IEZpeCBCVUctNDogbG9nb3V0IGxlYXZlcyB0aGUgc2Vzc2lvbiBjb29raWUgfCBkb25lIHwgb3B1cyB8IGhpZ2ggfCDigJQgfCAyMDI2LTA3LTIxIHwgcGFzc2VkIHwg4oCUIHwKCiMjIFA0IOKAlCBEb2N1bWVudGF0aW9uIChwZW5kaW5nLCAwLzEpCl9UaGUgaW52YXJpYW50cyBQaGFzZSAxIGFuZCBQaGFzZSAyIGVzdGFibGlzaGVkIGFyZSB3cml0dGVuIGRvd24gd2hlcmUgdGhlIG5leHQgcmVhZGVyIHdpbGwgbG9vayBmb3IgdGhlbSwgc28gdGhlIG5leHQgYXVkaXQgZG9lcyBub3QgcmVkaXNjb3ZlciB0aGVtLl8KCnwgaWQgfCB0aXRsZSB8IHN0YXR1cyB8IG1vZGVsIHwgcmlzayB8IGNvbW1pdCB8IGRvbmUgfCB0ZXN0cyB8IEFETyB8CnwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwKfCBQNC4xIHwgV3JpdGUgZG93biB0aGUgYXV0aCBhbmQgY2hlY2tvdXQgaW52YXJpYW50cyB8IHBlbmRpbmcgfCBoYWlrdSB8IGxvdyB8IOKAlCB8IOKAlCB8IG5vLWdhdGUgfCDigJQgfAoKIyMgUDUg4oCUIFN5bmMgd29ya2VyIHJlc2lsaWVuY2UgKHBlbmRpbmcsIDAvMSkKX0EgZmFpbGVkIGludmVudG9yeSBzeW5jIHJldHJpZXMgd2l0aCBjYXBwZWQgZXhwb25lbnRpYWwgYmFja29mZiBpbnN0ZWFkIG9mIGhhbW1lcmluZyB0aGUgc3VwcGxpZXIgZmVlZCBpbW1lZGlhdGVseSBhbmQgZm9yZXZlci5fCgp8IGlkIHwgdGl0bGUgfCBzdGF0dXMgfCBtb2RlbCB8IHJpc2sgfCBjb21taXQgfCBkb25lIHwgdGVzdHMgfCBBRE8gfAp8LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfC0tLXwtLS18CnwgUDUuMSB8IENhcCB0aGUgcmV0cnkgYmFja29mZiB8IHBlbmRpbmcgfCBzb25uZXQgfCBtZWQgfCDigJQgfCDigJQgfCBuby1ldmlkZW5jZSB8IOKAlCB8CgojIyBCdWdzCgp8IGlkIHwgdGl0bGUgfCBzdGF0dXMgfCBzZXZlcml0eSB8IHRhc2sgfCBmaXhlZEluIHwKfC0tLXwtLS18LS0tfC0tLXwtLS18LS0tfAp8IEJVRy0xIHwgUHJvZHVjdCBpbWFnZXMgNDA0IGludGVybWl0dGVudGx5IG9uIFNhZmFyaSB8IG9wZW4gfCBtZWQgfCDigJQgfCDigJQgfAp8IEJVRy0yIHwgQ2hlY2tvdXQgaXMgc2xvdyBvbiAzRyBtb2JpbGUgfCB0cmlhZ2VkIHwgbG93IHwg4oCUIHwg4oCUIHwKfCBCVUctMyB8IENhcnQgdG90YWwgb2ZmLWJ5LW9uZSB3aXRoIHN0YWNrZWQgZGlzY291bnRzIHwgaW5fcHJvZ3Jlc3MgfCBtZWQgfCBCRjEuMSB8IOKAlCB8CnwgQlVHLTQgfCBMb2dvdXQgZG9lcyBub3QgY2xlYXIgdGhlIHNlc3Npb24gY29va2llIHwgZml4ZWQgfCBoaWdoIHwgQkYxLjIgfCDigJQgfAp8IEJVRy01IHwgRGFyay1tb2RlIGxhYmVsIGNvbnRyYXN0IGJlbG93IEFBIHwgd29udGZpeCB8IGxvdyB8IOKAlCB8IOKAlCB8CgojIyBSZWFkeSBub3cKClAyLjQsIFA0LjEsIFA1LjEKCgojIyBVc2FnZQoKKipUb3RhbDoqKiA5MC4zTSB0b2tlbnMgwrcgfiQxMDIuNjAgZXF1aXYgwrcgMSwyODIgbXNncyDCtyA1IHNlc3Npb24ocykgwrcgY2FjaGUgaGl0IDkzJSDCtyByYXRlcyBhcyBvZiAyMDI2LTA4LTA2LCB0aGUgcHJvamVjdCdzIHVzYWdlLnByaWNpbmcgaW4gLmNsYXVkZS9hdWRpdC5jb25maWcuanNvbjsgcm93cyBhcmUgcHJpY2VkIGF0IGdsb2JhbCByb3V0aW5nOyB0aGUgbGVkZ2VyIGRvZXMgbm90IHJlYWQgYSByZXF1ZXN0J3MgaW5mZXJlbmNlIGdlbzsgMCByb3cocykgYXQgdGhlIHJhdGUgc3RhbXBlZCB3aGVuIHdyaXR0ZW4sIDIzMiBwcmljZWQgYWdhaW4gYXQgdGhlIHJhdGUgaW4gZWZmZWN0IG9uIHRoZWlyIGRhdGUKCiMjIyBCeSBwaGFzZQoKfCBwaGFzZSB8IHRva2VucyB8IGNvc3QgfCBtc2dzIHwKfC0tLXwtLS06fC0tLTp8LS0tOnwKfCBQMCB8IDMyLjdNIHwgJDE5LjgwIHwgMzUyIHwKfCBQMSB8IDMxLjZNIHwgJDI5LjEzIHwgMjY2IHwKfCBCRjEgfCAxNS41TSB8ICQyMC4xOCB8IDEyNyB8CnwgUDIgfCA2LjRNIHwgJDI3LjQwIHwgMzQzIHwKfCBVbmNhdGVnb3JpemVkIHwgNC4wTSB8ICQ2LjA5IHwgMTk0IHwKCiMjIyBCeSBtb2RlbAoKfCBtb2RlbCB8IHRva2VucyB8IGNvc3QgfCBtc2dzIHwKfC0tLXwtLS06fC0tLTp8LS0tOnwKfCBjbGF1ZGUtc29ubmV0LTUgfCA1NC45TSB8ICQ1My4xOCB8IDY5NCB8CnwgY2xhdWRlLW9wdXMtNSB8IDI1LjhNIHwgJDQzLjk2IHwgMzc0IHwKfCBjbGF1ZGUtaGFpa3UtNC01IHwgOC45TSB8ICQyLjQ3IHwgMTgyIHwKfCBjbGF1ZGUtZmFibGUtNSB8IDc2NS4zSyB8ICQyLjk5IHwgMzIgfAoKIyMjIEJ5IGF1dGhvcgoKfCBhdXRob3IgfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8CnwtLS18LS0tOnwtLS06fC0tLTp8Cnwgc2FyYUBhY21lLmV4YW1wbGUgfCAzMS4yTSB8ICQzMi4yMCB8IDQxNCB8CnwgbWlsb3NAYWNtZS5leGFtcGxlIHwgMzAuOU0gfCAkMzcuNjMgfCAzNjggfAp8IGFsZXhAYWNtZS5leGFtcGxlIHwgMjguMk0gfCAkMzIuNzcgfCA1MDAgfAoKIyMjIE1vbnRoIGJ5IG1vbnRoCgpQbGFuIGNvbHVtbnMgY291bnQgdGhlIHdob2xlIHByb2plY3QgYnkgZXZlbnQgbW9udGggKHRhc2sgY29tcGxldGVkQXQsIGJ1ZyByZXBvcnRlZEF0LCB0aGUgbGlua2VkIHRhc2sncyBjb21wbGV0ZWRBdCBmb3IgYSBmaXgsIHBoYXNlIG1lcmdlZEF0KS4KCnwgbW9udGggfCB0b2tlbnMgfCBjb3N0IHwgbXNncyB8IHRhc2tzIGRvbmUgfCBidWdzIHwgZml4ZWQgfCBtZXJnZWQgfAp8LS0tfC0tLTp8LS0tOnwtLS06fC0tLTp8LS0tOnwtLS06fC0tLTp8CnwgMjAyNi0wNSB8IDMzLjFNIHwgJDIwLjI2IHwgMzc0IHwgMiB8IDAgfCAwIHwgMSB8CnwgMjAyNi0wNiB8IDM3LjFNIHwgJDQ0Ljg0IHwgNjA1IHwgMyB8IDMgfCAwIHwgMSB8CnwgMjAyNi0wNyB8IDIwLjBNIHwgJDM3LjQ5IHwgMzAzIHwgMSB8IDIgfCAxIHwgMCB8CgojIyMgRWNvbm9taWNzCgotICoqQ2FjaGU6KiogOTMlIGhpdDsgdGhlIGlucHV0IHNpZGUgYmlsbHMgYXQgMjAlIG9mIGZyZXNoLXRva2VuIHJhdGVzLgotICoqTG93ZXN0IGNhY2hlIHBoYXNlOioqIFAyIGF0IDYyJS4KLSAqKkF0dHJpYnV0aW9uOioqIDk2JSBvZiBzcGVuZCBhdHRyaWJ1dGVkICg4NyUgdG8gYSBzcGVjaWZpYyB0YXNrKS4KLSAqKkNvc3QgcGVyIGNvbXBsZXRlZCB0YXNrOioqICQxMS40MSBhY3Jvc3MgNiB0YXNrKHMpLiBPZiB0aGUgcGxhbidzIDYgZG9uZSB0YXNrKHMpLCA2IGFyZSBwcmljZWQ7IG1haW4tbG9vcCBzcGVuZCBpcyBub3QgYXR0cmlidXRlZCB0byBhIHRhc2suCi0gKipQcm9qZWN0aW9uOioqIHJlbWFpbmluZyA4IHRhc2socykgYXQgdGhlIHAyNS1wNzUgcmF0ZSA9ICQ3NS42OSB0byAkMTI1Ljk1LgotICoqUmV0cmllZCB0YXNrczoqKiAkNS4zNiBhY3Jvc3MgMSB0YXNrKHMpICg1JSBvZiBzcGVuZCkuIE5vdCB0aGUgc2FtZSBhcyB3YXN0ZWQgc3BlbmQg4oCUIHRoZSBsZWRnZXIgYnVja2V0cyBieSBob3VyLCBub3QgYnkgYXR0ZW1wdC4KLSAqKkJsb2NrZWQgdGFza3M6KiogJDUuMzYgYWNyb3NzIDEgdGFzayhzKSDigJQgc3BlbmQgd2l0aCBubyBvdXRjb21lLgoKIyMjIE1vZGVsIGNvc3Qgd2l0aGluIGVhY2ggcmlzayBiYW5kCgpDb21wYXJlZCBpbnNpZGUgYSBiYW5kIG9uIHB1cnBvc2U6IGhhcmQgd29yayBpcyByb3V0ZWQgdG8gdGhlIHN0cm9uZ2VyIG1vZGVsIGRlbGliZXJhdGVseSwgc28gYSByYXcgc3BlbmQtcGVyLXRhc2sgY29tcGFyaXNvbiBhY3Jvc3MgYmFuZHMgd291bGQgZmxhZyB0aGF0IHdvcmtpbmcgc3lzdGVtIGFzIGEgZmF1bHQuCgpPZiB0aGUgcGxhbidzIDYgZG9uZSB0YXNrKHMpLCA2IGFyZSBwcmljZWQ7IG1haW4tbG9vcCBzcGVuZCBpcyBub3QgYXR0cmlidXRlZCB0byBhIHRhc2suCgp8IHJpc2sgfCBtb2RlbCB8IHRhc2tzIHwgY29zdC90YXNrIHwgbWVhbiBhdHRlbXB0cyB8CnwtLS18LS0tfC0tLTp8LS0tOnwtLS06fAp8IGhpZ2ggfCBjbGF1ZGUtb3B1cy01IHwgMyB8ICQxMS4xOSB8IDEuMCB8CnwgbWVkIHwgY2xhdWRlLXNvbm5ldC01IHwgNSB8ICQxMC4wMSB8IDEuNCB8CnwgbG93IHwgY2xhdWRlLWhhaWt1LTQtNSB8IDEgfCAkMS43NCB8IDEuMCB8Cg==";window.AUDIT_MD_NAME="acme-store-audit.md";</script>
 <script type="module">
 // ---------- reading a table with a key that came from outside ----------
 /**
@@ -2498,10 +2517,11 @@ function storageDrop(key) {
 
   /**
    * The height an element pins over the content: its rendered height while it
-   * is sticky, and nothing while it scrolls with the page. Below 52rem the top
-   * bar is not sticky, and an offset still carrying its height would leave the
-   * strip, the filter bar and every anchor hanging a bar's height below the
-   * top of the screen with nothing above them. Read off the computed style so
+   * is sticky, and nothing while it scrolls with the page. On a screen below
+   * 52rem wide or 32rem tall the top bar is not sticky, and an offset still
+   * carrying its height would leave the strip, the filter bar and every
+   * anchor hanging a bar's height below the top of the screen with nothing
+   * above them. Read off the computed style so
    * the stylesheet stays the one place that says where the bar sticks.
    * @param {Element|null} el
    * @returns {number}
@@ -2794,6 +2814,10 @@ function storageDrop(key) {
   const norowOutside = norow ? norow.querySelector('[data-outside]') : null;
   const norowOutsideSays = norow ? norow.querySelector('[data-outside-says]') : null;
   const showAllBtn = norow ? norow.querySelector('[data-showall]') : null;
+  // The empty state's own copy of Clear, apart from the toolbar's: it is the
+  // one that hides with the row it sits in, so it is the one that has to hand
+  // the keyboard on.
+  const norowClear = norow ? norow.querySelector('[data-clear]') : null;
 
   // The author chips live in the Usage section and scope ONLY it: tasks record
   // no author, so these never enter refresh() or touch the task table.
@@ -2834,7 +2858,9 @@ function storageDrop(key) {
    *   rows), `tasks` (tasks, hiding a phase none of whose tasks survive),
    *   `drill` (tasks inside one phase only) or `usage` (the Usage section, never
    *   the table).
-   * - `counts`: whether the More-filters badge counts it.
+   * - `counts`: whether the More-filters badge counts it - true exactly when
+   *   the axis has a control folded away inside that panel, since the badge
+   *   is how a reader learns something is on behind the closed disclosure.
    * - `on`, `reset`, `paint`, `encode`, `decode`: is it filtering; return it to
    *   its default; repaint every control that shows it; its values for `keys`;
    *   take its state from the decoded link, saying whether there was any.
@@ -2940,7 +2966,10 @@ function storageDrop(key) {
       id: 'task-status', attrs: ['data-ts'], keys: [],
       unkept: 'keyed by phase id, so the link would carry a list as long as '
         + 'the plan to describe a drill-down inside one row',
-      scope: 'drill', counts: true,
+      // Not counted: these chips sit in the table rows, not in More filters,
+      // and a badge over a panel with nothing pressed in it sends the reader
+      // looking for a filter that is not there. Clear still lifts them.
+      scope: 'drill', counts: false,
       on: () => Object.keys(taskStatus).some((pid) => taskStatus[pid] !== ''),
       reset: () => { taskStatus = Object.create(null); },
       paint: () => {
@@ -3387,9 +3416,12 @@ function storageDrop(key) {
     // `totT` and `visT` leave cancelled tasks out on BOTH sides of the
     // fraction, which is the header's own basis for its task total: a
     // denominator that counted what the header did not was a second number for
-    // one question. `outP` counts the phases that match but sit outside the
-    // view, off the verdict below rather than a second filter pass.
-    let visP = 0, visT = 0, totT = 0, outP = 0;
+    // one question. `visX` is what that basis leaves out of the drawn phases -
+    // cancelled tasks that match - so the count can name them instead of
+    // calling a phase drawn for one of them a phase with no match. `outP`
+    // counts the phases that match but sit outside the view, off the verdict
+    // below rather than a second filter pass.
+    let visP = 0, visT = 0, totT = 0, visX = 0, outP = 0;
     const outSegs = [];
     // Plain `{}` on purpose, and the one map here that keeps its prototype:
     // the key is `data-seg`, which Python's `_seg_of` emits from a closed
@@ -3401,7 +3433,7 @@ function storageDrop(key) {
       const tasks = tasksOf(pid);
       const tf = taskStatus[pid] || '';
       const pText = textHit(pr, term);
-      let anyTaskText = false, nMatch = 0, nCounted = 0;
+      let anyTaskText = false, nMatch = 0, nCounted = 0, nLeftOut = 0;
       tasks.forEach((t) => {
         const counted = t.getAttribute('data-status') !== 'cancelled';
         if (counted) totT++;
@@ -3422,6 +3454,7 @@ function storageDrop(key) {
         if (t.__hit) {
           nMatch++;
           if (counted) nCounted++;
+          else nLeftOut++;
         }
       });
       // phase-level: status + area gates + text (phase title OR any task matches)
@@ -3437,7 +3470,7 @@ function storageDrop(key) {
                   && inView(pr.__seg);
       pr.style.display = showP ? '' : 'none';
       if (showP) {
-        visP++; visT += nCounted;
+        visP++; visT += nCounted; visX += nLeftOut;
         segVis[pr.__seg] = (segVis[pr.__seg] || 0) + 1;
       }
       // A match the view is hiding: it would have shown under All phases.
@@ -3491,12 +3524,18 @@ function storageDrop(key) {
     bugRows.forEach((b) => { b.style.display = textHit(b, term) ? '' : 'none'; });
 
     if (count) {
-      // The view is named at rest as well as filtered: "165 phases" over a table
-      // showing five read as the size of the table, and the view was why it was
-      // not. Tasks join the phases once something filters, since a filter can
-      // narrow a phase from the inside while the phase count barely moves.
-      count.textContent = visP + ' of ' + plural(phaseRows.length, 'phase') + ' (' + viewName() + ')'
-        + (anyFilter ? ' · ' + visT + ' of ' + plural(totT, 'task') : '');
+      // The view is the basis at rest as well as filtered: "165 phases" over a
+      // table showing five read as the size of the table, and the view was why
+      // it was not. Pointed at rather than repeated - the View select beside
+      // the count already names it, and its wording in brackets wrapped the
+      // pinned bar onto a second line at 1512px. Tasks join the phases once
+      // something filters, since a filter can narrow a phase from the inside
+      // while the phase count barely moves; and cancelled matches the task
+      // fraction leaves out are named, so a phase drawn for one of them does
+      // not sit under a count of zero.
+      count.textContent = visP + ' of ' + plural(phaseRows.length, 'phase') + ' in view'
+        + (anyFilter ? ' · ' + visT + ' of ' + plural(totT, 'task')
+          + (visX ? ', ' + plural(visX, 'cancelled match', 'cancelled matches') : '') : '');
     }
     // Filtered down to nothing, the table was an empty frame with no explanation
     // and no way back except undoing each control by hand.
@@ -3540,11 +3579,22 @@ function storageDrop(key) {
   // Show all phases takes the View control's own path - the select set and its
   // change dispatched - so the stored view, the link and the select cannot
   // disagree about what is on screen.
+  //
+  // Both buttons of the empty state hide the row they sit in, so each hands
+  // the keyboard to the View select on the way out: a focus left on a hidden
+  // button sends the next Tab past the whole table. The select is the control
+  // that says which phases are now drawn. The Clear here is the second copy of
+  // the toolbar's, whose own press is wired with the others in date-range.js;
+  // only the empty state's copy moves focus, because only it disappears.
   if (showAllBtn && viewSel) {
     showAllBtn.addEventListener('click', () => {
       viewSel.value = 'all';
       viewSel.dispatchEvent(new Event('change'));
+      viewSel.focus();
     });
+  }
+  if (norowClear && viewSel) {
+    norowClear.addEventListener('click', () => { viewSel.focus(); });
   }
   /**
    * Compare two cell strings in natural order, so `P2` sorts before `P10`.
