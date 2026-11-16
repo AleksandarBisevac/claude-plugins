@@ -2843,10 +2843,17 @@ def rerun_alongside(ctx, state, manifest, pending):
 # `gate-red-base-unknown`, and no writer round is spent on a red nothing says the
 # task introduced. A base run that ran and was compared goes to the writer as it
 # always did when its cases cannot be charged either way (`not-knowable` naming a
-# run): the base answered, only not case by case. A red run HEAD has since left
-# keeps reading `no-base` and goes to the writer too, as a red with no base
-# reading always did: no base can be measured for it, and the next gate runs at
-# the new HEAD.
+# run): the base answered, only not case by case.
+#
+# THE IDENTITY IS THE CODE THE RED RAN ON, NOT THE COMMIT HEAD NAMES. The base
+# tree is built at the red row's own recorded head - the commit its run sat on,
+# which never moves - and HEAD is asked only whether it still holds that code
+# (`code_moved`): a HEAD that differs from the red's head only inside the paths
+# the recorder writes (`_evidence_io.recorded_paths`) is the same code, since the
+# drive's own record commit of the red lands there before a background base run
+# starts. A HEAD that moved anything else, or that git cannot compare, is a red
+# HEAD has left: it keeps reading `no-base` and goes to the writer, as a red with
+# no base reading always did, and the next gate runs at the new HEAD.
 #
 # A BASE NO COMMAND CAN RUN IS NOT A BASE NOBODY KNOWS. `--base-of` spells a
 # derived step again for the failing suites its row names; where it cannot - the
@@ -2880,14 +2887,25 @@ def rerun_alongside(ctx, state, manifest, pending):
 # start is decided by its own row's reading, and is unknown where that names no
 # base run. A mark whose base could not be measured at all (`measurable` False)
 # is no mark to any other red (`unmeasurable_elsewhere`): that red's base is
-# measured on its own, and goes to the writer as no-base where it still cannot
-# be run - else every later round of an unrunnable red would stop for the owner.
+# measured on its own, and the first such red goes to the writer as no-base.
+#
+# TWICE UNMEASURABLE IN ONE START IS A STOP. The start's mark carries how many
+# earlier reds of the start had a base that could not be measured
+# (`UNMEASURED_BEFORE`, counted by `unmeasured_before` from the mark it
+# replaces); a second unmeasurable red stops as `gate-red-base-unknown`
+# (`unmeasurable_again`), never another automatic round, so neither `next` nor
+# `auto` can loop gate - unmeasurable base - gate. The count lives on the mark,
+# so a new start (`_marked` reads a mark of an earlier start as none) counts
+# from zero, and `measure-base`, which drops the mark, is the owner's own
+# answer rather than a round the drive took.
 BASE_MEASURE_VERDICTS = ("no-base", "not-knowable")
 BASE_TREE_PREFIX = "audit-base-"
 BASE_MEASURED = "baseMeasured"
 BASE_PROGRESS_DIRNAME = "base-runs"
 BASE_MEASURE_SECONDS = _evio.FOREGROUND_BOUND_MS // 1000
 BASE_RUN_VERB = "base-run"
+# The start's base mark counts the unmeasurable reds before its own here.
+UNMEASURED_BEFORE = "unmeasuredBefore"
 
 
 def base_measure_due(state, task, row, runs):
@@ -2905,10 +2923,30 @@ def base_measure_due(state, task, row, runs):
 
 def unmeasurable(held):
     """Whether the base mark `held` is a finished measurement that could not
-    be taken at all - HEAD had left the red's head, or no red step could be
-    run again at the base (`measure_base`'s `measurable` False)."""
+    be taken at all - HEAD no longer held the code the red ran on, or no red
+    step could be run again at the base (`measure_base`'s `measurable`
+    False)."""
     return (isinstance(held, dict) and bool(held.get("done"))
             and held.get("measurable") is False)
+
+
+def unmeasured_before(prior):
+    """How many reds of this start had a base that could not be measured
+    before the one about to be: what the start's previous mark `prior`
+    counted (`UNMEASURED_BEFORE`), and that mark itself when it was one
+    (`unmeasurable`). `_marked` answers None for a mark of an earlier start,
+    so a new start counts from zero."""
+    if not isinstance(prior, dict):
+        return 0
+    return (int(prior.get(UNMEASURED_BEFORE) or 0)
+            + (1 if unmeasurable(prior) else 0))
+
+
+def unmeasurable_again(held):
+    """Whether `held` is an unmeasurable mark (`unmeasurable`) taken after an
+    earlier red of the same start was one too: the bound past which the drive
+    asks instead of measuring a third time."""
+    return unmeasurable(held) and int(held.get(UNMEASURED_BEFORE) or 0) > 0
 
 
 def unmeasurable_elsewhere(held, runs):
@@ -2927,26 +2965,30 @@ def measure_base(ctx, phase, row, tree=None, placed=None, started=None,
     holder of a tree the teardown kept (None when nothing was kept); why a
     run held to `bound` seconds was stopped there (None when it ended - and
     always with `bound` None, which holds it to none); and whether a base run
-    could be taken at all, False when HEAD is no longer the run's head and
-    when the run answered that no red step can be run again at the base
-    (`base_unrunnable`). `reading` is None, beside the reason, when no base
+    could be taken at all, False when HEAD no longer holds the code the run
+    ran on (`code_moved`) and when the run answered that no red step can be
+    run again at the base (`base_unrunnable`). The tree is built at the red
+    run's own recorded head, never at HEAD: a commit of nothing but the
+    recorder's paths moves HEAD and leaves that code as it was. `reading` is None, beside the reason, when no base
     run answered: the tree
     could not be built outside the repository, the run was stopped, or it did
     not answer. `placed(holder)` is called once the holder exists and before
     any tree is built in it, `started(pid)` once the run's process does, so
     the caller can record both before anything can kill the run."""
     want = (row.get(_evio.BASE_RED_KEY) or {}).get("head")
-    head = tree_head(ctx, tree)
-    if not head or not _evio.same_head(head, want):
+    moved = code_moved(ctx, want, tree_head(ctx, tree))
+    if moved is not None:
         return {"reading": None, "kept": None, "cut": None, "measurable": False,
-                "said": "%s's base not measured: the red run was at %s and "
-                        "HEAD is %s now" % (row.get("taskId"), want,
-                                            head or "unknown")}
+                "said": "%s's base not measured: %s" % (row.get("taskId"),
+                                                        moved)}
     holder = tempfile.mkdtemp(prefix=BASE_TREE_PREFIX)
     try:
         if placed is not None:
             placed(holder)
-        reading, said, cut, measurable = _base_in(ctx, phase, row, head,
+        # At the red's own head, never at HEAD: a record commit since moved
+        # HEAD without moving the code, and the red's head is the commit its
+        # run sat on - the base `--base-of` measures.
+        reading, said, cut, measurable = _base_in(ctx, phase, row, want,
                                                   holder, started, bound)
     finally:
         kept, left = remove_base_tree(ctx, holder)
@@ -2957,6 +2999,46 @@ def measure_base(ctx, phase, row, tree=None, placed=None, started=None,
     return {"reading": reading, "said": said, "cut": cut,
             "measurable": measurable,
             "kept": holder if kept is not None else None}
+
+
+def code_moved(ctx, since, now):
+    """None when HEAD `now` holds the code `since` held: the same commit, or
+    one that differs from it only inside the paths this plugin's recorder
+    writes (`_evidence_io.recorded_paths` - the plan, the journal, the
+    evidence), as a record commit does. Else the sentence saying how HEAD
+    moved, or why that could not be told: a head nobody names, or git unable
+    to compare the two, is never read as the same code.
+
+    THE ONE READING of "did HEAD move under this run" wherever the run's
+    subject is the code rather than the commit. git prints the paths from the
+    checkout's top and the recorder names them from the project, so each
+    printed path is spelled the plan's way first (`_config.git_to_plan`): a
+    project nested in a larger repository leaves out its own records, and a
+    path outside the project, spelled with `../`, is never one of them."""
+    if not since or not now:
+        return "the red run was at %s and HEAD is %s now" % (
+            since or "an unrecorded head", now or "unknown")
+    if _evio.same_head(since, now):
+        return None
+    hc = _loader.load_hooks_config(modname="audit__config")
+    top = hc.checkout_top(ctx["gitRoot"]) or ctx["gitRoot"]
+    code, out, err = carry_git(top, [
+        "diff", "--name-only", "--no-renames", "-z", since, now])
+    if code != 0:
+        return ("the red run was at %s and HEAD is %s now, and git could not "
+                "compare the two (%s)" % (since[:12], now[:12], err))
+    recorded = _evio.recorded_paths(ctx["project"], ctx["manifest"],
+                                    ctx["config"])[0]
+    changed = [hc.git_to_plan(p, top, ctx["project"])
+               for p in out.decode("utf-8", "replace").split("\0") if p]
+    code_paths = [p for p in changed
+                  if not any(p == r or p.startswith(r.rstrip("/") + "/")
+                             for r in recorded)]
+    if not code_paths:
+        return None
+    return ("the red run was at %s and HEAD is %s now, moved outside the "
+            "recorder's paths: %s" % (since[:12], now[:12],
+                                      _clip(", ".join(code_paths), 160)))
 
 
 def remove_base_tree(ctx, holder):
@@ -3305,7 +3387,9 @@ def launch_base(ctx, state, task, row, tree, why, cut=None):
             "run": None, "atBase": [], "introduced": [], "background": True,
             "at": at, "launch": "%s-%s" % (at, os.urandom(4).hex()),
             "argv": argv, "memberTree": tree or None,
-            "ran": False, "done": False}
+            "ran": False, "done": False,
+            UNMEASURED_BEFORE: unmeasured_before(
+                _marked(state, BASE_MEASURED, task))}
     if cut is not None:
         held["cut"] = cut
     _mark(state, BASE_MEASURED, task, held)
@@ -3373,7 +3457,9 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
 
     A measurement is due once per start (`base_measure_due`), and again for
     another red when the one taken could not be taken at all
-    (`unmeasurable_elsewhere`), which is read as no mark. Its reading
+    (`unmeasurable_elsewhere`), which is read as no mark; a second
+    measurement of the start that could not be taken either is unknown
+    (`unmeasurable_again`), so the drive asks rather than looping. Its reading
     decides only the red it was measured for, or a repeat of that red
     (`red_runs`); any other red of the start is decided by its own row's
     reading, and is unknown where that names no base run. A measurement that
@@ -3392,7 +3478,9 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
         if due:
             return launch_base(ctx, state, task, row, tree, why), None, None
         held = {"of": row.get("runId"), "verdict": None, "run": None,
-                "atBase": [], "introduced": []}
+                "atBase": [], "introduced": [],
+                UNMEASURED_BEFORE: unmeasured_before(
+                    _marked(state, BASE_MEASURED, task))}
         got = take_base(ctx, phase, task, row, tree,
                         mark_keeper(ctx, state, task, held), BASE_MEASURE_SECONDS)
         if got["cut"] is not None:
@@ -3428,6 +3516,11 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
                                ", ".join(sorted(runs)) or "no run named"))
     if held.get("unknowable") or cut_before_ran(held):
         return None, use, held.get("said") or "no base reading was left"
+    if unmeasurable_again(held):
+        return None, use, ("%s; the base of an earlier red of this start "
+                           "could not be measured either, so the drive asks "
+                           "rather than running the gate again" % (
+                               held.get("said") or "its base was not measured",))
     return None, use, None
 
 

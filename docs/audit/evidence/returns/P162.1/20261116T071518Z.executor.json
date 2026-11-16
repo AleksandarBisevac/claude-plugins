@@ -1,0 +1,45 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_drive_without_model.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-16T07:41:05Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_drive_without_model.py` in a throwaway tree at HEAD exited 1 with 8 of 74 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bdr4 (house FAIL), brc1 (house FAIL), brc5 (house FAIL), brc3 (house FAIL), brc4 (house FAIL), bi14 (house FAIL), dm85 (house FAIL), dm86 (house FAIL): SELFTEST FAILED: 72/74 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: code_moved(ctx, since, now) diffs the red's head against HEAD at the checkout top (--name-only --no-renames -z), puts each git path through _config.git_to_plan and leaves out _evidence_io.recorded_paths. It returns None for the same code; a code path moved, a git error or an unrecorded head each return a sentence. measure_base uses it and builds the base tree at the red's recorded head. The start's base mark carries UNMEASURED_BEFORE, set by unmeasured_before(prior) in launch_base and in the inline base path from _marked, so a new start counts from zero. unmeasurable_again makes base_reading_for return an unknown sentence, so a second unmeasurable red in one start stops as gate-red-base-unknown. auto is unchanged and dm85/dm86 run it. Left alone, each a different question: proof_drift, the head-moved/writer-committed reading, chosen_phase_gate, held_at, held_verdict, the lint probe, sign-off binding, and the recut base==head check. Prose updated: the comment block above BASE_MEASURE_VERDICTS, docstrings, execute-task.md, PLUGIN-BUILD-GUIDE.md; orchestrator.md untouched. bdr4 and bi14 changed to the new stop. Gate: the sweep over both suites -> exit 0, 2/2 files ok, 1048 cases. Also green: ruff (exit 0), vermin -t=3.8- (exit 0), measure-context --gate (exit 0), and the sweep of test__deps.py and test__output_lints.py (exit 0, 467 cases); a first version of code_moved built the paths by hand, failed test__deps gb1 (git_path_base_violations) and was rewritten to use the git_to_plan pair. Mutations in a scratch copy: stop never fires -> bdr4/brc3/bi14 red; stop always fires -> bdr3/brc3/bi14 red; git error read as same code -> brc5 red; tree built at HEAD -> brc1 red; count read across starts -> brc4 red. Dependants: drive-without-model.py still correct (it starts auto; dm85/dm86 cover it). _worktrees, test__filed_returns, test__invariants, test__worktrees, test_audit_status, test_commit_task_work and test_detect_plan_skip still correct: the new names are additions and nothing they import was renamed. README.md and orchestrator.md still correct: no decision or option renamed. prove-gates.py rows not run; whether one targets the old head check is unverified. The confirm-set harness outside the repo was not run.",
+    "descriptive": "A red gate's base is now measured at the red's own head even after the drive's record commit moved HEAD, and a second unmeasurable base in one start stops as the gate-red-base-unknown ask instead of looping."
+  },
+  "testsAdded": [
+    "brc1 a record-only commit before the background base run: the base is measured at the red's head and the drive stops on gate-red-base",
+    "brc2 a commit to a code path: not measurable, as before",
+    "brc5 code_moved itself: the same commit is the same code; a moved code path, a git error and an unrecorded head are not",
+    "brc3 a second unmeasurable red in one start asks, with no third gate and no writer round",
+    "brc4 the count carries within a start and starts at zero in a new one",
+    "dm85 auto measures the base after a record commit and ends on gate-red-base",
+    "dm86 auto shows the ask on the second unmeasurable red and runs no third gate"
+  ],
+  "casesAdded": [
+    [
+      "brc1"
+    ],
+    [
+      "brc2",
+      "brc5"
+    ],
+    [
+      "brc3",
+      "brc4"
+    ],
+    [
+      "dm85",
+      "dm86"
+    ]
+  ],
+  "claims": "claims:\n1 code_moved and measure_base's want-built tree are what the comment block, execute-task.md and PLUGIN-BUILD-GUIDE.md describe; unmeasurable_again is checked in base_reading_for\n2 mutations in a scratch copy, both directions, each red on the intended cases; the copy was removed\n3 grep of the HEAD comparisons in drive-phase.py: only measure_base was the same question; the others are left and named in the outcome\n4 the stop lives in unmeasurable_again, named in the comment block's own sentence; no rule addressed to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:94450de1aefd558553e979546d2b59151dbbe5930ac5d3112e2617c2bf80036f\",\"dirtyDigest\":\"sha256:5865468a7ef6f98058c9ce5252fdad75647915409a8519bef5935cd5c05bf44c\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"21a0a940af33f93f\",\"plugins/audit/reference/execute-task.md\":\"4ea30cd832084a95\",\"plugins/audit/scripts/governance/drive-phase.py\":\"1f8aec9893a61cc2\",\"tests/test_drive_phase.py\":\"6a72e39944523042\",\"tests/test_drive_without_model.py\":\"f6916561929c7b3b\"},\"head\":\"09dcf7cd\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\",\"tests/test_drive_without_model.py\"],\"scopeDigest\":\"sha256:8b5eb5d5d9fa5f289f6e50e10d8c2a61dd194a8c9162ae38a50e61f840cc890a\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

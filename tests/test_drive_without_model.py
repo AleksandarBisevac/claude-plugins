@@ -895,10 +895,119 @@ def _base_step_case(check, real):
           and [said["signal"]["runs"] for said in printed] == [[command]] * 2)
 
 
+def _auto_of(M, dp, root, mpath):
+    """`(code, text, auto log)` of the real `auto` over the fixture's phase,
+    in this process, the way `test_drive_phase`'s `bq5` runs it."""
+    import argparse
+    said = []
+    with dp._Env(root):
+        code = M.main(["auto", dp.PHASE, mpath, "--project-dir", root],
+                      out=said.append)
+    try:
+        with open(M.auto_log_path(dict(M.context(argparse.Namespace(
+                phase=dp.PHASE, manifest=mpath, project_dir=root,
+                verbose=False, task_only=False)), phase=dp.PHASE)),
+                encoding="utf-8", errors="replace") as fh:
+            ran = fh.read()
+    except (OSError, ValueError) as exc:
+        ran = "no auto log: %s" % (exc,)
+    return code, "\n".join(said), ran
+
+
+def _auto_base_cases(check):
+    """`auto` - the prompt hook's driver, no model - takes the base path
+    `next` takes: a red whose record commit moved HEAD has its base measured
+    by the background child auto runs and auto ends on gate-red-base, and a
+    second red of one start whose base cannot be measured surfaces the
+    gate-red-base-unknown ask instead of another gate run."""
+    import test_drive_phase as dp
+    import test_run_test_gate as rtg
+    k02 = rtg.sweep_red(rtg.K03R_FAILS)
+    M, why = dp._load("dwm_base_rec", real_gate_choice=True)
+    if M is None:
+        check("dm85 the driver loads", False, why)
+        return
+    world = {"root": None, "mpath": None, "commits": []}
+    real_launch = M.launch_base
+
+    def _then_record(ctx, state, task, *rest, **kw):
+        # The record commit of the red lands once the base is launched, before
+        # the child auto starts for it measures anything.
+        said = real_launch(ctx, state, task, *rest, **kw)
+        world["commits"].append(dp._commit_records(world["root"],
+                                                   world["mpath"]))
+        return said
+
+    M.launch_base = _then_record
+    try:
+        root, mpath, log, _l, _b = dp._base_measure_repo(
+            M, "dwm-base-rec", k02, k02, play_gate=False, seed_ms=10 * 60 * 1000)
+        world.update(root=root, mpath=mpath)
+        code, text, ran = _auto_of(M, dp, root, mpath)
+    finally:
+        M.launch_base = real_launch
+    _t, base_rows = dp._ledger_of(root)
+    measured = dp._base_mark(root)
+    check("dm85 auto over a red whose record commit moved HEAD measures the "
+          "base in its background child and ends on gate-red-base, needing a "
+          "model only for that ask, with one gate run and no writer round: %r"
+          % ((code, text[-600:], world["commits"], measured.get("said"),
+              len(base_rows), len(dp._red_rows(root)), len(dp._stub_runs(log))),),
+          code == M.AUTO_NEEDS_MODEL and len(world["commits"]) == 1
+          and "gate-red-base" in text and "gate-red-base-unknown" not in text
+          and measured.get("verdict") == "base-only"
+          and len(base_rows) == 1 and len(dp._red_rows(root)) == 1
+          and len(dp._stub_runs(log)) == 1
+          and "P1.1's base measured at" in ran)
+
+    M2, why = dp._load("dwm_base_twice")
+    if M2 is None:
+        check("dm86 the driver loads", False, why)
+        return
+    moves = {"root": None, "n": 0}
+    real_take = M2.take_base
+
+    def _moved_first(*args, **kw):
+        moves["n"] += 1
+        dp._commit_code(moves["root"], "src/other%d.txt" % (moves["n"],))
+        return real_take(*args, **kw)
+
+    M2.take_base = _moved_first
+    try:
+        root2, mpath2, _log2, _l2, _b2 = dp._base_measure_repo(
+            M2, "dwm-base-twice", k02, k02, play_gate=False)
+        moves["root"] = root2
+        _c, first = dp._signal_next(M2, root2, mpath2)
+        dp._signal_next(M2, root2, mpath2, "--answer", "resume")
+        _c, r_block = dp._explain_of(M2, root2, mpath2, "P1.1")
+        stubs = os.path.realpath(_harness.fixture_root("dwm-twice-again-"))
+        dp._play_session(root2, dp._run_argv(r_block) or [],
+                         dp._writer_stub(stubs),
+                         os.path.join(stubs, "runs.jsonl"), dp.WRITER_COSTS[1],
+                         edit={"src/f1.txt": "changed again by the writer\n"})
+        code2, text2, _ran2 = _auto_of(M2, dp, root2, mpath2)
+        gates = len(dp._red_rows(root2))
+        code3, text3, _ran3 = _auto_of(M2, dp, root2, mpath2)
+    finally:
+        M2.take_base = real_take
+    check("dm86 auto over a second red of one start whose base cannot be "
+          "measured either surfaces the gate-red-base-unknown ask and ends "
+          "there, and auto again runs no third gate: %r"
+          % ((first[-200:], code2, text2[-600:], gates,
+              len(dp._red_rows(root2)), code3, moves["n"]),),
+          "gate-red-writer" in first
+          and code2 == M2.AUTO_NEEDS_MODEL and "gate-red-base-unknown" in text2
+          and "gate-red-writer" not in text2
+          and gates == 2 and len(dp._red_rows(root2)) == 2
+          and code3 == M2.AUTO_NEEDS_MODEL and "gate-red-base-unknown" in text3
+          and moves["n"] == 2)
+
+
 def _cases(check):
     root = _harness.fixture_root("drive-without-model-")
     real = _loader.load_script("drive-phase.py")
     _base_step_case(check, real)
+    _auto_base_cases(check)
     _drive_cases(check, root, real)
     _table_cases(check, root)
     _next_cases(check, root, real)

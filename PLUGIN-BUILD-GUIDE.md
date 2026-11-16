@@ -5039,8 +5039,13 @@ the ready tasks' own gates, and only those steps' suites are read (`gate_step_na
 `run-test-gate.base_red` puts on the same question. `bb3` and `bb5` drive it. A red task gate
 whose reading has no comparable base run (`no-base`, `not-knowable`) has its base measured once
 per start (`base_reading_for`, `measure_base`): `run-test-gate.py --base-of` over the red run, in a
-detached tree at its HEAD built outside the repository and removed after (`remove_base_tree`, through
-`_worktrees.tree_unsettled`). Where it runs is `gate_in_background`'s answer over the red steps:
+detached tree at the red run's own recorded head - never at the current HEAD - built outside the
+repository and removed after (`remove_base_tree`, through `_worktrees.tree_unsettled`). The identity
+the measurement checks is the code the red ran on: `code_moved` compares the red's head with HEAD
+with the recorder's own paths left out (`_evidence_io.recorded_paths`, the same narrowing
+`run-test-gate.py` and `_tree_stamp` use), so a HEAD the drive's own record commit of the red moved
+is measured, and a HEAD that moved anything else, or that git cannot compare, is not measurable
+(`brc1`, `brc2`, `brc5`). Where it runs is `gate_in_background`'s answer over the red steps:
 past the foreground bound, unmeasured, or under `auto` it is `dispatch-base`, run in the background
 by `drive-phase.py base-run` with no bound, which writes only its launch's own record, and read
 back off the start's mark that record is folded into (`base_mark`, `base_gate`, `wait-base`). The
@@ -5066,10 +5071,15 @@ human before its `next:` - the commands' routing of `ask`; nothing in the drive 
 (`bi12` holds the verb). A later red of the same start whose own row finds no base run stops
 there too, unless the start's mark is one whose base could not be measured at all (`measurable`
 False): that mark is no mark to any red but its own (`unmeasurable_elsewhere`), so the later red is
-measured on its own and goes to the writer as no-base while it still cannot be run (`bdr4`,
-`bi14`). A mark's reading decides
+measured on its own, and the first such red goes to the writer as no-base. A second red of the
+same start whose base cannot be measured either is the bound: the start's mark counts the
+unmeasurable reds before it (`unmeasuredBefore`, `unmeasured_before`), and one past the first
+(`unmeasurable_again`) stops as `gate-red-base-unknown` rather than another gate or writer round,
+under `next` and under `auto` alike, so neither can loop on a base it cannot measure; the count
+lives on the mark, so a new start counts from zero (`bdr4`, `bi14`, `brc3`, `brc4`, and `dm85`,
+`dm86` in `test_drive_without_model.py`). A mark's reading decides
 only the red run it was measured for or a repeat of it, and a mark an earlier version wrote for
-a cut base (no `ran`, no `background`, no base run named) reads as unknown. A red run HEAD has since left keeps reading
+a cut base (no `ran`, no `background`, no base run named) reads as unknown. A red run whose code HEAD has since moved (`code_moved`) keeps reading
 `no-base` and goes to the writer as before, and so does a red whose steps `--base-of` answered it
 cannot run again at all (`base_unrunnable`: every red step in `notRun`): no later measurement could
 answer either, so neither is the unknown stop, which stays for a base run that was started and

@@ -1,0 +1,110 @@
+{
+  "id": "P162",
+  "title": "A red gate's base is measured on the code the red ran on",
+  "status": "in_progress",
+  "description": "Observed on 09dcf7cd in the confirm-set dry run (real-base leg b1, P125.23 at 48f2322d): outcome stopped after 13422 s and 181 turns, where d17e0ab5 ended done. Each cycle: the red task gate is recorded at commit X; recording it commits docs/audit evidence, journal and phase rows, so HEAD moves to Y; the background base run (measure_base, drive-phase.py `if not head or not _evio.same_head(head, want)`) refuses with `<task>'s base not measured: the red run was at X and HEAD is Y now`, measurable False; the mark is then read as no mark for the next red (unmeasurable_elsewhere), so next reruns the red gate and the cycle repeats every ~3.7 min. Before P161 the base was measured inline before the record commit, so the check held. Evidence: /private/tmp/cm-dry-20261113T221837Z out/b1-invoked/drive-state/base-runs/*.json (measurable false), work/b1/repo `git show --stat 5c897ea9` (docs/audit only).",
+  "desiredOutcome": "A red task gate whose record commit moved HEAD is still measured at its base and decided gate-red-base / gate-red-writer from that reading; a red whose base cannot be measured twice in one start stops as the gate-red-base-unknown ask instead of another rerun; a real-base drive that ended done before P161 ends done again",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "09dcf7cdc58f267ce181548374005054259775fc",
+  "branch": "audit/p162-a-red-gate-s-base-is-measured",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P162.1",
+      "title": "The base run checks the code the red ran on, not a HEAD the drive's own record commits move, and an unmeasurable base cannot loop next",
+      "status": "in_progress",
+      "description": "plugins/audit/scripts/governance/drive-phase.py measure_base (around line 2922) refuses unless tree_head == the red row's baseRed.head, and _base_in builds the detached base tree at the CURRENT head. Since the base run went to the background, the drive's own record commit of the red (docs/audit evidence/journal/phase rows only) always lands first, so HEAD never equals the red's head and the base is never measured; next then reruns the red gate, records again, and loops (observed: 60 cycles in a dry run until a step bound stopped it).\n\nREQUIRED, as the structurally correct identity rather than a special case:\n1. The identity measure_base checks is the CODE the red ran on. Build the base tree at the red row's own recorded head (the commit the task's run sat on, which is immutable and is exactly the base --base-of measures), not at the current HEAD. Whether the red is still about the current code is answered by comparing the red's head and HEAD with the plugin's own written paths left out - derive those from _evidence_io.recorded_paths (the existing single definition of 'what the recorder writes', already used by run-test-gate.py and _tree_stamp for the same 'is this the tree that was measured' question); do not hand-list docs/audit. HEAD whose only difference from the red's head lies inside those paths is the same code: measure. HEAD that differs outside them is a real move: keep the current not-measurable answer. A git error answering the comparison is not 'same code' - it says so and is not measurable. Factor the comparison as one helper so any other drive caller asking 'did HEAD move under this run' uses it (grep for other same_head(tree_head(...)) style checks in drive-phase.py and route them through it where the question is the same; state in the outcome which callers you changed and which you left and why).\n2. A bound so next can never loop on a red whose base cannot be measured: within one start of a task, a second red whose base is again unmeasurable (measurable False, or unknowable) must stop as the existing gate-red-base-unknown decision (ask: rerun | measure-base | block), never another automatic rerun. State how the count is held (the start's base mark is the natural place) and that it resets on a new start.\n3. drive-phase.py auto (the prompt hook's driver, no model) must take the same path: the fixed measurement, and the bounded stop surfacing as the ask, never a loop.\n4. Prose describing the base measurement says the new identity and the bound: the comment block above BASE_MEASURE_VERDICTS / measure_base's docstring, plugins/audit/reference/execute-task.md's recorded-gate step, PLUGIN-BUILD-GUIDE.md's base-measurement passages. Keep orchestrator.md untouched unless required - it sits within a few bytes of its measure-context ceiling (tools/measure-context.py --gate). No F/P/BUG ids in comments or docstrings.\n\nDEPENDANTS: tests/test_drive_phase.py and tests/test_drive_without_model.py drive these paths; tools/measure-context.py --gate holds orchestrator.md and execute-task.md sizes; tools/prove-gates.py rows that mutate drive-phase.py; the confirm-set harness (out of repo) relies on a real-base drive ending done.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "tests/test_drive_without_model.py",
+        "plugins/audit/reference/execute-task.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a red task gate recorded with a commit touching only the recorder's paths (evidence/journal/phase rows), then the background base run -> the base IS measured (tree built at the red's head) and decided gate-red-base when the base reproduces every failing case; red on 09dcf7cd (base not measured: HEAD moved)",
+          "tests/test_drive_phase.py: HEAD moved by a commit touching a non-recorded path -> not measurable, as before",
+          "tests/test_drive_phase.py: a second unmeasurable base in one start -> gate-red-base-unknown ask, no third gate rerun, no writer round; a new start resets the count",
+          "tests/test_drive_without_model.py: auto over a red gate whose record commit moved HEAD measures the base and stops gate-red-base with no loop; auto over a twice-unmeasurable base surfaces the ask"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_drive_without_model.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-16T07:15:18Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T07:15:16Z",
+          "text": "quotes the '`gates` per gate' passage of execute-task.md; the task edits only the recorded-gate step's base-measurement sentence",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-16T07:15:16Z",
+          "text": "quotes 'related listing' in PLUGIN-BUILD-GUIDE.md; the task edits only the base-measurement passages",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-16T07:15:16Z",
+          "text": "quotes the doctor trail-age sentence in PLUGIN-BUILD-GUIDE.md; the task edits only the base-measurement passages",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-16T07:15:16Z",
+          "text": "reads the generated module map heading of PLUGIN-BUILD-GUIDE.md; the task adds no module and edits only the base-measurement passages",
+          "waives": "tools/lints/_deps.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-16T07:51:32Z.b102c8",
+        "status": "passed",
+        "at": "2026-11-16T07:51:32Z"
+      }
+    }
+  ],
+  "request": "Fix the drive's background base measurement: recording a red task gate commits the plugin's own rows, which moves HEAD, and the base run then refuses because HEAD is no longer the red run's head - so the base is never measured and next reruns the red gate without bound.",
+  "openChoices": [],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "988f3478-fc74-4a1e-a62b-7522b404c792",
+    "branch": "audit/p162-a-red-gate-s-base-is-measured",
+    "at": "2026-11-16T07:15:18Z"
+  },
+  "startedAt": "2026-11-16T07:15:18Z"
+}

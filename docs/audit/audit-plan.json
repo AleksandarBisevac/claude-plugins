@@ -1036,6 +1036,12 @@
       "title": "The base of a red gate is measured like any gate",
       "status": "done",
       "shard": "phases/P161.json"
+    },
+    {
+      "id": "P162",
+      "title": "A red gate's base is measured on the code the red ran on",
+      "status": "in_progress",
+      "shard": "phases/P162.json"
     }
   ],
   "fileIndex": {
@@ -1992,7 +1998,8 @@
       "P161.6-toy",
       "P161.7-toy",
       "P161.8-toy",
-      "P161.9-toy"
+      "P161.9-toy",
+      "P162.1"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -3468,7 +3475,8 @@
       "P161.1",
       "P161.2-toy",
       "P161.3-toy",
-      "P161.4-toy"
+      "P161.4-toy",
+      "P162.1"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -10960,7 +10968,8 @@
       "P161.4-toy",
       "P161.5-toy",
       "P161.6-toy",
-      "P161.7-toy"
+      "P161.7-toy",
+      "P162.1"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -13033,7 +13042,8 @@
       "P161.4-toy",
       "P161.5-toy",
       "P161.6-toy",
-      "P161.7-toy"
+      "P161.7-toy",
+      "P162.1"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -13516,7 +13526,8 @@
       "P160.1",
       "P161.1",
       "P161.2-toy",
-      "P161.4-toy"
+      "P161.4-toy",
+      "P162.1"
     ]
   },
   "bugs": [

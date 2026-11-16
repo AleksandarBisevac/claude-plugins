@@ -18612,6 +18612,7 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("bdr-block", "_base_derived_cases"),
           ("bt-block", "_base_bound_cases"),
           ("bq-block", "_base_background_cases"),
+          ("brc-block", "_base_record_commit_cases"),
           ("bi-block", "_base_interleave_cases"),
           ("lc-block", "_base_claim_cases"),
           ("tcc-block", "_committed_close_cases"),
@@ -20251,8 +20252,8 @@ def _base_derived_cases(check):
     case stops the task as red at base with no writer round, a green base
     goes to the writer, and a derived step that cannot be run again (its
     runner named no failing suite) is a base no command can measure, which
-    goes to the writer as a red with no base reading - never the stop for a
-    base nobody can know."""
+    goes to the writer as a red with no base reading the first time in a
+    start, and stops for the owner the second time rather than loop."""
     M, why = _load("drive_phase_base_derived")
     if M is None:
         check("bdr1 the driver loads", False, why)
@@ -20313,7 +20314,8 @@ def _base_derived_cases(check):
 
     # The writer is resumed and the gate is red again, still unrunnable at the
     # base, under a run id of its own: the first red's mark was taken for
-    # another run and could not be measured, so it decides nothing here.
+    # another run and could not be measured, so it decides nothing here - but
+    # it is counted, and a second unmeasurable base in one start asks.
     stubs = os.path.realpath(_harness.fixture_root("drive-derived-again-"))
     bindir = _writer_stub(stubs)
     again_log = os.path.join(stubs, "runs.jsonl")
@@ -20327,14 +20329,16 @@ def _base_derived_cases(check):
     runs = [r.get("runId") for r in again_rows
             if r.get(_evio.VERDICT_SOURCE) != _evio.REUSED]
     s_mark = _base_mark(u_root)
-    check("bdr4 a second unrunnable red in one start, under a new run id, goes "
-          "to the writer as no-base: the first red's unmeasurable mark decides "
-          "no other red, so the second is measured again, never stopped as "
-          "gate-red-base-unknown: %r / %r / %r" % (second, runs, s_mark),
-          "gate-red-writer" in second
-          and "gate-red-base-unknown" not in second
+    check("bdr4 a second unrunnable red in one start, under a new run id, is "
+          "measured again - the first red's unmeasurable mark decides no other "
+          "red - and, unmeasurable a second time, stops as "
+          "gate-red-base-unknown rather than another writer round: %r / %r / %r"
+          % (second, runs, s_mark),
+          "gate-red-base-unknown" in second
+          and "gate-red-writer" not in second
           and len(set(runs)) >= 2 and s_mark.get("of") == runs[-1]
-          and s_mark.get("measurable") is False)
+          and s_mark.get("measurable") is False
+          and s_mark.get("unmeasuredBefore") == 1)
 
 
 def _base_trees(root):
@@ -20775,6 +20779,203 @@ def _base_auto_case(check, k02):
           and measured.get("verdict") == "base-only"
           and len(base_rows) == 1 and len(_stub_runs(log)) == 1
           and "P1.1's base measured at" in ran)
+
+
+# --- a base measured on the code the red ran on ----------------------------
+def _commit_records(root, mpath):
+    """Commit what the recorder wrote and nothing else - the plan, the
+    journal and the evidence, as `_evidence_io.recorded_paths` names them -
+    the way the drive's own record commit lands between a red and its base
+    run. The new HEAD."""
+    rels = _evio.recorded_paths(root, mpath)[0]
+    _harness.git(root, "add", "-A", "--", *rels)
+    _harness.git(root, "commit", "-qm", "the record of the red")
+    return _git_out(root, "rev-parse", "HEAD").strip()
+
+
+def _commit_code(root, rel="src/other.txt", text="moved by someone else\n"):
+    """Commit one path the recorder never writes: HEAD really moved. The new
+    HEAD."""
+    path = os.path.join(root, *rel.split("/"))
+    if not os.path.isdir(os.path.dirname(path)):
+        os.makedirs(os.path.dirname(path))
+    _write_lf(path, text)
+    _harness.git(root, "add", "--", rel)
+    _harness.git(root, "commit", "-qm", "a change to the code")
+    return _git_out(root, "rev-parse", "HEAD").strip()
+
+
+def _red_rows(root):
+    """The task gate's own runs, a reused verdict left out."""
+    return [r for r in _ledger_of(root)[0]
+            if r.get(_evio.VERDICT_SOURCE) != _evio.REUSED]
+
+
+def _base_record_commit_cases(check):
+    """The base of a red is measured on the code the red ran on: a commit that
+    touches only what the recorder writes moves HEAD and changes no code, so
+    the base is still measured, in a tree built at the red's own head; a commit
+    touching anything else is a real move and leaves the base unmeasurable."""
+    M, why = _load("drive_phase_base_rec", real_gate_choice=True)
+    if M is None:
+        check("brc1 the driver loads", False, why)
+        return
+    import test_run_test_gate as _rtg_cases
+    k02 = _rtg_cases.sweep_red(_rtg_cases.K03R_FAILS)
+    slow_ms = 10 * 60 * 1000
+    root, mpath, log, line, _block = _base_measure_repo(
+        M, "base-rec", k02, k02, seed_ms=slow_ms)
+    red_head = _git_out(root, "rev-parse", "HEAD").strip()
+    argv = _base_run_argv(M, root, mpath)
+    moved = _commit_records(root, mpath)
+    played = _play_base(root, argv) if argv else (None, "no base run printed")
+    _code, after = _signal_next(M, root, mpath)
+    _t, base_rows = _ledger_of(root)
+    measured = _base_mark(root)
+    base_head = ((base_rows[0].get("testedState") or {}).get("head")
+                 if base_rows else None)
+    check("brc1 a red whose record commit moved HEAD - a commit touching only "
+          "the plan, the journal and the evidence - still has its base "
+          "measured, in a tree built at the red's own head, and stops as "
+          "gate-red-base with no writer round: %r"
+          % ((line, red_head[:12], moved[:12], played, after, measured,
+              base_head, len(base_rows), len(_stub_runs(log)),
+              _writer_resumes(root), _base_trees(root)),),
+          bool(argv) and " dispatch P1.1" in line and moved != red_head
+          and played[0] == 0
+          and "gate-red-base" in after and "gate-red-base-unknown" not in after
+          and "gate-red-writer" not in after
+          and measured.get("verdict") == "base-only"
+          and measured.get("measurable") is not False
+          and len(base_rows) == 1 and _evio.same_head(base_head, red_head)
+          and len(_stub_runs(log)) == 1 and _writer_resumes(root) == 0
+          and _base_trees(root) == [])
+
+    M2, why = _load("drive_phase_base_moved", real_gate_choice=True)
+    if M2 is None:
+        check("brc2 the driver loads", False, why)
+        return
+    root2, mpath2, _log2, _line2, _b2 = _base_measure_repo(
+        M2, "base-moved", k02, k02, seed_ms=slow_ms)
+    argv2 = _base_run_argv(M2, root2, mpath2)
+    red_head2 = _git_out(root2, "rev-parse", "HEAD").strip()
+    moved2 = _commit_code(root2)
+    played2 = _play_base(root2, argv2) if argv2 else (None, "no base run")
+    left = _base_mark(root2, M2)
+    _t, base_rows2 = _ledger_of(root2)
+    check("brc2 THE TWIN: HEAD moved by a commit touching a path the recorder "
+          "never writes is a real move - the base run measures nothing, "
+          "records no base row and leaves the mark unmeasurable, as before: %r"
+          % ((red_head2[:12], moved2[:12], played2, left, len(base_rows2)),),
+          bool(argv2) and moved2 != red_head2 and played2[0] is not None
+          and left.get("done") and left.get("measurable") is False
+          and base_rows2 == [] and _base_trees(root2) == [])
+
+    ctx2 = {"gitRoot": root2, "project": root2, "manifest": mpath2,
+            "config": {}}
+    asked = getattr(M2, "code_moved", None)
+    answers = ([asked(ctx2, red_head2, red_head2),
+                asked(ctx2, red_head2, moved2),
+                asked(ctx2, "0123456789abcdef0123", moved2),
+                asked(ctx2, None, moved2)] if asked else ["no code_moved"])
+    check("brc5 HEAD asked whether it still holds the red's code: the same "
+          "commit is the same code; a code path moved, a head git cannot "
+          "compare and a head nobody recorded are each a sentence, never "
+          "the same code: %r" % (answers,),
+          len(answers) == 4 and answers[0] is None
+          and "src/other.txt" in str(answers[1])
+          and "git could not compare" in str(answers[2])
+          and "unrecorded head" in str(answers[3]))
+    _base_twice_unmeasurable_case(check, k02)
+    _base_new_start_case(check)
+
+
+def _base_twice_unmeasurable_case(check, k02):
+    """Two reds of one start whose base HEAD left both times: the first goes
+    to the writer as a red with no base reading, the second stops as
+    gate-red-base-unknown, and a `next` after it runs no gate again and sends
+    no writer."""
+    M, why = _load("drive_phase_base_twice")
+    if M is None:
+        check("brc3 the driver loads", False, why)
+        return
+    world = {"root": None, "n": 0}
+    real_take = M.take_base
+
+    def _moved_first(*args, **kw):
+        # HEAD really moves before each base run: another session's commit.
+        world["n"] += 1
+        _commit_code(world["root"], "src/other%d.txt" % (world["n"],))
+        return real_take(*args, **kw)
+
+    M.take_base = _moved_first
+    try:
+        root, mpath, log, _l, _b = _base_measure_repo(
+            M, "base-twice", k02, k02, play_gate=False)
+        world["root"] = root
+        _c, first = _signal_next(M, root, mpath)
+        first_mark = _base_mark(root)
+        _signal_next(M, root, mpath, "--answer", "resume")
+        _c, r_block = _explain_of(M, root, mpath, "P1.1")
+        stubs = os.path.realpath(_harness.fixture_root("drive-twice-again-"))
+        again_log = os.path.join(stubs, "runs.jsonl")
+        _play_session(root, _run_argv(r_block) or [], _writer_stub(stubs),
+                      again_log, WRITER_COSTS[1],
+                      edit={"src/f1.txt": "changed again by the writer\n"})
+        _c, second = _signal_next(M, root, mpath)
+        second_mark = _base_mark(root)
+        gates = len(_red_rows(root))
+        resumes = _writer_resumes(root)
+        _c, third = _signal_next(M, root, mpath)
+    finally:
+        M.take_base = real_take
+    check("brc3 a second red of one start whose base cannot be measured "
+          "either stops as gate-red-base-unknown - the first went to the "
+          "writer - and the next drive after it runs no third gate and sends "
+          "no writer round: %r"
+          % ((first, first_mark.get("measurable"), second, second_mark,
+              gates, len(_red_rows(root)), resumes, _writer_resumes(root),
+              len(_stub_runs(log)), len(_stub_runs(again_log)), third),),
+          "gate-red-writer" in first
+          and first_mark.get("measurable") is False
+          and "gate-red-base-unknown" in second
+          and "gate-red-writer" not in second
+          and second_mark.get("measurable") is False
+          and second_mark.get("unmeasuredBefore") == 1
+          and "gate-red-base-unknown" in third
+          and gates == 2 and len(_red_rows(root)) == gates
+          and resumes == 1 and _writer_resumes(root) == 1
+          and len(_stub_runs(log)) == 1 and len(_stub_runs(again_log)) == 1)
+
+
+def _base_new_start_case(check):
+    """The count of unmeasurable reds lives on the start's mark: a launch in
+    the same start counts the mark it replaces, a launch in a new start counts
+    from zero."""
+    M, why = _load("drive_phase_base_newstart")
+    if M is None:
+        check("brc4 the driver loads", False, why)
+        return
+    counted = []
+    for started in ("2026-11-13T09:00:00Z", "2026-11-14T09:00:00Z"):
+        ctx, task, _phase = _bi_world(M, "drive-brc-start-")
+        state = {}
+        M._mark(state, M.BASE_MEASURED, task, {
+            "of": "r-one", "done": True, "measurable": False,
+            "unmeasuredBefore": 1})
+        later = dict(task, startedAt=started)
+        try:
+            M.launch_base(ctx, state, later, {"runId": "r-two",
+                                              "status": "failed",
+                                              "taskId": "P1.1"}, None, "why")
+            counted.append((M._marked(state, M.BASE_MEASURED, later) or {})
+                           .get("unmeasuredBefore"))
+        except Exception as exc:                               # noqa: BLE001
+            counted.append("%s: %s" % (type(exc).__name__, exc))
+    check("brc4 a launch in the same start counts the unmeasurable mark it "
+          "replaces on top of that mark's own count, and a launch in a new "
+          "start counts from zero: %r" % (counted,),
+          counted == [2, 0])
 
 
 # --- the base run beside next: one writer per file, read back after --------
@@ -21219,9 +21420,10 @@ def _bi_reading_cases(check, M):
 
 def _bi_unmeasurable_case(check, M):
     """A mark whose base could not be measured at all is no mark to another
-    red, which is measured on its own; and THE TWIN, the over-fire direction:
+    red, which is measured on its own - and, unmeasurable again, is the
+    second of its start, so unknown; and THE TWIN, the over-fire direction:
     a repeat of the red that mark was taken for is decided by it, with no
-    second measurement."""
+    second measurement and no unknown."""
     def _read(run_id):
         ctx, task, phase = _bi_world(M, "drive-bi-unmeasurable-")
         state = {}
@@ -21255,11 +21457,13 @@ def _bi_unmeasurable_case(check, M):
     other, other_taken = _read("r-second")
     repeat, repeat_taken = _read("r-red")
     check("bi14 an unmeasurable mark taken for one red is no mark to another: "
-          "the other red is measured on its own and, still unrunnable, is "
-          "never unknown; THE TWIN, a repeat of the red the mark was taken "
-          "for is decided by it with no second measurement: %r"
+          "the other red is measured on its own and, still unrunnable - the "
+          "second of its start - is unknown rather than another round; THE "
+          "TWIN, a repeat of the red the mark was taken for is decided by it "
+          "with no second measurement, and is not unknown: %r"
           % ((other, other_taken, repeat, repeat_taken),),
-          other_taken == ["r-second"] and other[0] is None and other[2] is None
+          other_taken == ["r-second"] and other[0] is None
+          and "earlier red of this start" in str(other[2])
           and repeat_taken == [] and repeat[0] is None and repeat[2] is None)
 
 

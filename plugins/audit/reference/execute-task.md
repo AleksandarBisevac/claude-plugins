@@ -275,13 +275,22 @@ verb writes and refuses, and what the run commands leave behind, is
         the second refuses, measuring nothing: each claims the launch's record by an
         exclusive create first. A derived step's red is measured too: its failing
         suites are run again at the base, spelled as the gate spelled them, by the
-        paths the step's name lists.
+        paths the step's name lists. The base tree is built at the red run's own
+        recorded head, and HEAD is asked only whether it still holds that code: a
+        HEAD that moved only inside the paths the recorder writes (the plan, the
+        journal, the evidence - `_evidence_io.recorded_paths`), as the drive's own
+        record commit of the red does, is measured; one that moved anything else,
+        or that git cannot compare with it, is not (`code_moved`).
         A red whose base commit fails every case it fails stops as
         `gate-red-base`, with no session sent. A red no step of which can be run
         again at the base - its runner named no failing suite, or nothing can spell
-        its suites - has no base reading and goes to the writer like any such red;
-        that is not the unknown stop, and such a base decides no later red of the
-        start, which is measured on its own. A base nobody can
+        its suites - or whose HEAD has since moved the code has no base reading and
+        goes to the writer like any such red; that is not the unknown stop, and
+        such a base decides no later red of the start, which is measured on its
+        own. A second red of one start whose base cannot be measured either stops
+        as `gate-red-base-unknown`, under `next` and `auto` alike, never another
+        gate round: the start's base mark counts them (`unmeasuredBefore`), and a
+        new start counts from zero. A base nobody can
         know - the base run left no reading, failed or was killed, or its reading
         was taken for another red run - stops as `gate-red-base-unknown`, with no
         session sent and no round spent: `measure-base` measures the base again,
