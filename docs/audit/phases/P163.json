@@ -29,35 +29,40 @@
         "severity": "low",
         "file": "tools/redfirst.sh:9-11",
         "issue": "The diff deletes syncAreaOptions() from areas.js (and its call in filters.js), and redfirst.sh's documented usage example still mutates `--replace \"syncAreaOptions();\" \"\"` in areas.js: the anchor now matches nothing, so the one worked example of the red-first tool names a symbol that no longer exists. The executor disclosed this; the bash-write guard refused the edit because redfirst.sh is outside every in_progress task's scope.",
-        "resolution": "In a task that owns tools/redfirst.sh, point the example at an anchor that exists in the assembled report script, e.g. filters.js `--replace \"syncStatusChips();\" \"\"`, and check that the example run goes red against check-report-interactive.mjs."
+        "resolution": "In a task that owns tools/redfirst.sh, point the example at an anchor that exists in the assembled report script, e.g. filters.js `--replace \"syncStatusChips();\" \"\"`, and check that the example run goes red against check-report-interactive.mjs.",
+        "fixTask": "P163.4-d6t"
       },
       {
         "id": "P163-R2",
         "severity": "med",
         "file": "tools/check-report-interactive.mjs:2589-2631",
         "issue": "contradicts task clause \"extend the existing sticky-share check around line 2403 rather than adding a parallel one\" and \"at most a stated share of the viewport (a figure derived from the layout, with its basis in a comment)\": ph1 is a new standalone block after the phone-panel branch with its own measurement method (hit-testing down the screen's middle) and its own bound (50%), beside the existing `covered > 40` check (de21866c:2393), which is left unchanged. The repo now has two sticky-share measurements of the phone stack, by two methods and two bounds, which is the parallel check the clause excluded. The 50% bound is derived from the word 'most' in the requirement and not from the layout: the comment's basis is 'the table keeps MOST of it', with no measured layer heights. The executor's claim admits only that ph2 extends the existing check ('ph2 sits inside the existing phone More-filters branch, right after the sticky-share check it extends. ph1 measures the resting stack...').",
-        "resolution": "Fold the resting-stack question into the existing check. Measure the stack once, by one method (the hit-test is the better one, since it sees what pins over the table), in both states: shut (resting) and open, scrolled into the table. Assert each against its bound in the same place. If ph1 has to run for a report with no More-filters panel, move the shared measurement out of the `if` and keep the open-state assertion inside it, so there are still not two methods. Derive the shut bound from the layout, e.g. the strip height plus the shut filter bar's height plus a stated tolerance, read off the elements at run time, with that basis in the comment."
+        "resolution": "Fold the resting-stack question into the existing check. Measure the stack once, by one method (the hit-test is the better one, since it sees what pins over the table), in both states: shut (resting) and open, scrolled into the table. Assert each against its bound in the same place. If ph1 has to run for a report with no More-filters panel, move the shared measurement out of the `if` and keep the open-state assertion inside it, so there are still not two methods. Derive the shut bound from the layout, e.g. the strip height plus the shut filter bar's height plus a stated tolerance, read off the elements at run time, with that basis in the comment.",
+        "fixTask": "P163.5-d6t"
       },
       {
         "id": "P163-R3",
         "severity": "med",
         "file": "plugins/audit/scripts/report/_usage_detail.py:481",
         "issue": "contradicts task clause \"each chip group is role=group with an accessible label\": the heatmap granularity row `<span id=\"audit-hm-gran\">` holds a row of aria-pressed `.fchip` toggle buttons (All/Year/Month/Week/Day) and has no role or label. It is the only chip container in the rendered reports without one: a scan of examples/acme-store/acme-store-audit.html and docs/index.html with scripts stripped finds every other chip container (phase-status, areas, model, tev, tevf, presets, tf-chips, audit-authors) labelled. The tests enumerate the ids they fixed (ax2's `== 3`, pg24's two ids) instead of stating the invariant, so this row was missed and a chip row added later would be missed too.",
-        "resolution": "Give #audit-hm-gran role=group and an accessible name matching its visible context (e.g. aria-label=\"Heatmap period\"). Add one document-level case over a rendered report: every element whose direct children are `.fchip`/`.tf-chip`/`.auchip` buttons carries role=\"group\" and a non-empty aria-label. Prove it red against this tree, since hm-gran fails it now."
+        "resolution": "Give #audit-hm-gran role=group and an accessible name matching its visible context (e.g. aria-label=\"Heatmap period\"). Add one document-level case over a rendered report: every element whose direct children are `.fchip`/`.tf-chip`/`.auchip` buttons carries role=\"group\" and a non-empty aria-label. Prove it red against this tree, since hm-gran fails it now.",
+        "fixTask": "P163.6-d6t"
       },
       {
         "id": "P163-R4",
         "severity": "low",
         "file": "plugins/audit/scripts/report/_report_html.py:1467; tests/test_render_report.py:1032; tests/test_render_report.py:979; tools/check-report-interactive.mjs:2596; plugins/audit/scripts/ui/report-css/forced-colors.css:59",
         "issue": "Prose in the diff disagrees with the measurements and with the code. (a) The docstring says the wrapped bar 'pinned nearly half a phone screen' and the test comment says 'nearly half the screen', but the CSS and mjs comments record 58% (486px of 844) and the claim records 61% before the fix: both are more than half, which is the whole reason for the rule. (b) There are two 'before' figures for the same stack, 58%/486px in the comments and 61% in the claim, and no comment says the 58% is a sum of heights while the 61% is ph1's hit-test. (c) The g1 case title in a touched file still reads 'the sticky top bar carries the global filter row' in the present tense. This diff makes the bar non-sticky below 52rem and removes 'global' from the row, so the title is no longer history. It is a false description of what the case pins.",
-        "resolution": "Reword (a) to 'more than half'. In (b), say which method the 58% came from, or drop it and point at ph1's printed figure. Reword g1's title to 'the top bar carries the header filter row'."
+        "resolution": "Reword (a) to 'more than half'. In (b), say which method the 58% came from, or drop it and point at ph1's printed figure. Reword g1's title to 'the top bar carries the header filter row'.",
+        "fixTask": "P163.7-d6t"
       },
       {
         "id": "P163-R5",
         "severity": "low",
         "file": "tests/test_render_report.py:770-773",
         "issue": "This is an inherited case in the task's gate. 'sticky: the stack is restated at runtime' checks only `\"measureStack\" in M._SCRIPT and \"--topbar-h\" in M._SCRIPT and \"ResizeObserver\" in M._SCRIPT`. measureStack() could be emptied to a no-op and the case would still pass, because all three substrings stay in the script through the declaration, the listeners and other code. This task changed what measureStack publishes. st2 now pins the pinnedPx call, but the inherited case names a behaviour it cannot see.",
-        "resolution": "Either retire the case in favour of st2 plus the browser gate's stack checks, or make it assert the setProperty calls for each of --topbar-h, --strip-h and the sectools height, so emptying the function turns it red."
+        "resolution": "Either retire the case in favour of st2 plus the browser gate's stack checks, or make it assert the setProperty calls for each of --topbar-h, --strip-h and the sectools height, so emptying the function turns it red.",
+        "fixTask": "P163.8-d6t"
       }
     ],
     "outcome": "[findings: 5 - 0 high, 2 med, 3 low; 0 with a recorded fix commit]"
@@ -245,7 +250,7 @@
     {
       "id": "P163.3",
       "title": "On a phone the filters leave the table room, every header filter names its scope, and the filter controls are announced and focus-visible",
-      "status": "in_progress",
+      "status": "done",
       "description": "Read the skills refactoring-the-assembled-ui, writing-css, writing-javascript and no-silent-pass first.\n\nDEFECTS (measured on the dogfood and acme reports):\n1. At 390x844 the sticky header (0-202px), nav (202-250) and toolbar (262-465) cover 465 of 844px over the table; the header filters wrap onto three lines; the inline More filters panel is clipped.\n2. 'Global filters' mixes scopes with nothing saying which: Author narrows only the Usage section, Area only the table, the dates both, and the section's View overrides all of them.\n3. Two date controls hold one state with different wording ('From/to' in the header, 'Worked between/and' in More filters).\n4. a11y: #audit-count has no aria-live, so a filter result is silent; summary aria-label='More filters' overrides its text so the active count is never announced; chip groups have no role=group or label; focus on the header selects and dates is box-shadow only, which forced-colors mode removes.\n\nREQUIRED:\n1. Below 52rem the sticky stack measured by measureStack() (page-state.js) is shorter: the header's filter row is not sticky (or folds into a disclosure) so the table keeps most of the screen; More filters is fully visible (scrollable within the viewport if needed). Pick the structurally correct form per writing-css (tokens, :where(), container or media query, no !important) and say why.\n2. Each header control's visible label states its scope (e.g. 'Author (usage)'), or the control moves into the section it scopes - choose and justify; the table's View is not silently overriding a 'global' label.\n3. One wording for the date range across both controls.\n4. aria-live=polite on the count; the More filters summary's accessible name includes the active count; each chip group is role=group with an accessible label; header selects and date inputs get a focus indicator that survives forced-colors (outline, see report-css/forced-colors.css).\n\nTESTS: pins in tests/test_render_report.py / tests/test__report_html.py for the aria attributes, labels and the focus rule; tools/check-report-interactive.mjs: at 390x844 the sticky stack over the table is at most a stated share of the viewport (a figure derived from the layout, with its basis in a comment) and the open More filters panel's bounding box lies within the viewport; extend the existing sticky-share check around line 2403 rather than adding a parallel one. Prove each red against de21866c and record the verbatim failing line. Run the browser gate yourself (phase-gate-only in audit.config): node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html. Re-render the committed artifacts as tools/check-rendered-artifacts.py --before-commit asks.\n\nDEPENDANTS: as task a; tools/capture-screenshots.mjs captures phone shots; report-css/shell.css, controls.css and forced-colors.css are shared by the print and dark rules in motion-and-print.css. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/ui/report-css/shell.css",
@@ -305,14 +310,24 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "285462284bb9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "PHONE STACK: forced-colors.css's 52rem block (the file that holds the phone rules) now makes .topbar position:static and sets :root{--topbar-h:0px} as the no-JS answer. page-state.js gets pinnedPx(el), which returns an element's height only while getComputedStyle says it is sticky. measureStack() and markSpy()'s fold both use it, so the offsets follow the stylesheet with no second copy of the breakpoint. Why this form: the header filter row sits inside .topbar, and a child cannot be un-stuck from a sticky parent, so the only CSS-only form is the whole bar. On a phone that bar's three lines (title, document actions, filter row) are not what someone reading a table row needs; the section strip and the table's own filter bar are, and they stay pinned. Folding the row into a third disclosure would duplicate More filters. I used a viewport query because the cost is a share of the screen. No !important. MORE FILTERS: on a phone the open bar leaves the sticky stack, so opening it while stuck sent the panel above the screen (measured y -486..-106). A toggle handler in page-state.js scrolls the <details> to the nearest edge only when it is off screen. 'Off screen' starts at its scroll-margin-top, calc(var(--sticky-2) + var(--sp-0)), read back resolved, so a disclosure in a stuck desktop bar counts as on screen and the page never moves. SCOPE: the row is no longer labelled 'Global filters' (group name: 'Report filters, each naming the section it narrows'). Visible labels are 'Author (usage)', 'Area (phases)', and 'Worked from … to … (phases & usage)', with the scope in a .gfscope span. Each control's accessible name starts with its visible label. The words follow the side nav's section names. DATES: both pairs now read 'Worked from' / 'to' ('From', 'Worked between' and 'and' are gone). A11Y: #audit-count has aria-live=polite. The summary's aria-label is removed: Chromium's AX tree now names it 'More filters · 1' (de21866c: 'More filters'), and the ▾/▴ ::after glyph gets an empty alt via the cascade fallback content:'x'; content:'x' / '' (Baseline newly), so the arrow is not read. Labelled role=group on #audit-phase-status, each phase's .tf-chips ('Filter <pid> tasks by status'), and every More-filters chip row through one helper, _report_html._chip_row, which emits the visible label and the group name from one string. Also on the Usage author chips (#audit-authors, aria-label 'Author') in _usage_overview.py, which the orchestrator added to the task's scope. FOCUS: the three box-shadow-only field focus rules became one rule in controls.css (#audit-q, .frow date, .gfilters select/date). It keeps the accent border and ring and adds outline:2px solid transparent, which Chromium's forced-colours emulation repaints in a system colour while dropping the shadow (measured with a probe before writing it). The report's CSS now contains zero outline:none. TESTS: test__report_html sc1-sc4, ax1, ax2; test__report_page pg23, pg24; test_render_report fo1, fo2, st1-st3. check-report-interactive: ph2 sits inside the existing phone More-filters branch, right after the sticky-share check it extends. ph1 measures the resting stack as what a reader sees: the first point down the screen's middle that is the table's frame. Bound: half the screen, because 'the table keeps most of the screen' means over half (basis in the comment); before 61%, after 33% (279px). Both use PHONE_TALL = 390x844, kept apart from PHONE_VIEWPORT so the recorded layout-baseline shares are not re-based. Also added: an interaction-state table (is1-is10, each control's own computed style at rest vs in hover/focus, plus the outline under forced colours for focus), ax3 (summary name read from the AX tree over CDP), and FEATURE_ABSENT rows for the two conditional sites. Stale claims fixed: comments and docstrings calling the row global or sticky at every width, the product README line (plugins/audit/README.md, now in scope), both ui READMEs (forced-colors.css's row claimed forced-colours rules it does not hold). FOLLOWERS: examples/report.sh re-rendered acme plus its .md and refreshed docs/index.html; docs/demo-large.html re-rendered per --how; screenshots re-captured (exit 0). check-rendered-artifacts --before-commit OK (3 match). Runs: task gate 4/4 files, 818 cases; full sweep 196/196 files, 18854 cases, exit 0; vitest 57 files, 853 tests; browser gate on acme exit 0, 229 checks, coverage 189 of 202 sites with 13 conditional; ruff and vermin clean. DEPENDANTS: shell.css, controls.css and forced-colors.css are read by _ui_theme/_ui_theme_lints and their tests by basename; the part list is unchanged and the theme lints pass in the sweep. panel-css/usage-tab.css keeps its own twin of the summary rules, unchanged, so its pin in test__panel_page uf7 still holds. Its arrow also lacks an empty alt, but the panel summary has no aria-label; noting this as a low for the orchestrator rather than changing the panel. motion-and-print.css print rules: the on-paper checks stay green (the bar and panel never reach paper). page-state.js readers (_report_ui, heatmap.js, test__report_ui, test__ui_theme_lints): still correct, sweep green. filters.js: net diff empty (an early draft was moved to page-state.js because the refresh() slice pins scale and tv-r2b read the next function's span). tools/ui-tests test-gate-filter passes. capture-screenshots.mjs: unchanged and green. examples, docs/index.html and demo-large are re-rendered. _report_page.py importers (render-report, tests, tools/where.py): signatures unchanged. CASE BINDING: ph1, ph2 and is1-is10 are printed by check-report-interactive.mjs, not by the submit command, so the drive will report entries 1-11 as gaps. st1-st3 are listed under entry 1 as the printed pins of the same behaviour.",
+        "descriptive": "On a 390x844 phone the filters pin 33% of the screen instead of 61% and More filters opens on screen; every header control names the section it narrows, the date range has one wording, and the count, the More filters summary, the chip groups and the field focus rings are announced or survive forced colours."
       },
       "startedAt": "2026-11-16T15:20:05Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-16T16:04:30Z",
+      "verifiedBy": [
+        "test__report_html sc1-sc4: scoped visible labels, no 'global', label-in-name accessible names, one date wording in both pairs",
+        "test__report_html ax1-ax2: the summary has no aria-label; every More-filters chip row is a labelled group",
+        "test__report_page pg23-pg24: #audit-count is aria-live=polite; phase-status and per-phase task chips are labelled groups",
+        "test_render_report fo1-fo2: one field focus rule with a transparent outline; zero outline:none in the report CSS",
+        "test_render_report st1-st3: top bar static below 52rem with a zero fallback offset; pinnedPx drives measureStack and the spy fold; opening More filters scrolls into view",
+        "check-report-interactive ph1: resting sticky stack at 390x844 is at most half the screen, measured by hit-testing",
+        "check-report-interactive ph2: More filters opened while the bar is stuck lies within the 390x844 viewport and is painted",
+        "check-report-interactive is1-is10: each control's own box moves in its hover/focus state; focus keeps an outline under forced colours",
+        "check-report-interactive ax3: the summary's accessible name carries the active count, read from the AX tree"
+      ],
       "notes": [
         {
           "at": "2026-11-16T14:40:11Z",
@@ -340,7 +355,319 @@
         "runId": "2026-11-16T16:00:51Z.1ce0c0",
         "status": "passed",
         "at": "2026-11-16T16:00:51Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "285462284bb9",
+        "at": "2026-11-16T16:04:30Z",
+        "return": "docs/audit/evidence/returns/P163.3/20261116T152005Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-16T15:50:20Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_render_report.py tests/test__report_page.py tests/test__report_html.py tests/test__refs.py` in a throwaway tree at HEAD: inline suite plugins/audit/scripts/ui/report-css/shell.css (its test file is its implementation file): it is not Python, and an inline suite's test hunks are read from Python definitions; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P163.4-d6t",
+      "title": "fix P163-R1: The diff deletes syncAreaOptions() from areas.js (and its call i...",
+      "status": "in_progress",
+      "description": "The diff deletes syncAreaOptions() from areas.js (and its call in filters.js), and redfirst.sh's documented usage example still mutates `--replace \"syncAreaOptions();\" \"\"` in areas.js: the anchor now matches nothing, so the one worked example of the red-first tool names a symbol that no longer exists. The executor disclosed this; the bash-write guard refused the edit because redfirst.sh is outside every in_progress task's scope.\n\nResolution asked: In a task that owns tools/redfirst.sh, point the example at an anchor that exists in the assembled report script, e.g. filters.js `--replace \"syncStatusChips();\" \"\"`, and check that the example run goes red against check-report-interactive.mjs.",
+      "files": [
+        "tools/redfirst.sh"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-16T16:05:00Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T16:04:50Z",
+          "text": "scope: tools/redfirst.sh, every path the finding(s) P163-R1 name"
+        },
+        {
+          "at": "2026-11-16T16:04:50Z",
+          "text": "no suite: tools/redfirst.sh - no test sits beside it and no test file names it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-11-16T16:04:50Z",
+          "text": "no tests.add clause for P163-R1: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P163-R1"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-16T16:56:59Z.97b65a",
+        "status": "passed",
+        "at": "2026-11-16T16:56:59Z"
+      }
+    },
+    {
+      "id": "P163.5-d6t",
+      "title": "fix P163-R2: contradicts task clause \"extend the existing sticky-share check ...",
+      "status": "in_progress",
+      "description": "contradicts task clause \"extend the existing sticky-share check around line 2403 rather than adding a parallel one\" and \"at most a stated share of the viewport (a figure derived from the layout, with its basis in a comment)\": ph1 is a new standalone block after the phone-panel branch with its own measurement method (hit-testing down the screen's middle) and its own bound (50%), beside the existing `covered > 40` check (de21866c:2393), which is left unchanged. The repo now has two sticky-share measurements of the phone stack, by two methods and two bounds, which is the parallel check the clause excluded. The 50% bound is derived from the word 'most' in the requirement and not from the layout: the comment's basis is 'the table keeps MOST of it', with no measured layer heights. The executor's claim admits only that ph2 extends the existing check ('ph2 sits inside the existing phone More-filters branch, right after the sticky-share check it extends. ph1 measures the resting stack...').\n\nResolution asked: Fold the resting-stack question into the existing check. Measure the stack once, by one method (the hit-test is the better one, since it sees what pins over the table), in both states: shut (resting) and open, scrolled into the table. Assert each against its bound in the same place. If ph1 has to run for a report with no More-filters panel, move the shared measurement out of the `if` and keep the open-state assertion inside it, so there are still not two methods. Derive the shut bound from the layout, e.g. the strip height plus the shut filter bar's height plus a stated tolerance, read off the elements at run time, with that basis in the comment.",
+      "files": [
+        "tools/check-report-interactive.mjs"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "selftests",
+          "validate",
+          "plugin-validate",
+          "gate",
+          "report",
+          "lint",
+          "shots",
+          "interactive",
+          "vitest"
+        ],
+        "gateBasis": "files-no-suite"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-16T16:05:08Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T16:04:50Z",
+          "text": "scope: tools/check-report-interactive.mjs, every path the finding(s) P163-R2 name"
+        },
+        {
+          "at": "2026-11-16T16:04:50Z",
+          "text": "no suite: tools/check-report-interactive.mjs - 2 test files name it and none is named for it (tests/test__report_html.py, tests/test_audit_lookup.py); name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-11-16T16:04:50Z",
+          "text": "no tests.add clause for P163-R2: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        }
+      ],
+      "fixes": [
+        "P163-R2"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-16T17:07:42Z.d9b063",
+        "status": "passed",
+        "at": "2026-11-16T17:07:42Z"
+      }
+    },
+    {
+      "id": "P163.6-d6t",
+      "title": "fix P163-R3: contradicts task clause \"each chip group is role=group with an a...",
+      "status": "in_progress",
+      "description": "contradicts task clause \"each chip group is role=group with an accessible label\": the heatmap granularity row `<span id=\"audit-hm-gran\">` holds a row of aria-pressed `.fchip` toggle buttons (All/Year/Month/Week/Day) and has no role or label. It is the only chip container in the rendered reports without one: a scan of examples/acme-store/acme-store-audit.html and docs/index.html with scripts stripped finds every other chip container (phase-status, areas, model, tev, tevf, presets, tf-chips, audit-authors) labelled. The tests enumerate the ids they fixed (ax2's `== 3`, pg24's two ids) instead of stating the invariant, so this row was missed and a chip row added later would be missed too.\n\nResolution asked: Give #audit-hm-gran role=group and an accessible name matching its visible context (e.g. aria-label=\"Heatmap period\"). Add one document-level case over a rendered report: every element whose direct children are `.fchip`/`.tf-chip`/`.auchip` buttons carries role=\"group\" and a non-empty aria-label. Prove it red against this tree, since hm-gran fails it now.",
+      "files": [
+        "plugins/audit/scripts/report/_usage_detail.py",
+        "tests/test__usage_detail.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__usage_detail.py: Give #audit-hm-gran role=group and an accessible name matching its visible context (e.g"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__usage_detail.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-16T16:05:28Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T16:04:54Z",
+          "text": "scope: plugins/audit/scripts/report/_usage_detail.py, every path the finding(s) P163-R3 name"
+        },
+        {
+          "at": "2026-11-16T16:04:54Z",
+          "text": "scope: tests/test__usage_detail.py, the suite that tests plugins/audit/scripts/report/_usage_detail.py (python: its import closure reaches plugins/audit/scripts/report/_usage_detail.py)"
+        },
+        {
+          "at": "2026-11-16T16:05:26Z",
+          "text": "its section on _usage_detail.py describes what the module renders; adding role and a label to one chip row changes nothing that section states",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
+        }
+      ],
+      "fixes": [
+        "P163-R3"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-16T17:16:07Z.facd55",
+        "status": "passed",
+        "at": "2026-11-16T17:16:07Z"
+      }
+    },
+    {
+      "id": "P163.7-d6t",
+      "title": "fix P163-R4: Prose in the diff disagrees with the measurements and with the c...",
+      "status": "pending",
+      "description": "Prose in the diff disagrees with the measurements and with the code. (a) The docstring says the wrapped bar 'pinned nearly half a phone screen' and the test comment says 'nearly half the screen', but the CSS and mjs comments record 58% (486px of 844) and the claim records 61% before the fix: both are more than half, which is the whole reason for the rule. (b) There are two 'before' figures for the same stack, 58%/486px in the comments and 61% in the claim, and no comment says the 58% is a sum of heights while the 61% is ph1's hit-test. (c) The g1 case title in a touched file still reads 'the sticky top bar carries the global filter row' in the present tense. This diff makes the bar non-sticky below 52rem and removes 'global' from the row, so the title is no longer history. It is a false description of what the case pins.\n\nResolution asked: Reword (a) to 'more than half'. In (b), say which method the 58% came from, or drop it and point at ph1's printed figure. Reword g1's title to 'the top bar carries the header filter row'.",
+      "files": [
+        "plugins/audit/scripts/report/_report_html.py",
+        "tests/test_render_report.py",
+        "tools/check-report-interactive.mjs",
+        "plugins/audit/scripts/ui/report-css/forced-colors.css",
+        "tests/test__report_html.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_render_report.py: Reword (a) to 'more than half'"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_render_report.py tests/test__report_html.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T16:04:59Z",
+          "text": "scope: plugins/audit/scripts/report/_report_html.py, tests/test_render_report.py, tools/check-report-interactive.mjs, plugins/audit/scripts/ui/report-css/forced-colors.css, every path the finding(s) P163-R4 name"
+        },
+        {
+          "at": "2026-11-16T16:04:59Z",
+          "text": "scope: tests/test__report_html.py, the suite that tests plugins/audit/scripts/report/_report_html.py (python: its import closure reaches plugins/audit/scripts/report/_report_html.py)"
+        },
+        {
+          "at": "2026-11-16T16:04:59Z",
+          "text": "no suite: tools/check-report-interactive.mjs - 2 test files name it and none is named for it (tests/test__report_html.py, tests/test_audit_lookup.py); name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-11-16T16:04:59Z",
+          "text": "no suite: plugins/audit/scripts/ui/report-css/forced-colors.css - no test sits beside it and no test file names it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-11-16T16:04:59Z",
+          "text": "no test runner in this task's gate for the test P163-R4 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_render_report.py tests/test__report_html.py'], derived as narrowed to this task's tests.add paths and the suite(s) its files declare (tests/test__report_html.py), in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P163-R4"
+      ]
+    },
+    {
+      "id": "P163.8-d6t",
+      "title": "fix P163-R5: This is an inherited case in the task's gate. 'sticky: the stack...",
+      "status": "pending",
+      "description": "This is an inherited case in the task's gate. 'sticky: the stack is restated at runtime' checks only `\"measureStack\" in M._SCRIPT and \"--topbar-h\" in M._SCRIPT and \"ResizeObserver\" in M._SCRIPT`. measureStack() could be emptied to a no-op and the case would still pass, because all three substrings stay in the script through the declaration, the listeners and other code. This task changed what measureStack publishes. st2 now pins the pinnedPx call, but the inherited case names a behaviour it cannot see.\n\nResolution asked: Either retire the case in favour of st2 plus the browser gate's stack checks, or make it assert the setProperty calls for each of --topbar-h, --strip-h and the sectools height, so emptying the function turns it red.",
+      "files": [
+        "tests/test_render_report.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_render_report.py: the case P163-R5 asks for, locking the behaviour at HEAD"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_render_report.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T16:04:59Z",
+          "text": "scope: tests/test_render_report.py, every path the finding(s) P163-R5 name"
+        },
+        {
+          "at": "2026-11-16T16:04:59Z",
+          "text": "no test runner in this task's gate for the test P163-R5 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_render_report.py'], derived as narrowed to this task's tests.add paths, in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P163-R5"
+      ]
     }
   ],
   "request": "Users report the filters at the top of the HTML report do not work. Fix every filter defect found by the live diagnosis: Clear filters leaves the test-gate and observed filters on (and storage brings them back); the default view hides task-level matches while the empty state says none exist; the counter states no basis; the phone layout covers most of the screen; filter scopes are invisible; and the a11y gaps.",

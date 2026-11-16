@@ -6,8 +6,8 @@
 #     <gate command...>
 #
 # Example:
-#   tools/redfirst.sh plugins/audit/scripts/ui/report/areas.js \
-#     --replace "syncAreaOptions();" "" --render -- \
+#   tools/redfirst.sh plugins/audit/scripts/ui/report/filters.js \
+#     --replace "syncStatusChips();" "" --render -- \
 #     node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html
 #
 # THE VERDICT IS INVERTED, and that is the whole point. A gate that stays GREEN

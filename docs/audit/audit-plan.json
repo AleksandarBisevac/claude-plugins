@@ -5813,7 +5813,8 @@
       "P131.1",
       "P131.2",
       "P163.2",
-      "P163.3"
+      "P163.3",
+      "P163.7-d6t"
     ],
     "plugins/audit/scripts/report/_report_md.py": [
       "P51.9",
@@ -8683,7 +8684,9 @@
       "P155.9",
       "P163.1",
       "P163.2",
-      "P163.3"
+      "P163.3",
+      "P163.5-d6t",
+      "P163.7-d6t"
     ],
     "tools/gate-parity.py": [
       "P19.2",
@@ -8928,7 +8931,8 @@
     ],
     "tools/redfirst.sh": [
       "P55.13",
-      "P123.24"
+      "P123.24",
+      "P163.4-d6t"
     ],
     "tools/sweep-selftests.py": [
       "P37.2",
@@ -10532,7 +10536,8 @@
       "P122.8-z4y",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P163.6-d6t"
     ],
     "plugins/audit/tests/test__usage_overview.py": [
       "P104.4",
@@ -12621,7 +12626,8 @@
       "P131.1",
       "P154.3-mkf",
       "P163.2",
-      "P163.3"
+      "P163.3",
+      "P163.7-d6t"
     ],
     "tests/test__report_md.py": [
       "P131.1"
@@ -12736,7 +12742,8 @@
       "P131.1"
     ],
     "tests/test__usage_detail.py": [
-      "P131.1"
+      "P131.1",
+      "P163.6-d6t"
     ],
     "tests/test__usage_economics.py": [
       "P131.1"
@@ -13216,7 +13223,9 @@
       "P154.3-mkf",
       "P163.1",
       "P163.2",
-      "P163.3"
+      "P163.3",
+      "P163.7-d6t",
+      "P163.8-d6t"
     ],
     "tests/test_repair_commits.py": [
       "P131.1"
@@ -13605,7 +13614,8 @@
       "P163.3"
     ],
     "plugins/audit/scripts/ui/report-css/forced-colors.css": [
-      "P163.3"
+      "P163.3",
+      "P163.7-d6t"
     ]
   },
   "bugs": [

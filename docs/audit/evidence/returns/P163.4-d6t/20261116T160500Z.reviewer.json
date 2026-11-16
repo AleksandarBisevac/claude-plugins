@@ -1,0 +1,14 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause: \"point the example at an anchor that exists in the assembled report script, e.g. filters.js `--replace \"syncStatusChips();\" \"\"`\" - diff lines 9-10 of tools/redfirst.sh now read `tools/redfirst.sh plugins/audit/scripts/ui/report/filters.js \\` / `--replace \"syncStatusChips();\" \"\" --render -- \\`; grep in the task tree finds `syncStatusChips();` once, at filters.js:105 (inside refresh()), the only other hit being the definition `function syncStatusChips() {` at heatmap.js:444, which the anchor does not match - so the tool's exactly-one-occurrence rule holds. Clause: \"check that the example run goes red against check-report-interactive.mjs\" - the executor reports the verbatim run exiting 0 with 'REDFIRST ok: the gate went red (exit 1)' and the failing line 'in the Archived view only archived statuses are offered as chips ... got 2, want 0'; I did not rerun it (a browser gate run is outside what a reviewer may run), but the claim names the command and exit code and its stamp grades `current` (stamp-verification.py compare, exit 0). Claim vs diff: the claim says the only change is tools/redfirst.sh and the header line count is unchanged - `git diff --stat` shows 1 file, 2+/2-, and usage()'s `sed -n '2,34p'` window (redfirst.sh:53) still covers the Example block (lines 8-11). The claim's note that tests/test_render_report.py:1475 is an absence pin (`\"syncAreaOptions\" not in M._SCRIPT`) is accurate; it is the only remaining code mention. Dependants: affected.py, prove-gates.py, questions.md and CLAUDE.md name redfirst.sh by path or describe it without quoting the example, so a comment-only change to the example leaves each correct, as the executor answered.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "executor: \"tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed\"; testsAdded is empty and the change is a comment in a shell script's header, so no test is owed - the basis holds",
+  "inheritedTests": "not-asked",
+  "inheritedTestsBasis": "tests.gate's commands run whole-project gates (sweep-selftests.py over the tree, ruff/vermin, vitest, the browser gates); the diff changes only comment lines in tools/redfirst.sh's header, which no selected test can reach as behaviour, and the gate runs the whole project, so the question is not asked"
+ },
+ "verdict": "clean"
+}
