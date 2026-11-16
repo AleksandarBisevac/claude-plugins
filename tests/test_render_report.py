@@ -1143,15 +1143,19 @@ def _cases(check):
     # count of "165 phases" over a table showing five was the defect: the view
     # was a gate on the rows and on nothing the counter said.
     # A construct pin: the wording's behaviour - the count matches the rows
-    # drawn, and does not wrap the pinned bar at 1512px - is the browser gate's
-    # ("at rest the count says it counts in the view", nw1).
-    check("c5b: the phase count says it counts in the view, at rest as well as "
-          "filtered - one sentence, never a bare total beside a narrowed table, "
-          "and never the View select's wording repeated in brackets beside it",
-          "visP + ' of ' + plural(phaseRows.length, 'phase') + ' in view'"
-          in M._SCRIPT
+    # drawn, names the selected option's short name, and does not wrap the
+    # pinned bar at 1512px - is the browser gate's ("at rest the count names
+    # the view the View select sets", nw1).
+    check("c5b: the phase count names the view it counts in, at rest as well as "
+          "filtered - by the option's bracket-free short name, never a bare "
+          "total beside a narrowed table, and never the View select's wording "
+          "in brackets beside it",
+          M._SCRIPT.count(
+              "visP + ' of ' + plural(phaseRows.length, 'phase') + ' · ' + viewShort()") == 1
+          and "opt.getAttribute('data-short')" in M._SCRIPT
           and "' (' + viewName() + ')'" not in M._SCRIPT
           and "(phaseRows.length + ' phases')" not in M._SCRIPT)
+
     check("c5c: the task denominator is the header's - cancelled work counted on "
           "neither side of the fraction, exactly as the header's task total "
           "leaves it out",
@@ -1495,6 +1499,13 @@ def _cases(check):
           and '<option value="archived"' in _sgh
           and '<option value="all"' in _sgh
           and "audit-arch" not in _sgh)
+    # Every option, counted: a view the count would fall back to the long,
+    # bracketed wording for shows up here as a missing row, not as a pass.
+    _vshort = re.findall(r'<option value="([a-z]+)" data-short="([^"]*)"', _sgh)
+    check("vw1b every View option carries the short name the phase count names it "
+          "by, and none holds a bracket (%r)" % (_vshort,),
+          [v for v, _ in _vshort] == ["active", "archived", "all"]
+          and all(sh and "(" not in sh and ")" not in sh for _, sh in _vshort))
     check("vw2 the archive segment holds BOTH terminal states - a cancelled "
           "phase is finished, and filing it under pending would leave dropped "
           "work looking like work still to come",

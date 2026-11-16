@@ -692,12 +692,14 @@ def _table_tools(manifest, summary, evidence=None):
         # to be a toggle nobody found — a plan with forty done phases opened
         # looking half-empty and there was no control saying why. Three named
         # views, the default is the work that is left, and the select carries
-        # the answer even with the script dead.
+        # the answer even with the script dead. data-short is the name the
+        # phase count carries: the option's own wording has brackets, and
+        # inside the count they wrapped the pinned bar onto a second line.
         '<span class="viewpick"><label class="tbl" for="audit-view">View:</label>'
         '<select id="audit-view" aria-label="View: which phases to show">'
-        '<option value="active">Active &amp; pending</option>'
-        '<option value="archived">Archived (done &amp; cancelled)</option>'
-        '<option value="all">All phases</option></select></span>'
+        '<option value="active" data-short="active &amp; pending">Active &amp; pending</option>'
+        '<option value="archived" data-short="archived">Archived (done &amp; cancelled)</option>'
+        '<option value="all" data-short="all">All phases</option></select></span>'
         '%s'
         '<button type="button" id="audit-expand" class="btn">expand all</button>'
         # Shown only while something is actually filtering. It is a second copy of

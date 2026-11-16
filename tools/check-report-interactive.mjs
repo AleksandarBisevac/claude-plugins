@@ -491,14 +491,23 @@ if (seg0.defaultView === 'active') {
 expect('on load, tasks are collapsed', load.tasks, 0);
 // At rest too, the count says what it counts IN. A bare "165 phases" over a
 // table showing five read as the size of the table, and the view was the reason.
-// It points at the View select rather than repeating its wording: the select sits
-// beside the count, and its longest option inside brackets wrapped the bar.
+// It names the view by the selected option's short name, read off the select
+// here rather than written into this file, so a count that names some other
+// view, or none, is wrong. The count is a live region: a screen reader hears it
+// without the select beside it. No brackets: the option's full wording inside
+// them wrapped the bar.
 {
-  const rest = /^(\d+) of (\d+) phases? in view$/.exec(load.count);
-  const hasView = await page.evaluate(() => !!document.getElementById('audit-view'));
-  expect('at rest the count says it counts in the view the View select sets ('
-    + JSON.stringify(load.count) + ')',
-    !!rest && hasView && Number(rest[1]) === load.phases && Number(rest[2]) === load.total, true);
+  const rest = /^(\d+) of (\d+) phases? · ([^()]+)$/.exec(load.count);
+  const short = await page.evaluate(() => {
+    const sel = document.getElementById('audit-view');
+    const opt = sel ? sel.options[sel.selectedIndex] : null;
+    return opt ? opt.getAttribute('data-short') : null;
+  });
+  expect('at rest the count names the view the View select sets, by its short name '
+    + 'and without brackets (' + JSON.stringify(load.count) + ', short name '
+    + JSON.stringify(short) + ')',
+    !!rest && !!short && rest[3] === short
+      && Number(rest[1]) === load.phases && Number(rest[2]) === load.total, true);
 }
 // ...and saying so does not cost the pinned filter bar a line. The count is
 // read with its text and again emptied, at the laptop size this script reads the
@@ -684,9 +693,14 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
       presses.forEach((p, i) => {
         clear.click();
         pick(v);
+        const resting = shown();
         if (!p.on()) return;
+        // Whether the press did anything: fewer rows than the view draws at
+        // rest, or the toolbar's Clear offered. Made is not the same as
+        // effective - a search whose Enter no longer filters is still made.
         const r = { view: v, i, press: p.what,
                     rows: shown(), empty: seen(norow), slot: seen(slot) };
+        r.narrowed = r.rows < resting || seen(clear);
         if (r.empty && r.slot) {
           const said = slot.textContent;
           const m = /(\d+)/.exec(said);
@@ -745,15 +759,20 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
     const noisy = truth.out.filter((r) => r.rows > 0 && r.slot);
     expect('...and no press that leaves rows drawn shows the hidden-matches slot ('
       + JSON.stringify(noisy) + ')', noisy.length, 0);
-    // Which kinds of press were made, so a pass that silently made none of a
-    // kind says so rather than reading as covered.
+    // Which kinds of press were made AND narrowed something, so a pass that
+    // made none of a kind, or made only presses that filtered nothing, says so
+    // rather than reading as covered. The search alone is its own kind: a
+    // search with a chip still narrows through the chip when the search is dead.
+    const effective = (re) => truth.out.some((r) => re.test(r.press) && r.narrowed);
     const kinds = {
-      chip: truth.out.some((r) => !/^q=|^from\/to /.test(r.press)),
-      'search + chip': truth.out.some((r) => / \+ /.test(r.press)),
-      'from/to': truth.out.some((r) => /^from\/to /.test(r.press)),
+      chip: effective(/^(?!q=|from\/to )/),
+      search: effective(/^q=(?!.* \+ )/),
+      'search + chip': effective(/ \+ /),
+      'from/to': effective(/^from\/to /),
     };
-    expect('es0 the presses include a chip, a search with a chip, and a date range '
-      + '(' + JSON.stringify(kinds) + '; term ' + JSON.stringify(truth.term) + ')',
+    expect('es0 the presses include a chip, a search, a search with a chip, and a date '
+      + 'range, each at least once narrowing the view (' + JSON.stringify(kinds)
+      + '; term ' + JSON.stringify(truth.term) + ')',
       Object.values(kinds).every(Boolean), true);
     const hiding = truth.out.filter((r) => r.empty && r.slot);
     if (hiding.length) {
@@ -1291,7 +1310,7 @@ if (termInfo.term === null) {
   if (hit.phases < 1 || hit.phases >= load.total) {
     failures.push(`FAIL filtering by "${term}" narrows the list: got ${hit.phases} of ${load.total}${guardNote}`);
   } else notes.push(`ok   filtering by "${term}" narrows the list: ${hit.phases} of ${load.total}${guardNote}`);
-  if (!/\d+ of \d+ phases? in view/.test(hit.count)) {
+  if (!/\d+ of \d+ phases? · [^()]+ · \d+ of \d+ tasks?/.test(hit.count)) {
     failures.push(`FAIL the count reports the filtered total: got "${hit.count}"`);
   } else notes.push(`ok   the count reports the filtered total: "${hit.count}"`);
   // The counter's BASIS, read against what it must agree with: the header's own
@@ -1316,8 +1335,11 @@ if (termInfo.term === null) {
       };
       const phaseHit = new Map(shownRows.map((r) =>
         [r.getAttribute('data-phase'), own(r).includes(t)]));
+      const sel = document.getElementById('audit-view');
+      const opt = sel ? sel.options[sel.selectedIndex] : null;
       return {
         count: (document.getElementById('audit-count') || {}).textContent || '',
+        short: opt ? opt.getAttribute('data-short') : null,
         phases: hp ? Number(hp[1]) : null,
         tasks: hp ? Number(hp[2]) : null,
         shown: shownRows.length,
@@ -1327,13 +1349,14 @@ if (termInfo.term === null) {
               || r.textContent.toLowerCase().includes(t))).length,
       };
     }, term);
-    const m = /^(\d+) of (\d+) phases? in view · (\d+) of (\d+) tasks?(?:, (\d+) cancelled match(?:es)?)?$/
+    const m = /^(\d+) of (\d+) phases? · ([^()]+) · (\d+) of (\d+) tasks?(?:, (\d+) cancelled match(?:es)?)?$/
       .exec(basis.count);
-    expect('the filtered count names its basis - shown of the header\'s phases, in '
-      + 'the view, tasks of the header\'s task total, and the cancelled matches it '
-      + 'leaves out (' + JSON.stringify(basis) + ')',
+    expect('the filtered count names its basis - shown of the header\'s phases, the '
+      + 'view by its short name, tasks of the header\'s task total, and the cancelled '
+      + 'matches it leaves out (' + JSON.stringify(basis) + ')',
       !!m && Number(m[1]) === basis.shown && Number(m[2]) === basis.phases
-        && Number(m[4]) === basis.tasks && Number(m[5] || 0) === basis.cancelled, true);
+        && !!basis.short && m[3] === basis.short
+        && Number(m[5]) === basis.tasks && Number(m[6] || 0) === basis.cancelled, true);
   }
   // A TEXT filter is the one that used to force its matches open — one character
   // typed grew the page by screens and scrolled away what was being read, and

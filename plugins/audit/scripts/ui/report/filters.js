@@ -83,6 +83,18 @@
   }
 
   /**
+   * The current view by its option's data-short, the bracket-free name the
+   * phase count carries. Without one the option's full wording stands in,
+   * which is still the true basis, merely longer.
+   *
+   * @returns {string} e.g. "active & pending"
+   */
+  const viewShort = () => {
+    const opt = viewSel ? [...viewSel.options].find((o) => o.value === viewMode) : null;
+    return (opt && opt.getAttribute('data-short')) || viewName();
+  };
+
+  /**
    * Apply every filter to the whole table in one pass, then repaint the counts,
    * the empty state, the toolbar and the usage views.
    *
@@ -229,14 +241,15 @@
     if (count) {
       // The view is the basis at rest as well as filtered: "165 phases" over a
       // table showing five read as the size of the table, and the view was why
-      // it was not. Pointed at rather than repeated - the View select beside
-      // the count already names it, and its wording in brackets wrapped the
-      // pinned bar onto a second line at 1512px. Tasks join the phases once
-      // something filters, since a filter can narrow a phase from the inside
-      // while the phase count barely moves; and cancelled matches the task
-      // fraction leaves out are named, so a phase drawn for one of them does
-      // not sit under a count of zero.
-      count.textContent = visP + ' of ' + plural(phaseRows.length, 'phase') + ' in view'
+      // it was not. Named, because the count is a live region and a screen
+      // reader hears it without the select beside it; by the option's short
+      // name, because its full wording in brackets wrapped the pinned bar onto
+      // a second line at 1512px. Tasks join the phases once something filters,
+      // since a filter can narrow a phase from the inside while the phase count
+      // barely moves; and cancelled matches the task fraction leaves out are
+      // named, so a phase drawn for one of them does not sit under a count of
+      // zero.
+      count.textContent = visP + ' of ' + plural(phaseRows.length, 'phase') + ' · ' + viewShort()
         + (anyFilter ? ' · ' + visT + ' of ' + plural(totT, 'task')
           + (visX ? ', ' + plural(visX, 'cancelled match', 'cancelled matches') : '') : '');
     }

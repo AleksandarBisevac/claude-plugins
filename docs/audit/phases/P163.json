@@ -109,49 +109,70 @@
         "severity": "low",
         "file": "tools/check-report-interactive.mjs:2551-2554",
         "issue": "The ceiling's expect label hard-codes the word 'half' ('leaves the table at least half the screen it is read on') while the bound it judges is STACK_CEILING_SHARE, a named constant printed two words later. Change the constant to 0.4 and the line still says 'half' while printing '= 0.4 of 844px', so the label's claim and its own basis would disagree.",
-        "resolution": "Derive the wording from the constant, for example 'leaves the table at least ${1 - STACK_CEILING_SHARE} of the screen it is read on', or drop the fraction word and keep only the printed '<px> ceiling = <share> of <height>px' basis."
+        "resolution": "fixed in P163.13-d6t (78b03410e944): Derive the wording from the constant, for example 'leaves the table at least ${1 - STACK_CEILING_SHARE} of the screen it is read on', or drop the fraction word and keep only the printed '<px> ceiling = <share> of <height>px' basis.",
+        "fixTask": "P163.13-d6t",
+        "commit": "78b03410e944",
+        "status": "fixed"
       },
       {
         "id": "P163-R10",
         "severity": "med",
         "file": "plugins/audit/scripts/report/_report_html.py:1493 (with ui/report-css/forced-colors.css:70)",
         "issue": "The new scope labels ('(usage)', '(phases)', '(phases & usage)', 'Worked from') lengthen the header filter row, and the rule that unpins the top bar applies only below 52rem. On a landscape phone (844x390) the bar grows from 122px to 145px and the pinned layers cover 292 of 390px (75%, was 69%). On an iPad portrait (834x1194) the row wraps to two lines (bar 122px to 160px). ph1 measures only 390x844.",
-        "resolution": "Unpin the bar on short screens too (@media (max-width:52rem), (max-height:32rem)); pinnedPx() already handles a non-sticky bar. Or make the scope text compact enough not to wrap at 52-64rem. Add a landscape size (844x390) to the phone stack check."
+        "resolution": "fixed in P163.13-d6t (78b03410e944): Unpin the bar on short screens too (@media (max-width:52rem), (max-height:32rem)); pinnedPx() already handles a non-sticky bar. Or make the scope text compact enough not to wrap at 52-64rem. Add a landscape size (844x390) to the phone stack check.",
+        "fixTask": "P163.13-d6t",
+        "commit": "78b03410e944",
+        "status": "fixed"
       },
       {
         "id": "P163-R11",
         "severity": "med",
         "file": "plugins/audit/scripts/ui/report/page-state.js:559",
         "issue": "The per-phase task-status axis has scope 'drill', counts: true, so More filters reads '· 1' after a phase's 'blocked' chip is pressed while the panel shows nothing pressed. The badge counts filters folded away inside the panel; these chips live in the table rows.",
-        "resolution": "counts: false for the task-status axis (it still offers Clear through anyFilter); keep the registry pins in step."
+        "resolution": "fixed in P163.13-d6t (78b03410e944): counts: false for the task-status axis (it still offers Clear through anyFilter); keep the registry pins in step.",
+        "fixTask": "P163.13-d6t",
+        "commit": "78b03410e944",
+        "status": "fixed"
       },
       {
         "id": "P163-R12",
         "severity": "low",
         "file": "plugins/audit/scripts/ui/report/filters.js:138,230",
         "issue": "Matching cancelled tasks are shown but not counted: searching a cancelled task id shows its phase while the counter says '0 of 1450 tasks'; the per-phase 'N of M match' badge still counts cancelled tasks, so two counts on one screen use different bases.",
-        "resolution": "Keep the header's denominator and name what it leaves out when a cancelled task matches (e.g. '0 of 1450 tasks, 1 cancelled match'), or give the per-phase badge the same basis."
+        "resolution": "fixed in P163.13-d6t (78b03410e944): Keep the header's denominator and name what it leaves out when a cancelled task matches (e.g. '0 of 1450 tasks, 1 cancelled match'), or give the per-phase badge the same basis.",
+        "fixTask": "P163.13-d6t",
+        "commit": "78b03410e944",
+        "status": "fixed"
       },
       {
         "id": "P163-R13",
         "severity": "low",
         "file": "plugins/audit/scripts/ui/report/filters.js:230",
         "issue": "At 1512x945 the counter '5 of 7 phases (Active & pending)' wraps to its own line: the pinned filter bar grows from 60px to 92px. The parenthesis repeats the View select beside it, and the Archived view reads '(Archived (done & cancelled))'.",
-        "resolution": "Use a short view name in the counter (no nested brackets), and add a desktop check that the pinned filter bar does not wrap at a common laptop width."
+        "resolution": "fixed in P163.13-d6t (78b03410e944): Use a short view name in the counter (no nested brackets), and add a desktop check that the pinned filter bar does not wrap at a common laptop width.",
+        "fixTask": "P163.13-d6t",
+        "commit": "78b03410e944",
+        "status": "fixed"
       },
       {
         "id": "P163-R14",
         "severity": "low",
         "file": "plugins/audit/scripts/ui/report/filters.js:276",
         "issue": "After 'Show all phases' (and the empty state's Clear), keyboard focus stays on a button inside the now-hidden empty-state row; the next Tab skips the whole table.",
-        "resolution": "After either empty-state button acts, move focus to #audit-view (or the first visible phase row)."
+        "resolution": "fixed in P163.13-d6t (78b03410e944): After either empty-state button acts, move focus to #audit-view (or the first visible phase row).",
+        "fixTask": "P163.13-d6t",
+        "commit": "78b03410e944",
+        "status": "fixed"
       },
       {
         "id": "P163-R15",
         "severity": "low",
         "file": "tools/check-report-interactive.mjs:585 (comment :568)",
         "issue": "The empty-state case lists five attributes by hand while its comment says it reads them off the page; a new chip axis is not covered, and the date range, presets and search+chip combinations are never pressed.",
-        "resolution": "Derive the list from the wired attributes the cl* block already reads, and add a search-plus-chip pass and a from/to pass."
+        "resolution": "fixed in P163.13-d6t (78b03410e944): Derive the list from the wired attributes the cl* block already reads, and add a search-plus-chip pass and a from/to pass.",
+        "fixTask": "P163.13-d6t",
+        "commit": "78b03410e944",
+        "status": "fixed"
       },
       {
         "id": "P163-R16",
@@ -168,7 +189,7 @@
         "resolution": "Record per press whether it narrowed anything (drawn rows below the view's resting count, or the toolbar's Clear shown), and require each kind in `kinds` to have at least one press that did. Prove that red by making the search press set the value without dispatching Enter."
       }
     ],
-    "outcome": "[findings: 17 - 0 high, 6 med, 11 low; 8 with a recorded fix commit]"
+    "outcome": "[findings: 17 - 0 high, 6 med, 11 low; 15 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1115,7 +1136,7 @@
     {
       "id": "P163.13-d6t",
       "title": "Fix the phase review's findings on the report filters: no wrap that pins the screen, a truthful badge and counter, focus after the empty state, a derived empty-state check",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes P163-R9..R15, filed on P163 by the phase code review. Each is listed with its resolution in docs/audit/phases/P163.json review.findings: read them there first.\n- R10 (med): the scope labels make the header row wrap at 52-64rem, and on short screens the bar stays pinned. Measured: 844x390 has 75% covered; 834x1194 wraps to two lines. Unpin on short screens too, or compact the labels. Add 844x390 to the phone stack check.\n- R11 (med): the task-status axis must not count in the More filters badge (counts:false). It still offers Clear.\n- R12 (low): name cancelled matches the counter leaves out, or align the per-phase badge's basis.\n- R13 (low): give the counter a short view name with no nested brackets, so it does not wrap at 1512x945. Add a desktop no-wrap check.\n- R14 (low): after either empty-state button (Show all phases, Clear), move focus to #audit-view.\n- R15 (low): derive the empty-state check's axis list from the wired attributes the cl* block reads. Add a search+chip pass and a from/to pass.\n- R9 (low): derive the ceiling label's fraction from STACK_CEILING_SHARE.\n\nProve each med red against HEAD before fixing: run the browser gate yourself, node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html. It is phase-gate-only. Quote the failing lines in the return. Refresh the rendered followers: examples/report.sh (which also refreshes docs/index.html), docs/demo-large.html per tools/check-rendered-artifacts.py --how, and node tools/capture-screenshots.mjs. Then confirm tests/test__refs.py is green. If tools/ui-checks/report-layout-baseline.json needs re-recording, say so rather than editing it by hand. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/report/_report_html.py",
@@ -1164,14 +1185,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "78b03410e944",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "R10 (med): forced-colors.css - the top bar's unpin rule (.topbar{position:static}; :root{--topbar-h:0px}) moved out of the 52rem block into its own @media (max-width:52rem),(max-height:32rem) block, with the reason comment inside it. pinnedPx() already reads the computed position, so no JS changed beyond its comment. Gate: stackOverTable() and judgeStack() take a size, and the ceiling is computed per size. A sideways phone, PHONE_LANDSCAPE = PHONE_TALL rotated (844x390), runs the shut half. Measured 293px pinned (75%) before and 148px (38%) after. The open half is not run sideways, because above 52rem More filters opens as a layer hung off the bar, not as the bar growing (said in a comment). NOT fixed: the iPad-portrait wrap (834x1194, bar 122->160px, 13% of that screen). The brief allowed unpin-or-compact, and I took unpin, which bounds the share whatever the labels' length. R11 (med): page-state.js - the task-status axis is counts:false, and the `counts` doc now says the badge counts axes with a control inside the panel. rx9 in test_render_report.py is updated in step (counts false, scope not usage). New gate case cl10, in the Clear block: for every control that filters, the badge is non-empty exactly while a pressed chip or a filled field inside .fdetails is on. Clear is still offered for task-status chips (cl1 green). R12: filters.js counts matching cancelled tasks in drawn phases (nLeftOut/visX) and names them: '... · 40 of 1451 tasks, 4 cancelled matches'. The gate's basis check now derives the cancelled count off the page, as rows matching by their own text or by their phase's text with the match badge left out, and holds the clause to it in both directions. A new search-a-cancelled-task check skips on plans with none, through a FEATURE_ABSENT note; it ran green on this repo's live plan. R13: the counter says '5 of 7 phases in view' rather than repeating the View select's wording in brackets, so no nested brackets and no repetition of the select beside it. I deviated from 'a short view name' because the short names that fit ('active', a first word) would misname the Active & pending view, and 'Active & pending' alone still wrapped (224px wanted, about 173 free). Wording alone did not stop the wrap on the large demo (four status chips) or the live plan (Sort select), so controls.css changes too: #audit-q is flex:1 1 9rem with max-width 15rem (lifted to none in the 40rem phone block, where it takes the full row), and #audit-count is flex:1 1 6rem;min-width:0;line-height:1.25, so short of room the count wraps its own words inside the row's height. New gate case nw1 measures .sectools at 1512x945 with and without the count's text. Before: 92 vs 60. After: 60/60 on acme, demo-large and the live plan. The c5b pin was updated, and a new c5d pins the cancelled-clause construct. R14: filters.js - Show all phases calls viewSel.focus() after dispatching change, and the empty state's own Clear (resolved once in page-state.js as norowClear, beside the other empty-state refs, which keeps the refresh() slice query-free for the scale and tv-r2b pins) focuses #audit-view. Gate es1/es2 blur first, then check document.activeElement === #audit-view. R15: WIRED_CHIP_ATTRS is hoisted beside `source`, and the empty-state block and the Clear block both read it. The empty-state block now builds presses from it: each chip alone, the search alone (term = an archived phase id, else the first phase's), the search with each chip, and from/to set to a single day at each end of the date inputs' min/max. es0 asserts all three kinds ran. R9: the ceiling label says 'at least ${1 - STACK_CEILING_SHARE} of the screen'. Prose: the _report_html.py docstring and the gate comments that said 'sticky above 52rem' now name the short-screen arm, and ui/report/README.md notes the badge basis and the focus hand-off. Followers: examples/report.sh (acme html/md + docs/index.html), docs/demo-large.html per --how, and node tools/capture-screenshots.mjs (report shots + captured-at.json) were all refreshed. check-rendered-artifacts --before-commit says 3 artifacts match a fresh render. The layout baseline's relative arm still measures the recorded 30%/76%, so report-layout-baseline.json needs no re-recording. Gate run times: acme and demo about a minute each, and the live 166-phase plan about 19 minutes; that live leg was already that slow and is dominated by the Clear block's reloads, not the new presses (one refresh measured 3ms there). Dependants: the generated pages (docs/index.html, demo-large.html, the acme html) are re-rendered; _ui_theme.py and _ui_theme_lints.py still pass (test__ui_theme*, 6/6 suite files green); _report_ui.py assembly is unchanged; tests/test__report_html.py and tests/test__report_page.py are green; test__refs.py is green after the screenshot recapture; layout-baseline.mjs is unchanged and its consumer is green; date-range.js clearAll() is unchanged, and the new focus listener sits beside it. Out of scope and now slightly stale: plugins/audit/scripts/report/_report_page.py:509, a comment saying the header row is 'sticky above 52rem' without the new under-32rem-tall arm; it is not in my files, so I left it.",
+        "descriptive": "Report filters: the top bar unpins on short screens (sideways phone 75% -> 38% pinned), the More-filters badge counts only its own controls, the counter reads 'N of M phases in view' and names cancelled matches, the empty-state buttons hand focus to the View select, and the browser gate derives its empty-state presses and holds all of it."
       },
       "startedAt": "2026-11-16T19:13:23Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-16T20:16:48Z",
+      "verifiedBy": [
+        "nw1: at 1512x945 the resting count does not wrap the pinned filter bar (bar height with vs without the count's text)",
+        "es0/es1/es2: empty-state presses derived from WIRED_CHIP_ATTRS, including search+chip and from/to passes; focus lands on #audit-view after the empty state's Clear and after Show all phases",
+        "cl10: the More-filters badge is non-empty exactly while one of its own controls is on, for every control that filters",
+        "ph1 resting stack on a phone held sideways (844x390): the strip+bar bound and the share-of-screen ceiling",
+        "a search for a cancelled task names the cancelled matches the task count leaves out, and the basis check holds that clause to the page's rows in both directions",
+        "c5b/c5d/rx9/st1 construct pins in tests/test_render_report.py updated for the new counter, the cancelled clause, the badge declaration and the short-screen media query"
+      ],
       "notes": [
         {
           "at": "2026-11-16T19:13:10Z",
@@ -1200,6 +1228,84 @@
         "runId": "2026-11-16T20:13:48Z.6519ba",
         "status": "passed",
         "at": "2026-11-16T20:13:48Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "78b03410e944",
+        "at": "2026-11-16T20:16:48Z",
+        "return": "docs/audit/evidence/returns/P163.13-d6t/20261116T191323Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task with expectRedFirst false, and the reds the brief asks for are browser-gate reds, which the house red-first helper does not read. Proved by hand instead: I edited the browser gate first, then ran it against HEAD's committed acme-store artifact before changing any product code. It exited 1 with 'REPORT IS INERT: 9 interaction(s) did not work'. Quoted lines: R10 (med) - 'FAIL ph1 resting stack on a phone held sideways (More filters shut), scrolled into the table at 844x390, pins no more than the strip and the shut filter bar (293px against a 149.5px bound = strip 48.4 + bar 99.1 + slack 2; 75% of the screen)' and 'FAIL ph1 resting stack on a phone held sideways (More filters shut) leaves the table at least 0.5 of the screen it is read on (293px pinned against a 195px ceiling = 0.5 of 390px; 75% of the screen)'. R11 (med) - 'FAIL cl10 More filters counts a filter exactly while one of its own controls is on: got ... data-ts=blocked (More filters says \"· 1\" with 0 of its own controls on) · data-ts=done (...)'. R13 - 'FAIL nw1 at 1512x945 the resting count does not wrap the filter bar onto another line (\"5 of 7 phases (Active & pending)\": 92px with it, 60px without)'. R14 - 'FAIL es2 after Show all phases the keyboard is on the View select, not on the hidden button (active:data-tev=before-recording)' and 'FAIL es1 after the Clear inside the empty state ...'. The baseline gate on HEAD's own artifact, run before any edit, had exited 0 with 231 checks, so these reds are the new checks firing and not a broken tree. After the fix the same artifact, re-rendered, passed 239 checks. A first wording of cl10 also fired on the All-time preset, which lights a chip and filters nothing; the check was moved past the loop's turned-on-nothing branch.",
+        "at": "2026-11-16 ~20:05 CET (no helper stamp; run by hand)"
+      }
+    },
+    {
+      "id": "P163.14-d6t",
+      "title": "The counter names its view again without brackets, and the empty-state check counts only presses that narrowed",
+      "status": "in_progress",
+      "description": "Fixes P163-R16 (med) and P163-R17 (low), filed on P163.13-d6t. Their full text and resolutions are in docs/audit/phases/P163.json review.findings.\n\nR16: the counter now reads '5 of 7 phases in view' and has lost the view's name. The phase outcome is that the counter names its basis, and #audit-count is aria-live, so a screen reader no longer hears which view is counted.\n- Give each View <option> a short, bracket-free name (e.g. data-short: 'active & pending', 'archived', 'all') and render it into the count without brackets.\n- Restore the gate's at-rest check that the count names the selected option's short name. Keep nw1 holding the 1512x945 bar to one line, and bring c5b into step.\n- Prove the restored check red against HEAD 78b03410.\n\nR17: es0 counts a press kind as covered once recorded, but the search and from/to presses always report on. Record per press whether it narrowed anything (drawn rows below the view's resting count, or the toolbar Clear shown), and require each kind to have at least one effective press. Prove it red by making the search press set the value without dispatching Enter, and restore that change in the same command.\n\nRun node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html yourself; it is phase-gate-only. Refresh the rendered followers: examples/report.sh, docs/demo-large.html per tools/check-rendered-artifacts.py --how, and node tools/capture-screenshots.mjs. Then confirm tests/test__refs.py is green. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/ui/report/filters.js",
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/scripts/report/_report_page.py",
+        "plugins/audit/scripts/ui/report/README.md",
+        "tools/check-report-interactive.mjs",
+        "tests/test_render_report.py",
+        "tests/test__report_html.py",
+        "tests/test__report_page.py",
+        "examples",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_render_report.py tests/test__report_html.py tests/test__report_page.py tests/test__refs.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-16T20:17:27Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T20:17:25Z",
+          "text": "its _report_html.py and _report_page.py sections describe each module's role; an option attribute and a counter wording change nothing they state",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
+        },
+        {
+          "at": "2026-11-16T20:17:25Z",
+          "text": "it quotes docs/index.html as an exempt path name; a re-rendered copy changes no path",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-16T20:17:25Z",
+          "text": "it greps docs/demo-large.html for a phase row marker the renderer keeps",
+          "waives": "tools/verify.sh"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-16T20:51:51Z.66fac9",
+        "status": "passed",
+        "at": "2026-11-16T20:51:51Z"
       }
     }
   ],
