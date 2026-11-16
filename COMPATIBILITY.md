@@ -462,6 +462,17 @@ is still true of a nested key.
   runs. `/audit:init` writes `"waveWidth": "auto"` into a config it *creates*, and never
   into one that already exists, so waves are new behaviour only for a project set up
   from this release on.
+
+  **`floorGuard` keeps it, and what is promised of it is narrow.** The key is read:
+  `floorGuard.mode` `"report"` makes `drive-phase.py submit`, and the drive filing a
+  headless writer's work, read the task's diff for moves that lower the bar and file what
+  it found in the return as a `floorGuard` block; `"off"` files no block.
+  `floorGuard.acceptedSuppressions` lists suppression codes the reading never reports. An
+  absent key means `"report"` with nothing accepted, which adds a block to the filed
+  return and changes nothing a config already decides. **Promised: that the key is read
+  and what those two values mean.** Not promised: that a finding never refuses anything.
+  In this release it changes no gate, commit or sign-off; a later release may make one
+  refuse, and `"off"` still means no reading there, by the first promise above.
 - **When two keys can express the same thing, which one wins is written down.**
   `planGate` beats `enforce`, and that precedence does not change without a major
   release. A superseded key is kept and documented, never silently reinterpreted.

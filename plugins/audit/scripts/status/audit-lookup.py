@@ -1914,6 +1914,12 @@ def _tests_add_review_lines(task, filed):
     return lines
 
 
+# The heading the floor reading is shown under - in a task brief a section of its
+# own, in a phase brief a line in each task's section. The reading is the filed
+# return's own block (`_fr.floor_lines`), never recomputed here.
+FLOOR_SECTION = "Moves that lower the bar (the floor guard)"
+
+
 def compose_reviewer_brief(manifest, phase, task, ctx, filed):
     """The task-mode reviewer's whole brief, as lines. `filed` is the
     executor's `(rel, text)` for the current start, text present. The task's
@@ -1934,6 +1940,7 @@ def compose_reviewer_brief(manifest, phase, task, ctx, filed):
                                 "The phase records no desiredOutcome."))
     lines += _section("The intent question", CLAUSE_QUOTING_LINES)
     lines += _section("tests.add", _tests_add_review_lines(task, filed_obj))
+    lines += _section(FLOOR_SECTION, _fr.floor_lines(filed_obj))
     lines += _section("The recorded gate run", [
         "runId %s, status %s, at %s (task.testEvidence)"
         % (evidence.get("runId"), evidence.get("status"), evidence.get("at"))
@@ -2284,7 +2291,8 @@ def phase_brief_parts(manifest, phase, ctx):
         units.append((task, _section("%s %s" % (tid, task.get("title") or ""), [
             "commit: %s" % (task.get("commit"),),
             "files:"] + ["- %s" % (f,) for f in task.get("files") or []]
-            + _tests_add_review_lines(task, _filed_obj(text)) + [
+            + _tests_add_review_lines(task, _filed_obj(text))
+            + ["%s:" % (FLOOR_SECTION,)] + _fr.floor_lines(_filed_obj(text)) + [
             _recorded_run_line(evidence, rows, rows_why),
             _gate_results_line(evidence, rows, rows_why),
             "gate commands, %s:" % (whose,)] + gate_lines(manifest, entries)

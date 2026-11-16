@@ -3317,7 +3317,157 @@ def _selftest():
         _harness.stage(check, "co-block", _conventions_order_cases)
         _harness.stage(check, "hd-block", _unborn_head_entry_cases)
         _harness.stage(check, "rk-block", _review_skill_brief_cases)
+        _harness.stage(check, "fgb-block", _floor_brief_cases)
     return _harness.run(body)
+
+
+_FGB_FINDING = {"move": "definition-changed", "path": "tests/test_refund.py",
+                "line": 7, "side": "tree",
+                "what": "definition `T.test_sums` differs from its base copy"}
+_FGB_UNREAD = {"path": "tests/test_rows.py", "move": "definition-changed",
+               "reason": "its code changed, but neither copy defines a function "
+                         "or method named test*"}
+_FGB_CANNOT = {"path": "src/odd.py", "reason": "the tree copy of src/odd.py does "
+                                               "not compile (bad indent)"}
+
+
+def _fgb_block(**over):
+    block = {"answer": "findings", "basis": "1 move(s) that lower the bar",
+             "findings": [_FGB_FINDING], "declared": [], "renamed": [],
+             "couldNotTell": [_FGB_CANNOT], "notRead": [_FGB_UNREAD],
+             "base": {"commit": "d" * 40}, "acceptedSuppressions": [],
+             "source": "floor-guard", "at": "2026-01-01T00:00:00Z"}
+    block.update(over)
+    return block
+
+
+def _fgb_exec(block):
+    body = json.loads(_BF_EXEC)
+    if block is not None:
+        body["floorGuard"] = block
+    return json.dumps(body, indent=2) + "\n"
+
+
+def _floor_brief_cases(check):
+    """The reviewer's brief shows the floor block the filing verb recorded as
+    an INPUT - the script found these, judge each - keeping findings, files not
+    read and could-not-tell apart; says could-not-tell with its reason; and says
+    NOT MEASURED, never none found, where no block was recorded."""
+    root = _harness.fixture_root("audit-lookup-fgb-")
+
+    def project(name, manifest):
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        with open(os.path.join(proj, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(manifest, fh)
+        return proj, mpath
+
+    def file_exec(proj, task_id, text):
+        path = os.path.join(proj, "docs", "audit", "evidence", "returns",
+                            task_id, "20260101T000000Z.executor.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            fh.write(text)
+
+    def brief(proj, mpath, node_id, role, name):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                M.main([mpath, "brief", node_id, "--role", role, "--project", proj])
+            except SystemExit:
+                pass
+        path = os.path.join(proj, ".claude", "state", "briefs", node_id, name)
+        try:
+            with open(path, "r", encoding="utf-8", newline="") as fh:
+                return fh.read()
+        except OSError:
+            return ""
+
+    def section(text):
+        """The floor section's lines: from its heading to the next heading."""
+        lines = text.splitlines()
+        at = [i for i, ln in enumerate(lines)
+              if ln.startswith("## ") and "floor guard" in ln.lower()]
+        if len(at) != 1:
+            return None
+        rest = lines[at[0] + 1:]
+        end = next((i for i, ln in enumerate(rest) if ln.startswith("## ")), len(rest))
+        return rest[:end]
+
+    def task_brief(name, block):
+        proj, mpath = project(name, _bf_manifest())
+        file_exec(proj, "P1.1", _fgb_exec(block))
+        return brief(proj, mpath, "P1.1", "reviewer", "20260101T000000Z.reviewer.md")
+
+    try:
+        found = section(task_brief("fgb-findings", _fgb_block()))
+        body = "\n".join(found or [])
+        heads = [ln for ln in (found or []) if ln.rstrip().endswith(":")]
+        check("fgb1 the task reviewer's brief shows a recorded floor block as an "
+              "input - the script found these, judge each - with the finding, "
+              "the file not read with its move and reason, and the could-not-tell "
+              "with its reason, under three headings of their own: %r" % (found,),
+              found is not None and "found these; judge each" in body
+              and "tests/test_refund.py:7" in body and _FGB_FINDING["what"] in body
+              and "tests/test_rows.py" in body and "definition-changed" in body
+              and _FGB_UNREAD["reason"] in body
+              and _FGB_CANNOT["reason"] in body
+              and len([h for h in heads if h.lower().startswith(
+                  ("findings", "files not read", "could not tell"))]) == 3)
+        cannot = section(task_brief("fgb-cannot", _fgb_block(
+            answer="could-not-tell", findings=[], notRead=[],
+            basis="the diff does not parse: text before the first file header")))
+        cbody = "\n".join(cannot or [])
+        check("fgb2 a could-not-tell block is shown as could-not-tell with its "
+              "reason, and never as clean: %r" % (cannot,),
+              cannot is not None and "could-not-tell" in cbody
+              and "text before the first file header" in cbody
+              and "clean" not in cbody.lower().replace("not clean", ""))
+        absent = section(task_brief("fgb-absent", None))
+        abody = "\n".join(absent or [])
+        check("fgb3 with no floor block recorded the brief says NOT MEASURED and "
+              "never none found or clean: %r" % (absent,),
+              absent is not None and "not measured" in abody.lower()
+              and "none found" not in abody.lower()
+              and "clean" not in abody.lower())
+        partial = section(task_brief("fgb-partial", _fgb_block(
+            answer="clean", findings=[], couldNotTell=[],
+            basis="read 1 of the diff's 1 file(s) and found none of the moves")))
+        pbody = "\n".join(partial or [])
+        check("fgb4 a clean answer whose only content is a file not read is NOT "
+              "shown as clean: the brief says what was not compared: %r" % (partial,),
+              partial is not None and "tests/test_rows.py" in pbody
+              and "not compared" in pbody.lower()
+              and "answer: clean" not in pbody.lower())
+        forged = section(task_brief("fgb-forged", _fgb_block(source=None)))
+        check("fgb5 a block without the filing verb's mark is not shown as the "
+              "script's reading - the brief says not measured: %r" % (forged,),
+              forged is not None and "not measured" in "\n".join(forged).lower()
+              and _FGB_FINDING["what"] not in "\n".join(forged))
+        signed = _bf_signed_phase()
+        proj, mpath = project("fgb-phase", signed)
+        file_exec(proj, "P1.1", _fgb_exec(_fgb_block()))
+        ptext = brief(proj, mpath, "P1", "phase", "phase.md")
+        units = {}
+        for tid in ("P1.1", "P1.2"):
+            at = ptext.find("## %s " % (tid,))
+            nxt = ptext.find("\n## P1.", at + 1)
+            units[tid] = ptext[at:nxt if nxt > at else len(ptext)] if at >= 0 else ""
+        check("fgb6 the phase brief shows each owed task its own floor reading: "
+              "the task with a recorded block carries its finding, and the task "
+              "with none says not measured: %r"
+              % ([u[:200] for u in units.values()],),
+              _FGB_FINDING["what"] in units["P1.1"]
+              and "found these; judge each" in units["P1.1"]
+              and "not measured" in units["P1.2"].lower()
+              and _FGB_FINDING["what"] not in units["P1.2"])
+    finally:
+        _harness.remove_tree(root)
 
 
 def _unborn_head_entry_cases(check):

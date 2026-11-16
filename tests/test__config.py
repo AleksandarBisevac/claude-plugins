@@ -2361,6 +2361,47 @@ def _cases(check):
               {"executor": {"driveWithoutModel": _bad}}) is True
               for _bad in (0, "false", None, [])))
 
+    # --- floorGuard ----------------------------------------------------------------
+    # An object: `mode` ("report" | "off") and `acceptedSuppressions`, the list
+    # handed to the floor guard as written. Anything that is not the object -
+    # absent, a bare string, a list - is the defaults; a mode outside the two
+    # words is the default mode, since the guard only ever reports.
+    _fg_default = {"mode": "report", "acceptedSuppressions": []}
+    _fg_absent = [M.floor_guard_settings(c) for c in
+                  ({}, None, {"floorGuard": {}}, {"floorGuard": None})]
+    check("fgc1 floorGuard ships as report with no accepted suppression, and an "
+          "absent key, a null and an empty object all read as that default: %r"
+          % ((M.DEFAULTS.get("floorGuard"), _fg_absent),),
+          M.DEFAULTS.get("floorGuard") == _fg_default
+          and all(g == _fg_default for g in _fg_absent)
+          and M.FLOOR_GUARD_MODES == ("report", "off"))
+    _fg_list = ["noqa: E402", "type: ignore[attr-defined]"]
+    _fg_off = M.floor_guard_settings({"floorGuard": {"mode": "off"}})
+    _fg_rep = M.floor_guard_settings({"floorGuard": {"mode": "report",
+                                                     "acceptedSuppressions": _fg_list}})
+    check("fgc2 `off` is read as off and `report` as report, and the accepted "
+          "list reaches the caller as the very list written - not parsed, "
+          "normalised or filtered here: %r" % ((_fg_off, _fg_rep),),
+          _fg_off == {"mode": "off", "acceptedSuppressions": []}
+          and _fg_rep["mode"] == "report"
+          and _fg_rep["acceptedSuppressions"] is _fg_list)
+    _fg_bad = [M.floor_guard_settings(c) for c in
+               ({"floorGuard": {"mode": "silent"}}, {"floorGuard": {"mode": "Off"}},
+                {"floorGuard": {"mode": 0}}, {"floorGuard": {"mode": None}},
+                {"floorGuard": "off"}, {"floorGuard": ["off"]})]
+    check("fgc3 an unknown mode, a wrong-case `Off`, a non-string, and a value of "
+          "the wrong shape for the whole key (a bare string, a list) fall back "
+          "to the default mode - never to off, which would silence the guard "
+          "on a typo: %r" % (_fg_bad,),
+          all(g["mode"] == "report" for g in _fg_bad)
+          and _fg_bad[4] == _fg_default and _fg_bad[5] == _fg_default)
+    _fg_str = M.floor_guard_settings(
+        {"floorGuard": {"mode": "off", "acceptedSuppressions": "noqa: E402"}})
+    check("fgc4 an accepted list that is not a list is still handed on as "
+          "written, for the guard to answer could-not-tell on it, rather than "
+          "dropped here into a silence: %r" % (_fg_str,),
+          _fg_str == {"mode": "off", "acceptedSuppressions": "noqa: E402"})
+
     # --- executor.runsGate (P42.5) -----------------------------------------------
     # The key that stops the executor's own gate run from being suppressed by a
     # handoff note nobody reads twice: absent resolves to the cheap default,

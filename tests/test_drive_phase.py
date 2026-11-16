@@ -2073,6 +2073,13 @@ def _writer_files_cases(check):
           and sorted(body.get("diffPaths") or []) == sorted([_WF_SRC, _WF_TEST])
           and str(body.get("stamp") or "").startswith("audit-stamp:")
           and body.get("gates") == {})
+    floor = body.get("floorGuard") if isinstance(body.get("floorGuard"), dict) else {}
+    check("flrw1 the writer's return carries the floor block the drive computed "
+          "over the session's diff, with the verb's mark and the base it read: %r"
+          % (floor,),
+          floor.get("source") == _fr.FLOOR_SOURCE
+          and floor.get("answer") in _fr.FLOOR_ANSWERS
+          and (floor.get("base") or {}).get("commit") == _head(root))
     check("wf2 THE CLAIM IS NOT A VERDICT: the filed outcome says the writer's "
           "words are its claim, and the gate the drive ran is what turned the "
           "step green, not the message: %r" % ((line, body.get("outcome")),),
@@ -18608,6 +18615,254 @@ def _rf_verb_brief(check):
                                              "P1.2")))
 
 
+# --- the floor guard at submit -----------------------------------------------
+# A unittest file with one test method: the assertion the weakening edit
+# rewrites, and the method the clean edit appends beside it.
+_FG_TEST = "tests/test_f.py"
+_FG_SRC = "src/mod.py"
+_FG_BASE = ("import unittest\n\n\nclass T(unittest.TestCase):\n"
+            "    def test_v(self):\n        self.assertEqual(1 + 1, 2)\n\n\n"
+            "if __name__ == '__main__':\n    unittest.main()\n")
+_FG_WEAK = _FG_BASE.replace("self.assertEqual(1 + 1, 2)", "self.assertTrue(True)")
+_FG_CLEAN = _FG_BASE.replace(
+    "\n\nif __name__", "\n    def test_w(self):\n        self.assertEqual(3, 3)\n"
+                       "\n\nif __name__")
+
+
+def _fg_repo(M, prefix, floor=None, per_task="always", files=None, tests=None,
+             extra=()):
+    """A one-task repository whose task declares `files` (the unittest file
+    and a source module by default) and whose config carries `floor` as its
+    `floorGuard` (absent when None), committed with the test file at its base
+    copy, and the task started and dispatched by `next`."""
+    files = list(files or (_FG_TEST, _FG_SRC))
+    plan = _plan(TASKS[:1], ("true",))
+    task = plan["phases"][0]["tasks"][0]
+    task["files"] = files
+    if tests is not None:
+        task["tests"] = tests
+    plan["fileIndex"] = dict((f, ["P1.1"]) for f in files)
+    root, mpath = _repo("fg-%s" % (prefix,), task_ids=TASKS[:1], per_task=per_task)
+    config = {"manifestPath": "docs/audit/audit-plan.json",
+              "review": {"perTask": per_task}}
+    if floor is not None:
+        config["floorGuard"] = floor
+    for rel, text in [(".claude/audit.config.json", json.dumps(config)),
+                      (_FG_TEST, _FG_BASE)] + list(extra):
+        _write_lf(_fg_path(root, rel), text)
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(plan, fh, indent=2)
+    _harness.git(root, "add", "-A")
+    _harness.git(root, "commit", "-qm", "floor fixture")
+    with _Env(root):
+        M.main(["next", PHASE, mpath, "--project-dir", root], out=[].append)
+    return root, mpath
+
+
+def _fg_path(root, rel):
+    path = os.path.join(root, *rel.split("/"))
+    if not os.path.isdir(os.path.dirname(path)):
+        os.makedirs(os.path.dirname(path))
+    return path
+
+
+def _fg_filed(M, prefix, edits, floor=None, body=None, tail=(), per_task="always",
+              in_process=False, tests=None, extra=()):
+    """`(root, mpath, code, text, filed)` of one submit over `edits` - `{rel:
+    text}` written into the started task's tree - with `body` (the agent's
+    return) on stdin; run as the agent's command unless `in_process`."""
+    root, mpath = _fg_repo(M, prefix, floor, per_task, tests=tests, extra=extra)
+    for rel, text in sorted(edits.items()):
+        _write_lf(_fg_path(root, rel), text)
+    code, text = _submit(M if in_process else None, root, mpath, "P1.1",
+                         body or _executor_body("P1.1"), tail=list(tail))
+    return root, mpath, code, text, (_filed_body(mpath, "P1.1") or {})
+
+
+def _fg_floor(filed):
+    block = filed.get("floorGuard")
+    return block if isinstance(block, dict) else {}
+
+
+def _floor_guard_submit_cases(check):
+    """`submit` reads the task's diff for moves that lower the bar and files the
+    floor guard's answer as a block of its own, written by the verb: findings,
+    clean, could-not-tell on a guard that raises, and nothing with the mode off.
+    The base is the red-first helper's, read from the same tree."""
+    M, why = _load("drive_phase_floor")
+    if M is None:
+        check("flr1 the driver loads", False, why)
+        return
+    _r, _m, code, text, filed = _fg_filed(M, "weak", {_FG_TEST: _FG_WEAK})
+    floor = _fg_floor(filed)
+    hits = [f for f in floor.get("findings") or []
+            if f.get("path") == _FG_TEST and "T.test_v" in str(f.get("what"))]
+    check("flr1 submit over a task whose diff rewrites an existing test's "
+          "assertion files a floor block, written by the verb, answering "
+          "findings and naming that test, and says so on its line: %r"
+          % ((code, text, floor),),
+          code == 0 and floor.get("answer") == "findings"
+          and floor.get("source") == _fr.FLOOR_SOURCE and len(hits) == 1
+          and hits[0].get("move") == "definition-changed"
+          and "floor guard" in text.lower())
+    root, _m, code, text, filed = _fg_filed(M, "clean", {_FG_TEST: _FG_CLEAN})
+    floor = _fg_floor(filed)
+    check("flr2 THE TWIN: a diff that only appends a test files clean, with no "
+          "finding and the base it read named: %r" % ((code, text, floor),),
+          code == 0 and floor.get("answer") == "clean"
+          and floor.get("findings") == [] and floor.get("notRead") == []
+          and (floor.get("base") or {}).get("commit") == _head(root))
+    forged = _executor_body("P1.1", {"floorGuard": {
+        "answer": "clean", "basis": "typed by the agent", "findings": [],
+        "notRead": [], "couldNotTell": [], "source": _fr.FLOOR_SOURCE}})
+    _r, _m, code, text, filed = _fg_filed(M, "off", {_FG_TEST: _FG_WEAK},
+                                          floor={"mode": "off"}, body=forged)
+    check("flr3 floorGuard mode off files no floor block at all - an agent's own "
+          "block is dropped, not filed in the verb's place: %r" % ((code, text, filed),),
+          code == 0 and filed and "floorGuard" not in filed
+          and "floor guard" in text.lower() and "off" in text.lower())
+    _r, _m, code, text, filed = _fg_filed(M, "forged", {_FG_TEST: _FG_WEAK},
+                                          body=forged)
+    floor = _fg_floor(filed)
+    check("flr4 an agent's own floor block, mark and all, is replaced by the "
+          "verb's reading: the weakened test is a finding though the agent "
+          "typed clean: %r" % ((code, floor),),
+          code == 0 and floor.get("answer") == "findings"
+          and floor.get("basis") != "typed by the agent")
+    real = M._floor_guard.find_moves
+
+    def boom(*_a, **_kw):
+        raise RuntimeError("the guard fell over")
+    M._floor_guard.find_moves = boom
+    # The exception escaping `submit` is this case's red, not the block's: it is
+    # caught here so `flr5` itself prints FAIL naming it.
+    escaped = None
+    mpath, code, text, filed = "-", None, "", {}
+    try:
+        _r, mpath, code, text, filed = _fg_filed(M, "raises", {_FG_TEST: _FG_WEAK},
+                                                 in_process=True)
+    except Exception as exc:                                   # noqa: BLE001
+        escaped = "%s: %s" % (exc.__class__.__name__, exc)
+    finally:
+        M._floor_guard.find_moves = real
+    floor = _fg_floor(filed)
+    check("flr5 a floor guard that raises files could-not-tell naming the "
+          "exception's type, says so, and the filing completes: %r"
+          % ((escaped, code, text, floor),),
+          escaped is None and code == 0
+          and os.path.exists(_filed_path(mpath, "P1.1") or "-")
+          and floor.get("answer") == "could-not-tell"
+          and "RuntimeError" in str(floor.get("basis"))
+          and floor.get("source") == _fr.FLOOR_SOURCE)
+
+    # THE BASE IS THE RED-FIRST HELPER'S: the throwaway it builds is HEAD of the
+    # tree the task works in, and the floor guard reads the same commit. HEAD
+    # is moved after the start, so a base taken from the attempt's start would
+    # name another commit and part from the helper's.
+    tdd = {"mode": "tdd", "add": ["tests/test_mine.py: v is two"], "gate": ["true"],
+           "expectRedFirst": True}
+    root, mpath = _fg_repo(M, "base", files=["src/mine.py", "tests/test_mine.py"],
+                           tests=tdd, extra=[
+                               ("src/mine.py", "v = 1\n"),
+                               ("tests/test_mine.py",
+                                _house_suite([("old1", "mine.v >= 1")]))])
+    started = _head(root)
+    _write_lf(_fg_path(root, "docs/notes.txt"), "moved after the start\n")
+    _harness.git(root, "add", "docs/notes.txt")
+    _harness.git(root, "commit", "-qm", "HEAD moves after the start")
+    _write_lf(_fg_path(root, "src/mine.py"), "v = 2\n")
+    _write_lf(_fg_path(root, "tests/test_mine.py"),
+              _house_suite([("old1", "mine.v >= 1"), ("new1", "mine.v == 2")]))
+    seen = {}
+    inner = M.run_verb
+
+    def spy(ctx, script, args, stdin=None, record=False):
+        got = inner(ctx, script, args, stdin=stdin, record=record)
+        if script == "stamp-verification.py" and list(args)[:1] == ["red"]:
+            try:
+                seen["head"] = (json.loads(got[1]).get("throwaway") or {}).get("head")
+            except (ValueError, AttributeError):
+                seen["head"] = None
+        return got
+    M.run_verb = spy
+    try:
+        code, text = _submit(M, root, mpath, "P1.1", _executor_body(
+            "P1.1", {"testsAdded": ["tests/test_mine.py: new1"]}),
+            tail=["--", sys.executable, "tests/test_mine.py"])
+    finally:
+        M.run_verb = inner
+    floor = _fg_floor(_filed_body(mpath, "P1.1") or {})
+    base = (floor.get("base") or {}).get("commit")
+    check("flr6 the floor guard's base is the red-first helper's for the same "
+          "task: the commit it read is the HEAD the helper's throwaway was "
+          "built at, which is HEAD now and not the commit the task started on: %r"
+          % ((code, text, base, seen, started),),
+          code == 0 and base and seen.get("head") == base == _head(root)
+          and base != started)
+
+    # The accepted suppressions reach the guard as written: an accepted code is
+    # not reported, the same code unaccepted is, and an entry the guard cannot
+    # read is could-not-tell rather than silence.
+    noqa = "import os  # noqa: E402\n"
+    _r, _m, code, text, filed = _fg_filed(
+        M, "accept", {_FG_SRC: noqa},
+        floor={"mode": "report", "acceptedSuppressions": ["noqa: E402"]})
+    accepted = _fg_floor(filed)
+    _r, _m, code2, text2, filed2 = _fg_filed(M, "unaccepted", {_FG_SRC: noqa})
+    unaccepted = _fg_floor(filed2)
+    _r, _m, code3, text3, filed3 = _fg_filed(
+        M, "unreadable", {_FG_SRC: noqa},
+        floor={"mode": "report", "acceptedSuppressions": ["noqa E402"]})
+    unreadable = _fg_floor(filed3)
+    check("flr7 an accepted `noqa: E402` in a file new to the diff is not "
+          "reported, and the accepted list is recorded beside the answer: %r"
+          % ((code, accepted),),
+          code == 0 and accepted.get("answer") == "clean"
+          and accepted.get("acceptedSuppressions") == ["noqa: E402"])
+    check("flr8 THE TWIN: the same file with nothing accepted is a "
+          "suppression-added finding: %r" % ((code2, unaccepted),),
+          code2 == 0 and unaccepted.get("answer") == "findings"
+          and [f.get("move") for f in unaccepted.get("findings") or []]
+          == ["suppression-added"])
+    check("flr9 an accepted entry the guard cannot read whole files "
+          "could-not-tell naming the entry - never a silent clean: %r"
+          % ((code3, unreadable),),
+          code3 == 0 and unreadable.get("answer") == "could-not-tell"
+          and "noqa E402" in str(unreadable.get("basis")))
+
+
+def _floor_guard_drive_cases(check):
+    """A finding does not change the gate, the commit or sign-off: the same
+    drive over a weakened test and over a clean one takes the same steps to
+    the same ends."""
+    M, why = _load("drive_phase_floor_drive")
+    if M is None:
+        check("flr10 the driver loads", False, why)
+        return
+    ends = {}
+    for name, text in (("weak", _FG_WEAK), ("clean", _FG_CLEAN)):
+        root, mpath, code, said, filed = _fg_filed(
+            M, "drive-%s" % (name,), {_FG_TEST: text}, per_task="phase")
+        run = drive(M, root, mpath)
+        task = tasks_of(mpath).get("P1.1") or {}
+        phase = (_mio.load_manifest(mpath).get("phases") or [{}])[0]
+        ends[name] = {"answer": _fg_floor(filed).get("answer"), "filed": code,
+                      "steps": run["steps"], "status": task.get("status"),
+                      "committed": bool(task.get("commit")),
+                      "green": _ledger_has_green(root, mpath, "P1.1"),
+                      "phase": phase.get("status")}
+    weak, clean = ends["weak"], ends["clean"]
+    same = dict((k, weak[k] == clean[k]) for k in weak if k != "answer")
+    check("flr10 the drive over a findings block and over a clean one takes the "
+          "same steps, records the same green gate, commits and closes the task "
+          "alike and signs the phase off alike - the block is the only thing "
+          "that differs: %r" % (ends,),
+          weak["answer"] == "findings" and clean["answer"] == "clean"
+          and all(same.values()) and weak["status"] == "done"
+          and weak["committed"] and weak["green"] and weak["phase"] == "done"
+          and weak["steps"] and weak["steps"][-1] == DONE)
+
+
 STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("ws-block", "_writer_session_cases"),
           ("bg-block", "_background_gate_cases"),
@@ -18631,6 +18886,8 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("wj-block", "_writer_reading_cases"),
           ("dl-block", "_lock_stop_cases"),
           ("ds-block", "_submit_cases"),
+          ("flr-block", "_floor_guard_submit_cases"),
+          ("flr10-block", "_floor_guard_drive_cases"),
           ("e2e-signoff", "_e2e_signoff_cases"),
           ("sr2-block", "_redispatch_wave_cases"),
           ("lp-block", "_lint_probe_cases"),

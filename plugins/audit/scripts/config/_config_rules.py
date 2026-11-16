@@ -71,7 +71,7 @@ KNOWN_ROOT = {
     "trivialLineThreshold", "stateDir", "logsDir", "bypassKeyword",
     "secretPatterns", "guardEdits", "bashWriteCheck", "tddReminder", "usage",
     "journal", "evidence", "policy", "ui", "priority", "portability", "executor",
-    "review", "ci",
+    "review", "ci", "floorGuard",
 }
 # The tiers `planGate` may pin. Mirror of hooks/_config.py PLAN_GATE_TIERS (that
 # module stays the source of truth for the gate itself); the selftest below pins
@@ -107,6 +107,10 @@ RUNS_GATE_MODES = ("never", "own-tests", "full")
 # review at sign-off, or per task only where a computed signal fires.
 KNOWN_REVIEW = {"perTask", "maxRounds"}
 REVIEW_PER_TASK_MODES = ("always", "phase", "signals")
+# Mirror of hooks/_config.py FLOOR_GUARD_MODES, pinned by `fgr4`: whether
+# `submit` files the floor guard's reading of a task's diff.
+KNOWN_FLOOR_GUARD = {"mode", "acceptedSuppressions"}
+FLOOR_GUARD_MODES = ("report", "off")
 # When a long phase asks CI about itself before it lands. `cadence` holds the
 # triggers (`closes`: every N task closes, `hours`: every H hours of phase time,
 # either or both); `workflow` is the workflow file dispatched, `ci.yml` unless it
@@ -597,6 +601,7 @@ def validate_config(obj):
     _check_executor(obj.get("executor"), findings, warnings)
     _check_review(obj.get("review"), findings, warnings)
     _check_ci(obj.get("ci"), findings, warnings)
+    _check_floor_guard(obj.get("floorGuard"), findings, warnings)
 
     # Delegated whole: the module that resolves a policy decides what a malformed
     # one is. A copy of those rules here would be free to call legal what the guard
@@ -745,6 +750,33 @@ def _check_review(review, findings, warnings):
         findings.append("review.maxRounds must be a positive integer - a cap "
                         "of %r is refused rather than read as the default"
                         % (review["maxRounds"],))
+
+
+def _check_floor_guard(block, findings, warnings):
+    """Whether `submit` files the floor guard's reading, and the suppression
+    codes it never reports. A FINDING for a value `_config.floor_guard_settings`
+    reads back as the default - a whole key that is not an object, a mode
+    outside the two words - so a typo does not sit in the file looking like a
+    decision. The accepted entries are typed as strings and no more: the floor
+    guard reads each one itself, and a second reading here would be a second
+    definition of what an entry is."""
+    if block is None:
+        return
+    if not isinstance(block, dict):
+        findings.append("floorGuard must be an object - %r reads as the defaults "
+                        "(mode report, nothing accepted)" % (block,))
+        return
+    for k in _real_keys(block):
+        if k not in KNOWN_FLOOR_GUARD:
+            warnings.append("unknown floorGuard key %r" % k)
+    if "mode" in block and block["mode"] not in FLOOR_GUARD_MODES:
+        findings.append("floorGuard.mode must be one of %s - %r reads as %r"
+                        % (FLOOR_GUARD_MODES, block["mode"], FLOOR_GUARD_MODES[0]))
+    accepted = block.get("acceptedSuppressions", [])
+    if not (isinstance(accepted, list) and all(isinstance(a, str) for a in accepted)):
+        findings.append("floorGuard.acceptedSuppressions must be a list of "
+                        "strings, each written as its comment would be "
+                        "(\"noqa: E402\")")
 
 
 def _check_ci(ci, findings, warnings):

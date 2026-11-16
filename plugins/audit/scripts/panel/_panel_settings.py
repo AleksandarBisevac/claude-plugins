@@ -316,6 +316,15 @@ FIELD_HELP = {
         "was med or high, or whose gate went red; an open low is recommended "
         "carried. A whole number of at least 1; 0 is refused, not read as the "
         "default.",
+    "floorGuard.mode":
+        "Whether a task's filing reads its diff for moves that lower the bar and "
+        "files what it found for the reviewer. report (the default) files it; "
+        "off files nothing, and the reviewer's brief says not measured. A finding "
+        "refuses nothing.",
+    "floorGuard.acceptedSuppressions":
+        "Suppression codes never reported, each written as its comment would be "
+        "(noqa: E402). An entry the reading cannot take whole makes its answer "
+        "could-not-tell rather than silence. Default none.",
     "executor.waveWidth":
         "How many ready tasks whose declared files do not overlap the phase drive "
         "runs at once, each in a worktree of its own, integrated onto the phase "
@@ -735,6 +744,21 @@ SETTINGS_GROUPS = (
         ),
     },
     {
+        "id": "floorGuard",
+        "title": "Weakened tests",
+        "blurb": "When a task files its work, a script reads its diff for moves "
+                 "that lower the bar - an existing test changed or deleted, a "
+                 "skip, a suppression new to the file, a stub - and the reviewer "
+                 "is shown what it found, to judge. It refuses nothing.",
+        "fields": (
+            {"path": "floorGuard.mode", "label": "Read each task's diff",
+             "kind": "enum", "enum": "floorGuard"},
+            {"path": "floorGuard.acceptedSuppressions",
+             "label": "Suppressions never reported", "kind": "list",
+             "placeholder": "none"},
+        ),
+    },
+    {
         "id": "ci",
         "title": "CI during a long phase",
         "blurb": "A phase that runs for days used to meet CI only when it landed. "
@@ -791,7 +815,8 @@ def _cfg_enums():
             "planGate": list(vc.PLAN_GATE_MODES),
             "portability": list(vc.PORTABILITY_MODES),
             "runsGate": list(vc.RUNS_GATE_MODES),
-            "perTask": list(vc.REVIEW_PER_TASK_MODES)}
+            "perTask": list(vc.REVIEW_PER_TASK_MODES),
+            "floorGuard": list(vc.FLOOR_GUARD_MODES)}
 
 
 # --- cli --------------------------------------------------------------------

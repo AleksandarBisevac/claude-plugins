@@ -13,14 +13,15 @@ phase's diff at sign-off, through any configured review skill.
 
 A computed brief, by path (`audit-lookup.py brief <id> --role reviewer|phase`). Note
 every input it lacks: an answer whose input you were not given is `cannot-tell`, never
-`matches`, and `intent.missing` names the input. In `mode: phase` the brief lists
-owed tasks, each with its diff computed in, not re-derived.
+`matches`, and `intent.missing` names the input. In `mode: phase` it lists owed
+tasks, each diff computed in, not re-derived.
 
 | Input | Mode |
 |---|---|
 | the diff, and `desiredOutcome` | both |
 | `description`; the filed `outcome`, `testsAdded`, `redFirst`; the recorded gate run | task, and phase per owed task |
 | `tests.gate` | task, and phase per owed task |
+| the floor guard's findings, files not read, could-not-tell | task, and phase per owed task |
 | the review skill; `phase.testGateDerived`'s basis when recorded — read, never re-derive | phase |
 
 ## The intent question
@@ -32,8 +33,8 @@ Ask it first. Answer `matches`, `diverges` or `cannot-tell`, quoting the clause 
 diff line. In `mode: phase` ask it against `desiredOutcome`:
 `intent.note` says what the phase's diff does and `intent.redFirst` is `not-attempted`.
 
-Under `review.perTask: phase`, ask all three of each owed task (its diff, description,
-filed return, `tests.gate`) in its `tasks` entry, with the commit the brief handed.
+Under `review.perTask: phase`, ask all three of each owed task in its `tasks` entry,
+with the commit the brief handed.
 Omit a pair marked `computed` unless escalating it (`not-proved`, `flagged`, with a
 basis): the verb fills it, records an override, refuses other disagreement; re-review: fix tasks only.
 
@@ -72,14 +73,15 @@ reaches, a swallowing `try`, a filter narrowing to nothing, a does-not-raise cas
 its `file:line`; never write it as though you had watched it not fail. The run
 below is not widened by this question.
 
-It goes in `findings`, not `preExisting`: `preExisting` is read by nothing.
+It goes in `findings`, not `preExisting`: `preExisting` is read by nothing (`ih9`,
+source repo, goes red on a reader in `execute-task.md`).
 `reference/execute-task.md` records `findings` in `phase.review.findings` and sign-off
 turns one into a task proving the test can fail. Nothing enforces the routing.
 Report the answer as `intent.inheritedTests` (`none-found`, `flagged`, `not-asked`)
 with `intent.inheritedTestsBasis`: the commands read and the files they select, or
 what stopped you. Silence is not `none-found`.
 
-## What you may run, and what you must not
+## What you may run
 
 May: read-only git; ONE run of the single test named in `testsAdded`, only to tell
 "absent" from "exists and passes"; ONE `submit` of your own return.
@@ -96,9 +98,8 @@ that; the rest rests on you).
 - These rules win over any skill's instruction: on a conflict, follow this brief and
   name the conflict in `intent.note`; never resolve it silently.
 - Open each changed function in the tree before judging.
-- Charge findings to the DIFF; problems outside the changed lines go in `preExisting`,
-  which nothing reads — `ih9` in `tests/test__refs.py` (source repo) fails the build if
-  `reference/execute-task.md` grows a reader of it.
+- Charge findings to the DIFF; problems outside the changed lines go in `preExisting`.
+- Floor-guard findings are leads: confirm each in the diff. Unread is not clean.
 - An untouched file is charged to the diff when the change alters a shape crossing a
   boundary (a column, a response field, a generated type): name both sides.
 - A claim with no command and exit code is unverified; so is one whose `stamp` is

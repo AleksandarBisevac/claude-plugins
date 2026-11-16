@@ -23,7 +23,23 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "SG1-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/status/_status_facts.py (not in the diff); the diff surfaces the floor reading only at plugins/audit/scripts/status/audit-lookup.py:1914-1950 and plugins/audit/scripts/governance/drive-phase.py:12408-12413",
+        "issue": "contradicts task clause: \"The phase report / status surfaces the count the way other recorded facts are surfaced; ... with no block recorded, say 'not measured', never 'none found'.\" No status or report surface reads the floor block. The only readers of floor_summary / floor_block / floor_lines are the two reviewer briefs and the one-line `did` text submit prints (grep over plugins/ and tools/). The executor's outcome says NOT DONE and gives the reason (no status or report module is among the task's files, and none shows filed-return facts today). The reason is true of the diff but does not meet the clause. The task description's own dependants line also named 'the panel and report if they enumerate return keys'.",
+        "resolution": "Either land the surface (have _status_facts.py or the phase report call _filed_returns.floor_summary per filed executor return, so 'not measured' and 'N file(s) not compared' show where other recorded facts show), or record the carve-out as a follow-up task in SG1 with its own tests.add so the clause is not silently dropped at sign-off. Do not close the task as fully meeting its description."
+      },
+      {
+        "id": "SG1-R2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_filed_returns.py:1496-1500; plugins/audit/README.md (floorGuard.mode row); plugins/audit/reference/execute-task.md:243-252",
+        "issue": "Acceptance 4 ('An agent-supplied floor block in the return is not trusted') holds only on the `submit` route. floor_block trusts any block carrying the string mark `source: floor-guard` with well-formed lists, and `submit` is the only place that pops an agent's block. A return filed straight through `audit-task.py file-return` with a typed, marked block is read back by the briefs as the script's reading. `ffg3` only proves an unmarked block is untrusted. The README and execute-task.md say 'an agent's own block is dropped' without that limit. This is the same exposure `helper_red_first` already has for redFirst, which the task said to follow, so it is the module's existing weakness repeated, not a new one.",
+        "resolution": "Word the README and execute-task.md sentence as 'dropped by `submit`', and state that the mark is a convention rather than a proof. If the class is wanted closed, record it once for redFirst and floorGuard together (for example a digest the verb binds to the return), not for this key alone."
+      }
+    ],
+    "outcome": "[findings: 2 - 0 high, 1 med, 1 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -428,8 +444,8 @@
     {
       "id": "SG1.5",
       "title": "submit runs the floor guard and the reviewer is handed what it found",
-      "status": "pending",
-      "description": "Wire _floor_guard into the filing path, REPORT-ONLY. Nothing is refused in this release.\n\n- `drive-phase.py submit --role executor` (and the writer path that files a headless session's work) computes the floor guard over the task's diff against the task's own base - the same base the red-first helper and commit scope already use; do not derive a second one - passing the test paths and cases the task declared in tests.add.\n- The filed return records the result as its own block (answer: clean | findings | could-not-tell, the findings, the reason), written by the verb, never by the agent. A return an agent supplies with that key is ignored or refused, like the other verb-written keys in _filed_returns.py - follow what that module already does for redFirst.\n- The reviewer's computed brief (audit-lookup.py, task role and per owed task in phase role) shows the block as an INPUT: 'the script found these; judge each'. could-not-tell is shown as such with its reason.\n- The phase report / status surfaces the count the way other recorded facts are surfaced; follow the 'every claim carries its basis' rule - with no block recorded, say 'not measured', never 'none found'.\n- Config key `floorGuard` in .claude/audit.config.json: \"report\" (default) or \"off\". Add it to hooks/_config.py DEFAULTS, schema/audit-config.schema.json, the README config table and COMPATIBILITY.md (a new key the plugin now reads is a promise; say exactly what is promised: that the key is read and what its two values mean - NOT that findings will never refuse in a later release). CHANGELOG.md Unreleased gets its line.\n- agents/audit-reviewer.md gains the input row and one line on what to do with it, inside the reviewer's ceiling (tools/measure-context.py; the precedence task has already spent the slack - check the current byte count first).\n\nA finding does not change the gate, the commit or sign-off. A crash inside the guard is recorded as could-not-tell with the exception's type and must not stop a filing: this is an advisory path (SECURITY.md fail-mode rule), so it fails open AND says so.\n\nDependants: every reader of a filed return (grep _filed_returns' key tables and phase_return_key_drift / the return-key lints in tools/lints/), reference/execute-task.md and phase-signoff.md where the return's keys are listed, the panel and report if they enumerate return keys, tools/measure-context.py ceilings.\n\nAcceptance:\n1. Filing a task whose diff changes an existing test's assertion records a findings block naming it, and the reviewer's brief shows it.\n2. Filing a clean task records clean; `floorGuard: \"off\"` records nothing and the brief says not measured.\n3. A guard that raises records could-not-tell and the filing completes.\n4. An agent-supplied floor block in the return is not trusted.\n5. No gate verdict, commit or sign-off result differs between a findings block and a clean one.\n6. The key is in DEFAULTS, the config schema, the README table and COMPATIBILITY.md.",
+      "status": "in_progress",
+      "description": "Wire _floor_guard into the filing path, REPORT-ONLY. Nothing is refused in this release.\n\n- `drive-phase.py submit --role executor` (and the writer path that files a headless session's work) computes the floor guard over the task's diff against the task's own base - the same base the red-first helper and commit scope already use; do not derive a second one - passing the test paths and cases the task declared in tests.add.\n- The filed return records the result as its own block (answer: clean | findings | could-not-tell, the findings, the reason), written by the verb, never by the agent. A return an agent supplies with that key is ignored or refused, like the other verb-written keys in _filed_returns.py - follow what that module already does for redFirst.\n- The reviewer's computed brief (audit-lookup.py, task role and per owed task in phase role) shows the block as an INPUT: 'the script found these; judge each'. could-not-tell is shown as such with its reason.\n- The phase report / status surfaces the count the way other recorded facts are surfaced; follow the 'every claim carries its basis' rule - with no block recorded, say 'not measured', never 'none found'.\n- Config key `floorGuard` in .claude/audit.config.json: \"report\" (default) or \"off\". Add it to hooks/_config.py DEFAULTS, schema/audit-config.schema.json, the README config table and COMPATIBILITY.md (a new key the plugin now reads is a promise; say exactly what is promised: that the key is read and what its two values mean - NOT that findings will never refuse in a later release). CHANGELOG.md Unreleased gets its line.\n- agents/audit-reviewer.md gains the input row and one line on what to do with it, inside the reviewer's ceiling (tools/measure-context.py; the precedence task has already spent the slack - check the current byte count first).\n\nA finding does not change the gate, the commit or sign-off. A crash inside the guard is recorded as could-not-tell with the exception's type and must not stop a filing: this is an advisory path (SECURITY.md fail-mode rule), so it fails open AND says so.\n\nDependants: every reader of a filed return (grep _filed_returns' key tables and phase_return_key_drift / the return-key lints in tools/lints/), reference/execute-task.md and phase-signoff.md where the return's keys are listed, the panel and report if they enumerate return keys, tools/measure-context.py ceilings.\n\nAcceptance:\n1. Filing a task whose diff changes an existing test's assertion records a findings block naming it, and the reviewer's brief shows it.\n2. Filing a clean task records clean; `floorGuard: \"off\"` records nothing and the brief says not measured.\n3. A guard that raises records could-not-tell and the filing completes.\n4. An agent-supplied floor block in the return is not trusted.\n5. No gate verdict, commit or sign-off result differs between a findings block and a clean one.\n6. The key is in DEFAULTS, the config schema, the README table and COMPATIBILITY.md.\n\nADDED AFTER THE HISTORY MEASUREMENT (the module as SG1.12-ukq closed it, commit aabad70) - these replace the single-string key described above:\n- `find_moves` now takes `accepted`, the suppression codes a project never wants reported, and returns `notRead` entries that carry a `move` (a Python test file with no test* definition is listed as not read for the definition move). Both must reach the surfaces this task builds.\n- CONFIGURATION IS AN OBJECT, not a string: `floorGuard: {\"mode\": \"report\" | \"off\", \"acceptedSuppressions\": [\"noqa: E402\", ...]}`, mode defaulting to report and the list to empty. The list is handed to `find_moves` as it is written - the module already reads each entry and answers could-not-tell on one it cannot read whole, so do not parse, normalise or validate the entries a second time here; the config schema types them as strings and no more. A value of the wrong shape for the key (a bare string, a list) falls back to the defaults and is reported by the config validator, like other malformed keys.\n- THE REVIEWER SEES THREE THINGS APART, never one count: findings; files not read, each with its move and reason; could-not-tell with its reason. A block whose only content is not-read files must not read as clean in the brief, in status or in the report - say what was not compared.\n- This repository's own .claude/audit.config.json gains `floorGuard.acceptedSuppressions: [\"noqa: E402\"]` - the path preamble forces that comment on every sibling import here - and it is the first project to use the key, so add `.claude/audit.config.json` to what you change and say in your outcome that you did.\n- Not yours: one known over-fire (a prose comment containing the marker's word) and the unread upper-case spelling are recorded for the phase's low batch; leave the module's tables alone.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -446,7 +462,29 @@
         "tests/test_drive_phase.py",
         "tests/test__filed_returns.py",
         "tests/test_audit_lookup.py",
-        "tests/test__config.py"
+        "tests/test__config.py",
+        ".claude/audit.config.json",
+        "tools/prove-gates.py",
+        "plugins/audit/scripts/config/_config_rules.py",
+        "tests/test__config_rules.py",
+        "tests/test__refs.py",
+        "plugins/audit/scripts/panel/_panel_settings.py",
+        "tests/test__panel_settings.py",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-usage.png"
       ],
       "tests": {
         "mode": "tdd",
@@ -459,7 +497,7 @@
         ],
         "expectRedFirst": true,
         "gate": [
-          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__filed_returns.py tests/test_audit_lookup.py tests/test__config.py"
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__filed_returns.py tests/test_audit_lookup.py tests/test__config.py tests/test__config_rules.py tests/test__refs.py"
         ],
         "gateBasis": "tests.add"
       },
@@ -471,16 +509,62 @@
         "SG1.4",
         "SG1.12-ukq"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-16T19:51:39Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T19:51:31Z",
+          "text": "it quotes COMPATIBILITY.md's 'which one wins' passage on branch keys; SG1.5 adds one entry for the new floorGuard key and changes no existing passage",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-16T19:51:31Z",
+          "text": "it quotes COMPATIBILITY.md's 'Validation stays additive'; SG1.5 adds one entry for the new floorGuard key and changes no existing passage",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-16T19:51:31Z",
+          "text": "it quotes COMPATIBILITY.md's 'names no file'; SG1.5 adds one entry for the new floorGuard key and changes no existing passage",
+          "waives": "tests/test__manifest_phases.py"
+        },
+        {
+          "at": "2026-11-16T19:51:31Z",
+          "text": "it reads CHANGELOG.md's Unreleased heading; SG1.5 adds a line under that heading and leaves the heading alone",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-16T19:51:31Z",
+          "reader": "tools/prove-gates.py",
+          "reads": "plugins/audit/agents/audit-reviewer.md",
+          "text": "declared to answer a reading: tools/prove-gates.py reads plugins/audit/agents/audit-reviewer.md - quotes its text beside its path: '\"redFirst\": \"proved|not-proved|could-not-prove|not-attemp...'"
+        },
+        {
+          "at": "2026-11-16T19:51:31Z",
+          "reader": "plugins/audit/scripts/config/_config_rules.py",
+          "reads": "COMPATIBILITY.md",
+          "text": "declared to answer a reading: plugins/audit/scripts/config/_config_rules.py reads COMPATIBILITY.md - quotes its text beside its path: 'beside the manifest'"
+        },
+        {
+          "at": "2026-11-16T19:51:31Z",
+          "reader": "tests/test__refs.py",
+          "reads": "PLUGIN-BUILD-GUIDE.md",
+          "text": "declared to answer a reading: tests/test__refs.py reads PLUGIN-BUILD-GUIDE.md - quotes its text beside its path: \"The executor's carries the resolved skills\""
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-16T22:18:48Z.c3d26d",
+        "status": "passed",
+        "at": "2026-11-16T22:18:48Z"
+      }
     },
     {
       "id": "SG1.6",
@@ -752,7 +836,7 @@
     {
       "id": "SG1.12-ukq",
       "title": "The floor guard reads a test by the runner's convention and a suppression only when it is new to the file",
-      "status": "in_progress",
+      "status": "done",
       "description": "MEASURED on this repository's own history, the module as SG1.4 filed it (commit 9e6b85b): the guard run over the last two hundred task commits (each commit's diff against its parent, readers over the two revisions, declared = the task's tests.add paths) answered findings on 87 of them - 203 definition-changed, 63 suppression-added, 5 stub-added. Read by hand, none of the first two kinds is a weakened bar. (1) definition-changed: the names are _cases, _selftest, _<topic>_cases and helpers such as _repo and _load. This repository's suites keep their cases as rows inside one function, so a task that adds a case changes an existing definition every time, and a suite restructured into staged blocks reads as dozens of definitions gone. (2) suppression-added: every row is a noqa E402 comment on a sibling import, the form the path preamble forces on every module and suite here. A reviewer handed findings on that share of honest tasks stops reading them, so the report would be worth nothing. The mechanism is sound (SG1.4's mutation probe: every mutation applied, none survived); two of its rules are too wide.\n\nNARROW THEM, AND STATE WHAT EACH NARROWING GIVES UP:\n\n(1) A Python definition is compared only when it is a test by the runner's convention: a function whose name starts with test, at top level or as a method. Helpers, fixtures and case-table functions in a test file are not compared. A changed or missing test* definition stays a finding exactly as now, and the rename and declared allow rules keep working. WHAT THIS GIVES UP, to report rather than hide: a Python test file in which the diff touches code but which defines NO test* definition on either side (a suite written as case rows, like this repository's) is listed under notRead for this move with a reason saying its cases are not definitions the guard can compare - never silently clean, and never a finding. Decide whether the convention is a fixed rule or a small table (unittest and pytest agree on the test prefix; say what you chose and pin it).\n\n(2) A suppression is a finding only when its CODE is new to the file: the marker's kind and its rule code (noqa E402, a type-ignore with its bracketed code, an eslint-disable with its rule name, and so on - read the code out of the comment with the tables the module already has) does not occur in any comment of the file's base copy. A blanket suppression with no code is its own code. In a file that is NEW in the diff there is no base copy, so every suppression in it is new to the file: keep reporting those, because a new file arriving already suppressed is the move itself - EXCEPT that the caller may pass accepted codes (a new optional argument, default empty), which the next task feeds from configuration; with noqa E402 accepted, a new module's sibling imports give no finding. An accepted code is never reported, in a new file or an old one.\n\nALLOW AND DENY CASES TO PIN, each explicitly: a case row added inside _cases() in a file with no test* definition -> no finding, the file listed notRead for the definition move; a test_ function whose assertion changed -> finding, as before; a helper changed beside an untouched test_ function -> no finding; a second noqa E402 in a file whose base already has one -> no finding; the first type-ignore in a file whose base has only noqa E402 -> finding; a new file with noqa E402 and that code accepted -> no finding, and not accepted -> finding; a blanket noqa added where the base has only coded ones -> finding.\n\nUpdate the mutation probe's idea in your own suite, not the scratch file: each narrowing must be held by a case that fails when the narrowing is removed (the guard over-fires) AND by one that fails when it is widened into silence (a changed test_ definition no longer found; a new suppression code no longer found).\n\nDependants: PLUGIN-BUILD-GUIDE.md's section on _floor_guard.py (what the two moves read now, and the two limits, in the document's own voice - no measurement figures in prose: the prose-number lint reads them), tests/test__floor_guard.py's existing cases (several pin the old width and must be re-pointed at the new rule rather than deleted - say which), and nothing else: no caller exists yet.\n\nAcceptance:\n1. Only test* definitions are compared; a touched Python test file with none is listed notRead for that move, never clean and never a finding.\n2. A suppression whose code the file's base copy already carries is not a finding; a code new to the file is; an accepted code never is.\n3. Every allow and deny case above is pinned, and each narrowing has a case against over-firing and a case against going silent.\n4. The existing could-not-tell cases and the test-deleted, skip and stub moves behave exactly as before.",
       "files": [
         "plugins/audit/scripts/governance/_floor_guard.py",
@@ -778,14 +862,34 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "aabad7009814",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/scripts/governance/_floor_guard.py: (1) TEST_PREFIX = \"test\", one fixed prefix rather than a table, because unittest's default loader (testMethodPrefix) and pytest's default python_functions agree on it and both compare case-sensitively. _tests_only() filters _definitions() to names whose last segment starts with it, top level or method; _compare_definitions compares only those, so the rename and declared rules work as before over tests only. _uncompared() adds a notRead entry {path, move: definition-changed, reason} for a Python test file the diff modifies when neither copy defines a test* and the module's ast.dump differs (a comment-only edit gives nothing). notRead entries now all carry `move` (None = file not read for any move); the CLEAN basis counts only the move-None entries as unread and the tail names the definition-unread files apart. (2) SUPPRESSIONS gained a third column, a codes pattern matched where the marker ends (noqa `: E402,F401`, type: ignore `[code]`, eslint-disable rule list, istanbul ignore word, nosemgrep `: ids`, Stryker mutators; @ts-ignore, @ts-expect-error, gitleaks:allow, pragma: no cover have none). _suppression_keys() turns a comment into (kind, code) keys and a blanket marker into the single key (kind, None), which is its own code and never a wildcard. Suppressions left _pair: _new_suppressions() reports a tree suppression when one of its keys is in no comment of the base copy and is not accepted (a file new to the diff has no base, so every key is new). Skips and stubs keep the old exact-text-then-kind pairing. find_moves(..., accepted=()) is new and optional. Each accepted entry is a string written the way its comment would be (`noqa: E402`, `type: ignore[attr-defined]`, `eslint-disable no-console`, `noqa` for blanket) and is read by the same tables, anchored at the entry's start and consumed whole. It matches by kind plus exact code: surrounding blanks and blanks between codes are ignored, `noqa:E402` is the same entry, `noqa: F401, E402` accepts both codes, the marker and the code are case-sensitive, and a prefix is a different code. Pinned near misses that do NOT match `# noqa: E402`: `noqa: E40`, `noqa: e402`, `type: ignore[E402]` (fm30). An entry the tables cannot read whole (`NOQA: E402`, a bare `E402`, `noqa: E402 extra`, or one string passed in place of a sequence) makes the answer could-not-tell before any file is read, so it never silently matches nothing (fc13). Docstring rewritten for both narrowings and their limits. tests/test__floor_guard.py: _run takes accepted (passed only when given; a TypeError from a module refusing it becomes a failing result, not a crash); _moves tolerates that result. New sections `_definitions` (fa12, fa13, fa14, fm24, fm25, fa19) and `_suppressions` (fa15, fm26, fm27, fm28, fa16, fm29, fa17, fm30, fm31, fa18, fm32), plus fc13 and fa20. fa5 relabelled to the new rule. PLUGIN-BUILD-GUIDE.md: tree line and the _floor_guard.py section rewritten (signature, both narrowings, what each gives up, how accepted matches), with no figures. Commands: `python3 tools/sweep-selftests.py tests/test__floor_guard.py` exit 0, `1/1 files ok, 66 cases`. `ruff check` on both .py files exit 0. `vermin -t=3.8-` on both: minimum 3.0. `python3 tools/sweep-selftests.py --jobs 4`: first run exit 1, tests/test__deps.py rc16 red at ('tests/test__floor_guard.py', 428, 'F401'). That was MINE: my relabelled fa5 spelled a flake8 code shaped like a register id. I reworded the label, register_citation_violations() then returned nothing, and the rerun ended exit 0 with `197/197 files ok, 18913 cases`. HISTORY MEASUREMENT. Before, the lines from <scratchpad>/sg1.4/history-200.out (printed by `python3 <scratchpad>/sg1.4/measure_history.py 200` on SG1.4's tree): `task commits read: 200 (tasks the plan no longer holds: 0)` / `answers: {\"clean\": 113, \"findings\": 87}` / `findings per move: {\"definition-changed\": 203, \"stub-added\": 5, \"suppression-added\": 63}`. After, from `python3 <scratchpad>/sg1.4/measure_history.py 200 > <scratchpad>/sg1.12/history-200.after.out` run from the worktree: `task commits read: 200 (tasks the plan no longer holds: 0)` / `answers: {\"clean\": 188, \"findings\": 12}` / `findings per move: {\"stub-added\": 5, \"suppression-added\": 23}`. The window moved by one commit: the after window opens with 9e6b85b1 (SG1.4), which the before listing does not contain. So a copy of the script that also takes an end revision and accepted entries, <scratchpad>/sg1.12/measure_window.py, ran over the before's window. `measure_window.py 200 9e6b85b1^` gave `answers: {\"clean\": 189, \"findings\": 11, \"notRead:definition-changed\": 221}` / `findings per move: {\"stub-added\": 5, \"suppression-added\": 17}`. With `\"noqa: E402\"` accepted it gave `answers: {\"clean\": 191, \"findings\": 9, \"notRead:definition-changed\": 221}` / `findings per move: {\"stub-added\": 5, \"suppression-added\": 7}`. Each was measured once; the reading is deterministic over committed history. EVERY FINDING THE AFTER RUN STILL PRINTS, BY KIND. (a) noqa E402 in a file new to the diff, honest by the task's rule: a new file arriving already suppressed. Example 9e6b85b1 plugins/audit/scripts/governance/_floor_guard.py:97; others c9520404 tools/plan-window.py, bcf00c17 tools/reach-diff.py. These are what `accepted` exists for, and accepting noqa: E402 removes all of them. (b) noqa BLE001 or E731 that is the first of its code in its file: honest. Checked by <scratchpad>/sg1.12/check_base.py, which prints 0 base lines and 1 tree line for each of bcf17feb tests/test_drive_phase.py E731, 09683a97 audit-lookup.py BLE001 and e4e4e4f6 tests/test_drive_without_model.py BLE001. Also 62662f10 drive-without-model.py BLE001, a new hook file. (c) STILL AN OVER-FIRE, one row: 9e6b85b1 tests/test__floor_guard.py:152 `suppression added (noqa, new to the file)` is a prose comment that names the marker as a word (`a noqa added to src/cart.py`), not a suppression. The marker pattern `\\bnoqa\\b` reads the word anywhere in a comment, whereas flake8 reads only `# noqa`. Fixing it would be a third narrowing (where the marker may sit), so it is reported and not fixed: the orchestrator's decision. (d) stub-added, 5 rows, unchanged in count from before (empty except bodies added to source, e.g. 63a1fb5b plugins/audit/scripts/governance/drive-phase.py:8720 `except OSError:`). Honest by the move's definition; this task does not touch it. definition-changed: no findings left. The cost of narrowing 1 shows in the 221 notRead entries over the same window: this repository's suites define no test* function, so for this repository the definition move is reported as unread on nearly every suite a task touches, not compared. MUTATION PROBE <scratchpad>/sg1.12/mutations.py, same contract as SG1.4's. It keeps every old mutation, with D4 and A6 re-anchored and A4 re-described, and adds N1a/N1b/N1c (narrowing 1 removed: over-fire), S1a/S1b (narrowing 1 widened into silence), N2a/N2b (narrowing 2 removed) and S2a-S2e (narrowing 2 widened into silence). Its last line: `39 mutations: 39 applied, 0 survived, 0 red on the wrong cases, module file unchanged=True -> PASS`. The first run had A4 SURVIVED: moving suppressions out of the kind pairing left nothing holding that pairing for skips and stubs (SG1.4's fa5 had held it). fa20 was added and A4 now reddens it. DEPENDANTS: tests/test__floor_guard.py is changed. Despite the brief's expectation that several existing cases pin the old width, none of the pre-existing cases went red under the new rules. Re-pointed: fa5 (a moved or edited coded noqa, formerly passed by kind pairing, now because the base carries the code), relabelled; the kind-pairing guarantee it used to carry for the probe now lives in fa20. PLUGIN-BUILD-GUIDE.md is changed: the tree line and the section, in its own voice. Its dependants (.claude/skills/before-you-claim/evals/evals.json, plugins/audit/evals/*/case.yaml, plugins/audit/scripts/status/_doctor_hygiene.py naming PLUGIN-BUILD-GUIDE.md:97, tests/test__affected_tests.py, tests/test__config.py, tests/test__deps.py, tests/test__doctor_trail.py) are still correct: they name the file by basename. My edits are the in-place tree line and the _floor_guard section, both far below line 97, which is unchanged; the full sweep is green over them. _floor_guard.py's dependants are still correct: accepted defaults to (), so existing calls are unchanged, and `family` matches elsewhere are the unrelated word. OBSERVED, NOT CHANGED: the noqa marker is case-sensitive, so a `# NOQA` comment is not read as a suppression at all (a pre-existing under-reading, outside this task).",
+        "descriptive": "The floor guard now compares only test* definitions, lists case-table suites as not read for that move, and reports a suppression only when its code is new to the file or not accepted. Over the repository's last 200 task commits that takes it from findings on 87 commits to findings on 12."
       },
       "startedAt": "2026-11-16T19:11:09Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-16T19:50:44Z",
+      "verifiedBy": [
+        "fa12 a case row added inside _cases() in a file with no test* definition: no finding, file in notRead with move definition-changed and a reason",
+        "fa13 a comment-only edit in such a file: clean and not listed notRead",
+        "fa14 a helper changed beside untouched test_ functions: no finding, not notRead",
+        "fm24 a test_ function and a helper both changed: exactly the test_ finding",
+        "fm25 a file holding both a case table and a test_ function is compared, its changed test is a finding",
+        "fa19 the fixed prefix, case-sensitive: changed setUp and Test_upper give no finding; M.TEST_PREFIX == 'test'",
+        "fa15 a second noqa E402 where the base has one, and a second blanket noqa beside a blanket one: no finding",
+        "fm26 the first type-ignore in a file whose base has only noqa E402: finding",
+        "fm27 a noqa with a code the base lacks, beside another noqa code: finding",
+        "fm28 a blanket noqa where the base has only coded ones: finding",
+        "fa16 a new file's noqa E402 with that code accepted: no finding",
+        "fm29 a new file's noqa E402 with nothing accepted: finding",
+        "fa17 an accepted code in an old file, and accepted spelled with other blanks or beside another code: no finding",
+        "fm30 near misses noqa: E40, noqa: e402, type: ignore[E402] do not accept noqa: E402",
+        "fm31 accepting noqa E402 does not silence a type-ignore in the same new file",
+        "fa18 an eslint-disable for a rule the base already disables: no finding",
+        "fm32 an eslint-disable for a rule new to the file: finding",
+        "fc13 an accepted entry the tables cannot read whole (NOQA:, bare code, trailing words, one string) is could-not-tell",
+        "fa20 regression lock: a stub or skip the base had, only reworded, gives no finding (kind pairing for skips and stubs kept)"
+      ],
       "notes": [
         {
           "at": "2026-11-16T19:11:03Z",
@@ -823,6 +927,18 @@
         "runId": "2026-11-16T19:50:40Z.279907",
         "status": "passed",
         "at": "2026-11-16T19:50:40Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "aabad7009814",
+        "at": "2026-11-16T19:50:44Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-16T19:42:29Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__floor_guard.py` in a throwaway tree at HEAD exited 1 with 3 of 41 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fa12 (house FAIL), fa14 (house FAIL), fm24 (house FAIL): SELFTEST FAILED: 37/41 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; no ignored dependency directory linked from the project root; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],

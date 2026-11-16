@@ -22,6 +22,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   hook**: no process there can be sent a signal another process can catch, so Esc would end only
   the launcher while `auto` and its writers kept spending, and the hook stays out of the way until
   a real run proves a stop there.
+- **A task that weakens a test is reported to its reviewer, and nothing is refused for it.**
+  `drive-phase.py submit`, and the drive filing a headless writer's work, read the task's diff
+  against the HEAD the red-first helper builds its throwaway at, for a test deleted or its
+  definition changed, a skip, a suppression new to the file and a stub, and file what was found
+  in the return as a `floorGuard` block the verb writes - an agent's own block is dropped. The
+  reviewer's brief, per task and per owed task of a phase review, shows the block as an input to
+  judge, with findings, files not read and could-not-tell kept apart; a return with no block
+  reads *not measured*. A finding changes no gate, commit or sign-off, and a reading that crashes
+  files could-not-tell with the exception's type while the filing goes on. The new config key
+  `floorGuard` is an object: `mode` `report` (the default) or `off`, and
+  `acceptedSuppressions`, the codes never reported (`["noqa: E402"]`); a value of another shape
+  reads as the defaults and is a validator finding. The panel's Settings tab gains a *Weakened
+  tests* card for both.
 
 ## [3.8.0]
 

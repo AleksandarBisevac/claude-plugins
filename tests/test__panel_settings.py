@@ -52,7 +52,8 @@ def _cases(check):
                    "evidence": _vc.KNOWN_EVIDENCE,
                    "priority": _vc.KNOWN_PRIORITY,
                    "executor": _vc.KNOWN_EXECUTOR,
-                   "review": _vc.KNOWN_REVIEW, "ci": _vc.KNOWN_CI}
+                   "review": _vc.KNOWN_REVIEW, "ci": _vc.KNOWN_CI,
+                   "floorGuard": _vc.KNOWN_FLOOR_GUARD}
     # `policy` is a root key with no control on this form, on purpose — the one
     # kind of exemption, and it is stated rather than silently subtracted. It is
     # not a setting with a value; it is a rule set whose meaning is the verdict it
@@ -128,7 +129,7 @@ def _cases(check):
     check("the groups are the decisions the config makes, not one list",
           tuple(g["id"] for g in M.SETTINGS_GROUPS)
           == ("paths", "guards", "tdd", "usage", "journal", "priority",
-              "portability", "executor", "review", "ci")
+              "portability", "executor", "review", "floorGuard", "ci")
           and all(g["blurb"] for g in M.SETTINGS_GROUPS))
     check("the audit trail's card states the limit of the claim, where someone "
           "deciding whether to rely on it will read it",

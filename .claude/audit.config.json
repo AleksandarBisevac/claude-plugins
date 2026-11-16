@@ -6,5 +6,8 @@
   },
   "review": {
     "perTask": "signals"
+  },
+  "floorGuard": {
+    "acceptedSuppressions": ["noqa: E402"]
   }
 }

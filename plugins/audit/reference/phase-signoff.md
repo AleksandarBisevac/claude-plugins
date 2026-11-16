@@ -104,7 +104,10 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    mechanically, at the point the executor files - `case_binding_gaps` binds a declared case to
    the case id the executor returned for it (`casesAdded`, by index) and checks that id against the
    labels the suite printed, reading no title (a title compare, scored as one string diff, flagged
-   most of the danuvia tasks on language alone). **A reviewer's `matches`
+   most of the danuvia tasks on language alone). **Each owed task's brief carries the floor
+   guard's reading of its diff** - the `floorGuard` block `submit` filed, its findings, files
+   not read and could-not-tell shown apart, or *not measured* when none was filed - as leads the
+   reviewer judges; nothing at sign-off reads the block itself. **A reviewer's `matches`
    answer whose note quotes none of the task's own `description`** is refused as unsupported before
    it can file - `unsupported_match_basis` in `_filed_returns.py` - so a renamed scope cannot read
    back as matching on the strength of the executor's own restatement. **A planned test's

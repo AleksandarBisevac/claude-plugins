@@ -240,6 +240,16 @@ verb writes and refuses, and what the run commands leave behind, is
      file-return`. `file-return` checks the shape again - it exits 2 naming a missing field and
      writes nothing - and writes a well-formed return once, to a path it derives from the task
      and its current start. The agent hands back the one line `submit` printed.
+     **`submit` also adds a `floorGuard` block the agent does not write** (an agent's own is
+     dropped): `_floor_guard.find_moves` over the task's diff against the HEAD the red-first
+     helper's throwaway is built at (`task_root` and `tree_head` in `drive-phase.py`, the one
+     base), handed the `tests.add` paths with their `casesAdded` ids and
+     `floorGuard.acceptedSuppressions`. It holds `answer` (`clean`, `findings`,
+     `could-not-tell`), `findings`, `notRead` and `cannotTell` apart, and the reviewer's brief
+     shows it as an input to judge. **It refuses nothing**: no gate, commit or sign-off reads it,
+     a reading that raises is filed as `could-not-tell` naming the exception's type, and under
+     `floorGuard.mode: off` no block is filed and the brief says *not measured*. In the phase
+     tree, a change already in the tree before the task started is read as the task's.
      **A return handed back without filing is prose, and nothing parses it**, so a field
      that did not come back is recorded as absent and never filled in.
    - **With `executor.writerModel` set, the writer is a headless session that runs no
@@ -310,7 +320,8 @@ verb writes and refuses, and what the run commands leave behind, is
      4. **At the green gate, the stamp and the filing**, `audit-task.py file-return`, with
         a return the drive builds: the diff's paths, the proof's block with its HEAD and
         digest, every re-proof, the stamp, `casesAddedBasis` saying why no case is bound
-        to a `tests.add` entry, and the last session's final message in `writerClaim`, as
+        to a `tests.add` entry, the `floorGuard` block `submit` would file (no case ids:
+        the writer returns none), and the last session's final message in `writerClaim`, as
         the session wrote it apart from the machine paths `file-return` scrubs from every
         committed return. That message is the writer's claim; the gate and the reviewer
         grade the work, never the message.

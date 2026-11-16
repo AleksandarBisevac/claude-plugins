@@ -355,6 +355,42 @@ def _cases(check):
           "1: %r" % (_rx_prop,),
           _rx_prop.get("type") == "integer" and _rx_prop.get("minimum") == 1)
 
+    # --- floorGuard --------------------------------------------------------------
+    # An object of `mode` and `acceptedSuppressions`. A wrong shape falls back to
+    # the defaults where it is read (`_config.floor_guard_settings`), so here it
+    # is a FINDING: a value read back as neither word must not sit in the file
+    # looking like a decision. The entries themselves are the floor guard's to
+    # read - typed as strings, and no more.
+    for _fgv in ({"mode": "report"}, {"mode": "off"},
+                 {"mode": "report", "acceptedSuppressions": ["noqa: E402"]},
+                 {"acceptedSuppressions": []}, {}):
+        f, w = M.validate_config({"floorGuard": _fgv})
+        check("fgr1 floorGuard %r validates clean: %r" % (_fgv, (f, w)),
+              not f and not w)
+    for _fgb, _fgk in (("report", "floorGuard must be"),
+                       (["report"], "floorGuard must be"),
+                       ({"mode": "silent"}, "floorGuard.mode"),
+                       ({"mode": None}, "floorGuard.mode"),
+                       ({"acceptedSuppressions": "noqa: E402"},
+                        "floorGuard.acceptedSuppressions"),
+                       ({"acceptedSuppressions": ["noqa: E402", 3]},
+                        "floorGuard.acceptedSuppressions")):
+        f, w = M.validate_config({"floorGuard": _fgb})
+        check("fgr2 floorGuard %r is a FINDING naming %s: %r" % (_fgb, _fgk, f),
+              any(_fgk in x for x in f))
+    f, w = M.validate_config({"floorGuard": {"mod": "off"}})
+    check("fgr3 a misspelled floorGuard key -> warning only: %r" % ((f, w),),
+          not f and any("floorGuard" in x for x in w))
+    _fg_prop = ((_rx_schema.get("properties") or {}).get("floorGuard") or {})
+    _fg_sub = _fg_prop.get("properties") or {}
+    check("fgr4 the config schema types floorGuard an object whose mode is the "
+          "hooks' two words and whose accepted list holds strings and nothing "
+          "more, and the modes mirror hooks/_config.py's: %r" % (_fg_prop,),
+          _fg_prop.get("type") == "object"
+          and (_fg_sub.get("mode") or {}).get("enum") == list(_hcfg.FLOOR_GUARD_MODES)
+          and (_fg_sub.get("acceptedSuppressions") or {}).get("items") == {"type": "string"}
+          and tuple(M.FLOOR_GUARD_MODES) == tuple(_hcfg.FLOOR_GUARD_MODES))
+
     # --- executor.maxHours -------------------------------------------------------
     # The same shape as runsGate above, for the bound on CONTINUING an agent
     # across tasks: a positive number validates clean, and anything outside

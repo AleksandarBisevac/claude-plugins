@@ -151,6 +151,16 @@ Config keys (all optional; defaults in DEFAULTS below):
         positive integer, and 0 is refused by name rather than read as 2.
         Counted from the filed phase returns, so a lost driver state re-derives
         it. No hook reads this; `_config_rules.review_max_rounds` does.
+  floorGuard.mode         str   — whether `drive-phase.py submit` (and the
+        drive filing a writer session's work) reads the task's diff for moves
+        that lower the bar and files what it found beside the return: "report"
+        (the default) or "off", which files nothing. A finding refuses
+        nothing. Any other value, or a floorGuard that is not an object, reads
+        as the defaults (`floor_guard_settings`).
+  floorGuard.acceptedSuppressions [str] — suppression codes never reported,
+        each written as its comment would be ("noqa: E402"); handed to the
+        floor guard as written, which reads each entry itself. No hook reads
+        either key.
 
 This module also hosts the path/manifest helpers the hooks share (rel_path,
 within_root, matches_exempt, strip_line_suffix, in_progress_*).
@@ -392,6 +402,11 @@ DEFAULTS = {
     # "maxRounds" is how many phase reviews sign-off runs before it asks once
     # whether to carry what is still open; `_config_rules.review_max_rounds`.
     "review": {"perTask": "phase", "maxRounds": 2},
+    # Whether `submit` reads a task's diff for moves that lower the bar
+    # (`_floor_guard`) and files what it found; "report" or "off". Report
+    # only: a finding changes no gate, commit or sign-off. No hook reads this;
+    # `floor_guard_settings` below is what a caller sees.
+    "floorGuard": {"mode": "report", "acceptedSuppressions": []},
 }
 
 
@@ -4913,6 +4928,34 @@ def executor_context_bound_hours(cfg):
     if isinstance(reading, bool) or not isinstance(reading, (int, float)):
         return None
     return reading if reading > 0 else None
+
+
+# `floorGuard.mode`'s words. `_config_rules.py` mirrors this tuple as its own
+# FLOOR_GUARD_MODES and its suite pins the two together, RUNS_GATE_MODES's shape.
+FLOOR_GUARD_MODES = ("report", "off")
+
+
+def floor_guard_settings(cfg):
+    """`{"mode", "acceptedSuppressions"}` for `floorGuard`: the defaults for an
+    absent key and for a value that is not an object, the default mode for a
+    mode outside FLOOR_GUARD_MODES.
+
+    FALLING BACK TO REPORT, NEVER TO OFF. The guard refuses nothing, so the
+    default costs a typo nothing but a block the reviewer reads; a fallback to
+    off would silence it on a misspelling. `validate_config` reports the bad
+    value as a FINDING, so the fallback is not a silent guess.
+
+    The accepted list is returned AS WRITTEN - the very object - whatever its
+    shape: `_floor_guard.find_moves` reads each entry and answers
+    could-not-tell on one it cannot read whole, and a second reading here
+    would be a second definition of what an entry is."""
+    default = DEFAULTS["floorGuard"]
+    block = (cfg or {}).get("floorGuard") if isinstance(cfg, dict) else None
+    if not isinstance(block, dict):
+        return {"mode": default["mode"], "acceptedSuppressions": []}
+    mode = block.get("mode")
+    return {"mode": mode if mode in FLOOR_GUARD_MODES else default["mode"],
+            "acceptedSuppressions": block.get("acceptedSuppressions", [])}
 
 
 def drive_without_model_enabled(cfg):

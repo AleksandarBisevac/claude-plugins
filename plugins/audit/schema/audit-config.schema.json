@@ -537,6 +537,28 @@
         }
       }
     },
+    "floorGuard": {
+      "type": "object",
+      "description": "Whether `drive-phase.py submit`, and the drive filing a headless writer's work, read the task's diff against its base for moves that lower the bar - a test deleted or its definition changed, a skip, a suppression new to the file, a stub - and file what was found beside the return for the reviewer. A finding refuses nothing. Absent, or a value that is not an object, reads as the defaults.",
+      "additionalProperties": true,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "report",
+            "off"
+          ],
+          "description": "'report' (the default) files the reading; 'off' files nothing, and the reviewer's brief says not measured. Any other value reads as 'report'."
+        },
+        "acceptedSuppressions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Suppression codes never reported, each written as its comment would be ('noqa: E402', 'type: ignore[attr-defined]'). Handed to the floor guard as written; an entry it cannot read whole makes its answer could-not-tell."
+        }
+      }
+    },
     "ci": {
       "type": "object",
       "description": "When a long phase asks CI about itself before it lands, and whether the driver pushes a wave member's carry ref. Absent: landing only, and nothing pushed.",

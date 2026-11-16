@@ -2277,7 +2277,8 @@
       "P131.5",
       "P132.4",
       "P154.3-mkf",
-      "P159.2"
+      "P159.2",
+      "SG1.5"
     ],
     "examples/acme-store/acme-store-audit.html": [
       "P13.3",
@@ -4045,7 +4046,8 @@
       "P155.35-gfj",
       "P156.18-3st",
       "P156.20-3st",
-      "P159.2"
+      "P159.2",
+      "SG1.5"
     ],
     "plugins/audit/scripts/config/_help.py": [
       "P10.2",
@@ -5677,7 +5679,8 @@
       "P131.2",
       "P131.5",
       "P132.4",
-      "P159.2"
+      "P159.2",
+      "SG1.5"
     ],
     "plugins/audit/scripts/panel/_panel_state.py": [
       "P12.3",
@@ -8957,7 +8960,8 @@
       "P156.6",
       "P156.7",
       "P156.8-3st",
-      "SG1.1"
+      "SG1.1",
+      "SG1.5"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -9721,7 +9725,8 @@
       "P125.105-0h5",
       "P125.107-0h5",
       "P125.99-0h5",
-      "P125.135-0h5"
+      "P125.135-0h5",
+      "SG1.5"
     ],
     "docs/screenshots/panel-blocks.png": [
       "P80.8",
@@ -9752,7 +9757,8 @@
       "P125.105-0h5",
       "P125.107-0h5",
       "P125.99-0h5",
-      "P125.135-0h5"
+      "P125.135-0h5",
+      "SG1.5"
     ],
     "docs/screenshots/panel-composition-expanded.png": [
       "P80.8",
@@ -9783,7 +9789,8 @@
       "P125.105-0h5",
       "P125.107-0h5",
       "P125.99-0h5",
-      "P125.135-0h5"
+      "P125.135-0h5",
+      "SG1.5"
     ],
     "docs/screenshots/panel-composition.png": [
       "P80.8",
@@ -9814,7 +9821,8 @@
       "P125.105-0h5",
       "P125.107-0h5",
       "P125.99-0h5",
-      "P125.135-0h5"
+      "P125.135-0h5",
+      "SG1.5"
     ],
     "docs/screenshots/panel-confirm.png": [
       "P80.8",
@@ -9845,7 +9853,8 @@
       "P125.105-0h5",
       "P125.107-0h5",
       "P125.99-0h5",
-      "P125.135-0h5"
+      "P125.135-0h5",
+      "SG1.5"
     ],
     "docs/screenshots/panel-dark.png": [
       "P80.8",
@@ -9876,7 +9885,8 @@
       "P125.105-0h5",
       "P125.107-0h5",
       "P125.99-0h5",
-      "P125.135-0h5"
+      "P125.135-0h5",
+      "SG1.5"
     ],
     "docs/screenshots/panel-gate.png": [
       "P80.8",
@@ -9907,7 +9917,8 @@
       "P125.105-0h5",
       "P125.107-0h5",
       "P125.99-0h5",
-      "P125.135-0h5"
+      "P125.135-0h5",
+      "SG1.5"
     ],
     "docs/screenshots/panel-guards.png": [
       "P80.8",
@@ -9938,7 +9949,8 @@
       "P125.105-0h5",
       "P125.107-0h5",
       "P125.99-0h5",
-      "P125.135-0h5"
+      "P125.135-0h5",
+      "SG1.5"
     ],
     "docs/screenshots/panel-help.png": [
       "P80.8",
@@ -9969,7 +9981,8 @@
       "P125.105-0h5",
       "P125.107-0h5",
       "P125.99-0h5",
-      "P125.135-0h5"
+      "P125.135-0h5",
+      "SG1.5"
     ],
     "docs/screenshots/panel-mobile.png": [
       "P80.8",
@@ -10000,7 +10013,8 @@
       "P125.105-0h5",
       "P125.107-0h5",
       "P125.99-0h5",
-      "P125.135-0h5"
+      "P125.135-0h5",
+      "SG1.5"
     ],
     "docs/screenshots/panel-monthly.png": [
       "P80.8",
@@ -10031,7 +10045,8 @@
       "P125.105-0h5",
       "P125.107-0h5",
       "P125.99-0h5",
-      "P125.135-0h5"
+      "P125.135-0h5",
+      "SG1.5"
     ],
     "docs/screenshots/panel-overview.png": [
       "P80.8",
@@ -10062,7 +10077,8 @@
       "P125.105-0h5",
       "P125.107-0h5",
       "P125.99-0h5",
-      "P125.135-0h5"
+      "P125.135-0h5",
+      "SG1.5"
     ],
     "docs/screenshots/panel-person.png": [
       "P80.8",
@@ -10093,7 +10109,8 @@
       "P125.105-0h5",
       "P125.107-0h5",
       "P125.99-0h5",
-      "P125.135-0h5"
+      "P125.135-0h5",
+      "SG1.5"
     ],
     "docs/screenshots/panel-policy-expanded.png": [
       "P80.8",
@@ -10217,7 +10234,8 @@
       "P125.105-0h5",
       "P125.107-0h5",
       "P125.99-0h5",
-      "P125.135-0h5"
+      "P125.135-0h5",
+      "SG1.5"
     ],
     "tools/ui-tests/evidence-read-error.test.mjs": [
       "P80.15-rtb"
@@ -12338,7 +12356,8 @@
       "P155.18-gfj",
       "P155.35-gfj",
       "P156.18-3st",
-      "P156.20-3st"
+      "P156.20-3st",
+      "SG1.5"
     ],
     "tests/test__demo_cast.py": [
       "P131.1",
@@ -12618,7 +12637,8 @@
     "tests/test__panel_settings.py": [
       "P131.1",
       "P131.2",
-      "P132.4"
+      "P132.4",
+      "SG1.5"
     ],
     "tests/test__panel_state.py": [
       "P131.1"
@@ -12664,7 +12684,8 @@
       "SG1.3",
       "SG1.6",
       "SG1.8",
-      "SG1.11-ukq"
+      "SG1.11-ukq",
+      "SG1.5"
     ],
     "tests/test__report_html.py": [
       "P131.1",
@@ -13525,7 +13546,8 @@
       "P157.12-mwz"
     ],
     ".claude/audit.config.json": [
-      "P132.4"
+      "P132.4",
+      "SG1.5"
     ],
     "tests/": [
       "P137.3-3y3"

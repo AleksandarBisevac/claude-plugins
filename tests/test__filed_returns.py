@@ -1051,7 +1051,74 @@ def _selftest():
         _harness.stage(check, "ds-block", _digest_site_cases)
         _harness.stage(check, "rm-block", _red_command_cases)
         _harness.stage(check, "tsp-block", _support_path_cases)
+        _harness.stage(check, "ffg-block", _floor_block_cases)
     return _harness.run(body)
+
+
+def _floor_measured(**over):
+    """A floor block as `drive-phase.py submit` writes it."""
+    block = {"answer": "findings", "basis": "1 move(s) that lower the bar",
+             "findings": [{"move": "definition-changed", "path": "tests/test_a.py",
+                           "line": 4, "side": "tree",
+                           "what": "definition `T.test_v` differs from its base copy"}],
+             "declared": [], "renamed": [], "couldNotTell": [], "notRead": [],
+             "base": {"commit": "a" * 40}, "acceptedSuppressions": [],
+             "source": "floor-guard", "at": "2026-01-01T00:00:00Z"}
+    block.update(over)
+    return block
+
+
+def _floor_block_cases(check):
+    """The floor block is the filing verb's: a reader trusts one only when it
+    carries the verb's mark and a word of the guard's three, as a `redFirst`
+    block is trusted only with the helper's mark. With no block the answer is
+    NOT MEASURED, never none found."""
+    import _floor_guard
+    check("ffg1 the three answer words are the floor guard's own, in its order: %r"
+          % (getattr(M, "FLOOR_ANSWERS", None),),
+          tuple(getattr(M, "FLOOR_ANSWERS", ())) == (
+              _floor_guard.CLEAN, _floor_guard.FINDINGS, _floor_guard.COULD_NOT_TELL)
+          and getattr(M, "FLOOR_FIELD", None) == "floorGuard")
+    absent = M.floor_block(_executor())
+    check("ffg2 a return with no floor block reads as not measured, with no "
+          "block and a reason that says so: %r" % (absent,),
+          absent[0] is None and "not measured" in (absent[1] or ""))
+    forged = M.floor_block(_executor(floorGuard=_floor_measured(source=None)))
+    typed = M.floor_block(_executor(floorGuard={"answer": "clean", "findings": []}))
+    odd = M.floor_block(_executor(floorGuard=_floor_measured(answer="fine")))
+    bad = M.floor_block(_executor(floorGuard=_floor_measured(findings="none")))
+    check("ffg3 A FLOOR BLOCK THE AGENT TYPED IS NOT TRUSTED: one without the "
+          "verb's mark, one in the agent's own shape, one whose answer is no "
+          "word of the three and one whose findings are not a list each read "
+          "as no block, with a reason naming why: %r" % ((forged, typed, odd, bad),),
+          all(got[0] is None and got[1] and "not measured" in got[1]
+              for got in (forged, typed, odd, bad)))
+    whole = _floor_measured()
+    trusted = M.floor_block(_executor(floorGuard=whole))
+    check("ffg4 THE ALLOW TWIN: the block the verb writes is read back whole: %r"
+          % (trusted,), trusted == (whole, None))
+    summaries = [M.floor_summary(_executor()),
+                 M.floor_summary(_executor(floorGuard=whole)),
+                 M.floor_summary(_executor(floorGuard=_floor_measured(
+                     answer="clean", findings=[],
+                     notRead=[{"path": "tests/test_b.py", "move": "definition-changed",
+                               "reason": "no test* definition"}]))),
+                 M.floor_summary(_executor(floorGuard=_floor_measured(
+                     answer="could-not-tell", findings=[],
+                     couldNotTell=[{"path": "x.py", "reason": "does not compile"}]))),
+                 M.floor_summary(_executor(floorGuard=_floor_measured(
+                     answer="clean", findings=[])))]
+    check("ffg5 the one-line summary keeps the three apart and never calls an "
+          "unmeasured or partly read return clean: not measured; the finding "
+          "count; a clean answer with a file not compared says what was not "
+          "compared; could-not-tell says so; and only a wholly read diff is "
+          "clean: %r" % (summaries,),
+          summaries[0].startswith("not measured")
+          and "1 finding" in summaries[1]
+          and "not compared" in summaries[2] and "tests/test_b.py" in summaries[2]
+          and not summaries[2].startswith("clean")
+          and "could-not-tell" in summaries[3] and "1 file" in summaries[3]
+          and summaries[4].startswith("clean"))
 
 
 def _support_path_cases(check):

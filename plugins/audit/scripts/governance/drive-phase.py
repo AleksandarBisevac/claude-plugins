@@ -388,6 +388,7 @@ import _scoped_commit  # noqa: E402  (plugin_owned_rels: the one table of what t
 import _proc_group  # noqa: E402  (shell_invocation, stop_and_drain: the lint probe and the base run as one stoppable tree)
 import _locks  # noqa: E402  (pid_alive: whether the run a base tree's mark names still runs; acquire/release: the one claim on a base launch)
 import _task_outputs  # noqa: E402  (covers: the one rule for whether a declared path covers a changed one)
+import _floor_guard  # noqa: E402  (find_moves: the moves in a task's diff that lower the bar)
 
 E_OK, E_STOPPED, E_USAGE = 0, 1, 2
 PREFIX = "[drive-phase]"
@@ -3974,12 +3975,25 @@ def session_last_message(stream):
     return text, None
 
 
-def diff_paths(ctx, phase, tree=None):
-    """The paths the tree changed against HEAD, untracked ones included, with
-    the plan's own records left out (`_invariants.record_rels`), each spelled
-    as the plan spells it (`_config.git_to_plan`, read from the checkout's top):
-    the writer's diff as the return names it. None when git cannot say."""
-    where = tree or ctx["gitRoot"]
+def task_root(ctx, tree=None):
+    """The checkout a task's work is read in: the wave's tree for a member,
+    else the phase tree's git root. THE ONE BASE: the red-first helper builds
+    its throwaway at this checkout's HEAD (`red_block`), the stamp is taken
+    over it (`take_stamp`), the writer's diff is listed in it (`diff_paths`)
+    and the floor guard reads its diff against the same HEAD (`floor_moves`),
+    so no caller derives a second one."""
+    return tree or ctx["gitRoot"]
+
+
+def changed_rels(ctx, phase, tree=None):
+    """`(top, project, changes)` - the checkout's top, the project the plan's
+    paths are spelled from, and `[(path, plan_path, untracked)]` for every path
+    the tree changed against HEAD, untracked ones included and the plan's own
+    records left out (`_invariants.record_rels`): `path` as git spells it from
+    `top`, which the floor guard's git calls take, and `plan_path` as the plan
+    spells it (`_config.git_to_plan`), which the return names. `changes` None
+    when git cannot say."""
+    where = task_root(ctx, tree)
     hc = _loader.load_hooks_config(modname="audit__config")
     top = hc.checkout_top(where) or where
     project = member_project(ctx, tree) or ctx["project"]
@@ -3988,14 +4002,165 @@ def diff_paths(ctx, phase, tree=None):
                                "--untracked-files=all", "--no-renames"],
                               capture_output=True, timeout=60)
     except (OSError, subprocess.SubprocessError):
-        return None
+        return top, project, None
     if done.returncode != 0:
-        return None
+        return top, project, None
     records = _invariants.record_rels(ctx["manifest"], phase, ctx["project"],
                                       ctx["gitRoot"], config=ctx["config"])
-    paths = [item[3:].decode("utf-8", "replace") for item in done.stdout.split(b"\0")]
-    return sorted(set(hc.git_to_plan(p, top, project) for p in paths
-                      if p and not _invariants.is_record_path(p, records)))
+    found = {}
+    for item in done.stdout.split(b"\0"):
+        path = item[3:].decode("utf-8", "replace")
+        if path and not _invariants.is_record_path(path, records):
+            found[path] = item[:2] == b"??"
+    return top, project, [(p, hc.git_to_plan(p, top, project), new)
+                          for p, new in sorted(found.items())]
+
+
+def diff_paths(ctx, phase, tree=None):
+    """The paths the tree changed against HEAD (`changed_rels`), each spelled
+    as the plan spells it: the writer's diff as the return names it. None when
+    git cannot say."""
+    _top, _project, changes = changed_rels(ctx, phase, tree)
+    if changes is None:
+        return None
+    return sorted(set(plan for _p, plan, _new in changes))
+
+
+# --- the floor guard: what a task's diff did to the bar ------------------------
+# REPORT-ONLY. `submit` and the writer's filing read the task's diff for moves
+# that make a test easier to pass or a checker quieter (`_floor_guard.find_moves`)
+# and file what was found as the return's `_fr.FLOOR_FIELD` block, written here
+# and never by the agent. A finding changes no gate, commit or sign-off. The
+# reading is an advisory path, so it fails OPEN and says so: anything it raises
+# is filed as could-not-tell naming the exception's type, and the filing goes on.
+#
+# THE DIFF IS THE TREE'S AGAINST ITS HEAD, `changed_rels` - the writer's diff
+# reading, with the plan's records left out - at the HEAD `tree_head` names in
+# `task_root`, the checkout the red-first helper builds its throwaway from. In
+# the phase tree that is every uncommitted change, so a change dirty there
+# before the task started is read as the task's; the reviewer judges each
+# finding, and nothing is refused on one.
+
+def floor_failed(why):
+    """A could-not-tell block with nothing read, `why` its basis."""
+    return {"answer": _floor_guard.COULD_NOT_TELL, "basis": why, "findings": [],
+            "declared": [], "renamed": [], "couldNotTell": [], "notRead": [],
+            "base": {"commit": None}}
+
+
+def floor_declared(task, cases, top, project):
+    """The task's own test paths for `find_moves`' `declared`: each `tests.add`
+    entry's path, spelled from `top`, as `path::case` for each case id the
+    return binds to it by index (`casesAdded`), or the bare path when it binds
+    none - so a change to a test the task declares is its own to make."""
+    hc = _loader.load_hooks_config(modname="audit__config")
+    adds = (task.get("tests") or {}).get("add") or []
+    cases = cases if isinstance(cases, list) else []
+    out = []
+    for index, entry in enumerate(adds):
+        path = str(entry).split(":", 1)[0].strip()
+        if not path:
+            continue
+        rel = hc.plan_to_git(path, top, project) or path
+        ids = cases[index] if index < len(cases) else None
+        ids = [ids] if isinstance(ids, str) else (ids if isinstance(ids, list) else [])
+        named = [str(i) for i in ids if str(i).strip()]
+        out += ["%s::%s" % (rel, i) for i in named] or [rel]
+    return out
+
+
+def _floor_git(top, argv, ok=(0,)):
+    """stdout bytes of one git call in `top`; raises `OSError` naming the call
+    when it cannot run or exits outside `ok` - the reader contract
+    `find_moves` turns into could-not-tell."""
+    try:
+        done = subprocess.run(["git", "-C", top] + list(argv), capture_output=True,
+                              timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise OSError("git %s could not be run (%s)" % (argv[0], exc.__class__.__name__))
+    if done.returncode not in ok:
+        raise OSError("git %s exited %d (%s)" % (
+            argv[0], done.returncode,
+            _excerpt.excerpt(done.stderr.decode("utf-8", "replace"))))
+    return done.stdout
+
+
+_FLOOR_DIFF = ["-c", "core.quotepath=off", "diff", "--no-color", "--no-ext-diff",
+               "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/"]
+
+
+def floor_diff(top, base, changes):
+    """The unified diff of `changes` (`changed_rels`) against `base`: the
+    tracked paths in one `git diff <base>`, each untracked one against
+    /dev/null, git's own `a/` and `b/` prefixes forced whatever the config
+    says. Raises `OSError` when git will not give it."""
+    tracked = [p for p, _plan, new in changes if not new]
+    parts = []
+    if tracked:
+        parts.append(_floor_git(top, _FLOOR_DIFF + ["--no-renames", base, "--"]
+                                + tracked))
+    for path in [p for p, _plan, new in changes if new]:
+        parts.append(_floor_git(top, _FLOOR_DIFF + ["--no-index", "--", "/dev/null",
+                                                    path], ok=(0, 1)))
+    return b"".join(parts).decode("utf-8", "replace")
+
+
+def floor_readers(top, base):
+    """`(read_base, read_tree)` for `find_moves`: a path's text at `base` and
+    in the working tree, None where that side has no such file."""
+    def read_base(path):
+        if not _floor_git(top, ["ls-tree", "-z", "--full-tree", base, "--", path]):
+            return None
+        return _floor_git(top, ["cat-file", "blob", "%s:%s" % (base, path)]).decode("utf-8")
+
+    def read_tree(path):
+        try:
+            with open(os.path.join(top, *path.split("/")), "rb") as fh:
+                return fh.read().decode("utf-8")
+        except FileNotFoundError:
+            return None
+    return read_base, read_tree
+
+
+def floor_moves(ctx, phase, task, tree, accepted, cases):
+    """`find_moves`' answer for the task's diff, its base named beside it."""
+    base = tree_head(ctx, tree)
+    if not base:
+        return floor_failed("git named no HEAD in the task's tree, so there is no "
+                            "base to read the diff against")
+    top, project, changes = changed_rels(ctx, phase, tree)
+    if changes is None:
+        return dict(floor_failed("git would not list what the task's tree "
+                                 "changed"), base={"commit": base})
+    try:
+        diff = floor_diff(top, base, changes)
+    except OSError as exc:
+        return dict(floor_failed("the diff could not be read: %s" % (exc,)),
+                    base={"commit": base})
+    read_base, read_tree = floor_readers(top, base)
+    found = _floor_guard.find_moves(diff, read_base, read_tree,
+                                    floor_declared(task, cases, top, project), accepted)
+    return dict(found, base={"commit": base})
+
+
+def floor_reading(ctx, phase, task, tree=None, cases=None):
+    """`(block, said)` - the floor block to file for `task` and the clause the
+    did-line carries - or `(None, said)` when `floorGuard.mode` is off. A crash
+    anywhere in the reading is could-not-tell with the exception's type."""
+    hc = _loader.load_hooks_config(modname="audit__config")
+    settings = hc.floor_guard_settings(ctx["config"])
+    if settings["mode"] == "off":
+        return None, "floor guard off (floorGuard.mode): no reading filed"
+    accepted = settings["acceptedSuppressions"]
+    try:
+        block = floor_moves(ctx, phase, task, tree, accepted, cases)
+    except Exception as exc:                                   # noqa: BLE001
+        block = floor_failed("the floor guard raised %s (%s); nothing it read is "
+                             "recorded, and the filing went on"
+                             % (exc.__class__.__name__, exc))
+    block = dict(block, acceptedSuppressions=accepted, source=_fr.FLOOR_SOURCE,
+                 at=_utc_stamp())
+    return block, "floor guard: %s" % (_fr.floor_summary({_fr.FLOOR_FIELD: block}),)
 
 
 def _git_run(where, argv):
@@ -4139,7 +4304,7 @@ def writer_prove(ctx, manifest, phase, task, tree=None):
         return {"status": "could-not-prove", "at": _utc_stamp(),
                 "head": tree_head(ctx, tree), "basis": basis}, None, None
     block, payload, why = red_reading(ctx, task, red_args(
-        tree or ctx["gitRoot"], ctx["manifest"], task["id"], cmd))
+        task_root(ctx, tree), ctx["manifest"], task["id"], cmd))
     if why is not None:
         return None, None, "%s (exit %d): %s" % (
             "the helper refused" if why[0] == "refused" else
@@ -4431,6 +4596,9 @@ def file_writer_return(ctx, state, manifest, phase, task, tree=None):
     body[_fr.UNCHECKED_FIELD] = (_fr.case_binding_unchecked(task, cmd)
                                  if cmd and printed is not None else [])
     body[CASES_BASIS_FIELD] = CASES_BASIS
+    floor, said = floor_reading(ctx, phase, task, tree)
+    if floor is not None:
+        body[_fr.FLOOR_FIELD] = floor
     out, stop = _verb_or_stop(ctx, "audit-task.py", [
         "file-return", task["id"], "--role", "executor", ctx["manifest"],
         "--project-dir", ctx["project"]], stdin=json.dumps(body, indent=2) + "\n")
@@ -4442,7 +4610,8 @@ def file_writer_return(ctx, state, manifest, phase, task, tree=None):
     if tree:
         carry_work(ctx, task, tree, (state.get("wave") or {}).get("records"))
     ctx["did"].append("%s writer return filed by the drive, red-first %s; stamp "
-                      "taken after the gate" % (task["id"], block.get("status")))
+                      "taken after the gate; %s" % (task["id"], block.get("status"),
+                                                    said))
     return None
 
 
@@ -4705,7 +4874,7 @@ def grade_stamp(ctx, stamp, tree=None):
     if not isinstance(stamp, str) or not stamp.strip():
         return "stamp not graded (the return carries none)"
     code, out, err = run_verb(ctx, "stamp-verification.py", [
-        "compare", "--project", tree or ctx["gitRoot"], "--stamp", stamp, "--json"])
+        "compare", "--project", task_root(ctx, tree), "--stamp", stamp, "--json"])
     try:
         result = json.loads(out)
     except ValueError:
@@ -11917,7 +12086,7 @@ def red_block(ctx, task, args, cmd, tree=None):
     helper, and so no filing: the work is to fix the test. `tree` is the
     task's own worktree in a wave, whose test files and HEAD the red run reads."""
     block, _payload, stop = red_run(ctx, task, red_args(
-        tree or ctx["gitRoot"], ctx["manifest"], task["id"], cmd, args.case,
+        task_root(ctx, tree), ctx["manifest"], task["id"], cmd, args.case,
         args.introduces, args.deps_from))
     return block, stop
 
@@ -11970,7 +12139,7 @@ def take_stamp(ctx, task, tree=None):
     declared files - or `(None, stop)` when the take names no tree. The tree is
     the task's own worktree in a wave, else the phase tree."""
     code, out, err = run_verb(ctx, "stamp-verification.py", [
-        "take", "--project", tree or ctx["gitRoot"], "--manifest", ctx["manifest"],
+        "take", "--project", task_root(ctx, tree), "--manifest", ctx["manifest"],
         "--task", task["id"], "--json"])
     try:
         taken = json.loads(out)
@@ -12239,6 +12408,14 @@ def submit(ctx, manifest, args, cmd, text):
             return stop
         body["stamp"] = line
         ctx["did"].append("stamp taken")
+        # The floor block is the verb's alone: whatever the agent's return
+        # carried under the key is dropped before the reading is filed in its
+        # place, and with the mode off nothing stands there at all.
+        body.pop(_fr.FLOOR_FIELD, None)
+        floor, said = floor_reading(ctx, phase, task, tree, body.get(_fr.CASES_FIELD))
+        if floor is not None:
+            body[_fr.FLOOR_FIELD] = floor
+        ctx["did"].append(said)
         printed = ctx.get("printed") if cmd else None
         gaps = case_binding_gaps(task, body.get(_fr.CASES_FIELD), printed,
                                  list(cmd) if cmd else None)

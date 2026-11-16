@@ -1466,6 +1466,120 @@ def helper_red_first(executor):
     return red
 
 
+# --- the floor block ----------------------------------------------------------------
+# What `_floor_guard.find_moves` found in a task's diff, filed by `drive-phase.py
+# submit` (and by the drive for a writer session) under FLOOR_FIELD, with
+# FLOOR_SOURCE as its mark. WRITTEN BY THE VERB, NEVER BY THE AGENT: `submit`
+# drops a block the agent's return carries before it computes its own, the way it
+# takes the `source` mark off a typed `redFirst`, and a reader trusts a block only
+# with the mark - `floor_block`. A return with no trusted block reads NOT MEASURED,
+# never none found: the mode was off, the return predates the field, or the block
+# is not the verb's. The words are the guard's own three (`_floor_guard.CLEAN`,
+# `FINDINGS`, `COULD_NOT_TELL`), written here because that module imports this one;
+# `ffg1` in `tests/test__filed_returns.py` holds them equal.
+FLOOR_FIELD = "floorGuard"
+FLOOR_SOURCE = "floor-guard"
+FLOOR_ANSWERS = ("clean", "findings", "could-not-tell")
+_FLOOR_LISTS = ("findings", "declared", "couldNotTell", "notRead")
+
+
+def floor_block(executor):
+    """`(block, None)` - the floor block the filing verb wrote into `executor`
+    (a filed return as an object) - or `(None, why)`, `why` opening "not
+    measured" and saying why there is no reading to show."""
+    block = executor.get(FLOOR_FIELD) if isinstance(executor, dict) else None
+    if block is None:
+        return None, ("not measured: the return records no %s block - the "
+                      "floor guard was off when it was filed, or it was filed "
+                      "before submit read the diff" % (FLOOR_FIELD,))
+    if not isinstance(block, dict) or block.get("source") != FLOOR_SOURCE:
+        return None, ("not measured: the return's %s block carries no `source: "
+                      "%s` mark, so the filing verb did not write it and it is "
+                      "not the script's reading" % (FLOOR_FIELD, FLOOR_SOURCE))
+    bad = [k for k in _FLOOR_LISTS if not isinstance(block.get(k), list)]
+    if block.get("answer") not in FLOOR_ANSWERS or bad:
+        return None, ("not measured: the %s block does not read - answer %r, "
+                      "%s" % (FLOOR_FIELD, block.get("answer"),
+                              "%s not a list" % ", ".join(bad) if bad
+                              else "not one of %s" % ", ".join(FLOOR_ANSWERS)))
+    return block, None
+
+
+def _floor_unread_text(entry):
+    move = entry.get("move")
+    return "%s - %s: %s" % (entry.get("path"), "not compared for %s" % (move,)
+                            if move else "not read for any move", entry.get("reason"))
+
+
+def floor_summary(executor):
+    """One line for a surface that counts recorded facts: the floor block's
+    findings, the files it did not compare and what it could not tell, kept
+    apart - "not measured (why)" with no block, and "clean" only for a diff
+    every file of which was read."""
+    block, why = floor_block(executor)
+    if block is None:
+        return "not measured (%s)" % (why[len("not measured: "):],)
+    unread = block["notRead"]
+    parts = []
+    if block["findings"]:
+        parts.append("%d finding(s)" % (len(block["findings"]),))
+    if block["couldNotTell"]:
+        parts.append("%d file(s) could-not-tell" % (len(block["couldNotTell"]),))
+    if unread:
+        parts.append("%d file(s) not compared: %s" % (
+            len(unread), ", ".join(str(n.get("path")) for n in unread)))
+    if block["answer"] == "clean" and not unread:
+        return "clean - %s" % (block.get("basis"),)
+    if block["answer"] == "clean":
+        return "partly read, no finding in what was compared; %s" % ("; ".join(parts),)
+    if not parts:
+        parts.append(str(block.get("basis")))
+    return "%s: %s" % (block["answer"], "; ".join(parts))
+
+
+def floor_lines(executor):
+    """The floor reading as a reviewer's brief shows it: an INPUT - the script
+    found these, judge each - with the findings, the files not read and what it
+    could not tell under three headings of their own, never folded into one
+    count; NOT MEASURED where no trusted block was recorded."""
+    block, why = floor_block(executor)
+    if block is None:
+        return ["%s%s. Read that as nothing measured, never as a diff with no "
+                "move in it." % (why[:1].upper(), why[1:])]
+    base = (block.get("base") or {}).get("commit") or "an unnamed base"
+    unread = block["notRead"]
+    lines = ["The floor guard, a script `submit` ran over this task's diff "
+             "against base %s, found these; judge each - it decides nothing "
+             "and refused nothing." % (str(base)[:12],)]
+    if block["answer"] == "clean" and unread:
+        lines.append("answer: no finding in the files it compared - NOT clean "
+                     "overall: %d file(s) not compared, listed below." % (len(unread),))
+    else:
+        lines.append("answer: %s - %s" % (block["answer"], block.get("basis")))
+    lines.append("Findings:")
+    lines += ["- %s %s:%s (%s copy): %s" % (f.get("move"), f.get("path"), f.get("line"),
+                                           f.get("side"), f.get("what"))
+              for f in block["findings"]] or ["- none"]
+    lines.append("Files not read:")
+    lines += ["- %s" % (_floor_unread_text(n),) for n in unread] or ["- none"]
+    lines.append("Could not tell:")
+    cannot = ["- %s: %s" % (c.get("path"), c.get("reason")) for c in block["couldNotTell"]]
+    if not cannot and block["answer"] == "could-not-tell":
+        cannot = ["- the whole diff: %s" % (block.get("basis"),)]
+    lines += cannot or ["- none"]
+    if block["declared"]:
+        lines.append("Changes to tests the task declares (its own to make; check "
+                     "them against its claim):")
+        lines += ["- %s:%s: %s" % (d.get("path"), d.get("line"), d.get("what"))
+                  for d in block["declared"]]
+    accepted = block.get("acceptedSuppressions")
+    if accepted:
+        lines.append("Suppression codes the project accepts, never reported: %s"
+                     % (", ".join(str(a) for a in accepted)
+                        if isinstance(accepted, list) else repr(accepted),))
+    return lines
+
+
 def is_test_path(path):
     """Whether `path` (a `::case` suffix ignored) is a file named as a test,
     or a file inside a test directory. A bare test directory is not."""

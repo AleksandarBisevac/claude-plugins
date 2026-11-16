@@ -443,7 +443,7 @@ L9:
   close-phase -> _branch, _claude_home, _config_rules, _evidence_io, _excerpt, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _scoped_commit, _tree_stamp, _utc_stamp, _verdict_binding, _worktrees
   commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_vocab, _output, _panel_write, _scoped_commit, _verdict_binding, usage_ledger
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _invariants, _loader, _machine_paths, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _utc_stamp
-  drive-phase -> _affected_tests, _areas, _claude_home, _clause_coverage, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _gate_derive, _invariants, _journal_io, _loader, _locks, _manifest_io, _manifest_phases, _output, _proc_group, _runner_collects, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _tree_stamp, _verdict_binding, _wave, _worktrees
+  drive-phase -> _affected_tests, _areas, _claude_home, _clause_coverage, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _floor_guard, _gate_derive, _invariants, _journal_io, _loader, _locks, _manifest_io, _manifest_phases, _output, _proc_group, _runner_collects, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _tree_stamp, _verdict_binding, _wave, _worktrees
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
@@ -711,6 +711,11 @@ most dangerous edit in this file: `_load_scripts_module` wraps its load in
 `except Exception: return None` and every caller reads that as "the feature is not
 installed", so a wrong path silently switches off the capability policy, the journal, the
 ledger and the sharded-manifest read with every gate still green.
+
+`floor_guard_settings(cfg)` is the one reading of `floorGuard`: `mode` `report` unless the
+block says `off`, and `acceptedSuppressions` handed on exactly as written, so a malformed entry
+reaches the floor guard, which answers could-not-tell for it rather than dropping it. A
+`floorGuard` that is not an object reads as the defaults.
 
 ### `plugins/audit/hooks/require-plan.py`
 Plan-first gate on Edit/Write/MultiEdit/NotebookEdit **and on `mcp__.*`**, registered under
@@ -2430,6 +2435,14 @@ their signatures or None for a verdict recording none, and `ref_phase_returns` /
 module runs (`rd1`-`rd4`). What it cannot hold: the task
 id and role a caller files under are the caller's word. Cases in `tests/test__filed_returns.py`.
 
+**The floor guard's block** (`FLOOR_FIELD`) is read here once for every surface that shows it:
+`floor_block` trusts a block only with the source mark `submit` stamps (`FLOOR_SOURCE`), an
+answer word from `FLOOR_ANSWERS` and list-typed lists, so a block an agent wrote itself reads
+as not measured (`ffg3`); `floor_summary` is the one-line form, which says *not measured*
+for no block and never calls a reading clean while any file went unread (`ffg5`); and
+`floor_lines` is the reviewer brief's section - findings, files not read with each one's move
+and reason, and could-not-tell kept under separate headings.
+
 ### `plugins/audit/scripts/manifest/_task_outputs.py`
 What a task's **`outputs`** pattern may be, and what an honoured one reaches.
 `files` names what a task *edits* and is enumerated, so every entry can owe a `fileIndex`
@@ -3628,6 +3641,11 @@ saying what was searched; a `git grep` or `git ls-files` that fails is said, nev
 nothing found. The rows are not budgeted: each is a heading naming one declared file by a
 spelling only that file carries, so the section grows with the headings that name a task's
 files, not with every heading that uses a common word.
+
+A reviewer brief carries the section *Moves that lower the bar (the floor guard)* - per task,
+and per owed task in a phase brief - rendered by `_filed_returns.floor_lines` from the
+executor's filed return: the script's findings, files not read and could-not-tell apart, as
+input to judge, and *not measured* when no trusted block was filed (`fgb1`-`fgb6`).
 
 ### `plugins/audit/scripts/status/_impact.py`
 Who, among a repository's tracked files, reads a file a task is about to change — the reader
@@ -5425,6 +5443,20 @@ reach unchanged. Exit 0 filed, 1 refused with nothing written, 2 a usage error. 
 in `tests/test_drive_phase.py` hold each refusal beside the twin that files, and
 the drive's own cases play every agent through `submit`.
 
+**Between the stamp and the filing, an executor's `submit` reads the floor guard**
+(`floor_reading`): it drops any `floorGuard` block the agent returned, then runs
+`_floor_guard.find_moves` over the task's diff - `git diff` against the HEAD the red helper's
+throwaway is built at (`task_root` with `tree_head`, the one base `red_block`, `take_stamp`,
+`writer_prove` and `grade_stamp` read too, held equal by `flr6`), untracked files diffed against
+an empty file - with readers for that HEAD's blob and the tree's file, the `tests.add` paths
+bound to their `casesAdded` ids (`floor_declared`), and `floorGuard.acceptedSuppressions`. The
+result is filed as the return's `floorGuard` block, marked with `_filed_returns.FLOOR_SOURCE`,
+and its summary ends the printed line. It refuses nothing: any exception inside the reading is
+filed as `could-not-tell` naming its type, and the filing goes on (`flr5`); `floorGuard.mode:
+off` files no block. `file_writer_return` runs the same reading for a headless writer's work
+(`flrw1`). In the phase tree the diff is every change against HEAD, so work already dirty when the
+task started is read as the task's.
+
 ### `plugins/audit/scripts/governance/propose-gates.py`
 A plan proposal that reads what previous runs in THIS repository actually ran and what they
 caught, instead of the tree alone — the waste `/audit:init`'s recon step pays everywhere except
@@ -7114,6 +7146,11 @@ reads, so the form can never offer a value the validator rejects. Three modules 
 and all three used to load `validate-config.py` through `_loader` — including
 `_panel_settings` from beside this module, the deepest inversion `KNOWN_LAYER_DEBT`
 then carried, which is why `_panel_settings` moved up a layer in the same change.
+
+`floorGuard` is checked by `_check_floor_guard`: a value that is not an object, a `mode`
+outside `FLOOR_GUARD_MODES` or an `acceptedSuppressions` that is not a list of strings is a
+finding, an unknown key inside it a warning; the hooks read such a value as the defaults
+(`hooks/_config.floor_guard_settings`).
 
 ### `plugins/audit/scripts/config/validate-config.py`
 The command over those rules: read the file, print `WARNING:`/`FINDING:` lines, exit 0
