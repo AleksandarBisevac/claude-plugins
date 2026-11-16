@@ -18,17 +18,26 @@ default `a/` and `b/` prefixes; a rename is read base-old against tree-new.
 
 THE MOVES, NAMED IN `MOVES`:
   * a test file deleted;
-  * an existing test definition changed. For Python each function, and each
-    method under its `Class.method` name, is compared between the base and
-    tree copies by `ast.dump` - line numbers excluded, decorators included, a
-    leading docstring dropped - so a test appended beside it is no change and a
-    decorator added to it is one. A definition that disappears is reported
-    unless a new one with the same body appeared (a rename). For any other
-    language the assertion lines removed from a test file are reported, read
-    through `ASSERTIONS`;
+  * an existing test definition changed. For Python each test the runner would
+    run - a function, or a method under its `Class.method` name, whose name
+    starts with `TEST_PREFIX` - is compared between the base and tree copies by
+    `ast.dump` - line numbers excluded, decorators included, a leading
+    docstring dropped - so a test appended beside it is no change and a
+    decorator added to it is one. Helpers, fixtures and case-table functions
+    are not compared: a suite that adds a case changes its table every time,
+    and that is not a weaker bar. A test that disappears is reported unless a
+    new test with the same body appeared (a rename). For any other language the
+    assertion lines removed from a test file are reported, read through
+    `ASSERTIONS`;
   * a skip added to a test file (`SKIPS`);
-  * a suppression added anywhere, read in comments only (`SUPPRESSIONS`), so
-    one inside a fixture string - text a test feeds to something else - is not;
+  * a suppression whose CODE is new to the file, read in comments only
+    (`SUPPRESSIONS`), so one inside a fixture string - text a test feeds to
+    something else - is not. A code is the marker's kind with one rule code
+    out of the comment (`noqa E402`, `type: ignore attr-defined`), and a
+    blanket marker is its own code; a code some comment of the base copy
+    already carries is the file's existing contract and gives no finding, so
+    in a file new to the diff every code is new. A caller's `accepted` codes
+    are never reported;
   * a stub added in non-test code: `raise NotImplementedError`,
     `throw new Error('Not implemented')`, an except or catch with an empty body.
 What a test file is comes from `_filed_returns.is_test_path`, the scripts-side
@@ -46,22 +55,29 @@ never as a finding.
 
 A MOVE IS ONLY A MOVE WHEN IT IS NEW. Marks are read over the whole of both
 copies of a changed file - so a catch body emptied by a pure removal, whose
-`catch` line the diff never touches, is still seen - and each tree mark is
-paired away against a base mark with the same text first, then, for skips,
-suppressions and stubs, against any base mark of the same kind in the same
-file. Every unchanged mark cancels against itself; a `# noqa` that moved, or
-whose line's code changed, is no finding; an assertion line is paired by its
-exact text only, so one rewritten in place still reads as removed. The diff's
-own lines are what each copy is checked against, so a reader handing back a
-different tree is could-not-tell rather than a reading of the wrong file.
+`catch` line the diff never touches, is still seen - and each tree skip or stub
+is paired away against a base mark with the same text first, then against any
+base mark of the same kind in the same file. A suppression is not paired: it is
+new when one of its codes is in no comment of the base copy. Every unchanged
+mark cancels against itself; a `# noqa` that moved, or whose line's code
+changed, is no finding; an assertion line is paired by its exact text only, so
+one rewritten in place still reads as removed. The diff's own lines are what
+each copy is checked against, so a reader handing back a different tree is
+could-not-tell rather than a reading of the wrong file.
 
 WHAT THIS READING CANNOT SEE. The non-Python scanner knows quotes and comments,
 not regex literals or heredocs, so a quote inside a JavaScript regex mis-masks
-the rest of that line. Pairing is per file: a suppression carried with code
-moved to another file reads as added there. Pairing by kind cannot see a
-`noqa: <code>` widened to a bare `noqa`. A declared non-Python test is declared
-by file, since its lines map to no case name. A file whose extension has no
-comment syntax here is not read and is listed under `notRead`.
+the rest of that line. Suppressions are read per file: one carried with code
+moved to another file reads as added there. A code the base already carries is
+no finding however many more lines it is added to, and the kind is read without
+its scope, so an `eslint-disable-next-line <rule>` the base holds hides the same
+rule disabled for the whole file. A Python test file the diff modifies, where
+neither copy defines a test - a suite written as case rows - has no definition
+this reading can compare: when its code changed it is listed under `notRead` with
+`move: definition-changed`, never clean in silence and never a finding. A
+declared non-Python test is declared by file, since its lines map to no case
+name. A file whose extension has no comment syntax here is not read and is
+listed under `notRead` with `move` None.
 
 This module carries no `--selftest` of its own; its cases live in
 `tests/test__floor_guard.py`.
@@ -142,19 +158,30 @@ SKIPS = (
     ("t.Skip", r"\bt\.Skip(?:f|Now)?\s*\(", (C_LIKE,)),
 )
 
-# (name, pattern over a line's COMMENT text) - every family.
+# (name, pattern over a line's COMMENT text, pattern for its codes or None) -
+# every family. The codes pattern is matched right where the marker ends and its
+# group 1 is split on commas and blanks; a marker with no codes there is a
+# blanket one, whose code is None - its own code, never a wildcard.
 SUPPRESSIONS = (
-    ("noqa", r"\bnoqa\b"),
-    ("type: ignore", r"\btype:\s*ignore\b"),
-    ("eslint-disable", r"\beslint-disable"),
-    ("@ts-ignore", r"@ts-ignore\b"),
-    ("@ts-expect-error", r"@ts-expect-error\b"),
-    ("istanbul ignore", r"\bistanbul\s+ignore\b"),
-    ("nosemgrep", r"\bnosemgrep\b"),
-    ("gitleaks:allow", r"\bgitleaks:allow\b"),
-    ("Stryker disable", r"\bStryker\s+disable\b"),
-    ("pragma: no cover", r"\bpragma:\s*no\s*cover\b"),
+    ("noqa", r"\bnoqa\b",
+     r":[ \t]*([A-Za-z]+[0-9]+(?:[ \t,]+[A-Za-z]+[0-9]+)*)"),
+    ("type: ignore", r"\btype:\s*ignore\b", r"\[([^\]]*)\]"),
+    ("eslint-disable", r"\beslint-disable",
+     r"(?:-next-line|-line)?[ \t]+([@A-Za-z][\w@/.-]*(?:[ \t]*,[ \t]*[@A-Za-z][\w@/.-]*)*)"),
+    ("@ts-ignore", r"@ts-ignore\b", None),
+    ("@ts-expect-error", r"@ts-expect-error\b", None),
+    ("istanbul ignore", r"\bistanbul\s+ignore\b", r"[ \t]+(\w+)"),
+    ("nosemgrep", r"\bnosemgrep\b", r":[ \t]*([\w.-]+(?:[ \t]*,[ \t]*[\w.-]+)*)"),
+    ("gitleaks:allow", r"\bgitleaks:allow\b", None),
+    ("Stryker disable", r"\bStryker\s+disable\b",
+     r"[ \t]+(?:next-line[ \t]+)?(\w+(?:,\w+)*)"),
+    ("pragma: no cover", r"\bpragma:\s*no\s*cover\b", None),
 )
+
+# What a test is to the runner: a function or method whose name starts with this.
+# One fixed prefix rather than a table, because unittest's default loader and
+# pytest's default collection agree on it and both compare it case-sensitively.
+TEST_PREFIX = "test"
 
 # (name, pattern over a line's CODE) - test files outside Python.
 ASSERTIONS = (
@@ -171,8 +198,9 @@ _NOT_IMPLEMENTED = re.compile(r"\bthrow\s+new\s+Error\s*\(\s*['\"`]\s*not\s+impl
                               re.IGNORECASE)
 
 _COMPILED = dict((name, re.compile(pat)) for name, pat, _f in SKIPS)
-_COMPILED.update((name, re.compile(pat)) for name, pat in SUPPRESSIONS)
+_COMPILED.update((name, re.compile(pat)) for name, pat, _c in SUPPRESSIONS)
 _COMPILED.update((name, re.compile(pat)) for name, pat in ASSERTIONS)
+_CODES = dict((name, re.compile(codes)) for name, _p, codes in SUPPRESSIONS if codes)
 
 
 def family(path):
@@ -451,14 +479,31 @@ def _line_starts(text):
     return starts
 
 
+def _suppression_keys(text, anchored=False):
+    """[(kind, end, ((kind, code), ...))] for each suppression kind `text`
+    carries, read through `SUPPRESSIONS`; a blanket one's single key has code
+    None. `anchored` reads only a marker at the start of `text` - the form a
+    caller's accepted entry is written in."""
+    found = []
+    for name, _pat, _codes in SUPPRESSIONS:
+        m = _COMPILED[name].match(text) if anchored else _COMPILED[name].search(text)
+        if not m:
+            continue
+        codes_at = _CODES[name].match(text, m.end()) if name in _CODES else None
+        codes = [c for c in re.split(r"[\s,]+", codes_at.group(1)) if c] if codes_at else []
+        keys = tuple((name, c) for c in codes) or ((name, None),)
+        found.append((name, codes_at.end() if codes_at else m.end(), keys))
+    return found
+
+
 def _line_marks(raw_lines, code_lines, comment_lines, fam, test):
-    """The skip, suppression and assertion marks read one line at a time."""
+    """The skip, suppression and assertion marks read one line at a time. A
+    suppression mark carries a sixth field: its (kind, code) keys."""
     marks = []
     for idx, (code, comment) in enumerate(zip(code_lines, comment_lines)):
         ln = idx + 1
-        for name, _pat in SUPPRESSIONS:
-            if _COMPILED[name].search(comment):
-                marks.append(_mark(SUPPRESSION_ADDED, name, ln, ln, raw_lines))
+        for name, _end, keys in _suppression_keys(comment):
+            marks.append(_mark(SUPPRESSION_ADDED, name, ln, ln, raw_lines) + (keys,))
         if not test:
             continue
         for name, _pat, fams in SKIPS:
@@ -520,6 +565,24 @@ def _side_marks(text, tree, fam, test):
     return marks
 
 
+def _new_suppressions(base_marks, tree_marks, accepted):
+    """[(tree mark, its keys new to the file)]: a suppression whose (kind, code)
+    no comment of the base copy carries and the caller did not accept. A key
+    the base already holds is the file's existing contract, so repeating it is
+    not a move, wherever it sits."""
+    held = set(k for m in base_marks for k in m[5])
+    out = []
+    for mark in tree_marks:
+        new = [k for k in mark[5] if k not in held and k not in accepted]
+        if new:
+            out.append((mark, new))
+    return out
+
+
+def _key_text(keys):
+    return ", ".join(k[0] if k[1] is None else "%s %s" % k for k in keys)
+
+
 def _pair(base_marks, tree_marks, by_kind):
     """(base marks left unpaired, tree marks left unpaired): paired by exact
     text first, then - when `by_kind` - by kind alone, in order."""
@@ -576,10 +639,18 @@ def _dump(node, anonymous=False):
     return ast.dump(clone)
 
 
+def _tests_only(defs):
+    """The definitions a runner would run: the last name segment starts with
+    `TEST_PREFIX`. Helpers, fixtures and case-table functions fall away."""
+    return dict((q, n) for q, n in defs.items()
+                if q.rsplit(".", 1)[-1].startswith(TEST_PREFIX))
+
+
 def _compare_definitions(base_tree, tree_tree, new):
     """(changed, renamed): changed is a list of (what, line, side) and renamed
-    a list of {from, to, line}."""
-    base_defs, tree_defs = _definitions(base_tree), _definitions(tree_tree)
+    a list of {from, to, line}. Only test definitions are compared."""
+    base_defs = _tests_only(_definitions(base_tree))
+    tree_defs = _tests_only(_definitions(tree_tree))
     fresh = dict((q, n) for q, n in tree_defs.items() if q not in base_defs)
     changed, renamed = [], []
     for qual, node in sorted(base_defs.items(), key=lambda kv: kv[1].lineno):
@@ -686,8 +757,10 @@ def _parse_python(text, side, path):
         return None, "the %s copy of %s does not compile (%s)" % (side, path, exc)
 
 
-def _one_file(rec, read_base, read_tree, index):
-    """{findings, declared, renamed, problem, notRead} for one file of the diff."""
+def _one_file(rec, read_base, read_tree, index, accepted):
+    """{findings, declared, renamed, problem, notRead} for one file of the diff.
+    `notRead` is one entry or None; its `move` is None when no move was read,
+    and names the one move left unread otherwise."""
     out = {"findings": [], "declared": [], "renamed": [], "problem": None, "notRead": None}
     path = rec["new"] or rec["old"]
     if rec["status"] == "deleted":
@@ -699,8 +772,8 @@ def _one_file(rec, read_base, read_tree, index):
         return out
     fam = family(path)
     if rec["binary"] or fam is None:
-        out["notRead"] = {"path": path, "reason": "binary" if rec["binary"] else
-                          "no comment or string syntax this reading knows for its name"}
+        out["notRead"] = {"path": path, "move": None, "reason": "binary" if rec["binary"]
+                          else "no comment or string syntax this reading knows for its name"}
         return out
     test = is_test_path(path)
     base, tree, problem = _copies(rec, read_base, read_tree)
@@ -711,41 +784,66 @@ def _one_file(rec, read_base, read_tree, index):
         tree_ast, problem = _parse_python(tree, "tree", rec["new"])
     if problem is None:
         try:
-            findings, owned, renamed = _collect(rec, (base, base_ast), (tree, tree_ast),
-                                                fam, test, index)
+            findings, owned, renamed, unread = _collect(
+                rec, (base, base_ast), (tree, tree_ast), fam, test, (index, accepted))
         except (tokenize.TokenError, SyntaxError) as exc:
             problem = "%s does not tokenize (%s)" % (path, exc)
     if problem:
         out["problem"] = problem
         return out
-    out.update(findings=findings, declared=owned, renamed=renamed)
+    out.update(findings=findings, declared=owned, renamed=renamed, notRead=unread)
     return out
 
 
-def _collect(rec, base, tree, fam, test, index):
-    """(findings, declared, renamed) for one file whose copies were read;
-    `base` and `tree` are each (text, Python AST or None)."""
+def _collect(rec, base, tree, fam, test, ask):
+    """(findings, declared, renamed, notRead entry or None) for one file whose
+    copies were read; `base` and `tree` are each (text, Python AST or None) and
+    `ask` is (declared index, accepted suppression keys)."""
+    index, accepted = ask
     path, paths = rec["new"], (rec["new"], rec["old"])
     base_marks = _side_marks(base[0], base[1], fam, test) if base[0] is not None else []
     tree_marks = _side_marks(tree[0], tree[1], fam, test)
-    findings, owned, renamed = [], [], []
+    findings, owned, renamed, unread = [], [], [], None
     gone, _unused = _pair([m for m in base_marks if m[0] == "assertion"],
                           [m for m in tree_marks if m[0] == "assertion"], by_kind=False)
     for mark in gone:
         found = _finding(DEFINITION_CHANGED, rec["old"], mark[2], "base",
                          "assertion line removed (%s): %s" % (mark[1], mark[4]))
         (owned if _is_declared(index, paths) else findings).append(found)
-    _old, added = _pair([m for m in base_marks if m[0] != "assertion"],
-                        [m for m in tree_marks if m[0] != "assertion"], by_kind=True)
+    _old, added = _pair([m for m in base_marks if m[0] in (SKIP_ADDED, STUB_ADDED)],
+                        [m for m in tree_marks if m[0] in (SKIP_ADDED, STUB_ADDED)],
+                        by_kind=True)
     findings.extend(_finding(mark[0], path, mark[2], "tree", "%s (%s): %s"
                              % (_ADDED_WORD[mark[0]], mark[1], mark[4])) for mark in added)
+    fresh = _new_suppressions([m for m in base_marks if m[0] == SUPPRESSION_ADDED],
+                              [m for m in tree_marks if m[0] == SUPPRESSION_ADDED], accepted)
+    findings.extend(_finding(SUPPRESSION_ADDED, path, mark[2], "tree",
+                             "suppression added (%s, new to the file): %s"
+                             % (_key_text(new), mark[4])) for mark, new in fresh)
     if fam == PY and test and base[1] is not None:
         changed, renamed = _compare_definitions(base[1], tree[1], path)
         for qual, what, line, side in changed:
             found = _finding(DEFINITION_CHANGED, path if side == "tree" else rec["old"],
                              line, side, what)
             (owned if _is_declared(index, paths, qual) else findings).append(found)
-    return findings, owned, renamed
+        unread = _uncompared(base[1], tree[1], path)
+    return findings, owned, renamed, unread
+
+
+def _uncompared(base_ast, tree_ast, path):
+    """The notRead entry for a Python test file whose code changed while neither
+    copy defines a test the runner would run - a suite kept as case rows, whose
+    cases are not definitions this reading can compare. None otherwise: a file
+    with a test definition was compared, and one whose code did not change (a
+    comment edit) has nothing to compare."""
+    if _tests_only(_definitions(base_ast)) or _tests_only(_definitions(tree_ast)):
+        return None
+    if ast.dump(base_ast) == ast.dump(tree_ast):
+        return None
+    return {"path": path, "move": DEFINITION_CHANGED,
+            "reason": "its code changed, but neither copy defines a function or method "
+                      "named %s*, so its cases are not definitions this reading can "
+                      "compare" % TEST_PREFIX}
 
 
 _ADDED_WORD = {SKIP_ADDED: "skip added", SUPPRESSION_ADDED: "suppression added",
@@ -764,7 +862,30 @@ def _result(answer, basis, findings=(), declared=(), renamed=(), cannot=(), not_
             "renamed": list(renamed), "couldNotTell": list(cannot), "notRead": list(not_read)}
 
 
-def find_moves(diff, read_base, read_tree, declared=()):
+def _accepted_keys(accepted):
+    """(set of (kind, code), problem). Each entry is written as the comment would
+    be - `noqa: E402`, `type: ignore[attr-defined]`, `eslint-disable no-console`,
+    `noqa` for the blanket one - and read by the same tables, so it matches by
+    kind and exact code: blanks around it and between codes are free, the
+    marker and the code are case-sensitive as `SUPPRESSIONS` reads them, and a
+    prefix of a code is another code. An entry those tables do not read whole
+    is a problem rather than an entry silently matching nothing."""
+    if isinstance(accepted, str) or not isinstance(accepted, (list, tuple, set, frozenset)):
+        return set(), ("accepted must be a sequence of suppression texts, not %s"
+                       % type(accepted).__name__)
+    keys = set()
+    for entry in accepted:
+        text = entry.strip() if isinstance(entry, str) else None
+        read = _suppression_keys(text, anchored=True) if text else []
+        whole = [r for r in read if r[1] == len(text)]
+        if not whole:
+            return set(), ("the accepted entry %r is not a suppression this reading "
+                           "knows, written as its comment would be" % (entry,))
+        keys.update(whole[0][2])
+    return keys, None
+
+
+def find_moves(diff, read_base, read_tree, declared=(), accepted=()):
     """The moves in `diff` that lower the bar.
 
     `diff` is the task's unified diff against its base (git's form); `read_base`
@@ -772,6 +893,9 @@ def find_moves(diff, read_base, read_tree, declared=()):
     None when it does not exist on that side, or raise `OSError`/`ValueError`
     when it cannot be read. `declared` holds the task's own test paths, each
     `path` or `path::case`: a change to one of those is the task's to make.
+    `accepted` holds suppression codes never reported, each written as its
+    comment would be (`noqa: E402`); `_accepted_keys` says how one matches, and
+    an entry it cannot read makes the answer could-not-tell before any file is.
 
     Returns {"answer": FINDINGS | CLEAN | COULD_NOT_TELL,
              "basis": the sentence that makes the answer true,
@@ -779,12 +903,17 @@ def find_moves(diff, read_base, read_tree, declared=()):
              "declared": the same shape, for changes the task declared,
              "renamed": [{path, from, to, line}] - definitions renamed unchanged,
              "couldNotTell": [{path, reason}] - kept whatever the answer,
-             "notRead": [{path, reason}] - files with no syntax known here}.
+             "notRead": [{path, move, reason}] - `move` None for a file with no
+                        syntax known here, read for no move; a move's name for a
+                        file read for every move but that one}.
     `side` says which copy `line` counts in: "base" for something that is gone.
     """
     if not isinstance(diff, str):
         return _result(COULD_NOT_TELL, "no diff was given (%s), so nothing was read"
                        % type(diff).__name__)
+    keys, problem = _accepted_keys(accepted)
+    if problem:
+        return _result(COULD_NOT_TELL, "%s, so nothing was read" % problem)
     try:
         records = parse_diff(diff)
     except _Unparsed as exc:
@@ -794,7 +923,7 @@ def find_moves(diff, read_base, read_tree, declared=()):
     index = _declared_index(declared)
     findings, owned, renamed, cannot, not_read = [], [], [], [], []
     for rec in records:
-        got = _one_file(rec, read_base, read_tree, index)
+        got = _one_file(rec, read_base, read_tree, index, keys)
         findings.extend(got["findings"])
         owned.extend(got["declared"])
         renamed.extend(got["renamed"])
@@ -810,8 +939,9 @@ def find_moves(diff, read_base, read_tree, declared=()):
         answer, basis = COULD_NOT_TELL, ("; ".join(c["reason"] for c in cannot)
                                          + _tail(owned, (), not_read))
     else:
+        unread = [n for n in not_read if n["move"] is None]
         answer, basis = CLEAN, ("read %d of the diff's %d file(s) and found none of the "
-                                "moves (%s)%s" % (len(records) - len(not_read), len(records),
+                                "moves (%s)%s" % (len(records) - len(unread), len(records),
                                                   ", ".join(MOVES), tail))
     return _result(answer, basis, findings, owned, renamed, cannot, not_read)
 
@@ -823,7 +953,12 @@ def _tail(owned, cannot, not_read):
     if cannot:
         parts.append("%d file(s) could not be read: %s"
                      % (len(cannot), ", ".join(c["path"] for c in cannot)))
-    if not_read:
+    whole = [n["path"] for n in not_read if n["move"] is None]
+    if whole:
         parts.append("%d file(s) not read, having no syntax known here: %s"
-                     % (len(not_read), ", ".join(n["path"] for n in not_read)))
+                     % (len(whole), ", ".join(whole)))
+    part = [n["path"] for n in not_read if n["move"] is not None]
+    if part:
+        parts.append("%d test file(s) not compared for %s, defining no %s* function: %s"
+                     % (len(part), DEFINITION_CHANGED, TEST_PREFIX, ", ".join(part)))
     return "" if not parts else "; " + "; ".join(parts)

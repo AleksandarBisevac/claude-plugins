@@ -61,16 +61,26 @@ def _readers(files):
     return base.get, tree.get
 
 
-def _run(files, declared=()):
-    """`files` is a list of (path, base, tree[, old]) rows."""
+def _run(files, declared=(), accepted=None):
+    """`files` is a list of (path, base, tree[, old]) rows. `accepted` is passed
+    only when given, and a module that refuses the argument answers a result no
+    case can read as clean - so a case about it fails on its own line instead of
+    ending the run."""
     rows = [tuple(f) + (None,) * (4 - len(f)) for f in files]
     diff = "".join(_file_diff(r[0], r[1], r[2], r[3]) for r in rows)
     read_base, read_tree = _readers(rows)
-    return M.find_moves(diff, read_base, read_tree, declared=declared)
+    if accepted is None:
+        return M.find_moves(diff, read_base, read_tree, declared=declared)
+    try:
+        return M.find_moves(diff, read_base, read_tree, declared=declared,
+                            accepted=accepted)
+    except TypeError as exc:
+        return {"answer": "refused: %s" % exc, "basis": "", "findings": None,
+                "couldNotTell": [], "notRead": []}
 
 
 def _moves(result, move=None):
-    return [f for f in result["findings"] if move is None or f["move"] == move]
+    return [f for f in result["findings"] or () if move is None or f["move"] == move]
 
 
 def _show(result):
@@ -415,8 +425,9 @@ def _allowed(check):
     moved = "import sys\nimport os  # noqa: F401\n"
     edited = "import os.path  # noqa: F401\nimport sys\n"
     got = [_run([("src/boot.py", base, t)]) for t in (moved, edited)]
-    check("fa5 a noqa already on a line that only moved, or whose code changed, "
-          "gives no finding: %s / %s" % (_show(got[0]), _show(got[1])),
+    check("fa5 a coded noqa on a line that only moved, or whose code changed, gives "
+          "no finding - the base copy already carries that noqa code: %s / %s"
+          % (_show(got[0]), _show(got[1])),
           [g["findings"] for g in got] == [[], []]
           and [g["answer"] for g in got] == [M.CLEAN, M.CLEAN])
 
@@ -464,6 +475,18 @@ def _allowed(check):
     check("fa10 an ordinary source edit with none of the moves is clean: %s" % _show(got),
           got["answer"] == M.CLEAN and got["findings"] == [] and got["basis"])
 
+    base = CART_SRC + "\n\ndef later():\n    raise NotImplementedError\n"
+    stub = _run([("src/cart.py", base, base.replace(
+        "raise NotImplementedError\n", "raise NotImplementedError('later')\n"))])
+    js_base = JS_TEST.replace('it("adds zero"', 'it.skip("adds zero"')
+    skip = _run([("tests/add.test.js", js_base,
+                  js_base.replace('it.skip("adds zero"', 'it.skip("adds nothing"'))])
+    check("fa20 a stub or a skip the base already had, whose line was only reworded, "
+          "gives no finding - paired by kind once its text no longer matches: %s / %s"
+          % (_show(stub), _show(skip)),
+          stub["findings"] == [] and stub["answer"] == M.CLEAN
+          and skip["findings"] == [] and skip["answer"] == M.CLEAN)
+
     doc = "# Linting\n\nWrite `# noqa` only with a code.\n"
     got = _run([("docs/lint.md", "# Linting\n", doc)])
     check("fa11 a document naming a suppression gives no finding, and the file is "
@@ -471,6 +494,177 @@ def _allowed(check):
           % (_show(got), got.get("notRead")),
           got["findings"] == [] and got["answer"] == M.CLEAN
           and [n["path"] for n in got["notRead"]] == ["docs/lint.md"])
+
+
+# --- a test is what the runner would run ----------------------------------------
+# Each narrowing is held from both sides: an allow case that goes red when the
+# narrowing is removed (the guard compares every definition again and over-fires)
+# and a deny case that goes red when it is widened into silence.
+
+ROW_SUITE = """\
+import sys
+
+
+def _cases(check):
+    check("c1 one", 1 == 1)
+
+
+def _selftest():
+    return _run(_cases)
+"""
+
+HELPER_TEST = CART_TEST + """
+
+def _basket():
+    return [1, 2]
+"""
+
+
+def _definitions(check):
+    tree = ROW_SUITE.replace('    check("c1 one", 1 == 1)\n',
+                             '    check("c1 one", 1 == 1)\n    check("c2 two", 2 == 2)\n')
+    got = _run([("tests/test_rows.py", ROW_SUITE, tree)])
+    listed = [n for n in got["notRead"] if n["path"] == "tests/test_rows.py"]
+    check("fa12 a case row added inside a case-table function gives no finding, "
+          "and the file is listed as not read for the definition move with a "
+          "reason: %s %r" % (_show(got), got.get("notRead")),
+          got["findings"] == [] and got["answer"] == M.CLEAN and len(listed) == 1
+          and listed[0].get("move") == M.DEFINITION_CHANGED and listed[0].get("reason"))
+
+    tree = ROW_SUITE.replace("import sys\n", "import sys  # the runner's argv\n")
+    got = _run([("tests/test_rows.py", ROW_SUITE, tree)])
+    check("fa13 a comment edit in a file with no test definition touches no code: "
+          "clean, and not listed as not read: %s %r" % (_show(got), got.get("notRead")),
+          got["findings"] == [] and got["answer"] == M.CLEAN and got["notRead"] == [])
+
+    tree = HELPER_TEST.replace("return [1, 2]", "return [1, 2, 3]")
+    got = _run([("tests/test_cart.py", HELPER_TEST, tree)])
+    check("fa14 a helper changed beside untouched test_ functions gives no finding, "
+          "and the file was read: %s %r" % (_show(got), got.get("notRead")),
+          got["findings"] == [] and got["answer"] == M.CLEAN and got["notRead"] == [])
+
+    tree = HELPER_TEST.replace("return [1, 2]", "return [1, 2, 3]").replace(
+        "assert total([1, 2]) == 3", "assert total([1, 2]) >= 0")
+    got = _run([("tests/test_cart.py", HELPER_TEST, tree)])
+    hits = _moves(got, M.DEFINITION_CHANGED)
+    check("fm24 a test_ function changed beside a changed helper is the one "
+          "finding, and the helper is not: %s" % _show(got),
+          len(hits) == 1 and "test_total" in hits[0]["what"]
+          and "_basket" not in hits[0]["what"] and got["findings"] == hits)
+
+    tree = ROW_SUITE + "\n\ndef test_rows():\n    assert _cases\n"
+    edited = tree.replace("    assert _cases\n", "    assert True\n")
+    got = _run([("tests/test_rows.py", tree, edited)])
+    check("fm25 a file that has a test_ definition is compared even when it also "
+          "keeps a case table - its changed test is a finding, not a not-read: %s"
+          % _show(got),
+          [f["what"] for f in _moves(got, M.DEFINITION_CHANGED)
+           if "test_rows" in f["what"]] != [] and got["notRead"] == [])
+
+    base = CART_TEST.replace("class TestCart:\n", "class TestCart:\n    def setUp(self):\n"
+                             "        self.xs = [1]\n\n") + "\n\ndef Test_upper():\n    pass\n"
+    tree = base.replace("self.xs = [1]", "self.xs = []").replace(
+        "def Test_upper():\n    pass", "def Test_upper():\n    return 1")
+    got = _run([("tests/test_cart.py", base, tree)])
+    check("fa19 the convention is one fixed prefix, compared case-sensitively as "
+          "unittest and pytest compare it: a changed setUp and a changed "
+          "Test_upper are not tests, so no finding: %s" % _show(got),
+          M.TEST_PREFIX == "test" and got["findings"] == [] and got["answer"] == M.CLEAN)
+
+
+# --- a suppression is a finding only when its code is new to the file -----------
+
+PREAMBLE = """\
+import sys
+
+import _output  # noqa: E402
+"""
+
+
+def _suppressions(check):
+    tree = PREAMBLE + "import _manifest_io  # noqa: E402\n"
+    got = _run([("src/boot.py", PREAMBLE, tree)])
+    blanket = "import os\nx = 1  # noqa\n"
+    twice = _run([("src/flat.py", blanket, blanket + "y = 2  # noqa\n")])
+    check("fa15 a second noqa E402 where the base already has one gives no finding, "
+          "and a second blanket noqa beside a blanket one neither: %s / %s"
+          % (_show(got), _show(twice)),
+          got["findings"] == [] and got["answer"] == M.CLEAN
+          and twice["findings"] == [] and twice["answer"] == M.CLEAN)
+
+    tree = PREAMBLE + "x = _output.thing  # type: ignore[attr-defined]\n"
+    got = _run([("src/boot.py", PREAMBLE, tree)])
+    check("fm26 the first type-ignore in a file whose base has only noqa E402 is a "
+          "finding: %s" % _show(got),
+          [f["line"] for f in _moves(got, M.SUPPRESSION_ADDED)] == [4])
+
+    tree = PREAMBLE + "x = 1  # noqa: E501\n"
+    got = _run([("src/boot.py", PREAMBLE, tree)])
+    check("fm27 a noqa with a code the base does not carry is a finding though the "
+          "base has another noqa - the code is compared, not the marker: %s"
+          % _show(got),
+          [f["line"] for f in _moves(got, M.SUPPRESSION_ADDED)] == [4])
+
+    tree = PREAMBLE + "x = 1  # noqa\n"
+    got = _run([("src/boot.py", PREAMBLE, tree)])
+    check("fm28 a blanket noqa added where the base has only coded ones is a "
+          "finding: %s" % _show(got),
+          [f["line"] for f in _moves(got, M.SUPPRESSION_ADDED)] == [4])
+
+    fresh = [("src/new_mod.py", None, PREAMBLE)]
+    accepted = _run(fresh, accepted=("noqa: E402",))
+    plain = _run(fresh)
+    check("fa16 a new file whose noqa E402 is an accepted code gives no finding: %s"
+          % _show(accepted),
+          accepted["findings"] == [] and accepted["answer"] == M.CLEAN)
+    check("fm29 a new file's noqa E402 with nothing accepted is a finding - a file "
+          "arriving already suppressed is the move: %s" % _show(plain),
+          [f["line"] for f in _moves(plain, M.SUPPRESSION_ADDED)] == [3])
+
+    old = _run([("src/flat.py", "import os\n", "import os\nimport x  # noqa: E402\n")],
+               accepted=("noqa: E402",))
+    spelled = [_run(fresh, accepted=(a,)) for a in ("noqa:E402", "  noqa:   E402 ",
+                                                    "noqa: F401, E402")]
+    check("fa17 an accepted code is never reported in an old file either, and is "
+          "matched on kind and code whatever the blanks around it or beside "
+          "another code: %s / %s" % (_show(old), [_show(s) for s in spelled]),
+          old["findings"] == [] and old["answer"] == M.CLEAN
+          and [s["findings"] for s in spelled] == [[], [], []])
+
+    bad = [_run(fresh, accepted=a) for a in (("NOQA: E402",), ("E402",),
+                                             ("noqa: E402 extra",), "noqa: E402")]
+    check("fc13 an accepted entry the tables do not read whole - another case, a "
+          "bare code, trailing words, or one string in place of a sequence - is "
+          "could-not-tell naming it, never an entry that silently matches "
+          "nothing: %s" % [_show(b) for b in bad],
+          [b["answer"] for b in bad] == [M.COULD_NOT_TELL] * 4
+          and all(b["basis"] and b["findings"] == [] for b in bad))
+
+    near = [_run(fresh, accepted=(a,)) for a in ("noqa: E40", "noqa: e402",
+                                                 "type: ignore[E402]")]
+    check("fm30 a near miss is not an accepted code - a prefix of it, its code in "
+          "another case, or the code under another kind: %s"
+          % [_show(n) for n in near],
+          [[f["line"] for f in _moves(n, M.SUPPRESSION_ADDED)] for n in near]
+          == [[3], [3], [3]])
+
+    mixed = [("src/new_mod.py", None, PREAMBLE + "y = 1  # type: ignore\n")]
+    got = _run(mixed, accepted=("noqa: E402",))
+    check("fm31 accepting one code silences that code only - a type-ignore beside "
+          "it in the same new file is still a finding: %s" % _show(got),
+          [f["line"] for f in _moves(got, M.SUPPRESSION_ADDED)] == [4])
+
+    base = "// eslint-disable-next-line no-undef\nread(path);\n"
+    same = _run([("src/load.js", base, base + "// eslint-disable-next-line no-undef\n"
+                  "write(path);\n")])
+    other = _run([("src/load.js", base, base + "// eslint-disable-next-line no-console\n"
+                   "console.log(path);\n")])
+    check("fa18 an eslint-disable for a rule the base already disables gives no "
+          "finding: %s" % _show(same),
+          same["findings"] == [] and same["answer"] == M.CLEAN)
+    check("fm32 an eslint-disable for a rule new to the file is a finding: %s"
+          % _show(other),
+          [f["line"] for f in _moves(other, M.SUPPRESSION_ADDED)] == [3])
 
 
 # --- what cannot be read ---------------------------------------------------------
@@ -566,6 +760,8 @@ def _shape(check):
 def _cases(check):
     _found(check)
     _allowed(check)
+    _definitions(check)
+    _suppressions(check)
     _untold(check)
     _shape(check)
 

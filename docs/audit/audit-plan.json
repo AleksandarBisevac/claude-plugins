@@ -2022,7 +2022,8 @@
       "SG1.7",
       "SG1.9",
       "SG1.10-ukq",
-      "SG1.3"
+      "SG1.3",
+      "SG1.12-ukq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -13626,10 +13627,12 @@
       "P162.2-zz6"
     ],
     "plugins/audit/scripts/governance/_floor_guard.py": [
-      "SG1.4"
+      "SG1.4",
+      "SG1.12-ukq"
     ],
     "tests/test__floor_guard.py": [
-      "SG1.4"
+      "SG1.4",
+      "SG1.12-ukq"
     ],
     "plugins/audit/evals/bugfix/scaffold.sh": [
       "SG1.9"
