@@ -29,8 +29,10 @@
         "severity": "low",
         "file": "tools/redfirst.sh:9-11",
         "issue": "The diff deletes syncAreaOptions() from areas.js (and its call in filters.js), and redfirst.sh's documented usage example still mutates `--replace \"syncAreaOptions();\" \"\"` in areas.js: the anchor now matches nothing, so the one worked example of the red-first tool names a symbol that no longer exists. The executor disclosed this; the bash-write guard refused the edit because redfirst.sh is outside every in_progress task's scope.",
-        "resolution": "In a task that owns tools/redfirst.sh, point the example at an anchor that exists in the assembled report script, e.g. filters.js `--replace \"syncStatusChips();\" \"\"`, and check that the example run goes red against check-report-interactive.mjs.",
-        "fixTask": "P163.4-d6t"
+        "resolution": "fixed in P163.4-d6t (4fe6a2dc3017): In a task that owns tools/redfirst.sh, point the example at an anchor that exists in the assembled report script, e.g. filters.js `--replace \"syncStatusChips();\" \"\"`, and check that the example run goes red against check-report-interactive.mjs.",
+        "fixTask": "P163.4-d6t",
+        "commit": "4fe6a2dc3017",
+        "status": "fixed"
       },
       {
         "id": "P163-R2",
@@ -63,9 +65,23 @@
         "issue": "This is an inherited case in the task's gate. 'sticky: the stack is restated at runtime' checks only `\"measureStack\" in M._SCRIPT and \"--topbar-h\" in M._SCRIPT and \"ResizeObserver\" in M._SCRIPT`. measureStack() could be emptied to a no-op and the case would still pass, because all three substrings stay in the script through the declaration, the listeners and other code. This task changed what measureStack publishes. st2 now pins the pinnedPx call, but the inherited case names a behaviour it cannot see.",
         "resolution": "Either retire the case in favour of st2 plus the browser gate's stack checks, or make it assert the setProperty calls for each of --topbar-h, --strip-h and the sectools height, so emptying the function turns it red.",
         "fixTask": "P163.8-d6t"
+      },
+      {
+        "id": "P163-R6",
+        "severity": "med",
+        "file": "tools/check-report-interactive.mjs:2558-2572 (with tools/ui-checks/layout-baseline.mjs:316-332)",
+        "issue": "The shut bound is strip + shut bar + slack, read from the same layout it judges, so it grows with the bar. No check now caps how much of the phone the resting filters cover. The removed ph1 block capped the stack at 50% of PHONE_TALL. Now a shut .sectools of any height passes the absolute arm. The relative arm only catches that for the committed documents it has a row for. For a report outside the checkout or an untracked scratch render, judge() returns early with the note 'the relative arm did not run for it (the absolute bar above did)'. For those reports nothing asserts the phase outcome 'on a 390px phone the filters do not cover the table'. A shut bar covering 80% of the screen goes green. The new comment says so ('What this bound cannot see is the shut bar itself growing'), but its pointer to the relative arm does not hold for those documents.",
+        "resolution": "Keep the layer-derived bound and the single stackOverTable() measurement. On the same shutStack result, add a ceiling: a share of PHONE_TALL with its basis stated in the comment, e.g. the table keeps at least half of the screen it is read on. That keeps one method and still bounds the destination. If no such ceiling is wanted, judge()'s unrecorded-document notes must stop telling the reader that an absolute bar covered the document. They should say instead that the shut bar's height went unbounded on this run."
+      },
+      {
+        "id": "P163-R7",
+        "severity": "low",
+        "file": "tools/ui-checks/layout-baseline.mjs:4-8,17-19,24-33,42-47,318,329",
+        "issue": "The diff makes this file's prose about the absolute arm false. The header says the gate 'bounds the share of a phone screen an OPEN filter panel may pin'. It says the absolute arm 'saturates — the gate scrolls a fixed distance past the bar'. It says 'the absolute arm catches the DESTINATION', and that 'The shut figure has NO absolute bar'. After this diff the absolute arm is a hit-test of what pins over the table, both shut and open, against layer-derived bounds. It no longer scrolls a fixed distance, and the shut state does have a bound. The executor reports this in its outcome, refused by the plan gate (the file is declared by P125.56-0h5), so it is disclosed, not hidden. It is still a stale claim the diff created, and it crosses the gate/relative-arm boundary this file exists to describe.",
+        "resolution": "Rewrite the header and the two '(the absolute bar above did)' notes in a task that owns tools/ui-checks/layout-baseline.mjs (P163.7-d6t is pending on the same file), stating the new absolute arm: one hit-test, shut and open, each bounded by the layers allowed to pin."
       }
     ],
-    "outcome": "[findings: 5 - 0 high, 2 med, 3 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 7 - 0 high, 3 med, 4 low; 1 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -372,7 +388,7 @@
     {
       "id": "P163.4-d6t",
       "title": "fix P163-R1: The diff deletes syncAreaOptions() from areas.js (and its call i...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The diff deletes syncAreaOptions() from areas.js (and its call in filters.js), and redfirst.sh's documented usage example still mutates `--replace \"syncAreaOptions();\" \"\"` in areas.js: the anchor now matches nothing, so the one worked example of the red-first tool names a symbol that no longer exists. The executor disclosed this; the bash-write guard refused the edit because redfirst.sh is outside every in_progress task's scope.\n\nResolution asked: In a task that owns tools/redfirst.sh, point the example at an anchor that exists in the assembled report script, e.g. filters.js `--replace \"syncStatusChips();\" \"\"`, and check that the example run goes red against check-report-interactive.mjs.",
       "files": [
         "tools/redfirst.sh"
@@ -401,13 +417,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "4fe6a2dc3017",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/redfirst.sh header example (lines 9-10): the file is now plugins/audit/scripts/ui/report/filters.js and the anchor `--replace \"syncStatusChips();\" \"\"` (was areas.js / `syncAreaOptions();`, a symbol P163.2 deleted). Line count of the header unchanged, so usage()'s `sed -n '2,34p'` window still prints the whole example (checked: `sh tools/redfirst.sh` with no args prints the new Example block). Anchor occurs exactly once in filters.js (grep -c -> 1; heatmap.js:444 holds the definition `syncStatusChips() {`, which the anchor does not match), satisfying the tool's exactly-one-occurrence rule. Ran the example verbatim in the task tree: exit 0, output 'REDFIRST ok: the gate went red (exit 1), so it does assert this. file: plugins/audit/scripts/ui/report/filters.js (restored byte-for-byte)' with the gate's failing line 'FAIL in the Archived view only archived statuses are offered as chips ([\"done\",\"in_progress\",\"pending\"]): got 2, want 0'. The --render re-render left docs/index.html and examples/acme-store/acme-store-audit.{html,md} differing from HEAD only in the 'generated' timestamp (diff inspected); restored them to HEAD with git restore --source=HEAD, so the tree's only change is tools/redfirst.sh. Sweep of tests/test__refs.py, tools/affected.py, tools/prove-gates.py: 3/3 files ok, 419 cases. No rendered output changes, so no follower refresh owed. Remaining stale mention: tests/test_render_report.py:1475 asserts \"syncAreaOptions\" is NOT in the script - an absence pin, correct as is.",
+        "descriptive": "The red-first tool's worked example names an anchor that exists again and, run as written, turns the browser gate red."
       },
       "startedAt": "2026-11-16T16:05:00Z",
-      "completedAt": null,
+      "completedAt": "2026-11-16T17:18:17Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -431,6 +447,17 @@
         "runId": "2026-11-16T16:56:59Z.97b65a",
         "status": "passed",
         "at": "2026-11-16T16:56:59Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "4fe6a2dc3017",
+        "at": "2026-11-16T17:18:17Z",
+        "return": "docs/audit/evidence/returns/P163.4-d6t/20261116T160500Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+        "at": "2026-11-16T16:08:26Z"
       }
     },
     {

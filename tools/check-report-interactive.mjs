@@ -201,10 +201,12 @@ const FEATURE_ABSENT = [
   { note: 'the long-print stress check was not asked for',
     covers: ['(setting up the long print) the uncut sheet was grown past the crashing',
              'a page past the length that crashed the printer prints'] },
-  // No More-filters disclosure on the phone: nothing to open while stuck. No
-  // chip inside it: nothing to switch on so the summary has a count to say.
+  // No More-filters disclosure on the phone: nothing to open while stuck, and no
+  // open state for the stack over the table to be measured in. No chip inside
+  // it: nothing to switch on so the summary has a count to say.
   { note: 'phone panel check skipped',
-    covers: ['ph2 More filters opened while the bar is stuck'] },
+    covers: ['ph2 More filters opened while the bar is stuck',
+             'ph1 open stack (More filters open)'] },
   { note: 'its announced count skipped',
     covers: ['ax3 with one filter on, More filters is announced'] },
   { note: 'nothing is ready in this plan',
@@ -2498,6 +2500,78 @@ if (barState.open === true) {
 } else {
   measured.filterBarShutShare = share(barState.h, PHONE_VIEWPORT.height);
 }
+
+//    The pinned stack over the phases table: ONE measurement, taken here with More
+//    filters shut and again inside the branch below with it open, so the two
+//    states are judged by the same method and differ only in their bound.
+//    Measured as what a reader sees, not as a sum of heights: scrolled into the
+//    table at the taller phone size, from the top of the viewport down the
+//    middle, the first point that is the table's own frame is where the pinned
+//    layers end - a hit-test sees whatever pins over the rows, including a layer
+//    nobody meant to make sticky. The layers it may be held to are read in the
+//    same pass, so the bound and the measurement come from one layout.
+//
+//    The bound is read off that layout, not chosen. Below 52rem the top bar
+//    scrolls with the page (forced-colors.css says what it held while it was
+//    pinned), so the layers a reader keeps over a table row are the section strip
+//    (where am I) and, while More filters is shut, the table's own filter bar
+//    (what is filtering it); open, the bar is static and only the strip may pin.
+//    Each bound is those layers' rendered heights plus STACK_SLACK_PX: the scan
+//    steps whole pixels from the top, and the bar sticks at an offset published
+//    rounded to a whole pixel (px() in page-state.js), so the first table pixel
+//    can sit up to a pixel and a half below the layers' exact sum. Any other layer
+//    pinning - a sticky top bar is at least a line of text - clears that slack
+//    many times over.
+//    What this bound cannot see is the shut bar itself growing, because the bound
+//    grows with it; that is the relative arm's question, asked below through the
+//    filterBarShutShare figure recorded just above.
+const STACK_SLACK_PX = 2;
+const STACK_UNMEASURED = 'ph1 scrolled into the phases table at the phone size, no point '
+  + 'down the middle of the screen is the table - the stack over it could not be measured';
+const stackOverTable = async () => {
+  await page.setViewportSize(PHONE_TALL);
+  await page.evaluate(() => {
+    const t = document.querySelector('table.phases');
+    if (t) window.scrollTo(0, window.scrollY + t.getBoundingClientRect().top + 10);
+  });
+  await page.waitForTimeout(400);
+  const m = await page.evaluate(() => {
+    const height = (sel) => {
+      const el = document.querySelector(sel);
+      return el ? el.getBoundingClientRect().height : 0;
+    };
+    const d = document.querySelector('.fdetails');
+    const table = document.querySelector('table.phases');
+    const wrap = table && (table.closest('.tablewrap') || table);
+    const x = Math.round(window.innerWidth / 2);
+    let stack = null;
+    for (let y = 0; wrap && stack === null && y < window.innerHeight; y += 1) {
+      const at = document.elementFromPoint(x, y);
+      if (at && wrap.contains(at)) stack = y;
+    }
+    return { stack, strip: height('.snav'), bar: height('.sectools'), open: d ? d.open : null };
+  });
+  await page.setViewportSize(PHONE_VIEWPORT);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(150);
+  return m;
+};
+//    The SHUT half, outside the More-filters branch because a report with no
+//    panel still has a resting stack. The open half is inside the branch.
+if (barState.open !== true) {
+  const shutStack = await stackOverTable();
+  if (shutStack.stack === null) {
+    failures.push(`FAIL ${STACK_UNMEASURED} (More filters shut)`);
+  } else {
+    const bound = shutStack.strip + shutStack.bar + STACK_SLACK_PX;
+    expect(`ph1 resting stack (More filters shut), scrolled into the table at ${PHONE_TALL.width}x`
+      + `${PHONE_TALL.height}, pins no more than the strip and the shut filter bar `
+      + `(${shutStack.stack}px against a ${bound.toFixed(1)}px bound = strip `
+      + `${shutStack.strip.toFixed(1)} + bar ${shutStack.bar.toFixed(1)} + slack ${STACK_SLACK_PX}; `
+      + `${share(shutStack.stack, PHONE_TALL.height)}% of the screen)`,
+      shutStack.stack <= bound, true);
+  }
+}
 //    Same pairing as step 6: the <details> without the panel inside it is a
 //    contradiction in one document, so it is named rather than dereferenced.
 if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
@@ -2535,27 +2609,33 @@ if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
     measured.filterBarOpenShare = share(openState.h, PHONE_VIEWPORT.height);
   }
 
-  //    In flow the panel's height IS the bar's height, and the bar is sticky: 156px
-  //    shut, 481px open, on a 780px screen. Pinned, that is 62% of the viewport
-  //    covering the table it filters. Open, it has to scroll away like the block of
-  //    controls it now is.
-  const covered = await page.evaluate(async () => {
-    const st = document.querySelector('.sectools');
-    window.scrollTo(0, window.scrollY + st.getBoundingClientRect().top + 500);
-    await new Promise((r) => setTimeout(r, 300));
-    const b = st.getBoundingClientRect();
-    const vis = Math.max(0, Math.min(b.bottom, window.innerHeight) - Math.max(b.top, 0));
-    return Math.round((vis / window.innerHeight) * 100);
-  });
-  if (covered > 40) {
-    failures.push(`FAIL an open filter panel does not pin itself over the table: ${covered}% of the screen is filter bar`);
-  } else notes.push(`ok   scrolled, the open filter panel gives the table the screen back (${covered}% bar)`);
+  //    The OPEN half of the stack check (the shut half runs above, outside this
+  //    branch, through the same stackOverTable()). In flow the panel's height IS
+  //    the bar's height, so a bar that stayed sticky open pinned the whole panel
+  //    over the table it filters - measured at 390x780 before the bar went static
+  //    open: 156px shut, 481px open, 62% of the screen. Open, it has to scroll away
+  //    like the block of controls it now is, which leaves the strip as the only
+  //    layer allowed to pin.
+  const openStack = await stackOverTable();
+  if (openStack.open !== true) {
+    failures.push('FAIL the More-filters disclosure was not open where the open stack over '
+      + 'the table is measured, so the open bound would be judging the shut bar');
+  } else if (openStack.stack === null) {
+    failures.push(`FAIL ${STACK_UNMEASURED} (More filters open)`);
+  } else {
+    const bound = openStack.strip + STACK_SLACK_PX;
+    expect(`ph1 open stack (More filters open), scrolled into the table at ${PHONE_TALL.width}x`
+      + `${PHONE_TALL.height}, pins no more than the strip (${openStack.stack}px against a `
+      + `${bound.toFixed(1)}px bound = strip ${openStack.strip.toFixed(1)} + slack ${STACK_SLACK_PX}; `
+      + `${share(openStack.stack, PHONE_TALL.height)}% of the screen)`,
+      openStack.stack <= bound, true);
+  }
 
   //    ...and the other half of that trade: the open bar leaves the sticky stack,
   //    so More filters tapped while the bar is STUCK over the table used to open
   //    a panel back at the bar's place in the flow - above the top of the
   //    screen, where the reader who just tapped it could not see it. Opened from
-  //    there, at the phone size the stack share below is measured at, the panel
+  //    there, at the phone size the stack over the table is measured at, the panel
   //    has to be on screen and painted rather than covered by the strip that
   //    stays pinned. Points are read, not only the box, because a box inside the
   //    viewport can still sit under a sticky layer.
@@ -2590,50 +2670,11 @@ if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
   await page.waitForTimeout(150);
 } else notes.push('ok   (this plan records no models or dates — phone panel check skipped)');
 
-//    The RESTING stack, which the open-panel bar above does not measure: the top
-//    bar, the section strip and the shut filter bar, all pinned at once over the
-//    rows. At 390x844 the bar's three lines (title, document actions, the
-//    header's filter row) plus the strip and the table's own bar pinned 486px -
-//    58% of the screen - over the table they filter.
-//    The bound is half the screen, because the claim being held is that the
-//    table keeps MOST of it: a stack over 50% is the filters owning the phone.
-//    Measured as what a reader sees, not as a sum of heights: from the top of
-//    the viewport down the middle, the first point that is the table's own
-//    frame is where the pinned layers end.
-{
-  await page.setViewportSize(PHONE_TALL);
-  await page.evaluate(() => {
-    const t = document.querySelector('table.phases');
-    window.scrollTo(0, window.scrollY + t.getBoundingClientRect().top + 10);
-  });
-  await page.waitForTimeout(400);
-  const stack = await page.evaluate(() => {
-    const wrap = document.querySelector('table.phases').closest('.tablewrap')
-      || document.querySelector('table.phases');
-    const x = Math.round(window.innerWidth / 2);
-    for (let y = 0; y < window.innerHeight; y += 1) {
-      const at = document.elementFromPoint(x, y);
-      if (at && wrap.contains(at)) return y;
-    }
-    return null;
-  });
-  if (stack === null) {
-    failures.push('FAIL ph1 scrolled into the phases table at the phone size, no point down the '
-      + 'middle of the screen is the table - the stack share could not be measured');
-  } else {
-    expect(`ph1 at ${PHONE_TALL.width}x${PHONE_TALL.height}, scrolled into the table, the pinned `
-      + `stack over it is at most half the screen (${stack}px, ${share(stack, PHONE_TALL.height)}%)`,
-      share(stack, PHONE_TALL.height) <= 50, true);
-  }
-  await page.setViewportSize(PHONE_VIEWPORT);
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await page.waitForTimeout(150);
-}
-
 // --- the relative arm: what this document's layout was recorded at ------------
 //
-// The bar above is ABSOLUTE and stays exactly as it is: an open panel may not pin
-// more than its share of the screen over the table, whatever it did yesterday.
+// The stack check above is ABSOLUTE and stays exactly as it is: shut or open, no
+// layer but the ones its bound names may pin over the table, whatever it did
+// yesterday.
 // This asks the other question — has THIS document's filter chrome moved from the
 // figure this repository recorded — and the two are reported on separate lines so
 // a reader knows which they have.
