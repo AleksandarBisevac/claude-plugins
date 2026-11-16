@@ -58,21 +58,13 @@
     // sort, which is a poke at one table. The default is omitted, so a report
     // nobody has re-ordered still mints no fragment of its own.
     put('so', phaseOrder === defaultOrder ? '' : phaseOrder);
-    put('q', q ? q.value.trim() : '');
-    put('ps', phaseStatus);
-    // Space-joined, mirroring the data-area attribute — one separator rule for
-    // both carriers of a tag list. `a` and `au` are distinct keys: the codec
-    // that reads the fragment splits on '&' and the FIRST '=', so a key is
-    // always matched whole.
-    put('a', areaFilter.join(' '));
-    put('m', modelFilter);
-    // Two keys, never one. The codec splits on '&' and the FIRST '=', so `tev`
-    // and `tevf` are matched whole and a link can carry either axis alone.
-    put('tev', tevFilter);
-    put('tevf', tevFlag);
-    put('from', dFrom);
-    put('to', dTo);
-    put('au', auFilter);
+    // Every axis under its own keys. The codec that reads the fragment splits
+    // on '&' and the FIRST '=', so a key is always matched whole and `a`/`au`
+    // or `tev`/`tevf` never read as one another.
+    FILTER_AXES.forEach((axis) => {
+      const vals = axis.encode();
+      axis.keys.forEach((k, i) => { put(k, vals[i]); });
+    });
     // Only where this report OWNS the toggle. Embedded as a fragment, the host
     // stamps data-theme on the same root, and a link carrying a theme would flip
     // the page AROUND the report rather than the report. And only alongside a
@@ -117,10 +109,14 @@
     // A phase none of whose tasks survive is not a phase that matches: keeping it
     // is the difference between "these four phases used opus" and "here are all
     // twelve, four of them usefully".
-    const narrows = modelFilter !== '' || dFrom !== '' || dTo !== ''
-                  || tevFilter !== '' || tevFlag !== '';
-    const anyFilter = narrows || term !== '' || phaseStatus !== ''
-                    || areaFilter.length > 0;
+    //
+    // Read off the registry, never listed here: a list written by hand is how
+    // an axis came to filter the table while the counter and Clear ignored it.
+    // `anyFilter` is about the TABLE, so the Usage-only author scope is not in
+    // it; it still offers Clear below, which lifts every axis that is on.
+    const live = FILTER_AXES.filter((axis) => axis.on());
+    const narrows = live.some((axis) => axis.scope === 'tasks');
+    const anyFilter = live.some((axis) => axis.scope !== 'usage');
     let visP = 0, visT = 0, totT = 0;
     // Plain `{}` on purpose, and the one map here that keeps its prototype:
     // the key is `data-seg`, which Python's `_seg_of` emits from a closed
@@ -233,13 +229,11 @@
     // same fact without a control that undoes the reader's own choice.
     // The toolbar copy appears the moment anything is filtering, so there is a way
     // back that does not depend on the table having rows left to draw it in.
-    clearBtns.forEach((b) => { b.hidden = !anyFilter; });
+    clearBtns.forEach((b) => { b.hidden = !live.length; });
     // A filter folded away inside a closed <details> is how a reader concludes
     // rows are missing. The count on the summary says something is on.
     if (fcount) {
-      const nHidden = (modelFilter ? 1 : 0) + ((dFrom || dTo) ? 1 : 0)
-                    + (areaFilter.length ? 1 : 0)
-                    + (tevFilter ? 1 : 0) + (tevFlag ? 1 : 0);
+      const nHidden = live.filter((axis) => axis.counts).length;
       fcount.textContent = nHidden ? ' · ' + nHidden : '';
     }
     if (expandBtn) {

@@ -3161,6 +3161,185 @@ if (!STRESS) {
   await Promise.race([ctx.close(), new Promise((r) => setTimeout(r, 5000))]);
 }
 
+// --- Clear lifts every axis, derived from the page ----------------------------
+// Each filter control is turned on ALONE on a fresh load, Clear is pressed, and
+// the page has to be back where it opened - nothing pressed, no count on More
+// filters, nothing in the link or the stored view, every phase back - and still
+// so after a reload. The controls are read off the DOM by KIND (every pressable
+// chip in a filter bar, every field in the toolbar and the global row), never
+// listed, so a chip row added tomorrow is exercised without editing this. Its
+// own page and context: the main page above carries expanded rows and stored
+// state that would make "back where it opened" a different place.
+{
+  const CL_CHIPS = '.sectools [aria-pressed], .tf-chips [aria-pressed], .auchips [aria-pressed]';
+  const CL_FIELDS = '.sectools input, .gfilters input, .gfilters select';
+  const CL_ALL = CL_CHIPS + ', ' + CL_FIELDS;
+  // The chip attributes the page's own script wires, read off the document. A
+  // wired attribute no exercised chip carries is reported as not exercised.
+  const wiredAttrs = [...new Set([...source.matchAll(/wireChips\([^,()]+, '(data-[a-z]+)'/g)]
+    .map((m) => m[1]))].sort();
+  const cctx = await browser.newContext({ viewport: { width: 1512, height: 945 } });
+  const cp = await cctx.newPage();
+  const clErrors = [];
+  cp.on('pageerror', (e) => clErrors.push(e.message));
+  const fresh = async () => {
+    // A hash-only change is a same-document navigation and would not reload.
+    await cp.goto('about:blank');
+    await cp.goto('file://' + path);
+    await cp.waitForTimeout(60);
+  };
+  const dropStored = () => cp.evaluate(() => {
+    Object.keys(localStorage).filter((k) => k.indexOf('audit-') === 0)
+      .forEach((k) => localStorage.removeItem(k));
+  });
+  // What "back where it opened" means, read the same way at load, after Clear
+  // and after the reload.
+  const clSnap = () => cp.evaluate(({ all, chips }) => {
+    const g = document.querySelector('table.phases');
+    const h = location.hash || '';
+    const hashKeys = h.indexOf('#!') === 0
+      ? h.slice(2).split('&').filter(Boolean).map((p) => p.split('=')[0]).sort() : [];
+    return {
+      phases: [...g.querySelectorAll('tbody tr.phase')].filter((r) => r.style.display !== 'none').length,
+      tasks: [...g.querySelectorAll('tbody tr.task')].filter((r) => r.offsetParent !== null).length,
+      pressed: [...document.querySelectorAll(chips)]
+        .filter((c) => c.getAttribute('aria-pressed') === 'true')
+        .map((c) => [...c.attributes].filter((a) => a.name.indexOf('data-') === 0)
+          .map((a) => a.name + '=' + a.value)[0] || c.textContent.trim()),
+      fcount: ((document.getElementById('audit-fcount') || {}).textContent || '').trim(),
+      hashKeys: hashKeys.join(','),
+      stored: Object.keys(localStorage).filter((k) => k.indexOf('audit-view-') === 0)
+        .map((k) => localStorage.getItem(k)).filter(Boolean).join(' | '),
+      fields: [...document.querySelectorAll(all)].filter((e) => 'value' in e && !e.hasAttribute('aria-pressed'))
+        .map((e) => e.value).join('\u0001'),
+      clear: !!document.querySelector('.sectools [data-clear]:not([hidden])'),
+    };
+  }, { all: CL_ALL, chips: CL_CHIPS });
+  const describe = (s) => [
+    s.pressed.length ? 'pressed ' + s.pressed.join(' ') : '',
+    s.fcount ? 'More filters says ' + JSON.stringify(s.fcount) : '',
+    s.hashKeys ? 'link keys ' + s.hashKeys : '',
+    s.stored ? 'stored ' + JSON.stringify(s.stored) : '',
+  ].filter(Boolean).join(', ');
+
+  await fresh();
+  await dropStored();
+  await fresh();
+  const atLoad = await clSnap();
+  const n = await cp.evaluate((all) => document.querySelectorAll(all).length, CL_ALL);
+  const left = { offer: [], pressed: [], fcount: [], hash: [], stored: [], phases: [], fields: [], reload: [] };
+  const idle = [];
+  const unseen = [];
+  const exercised = new Set();
+  for (let i = 0; i < n; i++) {
+    // Turn on exactly control i. Returns its label and what kind of input it
+    // needs, or why it cannot be reached on this page.
+    const prep = await cp.evaluate(({ all, i, wired }) => {
+      const el = document.querySelectorAll(all)[i];
+      const attr = [...el.attributes].map((a) => a.name).find((a) => wired.indexOf(a) >= 0);
+      const label = attr ? attr + '=' + el.getAttribute(attr)
+        : el.id ? '#' + el.id : el.tagName.toLowerCase();
+      const d = el.closest('details');
+      if (d) d.open = true;
+      const tf = el.closest('tr.taskfilter');
+      return { label, attr: attr || '', tag: el.tagName, type: el.type || '',
+               tfPhase: tf ? tf.getAttribute('data-phase') : '',
+               min: el.min || '', max: el.max || '',
+               opt: el.tagName === 'SELECT'
+                 ? ([...el.options].find((o) => o.value && o.value !== '~multi') || {}).value || '' : '' };
+    }, { all: CL_ALL, i, wired: wiredAttrs });
+    // The page's own querySelectorAll order, the one `i` was counted in.
+    const handle = (await cp.evaluateHandle(({ all, i }) => document.querySelectorAll(all)[i],
+      { all: CL_ALL, i })).asElement();
+    if (prep.tfPhase) {
+      const row = await cp.$(`tr.phase[data-phase="${prep.tfPhase}"] strong`);
+      if (row && await row.isVisible()) await row.click();
+    }
+    if (!(await handle.isVisible())) {
+      unseen.push(prep.label + ' (not on screen in the default view)');
+      await dropStored(); await fresh(); continue;
+    }
+    const before = await clSnap();
+    if (prep.tag === 'SELECT') {
+      if (!prep.opt) { unseen.push(prep.label + ' (no option to pick)'); await dropStored(); await fresh(); continue; }
+      await handle.selectOption(prep.opt);
+    } else if (prep.type === 'date') {
+      const v = /to$/.test(prep.label) ? prep.min : prep.max;
+      if (!v) { unseen.push(prep.label + ' (no min or max to pick a date from)'); await dropStored(); await fresh(); continue; }
+      await handle.evaluate((e, val) => { e.value = val; e.dispatchEvent(new Event('change', { bubbles: true })); }, v);
+    } else if (prep.tag === 'INPUT') {
+      const term = await cp.evaluate(() => {
+        const t = document.querySelector('table.phases tbody tr.phase strong');
+        return t ? t.textContent.trim().split(/\s+/)[0].toLowerCase() : 'a';
+      });
+      await handle.fill(term);
+      await handle.press('Enter');
+    } else {
+      await handle.click();
+    }
+    await cp.evaluate(() => { document.querySelectorAll('details.fdetails').forEach((d) => { d.open = false; }); });
+    const on = await clSnap();
+    if (prep.attr) exercised.add(prep.attr);
+    if (!on.clear) {
+      // A control that changed nothing a reader can see (the All-time preset
+      // on a view already spanning all time) has nothing to lift. One that
+      // changed the table, the link or the stored view and offers no way back
+      // is the defect this case exists for.
+      const changed = on.phases !== before.phases || on.tasks !== before.tasks
+        || on.hashKeys !== atLoad.hashKeys || on.stored !== atLoad.stored || on.fcount !== atLoad.fcount;
+      if (changed) left.offer.push(prep.label + ' (' + (describe(on) || 'the table narrowed') + ')');
+      else idle.push(prep.label);
+      await dropStored();
+      await fresh();
+      continue;
+    }
+    await cp.click('.sectools [data-clear]');
+    const cleared = await clSnap();
+    if (cleared.pressed.length) left.pressed.push(prep.label + ' (still pressed: ' + cleared.pressed.join(' ') + ')');
+    if (cleared.fcount !== atLoad.fcount) left.fcount.push(prep.label + ' (' + JSON.stringify(cleared.fcount) + ')');
+    if (cleared.hashKeys !== atLoad.hashKeys) left.hash.push(prep.label + ' (' + cleared.hashKeys + ')');
+    if (cleared.stored !== atLoad.stored) left.stored.push(prep.label + ' (' + JSON.stringify(cleared.stored) + ')');
+    if (cleared.phases !== atLoad.phases) left.phases.push(prep.label + ' (' + cleared.phases + ' of ' + atLoad.phases + ')');
+    if (cleared.fields !== atLoad.fields) left.fields.push(prep.label);
+    await fresh();
+    const reloaded = await clSnap();
+    const stillDirty = describe(reloaded) || (reloaded.phases !== atLoad.phases ? reloaded.phases + ' phases' : '')
+      || (reloaded.fields !== atLoad.fields ? 'a field kept a value' : '');
+    if (stillDirty) left.reload.push(prep.label + ' (' + stillDirty + ')');
+    // Whatever a failed Clear left behind must not leak into the next control,
+    // and neither may a phase opened to reach its task-status chips.
+    if (stillDirty || reloaded.stored || prep.tfPhase) { await dropStored(); await fresh(); }
+  }
+  await cctx.close();
+  const ran = n - unseen.length - idle.length;
+  expect('cl0 Clear lifts every axis - the page offers filter controls to exercise, '
+    + 'read off the DOM', ran > 0, true);
+  expect('cl1 Clear lifts every axis - every control that filters offers Clear',
+    left.offer.join(' · ') || 'none', 'none');
+  expect('cl2 Clear lifts every axis - nothing stays pressed after Clear',
+    left.pressed.join(' · ') || 'none', 'none');
+  expect('cl3 Clear lifts every axis - More filters counts nothing after Clear',
+    left.fcount.join(' · ') || 'none', 'none');
+  expect('cl4 Clear lifts every axis - no filter key is left in the link after Clear',
+    left.hash.join(' · ') || 'none', 'none');
+  expect('cl5 Clear lifts every axis - the stored view is gone after Clear',
+    left.stored.join(' · ') || 'none', 'none');
+  expect('cl6 Clear lifts every axis - every phase shown at load is shown again after Clear',
+    left.phases.join(' · ') || 'none', 'none');
+  expect('cl7 Clear lifts every axis - every field holds its value at load again after Clear',
+    left.fields.join(' · ') || 'none', 'none');
+  expect('cl8 Clear lifts every axis - the cleared view is still clear after a reload',
+    left.reload.join(' · ') || 'none', 'none');
+  expect('cl9 Clear lifts every axis - the page raised no error while being driven',
+    clErrors.slice(0, 2).join(' | ') || 'none', 'none');
+  const notExercised = wiredAttrs.filter((a) => !exercised.has(a));
+  notes.push(`note Clear lifts every axis: ${ran} of ${n} controls exercised`
+    + (idle.length ? `; turned on nothing to clear: ${idle.join(', ')}` : '')
+    + (unseen.length ? `; not exercised: ${unseen.join(', ')}` : '')
+    + (notExercised.length ? `; wired chip attributes no exercised control carries `
+      + `(not exercised, not passed): ${notExercised.join(', ')}` : ''));
+}
+
 assertLivenessWasChecked('report', liveness, {
   report: (m) => failures.push(`FAIL ${m}`),
   ok: (m) => notes.push(`ok   ${m}`),

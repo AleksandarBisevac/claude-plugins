@@ -533,31 +533,7 @@
     sortSel.value = phaseOrder;
     orderPhaseBlocks(lookup(ORDERS, phaseOrder));
   }
-  if (q && HASH.q) q.value = HASH.q;
-  if (HASH.ps) {
-    phaseStatus = HASH.ps;
-    if (phaseStatusBar) highlight(phaseStatusBar, 'data-ps', phaseStatus);
-  }
-  if (HASH.m) {
-    modelFilter = HASH.m;
-    if (modelBar) highlight(modelBar, 'data-m', modelFilter);
-  }
-  if (HASH.tev) {
-    tevFilter = HASH.tev;
-    if (tevBar) highlight(tevBar, 'data-tev', tevFilter);
-  }
-  if (HASH.tevf) {
-    tevFlag = HASH.tevf;
-    if (tevFlagBar) highlight(tevFlagBar, 'data-tevf', tevFlag);
-  }
-  if (HASH.a) {
-    areaFilter = HASH.a.split(/\s+/).filter(Boolean);
-    paintAreas();
-  }
-  if (HASH.from || HASH.to) { dFrom = HASH.from || ''; dTo = HASH.to || ''; paintDates(); }
-  if (HASH.au) {
-    auFilter = HASH.au;
-    if (authorBar) highlight(authorBar, 'data-au', auFilter);
-    applyAuthor();
-  }
+  // Every axis the link carries, through the registry that wrote it. An axis
+  // the link does not mention keeps its default and is not repainted.
+  FILTER_AXES.forEach((axis) => { if (axis.decode(HASH)) axis.paint(); });
   refresh();

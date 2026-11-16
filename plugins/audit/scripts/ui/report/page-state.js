@@ -387,6 +387,144 @@
   const auSelect = document.getElementById('audit-au-select');
   const areaSelect = document.getElementById('audit-area-select');
 
+  // --- the filter axes, declared once ------------------------------------------
+
+  /**
+   * Every filter this page offers, declared ONCE.
+   *
+   * Clear, the link writer, the restore after a reload and the counters in
+   * refresh() each used to list the axes by hand, and three axes in a row were
+   * added to some of those lists and not the others: a filter Clear could not
+   * lift, still counted, still written to the link and restored on the next
+   * open. They all iterate this array now, so an axis declared here is cleared,
+   * encoded, restored and counted without being named anywhere else.
+   *
+   * What an entry carries:
+   * - `attrs`: the chip attributes its controls carry, so a test can hold the
+   *   chips the page wires against the axes declared here.
+   * - `keys`: its link keys, in the order `encode` returns values; empty when
+   *   the axis is deliberately not kept, and then `unkept` says why.
+   * - `scope`: what it narrows - `text` (the search), `phases` (whole phase
+   *   rows), `tasks` (tasks, hiding a phase none of whose tasks survive),
+   *   `drill` (tasks inside one phase only) or `usage` (the Usage section, never
+   *   the table).
+   * - `counts`: whether the More-filters badge counts it.
+   * - `on`, `reset`, `paint`, `encode`, `decode`: is it filtering; return it to
+   *   its default; repaint every control that shows it; its values for `keys`;
+   *   take its state from the decoded link, saying whether there was any.
+   *
+   * The behaviours call painters declared in later parts (`highlight`,
+   * `paintAreas`, `paintDates`, `applyAuthor`, `tfHosts`). They run only once
+   * the whole script has loaded, never while this array is being built.
+   *
+   * @type {Array<{id: string, attrs: string[], keys: string[], unkept?: string,
+   *   scope: string, counts: boolean, on: () => boolean, reset: () => void,
+   *   paint: () => void, encode: () => string[],
+   *   decode: (h: Object<string, string>) => boolean}>}
+   */
+  const FILTER_AXES = [
+    {
+      id: 'search', attrs: [], keys: ['q'], scope: 'text', counts: false,
+      on: () => !!q && q.value.trim() !== '',
+      reset: () => { if (q) q.value = ''; },
+      paint: () => {},
+      encode: () => [q ? q.value.trim() : ''],
+      decode: (h) => { if (!q || !h.q) return false; q.value = h.q; return true; },
+    },
+    {
+      id: 'phase-status', attrs: ['data-ps'], keys: ['ps'], scope: 'phases',
+      counts: false,
+      on: () => phaseStatus !== '',
+      reset: () => { phaseStatus = ''; },
+      paint: () => { if (phaseStatusBar) highlight(phaseStatusBar, 'data-ps', phaseStatus); },
+      encode: () => [phaseStatus],
+      decode: (h) => { if (!h.ps) return false; phaseStatus = h.ps; return true; },
+    },
+    {
+      // Space-joined in the link, mirroring the data-area attribute: one
+      // separator rule for both carriers of a tag list.
+      id: 'area', attrs: ['data-a'], keys: ['a'], scope: 'phases', counts: true,
+      on: () => areaFilter.length > 0,
+      reset: () => { areaFilter = []; },
+      paint: () => { paintAreas(); },
+      encode: () => [areaFilter.join(' ')],
+      decode: (h) => {
+        if (!h.a) return false;
+        areaFilter = h.a.split(/\s+/).filter(Boolean);
+        return true;
+      },
+    },
+    {
+      id: 'model', attrs: ['data-m'], keys: ['m'], scope: 'tasks', counts: true,
+      on: () => modelFilter !== '',
+      reset: () => { modelFilter = ''; },
+      paint: () => { if (modelBar) highlight(modelBar, 'data-m', modelFilter); },
+      encode: () => [modelFilter],
+      decode: (h) => { if (!h.m) return false; modelFilter = h.m; return true; },
+    },
+    {
+      // Two axes and two keys, never one: a link can carry either alone.
+      id: 'test-gate', attrs: ['data-tev'], keys: ['tev'], scope: 'tasks',
+      counts: true,
+      on: () => tevFilter !== '',
+      reset: () => { tevFilter = ''; },
+      paint: () => { if (tevBar) highlight(tevBar, 'data-tev', tevFilter); },
+      encode: () => [tevFilter],
+      decode: (h) => { if (!h.tev) return false; tevFilter = h.tev; return true; },
+    },
+    {
+      id: 'observed', attrs: ['data-tevf'], keys: ['tevf'], scope: 'tasks',
+      counts: true,
+      on: () => tevFlag !== '',
+      reset: () => { tevFlag = ''; },
+      paint: () => { if (tevFlagBar) highlight(tevFlagBar, 'data-tevf', tevFlag); },
+      encode: () => [tevFlag],
+      decode: (h) => { if (!h.tevf) return false; tevFlag = h.tevf; return true; },
+    },
+    {
+      // The presets are a way of SETTING this range, not a filter of their
+      // own: the span a lit chip chose is what from/to carry, so a restored
+      // range comes back as a range and the chip stays unlit.
+      id: 'dates', attrs: ['data-days'], keys: ['from', 'to'], scope: 'tasks',
+      counts: true,
+      on: () => dFrom !== '' || dTo !== '',
+      reset: () => { dFrom = ''; dTo = ''; preset = ''; },
+      paint: () => { paintDates(); },
+      encode: () => [dFrom, dTo],
+      decode: (h) => {
+        if (!h.from && !h.to) return false;
+        dFrom = h.from || ''; dTo = h.to || '';
+        return true;
+      },
+    },
+    {
+      // Scopes the Usage section only: tasks record no author, so this never
+      // narrows the table and the badge in the table's own panel skips it.
+      id: 'author', attrs: ['data-au'], keys: ['au'], scope: 'usage', counts: false,
+      on: () => auFilter !== '',
+      reset: () => { auFilter = ''; },
+      paint: () => {
+        if (authorBar) highlight(authorBar, 'data-au', auFilter);
+        applyAuthor();
+      },
+      encode: () => [auFilter],
+      decode: (h) => { if (!h.au) return false; auFilter = h.au; return true; },
+    },
+    {
+      id: 'task-status', attrs: ['data-ts'], keys: [],
+      unkept: 'keyed by phase id, so the link would carry a list as long as '
+        + 'the plan to describe a drill-down inside one row',
+      scope: 'drill', counts: true,
+      on: () => Object.keys(taskStatus).some((pid) => taskStatus[pid] !== ''),
+      reset: () => { taskStatus = Object.create(null); },
+      paint: () => {
+        tfHosts.forEach((h) => { highlight(h, 'data-ts', taskStatus[h.__pid] || ''); });
+      },
+      encode: () => [],
+      decode: () => false,
+    },
+  ];
+
   /**
    * The per-day usage layer that both the range controls and the heatmap
    * calendar read. Absent on a report rendered without a ledger.

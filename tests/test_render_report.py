@@ -123,6 +123,171 @@ def _tables_and_wrappers(markup):
     return out
 
 
+# --- the filter-axis registry -------------------------------------------------
+# Chips the script wires that are NOT a filter, each with why. Read in both
+# directions: an attribute here that nothing wires any more is a stale row.
+NOT_A_FILTER = {
+    "data-g": "the heatmap's granularity picks the grain one chart is drawn "
+              "at; it hides no row, no phase and no view, so Clear owes it "
+              "nothing",
+}
+# The vocabulary a registry entry's `scope` is drawn from - what the axis
+# narrows, which is what refresh() reads to decide what it counts.
+AXIS_SCOPES = ("text", "phases", "tasks", "drill", "usage")
+AXIS_BEHAVIOURS = ("on", "reset", "paint", "encode", "decode")
+
+
+def _registry_text(script):
+    """The `FILTER_AXES` array literal of `script`, or '' when there is none."""
+    start = script.find("const FILTER_AXES = [")
+    if start < 0:
+        return ""
+    end = script.find("\n  ];\n", start)
+    return script[start:end] if end > 0 else ""
+
+
+def _filter_axes(script):
+    """One dict per registry entry, read off the array literal's own text:
+    `id`, `attrs`, `keys`, `unkept` (the first literal of the reason, or ''),
+    `scope`, `counts`, the behaviours it declares, and the state names its
+    `reset` assigns. Parsed rather than evaluated, because the claim being
+    tested is about what the SOURCE declares in one place."""
+    text = _registry_text(script)
+    starts = [m for m in re.finditer(r"\bid: '([a-z-]+)'", text)]
+    axes = []
+    for n, m in enumerate(starts):
+        body = text[m.start():starts[n + 1].start() if n + 1 < len(starts)
+                    else len(text)]
+        lists = dict((k, re.findall(r"'([^']*)'", v)) for k, v in
+                     re.findall(r"\b(attrs|keys): \[([^\]]*)\]", body))
+        unkept = re.search(r"\bunkept: '([^']*)'", body)
+        scope = re.search(r"\bscope: '([a-z]+)'", body)
+        counts = re.search(r"\bcounts: (true|false)\b", body)
+        reset = re.search(r"\breset: \(\) => \{(.*?)\},\n", body, re.S)
+        axes.append({
+            "id": m.group(1),
+            "attrs": lists.get("attrs"),
+            "keys": lists.get("keys"),
+            "unkept": unkept.group(1) if unkept else "",
+            "scope": scope.group(1) if scope else None,
+            "counts": counts.group(1) if counts else None,
+            "behaviours": [b for b in AXIS_BEHAVIOURS
+                           if re.search(r"\b%s: \(" % b, body)],
+            "state": sorted(set(re.findall(r"([A-Za-z_]\w*(?:\.value)?) = ",
+                                           reset.group(1)))) if reset else [],
+        })
+    return axes
+
+
+def _names_in(text, names):
+    """The names of `names` that `text` spells as a whole identifier."""
+    return sorted(n for n in names
+                  if re.search(r"(?<![\w.])%s(?!\w)" % re.escape(n), text))
+
+
+def _function_body(text, signature):
+    """`signature` through the first line closing a two-space-indented block
+    after it - the span of a top-level function in a report part - or ''."""
+    i = text.find(signature)
+    if i < 0:
+        return ""
+    j = text.find("\n  }\n", i)
+    return text[i:j] if j > 0 else ""
+
+
+def _filter_axis_cases(check):
+    """rx: every filter axis is declared ONCE, and the four places that used to
+    list the axes by hand - Clear, the link writer, the restore and refresh()'s
+    counters - iterate the declaration instead."""
+    script = M._SCRIPT
+    axes = _filter_axes(script)
+    page_state = _theme.read_asset("report/page-state.js")
+    check("rx1 the registry is declared once, in the part that owns the "
+          "filter state, and declares axes",
+          script.count("const FILTER_AXES = [") == 1
+          and page_state.count("const FILTER_AXES = [") == 1
+          and len(axes) > 0, repr([a["id"] for a in axes]))
+    # Derived from the script: every chip attribute a `wireChips` call binds is
+    # an axis or a row of NOT_A_FILTER. A chip row added without a registry
+    # entry fails here BY NAME, which is the whole point of the registry.
+    wired = set(re.findall(r"wireChips\([^,()]+, '(data-[a-z]+)'", script))
+    registered = [x for a in axes for x in (a["attrs"] or [])]
+    missing = sorted(wired - set(registered) - set(NOT_A_FILTER))
+    named = ("data-ps", "data-m", "data-tev", "data-tevf", "data-a", "data-au",
+             "data-days", "data-ts")
+    check("rx2 every chip attribute the page wires is a registered axis "
+          "(or a named non-filter), and so is every axis the page renders",
+          bool(wired) and not missing
+          and not sorted(set(named) - set(registered)),
+          "wired %r, registered %r, unregistered %r"
+          % (sorted(wired), sorted(registered), missing))
+    check("rx2b ...and NOT_A_FILTER names only attributes the script still "
+          "wires, so an exemption cannot outlive its chip",
+          set(NOT_A_FILTER) <= wired, repr(sorted(set(NOT_A_FILTER) - wired)))
+    dup_attrs = sorted(set(x for x in registered if registered.count(x) > 1))
+    check("rx3 each chip attribute belongs to exactly one axis",
+          bool(registered) and not dup_attrs, repr(dup_attrs))
+    bad = [a["id"] for a in axes
+           if a["behaviours"] != list(AXIS_BEHAVIOURS)
+           or a["scope"] not in AXIS_SCOPES or a["counts"] is None
+           or a["attrs"] is None or a["keys"] is None or not a["state"]]
+    check("rx4 every axis declares how it is on, reset, painted, encoded and "
+          "decoded, what it narrows, whether the panel counts it, and the "
+          "state its reset clears",
+          bool(axes) and not bad, repr(bad))
+    keys = [k for a in axes for k in (a["keys"] or [])]
+    unexplained = [a["id"] for a in axes
+                   if bool(a["keys"]) == bool(a["unkept"].strip())]
+    check("rx5 an axis is kept across a reload under its own link keys, or "
+          "says in one line why it is not - never both, never neither - and "
+          "no two axes share a key",
+          bool(keys) and not unexplained
+          and len(keys) == len(set(keys))
+          and set(("q", "from", "to")) <= set(keys),
+          "keys %r, neither-or-both %r" % (keys, unexplained))
+    # The consumers. The forbidden names are DERIVED from the registry - the
+    # state each axis's reset assigns - so a new axis's variable is forbidden
+    # in a hand list the moment the axis is declared.
+    state = sorted(set(s for a in axes for s in a["state"]))
+    date_range = _theme.read_asset("report/date-range.js")
+    filters = _theme.read_asset("report/filters.js")
+    exports = _theme.read_asset("report/exports.js")
+    clear = _function_body(date_range, "function clearAll()")
+    sync = _function_body(filters, "function syncHash()")
+    restore = exports[exports.find("// Restore what the link asked"):]
+    refresh = _function_body(filters, "function refresh()")
+    counters = re.findall(
+        r"const (?:live|narrows|anyFilter|nHidden) = [^;]*;"
+        r"|clearBtns\.forEach\([^;]*;", refresh)
+    sites = (("clearAll", clear, (".reset()", ".paint()")),
+             ("syncHash", sync, (".encode()",)),
+             ("the restore block", restore, (".decode(HASH)", ".paint()")),
+             ("refresh's counters", "\n".join(counters), (".on()",)))
+    for name, body, calls in sites:
+        check("rx6 %s iterates the registry and names no axis's state by hand"
+              % name,
+              bool(state) and "FILTER_AXES" in body
+              and all(c in body for c in calls)
+              and not _names_in(body, state),
+              "state %r named %r, body %d chars"
+              % (state, _names_in(body, state), len(body)))
+    check("rx7 refresh's counters are exactly the statements the registry "
+          "feeds - the live set, the narrowing test, the filter test, the "
+          "panel count and the Clear offer",
+          len(counters) == 5 and "const live = FILTER_AXES.filter(" in refresh,
+          repr(counters))
+    hash_reads = sorted(set(k for k in keys
+                            if re.search(r"HASH\.%s\b" % re.escape(k), script)))
+    check("rx8 no part reads a registered key off the link by hand - the "
+          "registry's decode is the one reader",
+          bool(keys) and not hash_reads, repr(hash_reads))
+    ts = [a for a in axes if "data-ts" in (a["attrs"] or [])]
+    check("rx9 the per-phase task-status chips count on the panel and offer "
+          "Clear like every other axis",
+          len(ts) == 1 and ts[0]["counts"] == "true"
+          and ts[0]["scope"] not in ("usage",), repr(ts))
+
+
 # --- cases --------------------------------------------------------------------
 def _cases(check):
 
@@ -763,12 +928,9 @@ def _cases(check):
           "chip.getAttribute('data-tokens')" in M._SCRIPT
           and "chip.getAttribute('data-share')" in M._SCRIPT
           and "of all spend" in M._SCRIPT)
-    check("c3: the author filter is a link (au=) and restores from one",
-          "put('au', auFilter)" in M._SCRIPT and "if (HASH.au)" in M._SCRIPT)
-    check("c3: clear-all lifts the author scope with everything else "
-          "(pinned INSIDE clearAll - the declaration up top spells the same "
-          "bytes and satisfied a whole-script substring)",
-          "auFilter = '';" in M._SCRIPT.split("function clearAll()")[1])
+    # The author's link key, its restore and its Clear are no longer written
+    # per axis: the filter-axis registry carries them, and the rx cases pin
+    # that the registry holds the author and that every consumer iterates it.
     check("c3: hidden actually hides a rank row and a hidden smcell - the "
           "author-facing rules a UA default cannot win against",
           ".rank[hidden]{display:none}" in M._CSS
@@ -802,18 +964,9 @@ def _cases(check):
           "with none selected it admits everything",
           "areaFilter.includes(tag)" in M._SCRIPT
           and "if (!areaFilter.length) return true;" in M._SCRIPT)
-    check("d1: the area selection is a link (a=) and restores from one - "
-          "spelled apart from the author's au=, which stays wired",
-          "put('a', areaFilter.join(' '));" in M._SCRIPT
-          and "if (HASH.a)" in M._SCRIPT
-          and "put('au', auFilter)" in M._SCRIPT and "if (HASH.au)" in M._SCRIPT)
-    check("d1: clear-all lifts the area gate with everything else, and both "
-          "the way-back button and the panel count own it "
-          "(the reset is pinned INSIDE clearAll - the declaration up top "
-          "spells the same bytes and satisfied a whole-script substring)",
-          "areaFilter = [];" in M._SCRIPT.split("function clearAll()")[1]
-          and "|| areaFilter.length > 0" in M._SCRIPT
-          and "(areaFilter.length ? 1 : 0)" in M._SCRIPT)
+    # The area's link key (a=, apart from the author's au=), its restore, its
+    # Clear and its place in the panel count are the registry's now; the rx
+    # cases pin the registry entry and the consumers that iterate it.
     check("d1: the chips are wired, not built - report.js attaches behaviour "
           "to the server-rendered row",
           "wireChips(areaBar, 'data-a'" in M._SCRIPT
@@ -1882,14 +2035,9 @@ def _cases(check):
           "list, not as a substring of a longer marker name",
           "(' ' + (t.getAttribute('data-tev-flags') || '') + ' ')" in M._SCRIPT
           and ".indexOf(' ' + tevFlag + ' ')" in M._SCRIPT)
-    check("tv-r5 both axes travel in the link under distinct keys, and both "
-          "come back - a filtered view somebody sends has to arrive filtered",
-          "put('tev', tevFilter);" in M._SCRIPT
-          and "put('tevf', tevFlag);" in M._SCRIPT
-          and "if (HASH.tev) {" in M._SCRIPT and "if (HASH.tevf) {" in M._SCRIPT)
-    check("tv-r6 ...and both are counted by the badge on the folded filter "
-          "panel, so a filter nobody can see still says it is on",
-          "+ (tevFilter ? 1 : 0) + (tevFlag ? 1 : 0)" in M._SCRIPT)
+    # Both axes travel in the link under distinct keys, come back, count on the
+    # folded panel and are lifted by Clear - through their registry entries,
+    # which the rx cases pin by attribute and by key.
     # The stylesheet. The badge is a `.chip` and the observation deliberately is
     # not: two pills side by side read as two verdicts.
     check("tv-r7 the verdict reuses the one pill grammar this sheet already "
@@ -2246,6 +2394,7 @@ def _rl_stage(check):
 def _selftest():
     def body(check):
         _cases(check)
+        _filter_axis_cases(check)
         _resolve_cases(check)
         _harness.stage(check, "rl", _rl_stage)
     return _harness.run(body)

@@ -8,6 +8,11 @@
   /**
    * Narrow the Usage section to the selected author, or restore the default view
    * when no author is selected, and say in the note what the selection covers.
+   *
+   * A painter only: the link and the Clear offer are refresh()'s, which every
+   * caller runs next. Writing the link from here alone left Clear hidden while
+   * an author was selected, because the button is shown by refresh() and an
+   * author pick never reached it.
    * @returns {void}
    */
   function applyAuthor() {
@@ -40,12 +45,12 @@
         auNote.textContent = '';
       }
     }
-    syncHash();
   }
   wireChips(authorBar, 'data-au', (val, host, attr) => {
     auFilter = (auFilter === val) ? '' : val;
     highlight(host, attr, auFilter);
     applyAuthor();
+    refresh();
   });
   // The authors dropdown drives the same state the chips do, and both are
   // painted from it, so touching either one leaves the other agreeing.
@@ -53,6 +58,7 @@
     auFilter = auSelect.value;
     if (authorBar) highlight(authorBar, 'data-au', auFilter);
     applyAuthor();
+    refresh();
   });
 
   // The More-filters panel closes on an outside click and on Escape. A <details>

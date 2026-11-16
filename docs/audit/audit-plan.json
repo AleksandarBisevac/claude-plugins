@@ -1042,6 +1042,12 @@
       "title": "A red gate's base is measured on the code the red ran on",
       "status": "done",
       "shard": "phases/P162.json"
+    },
+    {
+      "id": "P163",
+      "title": "The report's filters clear, count and explain what they show",
+      "status": "in_progress",
+      "shard": "phases/P163.json"
     }
   ],
   "fileIndex": {
@@ -2139,7 +2145,10 @@
       "P125.107-0h5",
       "P125.81-0h5",
       "P125.99-0h5",
-      "P154.3-mkf"
+      "P154.3-mkf",
+      "P163.1",
+      "P163.2",
+      "P163.3"
     ],
     "docs/design/audit-concurrency-report.md": [
       "P60.3"
@@ -2191,7 +2200,10 @@
       "P125.107-0h5",
       "P125.81-0h5",
       "P125.99-0h5",
-      "P154.3-mkf"
+      "P154.3-mkf",
+      "P163.1",
+      "P163.2",
+      "P163.3"
     ],
     "docs/screenshots": [
       "P53.9",
@@ -2206,7 +2218,10 @@
       "P123.65-64p",
       "P123.70-64p",
       "P123.88-64p",
-      "P130.3"
+      "P130.3",
+      "P163.1",
+      "P163.2",
+      "P163.3"
     ],
     "docs/screenshots/captured-at.json": [
       "P63.9",
@@ -5793,7 +5808,9 @@
       "P126.1",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P163.2",
+      "P163.3"
     ],
     "plugins/audit/scripts/report/_report_md.py": [
       "P51.9",
@@ -5823,7 +5840,9 @@
       "P126.1",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P163.2",
+      "P163.3"
     ],
     "plugins/audit/scripts/report/_report_ui.py": [
       "P11.2",
@@ -8658,7 +8677,10 @@
       "P130.9",
       "P131.2",
       "P154.3-mkf",
-      "P155.9"
+      "P155.9",
+      "P163.1",
+      "P163.2",
+      "P163.3"
     ],
     "tools/gate-parity.py": [
       "P19.2",
@@ -11629,7 +11651,8 @@
       "P123.90-64p",
       "P126.1",
       "P125.26",
-      "P125.99-0h5"
+      "P125.99-0h5",
+      "P163.3"
     ],
     ".github/sweep-costs.json": [
       "P127.2-bgr",
@@ -11810,7 +11833,10 @@
       "P125.81-0h5",
       "P125.130-0h5",
       "P131.2",
-      "P154.3-mkf"
+      "P154.3-mkf",
+      "P163.1",
+      "P163.2",
+      "P163.3"
     ],
     "tools/ui-tests/table-fit.test.mjs": [
       "P125.81-0h5",
@@ -12588,7 +12614,9 @@
     ],
     "tests/test__report_html.py": [
       "P131.1",
-      "P154.3-mkf"
+      "P154.3-mkf",
+      "P163.2",
+      "P163.3"
     ],
     "tests/test__report_md.py": [
       "P131.1"
@@ -12596,7 +12624,9 @@
     "tests/test__report_page.py": [
       "P131.1",
       "P131.2",
-      "P154.3-mkf"
+      "P154.3-mkf",
+      "P163.2",
+      "P163.3"
     ],
     "tests/test__report_ui.py": [
       "P131.1",
@@ -13178,7 +13208,10 @@
     "tests/test_render_report.py": [
       "P131.1",
       "P131.2",
-      "P154.3-mkf"
+      "P154.3-mkf",
+      "P163.1",
+      "P163.2",
+      "P163.3"
     ],
     "tests/test_repair_commits.py": [
       "P131.1"
@@ -13483,19 +13516,25 @@
       "P154.2-mkf"
     ],
     "plugins/audit/scripts/ui/report/exports.js": [
-      "P154.3-mkf"
+      "P154.3-mkf",
+      "P163.1"
     ],
     "plugins/audit/scripts/ui/report-css/print-segments.css": [
       "P154.3-mkf"
     ],
     "plugins/audit/scripts/ui/report/README.md": [
-      "P154.3-mkf"
+      "P154.3-mkf",
+      "P163.1",
+      "P163.2",
+      "P163.3"
     ],
     "plugins/audit/scripts/ui/report-css/README.md": [
-      "P154.3-mkf"
+      "P154.3-mkf",
+      "P163.3"
     ],
     "plugins/audit/scripts/ui/report/date-range.js": [
-      "P154.3-mkf"
+      "P154.3-mkf",
+      "P163.1"
     ],
     "plugins/audit/commands/verbs-in-full.md": [
       "P155.10"
@@ -13533,6 +13572,35 @@
       "P161.4-toy",
       "P162.1",
       "P162.2-zz6"
+    ],
+    "plugins/audit/scripts/ui/report/filters.js": [
+      "P163.1",
+      "P163.2",
+      "P163.3"
+    ],
+    "plugins/audit/scripts/ui/report/chips.js": [
+      "P163.1"
+    ],
+    "plugins/audit/scripts/ui/report/areas.js": [
+      "P163.1",
+      "P163.2"
+    ],
+    "plugins/audit/scripts/ui/report/authors.js": [
+      "P163.1"
+    ],
+    "examples": [
+      "P163.1",
+      "P163.2",
+      "P163.3"
+    ],
+    "plugins/audit/scripts/ui/report-css/empty-state.css": [
+      "P163.2"
+    ],
+    "plugins/audit/scripts/ui/report-css/controls.css": [
+      "P163.3"
+    ],
+    "plugins/audit/scripts/ui/report-css/forced-colors.css": [
+      "P163.3"
     ]
   },
   "bugs": [

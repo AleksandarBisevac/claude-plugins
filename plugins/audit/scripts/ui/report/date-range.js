@@ -125,29 +125,19 @@
   });
 
   /**
-   * Lift every filter at once: search, statuses, model, dates, areas, author.
+   * Lift every filter at once: every axis FILTER_AXES declares.
    *
-   * The button that calls this lives in the empty state because that is the one
+   * Reset AND repaint, per axis: clearing the state without unlighting its
+   * controls would leave chips claiming a filter that no longer applies.
+   *
+   * One copy of this button lives in the empty state because that is the one
    * view from which no other control is reachable — every chip that could clear
    * itself has been filtered off the screen along with the rows.
    *
    * @returns {void}
    */
   function clearAll() {
-    if (q) q.value = '';
-    phaseStatus = ''; modelFilter = ''; dFrom = ''; dTo = ''; preset = '';
-    taskStatus = {};
-    auFilter = '';
-    areaFilter = [];
-    if (phaseStatusBar) highlight(phaseStatusBar, 'data-ps', '');
-    if (modelBar) highlight(modelBar, 'data-m', '');
-    paintAreas();
-    if (authorBar) highlight(authorBar, 'data-au', '');
-    // Clearing the state without unlighting these would leave rows claiming a
-    // filter that no longer applies to them.
-    tfHosts.forEach((h) => { highlight(h, 'data-ts', ''); });
-    applyAuthor();
-    paintDates();
+    FILTER_AXES.forEach((axis) => { axis.reset(); axis.paint(); });
     refresh();
   }
   clearBtns.forEach((b) => { b.addEventListener('click', clearAll); });

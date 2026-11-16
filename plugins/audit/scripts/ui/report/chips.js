@@ -102,6 +102,9 @@
     const pid = pr.getAttribute('data-phase');
     const tfRow = tfOf(pid); if (!tfRow) return;
     const host = tfRow.querySelector('.tf-chips'); if (!host) return;
+    // The phase rides on the host so the registry's painter can repaint every
+    // row's chips from `taskStatus` without a second index.
+    host.__pid = pid;
     tfHosts.push(host);
     wireChips(host, 'data-ts', (val) => {
       taskStatus[pid] = (taskStatus[pid] === val) ? '' : val;

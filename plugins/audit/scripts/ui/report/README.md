@@ -11,16 +11,16 @@ against state that already exists. Reordering them is not a formatting change.
 
 | part | responsibility |
 |---|---|
-| `page-state.js` | Element lookups, theme preference, sticky header measurement, scroll spy, expand/collapse persistence, number formatting, and the task index the filters read. |
-| `filters.js` | Which phase and task rows are on screen: the filter state, the single pass that applies it, and the URL hash that survives a reload. The test gate is TWO of those axes and not one — what a task's last recorded run said, and what else was true about that run — because a gate can fail and rewrite the tree, and one control could only express their combination. |
+| `page-state.js` | Element lookups, theme preference, sticky header measurement, scroll spy, expand/collapse persistence, number formatting, the task index the filters read, and `FILTER_AXES` — every filter axis declared once, with its link keys, default, reset, painter and what it narrows, so Clear, the link, the restore and the counters iterate it instead of listing axes by hand. |
+| `filters.js` | Which phase and task rows are on screen: the filter state, the single pass that applies it, and the URL hash that survives a reload — the hash and the panel count both read off `FILTER_AXES`. The test gate is TWO of those axes and not one — what a task's last recorded run said, and what else was true about that run — because a gate can fail and rewrite the tree, and one control could only express their combination. |
 | `sorting.js` | Natural-order column sorting, inside a phase and across the table; and which order the phase rows themselves are listed in — the written plan, or the priority ranks the server stamped on the rows. |
 | `chips.js` | The toggle-chip behaviour shared by every filter bar, including which chip reads as pressed. |
 | `areas.js` | Filtering by area tag, and the counts each tag shows. |
-| `authors.js` | Selecting one author and narrowing the usage tables and rank rows to them. |
-| `date-range.js` | The task table's date window: the two inputs, the relative-span presets, and clearing back to all time. |
+| `authors.js` | Selecting one author and narrowing the usage tables and rank rows to them; a pick goes through the same refresh as every other filter, so it offers Clear. |
+| `date-range.js` | The task table's date window: the two inputs, the relative-span presets, and clearing back to all time — plus Clear filters, which resets and repaints every axis `FILTER_AXES` declares. |
 | `usage-range.js` | The same window applied to the usage charts, which read a different data source. |
 | `heatmap.js` | Calendar navigation and run selection in the activity heatmap. |
-| `exports.js` | Per-segment and per-section export: CSV for tables, PNG for the heatmap, printing one segment — and, for every print, cutting the phases table into one table per phase on `beforeprint` and joining it back on `afterprint`, because Chrome's renderer crashes paginating one long table across many pages. |
+| `exports.js` | Per-segment and per-section export: CSV for tables, PNG for the heatmap, printing one segment — and, for every print, cutting the phases table into one table per phase on `beforeprint` and joining it back on `afterprint`, because Chrome's renderer crashes paginating one long table across many pages. It also restores the linked or stored view before the first pass, through each axis's `decode`. |
 
 ## Constraints that hold for every part
 
