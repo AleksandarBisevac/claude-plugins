@@ -19,15 +19,27 @@
    offset it computed from --sticky-2 — no sentinel element, no second observer. */
 .sectools.stuck{box-shadow:var(--shadow-sm)}
 @media print{.sectools{display:none!important}}
-/* The count never breaks its own words. Given a small basis and leave to wrap,
-   it held the bar to one flex line by taking two or three lines of text inside
-   it - the bar still grew, and a check that measured the bar's lines could not
-   see it. Unbroken, it is one line of text at its natural width, and the flex
-   line it lands on is the one that has room for all of it; what keeps that
-   short is that the view's name is not drawn (the .vh below). lm3 and lm4 in
-   tools/check-report-interactive.mjs read the count's lines off its text, and
-   the bar's lines against what its controls need, at every size and state. */
-#audit-count{flex:0 0 auto;white-space:nowrap}
+/* The count is the bar's last item and takes a row of its own when it does not
+   fit beside the controls: its basis is its whole text, which is what a wrapping
+   flex line places, so it moves down whole rather than squeezing in beside them.
+   Given a small basis instead, it held the bar to one flex line by taking two or
+   three lines of text inside it. Only where its text is wider than the whole bar
+   - a phone's, with a filter on - does it shrink and wrap its own words; held
+   unbroken there it ran out of the bar's card and gave the page a sideways
+   scroll. The view's name is not drawn (the .vh below), which is what keeps the
+   text short. tools/check-report-interactive.mjs holds this at every size and
+   state: lm3 the count one line wherever its text fits the bar, lm4 the bar's
+   lines at the laptop sizes, lm8 every control and the count inside the bar. */
+#audit-count{flex:0 1 auto}
+/* The bar's View and Sort selects are as wide as the option they show, not the
+   longest option they hold: sized to "Archived (done & cancelled)" in every
+   view, the View select alone pushed the bar onto a second line at a laptop
+   width with nothing filtering. field-sizing is Newly Available, so a browser
+   without it keeps the select's intrinsic width and the bar may wrap there;
+   lm4 measures Chromium only. Selected as a select in the bar's own row, not by
+   the two wrappers' names, so the selects in More filters keep their widths and
+   the two pickers still share one styling rule (pr8 in tests/test_render_report.py). */
+@supports (field-sizing:content){.sectools>span>select{field-sizing:content}}
 /* Said to a screen reader, drawn to nobody: the count's view name, which the
    View select beside it already shows. The panel's base-controls.css carries
    the same rule under the same name; the two are a pair until the surfaces

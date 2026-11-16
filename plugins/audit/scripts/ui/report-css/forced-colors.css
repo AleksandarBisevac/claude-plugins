@@ -62,9 +62,10 @@
      own filter bar it held more than half of a 390x844 screen over the rows
      before this rule. Held sideways the same phone is wider than 52rem and only
      390px tall, and the width query alone left the bar pinned there: three
-     quarters of the screen. lm1 in tools/check-report-interactive.mjs measures
-     the stack by hit-test at every size it reads, both of these among them, and
-     prints its share of the screen. None of the
+     quarters of the screen. lm1 in tools/check-report-interactive.mjs fails a
+     top bar that pins wherever this query matches - it carries the query as its
+     own copy, so deleting this rule turns it red rather than moving its bound -
+     and measures the stack by hit-test at every size it reads. None of the
      bar's lines is what a reader needs while reading a table row; the strip
      (where am I) and the table's bar (what is filtering it) are, and they stay
      pinned. A viewport query rather than a container query because the cost is a

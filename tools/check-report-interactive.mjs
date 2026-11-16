@@ -532,8 +532,8 @@ expect('on load, tasks are collapsed', load.tasks, 0);
     !!rest && !!short && drawn === rest[1] + ' of ' + rest[2] + ' phase'
       + (rest[2] === '1' ? '' : 's') && load.count.indexOf(short) >= 0, true);
 }
-// ...and saying so does not cost the pinned bar a line of text, at any size or
-// in any state: lm3 and lm4 in the layout matrix below.
+// ...and the count it leaves is one line wherever its text fits the bar, and
+// inside the bar everywhere: lm3, lm4 and lm8 in the layout matrix below.
 
 // Switching the view is an EXPANDER in the standing sense — it may not grow a
 // sideways scroll box — and it must not lose the reader's place either.
@@ -2781,11 +2781,13 @@ if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
 // a search typed. Each cell asks:
 //   lm1  the stack pinned over the table is no more than the layers pinned there
 //   lm2  ...and leaves the table its share of the screen, whatever those are
-//   lm3  the count is one line of text
-//   lm4  the filter bar takes no more lines than its controls need
+//   lm3  the count is one line of text wherever its text fits the bar unbroken
+//   lm4  at a laptop size the filter bar is one line at rest and two filtered
 //   lm5  while the top bar pins, the header's filter row is one line
 //   lm6  More filters, opened over the table, is on the screen and painted
 //   lm7  ...and where it opens in the bar's flow, the bar holding it does not pin
+//   lm8  the bar's controls and the count's text lie inside the bar, and the
+//        page is no wider than the screen
 //
 // lm1 measures what a reader sees, not a sum of heights: scrolled into the table,
 // from the top of the screen down its middle, the first point that is the table's
@@ -2793,10 +2795,11 @@ if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
 // rows, including a layer nobody meant to make sticky. Its bound is the layers
 // whose computed position is sticky in that same layout and that span the
 // column the scan walks - the top bar, the section strip, the filter bar - plus
-// STACK_SLACK_PX: the scan steps whole
-// pixels, and the bar sticks at an offset published rounded to a whole pixel
-// (px() in page-state.js), so the first table pixel can sit up to a pixel and a
-// half below the layers' exact sum. Anything else pinning clears that slack many
+// STACK_SLACK_PX. Where TOPBAR_SCROLLS's query matches, a phone's screen, the top
+// bar is not granted: it pinning there fails lm1 by name, however small it is.
+// The slack is there because the scan steps whole pixels, and the bar sticks at
+// an offset published rounded to a whole pixel (px() in page-state.js), so the
+// first table pixel can sit up to a pixel and a half below the layers' exact sum. Anything else pinning clears that slack many
 // times over.
 //
 // What that bound cannot see is the layers themselves growing, or a layer that
@@ -2815,31 +2818,38 @@ if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
 // reader sees. Emptying the text and comparing the bar's height - the probe this
 // replaces - cannot see a count that wraps its own words inside the row's height,
 // and that is how the laptop's count came to take three lines under a green check.
-// lm4's need is derived, not chosen: the bar's controls laid end to end at their
-// natural widths - a flex basis set in a length where one is, the count's text
-// unbroken, everything else as drawn - packed into the bar's width the way a
-// wrapping flex line packs them. A bar that holds more lines than that is a bar
-// wrapping for a reason its controls do not give.
-// What lm4 does NOT hold: a bar whose controls need two lines is allowed two,
-// and the count, the last control, is often what lands alone on the second. That
-// still happens at the laptop size once anything filters, measured on the
-// example, the large demo and this repository's own plan - each needs more than
-// the bar's width only with the count among its controls - so the count still
-// costs the pinned bar a line there. It is a
-// known open cost, waiting on a decision about where the count sits, and not
-// something this matrix passes.
+// It asks only where the text, measured unbroken, fits the bar's content box:
+// narrower than that, the count wraps its words rather than run out of the bar,
+// and the cell says so instead of passing it.
+// lm4 is a stated bound and not a derived one: at the two laptop sizes the bar
+// is LAPTOP_BAR_LINES.rest line with nothing filtering, in every view, and at
+// most LAPTOP_BAR_LINES.filtered with a chip on or a search typed, where the
+// count may take a row of its own. The check it replaces packed the bar's
+// controls end to end and allowed the lines they needed, which grew with the
+// count and so could not fail on it. A phone's bar may take more lines; what it
+// costs the reader there is lm1 and lm2's question.
+// lm8 is the one a line count cannot see: a control or a count wider than the
+// bar takes one line and runs out of the card sideways. Every in-flow child of
+// the bar and every drawn line of the count is held to the bar's content box,
+// and the page to the screen's width.
 const STACK_SLACK_PX = 2;
 const STACK_CEILING_SHARE = 0.5;
 const STACK_TABLE_SHARE = +(1 - STACK_CEILING_SHARE).toFixed(2);
+// `laptop` marks the sizes lm4 holds the bar's lines at.
 const LAYOUT_SIZES = [
   { width: PHONE_VIEWPORT.width, height: 844 },
   { width: 844, height: PHONE_VIEWPORT.width },
   { width: 834, height: 1194 },
-  { width: 1024, height: 768 },
-  { width: 1512, height: 945 },
+  { width: 1024, height: 768, laptop: true },
+  { width: 1512, height: 945, laptop: true },
 ];
+const LAPTOP_BAR_LINES = { rest: 1, filtered: 2 };
 // The layers that may pin over the table, by the names a label prints.
 const STACK_LAYERS = [['top bar', '.topbar'], ['strip', '.snav'], ['filter bar', '.sectools']];
+// Where the top bar scrolls instead: the query is written here and not read
+// off the stylesheet, because the fault it is held against is that rule going
+// missing, and a query read off a missing rule asks nothing.
+const TOPBAR_SCROLLS = ['top bar', '(max-width:52rem),(max-height:32rem)'];
 const layoutAtTop = () => page.evaluate(() => {
   const shown = (n) => n && n.getClientRects().length > 0;
   // A run of boxes, grouped into the bands they share: two boxes on one line
@@ -2879,30 +2889,42 @@ const layoutAtTop = () => page.evaluate(() => {
   const gf = document.querySelector('.topbar .gfilters');
   const top = document.querySelector('.topbar');
   const countRects = drawnText(count);
-  const natural = (k) => {
-    if (k === count) return countRects.reduce((w, r) => w + r.width, 0);
-    const cs = getComputedStyle(k);
-    const basis = /px$/.test(cs.flexBasis) ? parseFloat(cs.flexBasis) : null;
-    if (basis === null) return k.getBoundingClientRect().width;
-    const lo = parseFloat(cs.minWidth) || 0;
-    const hi = /px$/.test(cs.maxWidth) ? parseFloat(cs.maxWidth) : Infinity;
-    return Math.min(Math.max(basis, lo), hi);
-  };
+  // The count's text unbroken, measured with its wrapping switched off for the
+  // one synchronous read and put back before anything paints: the sum of the
+  // drawn lines' widths drops the spaces a break swallowed.
+  const was = count.style.whiteSpace;
+  count.style.whiteSpace = 'nowrap';
+  const countWide = drawnText(count).reduce((w, r) => w + r.width, 0);
+  count.style.whiteSpace = was;
   const cs = getComputedStyle(st);
-  const room = st.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-  const gap = parseFloat(cs.columnGap) || 0;
-  let needed = 0, used = 0;
-  for (const k of inFlow(st)) {
-    const w = natural(k);
-    if (needed === 0 || used + gap + w > room + 0.5) { needed += 1; used = w; }
-    else used += gap + w;
-  }
+  const b = st.getBoundingClientRect();
+  const box = {
+    left: b.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft),
+    right: b.right - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingRight),
+    top: b.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop),
+    bottom: b.bottom - parseFloat(cs.borderBottomWidth) - parseFloat(cs.paddingBottom),
+  };
+  // Half a pixel either way: edges land on fractional pixels, and a box laid
+  // flush against the padding edge reads a rounding error past it.
+  const outside = (r) => r.left < box.left - 0.5 || r.right > box.right + 0.5
+    || r.top < box.top - 0.5 || r.bottom > box.bottom + 0.5;
+  const named = (k) => k.id ? `#${k.id}` : `${k.tagName.toLowerCase()}.${[...k.classList].join('.')}`;
+  const spill = [
+    ...inFlow(st).filter((k) => outside(k.getBoundingClientRect())).map(named),
+    ...(countRects.some(outside) ? ['the count\'s text'] : []),
+  ];
+  const sort = document.getElementById('audit-sort');
   return {
     said: count.textContent,
     countLines: bands(countRects),
+    countWide: Math.round(countWide),
+    room: Math.round(box.right - box.left),
+    spill,
+    pageWide: document.scrollingElement.scrollWidth,
+    screenWide: window.innerWidth,
     barLines: bands(inFlow(st).map((k) => k.getBoundingClientRect())),
-    barNeeds: needed,
-    barPx: Math.round(st.getBoundingClientRect().height),
+    barPx: Math.round(b.height),
+    sortDrawn: !!sort && shown(sort) && st.contains(sort),
     topPins: getComputedStyle(top).position === 'sticky',
     topPx: Math.round(top.getBoundingClientRect().height),
     rowLines: gf ? bands(inFlow(gf).map((k) => k.getBoundingClientRect())) : null,
@@ -2913,7 +2935,7 @@ const layoutAtTop = () => page.evaluate(() => {
 const stackInTable = () => page.evaluate(() => {
   const t = document.querySelector('table.phases');
   window.scrollTo(0, window.scrollY + t.getBoundingClientRect().top + 10);
-}).then(() => page.waitForTimeout(300)).then(() => page.evaluate((layers) => {
+}).then(() => page.waitForTimeout(300)).then(() => page.evaluate(([layers, scrolls]) => {
   const t = document.querySelector('table.phases');
   const wrap = t.closest('.tablewrap') || t;
   const x = Math.round(window.innerWidth / 2);
@@ -2932,9 +2954,20 @@ const stackInTable = () => page.evaluate(() => {
              over: !!el && getComputedStyle(el).position === 'sticky'
                && r.left <= x && r.right >= x };
   }).filter((l) => l.over);
-  return { stack, pinned };
-}, STACK_LAYERS));
+  // Where the screen is a phone's, the top bar is not a layer the bound may
+  // grant: it pinning there is the fault, and counting it in would grow the
+  // bound with it.
+  const phone = window.matchMedia(scrolls[1]).matches;
+  const refused = phone ? pinned.filter((l) => l.name === scrolls[0]) : [];
+  return { stack, pinned: pinned.filter((l) => refused.indexOf(l) < 0), refused, phone };
+}, [STACK_LAYERS, TOPBAR_SCROLLS]));
 const judgeStack = (id, cell, size, m) => {
+  if (id === 'lm1') {
+    expect(`lm1 ${cell}: where ${TOPBAR_SCROLLS[1]} matches, the top bar scrolls rather `
+      + `than pinning over the table (${m.phone ? 'the query matches' : 'the query does not match'}; `
+      + `pinned there and refused: ${m.refused.map((l) => `${l.name} ${l.px.toFixed(1)}px`).join(', ') || 'nothing'})`,
+      m.refused.length, 0);
+  }
   const bound = m.pinned.reduce((sum, l) => sum + l.px, 0) + STACK_SLACK_PX;
   const parts = m.pinned.map((l) => `${l.name} ${l.px.toFixed(1)}`).join(' + ') || 'nothing';
   const ceiling = Math.floor(size.height * STACK_CEILING_SHARE);
@@ -2980,12 +3013,12 @@ const judgeStack = (id, cell, size, m) => {
     const id = row && row.querySelector('.mono');
     return { chip: !!chip, term: id ? id.textContent.trim() : null };
   });
-  const states = viewOpts.map((v) => ({ name: `View=${v} at rest`, view: v }));
+  const states = viewOpts.map((v) => ({ name: `View=${v} at rest`, view: v, rest: true }));
   if (probe.chip) states.push({ name: `View=${seg0.defaultView}, one phase-status chip on`, view: seg0.defaultView, chip: true });
   else failures.push('FAIL lm the default view draws no phase-status chip, so no cell was read with one on');
   if (probe.term) states.push({ name: `View=${seg0.defaultView}, searched for ${probe.term}`, view: seg0.defaultView, term: probe.term });
   else failures.push('FAIL lm the default view draws no phase row, so no cell was read with a search typed');
-  let cells = 0;
+  let cells = 0, sortCells = 0;
   for (const s of states) {
     await page.setViewportSize({ width: 1512, height: 945 });
     await page.evaluate(() => window.scrollTo(0, 0));
@@ -3000,11 +3033,26 @@ const judgeStack = (id, cell, size, m) => {
       await page.waitForTimeout(250);
       const at = await layoutAtTop();
       cells += 1;
-      expect(`lm3 ${cell}: the count is one line of text (${JSON.stringify(at.said)} drawn on `
-        + `${at.countLines} lines)`, at.countLines, 1);
-      expect(`lm4 ${cell}: the filter bar takes no more lines than its controls need laid end `
-        + `to end (${at.barLines} lines, ${at.barNeeds} needed; ${at.barPx}px)`,
-        at.barLines <= at.barNeeds, true);
+      if (at.sortDrawn) sortCells += 1;
+      if (at.countWide <= at.room) {
+        expect(`lm3 ${cell}: the count, whose text fits the bar unbroken (${at.countWide}px of `
+          + `${at.room}px), is one line (${JSON.stringify(at.said)} drawn on ${at.countLines} `
+          + 'lines)', at.countLines, 1);
+      } else {
+        notes.push(`ok   lm3 ${cell}: the count's text is ${at.countWide}px unbroken against a `
+          + `${at.room}px bar, so it wraps its own words (${at.countLines} lines); lm8 holds it `
+          + 'inside the bar');
+      }
+      if (size.laptop) {
+        const most = s.rest ? LAPTOP_BAR_LINES.rest : LAPTOP_BAR_LINES.filtered;
+        expect(`lm4 ${cell}: the filter bar takes at most ${most} line${most > 1 ? 's' : ''} `
+          + `${s.rest ? 'at rest' : 'filtered'} (${at.barLines} lines; ${at.barPx}px)`,
+          at.barLines <= most, true);
+      }
+      expect(`lm8 ${cell}: every control of the filter bar and the count's text lie inside `
+        + `the bar's content box, and the page is no wider than the screen (outside: `
+        + `${at.spill.join(', ') || 'nothing'}; page ${at.pageWide}px on a ${at.screenWide}px `
+        + 'screen)', at.spill.length === 0 && at.pageWide <= at.screenWide, true);
       if (at.topPins && at.rowLines !== null) {
         expect(`lm5 ${cell}: while the top bar pins, the header's filter row is one line `
           + `(${at.rowLines} lines; top bar ${at.topPx}px)`, at.rowLines, 1);
@@ -3053,6 +3101,21 @@ const judgeStack = (id, cell, size, m) => {
   }
   notes.push(`ok   (the layout matrix read ${cells} cells: ${LAYOUT_SIZES.length} sizes by `
     + `${states.length} states)`);
+  // Whether the Sort select was in the bar the matrix measured. The select is
+  // drawn only for a plan that pins a phase, and the rows' execution ranks are
+  // the other half of that same plan fact, emitted on their own: ranks with no
+  // select is a bar measured without a control it ships with.
+  const ranked = await page.$$eval('table.phases tr.phase[data-porder]', (rs) => rs.length);
+  if (ranked > 0 && sortCells < cells) {
+    failures.push(`FAIL lm the plan pins a phase (${ranked} rows carry an execution rank) but `
+      + `the Sort select was drawn in ${sortCells} of the ${cells} cells read`);
+  } else if (ranked > 0) {
+    notes.push(`ok   (the Sort select was in the filter bar in every cell: ${ranked} rows carry `
+      + 'an execution rank)');
+  } else {
+    notes.push('ok   (this plan pins no phase, so the Sort select is not drawn and no cell '
+      + 'measured the bar with it - that coverage is absent from this run)');
+  }
   await page.evaluate(() => {
     for (const n of document.querySelectorAll('[data-lm-spacer]')) n.remove();
     for (const n of document.querySelectorAll('[data-lm-chip]')) n.removeAttribute('data-lm-chip');

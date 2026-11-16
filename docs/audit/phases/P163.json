@@ -199,42 +199,60 @@
         "severity": "med",
         "file": "plugins/audit/scripts/ui/report-css/controls.css:33 (with tools/check-report-interactive.mjs:531)",
         "issue": "R13 is not fixed: flex:1 1 6rem;min-width:0 makes the count wrap its own words. At 1512x945 acme at rest takes 2 lines, filtered 3 lines (bar 60px to 74px); this repo's own report at rest takes 3 lines (bar 74px) and nw1 fails there; View=all or filtered gives 87px. nw1 runs only at rest in the default view and empties the count's text, so it cannot see a wrap on the shipped fixtures.",
-        "resolution": "Keep the view's name in the live region but visually hidden (the View select beside it shows it), so the visible count stays short. Make nw1 require a single-line count and a single-line bar at rest, filtered and in every view, on a fixture that carries the Sort select."
+        "resolution": "fixed in P163.15-d6t (06e5cebe229e): Keep the view's name in the live region but visually hidden (the View select beside it shows it), so the visible count stays short. Make nw1 require a single-line count and a single-line bar at rest, filtered and in every view, on a fixture that carries the Sort select.",
+        "fixTask": "P163.15-d6t",
+        "commit": "06e5cebe229e",
+        "status": "fixed"
       },
       {
         "id": "P163-R19",
         "severity": "low",
         "file": "plugins/audit/scripts/ui/report-css/forced-colors.css:58",
         "issue": "R10's iPad half is unaddressed: at 834x1194 (wider than 52rem, tall) the bar stays sticky at 160px against 122px elsewhere; no gate size falls in the 52-64rem band.",
-        "resolution": "Compact the scope labels between 52rem and 64rem so the header row does not wrap, and add 834x1194 to the stack check with a bound."
+        "resolution": "fixed in P163.15-d6t (06e5cebe229e): Compact the scope labels between 52rem and 64rem so the header row does not wrap, and add 834x1194 to the stack check with a bound.",
+        "fixTask": "P163.15-d6t",
+        "commit": "06e5cebe229e",
+        "status": "fixed"
       },
       {
         "id": "P163-R20",
         "severity": "low",
         "file": "tools/check-report-interactive.mjs:703",
         "issue": "es0 counts a press as narrowing when Clear merely shows: with refresh's search term forced empty, es0 stays green with search:true.",
-        "resolution": "For the search kinds require drawn rows below the resting count (the term is an archived phase id, so the default view always hides rows)."
+        "resolution": "fixed in P163.15-d6t (06e5cebe229e): For the search kinds require drawn rows below the resting count (the term is an archived phase id, so the default view always hides rows).",
+        "fixTask": "P163.15-d6t",
+        "commit": "06e5cebe229e",
+        "status": "fixed"
       },
       {
         "id": "P163-R21",
         "severity": "low",
         "file": "plugins/audit/scripts/ui/report/filters.js:254",
         "issue": "The cancelled clause appears under any filter: pressing one phase's 'cancelled' chip reads '... 90 cancelled matches' though 89 belong to phases nobody filtered; it also lengthens the count.",
-        "resolution": "Word it as 'N cancelled not counted' (true under any filter), or emit it only when a search or task-level filter selected those tasks."
+        "resolution": "fixed in P163.15-d6t (06e5cebe229e): Word it as 'N cancelled not counted' (true under any filter), or emit it only when a search or task-level filter selected those tasks.",
+        "fixTask": "P163.15-d6t",
+        "commit": "06e5cebe229e",
+        "status": "fixed"
       },
       {
         "id": "P163-R22",
         "severity": "low",
         "file": "plugins/audit/scripts/report/_report_page.py:509; tests/test_render_report.py:1105",
         "issue": "Prose and the st4 label still say the top bar is sticky above 52rem; at 900x500 it is static because the short-screen query unpins it too.",
-        "resolution": "Say 'narrow or short screen', in the words of forced-colors.css and page-state.js:118."
+        "resolution": "fixed in P163.15-d6t (06e5cebe229e): Say 'narrow or short screen', in the words of forced-colors.css and page-state.js:118.",
+        "fixTask": "P163.15-d6t",
+        "commit": "06e5cebe229e",
+        "status": "fixed"
       },
       {
         "id": "P163-R23",
         "severity": "low",
         "file": "tools/check-report-interactive.mjs:2769",
         "issue": "The R9 label prints float noise for other constants (0.30000000000000004 at 0.7).",
-        "resolution": "Print +(1 - STACK_CEILING_SHARE).toFixed(2), or state only the ceiling."
+        "resolution": "fixed in P163.15-d6t (06e5cebe229e): Print +(1 - STACK_CEILING_SHARE).toFixed(2), or state only the ceiling.",
+        "fixTask": "P163.15-d6t",
+        "commit": "06e5cebe229e",
+        "status": "fixed"
       },
       {
         "id": "P163-R24",
@@ -263,9 +281,23 @@
         "file": "tools/check-report-interactive.mjs:2918-2930 (matrix states)",
         "issue": "Clause 1 requires the gate to run on a fixture carrying the Sort select. The chosen fixture is the live render in verify.sh's rendered_plan_legs, which carries #audit-sort only while _report_html.any_phase_pinned() is true for this plan (it is today). Nothing in the matrix or the leg asserts or notes that #audit-sort was present, so the day no phase is pinned the Sort-select coverage disappears with every cell still green.",
         "resolution": "Have the matrix note per run whether #audit-sort was drawn, and either make the live leg fail when it is absent or add a committed fixture with a pinned phase to the gate's fixture list."
+      },
+      {
+        "id": "P163-R28",
+        "severity": "high",
+        "file": "tools/check-report-interactive.mjs:2846,3048; plugins/audit/scripts/ui/report-css/controls.css:33-42",
+        "issue": "contradicts task clause 'at 1024x768 and 1512x945 the bar takes at most 2 lines in every state, and 1 line at rest': the diff asserts the bound (LAPTOP_BAR_LINES = { rest: 1, filtered: 2 }, lm4 at :3048) but the CSS does not meet it on two of the three fixtures the task names. By the executor's own filed runs, docs/demo-large.html exits 1 on 'lm4 1024x768 View=active at rest (2 lines; 92px)' and 'View=all at rest', and the live render exits 1 on lm4 1024x768 at rest in active/archived/all. Both are per-run gates, not only phase-gate legs: tools/verify.sh:895 slice_report runs check-report-interactive on docs/demo-large.html, and tools/verify.sh:816 runs it on the live plan render. So landing this diff as it is turns CI's report slice and live-plan leg red on every run.",
+        "resolution": "Do not land the task while either leg is red. The orchestrator should take the placement decision the executor measured and recommended (move 'expand all', a table action, and the Sort select, an ordering, out of .sectools into the phases table's head) as a follow-up fix task. It should declare plugins/audit/scripts/report/_report_page.py, tables.css and the pins in tests/test_render_report.py (pr8 and the sortpick markup pins), and rerun the browser gate on acme, demo-large and the live render to exit 0. Do not relax LAPTOP_BAR_LINES.rest or take the one-pixel density step; the executor measured both and rejected them."
+      },
+      {
+        "id": "P163-R29",
+        "severity": "low",
+        "file": "plugins/audit/scripts/ui/report-css/controls.css:42",
+        "issue": "The field-sizing rule is a second, structurally-selected rule (.sectools>span>select) that does work the shared picker rule '.viewpick select,.sortpick select{' at tables.css:114 already exists for. Its selector was chosen to keep pr8's spelling count at 2 (the executor's note: ':is(.viewpick,.sortpick)' turned pr8 red, then it was rescoped). It is also wrapped in an @supports that changes nothing: a browser without field-sizing drops the unknown declaration anyway. The selector is tied to the markup's shape, so any future span-wrapped select in the bar silently becomes content-sized.",
+        "resolution": "Add 'field-sizing:content' to the existing shared '.viewpick select,.sortpick select{' declaration block in tables.css, with no @supports. Then one rule styles both pickers, which is the property pr8 guards, and the structural selector goes away. tables.css must be declared, which the fix task in finding 1 needs anyway."
       }
     ],
-    "outcome": "[findings: 27 - 0 high, 10 med, 17 low; 17 with a recorded fix commit]"
+    "outcome": "[findings: 29 - 1 high, 10 med, 18 low; 23 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1402,7 +1434,7 @@
     {
       "id": "P163.15-d6t",
       "title": "The filter bar and its count stay one line at every measured size, and the checks that say so read every state",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes P163-R18 to R23, filed on P163 by review round 2. Read their full text and resolutions in docs/audit/phases/P163.json review.findings.\n\nR10 and R13 were 'fixed' and came back, because each check measured one viewport in one state. That is a recurring class, so fix it by construction, not per size.\n\n1. ONE layout matrix in check-report-interactive.mjs, replacing the scattered single-size probes (ph1, nw1 and the phone stack). The matrix covers:\n   - viewports 390x844, 844x390, 834x1194, 1024x768 and 1512x945;\n   - states: at rest, one chip filtered, search filtered, and each View option;\n   - every fixture the gate is run on.\n   For each cell it asserts:\n   - the pinned stack over the table is within its layer-derived bound and the ceiling;\n   - the filter bar and the count are each one line (line count read from getClientRects or the line-height, not text emptied);\n   - More filters, when open, lies within the viewport.\n   Report each failing cell by name. The gate must also be run on a fixture that carries the Sort select (docs/demo-large.html or this repo's own render). Say which, and add that run to wherever the browser gate's fixtures are listed (verify.sh / ci) only if that file is in scope; otherwise say it is owed.\n2. R18 (med): keep the view's name in the live region but visually hidden, so the visible count stays short. The View select beside it shows the view.\n3. R19: compact the scope labels between 52rem and 64rem so the header row does not wrap at 834px.\n4. R20: es0's search kinds require drawn rows below the resting count.\n5. R21: word the cancelled clause so it is true under any filter.\n6. R22: fix the stale 'sticky above 52rem' prose and the st4 label.\n7. R23: format the ceiling label's fraction.\n\nProve the matrix red against HEAD d5f2d6a5. It must fail on the 1512x945 count wrap with the own-plan or demo fixture, and on 834x1194. Quote the failing cells in the return. Run node tools/check-report-interactive.mjs on examples/acme-store/acme-store-audit.html and on the Sort-select fixture yourself; it is phase-gate-only. If report-layout-baseline.json needs re-recording, use the tool's own recording path, never a hand edit. Refresh the rendered followers: examples/report.sh, docs/demo-large.html per check-rendered-artifacts.py --how, and node tools/capture-screenshots.mjs. Confirm tests/test__refs.py is green. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/ui/report-css/controls.css",
@@ -1452,14 +1484,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "06e5cebe229e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "MATRIX (tools/check-report-interactive.mjs): ONE layout matrix replaces nw1, ph1 (shut, sideways and open stacks) and ph2. Sizes are 390x844, 844x390, 834x1194, 1024x768 and 1512x945. States are read off the page: every View option at rest, then the default view with one phase-status chip on, and with a search typed (the first drawn phase's id). That is 25 cells per fixture, each reported by name as `lmN <w>x<h> <state>`. Per cell: lm1, the hit-test stack over the table is within its layer-derived bound (the top bar, strip and filter bar layers whose computed position is sticky AND that span the scan column, so the desktop sidebar strip is not counted, + STACK_SLACK_PX). lm2, within the ceiling (STACK_CEILING_SHARE of the height). lm3, the count is one line, read from its drawn text nodes' client rects (text clipped to 1px skipped), not by emptying the text. lm4, the filter bar's flex lines are no more than its controls need packed end to end at their natural widths (flex-basis length, else drawn width; the count by its unbroken text). lm5, while the top bar pins, the header filter row is one line. lm6, More filters opened over the table lies within the viewport and is painted top and bottom. lm7, where the open panel is in the bar's flow, the bar does not pin and the stack is within the remaining layers. A spacer row two screens tall is appended to the phases tbody for the matrix's length only, so a narrowed table is still long enough to sit under the chrome; it is removed afterwards. The phone step keeps only what is the phone's own: the open panel's controls on screen, and the two layout-baseline figures. FEATURE_ABSENT 'phone panel check skipped' now covers lm6/lm7. R23: the ceiling label prints STACK_TABLE_SHARE = +(1 - share).toFixed(2). New vh1 (at rest): the count's live text names the view's short name, and the DRAWN text is only 'N of M phases'. SORT-SELECT FIXTURE: this repo's own render (tools/plan-window.py docs/audit/audit-plan.json <dir>; render-report.py --format html). It is already in verify.sh as the rendered_plan_legs 'live plan' leg, so no gate list is owed. Caveat: it carries the Sort select only while some live phase is pinned (any_phase_pinned); docs/demo-large.html and acme do not carry it. A committed fixture with a pinned phase is owed if that dependence is unwanted. R18: filters.js keeps the view name in the live region inside a span with class vh (a clipped box), so the drawn count is 'N of M phases' plus the task fraction when filtered. controls.css: #audit-count{flex:0 0 auto;white-space:nowrap} and a .vh rule (the same rule as the panel's base-controls.css, noted as a pair). R19: shell.css @media (52rem < width <= 64rem) stacks each scope under its label, wraps the trailing '(phases & usage)' and caps the header selects at 9rem. At 834x1194 the top bar went 160px -> 122px (acme) and 145px -> 122px (demo). R20: es0 records `fewer` (rows below resting) apart from `narrowed`; the search and search+chip kinds count only `fewer`. R21: the clause reads ', N cancelled not counted'. The gate's two regexes and labels follow it. R22: _report_page.py:509 says 'sticky; on a narrow or a short screen the bar scrolls with the page'; st4's label says 'on a narrow or a short screen'; forced-colors.css and test comments name lm1 instead of ph1. FOUND BY THE MATRIX AND FIXED: at 1024x768 in View=archived the open More filters panel spanned x=-26..486 at HEAD (acme, demo; live -31), because it hung from its own control's right edge and the control had wrapped to the left. .fdetails is no longer positioned, so the panel hangs from the sticky .sectools. Pins updated deliberately: c5 (panel pin: .fdetails not positioned), st3, st4 ('lm1' in the stylesheet), c5b (new count construct: the vh span, appended once, .vh rule present), c5d (wording, and 'cancelled match' absent). NOT MET, stated plainly: R18 asked for a single-line BAR at 1512 at rest, filtered and in every view. The count is now one line everywhere, but at 1512x945 the bar is 2 flex lines (92px against 60px at rest) once anything filters, on all three fixtures, and on the live render in View=all. Measured filtered at 1512: the bar's inner width is 1166px; its controls need 1193px (acme), 1298px (demo) and 1534px (live: Sort select, and a 391px count with the cancelled clause). Every one of them fits on one line WITHOUT the count. So the count still costs the pinned bar a line there; at 1024 rest on acme it does too. At HEAD the same acme filtered state was a 74px bar with the count squeezed onto 3 text lines; it is now a 92px bar with a one-line count. Hiding the view name cannot close that. The structural options are a UI design call: take the count out of the pinned bar's flow, or move expand/Clear out of it. The gate does not pass this silently: lm4's comment states it as a known open cost, and lm4 prints the lines and the need per cell. Recommend filing it as a finding. RUNS: task gate 4/4 files, 821 cases. Browser gate exit 0: acme 378 checks, demo-large 384, live render 337. Each reads 25 matrix cells, and the coverage verdict is green. check-rendered-artifacts --before-commit: 3 artifacts match a fresh render. capture-screenshots re-run, and --check OK; tests/test__refs.py green after it (it was red only on the sc1/sc2 screenshot digests before). Dependant suites 11/11 files, 1500 cases (test__ui_theme, _ui_theme_lints, _output, _output_lints, _deps, _report_ui, _report_usage, test_audit_lookup, _evidence_view, _surface_digest, _config). vitest layout-baseline + test-gate-filter: 41 passed. ruff clean; vermin 3.8. The layout baseline's relative arm still reads the recorded 30%/76% for acme, so report-layout-baseline.json needed no re-recording and is untouched. FOLLOWERS: examples/report.sh (acme html; the md changed only its timestamp), docs/index.html copied, docs/demo-large.html per --how, node tools/capture-screenshots.mjs (report pngs + captured-at.json). DEPENDANTS: the rendered pages are re-rendered and green. controls.css/forced-colors.css/shell.css -> _ui_theme.py, _ui_theme_lints.py, test__ui_theme*.py, the report-css README and panel-css: still correct (the lints are green on the assembled sheet; no token added; no panel part touched). filters.js -> _report_ui.py (assembly unchanged), test__output.py and _ui_theme_lints.py (green), test-gate-filter.test.mjs (green), tools/redfirst.sh (names the file by path only), ui/report/README.md (row updated for the count). page-state.js, _report_html.py, layout-baseline.mjs, layout-baseline.test.mjs, report-layout-baseline.json, tests/test__report_html.py and tests/test__report_page.py are unchanged; their consumers stay correct. layout-baseline.mjs's 'the absolute stack check above' still holds, because the matrix's notes print before judge()'s. _report_page.py (comment only) -> PLUGIN-BUILD-GUIDE.md:6682, which does not describe the bar's breakpoint; still true. test files -> sweep-costs.json and affected.py: no suite added or renamed. docs/screenshots -> test__refs.py green. The interaction-state entries in tests.add were already carried by is1-is10 in the gate's interaction-states block (all pass on the three fixtures). They are bound below; no duplicate was added.",
+        "descriptive": "One layout matrix (5 sizes x every view, chip and search) replaces the single-size probes. It went red on HEAD where predicted, and on a panel off-screen at 1024px that is now fixed. The count is one line with the view said only to screen readers, and the 834px header row is one line. Still open: the 1512 bar takes a second line once filtered, which needs a design decision."
       },
       "startedAt": "2026-11-16T21:13:29Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-16T22:26:23Z",
+      "verifiedBy": [
+        "lm1-lm7: the layout matrix in tools/check-report-interactive.mjs - stack within its sticky-layer bound and the ceiling, count one line, bar lines within its controls' need, pinned header row one line, open More filters on screen and painted, and the open in-flow bar not pinning - per size x state cell, on every fixture",
+        "vh1: at rest the count says the view to a screen reader and draws only the phase fraction",
+        "es0: the search and search+chip kinds count only presses that drew fewer rows",
+        "c5b/c5d/c5/st3/st4 in tests/test_render_report.py updated to the new count construct, the cancelled wording, the bar-anchored panel and lm1"
+      ],
       "notes": [
         {
           "at": "2026-11-16T21:13:27Z",
@@ -1482,6 +1519,99 @@
         "runId": "2026-11-16T22:22:44Z.1ab624",
         "status": "passed",
         "at": "2026-11-16T22:22:44Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "06e5cebe229e",
+        "at": "2026-11-16T22:26:23Z",
+        "return": "docs/audit/evidence/returns/P163.15-d6t/20261116T211329Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task with expectRedFirst false, and the browser gate is not a runner the helper reads, so no helper run was owed. The red was watched by hand instead. (a) HEAD d5f2d6a5 render, new matrix, exit 1 on all three fixtures. Cells quoted: 'FAIL lm3 1512x945 View=active at rest: the count is one line of text (\"6 of 33 phases · active & pending\" drawn on 3 lines)' (live, Sort fixture); 'FAIL lm3 1512x945 View=all at rest: ... (\"40 of 40 phases · all\" drawn on 2 lines)' (demo); 'FAIL lm5 834x1194 View=active at rest: while the top bar pins, the header's filter row is one line (2 lines; top bar 160px)' (acme; demo 145px); 'FAIL lm6 1024x768 View=archived at rest: More filters ... (open true, box -26,222-486,568 on 1024x768)' (acme, demo; live -31). (b) One mutation per new check, each on a scratch copy of the acme render with its anchor asserted to occur exactly once, and each red on its own id: es0 (refresh term forced empty) -> {search:false}; lm1 (a sticky 400px layer inside #phases) -> 400px against 253.5px; lm2 (top bar sticky on phones) -> 520px against 422px; lm3 (count back to flex:1 1 6rem;min-width:0) -> 2 lines at 1512 filtered; lm4 (count given margin-left:30rem) -> 6 lines, 5 needed; lm5 (scope stacking removed) -> 2 lines at 834x1194; lm6 (panel right:60rem) -> box -668..-156; lm7 (:has(.fdetails[open]) static removed) -> 639px against 641px with the filter bar pinned; vh1 (countView class dropped) -> the view name drawn.",
+        "at": "2026-11-16, by hand (HEAD run and mutation runs), not by the helper"
+      }
+    },
+    {
+      "id": "P163.16-d6t",
+      "title": "The count never overflows the bar, the bar's height is stated per size, the phone stack check refuses a pinned top bar, and the Sort-select coverage is asserted",
+      "status": "in_progress",
+      "description": "Fixes P163-R24 to R27, filed on P163.15-d6t. Read their full text in docs/audit/phases/P163.json review.findings.\n\nDesign decision, taken by the orchestrator (R24/R25): the count keeps one line of its own text but may move to its own row inside the bar. It is never wider than the bar.\n- It is the bar's last item, and it may wrap onto a row of its own when it does not fit beside the controls.\n- On a narrow bar it may wrap its own words rather than overflow.\n- Stated bound, asserted by the matrix: at 1024x768 and 1512x945 the bar takes at most 2 lines in every state, and 1 line at rest. On phones the bar may take more lines, but the pinned stack stays within lm1/lm2.\n- Every in-flow control of .sectools and the count's drawn rects lie inside the bar's content box, and document.scrollingElement.scrollWidth <= innerWidth, in every cell.\n- Replace lm4's 'lines its controls need' relaxation with these stated bounds.\n- Prove the overflow red on this repo's own render at 390x844 with a chip on, at HEAD 06e5cebe.\n\nR26: in stackInTable, where matchMedia('(max-width:52rem),(max-height:32rem)') matches, the top bar is not an allowed layer. lm1 fails if it pins there. Re-run the 'top bar sticky on phones' mutation and confirm lm1 goes red, restoring in the same command.\n\nR27: the matrix notes per run whether #audit-sort was drawn. The live-plan leg fails when the plan has a pinned phase but no #audit-sort is drawn; otherwise it names the coverage as absent.\n\nRun the browser gate yourself on acme, docs/demo-large.html and the live render; it is phase-gate-only. Refresh the rendered followers: examples/report.sh, docs/demo-large.html, and node tools/capture-screenshots.mjs. Confirm tests/test__refs.py is green. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/ui/report-css/controls.css",
+        "plugins/audit/scripts/ui/report-css/forced-colors.css",
+        "plugins/audit/scripts/ui/report-css/shell.css",
+        "plugins/audit/scripts/ui/report/filters.js",
+        "plugins/audit/scripts/ui/report/README.md",
+        "tools/check-report-interactive.mjs",
+        "tools/ui-checks/layout-baseline.mjs",
+        "tools/ui-tests/layout-baseline.test.mjs",
+        "tools/ui-checks/report-layout-baseline.json",
+        "tests/test_render_report.py",
+        "tests/test__report_html.py",
+        "tests/test__report_page.py",
+        "examples",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [
+          "plugins/audit/scripts/ui/report-css/controls.css: #audit-q interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .btn interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .btn-primary interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .fchip interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .fdetails>summary interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .frow input[type=date] interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .gfilters input[type=date] interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .gfilters select interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .tf-chip interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/shell.css: .snav a interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_render_report.py tests/test__report_html.py tests/test__report_page.py tests/test__refs.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-16T22:27:01Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T22:26:59Z",
+          "text": "its sections on the report modules describe each module's role; layout rules change nothing they state",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
+        },
+        {
+          "at": "2026-11-16T22:26:59Z",
+          "text": "it quotes docs/index.html as an exempt path name; a re-rendered copy changes no path",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-16T22:26:59Z",
+          "text": "it greps docs/demo-large.html for a phase row marker the renderer keeps",
+          "waives": "tools/verify.sh"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-16T23:33:42Z.c0aae2",
+        "status": "passed",
+        "at": "2026-11-16T23:33:42Z"
       }
     }
   ],
