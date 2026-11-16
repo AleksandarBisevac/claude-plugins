@@ -160,8 +160,8 @@ never hardcode branch names, package ids, skills, or build tools here:
   - **Review skill** — `phase.reviewSkill ?? meta.areas[tag].reviewSkill ?? meta.reviewSkill`. The
     first level that is **present** answers, and an explicit `null` **is** an answer (skip review;
     tests are the signer) — it does not fall through.
-  - **Executor skills** — each tag's `meta.areas[tag].skills` first, then `task.skills`, deduped,
-    **area first** (house conventions before task specifics).
+  - **Executor skills** — `meta.defaultSkills`, then each tag's `meta.areas[tag].skills`, then
+    `task.skills`, deduped, widest first.
   - When a phase carries **several tags**, WRITTEN ORDER decides: the first tag whose area declares
     the field answers. `/audit:status` prints the resolved reviewer and the basis it came from
     (`review: backend-review (area api)`), so you never have to re-derive this by hand.

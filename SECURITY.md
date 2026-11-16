@@ -1257,8 +1257,11 @@ would bypass the permission system entirely: an advisory must not grant anything
 Blocking uses the canonical PreToolUse JSON protocol
 (`permissionDecision: "deny"` + reason, exit 0). Internal errors fail **open**
 deliberately: a buggy guard must never brick legitimate work — but that means a
-crafted input that *crashes* a guard bypasses it. Every hook has an explicit
-10-second timeout.
+crafted input that *crashes* a guard bypasses it. Every hook carries an explicit
+`timeout` in `plugins/audit/hooks/hooks.json`, which is where the figures are read; the
+harness ends a hook that outlives its own. They are not one figure:
+`drive-without-model`'s is set far past the other hooks', because it runs a whole phase drive
+(`drive-phase.py auto`) inside a typed prompt, and expiry there is not a normal path.
 
 A **malformed** `.claude/audit.config.json` falls back to defaults — meaning
 your custom secret patterns and rules are NOT applied — and is surfaced once
@@ -1439,8 +1442,11 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
 5. **Bypass residuals.** The single-use `#no-plan` bypass is consumed on
    PostToolUse; several edits batched in ONE assistant message can ride one
    bypass ("single-use per tool batch"). Arming is substring-based: a prompt
-   *discussing* the keyword arms it (you are told when that happens). Since
-   0.6.0 a forgotten armed bypass expires with the 7-day state GC.
+   *discussing* the keyword arms it (you are told when that happens). An armed
+   bypass left unused expires after `_config.BYPASS_TTL_SECONDS`, counted from the
+   `armedAtEpoch` `detect-plan-skip` writes when it arms one; the arming notice
+   names the limit in minutes. A slot without that field, written by an older
+   version, is honoured with no expiry until the state GC sweeps it.
 6. **Secret-read guard is name-based.** It blocks by path/token patterns
    (`.env`, `credentials*`, key/cert extensions + your `secretPatterns.extra`).
    A secret in an unconventionally-named file is invisible to it. It

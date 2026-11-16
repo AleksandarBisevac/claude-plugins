@@ -118,7 +118,7 @@
     {
       "id": "SG1.2",
       "title": "The phase reviewer's brief names the review skill that resolved",
-      "status": "in_progress",
+      "status": "done",
       "description": "agents/audit-reviewer.md: 'A review skill named (mode: phase): invoke it FIRST', and its input table lists 'the review skill' as a phase-mode input of the computed brief (`audit-lookup.py brief <id> --role phase`). On de21866c `grep -n -i 'review.\\?skill' plugins/audit/scripts/status/audit-lookup.py` prints nothing, and in plugins/audit/scripts/governance/drive-phase.py `_areas.resolve_review_skill` is read only where the drive decides whether a review is due. So on the drive route a plan with meta.reviewSkill / meta.areas[tag].reviewSkill / phase.reviewSkill set appears to get a review that never learns the skill's name.\n\nFIRST establish the fact by running, not reading: build a scratch plan (tempfile.mkdtemp, removed in finally) whose phase resolves a review skill, compute the phase brief with the real command, and show whether the name is in it. If it IS there through a path the grep missed, stop: report where, add the pinning case only, and say so.\n\nIf it is not: file the bug in this plan (`audit-task.py bug-add`, medium) and fix it here - the phase brief gains a section naming the resolved skill and its basis exactly as `_areas.resolve_review_skill` returns them (the phase's own, an area's, or the plan's), and saying nothing when none resolves or when an explicit null stopped the fallback. One resolver, no second precedence chain. The headless reviewer session (drive-phase.py writer_argv / session_skills) must load the same skill; check whether it does and include it if not.\n\nAllow case to pin as explicitly as the fix: a phase with no review skill, and a phase whose area sets reviewSkill null, get a brief with NO review-skill section.\n\nDependants: reference/phase-signoff.md and reference/orchestrator.md where they describe what the phase reviewer is handed; tools/measure-context.py ceilings for the sign-off entry; PLUGIN-BUILD-GUIDE.md's section on audit-lookup.py.\n\nAcceptance:\n1. A phase brief computed for a phase that resolves a review skill names that skill and the level it resolved from.\n2. A phase with none, and one stopped by an explicit null, get no such section.\n3. The headless reviewer session is started with the review skill when one resolves.\n4. The bug is filed and closed by this task's commit, or the outcome says why none was owed.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -149,14 +149,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2e4716d102e0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "ESTABLISHED FIRST, BY RUNNING: a scratch script built three plans in tempfile.mkdtemp (removed in finally), each resolving reviewSkill from one level (phase.reviewSkill / meta.areas.api.reviewSkill / meta.reviewSkill), and ran the working tree's plugins/audit/scripts/status/audit-lookup.py <plan> brief P1 --role phase --project <proj> at 0eeb2b7f: exit 0 all three, phase.md written (6423/6421/6421 bytes), the skill name in it False all three, and no line containing 'review skill' or 'reviewSkill'. So the bug was real; filed BUG-34-ukq (med) with the exported copy's audit-task.py bug-add against docs/audit/audit-plan.json - the orchestrator closes it at commit time. FIX: (1) plugins/audit/scripts/status/audit-lookup.py gains review_skill_lines(manifest, phase), called right after the rules line in phase_brief_parts' header (so every slice of a cut brief carries it): a '## Review skill' section with '- <skill> (basis: <basis>, ...)' exactly as _areas.resolve_review_skill returns them and an instruction to invoke it via the Skill tool FIRST; [] when no skill resolves, including an explicit null - no second precedence chain. (2) plugins/audit/scripts/governance/drive-phase.py: session_skills(ctx, task, phase_review=False) appends the resolved review skill (deduped) when phase_review is set; writer_argv passes a new phase_review keyword through; validation_dispatch (the headless reviewer-role session over the phase review's findings) sets it. WHAT I FOUND ABOUT 'THE HEADLESS REVIEWER SESSION': the phase review itself on the drive route is an Agent dispatch (dispatch_phase_review -> dispatch_said, subagent audit-reviewer handed the brief path), not a writer_argv session - the brief section is what reaches it. The writer_argv sessions under role reviewer are the per-task reviewer (reviewer_dispatch, mode: task - agents/audit-reviewer.md:9 says that mode takes no review skill, and reference/execute-task.md:487 says not to pass one) and the validation session at phase scope. The latter did not get the skill (vk1 red); it now does, and the per-task reviewer is pinned not to (vk3). TESTS: tests/test_audit_lookup.py new rk-block (_review_skill_brief_cases, staged in _selftest): rk1-rk3 each level set beside a lower level carrying a DIFFERENT name, asserting one heading, the skill on exactly one body line with 'basis: <what the resolver returned>', and no other level's name anywhere in the brief; rk4 no skill anywhere -> written brief, no section; rk5 area reviewSkill null with meta set -> no section, plan skill never named. tests/test_drive_phase.py: _review_skill_session_units called from _skill_units (uy-block): vk1 validation argv carries the area's review skill once and not the overridden plan one, role reviewer; vk2 none and an explicit phase null give no --skill; vk3 the per-task reviewer over a review-skill phase carries only the task's skills. Red before the fix: audit-lookup suite exit 1, 190/193, FAIL rk1-rk3; drive uy-block exit 1, 63/64, FAIL vk1. Green after: audit-lookup exit 0, 193/193; uy-block exit 0, 64/64. Mutations by monkeypatch in a scratch script, nothing written to the tree: section printed unconditionally -> rk4, rk5 FAIL; session_skills always adding -> vk3 FAIL; never adding -> vk1 FAIL; unmutated -> all PASS. Gate: python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test_drive_phase.py --jobs 4 exit 0, '2/2 files ok, 1173 cases' (--jobs 4 added on the orchestrator's instruction for multi-file sweeps). DEPENDANTS: reference/phase-signoff.md step 1 CHANGED - one sentence: on the drive route the phase brief carries the name and basis in a '## Review skill' section (review_skill_lines, only when one resolves) and the validation session starts with the same skill. reference/orchestrator.md STILL CORRECT, UNCHANGED: it states the resolution order, not what the brief hands; I added a sentence and took it back out because python3 tools/measure-context.py --gate then exited 1 with 'BREACH reference/orchestrator.md: 62157 bytes, over a ceiling of 62000'; after removal exit 0, 'reference/orchestrator.md 61987 / 62000'. tools/measure-context.py (not in my files, not edited): GATE OK exit 0; 'sign-off (/audit:review) 3661 / 6000' - the phase brief is a file the agent is handed, not part of the measured entry, so its ceiling is untouched. PLUGIN-BUILD-GUIDE.md CHANGED in two places: the audit-lookup.py section now says the phase reviewer's brief carries the Review skill section (rk1-rk5), and the run-agent-session passage that said writer_argv adds _areas.resolve_skills' names for writer, reviewer and validation session alike now says the validation session also gets the resolved review skill and the per-task reviewer never does (vk1-vk3). Importers of audit-lookup.py (test__evidence_io, test__filed_returns, test__deps' _rewritten) and of drive-phase.py (drive-without-model.py, _worktrees.py, the suites listed): still correct - only a function was added and two keywords with a False default, so every existing call keeps its meaning. schema / _clause_coverage / docs/research basename-or-path mentions: untouched by the change. plugins/audit/README.md and reference/execute-task.md prose names (executor.runsGate, review.perTask, own-tests): unrelated to this change; execute-task.md:487 'Do not pass a review skill' to the per-task reviewer stays true and is now pinned by vk3. NOT FIXED, OUTSIDE SCOPE, FOR THE REGISTER: reference/orchestrator.md:163-164 and PLUGIN-BUILD-GUIDE.md's audit-lookup section ('resolved skills (area first)') still describe executor skills as area first, while co1 in tests/test_audit_lookup.py pins _areas.resolve_skills as plan default, then area, then task. Not run: the repo-wide doc/prose lints (tests/test__deps.py, the _output_lints suite) over my two .md edits - they are not this task's gate (runsGate own-tests); the orchestrator's full run is the evidence there.",
+        "descriptive": "The phase reviewer's brief now names the configured review skill and where it came from, and the headless validation session over its findings starts with that skill; BUG-34-ukq filed for the orchestrator to close."
       },
       "startedAt": "2026-11-16T16:58:09Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-16T17:48:59Z",
+      "verifiedBy": [
+        "rk1-rk3: the phase brief names the resolved review skill once with the resolver's basis, at each of the three levels, with a different name set at the lower level",
+        "rk4-rk5: no review skill, and an area's explicit null over a set meta.reviewSkill, give a written phase brief with no review-skill section",
+        "vk1-vk3: the validation session's argv carries the resolved review skill once and none when none resolves or a null stops it; the per-task reviewer's argv never carries it"
+      ],
       "notes": [
         {
           "at": "2026-11-16T16:57:59Z",
@@ -189,19 +193,32 @@
         "runId": "2026-11-16T17:46:39Z.96fe66",
         "status": "passed",
         "at": "2026-11-16T17:46:39Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "2e4716d102e0",
+        "at": "2026-11-16T17:48:59Z",
+        "return": "docs/audit/evidence/returns/SG1.2/20261116T165809Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-16T17:16:14Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with failing cases rk1 (house FAIL), rk2 (house FAIL), rk3 (house FAIL), vk1 (house FAIL), but the fix run could not be made: the run timed out after 54 s and its process group was torn down - SELFTEST FAILED: 979/980 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; no ignored dependency directory linked from the project root; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "SG1.3",
       "title": "Four places where a document says what the code does not",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Each row was read on de21866c; RE-VERIFY each against the code before editing, and where the code turns out to agree with the document, leave the document and say so.\n\n(a) plugins/audit/README.md, the guard-bash-writes.py row of the enforcement table (line 371 on de21866c) calls it 'non-blocking additionalContext'. plugins/audit/hooks/guard-bash-writes.py emits `\"decision\": \"block\"` (line 2253) for one class of authored path under the deny tier. Say what it does and when; SECURITY.md already describes it - the two must agree.\n(b) SECURITY.md ~1260: 'Every hook has an explicit 10-second timeout.' plugins/audit/hooks/hooks.json carries one timeout of 86400 (drive-without-model). Do not write the count of hooks into prose; say which hook is the exception and why, or point at the file.\n(c) SECURITY.md ~1439-1443 describes an armed #no-plan bypass as expiring with the 7-day state GC. plugins/audit/hooks/_config.py BYPASS_TTL_SECONDS is 30 * 60 and the README already says so. Make SECURITY.md say what the code does; name the constant rather than restating the figure where the lint would read it as a bare number.\n(d) plugins/audit/reference/execute-task.md ~73-77 and reference/orchestrator.md ~164 give the executor's skill order as area skills then task.skills. `_areas.resolve_skills` and the schema put meta.defaultSkills first. Fix both passages to the resolver's order.\n\nThis is a documentation task under the repo's prose-number lints (`_deps.doc_prose_numbers`): read CONTRIBUTING.md 'Writing a count that is allowed' before writing any number. Dependants: tools/measure-context.py DOC_CEILINGS for reference/orchestrator.md; any tests/ case pinning these sentences (grep a distinctive phrase of each before changing it).\n\nAcceptance:\n1. README's guard-bash-writes row and SECURITY.md describe the same behaviour, and it is the code's.\n2. SECURITY.md no longer claims one timeout for every hook.\n3. SECURITY.md's bypass-expiry sentence matches BYPASS_TTL_SECONDS.\n4. Both reference passages give the skill order `_areas.resolve_skills` implements.\n5. A locking case pins (d) against the resolver's order, so the prose cannot drift from it again.",
       "files": [
         "plugins/audit/README.md",
         "SECURITY.md",
         "plugins/audit/reference/execute-task.md",
         "plugins/audit/reference/orchestrator.md",
-        "tests/test__refs.py"
+        "tests/test__refs.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "regression",
@@ -219,16 +236,84 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-16T17:49:54Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T17:49:47Z",
+          "text": "it quotes README's decide-high-risk row; SG1.3 edits README only in the guard-bash-writes.py row",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-16T17:49:47Z",
+          "text": "it has a section headed by README's path; SG1.3 renames and moves nothing, it rewords one table row",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
+        },
+        {
+          "at": "2026-11-16T17:49:47Z",
+          "text": "it quotes SECURITY.md's reporting link text; SG1.3 edits only the hook-timeout and bypass-expiry sentences",
+          "waives": ".github/ISSUE_TEMPLATE/config.yml"
+        },
+        {
+          "at": "2026-11-16T17:49:47Z",
+          "text": "it quotes SECURITY.md's 'Test-file exemption' heading; SG1.3 edits only the hook-timeout and bypass-expiry sentences",
+          "waives": "plugins/audit/hooks/_config.py"
+        },
+        {
+          "at": "2026-11-16T17:49:47Z",
+          "text": "it quotes SECURITY.md's capability-policy sentence; SG1.3 edits only the hook-timeout and bypass-expiry sentences",
+          "waives": "tests/test__panel_page.py"
+        },
+        {
+          "at": "2026-11-16T17:49:47Z",
+          "text": "it quotes SECURITY.md's secret-read residual; SG1.3 edits only the hook-timeout and bypass-expiry sentences",
+          "waives": "tests/test_guard_secrets_read.py"
+        },
+        {
+          "at": "2026-11-16T17:49:47Z",
+          "text": "it quotes SECURITY.md's description of the after-the-fact shell-write notice; SG1.3 changes README's row to agree with that text and leaves the text itself alone",
+          "waives": "tests/test_hooks.py"
+        },
+        {
+          "at": "2026-11-16T17:49:47Z",
+          "text": "it quotes a SECURITY.md passage on committed paths; SG1.3 edits only the hook-timeout and bypass-expiry sentences",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-16T17:49:47Z",
+          "text": "it quotes SECURITY.md's 'deliberately loud rather than silent'; SG1.3 edits only the hook-timeout and bypass-expiry sentences",
+          "waives": "tools/check-git-pipeline.py"
+        },
+        {
+          "at": "2026-11-16T17:49:47Z",
+          "text": "it reads SECURITY.md's fail-mode table by its heading; SG1.3 changes no row of that table and not its heading",
+          "waives": "tools/gate-parity.py"
+        },
+        {
+          "at": "2026-11-16T17:49:47Z",
+          "text": "it has a section headed by SECURITY.md's path; SG1.3 renames and moves nothing",
+          "waives": "docs/research/guard-ownership-design.md"
+        },
+        {
+          "at": "2026-11-16T17:49:47Z",
+          "text": "it quotes orchestrator.md's sentence on push and stash; SG1.3 edits orchestrator.md only in the executor skill-order passage",
+          "waives": ".claude/hooks/guard-uncommitted.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-16T18:24:01Z.76c6a2",
+        "status": "passed",
+        "at": "2026-11-16T18:24:01Z"
+      }
     },
     {
       "id": "SG1.4",
@@ -534,6 +619,46 @@
         "expectRedFirst": true,
         "gate": [
           "python3 tools/sweep-selftests.py tests/test_run_agent_session.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "SG1.11-ukq",
+      "title": "The pinned skills rule and the help text name the plan default before the area",
+      "status": "pending",
+      "description": "SG1.3 corrected the executor's skill order in the reference files, the guide and the README to what _areas.resolve_skills builds: meta.defaultSkills, then each tag's meta.areas[tag].skills, then task.skills. Two statements of the same rule were outside its files and are still stale on the commit that closes it. (1) plugins/audit/scripts/manifest/_areas.py SKILLS_RULE is the string 'then task.skills, deduped, area first' and is pinned into reference/execute-task.md's 'Execute the task' section by the claim-drift row beside it; SG1.3 had to keep that phrase in the corrected sentence ('..., deduped, area first under the plan default') only because the constant could not change. (2) plugins/audit/scripts/config/_help.py renders 'The executor's skills are the area's, <SKILLS_RULE>' into the help endpoint's areas topic, which leaves out the plan level altogether. Make the constant state the whole order the resolver applies, in one phrase a reader can check against resolve_skills, and make the help sentence and the reference sentence carry it without the patch SG1.3 needed. Derive, do not restate: if the phrase can be composed from what the resolver itself defines, do that. Dependants you answer for: the claim-drift table in _areas.py and every reader of it (tests/test__areas.py, tools/gate-parity.py), tests/test__help.py (its areas-topic case reads SKILLS_RULE), the help topics served to the panel drawer, reference/execute-task.md (the pinned sentence; tools/measure-context.py ceilings), and tests/test__refs.py sko1-sko6, which pin the order in the documents and must stay green. docs/research/pipeline-cost-design.md also says 'resolved area first': it is a dated design record - leave it and say so.\n\nAcceptance:\n1. SKILLS_RULE names the plan default, then the area, then the task, and a case holds it to the order _areas.resolve_skills returns for a plan that sets all three.\n2. The help endpoint's areas topic states that order.\n3. reference/execute-task.md carries the new pinned phrase and no leftover of the old one.\n4. The claim-drift lint, tests/test__help.py and sko1-sko6 are green.",
+      "files": [
+        "plugins/audit/scripts/manifest/_areas.py",
+        "plugins/audit/scripts/config/_help.py",
+        "plugins/audit/reference/execute-task.md",
+        "tests/test__areas.py",
+        "tests/test__help.py",
+        "tests/test__refs.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__areas.py: SKILLS_RULE names the three levels in the order resolve_skills returns for a plan that sets all three; red on the commit that closes SG1.3"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__areas.py tests/test__help.py tests/test__refs.py"
         ],
         "gateBasis": "tests.add"
       },

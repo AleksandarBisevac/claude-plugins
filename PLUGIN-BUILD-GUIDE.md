@@ -1479,8 +1479,8 @@ The `meta.areas` registry and everything that resolves against it. A phase's `ar
 text, since v0.16) is only a grouping label; this module is where a tag becomes a thing with
 properties — a `root`, a `description`, a `reviewSkill`, `skills` — and it implements, once, the
 two precedence rules every surface quotes identically: `phase.reviewSkill ?? areas[tag]
-.reviewSkill ?? meta.reviewSkill` for the review skill, and area-skills-then-task-skills
-(deduped, area first) for the executor. Registration stays optional in both directions;
+.reviewSkill ?? meta.reviewSkill` for the review skill, and `meta.defaultSkills`, then
+`meta.areas[tag].skills`, then `task.skills` (deduped, widest first) for the executor. Registration stays optional in both directions;
 `review_skill_conflicts()` finds the case where a multi-tag phase's areas disagree, so a
 tie-break decided by write order stays visible instead of silent.
 
@@ -3532,7 +3532,8 @@ writer already bounded and redacted them, never re-cut here, and an unreadable l
 said rather than read as "no such run". `brief <id> --role executor|reviewer|phase` writes
 the WHOLE spawn brief to a file under `stateDir` (`briefs/<id>/<start>.<role>.md`, or
 `briefs/<phaseId>/phase.md`) and prints its path, so the agent is handed a path and the brief
-never passes through the main loop. The executor's carries the resolved skills (area first),
+never passes through the main loop. The executor's carries the resolved skills (`meta.defaultSkills`, then
+`meta.areas[tag].skills`, then `task.skills`),
 the description verbatim, the files with their last declarer, the docs, the desired outcome,
 the gate resolved through `meta.buildCommands`, the `executor.runsGate` reading with its
 command, the filing command — one `drive-phase.py submit`, resolved against this plugin copy,

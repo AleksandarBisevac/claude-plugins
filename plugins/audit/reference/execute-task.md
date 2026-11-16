@@ -71,10 +71,11 @@ verb writes and refuses, and what the run commands leave behind, is
      `attempts > 1`. A brief typed by hand instead is checked by nothing; the computed one is
      held by `audit-lookup.py`'s cases in `tests/test_audit_lookup.py` (in the source repository).
    - Tell it to **first invoke each resolved skill** via the `Skill` tool (load conventions before coding).
-     Resolve them as **each tag's `meta.areas[tag].skills` first, then `task.skills`, deduped, area
-     first** — house conventions before task specifics, because a subagent that reads the specifics
-     first has already made the decisions the conventions were meant to inform. With no registered
-     area this is exactly `task.skills`, unchanged.
+     Resolve them in `_areas.resolve_skills`' order, widest first: **the plan's
+     `meta.defaultSkills`, then each tag's `meta.areas[tag].skills`, then `task.skills`, deduped, area
+     first** under the plan default — house conventions before task specifics, because a subagent
+     that reads the specifics first has already made the decisions the conventions were meant to
+     inform. With no `meta.defaultSkills` and no registered area this is exactly `task.skills`.
    - Give it `task.description`, `task.files`, `task.docs`, the phase's `desiredOutcome` (so the work
      aims at the phase's stated goal), and the repo hard-rules (no token logging, no secret
      reads, plus any `meta`-level conventions). It must load project skills for domain rules.

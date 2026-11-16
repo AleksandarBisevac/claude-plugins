@@ -43,6 +43,7 @@ from _output import safe_stdio                     # noqa: E402
 import _refs as M                                  # noqa: E402
 import _loader                                     # noqa: E402  (the reference resolver)
 import _evidence_io as _ev                         # noqa: E402  (follower_line)
+import _areas                                      # noqa: E402  (resolve_skills, read by sko*)
 # The one home for which files a surface's pictures are OF, asked here the way
 # `tools/capture-screenshots.mjs` asks it. Seeding a fixture's sidecar from it is
 # what a capture does and is not circular: every RED case below then edits a source
@@ -3506,6 +3507,7 @@ def _cases(check):
 
 
     _skill_precedence_cases(check)
+    _skill_order_cases(check)
     _placeholder_cases(check)
     _shell_argv_cases(check)
     _lock_recipe_cases(check)
@@ -3567,6 +3569,75 @@ def _skill_precedence_cases(check):
         check("sp%d %s's return template declares %s, so the field the "
               "precedence bullet names is one the return carries: %r"
               % (base + 2, rel, field, nested), child in nested)
+
+
+# --- the executor's skill order, as the resolver applies it (`sko*`) --------------
+# The order is executed by `_areas.resolve_skills` and OBEYED by a model reading the
+# prose, so the prose is held to the resolver rather than to a list written here: a
+# plan setting all three levels is resolved, each skill is mapped back to the token
+# naming its level, and every passage must name those tokens in the order the
+# resolver returned. Reordering the resolver or a passage turns this red. The
+# passages are the ones that stated the order area-first after the plan default
+# had become the first level.
+_SKO_LEVEL = {"from-plan": "meta.defaultSkills",
+              "from-area": "meta.areas[tag].skills",
+              "from-task": "task.skills"}
+
+
+def _between(text, start, end):
+    """`text` from the first `start` up to the next `end` after it, emphasis and
+    code marks removed and squashed to one line. `""` when `start` is absent,
+    which every case reading this fails on."""
+    at = text.find(start)
+    if at < 0:
+        return ""
+    stop = text.find(end, at + len(start))
+    return _squash(re.sub(r"[*`]", "", text[at:stop if stop > at else None]))
+
+
+def _repo_doc(rel):
+    """A file at the repository root, as text; unreadable comes back EMPTY, for
+    `_product_doc`'s reason."""
+    try:
+        with open(os.path.join(M.REPO_ROOT, rel), "r", encoding="utf-8") as fh:
+            return fh.read()
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+
+def _skill_order_cases(check):
+    manifest = {"meta": {"defaultSkills": ["from-plan"],
+                         "areas": {"api": {"skills": ["from-area"]}}}}
+    resolved = _areas.resolve_skills(manifest, {"id": "P1", "area": "api"},
+                                     {"id": "P1.1", "skills": ["from-task"]})
+    tokens = [_SKO_LEVEL.get(name) for name in resolved]
+    check("sko1 the resolver returns one skill per level for a plan that sets "
+          "all three, so the order below is read off it rather than assumed: %r"
+          % (resolved,),
+          sorted(resolved) == sorted(_SKO_LEVEL) and None not in tokens)
+    guide = _repo_doc("PLUGIN-BUILD-GUIDE.md")
+    passages = (
+        ("reference/execute-task.md",
+         _between(_product_doc("reference/execute-task.md"),
+                  "first invoke each resolved skill", "\n   - ")),
+        ("reference/orchestrator.md",
+         _between(_product_doc("reference/orchestrator.md"),
+                  "**Executor skills**", "\n  - ")),
+        ("README.md",
+         _between(_product_doc("README.md"), "**Executor skills**", "\n- ")),
+        ("PLUGIN-BUILD-GUIDE.md _areas.py section",
+         _between(guide, "### `plugins/audit/scripts/manifest/_areas.py`",
+                  "\n### ")),
+        ("PLUGIN-BUILD-GUIDE.md audit-lookup.py brief",
+         _between(guide, "The executor's carries the resolved skills",
+                  "the description verbatim")),
+    )
+    for n, (where, passage) in enumerate(passages, 2):
+        at = [passage.find(tok) for tok in tokens]
+        check("sko%d %s names %s in the order _areas.resolve_skills applies "
+              "them (positions %r): %r" % (n, where, " < ".join(map(str, tokens)),
+                                           at, passage[:400]),
+              len(at) == len(_SKO_LEVEL) and min(at) >= 0 and at == sorted(at))
 
 
 # --- a placeholder the script answers itself -------------------------------------

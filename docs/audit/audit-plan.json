@@ -2021,7 +2021,8 @@
       "SG1.6",
       "SG1.7",
       "SG1.9",
-      "SG1.10-ukq"
+      "SG1.10-ukq",
+      "SG1.3"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -3518,7 +3519,8 @@
       "P162.2-zz6",
       "SG1.3",
       "SG1.5",
-      "SG1.6"
+      "SG1.6",
+      "SG1.11-ukq"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -4065,7 +4067,8 @@
       "P130.8",
       "P130.9",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "SG1.11-ukq"
     ],
     "plugins/audit/scripts/config/validate-config.py": [
       "P15.4",
@@ -4972,7 +4975,8 @@
       "P131.1",
       "P131.2",
       "P138.2",
-      "P142.1"
+      "P142.1",
+      "SG1.11-ukq"
     ],
     "plugins/audit/scripts/manifest/_branch.py": [
       "P18.2",
@@ -12271,7 +12275,8 @@
     ],
     "tests/test__areas.py": [
       "P131.1",
-      "P138.2"
+      "P138.2",
+      "SG1.11-ukq"
     ],
     "tests/test__branch.py": [
       "P131.1",
@@ -12465,7 +12470,8 @@
     ],
     "tests/test__help.py": [
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "SG1.11-ukq"
     ],
     "tests/test__id_refs.py": [
       "P131.1"
@@ -12655,7 +12661,8 @@
       "SG1.1",
       "SG1.3",
       "SG1.6",
-      "SG1.8"
+      "SG1.8",
+      "SG1.11-ukq"
     ],
     "tests/test__report_html.py": [
       "P131.1",
