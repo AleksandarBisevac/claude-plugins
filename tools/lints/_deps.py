@@ -365,6 +365,12 @@ LAYERS = (
      # the floor, for whether the runner collects a path, so this is the first
      # layer that holds its edges strictly downward; the task writer above it calls it.
      "_scope_companions",
+     # `_floor_guard` reads a task's diff for the moves that make a test easier or
+     # a checker quieter. It is here, not at the floor, because what a test file
+     # is must be `_filed_returns.is_test_path`'s answer, and that module is on
+     # the floor: a layer-mate could only copy it. It reaches nothing else - the
+     # diff and both readers arrive as ARGUMENTS, which keeps git out of it.
+     "_floor_guard",
      # The four passes `_usage_analytics` was cut into. Each answers ONE of the
      # questions that file held, each reads `_usage_core` below, and none reads
      # another - which is what lets all four share a layer, and what they had to

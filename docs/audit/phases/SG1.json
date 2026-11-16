@@ -210,7 +210,7 @@
     {
       "id": "SG1.3",
       "title": "Four places where a document says what the code does not",
-      "status": "in_progress",
+      "status": "done",
       "description": "Each row was read on de21866c; RE-VERIFY each against the code before editing, and where the code turns out to agree with the document, leave the document and say so.\n\n(a) plugins/audit/README.md, the guard-bash-writes.py row of the enforcement table (line 371 on de21866c) calls it 'non-blocking additionalContext'. plugins/audit/hooks/guard-bash-writes.py emits `\"decision\": \"block\"` (line 2253) for one class of authored path under the deny tier. Say what it does and when; SECURITY.md already describes it - the two must agree.\n(b) SECURITY.md ~1260: 'Every hook has an explicit 10-second timeout.' plugins/audit/hooks/hooks.json carries one timeout of 86400 (drive-without-model). Do not write the count of hooks into prose; say which hook is the exception and why, or point at the file.\n(c) SECURITY.md ~1439-1443 describes an armed #no-plan bypass as expiring with the 7-day state GC. plugins/audit/hooks/_config.py BYPASS_TTL_SECONDS is 30 * 60 and the README already says so. Make SECURITY.md say what the code does; name the constant rather than restating the figure where the lint would read it as a bare number.\n(d) plugins/audit/reference/execute-task.md ~73-77 and reference/orchestrator.md ~164 give the executor's skill order as area skills then task.skills. `_areas.resolve_skills` and the schema put meta.defaultSkills first. Fix both passages to the resolver's order.\n\nThis is a documentation task under the repo's prose-number lints (`_deps.doc_prose_numbers`): read CONTRIBUTING.md 'Writing a count that is allowed' before writing any number. Dependants: tools/measure-context.py DOC_CEILINGS for reference/orchestrator.md; any tests/ case pinning these sentences (grep a distinctive phrase of each before changing it).\n\nAcceptance:\n1. README's guard-bash-writes row and SECURITY.md describe the same behaviour, and it is the code's.\n2. SECURITY.md no longer claims one timeout for every hook.\n3. SECURITY.md's bypass-expiry sentence matches BYPASS_TTL_SECONDS.\n4. Both reference passages give the skill order `_areas.resolve_skills` implements.\n5. A locking case pins (d) against the resolver's order, so the prose cannot drift from it again.",
       "files": [
         "plugins/audit/README.md",
@@ -238,14 +238,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b50612891ae7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Re-verified each row against the code before editing; every row was still wrong. (a) plugins/audit/hooks/guard-bash-writes.py:2221-2233 and 2251-2259: in the deny tier, a path the command authored (named in its own text, or unproven with no other-author clause) that is NOT a source extension is returned as 'block' and printed as decision:block; a source file keeps the additionalContext notice, and a path whose author is in question keeps the notice. README's enforcement-table row now says exactly that; SECURITY.md:737-740 already said it (minus the authorship condition) and was left alone, as the SG1.3 waiver note for tests/test_hooks.py promises. Same file, same class: README's hook list item (line 281) called the whole hook non-blocking; now 'non-blocking for a source file' with a pointer to the table. (b) hooks.json carries timeout 10 on every entry but drive-without-model (86400); SECURITY.md now says every hook carries an explicit timeout in hooks.json (where the figures are read), that they are not one figure, and that drive-without-model's is set far past the other hooks' because it runs a whole drive-phase.py auto inside a typed prompt (its docstring lines 38-40). No count and no figure written. (c) SECURITY.md's bypass item now says an armed bypass left unused expires after _config.BYPASS_TTL_SECONDS counted from armedAtEpoch (detect-plan-skip.py:167 writes it; require-plan.py:1041-1047 expires it), that the arming notice names the limit in minutes (detect-plan-skip.py:162,177), and that a slot without the field is honoured with no expiry until the state GC sweeps it (require-plan.py:1032-1033, 1049). (d) execute-task.md, orchestrator.md, PLUGIN-BUILD-GUIDE.md (the _areas.py section and the audit-lookup.py brief sentence) and README (the area-resolution bullet and the enforcement-table skills row) now name meta.defaultSkills, then meta.areas[tag].skills, then task.skills - the order _areas.resolve_skills:281-284 builds. execute-task.md's 'With no registered area this is exactly task.skills' was also wrong when defaultSkills is set and now names both conditions; README's 'STOPS the area default' now says 'the plan and area defaults' (_areas.py:279-280). CONSTRAINT KEPT: _areas.py:714 pins execute-task.md's 'Execute the task' section to contain SKILLS_RULE ('then task.skills, deduped, area first', a claim_drift 'pinned' row, read by tests/test__areas.py and tools/gate-parity.py). _areas.py is not in this task's files, so the corrected sentence keeps that phrase, worded so it reads true: '..., then task.skills, deduped, area first under the plan default'. The constant itself is stale (it omits the plan level), and so is config/_help.py:544, which renders 'The executor's skills are the area's, then task.skills, deduped, area first' into /audit:help - both out of this task's files; they need a widened task (change SKILLS_RULE to the full order and reword _help.py's sentence; tests/test__help.py t4 reads SKILLS_RULE and would follow). Test: tests/test__refs.py _skill_order_cases (sko1-sko6) resolves a plan that sets all three levels with _areas.resolve_skills, maps each returned skill back to its level's token, and requires each of the passages to name those tokens in the resolver's order; _areas is imported at module level. Skill-order grep (bare shapes 'area first', 'areas[tag].skills', 'then task.skills', 'area skills', 'defaultSkills', 'plan default, then') over plugins/audit, README, CONTRIBUTING, QUICKSTART, SECURITY, COMPATIBILITY, CHANGELOG, the guide and docs/research: FIXED - execute-task.md:74, orchestrator.md:163, PLUGIN-BUILD-GUIDE.md:1482 and :3535, plugins/audit/README.md:419 and :866. ALREADY CORRECT - manifest-conventions.md:259, verbs-in-full.md:1560/1568, schema audit-plan.schema.json:179 and :1418, schema :1020 (the area-level field's own description: 'area first' relative to task.skills, true), _areas.py:25 and :258, audit-lookup.py:140 and :644, PLUGIN-BUILD-GUIDE.md:6489, COMPATIBILITY.md:280. OUT OF MY FILES and wrong - _areas.py:562 SKILLS_RULE, config/_help.py:544, docs/research/pipeline-cost-design.md:1008 ('the skills, resolved area first'). HISTORY, left - CHANGELOG.md:6437. Also seen and left: plugins/audit/README.md:303 says stale session state 'incl. forgotten armed bypasses' is GC'd after the state-GC window - true of slot files left behind, and README:246/595 already give the TTL. Dependants: plugins/audit/README.md's readers (_invariants.py, verify-invariants.py, _usage_economics.py, audit-usage.py, test__deps.py, test__output_lints.py, test__refs.py, tools/affected.py) reference it by path - still correct, no heading or path moved; the waiver note's 'README only in the guard-bash-writes.py row' is narrower than the change (lines 281, 419, 866 too), but its substance holds: tools/prove-gates.py's quote of the decide-high-risk row is untouched (grep of prove-gates.py for the edited phrases: no hits). SECURITY.md's readers - still correct: only the timeout and bypass sentences changed, the fail-mode table and the after-the-fact notice passage test_hooks.py quotes are untouched; test_hooks, test_guard_bash_writes, test__config, gate-parity, check-prohibitions, check-committed-pii all green. execute-task.md's readers (_areas.py claim_drift skills-rule anchor; tests/test_run_test_gate.py named in prose) - still correct, anchor phrase retained, test__areas.py 130 cases green. orchestrator.md: guard-uncommitted.py's quoted push/stash sentence untouched; tools/measure-context.py DOC_CEILINGS - 'python3 tools/measure-context.py --tree plugins/audit --gate' prints 61964 / 62000 and GATE OK (was 61987). tests/test__refs.py's shared helper names (_write, _cases, _selftest) unchanged; added helpers _between, _repo_doc and table _SKO_LEVEL are new names. Runs: 'python3 tools/sweep-selftests.py tests/test__refs.py' exit 0, 304 cases; 'python3 tests/test__refs.py --selftest' ALL PASS 304/304 with sko1-sko6 PASS; 'python3 tools/sweep-selftests.py --jobs 4' exit 0, 196/196 files ok (started before a final one-word SECURITY.md change from guards' to other hooks'); after that change 'python3 tools/sweep-selftests.py --jobs 2 tests/test__deps.py tests/test__output_lints.py tests/test_hooks.py tests/test__areas.py tests/test__help.py tests/test_guard_bash_writes.py tests/test__config.py tools/gate-parity.py tools/check-prohibitions.py tools/check-committed-pii.py' exit 0, 10/10 files. git diff --check clean. No tool call was refused.",
+        "descriptive": "README, SECURITY.md, both reference passages and the build guide now say what guard-bash-writes, hooks.json, the bypass TTL and _areas.resolve_skills actually do, and a resolver-derived case holds the skill order in place."
       },
       "startedAt": "2026-11-16T17:49:54Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-16T18:24:04Z",
+      "verifiedBy": [
+        "tests/test__refs.py sko1-sko6: resolve a plan setting meta.defaultSkills, an area skill and a task skill with _areas.resolve_skills, then require execute-task.md, orchestrator.md, the plugin README's area-resolution bullet and both PLUGIN-BUILD-GUIDE.md passages to name meta.defaultSkills, meta.areas[tag].skills and task.skills in exactly the order the resolver returned"
+      ],
       "notes": [
         {
           "at": "2026-11-16T17:49:47Z",
@@ -313,18 +315,31 @@
         "runId": "2026-11-16T18:24:01Z.76c6a2",
         "status": "passed",
         "at": "2026-11-16T18:24:01Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "b50612891ae7",
+        "at": "2026-11-16T18:24:04Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-16T18:07:14Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__refs.py` in a throwaway tree at HEAD exited 1 with 5 of 304 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sko2 (house FAIL), sko3 (house FAIL), sko4 (house FAIL), sko5 (house FAIL), sko6 (house FAIL): SELFTEST FAILED: 299/304 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; no ignored dependency directory linked from the project root; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "SG1.4",
       "title": "A pure function reads a task's diff for moves that lower the bar",
-      "status": "pending",
+      "status": "in_progress",
       "description": "New module plugins/audit/scripts/governance/_floor_guard.py: given a task's unified diff against its base (and a way to read a file at the base and in the tree), return the moves that make a test easier or a checker quieter. It decides nothing and refuses nothing; a later task reports its findings.\n\nWhy: docs/research/benchmark-feature-results.md section 4.1 - the plain arm edited a protected test's existing assertion in every session; nothing in the plugin would have seen it. The red-first helper proves a NEW test can fail; the `tests-moved` refusal covers a test file changed after its proof; neither reads an existing test being weakened.\n\nMoves to find, each a named finding with path and line:\n1. a test file deleted;\n2. an existing test definition changed - for Python, compare each function and method defined in the base copy of a test file with the same qualified name in the tree by `ast.dump` (line numbers excluded, so a test appended beside it is not a change), and report definitions that changed or disappeared; for other languages report assertion lines removed from a test file (expect(, assert, should, t.Error/t.Fatal - a table, not scattered regexes);\n3. a skip added to a test file (pytest.mark.skip/skipif/xfail, unittest.skip*, .skip( / xit( / xdescribe( / it.todo(, t.Skip();\n4. a suppression added anywhere (# noqa, # type: ignore, eslint-disable*, @ts-ignore, @ts-expect-error, istanbul ignore, nosemgrep, gitleaks:allow, Stryker disable, # pragma: no cover);\n5. a stub added in non-test code (raise NotImplementedError, throw new Error('Not implemented'), an empty except/catch body).\n\nTHREE ANSWERS, AND ONLY ONE IS CLEAN: findings, clean, or could-not-tell with its reason (a diff that does not parse, a base file that cannot be read, a Python file that does not compile on either side). could-not-tell is never returned as clean and never as a finding - the same three-valued shape as _runner_collects.py, which is the model to follow.\n\nWhat a test file is must come from one existing definition, not a new one: find how the plugin already classifies test paths (the plan gate's exempt test patterns in hooks/_config.py DEFAULTS, and _runner_collects / _affected_tests) and reuse the scripts-side one; say which you reused.\n\nALLOW CASES - pin each as explicitly as a finding, because a guard that fires on honest work is routed around: a test appended to an existing file; a test RENAMED with its body unchanged; an assertion changed in a test the task itself declares in tests.add (the caller passes the declared paths/cases - those are the task's to change and are reported as declared, not as findings); a `# noqa` that was already on the line and only moved; a comment or docstring edit inside a test; a suppression added inside a test FIXTURE string (text the test feeds to something else).\n\nThe five obligations of a new .py under scripts/ are yours (CLAUDE.md 'Adding a .py'): tests/test__floor_guard.py printing the N/M cases passed contract; a layer in tools/lints/_deps.py LAYERS; a tree line AND a section in PLUGIN-BUILD-GUIDE.md; the PATH_PREAMBLE byte for byte. It is a helper, not an entry point. Stdlib only, Python 3.8, no annotations, %-formatting.\n\nAcceptance:\n1. Each of the five moves is found on a minimal diff and carries path, line and move name.\n2. Each allow case above returns no finding.\n3. An unparseable diff, an unreadable base file and a non-compiling Python file each return could-not-tell with a reason, never clean.\n4. A changed definition in a test the caller declared is returned as declared, apart from findings.\n5. The module imports nothing outside the stdlib and its layer, and the import-graph and enumeration lints pass.",
       "files": [
         "plugins/audit/scripts/governance/_floor_guard.py",
         "tests/test__floor_guard.py",
         "tools/lints/_deps.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__deps.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -335,7 +350,7 @@
         ],
         "expectRedFirst": true,
         "gate": [
-          "python3 tools/sweep-selftests.py tests/test__floor_guard.py"
+          "python3 tools/sweep-selftests.py tests/test__floor_guard.py tests/test__deps.py"
         ],
         "gateBasis": "tests.add"
       },
@@ -344,16 +359,55 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-16T18:24:28Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T18:24:22Z",
+          "text": "it quotes the guide's 'related listing' passage; SG1.4 adds one tree line and one new section for _floor_guard.py and changes no existing passage",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-16T18:24:22Z",
+          "text": "it quotes the guide's doctor-trail passage; SG1.4 adds one tree line and one new section and changes no existing passage",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-16T18:24:22Z",
+          "text": "it quotes the guide's sentence on the executor brief's resolved skills; SG1.4 adds one tree line and one new section and changes no existing passage",
+          "waives": "tests/test__refs.py"
+        },
+        {
+          "at": "2026-11-16T18:24:22Z",
+          "text": "it quotes a drive-phase section marker of the guide; SG1.4 adds one tree line and one new section and changes no existing passage",
+          "waives": "tests/test_drive_phase.py"
+        },
+        {
+          "at": "2026-11-16T18:24:22Z",
+          "text": "it quotes a passage on a lint's scope spelling; SG1.4 adds one tree line and one new section and changes no existing passage",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-16T18:24:22Z",
+          "reader": "tests/test__deps.py",
+          "reads": "tools/lints/_deps.py",
+          "text": "declared to answer a reading: tests/test__deps.py reads tools/lints/_deps.py - its own suite"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-16T19:10:08Z.51e63c",
+        "status": "passed",
+        "at": "2026-11-16T19:10:08Z"
+      }
     },
     {
       "id": "SG1.5",

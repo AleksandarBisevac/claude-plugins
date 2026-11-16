@@ -195,6 +195,7 @@ claude-plugins/                           # this repo (personal, public)
           full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, then a coupling and a bug per named selection miss of a red run (the red still blocks), or the sentence and exit 0 when no runnable meta.fullGate entry is declared; --learn-from <runId> runs nothing and learns from an imported row through the same function
           _runner_output.py               # every reading of what a test runner printed: its summary line (how many checks ran) and the lines naming a failing check
           _runner_collects.py             # does the test runner collect this path: collected, not collected, or could not tell - from the runner's own file listing, else a literal include in its config text
+          _floor_guard.py                 # which moves in a task's diff lower the bar - a test deleted, an existing test definition changed, a skip, a suppression or a stub added - as findings, clean, or could not tell; git stays out, the diff and two readers are arguments
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs; the one POSIX sh (and its PATH) every plan command runs under, or a refusal - never cmd.exe
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
           _clause_coverage.py             # the ONE numbering of a task's clauses (tests.add entries, then the description's Acceptance items) and whether a writer's last JSON object answers every one, citing a file the diff touches - a missing or unreadable object is a gap of every clause
@@ -360,6 +361,7 @@ L4:
   _config_rules -> _loader, _output, _policy
   _doctor_report -> _loader, _output
   _evidence_io -> _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_vocab, _output, _usage_core, _utc_stamp, _worktrees
+  _floor_guard -> _filed_returns, _output
   _gate_feed -> _journal_io, _loader, _output, _usage_core
   _help -> _areas, _journal_io, _loader, _output, _policy, _ui_theme
   _id_shape -> _branch, _loader, _manifest_io, _manifest_vocab, _output
@@ -5647,6 +5649,24 @@ would give it; `locate_sh` returns `<root>\usr\bin` and `<root>\mingw64\bin` wit
 untouched. Both spawn sites take argv and env from ONE call, `shell_invocation`, so the shell and
 its PATH cannot drift apart between them. The path module is a parameter throughout, so the
 cases judge Windows spellings under `ntpath` on every host.
+
+### `plugins/audit/scripts/governance/_floor_guard.py`
+`find_moves(diff, read_base, read_tree, declared=())` reads a task's unified diff against its base
+for the moves that lower the bar, named in `MOVES`: a test file deleted, an existing test definition
+changed (Python by `ast.dump` per function and `Class.method`, decorators included, line numbers and
+a leading docstring not; other languages by the `ASSERTIONS` lines a test file lost), a skip added
+to a test file (`SKIPS`), a suppression added in a comment anywhere (`SUPPRESSIONS`), and a stub
+added to non-test code. Each finding carries its move, path, line and the side the line counts in.
+The answer has three values, as `_runner_collects` set: `FINDINGS`, `CLEAN`, or `COULD_NOT_TELL`
+with its reason - a diff that does not parse, a copy a reader cannot produce, a Python copy that
+does not compile, a tree that no longer holds the lines the diff added - and `couldNotTell` is kept
+beside findings rather than dropped. A change to a test the caller passes in `declared` (the task's
+own `tests.add`) is returned under `declared`, never as a finding; a test renamed unchanged, a
+suppression that only moved, a comment or docstring edit and a suppression inside a fixture string
+are no finding. What a test file is comes from `_filed_returns.is_test_path`, which is why the
+module sits one layer above it. Git stays out: the diff and both readers are arguments. It decides
+and refuses nothing - a caller reports what it returns. Its cases are in
+`tests/test__floor_guard.py`.
 
 ### `plugins/audit/scripts/governance/_runner_collects.py`
 `collects(path, runner, project, lister=None)` answers whether a runner would collect a path, with

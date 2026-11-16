@@ -1,0 +1,78 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__floor_guard.py tests/test__deps.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-16T18:53:33Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__floor_guard.py tests/test__deps.py` in a throwaway tree at HEAD exited 1 on \"ModuleNotFoundError: No module named '_floor_guard'\" (read as python), and the task introduces '_floor_guard': absent from HEAD's plugins/audit/scripts/governance/_floor_guard.py, tools/lints/_deps.py, PLUGIN-BUILD-GUIDE.md and present in the working tree's plugins/audit/scripts/governance/_floor_guard.py, tools/lints/_deps.py, PLUGIN-BUILD-GUIDE.md; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; no ignored dependency directory linked from the project root; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "NEW plugins/audit/scripts/governance/_floor_guard.py, a helper with no __main__ that carries PATH_PREAMBLE byte for byte. find_moves(diff, read_base, read_tree, declared=()) -> {answer: FINDINGS|CLEAN|COULD_NOT_TELL, basis, findings[{move,path,line,side,what}], declared[same shape], renamed[{path,from,to,line}], couldNotTell[{path,reason}], notRead[{path,reason}]}. MOVES = test-deleted, definition-changed, skip-added, suppression-added, stub-added. Tables: SKIPS, SUPPRESSIONS, ASSERTIONS. DESIGN DECISIONS: (1) Inputs: git is kept out. The module takes the diff text plus two reader callables (text / None = absent / raise OSError or ValueError = unreadable). It imports no subprocess (case fx1). parse_diff reads git's unified form with a/ b/ prefixes, renames and C-quoted paths. It checks hunk counts strictly; a malformed diff raises _Unparsed and becomes could-not-tell. Each copy is checked line by line against the lines the diff says it added or removed, so a reader returning a different tree is could-not-tell (fc10). (2) Test-file definition: REUSED _filed_returns.is_test_path, not mirrored. The module sits one layer above _filed_returns (new LAYERS entry beside _scope_companions, with a comment) so it can import it. fm22 pins identity (`M.is_test_path is _filed_returns.is_test_path`) and pins behaviour on a path the two existing definitions disagree on (see descriptive). (3) Python definitions: top-level functions plus methods by qualified Class.method (nested classes Outer.Inner.method), compared by ast.dump. ast.dump leaves line numbers out. Decorators are part of the definition (fm5); a leading docstring is dropped (fa6). A name defined twice keeps the last one, which is the one Python runs, so a weaker test appended under an existing name counts as a change. A definition that disappears is a finding unless a new definition with the same body appeared (renamed, fa2). Other languages: assertion lines removed from a test file, read through ASSERTIONS on code-masked text. Moved or reindented lines are paired by exact text (fa8); an assertion rewritten in place reads as removed (fm7). (4) Suppressions are read in COMMENTS only. Python uses tokenize; the c/hash families use a quote-and-comment scanner. So a marker inside a fixture string gives no finding (fa7). Skips and stubs are read on code with strings masked. (5) Pairing: marks are read over both whole copies of a changed file. A tree mark pairs first with a base mark of the same text, then (skips, suppressions, stubs only) with any base mark of the same kind in the same file. So a noqa that moved, or whose line's code changed, gives no finding (fa5). A first draft limited marks to diff regions. I removed that because it was equivalent to whole-file pairing, so no case could pin it. (6) Answers: FINDINGS beats could-not-tell, but couldNotTell is always kept (fc11). With no findings, any could-not-tell is the answer. CLEAN only when nothing failed to read. An empty diff is CLEAN with a basis saying no file changed (fc12); None is could-not-tell (fc9). A file with no known comment syntax (.md) goes in notRead, not silently passed (fa11). (7) declared: entries are `path` or `path::case` (pytest `Class::method` read as Class.method). A non-Python test is declared by file, because its lines map to no case name. OTHER FILES: tools/lints/_deps.py (one LAYERS entry plus comment). PLUGIN-BUILD-GUIDE.md: a tree line, a section, and one fence line regenerated with `python3 tools/lints/_deps.py --write-map`. tests/test__floor_guard.py has 47 cases: fm1-fm23 moves, fa1-fa11 allow, fc1-fc12 could-not-tell, fx1 imports. One fixture (REAL_GIT) is a diff printed by real `git diff -M --no-color HEAD` in a scratch repo, not one I wrote. tests/test__deps.py was NOT edited and needed no change. The first run of it went red on dk2b: the dict-key lint could not follow a dict written with a computed key in my module. I fixed my module (two plain names, and _collect now returns its lists rather than mutating), not the lint. .github/sweep-costs.json: no row added. tools/sweep-selftests.py lines 1773-1778 say a swept file with no entry is estimated and reported only as a note, and rows are recorded with --record-costs rather than written by hand. COMMANDS: `python3 tools/sweep-selftests.py tests/test__floor_guard.py tests/test__deps.py --jobs 4` -> `2/2 files ok, 330 cases`, exit 0. `python3 tools/sweep-selftests.py --jobs 4` (full) -> `197/197 files ok, 18894 cases`, coverage line clean, exit=0. `ruff check` on the three .py files -> All checks passed!. `vermin -t=3.8- --no-tips --violations` on the module and suite -> no violations. MUTATION PROBE: `python3 <scratchpad>/sg1.4/mutations.py` from the worktree. It runs 27 mutations in memory via exec plus sys.modules, never writing the tree, and checks the module's sha256 before and after: 8 detector-off (each red on fm cases), 12 allow-rule-removed (each red on fa cases, or on fm19/fm22/fm23 as expected), 7 could-not-tell collapses (C1/C2/C3/C5 into clean, C4 into a finding, C6/C7 checks removed). Last line: `27 mutations: 27 applied, 0 survived, 0 red on the wrong cases, module file unchanged=True -> PASS`. DEPENDANTS: tools/lints/_deps.py's readers (evals.json, _manifest_rules, _manifest_vocab, _doctor_policy, test__deps, test__manifest_vocab, test__output, test__panel_paths) are still correct. Only one name was added to an existing LAYERS tuple and no function changed; all their suites are green in the full sweep. Of its names used elsewhere, none was renamed. PLUGIN-BUILD-GUIDE.md's readers (evals.json, both eval case.yaml, _doctor_hygiene, test__affected_tests, test__config, test__deps, test__doctor_trail) are still correct: lines were added, nothing renamed, and the map fence matches render(); suites green in the full sweep. tests/test__deps.py's readers (sweep-costs.json, test_audit_lookup, gate-parity, _deps, _output_lints, prove-gates, CHANGELOG, the guide) are unchanged because the file is unchanged.",
+    "descriptive": "A pure, git-free reader now finds the five moves that weaken a test or quiet a checker in a task's diff, with every allow case and every could-not-tell case pinned and each shown red under mutation. OBSERVATIONS for the orchestrator, not fixed (outside this task's files): (a) the plan gate's exemptGlobs in hooks/_config.py count `**/*_spec.*` (rspec's cart_spec.rb) as a test while _filed_returns.is_test_path does not (its name regex has no `_spec` form). The plugin's two test-path definitions disagree, and this module inherits the scripts-side answer (fm22 pins it). (b) This repo's suites group many cases inside one function (`_found(check)` style). Adding a case inside an existing grouping function is therefore a definition-changed finding under the task's per-definition rule, and tests/_harness.py (a test-support path per is_test_path) is compared too. The reporter task should weigh that over-fire risk. (c) Known limits are stated in the module docstring: regex literals in JS, per-file pairing (a suppression carried to another file reads as added), and kind-level pairing cannot see `noqa: <code>` widened to a bare `noqa`."
+  },
+  "testsAdded": [
+    "fm1-fm23: each of the five moves found on a minimal diff with path, line, side and move name. Covers Python definition change, removal, method qualname and decorator; JS/Go assertion removal; pytest/JS/Go skips; noqa/eslint/ts-ignore/pragma suppressions; Python/JS stubs; non-test boundaries for stubs and skips; a real-git diff; the reused test-path definition",
+    "fa1-fa11: appended test, renamed test, declared test changed (Python by case and by file, JS by file), moved or edited noqa, comment/docstring edit, suppression or skip inside a fixture string (Python and JS), reindented assertion, renamed test file, an ordinary edit is clean, a .md naming a suppression is notRead not silent",
+    "fc1-fc12: not-a-diff, bad hunk counts, hunk before header, unreadable base, base absent, test file not compiling in tree and in base, source .py not compiling, no diff, tree not matching the diff, could-not-tell kept beside a finding, empty diff clean with its basis"
+  ],
+  "casesAdded": [
+    [
+      "fm1",
+      "fm2",
+      "fm3",
+      "fm4",
+      "fm5",
+      "fm6",
+      "fm7",
+      "fm8",
+      "fm9",
+      "fm10",
+      "fm11",
+      "fm12",
+      "fm13",
+      "fm14",
+      "fm15",
+      "fm16",
+      "fm17",
+      "fm18",
+      "fm19",
+      "fm20",
+      "fm21",
+      "fm22",
+      "fm23"
+    ],
+    [
+      "fa1",
+      "fa2",
+      "fa3",
+      "fa4",
+      "fa5",
+      "fa6",
+      "fa7",
+      "fa8",
+      "fa9",
+      "fa10",
+      "fa11"
+    ],
+    [
+      "fc1",
+      "fc2",
+      "fc3",
+      "fc4",
+      "fc5",
+      "fc6",
+      "fc7",
+      "fc8",
+      "fc9",
+      "fc10",
+      "fc11",
+      "fc12"
+    ]
+  ],
+  "claims": "claims:\n1 _floor_guard.py docstring claims each map to code: reader contract -> _read catches (OSError, ValueError); couldNotTell kept beside findings -> find_moves appends cannot whatever the answer (fc11); comments-only suppressions -> _line_marks searches the comment text (fa7); the CLEAN basis was rewritten from 'read every file' to 'read N of M' because notRead files are not read\n2 mutations.py: 27 mutations, each anchor asserted once, run in memory -> 0 survived; allow direction: A1-A12 each red on an allow case; could-not-tell collapsed into clean (C1,C2,C3,C5) and into a finding (C4) each red; module sha256 unchanged\n3 n/a - new module, not a fix of a reported defect; the test-path disagreement between hooks/_config exemptGlobs and _filed_returns.is_test_path is reported, not fixed\n4 n/a - no rule addressed to an agent; the module decides and refuses nothing\n5 n/a - no property recorded beyond the two sweep runs quoted with their commands\n6 decision reads the operation: Python definitions by AST, comments and strings by tokenize/scanner, not by pattern over raw lines; allow cases fa1-fa11 proven quiet and proven to go red when each allow rule is removed\n7 no number written into prose; counts in the basis are %d of computed lengths, and the guide section names MOVES rather than a count",
+  "stamp": "audit-stamp: {\"content\":\"sha256:2f4d2eaa5542dbb9a07877ac8d51ef66190cc3fb15fde7b9a6412c0e4461932b\",\"dirtyDigest\":\"sha256:ec99ae2e314663f603a7dcb68309aca8753103dbccefad0058668712a407764e\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"ec06f02a986ece61\",\"plugins/audit/scripts/governance/_floor_guard.py\":\"1fdcbce89274bc9a\",\"tests/test__floor_guard.py\":\"503e5a37628bf284\",\"tools/lints/_deps.py\":\"b9b85506a2fda9e8\"},\"head\":\"b5061289\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/governance/_floor_guard.py\",\"tests/test__deps.py\",\"tests/test__floor_guard.py\",\"tools/lints/_deps.py\"],\"scopeDigest\":\"sha256:4007dd80c43d893e2ca24f37b9a90e963baea99d80179dfb5964cbfd0d3cf4ec\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
