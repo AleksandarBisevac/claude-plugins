@@ -779,12 +779,22 @@ def _cases(check):
                           M._SCRIPT.index("\n  };\n", _ms_at)]
                 if _ms_at >= 0 else "")
     _ms_sets = re.findall(r"root\.style\.setProperty\('(--[\w-]+)'", _ms_body)
+    # A constructed observer that observes nothing never fires, so the loop
+    # handing it each layer is read too: one loop, straight after the
+    # constructor, calling ro.observe on every pinned layer and nothing else.
+    _ms_loops = re.findall(
+        r"const ro = new ResizeObserver\(measureStack\);\n\s*"
+        r"for \(const el of \[([^\]]*)\]\) \{\n\s*if \(el\) ro\.observe\(el\);\n\s*\}",
+        M._SCRIPT)
+    _ms_observed = [[x.strip() for x in loop.split(",")] for loop in _ms_loops]
     check("st5 the stack is restated at runtime, because its height depends "
           "on the title, the width and the reader's font size - measureStack() "
           "itself publishes the bar, the strip and the section tools' heights, "
-          "and runs on load, on every resize and on every observed layer: %s"
-          % (_ms_sets,),
+          "and runs on load, on every resize and on every observed layer: %s, "
+          "observing %s" % (_ms_sets, _ms_observed),
           M._SCRIPT.count(_ms_head) == 1
+          and _ms_observed == [["toolbar", "snav",
+                                "document.querySelector('.sectools')"]]
           and sorted(_ms_sets) == ["--sectools-h", "--strip-h", "--topbar-h"]
           and "root.style.setProperty('--topbar-h', pinnedPx(toolbar) + 'px');"
               in _ms_body

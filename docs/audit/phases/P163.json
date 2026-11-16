@@ -69,8 +69,10 @@
         "severity": "low",
         "file": "tests/test_render_report.py:770-773",
         "issue": "This is an inherited case in the task's gate. 'sticky: the stack is restated at runtime' checks only `\"measureStack\" in M._SCRIPT and \"--topbar-h\" in M._SCRIPT and \"ResizeObserver\" in M._SCRIPT`. measureStack() could be emptied to a no-op and the case would still pass, because all three substrings stay in the script through the declaration, the listeners and other code. This task changed what measureStack publishes. st2 now pins the pinnedPx call, but the inherited case names a behaviour it cannot see.",
-        "resolution": "Either retire the case in favour of st2 plus the browser gate's stack checks, or make it assert the setProperty calls for each of --topbar-h, --strip-h and the sectools height, so emptying the function turns it red.",
-        "fixTask": "P163.8-d6t"
+        "resolution": "fixed in P163.8-d6t (77b76c7f6dad): Either retire the case in favour of st2 plus the browser gate's stack checks, or make it assert the setProperty calls for each of --topbar-h, --strip-h and the sectools height, so emptying the function turns it red.",
+        "fixTask": "P163.8-d6t",
+        "commit": "77b76c7f6dad",
+        "status": "fixed"
       },
       {
         "id": "P163-R6",
@@ -91,10 +93,11 @@
         "severity": "low",
         "file": "tests/test_render_report.py:782-796",
         "issue": "st5's label says measureStack() runs 'on every observed layer', but nothing in the assertion sees the observe loop (page-state.js:143-145, `for (const el of [toolbar, snav, document.querySelector('.sectools')]) { if (el) ro.observe(el); }`). Deleting that loop, or dropping one element from its array, leaves `new ResizeObserver(measureStack)` present once and st5 green, so the observer is constructed but never fires. This goes beyond the task's clause, which asked only for the setProperty calls, so it is filed low. It is the same label-claims-more-than-it-sees shape that R5 retired.",
-        "resolution": "Either assert that the observe loop names toolbar, snav and .sectools and calls ro.observe(el), for example by pinning the loop's text exactly once, or narrow the label to 'handed to a ResizeObserver' so it claims only what is asserted."
+        "resolution": "Either assert that the observe loop names toolbar, snav and .sectools and calls ro.observe(el), for example by pinning the loop's text exactly once, or narrow the label to 'handed to a ResizeObserver' so it claims only what is asserted.",
+        "fixTask": "P163.11-d6t"
       }
     ],
-    "outcome": "[findings: 8 - 0 high, 3 med, 5 low; 4 with a recorded fix commit]"
+    "outcome": "[findings: 8 - 0 high, 3 med, 5 low; 5 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -731,7 +734,7 @@
     {
       "id": "P163.8-d6t",
       "title": "fix P163-R5: This is an inherited case in the task's gate. 'sticky: the stack...",
-      "status": "in_progress",
+      "status": "done",
       "description": "This is an inherited case in the task's gate. 'sticky: the stack is restated at runtime' checks only `\"measureStack\" in M._SCRIPT and \"--topbar-h\" in M._SCRIPT and \"ResizeObserver\" in M._SCRIPT`. measureStack() could be emptied to a no-op and the case would still pass, because all three substrings stay in the script through the declaration, the listeners and other code. This task changed what measureStack publishes. st2 now pins the pinnedPx call, but the inherited case names a behaviour it cannot see.\n\nResolution asked: Either retire the case in favour of st2 plus the browser gate's stack checks, or make it assert the setProperty calls for each of --topbar-h, --strip-h and the sectools height, so emptying the function turns it red.",
       "files": [
         "tests/test_render_report.py",
@@ -758,14 +761,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "77b76c7f6dad",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_render_report.py: the inherited case 'sticky: the stack is restated at runtime' (three script-wide substring checks) is replaced by st5, which slices measureStack()'s own body out of M._SCRIPT (head 'const measureStack = () => {\\n' required exactly once, body up to the first '\\n  };\\n'), extracts every root.style.setProperty('--name' inside it and requires the sorted list to equal exactly [--sectools-h, --strip-h, --topbar-h], pins the --topbar-h call to pinnedPx(toolbar) and the sectools call to px(st), and requires the function to be called on load ('  };\\n  measureStack();\\n'), handed to ResizeObserver exactly once and to the resize listener exactly once. The label prints the extracted list. No product code changed. Gate: python3 tools/sweep-selftests.py tests/test_render_report.py exit 0, 313 cases (case count unchanged: one case replaced by one). Also ran tests/test__refs.py + tests/test__output_lints.py via the sweep: exit 0; ruff check tests/test_render_report.py: clean. Dependants: tests/test_render_report.py's dependants (.github/sweep-costs.json, render-report.py, tools/affected.py, tests/test__live_copy.py, ui/shared/README.md) - still correct: no defined name changed (_cases/_selftest untouched), the suite's runtime is the same, the path did not move. examples/, docs/index.html, docs/demo-large.html, docs/screenshots and all their listed dependants - still correct: the change is test-only, so the rendered report is byte-identical and no follower refresh was owed (orchestrator's refresh instruction is conditional on the rendered report changing); test__refs green as asked.",
+        "descriptive": "The sticky-stack case now fails when measureStack() stops publishing any of its three heights or stops being run, instead of passing over a no-op."
       },
       "startedAt": "2026-11-16T18:22:14Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-16T18:29:30Z",
+      "verifiedBy": [
+        "st5: measureStack()'s body publishes exactly --topbar-h (via pinnedPx), --strip-h and --sectools-h, and the function runs on load, from the ResizeObserver and from the resize listener"
+      ],
       "notes": [
         {
           "at": "2026-11-16T16:04:59Z",
@@ -794,6 +799,215 @@
         "runId": "2026-11-16T18:28:25Z.1557ce",
         "status": "passed",
         "at": "2026-11-16T18:28:25Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "77b76c7f6dad",
+        "at": "2026-11-16T18:29:30Z",
+        "return": "docs/audit/evidence/returns/P163.8-d6t/20261116T182214Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task with expectRedFirst false and no code change: HEAD's page-state.js already does what st5 asserts, so the helper (HEAD code + this test file) has no red to find. The case was instead proven red by mutating measureStack() in the shared tree and restoring in the same script (/tmp/p163r5/mut.py, restore asserted byte-equal, __pycache__ purged per cycle): empty body -> st5 FAIL (and st2), 311/313; drop the --strip-h setProperty -> st5 FAIL 312/313; drop the --sectools-h setProperty -> st5 FAIL 312/313; ResizeObserver handed a no-op instead of measureStack -> st5 FAIL 312/313; resize listener removed -> st5 FAIL 312/313; initial measureStack() call removed -> st5 FAIL 312/313; restored: True, then 313/313. The retired case's expression evaluated True over the emptied body (printed: 'old case under empty body: True'), which is the defect R5 named.",
+        "at": "2026-11-16 (mutation script run, no helper stamp)"
+      }
+    },
+    {
+      "id": "P163.9-d6t",
+      "title": "fix P163-R6: The shut bound is strip + shut bar + slack, read from the same l...",
+      "status": "cancelled",
+      "description": "The shut bound is strip + shut bar + slack, read from the same layout it judges, so it grows with the bar. No check now caps how much of the phone the resting filters cover. The removed ph1 block capped the stack at 50% of PHONE_TALL. Now a shut .sectools of any height passes the absolute arm. The relative arm only catches that for the committed documents it has a row for. For a report outside the checkout or an untracked scratch render, judge() returns early with the note 'the relative arm did not run for it (the absolute bar above did)'. For those reports nothing asserts the phase outcome 'on a 390px phone the filters do not cover the table'. A shut bar covering 80% of the screen goes green. The new comment says so ('What this bound cannot see is the shut bar itself growing'), but its pointer to the relative arm does not hold for those documents.\n\nResolution asked: Keep the layer-derived bound and the single stackOverTable() measurement. On the same shutStack result, add a ceiling: a share of PHONE_TALL with its basis stated in the comment, e.g. the table keeps at least half of the screen it is read on. That keeps one method and still bounds the destination. If no such ceiling is wanted, judge()'s unrecorded-document notes must stop telling the reader that an absolute bar covered the document. They should say instead that the shut bar's height went unbounded on this run.",
+      "files": [
+        "tools/check-report-interactive.mjs",
+        "tools/ui-checks/layout-baseline.mjs",
+        "tools/ui-tests/layout-baseline.test.mjs"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ui-tests/layout-baseline.test.mjs: Keep the layer-derived bound and the single stackOverTable() measurement"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "npx vitest run tools/ui-tests/layout-baseline.test.mjs"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: folded into one task that owns both files with a vitest gate: the drive finds no runner config for a tests.add naming tools/ui-tests/layout-baseline.test.mjs (scope-gap; vitest.config.mjs exists), so neither fix task could start"
+      },
+      "startedAt": null,
+      "completedAt": "2026-11-16T18:30:21Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T18:29:44Z",
+          "text": "scope: tools/check-report-interactive.mjs, tools/ui-checks/layout-baseline.mjs, every path the finding(s) P163-R6 name"
+        },
+        {
+          "at": "2026-11-16T18:29:44Z",
+          "text": "scope: tools/ui-tests/layout-baseline.test.mjs, the suite that tests tools/ui-checks/layout-baseline.mjs (the test file that names layout-baseline.mjs)"
+        },
+        {
+          "at": "2026-11-16T18:29:44Z",
+          "text": "no suite: tools/check-report-interactive.mjs - 2 test files name it and none is named for it (tests/test__report_html.py, tests/test_audit_lookup.py); name the one that tests it with `scope --files`, none was guessed"
+        }
+      ],
+      "fixes": [
+        "P163-R6"
+      ]
+    },
+    {
+      "id": "P163.10-d6t",
+      "title": "fix P163-R7: The diff makes this file's prose about the absolute arm false. T...",
+      "status": "cancelled",
+      "description": "The diff makes this file's prose about the absolute arm false. The header says the gate 'bounds the share of a phone screen an OPEN filter panel may pin'. It says the absolute arm 'saturates — the gate scrolls a fixed distance past the bar'. It says 'the absolute arm catches the DESTINATION', and that 'The shut figure has NO absolute bar'. After this diff the absolute arm is a hit-test of what pins over the table, both shut and open, against layer-derived bounds. It no longer scrolls a fixed distance, and the shut state does have a bound. The executor reports this in its outcome, refused by the plan gate (the file is declared by P125.56-0h5), so it is disclosed, not hidden. It is still a stale claim the diff created, and it crosses the gate/relative-arm boundary this file exists to describe.\n\nResolution asked: Rewrite the header and the two '(the absolute bar above did)' notes in a task that owns tools/ui-checks/layout-baseline.mjs (P163.7-d6t is pending on the same file), stating the new absolute arm: one hit-test, shut and open, each bounded by the layers allowed to pin.",
+      "files": [
+        "tools/ui-checks/layout-baseline.mjs",
+        "tools/ui-tests/layout-baseline.test.mjs"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ui-tests/layout-baseline.test.mjs: Rewrite the header and the two '(the absolute bar above did)' notes in a task that owns tools/ui-checks/layout-baseline.mjs (P163.7-d6t is pending on the same ..."
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "npx vitest run tools/ui-tests/layout-baseline.test.mjs"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: folded into one task that owns both files with a vitest gate: the drive finds no runner config for a tests.add naming tools/ui-tests/layout-baseline.test.mjs (scope-gap; vitest.config.mjs exists), so neither fix task could start"
+      },
+      "startedAt": null,
+      "completedAt": "2026-11-16T18:30:22Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T18:29:44Z",
+          "text": "scope: tools/ui-checks/layout-baseline.mjs, every path the finding(s) P163-R7 name"
+        },
+        {
+          "at": "2026-11-16T18:29:44Z",
+          "text": "scope: tools/ui-tests/layout-baseline.test.mjs, the suite that tests tools/ui-checks/layout-baseline.mjs (the test file that names layout-baseline.mjs)"
+        }
+      ],
+      "fixes": [
+        "P163-R7"
+      ]
+    },
+    {
+      "id": "P163.11-d6t",
+      "title": "fix P163-R8: st5's label says measureStack() runs 'on every observed layer', ...",
+      "status": "in_progress",
+      "description": "st5's label says measureStack() runs 'on every observed layer', but nothing in the assertion sees the observe loop (page-state.js:143-145, `for (const el of [toolbar, snav, document.querySelector('.sectools')]) { if (el) ro.observe(el); }`). Deleting that loop, or dropping one element from its array, leaves `new ResizeObserver(measureStack)` present once and st5 green, so the observer is constructed but never fires. This goes beyond the task's clause, which asked only for the setProperty calls, so it is filed low. It is the same label-claims-more-than-it-sees shape that R5 retired.\n\nResolution asked: Either assert that the observe loop names toolbar, snav and .sectools and calls ro.observe(el), for example by pinning the loop's text exactly once, or narrow the label to 'handed to a ResizeObserver' so it claims only what is asserted.",
+      "files": [
+        "tests/test_render_report.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_render_report.py: the case P163-R8 asks for, locking the behaviour at HEAD"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_render_report.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-16T18:30:28Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T18:29:44Z",
+          "text": "scope: tests/test_render_report.py, every path the finding(s) P163-R8 name"
+        },
+        {
+          "at": "2026-11-16T18:29:44Z",
+          "text": "no test runner in this task's gate for the test P163-R8 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_render_report.py'], derived as narrowed to this task's tests.add paths, in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P163-R8"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-16T18:57:22Z.958006",
+        "status": "passed",
+        "at": "2026-11-16T18:57:22Z"
+      }
+    },
+    {
+      "id": "P163.12-d6t",
+      "title": "The phone stack check bounds what the resting filters may cover, and layout-baseline's prose states the new absolute arm",
+      "status": "in_progress",
+      "description": "Fixes review findings P163-R6 (med) and P163-R7 (low), filed on P163.5-d6t.\n\nR6: tools/check-report-interactive.mjs:2558-2572 with tools/ui-checks/layout-baseline.mjs:316-332. The shut bound is strip + shut bar + slack, read from the same layout it judges, so it grows with the bar. Nothing now caps how much of the phone the resting filters cover. For a report outside the checkout or an untracked render, judge() returns early, so a shut bar covering 80% of the screen passes.\nFIX: keep the layer-derived bound and the single stackOverTable() measurement. On the same shutStack result, add a ceiling: a share of PHONE_TALL with its basis stated in a comment, for example 'the table keeps at least half of the screen it is read on'. Prove it red by inflating .sectools' height in a scratch copy of the acme report.\n\nR7: tools/ui-checks/layout-baseline.mjs header (lines 4-8, 17-19, 24-33, 42-47) and notes at 318 and 329. The prose describes the old absolute arm: an open panel only, a fixed scroll distance, 'the shut figure has NO absolute bar'. Rewrite it to state the new arm: one hit-test, shut and open, each bounded by the layers allowed to pin, plus the ceiling above. The '(the absolute bar above did)' notes must be true.\n\nRun node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html yourself; it is phase-gate-only here. No F/P/BUG ids in comments.",
+      "files": [
+        "tools/check-report-interactive.mjs",
+        "tools/ui-checks/layout-baseline.mjs",
+        "tools/ui-tests/layout-baseline.test.mjs"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "npx vitest run tools/ui-tests/layout-baseline.test.mjs"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-16T18:30:34Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-16T18:57:24Z.d1739a",
+        "status": "passed",
+        "at": "2026-11-16T18:57:24Z"
       }
     }
   ],
