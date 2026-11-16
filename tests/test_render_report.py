@@ -973,10 +973,10 @@ def _cases(check):
           "wireChips(areaBar, 'data-a'" in M._SCRIPT
           and "function paintAreas()" in M._SCRIPT)
 
-    # --- g: the global filter row (C1/C2) — document-level composition. --------
+    # --- g: the header filter row (C1/C2) — document-level composition. --------
     # The row's own markup is pinned in _report_html's selftest; what needs a
     # whole document is what render_html feeds it and where it lands.
-    check("g1 the sticky top bar carries the global filter row when there is "
+    check("g1 the top bar carries the header filter row when there is "
           "anything to filter by, with both authors as options",
           'class="gfilters"' in uh
           and uh.index('class="gfilters"') < uh.index('<div class="shell">')
@@ -1029,7 +1029,7 @@ def _cases(check):
           M._CSS.count("outline:none") == 0)
     # The phone stack. The bar carries the title, the document actions and the
     # header's filter row, and on a phone those wrap onto lines that pinned
-    # nearly half the screen over the table. Below the breakpoint the bar scrolls
+    # more than half the screen over the table. Below the breakpoint the bar scrolls
     # with the page, and the measured offset says so.
     # The block that opens on its own line; tables.css has a one-line rule under
     # the same query, and a slice from that one would read the wrong block.
@@ -1054,6 +1054,22 @@ def _cases(check):
           "would otherwise open above the top of the screen",
           "scrollIntoView({ block: 'nearest' })" in M._SCRIPT
           and ".fdetails{position:relative;scroll-margin-top:" in M._CSS)
+    # The reason the bar stops pinning is written twice - in the row's docstring
+    # and in the rule's own comment - and it is the measurement: the pinned stack
+    # held MORE than half the screen. "Nearly half" argues against the rule it
+    # explains. The stylesheet's figure is ph1's to print, so the comment names
+    # ph1 rather than carrying a before-figure of its own. Whitespace is folded
+    # because both texts wrap mid-phrase.
+    _phone_reason = [" ".join(t.split()) for t in
+                     (_report_html._global_filter_row.__doc__, _below)]
+    check("st4 the docstring and the stylesheet give one reason the top bar "
+          "scrolls below 52rem - the stack held more than half the screen - and "
+          "the stylesheet points at ph1 for the measured share: %r"
+          % ([(t.count("more than half"), t.count("nearly half"))
+              for t in _phone_reason],),
+          [(t.count("more than half"), t.count("nearly half"))
+           for t in _phone_reason] == [(1, 0), (1, 0)]
+          and "ph1" in _below)
 
     # --- rd: Ready now as a definition list (C4) --------------------------------
     check("rd1 Ready now is a definition list naming the ready task, and the "

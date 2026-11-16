@@ -49,8 +49,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/report/_usage_detail.py:481",
         "issue": "contradicts task clause \"each chip group is role=group with an accessible label\": the heatmap granularity row `<span id=\"audit-hm-gran\">` holds a row of aria-pressed `.fchip` toggle buttons (All/Year/Month/Week/Day) and has no role or label. It is the only chip container in the rendered reports without one: a scan of examples/acme-store/acme-store-audit.html and docs/index.html with scripts stripped finds every other chip container (phase-status, areas, model, tev, tevf, presets, tf-chips, audit-authors) labelled. The tests enumerate the ids they fixed (ax2's `== 3`, pg24's two ids) instead of stating the invariant, so this row was missed and a chip row added later would be missed too.",
-        "resolution": "Give #audit-hm-gran role=group and an accessible name matching its visible context (e.g. aria-label=\"Heatmap period\"). Add one document-level case over a rendered report: every element whose direct children are `.fchip`/`.tf-chip`/`.auchip` buttons carries role=\"group\" and a non-empty aria-label. Prove it red against this tree, since hm-gran fails it now.",
-        "fixTask": "P163.6-d6t"
+        "resolution": "fixed in P163.6-d6t (adda75514d01): Give #audit-hm-gran role=group and an accessible name matching its visible context (e.g. aria-label=\"Heatmap period\"). Add one document-level case over a rendered report: every element whose direct children are `.fchip`/`.tf-chip`/`.auchip` buttons carries role=\"group\" and a non-empty aria-label. Prove it red against this tree, since hm-gran fails it now.",
+        "fixTask": "P163.6-d6t",
+        "commit": "adda75514d01",
+        "status": "fixed"
       },
       {
         "id": "P163-R4",
@@ -83,7 +85,7 @@
         "resolution": "Rewrite the header and the two '(the absolute bar above did)' notes in a task that owns tools/ui-checks/layout-baseline.mjs (P163.7-d6t is pending on the same file), stating the new absolute arm: one hit-test, shut and open, each bounded by the layers allowed to pin."
       }
     ],
-    "outcome": "[findings: 7 - 0 high, 3 med, 4 low; 2 with a recorded fix commit]"
+    "outcome": "[findings: 7 - 0 high, 3 med, 4 low; 3 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -543,7 +545,7 @@
     {
       "id": "P163.6-d6t",
       "title": "fix P163-R3: contradicts task clause \"each chip group is role=group with an a...",
-      "status": "in_progress",
+      "status": "done",
       "description": "contradicts task clause \"each chip group is role=group with an accessible label\": the heatmap granularity row `<span id=\"audit-hm-gran\">` holds a row of aria-pressed `.fchip` toggle buttons (All/Year/Month/Week/Day) and has no role or label. It is the only chip container in the rendered reports without one: a scan of examples/acme-store/acme-store-audit.html and docs/index.html with scripts stripped finds every other chip container (phase-status, areas, model, tev, tevf, presets, tf-chips, audit-authors) labelled. The tests enumerate the ids they fixed (ax2's `== 3`, pg24's two ids) instead of stating the invariant, so this row was missed and a chip row added later would be missed too.\n\nResolution asked: Give #audit-hm-gran role=group and an accessible name matching its visible context (e.g. aria-label=\"Heatmap period\"). Add one document-level case over a rendered report: every element whose direct children are `.fchip`/`.tf-chip`/`.auchip` buttons carries role=\"group\" and a non-empty aria-label. Prove it red against this tree, since hm-gran fails it now.",
       "files": [
         "plugins/audit/scripts/report/_usage_detail.py",
@@ -571,14 +573,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "adda75514d01",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/scripts/report/_usage_detail.py: the heatmap granularity span now renders <span id=\"audit-hm-gran\" role=\"group\" aria-label=\"Heatmap period\">, named after the period the Previous/Next period arrows next to it step through. tests/test__usage_detail.py: added a stdlib HTMLParser scanner, chip_rows(html), that records every element with a .fchip/.tf-chip/.auchip button as a DIRECT child (a void-aware parent stack; script bodies are CDATA to the parser, so chip markup inside JS strings is never read as a row). New cases: ud33a (the heatmap fragment's only chip row is ('#audit-hm-gran','group','Heatmap period')); ud36 (the scanner proves itself on a fixture: a direct parent, once per row, a chip nested in <b> reported against <b>, a non-chip button not reported, a whitespace label read as empty); ud37 (render examples/acme-store with the shipped render-report.py into a mkdtemp scratch dir, as examples/report.sh renders it, then require every chip row to have role=group and a non-empty aria-label; it also requires #audit-hm-gran and #audit-phase-status to be among the rows, so a render without the usage or table section cannot pass vacuously; if the render fails, could_not_run fails the case). Mutations, each red and then restored with __pycache__ purged: empty label -> ud33a+ud37 red; role dropped -> ud33a+ud37 red; scanner takes the outermost ancestor -> ud33a+ud36+ud37 red; scanner knows fchip only -> ud36 red. Restored: 57/57. Full sweep 196/196 files ok; ruff clean; vermin clean; house_style_violations and prose_number_claims report nothing. Followers refreshed in this tree, as the orchestrator asked: examples/report.sh (examples/acme-store/acme-store-audit.html + .md, docs/index.html as its byte copy) and docs/demo-large.html per check-rendered-artifacts.py --how. The diff is the two attributes plus the generated stamp; check-rendered-artifacts.py --before-commit OK. check-report-interactive.mjs on the example: 229 checks passed. capture-screenshots.mjs --check OK. No recapture: the change adds only aria attributes, which paint nothing. These four rendered paths are outside the task's declared files. They are the followers the orchestrator's context told this task to refresh in the same task, and without them check-rendered-artifacts goes red. Dependants: _report_usage.py still correct, because it re-exports _usage_heatmap by identity (ud34 green), and test__report_usage uh1/uh4 still find the substring id=\"audit-hm-gran\" (111 cases ok). PLUGIN-BUILD-GUIDE.md section 6802 is still correct: it names the heatmap and does not describe its markup. _usage_overview.py is still correct: it names this module by basename only and its own row #audit-authors already passes ud37. .github/sweep-costs.json: the 0.3s row still matches the measured 0.3s with the render. tests/test__usage_detail.py is changed as described.",
+        "descriptive": "The heatmap's period chips are now a labelled group, and one case holds every chip row in a rendered report to role=group plus a name, so a new row cannot be missed."
       },
       "startedAt": "2026-11-16T16:05:28Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-16T17:35:35Z",
+      "verifiedBy": [
+        "the heatmap granularity row is a group labelled Heatmap period",
+        "the chip-row scanner reports direct parents only, once each, and no non-chip button",
+        "every chip row in the rendered acme-store report is role=group with a non-empty aria-label"
+      ],
       "notes": [
         {
           "at": "2026-11-16T16:04:54Z",
@@ -606,19 +612,35 @@
         "runId": "2026-11-16T17:35:31Z.924dae",
         "status": "passed",
         "at": "2026-11-16T17:35:31Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "adda75514d01",
+        "at": "2026-11-16T17:35:35Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-16T16:23:28Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__usage_detail.py` in a throwaway tree at HEAD exited 1 with 2 of 57 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ud33a (house FAIL), ud37 (house FAIL): SELFTEST FAILED: 55/57 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P163.7-d6t",
       "title": "fix P163-R4: Prose in the diff disagrees with the measurements and with the c...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Prose in the diff disagrees with the measurements and with the code. (a) The docstring says the wrapped bar 'pinned nearly half a phone screen' and the test comment says 'nearly half the screen', but the CSS and mjs comments record 58% (486px of 844) and the claim records 61% before the fix: both are more than half, which is the whole reason for the rule. (b) There are two 'before' figures for the same stack, 58%/486px in the comments and 61% in the claim, and no comment says the 58% is a sum of heights while the 61% is ph1's hit-test. (c) The g1 case title in a touched file still reads 'the sticky top bar carries the global filter row' in the present tense. This diff makes the bar non-sticky below 52rem and removes 'global' from the row, so the title is no longer history. It is a false description of what the case pins.\n\nResolution asked: Reword (a) to 'more than half'. In (b), say which method the 58% came from, or drop it and point at ph1's printed figure. Reword g1's title to 'the top bar carries the header filter row'.",
       "files": [
         "plugins/audit/scripts/report/_report_html.py",
         "tests/test_render_report.py",
         "tools/check-report-interactive.mjs",
         "plugins/audit/scripts/ui/report-css/forced-colors.css",
-        "tests/test__report_html.py"
+        "tests/test__report_html.py",
+        "examples",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots"
       ],
       "tests": {
         "mode": "tdd",
@@ -636,14 +658,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-16T17:59:23Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -666,11 +688,22 @@
         {
           "at": "2026-11-16T16:04:59Z",
           "text": "no test runner in this task's gate for the test P163-R4 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_render_report.py tests/test__report_html.py'], derived as narrowed to this task's tests.add paths and the suite(s) its files declare (tests/test__report_html.py), in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        },
+        {
+          "at": "2026-11-16T17:36:00Z",
+          "text": "its _report_html.py section describes the header markup; rewording a docstring figure and a test title changes nothing it states",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
         }
       ],
       "fixes": [
         "P163-R4"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-16T18:21:50Z.9dc6ae",
+        "status": "passed",
+        "at": "2026-11-16T18:21:50Z"
+      }
     },
     {
       "id": "P163.8-d6t",
@@ -678,7 +711,11 @@
       "status": "pending",
       "description": "This is an inherited case in the task's gate. 'sticky: the stack is restated at runtime' checks only `\"measureStack\" in M._SCRIPT and \"--topbar-h\" in M._SCRIPT and \"ResizeObserver\" in M._SCRIPT`. measureStack() could be emptied to a no-op and the case would still pass, because all three substrings stay in the script through the declaration, the listeners and other code. This task changed what measureStack publishes. st2 now pins the pinnedPx call, but the inherited case names a behaviour it cannot see.\n\nResolution asked: Either retire the case in favour of st2 plus the browser gate's stack checks, or make it assert the setProperty calls for each of --topbar-h, --strip-h and the sectools height, so emptying the function turns it red.",
       "files": [
-        "tests/test_render_report.py"
+        "tests/test_render_report.py",
+        "examples",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots"
       ],
       "tests": {
         "mode": "regression",

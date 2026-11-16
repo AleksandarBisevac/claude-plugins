@@ -2151,7 +2151,9 @@
       "P163.1",
       "P163.2",
       "P163.3",
-      "P163.6-d6t"
+      "P163.6-d6t",
+      "P163.7-d6t",
+      "P163.8-d6t"
     ],
     "docs/design/audit-concurrency-report.md": [
       "P60.3"
@@ -2207,7 +2209,9 @@
       "P163.1",
       "P163.2",
       "P163.3",
-      "P163.6-d6t"
+      "P163.6-d6t",
+      "P163.7-d6t",
+      "P163.8-d6t"
     ],
     "docs/screenshots": [
       "P53.9",
@@ -2225,7 +2229,9 @@
       "P130.3",
       "P163.1",
       "P163.2",
-      "P163.3"
+      "P163.3",
+      "P163.7-d6t",
+      "P163.8-d6t"
     ],
     "docs/screenshots/captured-at.json": [
       "P63.9",
@@ -13609,7 +13615,9 @@
     "examples": [
       "P163.1",
       "P163.2",
-      "P163.3"
+      "P163.3",
+      "P163.7-d6t",
+      "P163.8-d6t"
     ],
     "plugins/audit/scripts/ui/report-css/empty-state.css": [
       "P163.2"

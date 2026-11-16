@@ -1464,7 +1464,7 @@ def _global_filter_row(authors, tags, dmin, dmax, owners=None):
       * Mobile width exists: inside the topbar the row wraps under the title
         with `flex-wrap` and compact controls. Below 52rem the whole bar stops
         being sticky (report-css/forced-colors.css) - wrapped, its title,
-        actions and this row pinned nearly half a phone screen over the table -
+        actions and this row pinned more than half a phone screen over the table -
         and measureStack() publishes a zero offset while it is not, so there is
         still no breakpoint arithmetic and no second bar to place.
 

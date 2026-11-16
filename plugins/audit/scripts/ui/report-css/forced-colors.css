@@ -56,8 +56,10 @@
   .sectools:has(.fdetails[open]){position:static}
   /* The top bar scrolls with the page here. Wrapped onto a phone it is three
      lines - the title, the document actions and the header's filter row - and
-     pinned with the section strip and the table's own filter bar it held 58% of
-     a 390x844 screen over the rows (measured before this rule). None of those
+     pinned with the section strip and the table's own filter bar it held more
+     than half of a 390x844 screen over the rows before this rule; ph1 in
+     tools/check-report-interactive.mjs measures that stack by hit-test and
+     prints its share of the screen. None of those
      three lines is what a reader needs while reading a table row; the strip
      (where am I) and the table's bar (what is filtering it) are, and they stay
      pinned. A viewport query rather than a container query because the cost is
