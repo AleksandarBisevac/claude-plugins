@@ -1046,7 +1046,7 @@
     {
       "id": "SG1",
       "title": "A brief outranks a skill, and a weakened test is reported",
-      "status": "pending",
+      "status": "in_progress",
       "shard": "phases/SG1.json"
     }
   ],
@@ -8950,7 +8950,8 @@
       "P156.4",
       "P156.6",
       "P156.7",
-      "P156.8-3st"
+      "P156.8-3st",
+      "SG1.1"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -11208,7 +11209,9 @@
       "P131.2",
       "P131.6",
       "P132.3",
-      "P155.13"
+      "P155.13",
+      "SG1.5",
+      "SG1.6"
     ],
     "plugins/audit/tests/test__filed_returns.py": [
       "P118.3",
@@ -13616,10 +13619,6 @@
     ],
     "tests/test__floor_guard.py": [
       "SG1.4"
-    ],
-    "plugins/audit/scripts/governance/_filed_returns.py": [
-      "SG1.5",
-      "SG1.6"
     ],
     "plugins/audit/evals/bugfix/scaffold.sh": [
       "SG1.9"

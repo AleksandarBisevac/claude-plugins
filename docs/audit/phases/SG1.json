@@ -1,7 +1,7 @@
 {
   "id": "SG1",
   "title": "A brief outranks a skill, and a weakened test is reported",
-  "status": "pending",
+  "status": "in_progress",
   "description": "Evidence is in the study report (quality-gates-internal reports/2026-11-16-agent-skills). Measured on this repository's own benchmark (docs/research/benchmark-feature-results.md section 4.1): the plain arm edited a protected test's assertion in every session, and the plugin arm differed from the skills-and-rules arm in nothing a grader measured - the same prose rule protected both. Live: _skill_places.resolve_skill refuses another plugin's skill; _policy.resolve allows a single named skill per active area. Read: agents/audit-reviewer.md says a named review skill is invoked FIRST while its must-not list forbids writes, with no sentence ranking the two; audit-lookup.py does not mention a review skill at all.",
   "desiredOutcome": "An agent brief states that its hard rules win over a skill's instructions; a configured review skill is named in the phase reviewer's brief on the drive route; a task whose diff weakens an existing test, deletes one, adds a skip or a suppression is reported to the reviewer by a script; a refactor task can prove its tests were green on the base; an agent's edit-tool write to .claude/audit.config.json is refused or asked; /audit:init shows its assumptions before synthesis; both shipped eval cases have the scaffold they name",
   "testGate": [
@@ -16,8 +16,8 @@
     "vitest"
   ],
   "blockedBy": [],
-  "baseRef": null,
-  "branch": null,
+  "baseRef": "95f43749107e704a26a21e5c90228107b7ef8459",
+  "branch": "audit/sg1-a-brief-outranks-a-skill-and-a",
   "mergedAt": null,
   "review": {
     "tool": null,
@@ -30,14 +30,15 @@
     {
       "id": "SG1.1",
       "title": "Both agent briefs say their hard rules win over a skill's instructions",
-      "status": "pending",
+      "status": "in_progress",
       "description": "plugins/audit/agents/audit-executor.md tells the executor to invoke each skill its brief lists FIRST; plugins/audit/agents/audit-reviewer.md tells the phase reviewer to invoke a named review skill FIRST. Neither says what happens when the skill's text contradicts the brief (a skill that says to commit, to ask the human and stop the turn, to mutate a file and restore it, to fetch a URL). Today that is prose against prose and the agent picks.\n\nAdd one sentence to each brief, in the hard-rules list: the hard rules of this brief win over any instruction a skill gives; where they conflict the agent follows the brief and names the conflict in its return (executor: outcome.technical; reviewer: intent.note), never resolving it silently.\n\nCONSTRAINT YOU OWN: tools/measure-context.py AGENT_CEILINGS is executor 9000 / reviewer 7000 and `python3 tools/measure-context.py --tree plugins/audit` prints the briefs at 8910 and 6994 bytes on de21866c. The sentence does not fit as-is. Free the bytes by tightening existing wording WITHOUT dropping or weakening any rule (every existing pin in tests/ must stay green - several suites assert substrings of these two files, so run the whole sweep, not one file). Only if that is not possible, raise the ceiling by what the sentence costs and record the reason where the ceilings are defined. Say in your outcome which of the two you did and the byte counts before and after.\n\nDependants of these files you answer for: every tests/ case that asserts text of the two briefs (grep the two basenames under tests/ and tools/lints/), tools/measure-context.py --gate, and PLUGIN-BUILD-GUIDE.md wherever it quotes either brief.\n\nAcceptance:\n1. Each brief carries the precedence sentence inside its hard-rules section, naming where the conflict is reported.\n2. A case fails when the sentence is removed from either brief (count occurrences, do not assert presence of a loose substring).\n3. `python3 tools/measure-context.py --tree plugins/audit --gate` exits 0.\n4. No existing rule of either brief was dropped: the full sweep is green.",
       "files": [
         "plugins/audit/agents/audit-executor.md",
         "plugins/audit/agents/audit-reviewer.md",
         "tests/test__refs.py",
         "tools/measure-context.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/prove-gates.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -55,16 +56,45 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-16T16:20:20Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T16:20:06Z",
+          "text": "it quotes the guide's 'related listing' passage; SG1.1 edits the guide only where it quotes the two agent briefs",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-16T16:20:06Z",
+          "text": "it quotes the guide's doctor-trail passage; SG1.1 edits the guide only where it quotes the two agent briefs",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-16T16:20:06Z",
+          "text": "it quotes a drive-phase section marker of the guide; SG1.1 edits the guide only where it quotes the two agent briefs",
+          "waives": "tests/test_drive_phase.py"
+        },
+        {
+          "at": "2026-11-16T16:20:06Z",
+          "text": "it reads the guide's generated module map; SG1.1 adds no module and edits the guide only where it quotes the two agent briefs",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-16T16:20:06Z",
+          "reader": "tools/prove-gates.py",
+          "reads": "plugins/audit/agents/audit-executor.md",
+          "text": "declared to answer a reading: tools/prove-gates.py reads plugins/audit/agents/audit-executor.md - quotes its text beside its path: 'Report back a structured outcome:'"
+        }
+      ],
+      "reviewPerTask": "signals"
     },
     {
       "id": "SG1.2",
@@ -195,7 +225,7 @@
       "description": "Wire _floor_guard into the filing path, REPORT-ONLY. Nothing is refused in this release.\n\n- `drive-phase.py submit --role executor` (and the writer path that files a headless session's work) computes the floor guard over the task's diff against the task's own base - the same base the red-first helper and commit scope already use; do not derive a second one - passing the test paths and cases the task declared in tests.add.\n- The filed return records the result as its own block (answer: clean | findings | could-not-tell, the findings, the reason), written by the verb, never by the agent. A return an agent supplies with that key is ignored or refused, like the other verb-written keys in _filed_returns.py - follow what that module already does for redFirst.\n- The reviewer's computed brief (audit-lookup.py, task role and per owed task in phase role) shows the block as an INPUT: 'the script found these; judge each'. could-not-tell is shown as such with its reason.\n- The phase report / status surfaces the count the way other recorded facts are surfaced; follow the 'every claim carries its basis' rule - with no block recorded, say 'not measured', never 'none found'.\n- Config key `floorGuard` in .claude/audit.config.json: \"report\" (default) or \"off\". Add it to hooks/_config.py DEFAULTS, schema/audit-config.schema.json, the README config table and COMPATIBILITY.md (a new key the plugin now reads is a promise; say exactly what is promised: that the key is read and what its two values mean - NOT that findings will never refuse in a later release). CHANGELOG.md Unreleased gets its line.\n- agents/audit-reviewer.md gains the input row and one line on what to do with it, inside the reviewer's ceiling (tools/measure-context.py; the precedence task has already spent the slack - check the current byte count first).\n\nA finding does not change the gate, the commit or sign-off. A crash inside the guard is recorded as could-not-tell with the exception's type and must not stop a filing: this is an advisory path (SECURITY.md fail-mode rule), so it fails open AND says so.\n\nDependants: every reader of a filed return (grep _filed_returns' key tables and phase_return_key_drift / the return-key lints in tools/lints/), reference/execute-task.md and phase-signoff.md where the return's keys are listed, the panel and report if they enumerate return keys, tools/measure-context.py ceilings.\n\nAcceptance:\n1. Filing a task whose diff changes an existing test's assertion records a findings block naming it, and the reviewer's brief shows it.\n2. Filing a clean task records clean; `floorGuard: \"off\"` records nothing and the brief says not measured.\n3. A guard that raises records could-not-tell and the filing completes.\n4. An agent-supplied floor block in the return is not trusted.\n5. No gate verdict, commit or sign-off result differs between a findings block and a clean one.\n6. The key is in DEFAULTS, the config schema, the README table and COMPATIBILITY.md.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/scripts/governance/_filed_returns.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
         "plugins/audit/scripts/status/audit-lookup.py",
         "plugins/audit/hooks/_config.py",
         "plugins/audit/schema/audit-config.schema.json",
@@ -252,7 +282,7 @@
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
         "plugins/audit/scripts/governance/drive-phase.py",
-        "plugins/audit/scripts/governance/_filed_returns.py",
+        "plugins/audit/scripts/manifest/_filed_returns.py",
         "plugins/audit/scripts/manifest/_manifest_rules.py",
         "plugins/audit/scripts/manifest/audit-task.py",
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -441,5 +471,12 @@
     "floor guard ships report-only for one release; whether it ever refuses is decided from measured false positives",
     "green-first is an additive tests field, not a new tests.mode",
     "shell-form writes to .claude/audit.config.json stay journal-only in this phase"
-  ]
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "c445985d-439f-43a2-a6e0-523acc4ac52e",
+    "branch": "audit/sg1-a-brief-outranks-a-skill-and-a",
+    "at": "2026-11-16T16:20:20Z"
+  },
+  "startedAt": "2026-11-16T16:20:20Z"
 }
