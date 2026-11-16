@@ -3505,9 +3505,68 @@ def _cases(check):
           min(len(_gp_exec), len(_gp_orch)) > 400)
 
 
+    _skill_precedence_cases(check)
     _placeholder_cases(check)
     _shell_argv_cases(check)
     _lock_recipe_cases(check)
+
+
+# --- a brief's hard rules outrank a skill (`sp*`) ----------------------------------
+# Both briefs tell the agent to invoke a skill FIRST, and a skill can say the
+# opposite of a hard rule (commit, stop and ask, mutate and restore, fetch). The
+# brief has to say which one wins and where the conflict is reported, or the agent
+# picks. The anchor is the clause both briefs share; the field is per brief, and
+# it is read off the brief's own return template too, so renaming the field there
+# without moving the rule goes red here.
+_SP_ANCHOR = "win over any skill's instruction"
+_SP_FIELD = {"agents/audit-executor.md": ("outcome", "technical"),
+             "agents/audit-reviewer.md": ("intent", "note")}
+
+
+def _hard_rules_bullets(text):
+    """The bullets of a brief's hard-rules list, each squashed to one line.
+
+    The list starts at the line naming `Hard rules` (a `## ` heading in one brief,
+    a plain lead-in in the other) and ends at the next heading or the first
+    unindented line that is neither a bullet nor blank. `[]` when there is no such
+    line, which every case reading this fails on."""
+    lines = text.split("\n")
+    start = next((i for i, ln in enumerate(lines)
+                  if re.match(r"^(## )?Hard rules\b", ln)), None)
+    if start is None:
+        return []
+    body = []
+    for ln in lines[start + 1:]:
+        if ln.startswith("#") or (ln.strip() and not ln.startswith((" ", "- "))):
+            break
+        body.append(ln)
+    return [_squash(b) for b in re.split(r"\n(?=- )", "\n".join(body))
+            if b.strip().startswith("- ")]
+
+
+def _skill_precedence_cases(check):
+    for base, rel in ((1, "agents/audit-executor.md"),
+                      (4, "agents/audit-reviewer.md")):
+        text = _product_doc(rel)
+        parent, child = _SP_FIELD[rel]
+        bullets = _hard_rules_bullets(text)
+        holders = [b for b in bullets if _SP_ANCHOR in b]
+        whole = _squash(text).count(_SP_ANCHOR)
+        check("sp%d %s states the precedence clause %r exactly once, and that "
+              "once is a bullet of its hard-rules list - not prose elsewhere, "
+              "not twice (bullets read: %d, holders: %d, whole document: %d)"
+              % (base, rel, _SP_ANCHOR, len(bullets), len(holders), whole),
+              len(bullets) >= 3 and len(holders) == 1 and whole == 1)
+        field = "`%s.%s`" % (parent, child)
+        check("sp%d %s's precedence bullet names %s as where the conflict is "
+              "reported, and says it is never resolved silently"
+              % (base + 1, rel, field),
+              len(holders) == 1 and holders[0].count(field) == 1
+              and "silently" in holders[0])
+        nested = _return_nested_keys(text, parent)
+        check("sp%d %s's return template declares %s, so the field the "
+              "precedence bullet names is one the return carries: %r"
+              % (base + 2, rel, field, nested), child in nested)
 
 
 # --- a placeholder the script answers itself -------------------------------------

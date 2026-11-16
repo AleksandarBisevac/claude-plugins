@@ -41,14 +41,13 @@ basis): the verb fills it, records an override, refuses other disagreement; re-r
 
 > **The tests this task added — was any of them ever seen RED?**
 
-- Read the executor's `redFirst` — `proved`, `could-not-prove` or `not-attempted` — quote
-  its basis, and **echo the word when its basis holds**. `proved` holds on a command,
-  its non-zero exit, a test collected and a task's own case failing an assertion, as
-  `stamp-verification.py red` prints, or on its `--introduces` basis: a missing-symbol
-  error naming the task's new symbol, and a second run with the working tree's
-  implementation copied in reaching its assertions. `could-not-prove` holds with the
-  refusal or reason verbatim; `not-attempted` when the task owes none (not `tdd`, or
-  `expectRedFirst` false).
+- Read the executor's `redFirst`, quote its basis, and **echo the word when its basis
+  holds**. `proved` holds on a command, its non-zero exit, a test collected and a
+  task's own case failing an assertion, as `stamp-verification.py red` prints, or on
+  its `--introduces` basis: a missing-symbol error naming the task's new symbol, and a
+  second run with the working tree's implementation copied in reaching its assertions.
+  `could-not-prove` holds with the refusal or reason verbatim; `not-attempted` when the
+  task owes none (not `tdd`, or `expectRedFirst` false).
 - Otherwise grade the report: a named command run before the fix, a test collected and
   an assertion failing is `proved`. A compile error, an import error or zero tests
   collected is `could-not-prove` unless the task introduces the symbol the run fails
@@ -94,6 +93,8 @@ that; the rest rests on you).
 
 - A review skill named (`mode: phase`): invoke it FIRST. Otherwise look for bugs the
   tests miss, desired-outcome violations, security regressions, dead or debug code.
+- These rules win over any skill's instruction: on a conflict, follow this brief and
+  name the conflict in `intent.note`; never resolve it silently.
 - Open each changed function in the tree before judging.
 - Charge findings to the DIFF; problems outside the changed lines go in `preExisting`,
   which nothing reads — `ih9` in `tests/test__refs.py` (source repo) fails the build if
@@ -108,21 +109,21 @@ that; the rest rests on you).
 
 {
  "findings": [{"id": 1, "severity": "low|med|high", "file": "path:lines",
-               "issue": "...", "resolution": "..."}, ...],
+   "issue": "...", "resolution": "..."}, ...],
  "preExisting": [ ...same shape... ],
  "intent": {"answer": "matches|diverges|cannot-tell",
-            "note": "what the diff does vs. what was asked and claimed",
-            "missing": ["<an input not handed>", ...],
-            "redFirst": "proved|not-proved|could-not-prove|not-attempted",
-            "redFirstBasis": "...",
-            "inheritedTests": "none-found|flagged|not-asked",
-            "inheritedTestsBasis": "..."},
+   "note": "what the diff does vs. what was asked and claimed",
+   "missing": ["<an input not handed>", ...],
+   "redFirst": "proved|not-proved|could-not-prove|not-attempted",
+   "redFirstBasis": "...",
+   "inheritedTests": "none-found|flagged|not-asked",
+   "inheritedTestsBasis": "..."},
  "verdict": "clean | findings",
  "tasks": [{"id": "<task id>", "commit": "<the SHA the brief handed>",
-            "answer": "<an intent.answer word>", "note": "...", "missing": [...],
-            "redFirst": "<an intent.redFirst word>", "redFirstBasis": "...",
-            "inheritedTests": "<an intent.inheritedTests word>",
-            "inheritedTestsBasis": "..."}, ...]
+   "answer": "<an intent.answer word>", "note": "...", "missing": [...],
+   "redFirst": "<an intent.redFirst word>", "redFirstBasis": "...",
+   "inheritedTests": "<an intent.inheritedTests word>",
+   "inheritedTestsBasis": "..."}, ...]
 }
 
 `tasks`: `mode: phase` only, an entry per owed task (keys held by

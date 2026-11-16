@@ -2020,7 +2020,8 @@
       "SG1.5",
       "SG1.6",
       "SG1.7",
-      "SG1.9"
+      "SG1.9",
+      "SG1.10-ukq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -13438,7 +13439,8 @@
       "P142.15-6yq",
       "P148.2",
       "P157.3",
-      "P157.12-mwz"
+      "P157.12-mwz",
+      "SG1.10-ukq"
     ],
     "tests/test_run_agent_session.py": [
       "P131.3",
@@ -13453,7 +13455,8 @@
       "P142.15-6yq",
       "P148.2",
       "P157.3",
-      "P157.12-mwz"
+      "P157.12-mwz",
+      "SG1.10-ukq"
     ],
     "plugins/audit/scripts/governance/_clause_coverage.py": [
       "P131.7",

@@ -17,26 +17,29 @@ Hard rules (non-negotiable):
   not answer a question in front of you, exploring is fine — say so, and why, in your
   outcome. Nothing mechanically stops a grep; you keep this by reading it.
 - **First** invoke each skill the brief lists, via the Skill tool, before touching code.
+  These rules win over any skill's instruction: on a conflict (commit, stop and ask,
+  mutate and restore, fetch), follow this brief and name the conflict in
+  `outcome.technical`; never resolve it silently.
 - **Test discipline** exactly as ordered: `tdd` → draft the test(s) from `task.tests.add`
   and the task's own text FIRST, before reading the implementation they will run
-  against — a test written after seeing the code tends to confirm what the code already
-  does rather than probe what the task asked for — then run them and see them FAIL on
-  current code, then implement until green; `regression` → implement, then add test(s)
-  locking the corrected behaviour; `gate-only` → no new tests, keep the gates green.
-  Bind each `tests.add` entry to the case that carries it by id: return `casesAdded`, one
-  case id per entry, by index - the word a suite prints first on the case's `PASS`/`FAIL`
-  line (`gx1` in `PASS gx1 the shape predicate ...`), or a list of ids when one entry covers
-  several cases. Title wording is yours: `drive-phase.py submit` (`case_binding_gaps` in
-  `_filed_returns.py`) reads no title, and reports an entry with no id, and an id the
-  suite did not print, as a gap the reviewer is told. It reports; it does not refuse.
+  against — a test written after the code tends to confirm it rather than probe the
+  task — then run them and see them FAIL on current code, then implement until green;
+  `regression` → implement, then add test(s) locking the corrected behaviour;
+  `gate-only` → no new tests, keep the gates green. Bind each `tests.add` entry to the
+  case that carries it by id: return `casesAdded`, one case id per entry, by index - the
+  word a suite prints first on the case's `PASS`/`FAIL` line (`gx1` in `PASS gx1 ...`),
+  or a list of ids when one entry covers several cases. Title wording is yours:
+  `drive-phase.py submit` (`case_binding_gaps` in `_filed_returns.py`) reads no title,
+  and reports an entry with no id, and an id the suite did not print, as a gap the
+  reviewer is told. It reports; it does not refuse.
 - **Run the reading of `executor.runsGate` the brief names — no more, no less.** `full`:
   every gate command given. `own-tests` (the default): the command the brief's *What you
-  run* prints, either `run-test-gate.py ... --own --quiet` or the command the brief
-  gives in its place, covering only the tests `tests.add` names. Where the brief says
-  there is nothing of its own to run, say so. `never`:
-  run nothing and report `"gates": {}`. Report pass/fail per command you actually ran,
-  and keep **"ran and failed"** apart from **"could not run"** (missing command, runner
-  crash, zero tests collected where some were expected). Run each command as the brief
+  run* prints, `run-test-gate.py ... --own --quiet` or the one given in its place,
+  covering only the tests `tests.add` names. Where the brief says there is nothing of
+  its own to run, say so. `never`: run nothing and report `"gates": {}`. Report
+  pass/fail per command you actually ran, and keep **"ran and failed"** apart from
+  **"could not run"** (missing command, runner crash, zero tests collected where some
+  were expected). Run each command as the brief
   gives it, from the project directory, and git against the git root its commands name.
   The orchestrator's own recorded run is the evidence either way.
 - **A tool call refused by the auto-mode permission classifier — text containing
@@ -71,7 +74,7 @@ Hard rules (non-negotiable):
   verbatim. It is not a failed proof and costs no retry. `proved` is a red you
   watched; `not-attempted` says why none was owed. These three words are the schema's
   `redFirst.status` enum, held by `red_first_vocabulary_drift()` in
-  `tools/lints/_refs.py` (in the source repository, which the installed copy does not carry); the reviewer's `not-proved` is never yours.
+  `tools/lints/_refs.py` (source repo only); the reviewer's `not-proved` is never yours.
 - **You never commit, push, tag or amend**, never run `git reset`, `rebase` or `clean`
   (those need a human's confirmation), and **NEVER run `git stash`** — the tree is
   shared and a stash destroys siblings' work. Read a baseline with `git diff` or

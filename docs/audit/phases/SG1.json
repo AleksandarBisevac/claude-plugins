@@ -94,7 +94,12 @@
           "text": "declared to answer a reading: tools/prove-gates.py reads plugins/audit/agents/audit-executor.md - quotes its text beside its path: 'Report back a structured outcome:'"
         }
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-16T16:55:47Z.408a19",
+        "status": "passed",
+        "at": "2026-11-16T16:55:47Z"
+      }
     },
     {
       "id": "SG1.2",
@@ -445,6 +450,43 @@
         "expectRedFirst": true,
         "gate": [
           "python3 tools/sweep-selftests.py tests/test_eval_scaffolds.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "SG1.10-ukq",
+      "title": "The skill disclosure a headless session is handed says the task prompt outranks it",
+      "status": "pending",
+      "description": "SG1.1 put the precedence rule into the two SUBAGENT briefs. A headless writer or reviewer session (executor.writerModel set) reads neither: its prompt is composed as plain's own text with no rules (plugins/audit/scripts/status/audit-lookup.py, the comment above WRITER_COMMIT_LINE and compose_writer_prompt), and a task's skills reach it only through the text plugins/audit/scripts/governance/run-agent-session.py appends to the system prompt - SKILLS_PREAMBLE, then each skill's description and its '## Checklist' section (skill_disclosure, skills_prompt). So when a named skill's checklist or body contradicts the prompt (a skill that says to commit, to run the whole suite after each change where the prompt leaves it to the phase gate, to stop and ask), nothing the session reads says which wins. Add the rule to SKILLS_PREAMBLE and nowhere else: the skills are guidance for how to do the task; where one conflicts with the prompt the session follows the prompt and says so in its closing answer. The prompt of a task that names NO skill must not change by one byte - that text is the measured baseline - so the sentence lives only in the appended file, which is written only when a skill is named. Dependants: tests pinning SKILLS_PREAMBLE or the appended text (grep tests/ for SKILLS_PREAMBLE and skills_prompt), PLUGIN-BUILD-GUIDE.md's run-agent-session section, and the reviewer session, which is started with the same appended text.\n\nAcceptance:\n1. The text appended for a session that names a skill states that the prompt wins over a skill and that the conflict is named in the closing answer, once.\n2. A session started with no skill is handed no appended file and a prompt byte-identical to before.\n3. A case fails when the sentence is removed from the preamble.",
+      "files": [
+        "plugins/audit/scripts/governance/run-agent-session.py",
+        "tests/test_run_agent_session.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_agent_session.py: the text appended for a session naming a skill carries the precedence sentence exactly once, and a session naming no skill gets no appended text and an unchanged prompt"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_agent_session.py"
         ],
         "gateBasis": "tests.add"
       },
