@@ -2150,7 +2150,8 @@
       "P154.3-mkf",
       "P163.1",
       "P163.2",
-      "P163.3"
+      "P163.3",
+      "P163.6-d6t"
     ],
     "docs/design/audit-concurrency-report.md": [
       "P60.3"
@@ -2205,7 +2206,8 @@
       "P154.3-mkf",
       "P163.1",
       "P163.2",
-      "P163.3"
+      "P163.3",
+      "P163.6-d6t"
     ],
     "docs/screenshots": [
       "P53.9",
@@ -2298,7 +2300,8 @@
       "P125.107-0h5",
       "P125.81-0h5",
       "P125.99-0h5",
-      "P154.3-mkf"
+      "P154.3-mkf",
+      "P163.6-d6t"
     ],
     "examples/acme-store/acme-store-audit.md": [
       "P13.3",
@@ -2317,7 +2320,8 @@
       "P125.107-0h5",
       "P125.81-0h5",
       "P125.99-0h5",
-      "P154.3-mkf"
+      "P154.3-mkf",
+      "P163.6-d6t"
     ],
     "examples/acme-store/audit-plan.json": [
       "P50.3",

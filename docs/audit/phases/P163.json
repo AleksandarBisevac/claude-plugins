@@ -39,8 +39,10 @@
         "severity": "med",
         "file": "tools/check-report-interactive.mjs:2589-2631",
         "issue": "contradicts task clause \"extend the existing sticky-share check around line 2403 rather than adding a parallel one\" and \"at most a stated share of the viewport (a figure derived from the layout, with its basis in a comment)\": ph1 is a new standalone block after the phone-panel branch with its own measurement method (hit-testing down the screen's middle) and its own bound (50%), beside the existing `covered > 40` check (de21866c:2393), which is left unchanged. The repo now has two sticky-share measurements of the phone stack, by two methods and two bounds, which is the parallel check the clause excluded. The 50% bound is derived from the word 'most' in the requirement and not from the layout: the comment's basis is 'the table keeps MOST of it', with no measured layer heights. The executor's claim admits only that ph2 extends the existing check ('ph2 sits inside the existing phone More-filters branch, right after the sticky-share check it extends. ph1 measures the resting stack...').",
-        "resolution": "Fold the resting-stack question into the existing check. Measure the stack once, by one method (the hit-test is the better one, since it sees what pins over the table), in both states: shut (resting) and open, scrolled into the table. Assert each against its bound in the same place. If ph1 has to run for a report with no More-filters panel, move the shared measurement out of the `if` and keep the open-state assertion inside it, so there are still not two methods. Derive the shut bound from the layout, e.g. the strip height plus the shut filter bar's height plus a stated tolerance, read off the elements at run time, with that basis in the comment.",
-        "fixTask": "P163.5-d6t"
+        "resolution": "fixed in P163.5-d6t (efc4868d297e): Fold the resting-stack question into the existing check. Measure the stack once, by one method (the hit-test is the better one, since it sees what pins over the table), in both states: shut (resting) and open, scrolled into the table. Assert each against its bound in the same place. If ph1 has to run for a report with no More-filters panel, move the shared measurement out of the `if` and keep the open-state assertion inside it, so there are still not two methods. Derive the shut bound from the layout, e.g. the strip height plus the shut filter bar's height plus a stated tolerance, read off the elements at run time, with that basis in the comment.",
+        "fixTask": "P163.5-d6t",
+        "commit": "efc4868d297e",
+        "status": "fixed"
       },
       {
         "id": "P163-R3",
@@ -81,7 +83,7 @@
         "resolution": "Rewrite the header and the two '(the absolute bar above did)' notes in a task that owns tools/ui-checks/layout-baseline.mjs (P163.7-d6t is pending on the same file), stating the new absolute arm: one hit-test, shut and open, each bounded by the layers allowed to pin."
       }
     ],
-    "outcome": "[findings: 7 - 0 high, 3 med, 4 low; 1 with a recorded fix commit]"
+    "outcome": "[findings: 7 - 0 high, 3 med, 4 low; 2 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -463,7 +465,7 @@
     {
       "id": "P163.5-d6t",
       "title": "fix P163-R2: contradicts task clause \"extend the existing sticky-share check ...",
-      "status": "in_progress",
+      "status": "done",
       "description": "contradicts task clause \"extend the existing sticky-share check around line 2403 rather than adding a parallel one\" and \"at most a stated share of the viewport (a figure derived from the layout, with its basis in a comment)\": ph1 is a new standalone block after the phone-panel branch with its own measurement method (hit-testing down the screen's middle) and its own bound (50%), beside the existing `covered > 40` check (de21866c:2393), which is left unchanged. The repo now has two sticky-share measurements of the phone stack, by two methods and two bounds, which is the parallel check the clause excluded. The 50% bound is derived from the word 'most' in the requirement and not from the layout: the comment's basis is 'the table keeps MOST of it', with no measured layer heights. The executor's claim admits only that ph2 extends the existing check ('ph2 sits inside the existing phone More-filters branch, right after the sticky-share check it extends. ph1 measures the resting stack...').\n\nResolution asked: Fold the resting-stack question into the existing check. Measure the stack once, by one method (the hit-test is the better one, since it sees what pins over the table), in both states: shut (resting) and open, scrolled into the table. Assert each against its bound in the same place. If ph1 has to run for a report with no More-filters panel, move the shared measurement out of the `if` and keep the open-state assertion inside it, so there are still not two methods. Derive the shut bound from the layout, e.g. the strip height plus the shut filter bar's height plus a stated tolerance, read off the elements at run time, with that basis in the comment.",
       "files": [
         "tools/check-report-interactive.mjs"
@@ -492,14 +494,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "efc4868d297e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/check-report-interactive.mjs, step 9 (phone). The old open-state check (scroll 500px past the bar, visible share of .sectools, fixed 'covered > 40') and the standalone ph1 block (hit-test, fixed 50%) are both gone. In their place is one async stackOverTable(): it sets PHONE_TALL (390x844), scrolls the phases table to 10px above the viewport top, and hit-tests down the middle of the screen for the first pixel inside .tablewrap. In the same evaluate it reads the rendered heights of .snav (the strip) and .sectools (the filter bar) and the disclosure's open state, then restores PHONE_VIEWPORT and scroll 0. It is called twice. SHUT: after barState, OUTSIDE the More-filters branch (runs for a report with no panel), bound = strip + shut bar + STACK_SLACK_PX, expect label 'ph1 resting stack (More filters shut) ...'. OPEN: inside the branch, after openState, replacing the old covered>40 site, bound = strip + STACK_SLACK_PX, expect label 'ph1 open stack (More filters open) ...'. Each half refuses by name if the disclosure is in the wrong state or if no point is the table (shared STACK_UNMEASURED text). Bound basis is in the comment: below 52rem the top bar is static, so the layers allowed to pin are the strip and, while shut, the filter bar; open, the bar is static and only the strip may pin. STACK_SLACK_PX = 2 because the scan steps whole pixels and the bar's sticky offset is published rounded by px() in page-state.js, so the first table pixel can sit up to 1.5px below the exact sum. The comment also says what the bound cannot see (the shut bar growing, since the bound grows with it), which is the relative arm's filterBarShutShare. FEATURE_ABSENT 'phone panel check skipped' now also covers 'ph1 open stack (More filters open)'. The relative-arm comment ('The bar above is ABSOLUTE ...') is reworded to the new stack check. Messages print the bound and its parts to one decimal. EVIDENCE: `node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html` exit 0, 229 checks: resting 279px against a 280.9px bound (strip 48.4 + bar 230.5 + slack 2; 33%); open 49px against 50.4px (6%); coverage 190 of 203 sites ran. docs/demo-large.html exit 0, 235 checks: resting 337 against 338.8 (40%); open 49 against 50.4. Each report was run at least twice, with a gap between runs. One acme run made concurrently with the suite runs below exited 1 on '(setting up the print check) the screen is filtered to nothing: got 7, want 0'. That is step 8, which runs before any changed line, and it waits a fixed 250ms. Two later runs of acme alone each exited 0 with the same figures, so I read it as load timing, not this change. RED (scratch renders via `sh examples/report.sh --out-dir /tmp/p1635/r-*`, CSS restored with `git checkout --` in the same command and confirmed clean): (1) forced-colors.css `.topbar{position:static}` -> sticky, the defect at de21866c: gate exit 1, 'FAIL ph1 resting stack ... (547px against a 281px bound ...; 65%)' and 'FAIL ph1 open stack ... (317px against a 50px bound ...; 38%)'. (2) `.sectools:has(.fdetails[open]){position:static}` deleted: gate exit 1, the resting half stays ok (279/281) and 'FAIL ph1 open stack ... (667px against a 50px bound ...; 79%)'. So each half goes red on its own defect only. OVER-FIRE: STACK_SLACK_PX=0 on the clean acme report (file backed up and restored, grep-confirmed): exit 1, resting 279 against 278.9 and open 49 against 48.4 both FAIL. The slack is load-bearing and set as tight as the rounding allows. Those red runs printed the bound rounded; the message now prints one decimal. SUITES: `python3 tools/sweep-selftests.py --only tests/<x>.py` exit 0 each for test__refs (292 cases), test__report_html (181), test_render_report (312), test__report_usage (111), test_audit_lookup (188), test_drive_phase (977). The full selftests gate and the other task gates were not run (runsGate own-tests, nothing of its own). The rendered report is unchanged (only a tool changed), so no follower re-render is owed. DEPENDANTS: tests/test__report_html.py, test__report_usage.py, test_render_report.py, test_audit_lookup.py, test_drive_phase.py: still correct, green above, and none pins the replaced labels (grep for 'ph1 ', 'pin itself over', 'screen back', 'at most half the screen' outside the file hits only unrelated 'ph1' ids in test__proposals/test__refs and a page-state.js comment). tools/affected.py: still correct, it routes by path (REPORT_GATE, line 964) and reads no label. tools/capture-screenshots.mjs: still correct, check-report-interactive imports from it, not the reverse, and its 'step 10' reference is unchanged because step numbering did not move. tools/redfirst.sh: still correct, it only names the gate command. NOT DONE, refused by the plan gate: tools/ui-checks/layout-baseline.mjs's header (lines 4-8, 17-19, 24-27, 29-33) still describes the absolute arm as the open bar's visible share after a fixed scroll past it. That is now false. The absolute arm is a hit-test of what pins over the table, shut and open, against layer-derived bounds, and open it no longer reads the open bar's height at all (the bar is static, so any height reports the strip). The 'saturates' sentence stays true for a different reason, while 'the absolute arm catches the DESTINATION' no longer holds for the bar's height: only the relative arm watches it. Refusal verbatim: '[require-plan] tools/ui-checks/layout-baseline.mjs is outside task P163.5-d6t, the task this worktree is bound to ...: it is declared by P125.56-0h5, a different task.' It needs a task that owns that file. Also for P163.7-d6t (pending, same file): my new comments do not restate the 58%/486px figure (they point at forced-colors.css for what the top bar held). The open-half comment keeps the dated 390x780 history (156px shut, 481px open, 62%) from the replaced block.",
+        "descriptive": "The phone stack over the phases table is measured once, by hit-test, with More filters shut and open, each state against a bound read off the layers allowed to pin plus a stated rounding slack; the parallel 40%/50% checks are gone and each restored defect turns its own half red"
       },
       "startedAt": "2026-11-16T16:05:08Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-16T17:18:37Z",
+      "verifiedBy": [
+        "ph1 resting stack (More filters shut): browser-gate case replacing the old standalone 50% block, bound = strip + shut bar + slack",
+        "ph1 open stack (More filters open): browser-gate case replacing the old covered>40 check, bound = strip + slack"
+      ],
       "notes": [
         {
           "at": "2026-11-16T16:04:50Z",
@@ -522,6 +527,17 @@
         "runId": "2026-11-16T17:07:42Z.d9b063",
         "status": "passed",
         "at": "2026-11-16T17:07:42Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "efc4868d297e",
+        "at": "2026-11-16T17:18:37Z",
+        "return": "docs/audit/evidence/returns/P163.5-d6t/20261116T160508Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+        "at": "2026-11-16T16:25:26Z"
       }
     },
     {
@@ -531,7 +547,11 @@
       "description": "contradicts task clause \"each chip group is role=group with an accessible label\": the heatmap granularity row `<span id=\"audit-hm-gran\">` holds a row of aria-pressed `.fchip` toggle buttons (All/Year/Month/Week/Day) and has no role or label. It is the only chip container in the rendered reports without one: a scan of examples/acme-store/acme-store-audit.html and docs/index.html with scripts stripped finds every other chip container (phase-status, areas, model, tev, tevf, presets, tf-chips, audit-authors) labelled. The tests enumerate the ids they fixed (ax2's `== 3`, pg24's two ids) instead of stating the invariant, so this row was missed and a chip row added later would be missed too.\n\nResolution asked: Give #audit-hm-gran role=group and an accessible name matching its visible context (e.g. aria-label=\"Heatmap period\"). Add one document-level case over a rendered report: every element whose direct children are `.fchip`/`.tf-chip`/`.auchip` buttons carries role=\"group\" and a non-empty aria-label. Prove it red against this tree, since hm-gran fails it now.",
       "files": [
         "plugins/audit/scripts/report/_usage_detail.py",
-        "tests/test__usage_detail.py"
+        "tests/test__usage_detail.py",
+        "docs/demo-large.html",
+        "docs/index.html",
+        "examples/acme-store/acme-store-audit.html",
+        "examples/acme-store/acme-store-audit.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -572,6 +592,10 @@
           "at": "2026-11-16T16:05:26Z",
           "text": "its section on _usage_detail.py describes what the module renders; adding role and a label to one chip row changes nothing that section states",
           "waives": "PLUGIN-BUILD-GUIDE.md"
+        },
+        {
+          "at": "2026-11-16T17:18:58Z",
+          "text": "files widened by docs/demo-large.html, docs/index.html, examples/acme-store/acme-store-audit.html, examples/acme-store/acme-store-audit.md: widened by the integration answer"
         }
       ],
       "fixes": [
@@ -579,9 +603,9 @@
       ],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-11-16T17:16:07Z.facd55",
+        "runId": "2026-11-16T17:35:31Z.924dae",
         "status": "passed",
-        "at": "2026-11-16T17:16:07Z"
+        "at": "2026-11-16T17:35:31Z"
       }
     },
     {

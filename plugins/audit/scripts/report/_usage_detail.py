@@ -477,8 +477,11 @@ def _usage_heatmap(u):
     png_btn = ('<button type="button" class="btn segbtn" data-png="heatmap" '
                'title="Download this heatmap as a PNG image, redrawn from '
                'the data">PNG</button>' if u.get("daily") else "")
+    # A row of toggles is one choice, so it is announced as a group; its name
+    # is the period the arrows beside it step through.
     nav = ('<div class="hmnav">'
-           '<span id="audit-hm-gran">%s</span>'
+           '<span id="audit-hm-gran" role="group" aria-label="Heatmap period">'
+           '%s</span>'
            '<button type="button" class="btn btn-icon hmarrow" id="audit-hm-prev" '
            'aria-label="Previous period" disabled>&lsaquo;</button>'
            '<span class="hmperiod" id="audit-hm-period">All data &middot; %s</span>'
