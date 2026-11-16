@@ -22,10 +22,11 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [],
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "The base of a red gate is measured at the red's own head whenever HEAD moved only inside the recorder's paths (code_moved over _evidence_io.recorded_paths); a second moved-code unmeasurable base in one start stops as gate-red-base-unknown before any further launch, unrunnable bases keep the writer-round bound. Review round 1: one med and three lows, all fixed in P162.2-zz6; round 2: two lows recorded in the register.",
   "tasks": [
     {
       "id": "P162.1",
@@ -120,7 +121,7 @@
     {
       "id": "P162.2-zz6",
       "title": "Only a moved-code base counts toward the unmeasurable stop, the stop holds before any launch, and a nested project's record commit is the same code",
-      "status": "in_progress",
+      "status": "done",
       "description": "The phase review of P162.1 (commit 29726cea) found:\n(1, med) unmeasured_before / unmeasurable_again (drive-phase.py ~2933-2950, applied ~3519) count every measurable-False mark, including a red whose steps cannot be re-run at the base (base_unrunnable). That path was already bounded by the writer rounds (MAX_RESUME_ROUNDS, then the gate-red ask), and the old bdr4 pinned it. The loop this phase fixes came only from HEAD moving, so such reds now lose the writer's second automatic round for no gain. Fix: the mark records WHY it is unmeasurable (e.g. moved: True when code_moved answered; unrunnable reds do not set it), and only moved-code marks count. Restore the old bdr4 behaviour.\n(2, low) The prose then holds again: drive-phase.py ~2858-2867 and ~3091-3094, PLUGIN-BUILD-GUIDE.md ~5082-5086, execute-task.md ~285-288. The prose added by P162.1 (the comment above BASE_MEASURE_VERDICTS, the TWICE UNMEASURABLE paragraph) must say that only a moved-code base counts.\n(3, low) The bound applies only to a mark that has already been decided. base_reading_for's due branch (~3477) returns launch_base / take_base before checking the count, so a sibling that keeps moving code can keep relaunching. Fix it as an invariant, not as one more check site: the due branch returns the gate-red-base-unknown stop when the start already counts the bound, before ANY measurement is launched, inline or background. Put the bound in one predicate used by both the due branch and the decided-mark branch.\n(4, low) No test covers code_moved for a nested project (git prints sub/docs/audit/..., recorded_paths says docs/audit/...). Add one.\nKeep orchestrator.md untouched (it is near its measure-context ceiling). No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -149,14 +150,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3a83d0193fd3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: measure_base returns moved True only when code_moved answered (False on every other path, base_unrunnable included); take_base records it on the mark as `moved`; new moved_unmeasurable(held); unmeasured_before counts only moved-code marks; UNMEASURED_BOUND constant and ONE predicate unmeasurable_bound(held) (count up to and including the mark >= bound) plus bound_said(held), asked in base_reading_for's due branch BEFORE gate_in_background/launch_base/take_base and in the decided-mark branch; unmeasurable_again removed (grep: no other caller in plugins/tests/tools, the guide's mention rewritten). Comment block above BASE_MEASURE_VERDICTS, measure_base/take_base/base_reading_for docstrings, PLUGIN-BUILD-GUIDE.md (~5073) and execute-task.md (~290) now say only a moved-code base counts and the stop precedes any launch. orchestrator.md untouched. Tests: bdr4 restored to the pre-P162.1 behaviour (writer, never unknown, no moved, no count); bi14 restored (unrunnable other red -> not unknown) + new bi15 (moved mark + moved again -> unknown); new bi16 (mark counting two moved reds: no take_base, no launch_base, inline and background, unknown returned; twin with unrunnable marks launches both ways); brc4 gains the unrunnable twin ([2,0,1]); new brc6 nested project (sub/ under the git root: record-only commit -> None, code commit -> names f1.txt); dm86 docstring reworded. Mutations in a scratch git-archive export, each restored: due-branch check dropped -> bi16 red; git_to_plan dropped -> brc6 red; count every unmeasurable -> bdr4, brc4, bi14, bi16 red; count nothing -> brc3, brc4, bi15, bi16 red; unmutated 26/26. Gate: `python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_drive_without_model.py` exit 0, '2/2 files ok, 1051 cases'. ruff on the three .py exit 0; prose_number_claims/doc_prose_numbers report nothing in touched files. Dependants: drive-without-model.py hook, _worktrees.py and the importing suites (test__filed_returns, test__invariants, test__worktrees, test_audit_status, test_commit_task_work, test_detect_plan_skip) - still correct: no public name they use was renamed or removed (only unmeasurable_again, used nowhere else) and the mark gains one key; test_drive_without_model.py dm85/dm86 still pass (74 cases ok) since dm86's bases are moved-code; PLUGIN-BUILD-GUIDE.md, execute-task.md - changed, as above; README.md/orchestrator.md name gate-red-base-unknown etc. whose meaning is unchanged; tests/test_drive_phase.py dependants (stamp_verification, run_test_gate, affected) use helpers not touched.",
+        "descriptive": "Only a HEAD that moved the red's code counts toward the unmeasurable-base stop; unrunnable reds go back to the writer as before, and the stop now fires before any further base run is launched."
       },
       "startedAt": "2026-11-16T07:57:13Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-16T08:20:06Z",
+      "verifiedBy": [
+        "bdr4 restored + bi14 restored (unrunnable twice -> writer, never unknown), bi15 (two moved-code reds -> unknown), brc4 unrunnable twin",
+        "bi16: a mark counting two moved-code reds stops the next red with no take_base and no launch_base, inline and background; twin launches",
+        "brc6: nested project, record-only commit is the same code, code commit is a move"
+      ],
       "notes": [
         {
           "at": "2026-11-16T07:57:11Z",
@@ -184,16 +189,28 @@
         "runId": "2026-11-16T08:20:03Z.532070",
         "status": "passed",
         "at": "2026-11-16T08:20:03Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "3a83d0193fd3",
+        "at": "2026-11-16T08:20:06Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-16T08:09:46Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_drive_without_model.py` in a throwaway tree at HEAD exited 1 with 4 of 977 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bdr4 (house FAIL), brc4 (house FAIL), bi14 (house FAIL), bi16 (house FAIL): SELFTEST FAILED: 973/977 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
   "request": "Fix the drive's background base measurement: recording a red task gate commits the plugin's own rows, which moves HEAD, and the base run then refuses because HEAD is no longer the red run's head - so the base is never measured and next reruns the red gate without bound.",
   "openChoices": [],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "988f3478-fc74-4a1e-a62b-7522b404c792",
-    "branch": "audit/p162-a-red-gate-s-base-is-measured",
-    "at": "2026-11-16T07:15:18Z"
-  },
-  "startedAt": "2026-11-16T07:15:18Z"
+  "startedAt": "2026-11-16T07:15:18Z",
+  "testEvidence": {
+    "runId": "2026-11-16T08:47:00Z.7c2ccf",
+    "status": "passed",
+    "at": "2026-11-16T08:47:00Z"
+  }
 }
