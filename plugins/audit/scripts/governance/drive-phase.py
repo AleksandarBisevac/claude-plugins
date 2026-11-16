@@ -2889,23 +2889,32 @@ def rerun_alongside(ctx, state, manifest, pending):
 # is no mark to any other red (`unmeasurable_elsewhere`): that red's base is
 # measured on its own, and the first such red goes to the writer as no-base.
 #
-# TWICE UNMEASURABLE IN ONE START IS A STOP. The start's mark carries how many
-# earlier reds of the start had a base that could not be measured
-# (`UNMEASURED_BEFORE`, counted by `unmeasured_before` from the mark it
-# replaces); a second unmeasurable red stops as `gate-red-base-unknown`
-# (`unmeasurable_again`), never another automatic round, so neither `next` nor
-# `auto` can loop gate - unmeasurable base - gate. The count lives on the mark,
-# so a new start (`_marked` reads a mark of an earlier start as none) counts
-# from zero, and `measure-base`, which drops the mark, is the owner's own
-# answer rather than a round the drive took.
+# TWICE MOVED IN ONE START IS A STOP. Only a base unmeasurable because HEAD no
+# longer held the red's code counts: the mark records that reason (`moved`,
+# from `code_moved`), and a red whose steps cannot be re-run at the base
+# (`base_unrunnable`) never sets it - that red goes to the writer every time,
+# bounded by the writer rounds as it always was, since no stop would change
+# what it measures. The start's mark carries how many earlier reds of the start
+# had a moved-code base (`UNMEASURED_BEFORE`, counted by `unmeasured_before`
+# from the mark it replaces); once the start counts `UNMEASURED_BOUND` of them
+# (`unmeasurable_bound`), the red stops as `gate-red-base-unknown`, never
+# another automatic round, so neither `next` nor `auto` can loop gate - moved
+# HEAD - gate. That one predicate is asked twice: of a mark just decided, and
+# in the due branch BEFORE any measurement is launched, inline or in the
+# background, so a sibling that keeps moving the code cannot keep relaunching.
+# The count lives on the mark, so a new start (`_marked` reads a mark of an
+# earlier start as none) counts from zero, and `measure-base`, which drops the
+# mark, is the owner's own answer rather than a round the drive took.
 BASE_MEASURE_VERDICTS = ("no-base", "not-knowable")
 BASE_TREE_PREFIX = "audit-base-"
 BASE_MEASURED = "baseMeasured"
 BASE_PROGRESS_DIRNAME = "base-runs"
 BASE_MEASURE_SECONDS = _evio.FOREGROUND_BOUND_MS // 1000
 BASE_RUN_VERB = "base-run"
-# The start's base mark counts the unmeasurable reds before its own here.
+# The start's base mark counts the moved-code reds before its own here.
 UNMEASURED_BEFORE = "unmeasuredBefore"
+# How many moved-code bases one start takes before it asks instead.
+UNMEASURED_BOUND = 2
 
 
 def base_measure_due(state, task, row, runs):
@@ -2930,23 +2939,39 @@ def unmeasurable(held):
             and held.get("measurable") is False)
 
 
+def moved_unmeasurable(held):
+    """Whether `held` is unmeasurable (`unmeasurable`) because HEAD no longer
+    held the code its red ran on (`moved`, set from `code_moved`) - never a
+    red whose steps could not be re-run at the base."""
+    return unmeasurable(held) and held.get("moved") is True
+
+
 def unmeasured_before(prior):
-    """How many reds of this start had a base that could not be measured
-    before the one about to be: what the start's previous mark `prior`
-    counted (`UNMEASURED_BEFORE`), and that mark itself when it was one
-    (`unmeasurable`). `_marked` answers None for a mark of an earlier start,
-    so a new start counts from zero."""
+    """How many reds of this start had a moved-code base (`moved_unmeasurable`)
+    up to and including the start's mark `prior`: what it counted before
+    itself (`UNMEASURED_BEFORE`), and itself when it was one. `_marked`
+    answers None for a mark of an earlier start, so a new start counts from
+    zero."""
     if not isinstance(prior, dict):
         return 0
     return (int(prior.get(UNMEASURED_BEFORE) or 0)
-            + (1 if unmeasurable(prior) else 0))
+            + (1 if moved_unmeasurable(prior) else 0))
 
 
-def unmeasurable_again(held):
-    """Whether `held` is an unmeasurable mark (`unmeasurable`) taken after an
-    earlier red of the same start was one too: the bound past which the drive
-    asks instead of measuring a third time."""
-    return unmeasurable(held) and int(held.get(UNMEASURED_BEFORE) or 0) > 0
+def unmeasurable_bound(held):
+    """Whether the start whose mark is `held` has reached `UNMEASURED_BOUND`
+    moved-code bases (`unmeasured_before`): the drive then asks instead of
+    measuring again. The one predicate both the due branch and the decided
+    mark ask."""
+    return unmeasured_before(held) >= UNMEASURED_BOUND
+
+
+def bound_said(held):
+    """The unknown sentence of a start past `unmeasurable_bound`."""
+    return ("%s; the base of an earlier red of this start could not be "
+            "measured either, its code moved, so the drive asks rather than "
+            "running the gate again" % (
+                (held or {}).get("said") or "its base was not measured",))
 
 
 def unmeasurable_elsewhere(held, runs):
@@ -2964,10 +2989,11 @@ def measure_base(ctx, phase, row, tree=None, placed=None, started=None,
     at that commit and recorded; the did-line saying what was done; the
     holder of a tree the teardown kept (None when nothing was kept); why a
     run held to `bound` seconds was stopped there (None when it ended - and
-    always with `bound` None, which holds it to none); and whether a base run
+    always with `bound` None, which holds it to none); whether a base run
     could be taken at all, False when HEAD no longer holds the code the run
     ran on (`code_moved`) and when the run answered that no red step can be
-    run again at the base (`base_unrunnable`). The tree is built at the red
+    run again at the base (`base_unrunnable`); and `moved`, True for the first
+    of those two reasons only. The tree is built at the red
     run's own recorded head, never at HEAD: a commit of nothing but the
     recorder's paths moves HEAD and leaves that code as it was. `reading` is None, beside the reason, when no base
     run answered: the tree
@@ -2979,6 +3005,7 @@ def measure_base(ctx, phase, row, tree=None, placed=None, started=None,
     moved = code_moved(ctx, want, tree_head(ctx, tree))
     if moved is not None:
         return {"reading": None, "kept": None, "cut": None, "measurable": False,
+                "moved": True,
                 "said": "%s's base not measured: %s" % (row.get("taskId"),
                                                         moved)}
     holder = tempfile.mkdtemp(prefix=BASE_TREE_PREFIX)
@@ -2997,7 +3024,7 @@ def measure_base(ctx, phase, row, tree=None, placed=None, started=None,
     elif left:
         said += "; its tree %s is left behind" % (holder,)
     return {"reading": reading, "said": said, "cut": cut,
-            "measurable": measurable,
+            "measurable": measurable, "moved": False,
             "kept": holder if kept is not None else None}
 
 
@@ -3149,7 +3176,8 @@ def take_base(ctx, phase, task, row, tree, keep, bound):
     """`measure_base` under the start's mark, written through `keep(**changes)`
     before anything can kill the run - the process measuring, the tree, the
     base run's own process - and once more with what the run answered:
-    `done`, the reading and its parts, `measurable`, and `unknowable` when a
+    `done`, the reading and its parts, `measurable`, `moved` (why it was not),
+    and `unknowable` when a
     base was measurable and the run left no reading with a base run behind it
     (`base_behind`). A run stopped at `bound` is not finished: its
     mark keeps `cut`, the reason, for the caller to hand the base to the
@@ -3167,7 +3195,8 @@ def take_base(ctx, phase, task, row, tree, keep, bound):
     fresh = got["reading"] if isinstance(got["reading"], dict) else None
     verdict = (fresh or {}).get("verdict")
     changes = {"done": True, "tree": None, "pids": [], "said": got["said"],
-               "measurable": got["measurable"], "reading": fresh,
+               "measurable": got["measurable"],
+               "moved": got.get("moved") is True, "reading": fresh,
                "unknowable": bool(got["measurable"]) and not base_behind(fresh),
                "verdict": verdict, "run": (fresh or {}).get("run"),
                "atBase": list((fresh or {}).get("atBase") or []),
@@ -3457,9 +3486,10 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
 
     A measurement is due once per start (`base_measure_due`), and again for
     another red when the one taken could not be taken at all
-    (`unmeasurable_elsewhere`), which is read as no mark; a second
-    measurement of the start that could not be taken either is unknown
-    (`unmeasurable_again`), so the drive asks rather than looping. Its reading
+    (`unmeasurable_elsewhere`), which is read as no mark; a start that counts
+    `UNMEASURED_BOUND` moved-code bases is unknown (`unmeasurable_bound`) -
+    asked of the decided mark, and in the due branch before anything is
+    launched - so the drive asks rather than looping. Its reading
     decides only the red it was measured for, or a repeat of that red
     (`red_runs`); any other red of the start is decided by its own row's
     reading, and is unknown where that names no base run. A measurement that
@@ -3474,6 +3504,9 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
     # in its own record, and the due question reads the mark in `state`.
     base_mark(ctx, state, task)
     if base_measure_due(state, task, row, runs):
+        before = _marked(state, BASE_MEASURED, task)
+        if unmeasurable_bound(before):
+            return None, reading, bound_said(before)
         due, why = gate_in_background(ctx, _evio.red_step_names(row))
         if due:
             return launch_base(ctx, state, task, row, tree, why), None, None
@@ -3516,11 +3549,8 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
                                ", ".join(sorted(runs)) or "no run named"))
     if held.get("unknowable") or cut_before_ran(held):
         return None, use, held.get("said") or "no base reading was left"
-    if unmeasurable_again(held):
-        return None, use, ("%s; the base of an earlier red of this start "
-                           "could not be measured either, so the drive asks "
-                           "rather than running the gate again" % (
-                               held.get("said") or "its base was not measured",))
+    if unmeasurable_bound(held):
+        return None, use, bound_said(held)
     return None, use, None
 
 

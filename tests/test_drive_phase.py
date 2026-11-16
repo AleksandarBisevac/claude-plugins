@@ -20252,8 +20252,9 @@ def _base_derived_cases(check):
     case stops the task as red at base with no writer round, a green base
     goes to the writer, and a derived step that cannot be run again (its
     runner named no failing suite) is a base no command can measure, which
-    goes to the writer as a red with no base reading the first time in a
-    start, and stops for the owner the second time rather than loop."""
+    goes to the writer as a red with no base reading every time, bounded by
+    the writer rounds - only a base whose code moved counts toward the stop
+    for a base nobody can know."""
     M, why = _load("drive_phase_base_derived")
     if M is None:
         check("bdr1 the driver loads", False, why)
@@ -20314,8 +20315,8 @@ def _base_derived_cases(check):
 
     # The writer is resumed and the gate is red again, still unrunnable at the
     # base, under a run id of its own: the first red's mark was taken for
-    # another run and could not be measured, so it decides nothing here - but
-    # it is counted, and a second unmeasurable base in one start asks.
+    # another run and could not be measured, so it decides nothing here, and a
+    # base unrunnable because of the red's own steps counts toward no stop.
     stubs = os.path.realpath(_harness.fixture_root("drive-derived-again-"))
     bindir = _writer_stub(stubs)
     again_log = os.path.join(stubs, "runs.jsonl")
@@ -20329,16 +20330,18 @@ def _base_derived_cases(check):
     runs = [r.get("runId") for r in again_rows
             if r.get(_evio.VERDICT_SOURCE) != _evio.REUSED]
     s_mark = _base_mark(u_root)
-    check("bdr4 a second unrunnable red in one start, under a new run id, is "
-          "measured again - the first red's unmeasurable mark decides no other "
-          "red - and, unmeasurable a second time, stops as "
-          "gate-red-base-unknown rather than another writer round: %r / %r / %r"
+    check("bdr4 a second unrunnable red in one start, under a new run id, goes "
+          "to the writer as no-base: the first red's unmeasurable mark decides "
+          "no other red, and a base the red's own steps cannot re-run - code "
+          "not moved - counts toward no stop, so it is never "
+          "gate-red-base-unknown; the writer rounds bound it: %r / %r / %r"
           % (second, runs, s_mark),
-          "gate-red-base-unknown" in second
-          and "gate-red-writer" not in second
+          "gate-red-writer" in second
+          and "gate-red-base-unknown" not in second
           and len(set(runs)) >= 2 and s_mark.get("of") == runs[-1]
           and s_mark.get("measurable") is False
-          and s_mark.get("unmeasuredBefore") == 1)
+          and not s_mark.get("moved")
+          and not s_mark.get("unmeasuredBefore"))
 
 
 def _base_trees(root):
@@ -20888,6 +20891,48 @@ def _base_record_commit_cases(check):
           and "unrecorded head" in str(answers[3]))
     _base_twice_unmeasurable_case(check, k02)
     _base_new_start_case(check)
+    _base_nested_project_case(check)
+
+
+def _base_nested_project_case(check):
+    """A project nested in a subdirectory of its repository: git names a
+    changed path from the repository's root (`sub/docs/audit/...`), the
+    recorder from the project's (`docs/audit/...`), so a commit of only the
+    recorder's paths is the same code only once the two are put in one
+    frame; THE TWIN, a commit of the nested project's code is a move."""
+    M, why = _load("drive_phase_base_nested")
+    if M is None or getattr(M, "code_moved", None) is None:
+        check("brc6 the driver loads, with code_moved", False,
+              why or "no code_moved")
+        return
+    root = os.path.realpath(_harness.fixture_root("drive-brc-nested-"))
+    files = tuple(("sub/" + rel, text, nl) for rel, text, nl in _repo_files(
+        TASKS[:1], ("true",), "always", None, None))
+    _build_repo(root, files)
+    project = os.path.join(root, "sub")
+    mpath = os.path.join(project, "docs", "audit", "audit-plan.json")
+    red = _git_out(root, "rev-parse", "HEAD").strip()
+    with open(mpath, "a", encoding="utf-8", newline="\n") as fh:
+        fh.write("\n")
+    _harness.git(root, "add", "-A", "--", "sub/docs/audit/audit-plan.json")
+    _harness.git(root, "commit", "-qm", "the record of the red")
+    recorded = _git_out(root, "rev-parse", "HEAD").strip()
+    _write_lf(os.path.join(project, "src", "f1.txt"), "moved\n")
+    _harness.git(root, "add", "-A", "--", "sub/src/f1.txt")
+    _harness.git(root, "commit", "-qm", "a change to the code")
+    code = _git_out(root, "rev-parse", "HEAD").strip()
+    ctx = {"gitRoot": root, "project": project, "manifest": mpath,
+           "config": {}}
+    try:
+        answers = [M.code_moved(ctx, red, recorded), M.code_moved(ctx, red, code)]
+    except Exception as exc:                                   # noqa: BLE001
+        answers = ["raised %s: %s" % (type(exc).__name__, exc)]
+    check("brc6 a project nested in a subdirectory of its repository, HEAD "
+          "moved by a commit of only the recorder's paths, is the same code; "
+          "THE TWIN, HEAD moved by a commit of the project's code is a move "
+          "naming that path: %r" % ((red[:12], recorded[:12], answers),),
+          recorded != red and len(answers) == 2 and answers[0] is None
+          and "f1.txt" in str(answers[1]))
 
 
 def _base_twice_unmeasurable_case(check, k02):
@@ -20957,12 +21002,14 @@ def _base_new_start_case(check):
         check("brc4 the driver loads", False, why)
         return
     counted = []
-    for started in ("2026-11-13T09:00:00Z", "2026-11-14T09:00:00Z"):
+    for started, moved in (("2026-11-13T09:00:00Z", True),
+                           ("2026-11-14T09:00:00Z", True),
+                           ("2026-11-13T09:00:00Z", False)):
         ctx, task, _phase = _bi_world(M, "drive-brc-start-")
         state = {}
         M._mark(state, M.BASE_MEASURED, task, {
             "of": "r-one", "done": True, "measurable": False,
-            "unmeasuredBefore": 1})
+            "moved": moved, "unmeasuredBefore": 1})
         later = dict(task, startedAt=started)
         try:
             M.launch_base(ctx, state, later, {"runId": "r-two",
@@ -20972,10 +21019,11 @@ def _base_new_start_case(check):
                            .get("unmeasuredBefore"))
         except Exception as exc:                               # noqa: BLE001
             counted.append("%s: %s" % (type(exc).__name__, exc))
-    check("brc4 a launch in the same start counts the unmeasurable mark it "
-          "replaces on top of that mark's own count, and a launch in a new "
-          "start counts from zero: %r" % (counted,),
-          counted == [2, 0])
+    check("brc4 a launch in the same start counts the moved-code mark it "
+          "replaces on top of that mark's own count, a launch in a new start "
+          "counts from zero, and THE TWIN, a mark unmeasurable with its code "
+          "not moved adds nothing to the count it carried: %r" % (counted,),
+          counted == [2, 0, 1])
 
 
 # --- the base run beside next: one writer per file, read back after --------
@@ -21424,23 +21472,28 @@ def _bi_unmeasurable_case(check, M):
     second of its start, so unknown; and THE TWIN, the over-fire direction:
     a repeat of the red that mark was taken for is decided by it, with no
     second measurement and no unknown."""
-    def _read(run_id):
+    def _read(run_id, moved=False):
         ctx, task, phase = _bi_world(M, "drive-bi-unmeasurable-")
         state = {}
-        M._mark(state, M.BASE_MEASURED, task, {
+        mark = {
             "of": "r-red", "done": True, "measurable": False, "ran": True,
             "reading": None, "verdict": None, "run": None, "atBase": [],
-            "introduced": [], "said": "no red step can be run again"})
+            "introduced": [], "said": "no red step can be run again"}
+        if moved:
+            mark["moved"] = True
+        M._mark(state, M.BASE_MEASURED, task, mark)
         row = dict(_bi_row(run_id), **{_evio.BASE_RED_KEY: {
             "verdict": "no-base", "run": None, "head": "abc1234"}})
         taken = []
 
         def _take(c, ph, t, r, tree, keep, bound):
             taken.append(r.get("runId"))
+            extra = {"moved": True} if moved else {}
             keep(ran=True, done=True, measurable=False, reading=None,
-                 unknowable=False, said="still unrunnable")
-            return {"reading": None, "said": "still unrunnable", "cut": None,
-                    "kept": None, "measurable": False}
+                 unknowable=False, said="still unrunnable", **extra)
+            return dict({"reading": None, "said": "still unrunnable",
+                         "cut": None, "kept": None, "measurable": False},
+                        **extra)
 
         real = (M.gate_row, M.take_base, M.gate_in_background)
         M.gate_row = lambda c, t: row
@@ -21457,14 +21510,76 @@ def _bi_unmeasurable_case(check, M):
     other, other_taken = _read("r-second")
     repeat, repeat_taken = _read("r-red")
     check("bi14 an unmeasurable mark taken for one red is no mark to another: "
-          "the other red is measured on its own and, still unrunnable - the "
-          "second of its start - is unknown rather than another round; THE "
+          "the other red is measured on its own and, still unrunnable with its "
+          "code not moved, is never unknown - the writer rounds bound it; THE "
           "TWIN, a repeat of the red the mark was taken for is decided by it "
           "with no second measurement, and is not unknown: %r"
           % ((other, other_taken, repeat, repeat_taken),),
-          other_taken == ["r-second"] and other[0] is None
-          and "earlier red of this start" in str(other[2])
+          other_taken == ["r-second"] and other[0] is None and other[2] is None
           and repeat_taken == [] and repeat[0] is None and repeat[2] is None)
+    moved, moved_taken = _read("r-second", moved=True)
+    check("bi15 a mark unmeasurable because the code moved, and another red "
+          "of the start whose code moved again, is the second moved-code base "
+          "of its start and stops as unknown rather than another round: %r"
+          % ((moved, moved_taken),),
+          moved_taken == ["r-second"] and moved[0] is None
+          and moved[2] is not None)
+    _bi_bound_due_case(check, M)
+
+
+def _bi_bound_due_case(check, M):
+    """Once the start's mark already counts the bound of moved-code
+    unmeasurable reds, a new red is stopped before ANY measurement is
+    launched - inline or in the background; THE TWIN, a mark counting the
+    same reds as unrunnable, its code never moved, is measured as before."""
+    def _read(moved, background):
+        ctx, task, phase = _bi_world(M, "drive-bi-due-")
+        state = {}
+        M._mark(state, M.BASE_MEASURED, task, {
+            "of": "r-red", "done": True, "measurable": False, "ran": True,
+            "moved": moved, "unmeasuredBefore": 1, "reading": None,
+            "verdict": None, "run": None, "atBase": [], "introduced": [],
+            "said": "HEAD moved"})
+        row = dict(_bi_row("r-third"), **{_evio.BASE_RED_KEY: {
+            "verdict": "no-base", "run": None, "head": "abc1234"}})
+        started = []
+
+        def _take(c, ph, t, r, tree, keep, bound):
+            started.append(("take", r.get("runId")))
+            keep(ran=True, done=True, measurable=True, reading=None,
+                 unknowable=False, said="measured")
+            return {"reading": None, "said": "measured", "cut": None,
+                    "kept": None, "measurable": True}
+
+        def _launch(c, st, t, r, *a, **k):
+            started.append(("launch", r.get("runId")))
+
+        real = (M.gate_row, M.take_base, M.launch_base, M.gate_in_background)
+        M.gate_row = lambda c, t: row
+        M.take_base = _take
+        M.launch_base = _launch
+        M.gate_in_background = lambda c, names: (background, "why")
+        try:
+            got = M.base_reading_for(ctx, state, phase, task,
+                                     _bi_text("r-third"))
+        except Exception as exc:                               # noqa: BLE001
+            got = ("raised", "%s: %s" % (type(exc).__name__, exc), None)
+        finally:
+            (M.gate_row, M.take_base, M.launch_base,
+             M.gate_in_background) = real
+        return got, started
+
+    stopped = [_read(True, bg) for bg in (False, True)]
+    twin = [_read(False, bg) for bg in (False, True)]
+    check("bi16 a start whose mark already counts two moved-code unmeasurable "
+          "reds stops a third red as unknown before any base run is launched, "
+          "inline or in the background; THE TWIN, the same count of reds "
+          "unrunnable with the code not moved, launches the measurement: "
+          "%r / %r" % (stopped, twin),
+          all(st == [] and got[0] is None and got[2] is not None
+              for got, st in stopped)
+          and [st for _g, st in twin] == [[("take", "r-third")],
+                                          [("launch", "r-third")]])
 
 
 def _bi_claim_case(check, M):

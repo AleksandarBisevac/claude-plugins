@@ -5071,13 +5071,17 @@ human before its `next:` - the commands' routing of `ask`; nothing in the drive 
 (`bi12` holds the verb). A later red of the same start whose own row finds no base run stops
 there too, unless the start's mark is one whose base could not be measured at all (`measurable`
 False): that mark is no mark to any red but its own (`unmeasurable_elsewhere`), so the later red is
-measured on its own, and the first such red goes to the writer as no-base. A second red of the
-same start whose base cannot be measured either is the bound: the start's mark counts the
-unmeasurable reds before it (`unmeasuredBefore`, `unmeasured_before`), and one past the first
-(`unmeasurable_again`) stops as `gate-red-base-unknown` rather than another gate or writer round,
-under `next` and under `auto` alike, so neither can loop on a base it cannot measure; the count
-lives on the mark, so a new start counts from zero (`bdr4`, `bi14`, `brc3`, `brc4`, and `dm85`,
-`dm86` in `test_drive_without_model.py`). A mark's reading decides
+measured on its own, and the first such red goes to the writer as no-base. Only a base whose
+code moved counts toward a bound: the mark records that reason (`moved`, set when `code_moved`
+answered), and a red whose steps cannot be re-run at the base (`base_unrunnable`) never sets it,
+so it goes to the writer every time, bounded by the writer rounds. The start's mark counts the
+moved-code reds up to it (`unmeasuredBefore`, `unmeasured_before`), and a start that has reached
+`UNMEASURED_BOUND` of them (`unmeasurable_bound`) stops as `gate-red-base-unknown` rather than
+another gate or writer round, under `next` and under `auto` alike, so neither can loop on a HEAD
+that keeps moving. That one predicate is asked of a mark just decided and in the due branch before
+any measurement is launched, inline or in the background; the count lives on the mark, so a new
+start counts from zero (`bdr4`, `bi14`-`bi16`, `brc3`, `brc4`, `brc6`, and `dm85`, `dm86` in
+`test_drive_without_model.py`). A mark's reading decides
 only the red run it was measured for or a repeat of it, and a mark an earlier version wrote for
 a cut base (no `ran`, no `background`, no base run named) reads as unknown. A red run whose code HEAD has since moved (`code_moved`) keeps reading
 `no-base` and goes to the writer as before, and so does a red whose steps `--base-of` answered it

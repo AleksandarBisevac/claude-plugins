@@ -1,0 +1,34 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_drive_without_model.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-16T08:09:46Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_drive_without_model.py` in a throwaway tree at HEAD exited 1 with 4 of 977 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bdr4 (house FAIL), brc4 (house FAIL), bi14 (house FAIL), bi16 (house FAIL): SELFTEST FAILED: 973/977 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: measure_base returns moved True only when code_moved answered (False on every other path, base_unrunnable included); take_base records it on the mark as `moved`; new moved_unmeasurable(held); unmeasured_before counts only moved-code marks; UNMEASURED_BOUND constant and ONE predicate unmeasurable_bound(held) (count up to and including the mark >= bound) plus bound_said(held), asked in base_reading_for's due branch BEFORE gate_in_background/launch_base/take_base and in the decided-mark branch; unmeasurable_again removed (grep: no other caller in plugins/tests/tools, the guide's mention rewritten). Comment block above BASE_MEASURE_VERDICTS, measure_base/take_base/base_reading_for docstrings, PLUGIN-BUILD-GUIDE.md (~5073) and execute-task.md (~290) now say only a moved-code base counts and the stop precedes any launch. orchestrator.md untouched. Tests: bdr4 restored to the pre-P162.1 behaviour (writer, never unknown, no moved, no count); bi14 restored (unrunnable other red -> not unknown) + new bi15 (moved mark + moved again -> unknown); new bi16 (mark counting two moved reds: no take_base, no launch_base, inline and background, unknown returned; twin with unrunnable marks launches both ways); brc4 gains the unrunnable twin ([2,0,1]); new brc6 nested project (sub/ under the git root: record-only commit -> None, code commit -> names f1.txt); dm86 docstring reworded. Mutations in a scratch git-archive export, each restored: due-branch check dropped -> bi16 red; git_to_plan dropped -> brc6 red; count every unmeasurable -> bdr4, brc4, bi14, bi16 red; count nothing -> brc3, brc4, bi15, bi16 red; unmutated 26/26. Gate: `python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_drive_without_model.py` exit 0, '2/2 files ok, 1051 cases'. ruff on the three .py exit 0; prose_number_claims/doc_prose_numbers report nothing in touched files. Dependants: drive-without-model.py hook, _worktrees.py and the importing suites (test__filed_returns, test__invariants, test__worktrees, test_audit_status, test_commit_task_work, test_detect_plan_skip) - still correct: no public name they use was renamed or removed (only unmeasurable_again, used nowhere else) and the mark gains one key; test_drive_without_model.py dm85/dm86 still pass (74 cases ok) since dm86's bases are moved-code; PLUGIN-BUILD-GUIDE.md, execute-task.md - changed, as above; README.md/orchestrator.md name gate-red-base-unknown etc. whose meaning is unchanged; tests/test_drive_phase.py dependants (stamp_verification, run_test_gate, affected) use helpers not touched.",
+    "descriptive": "Only a HEAD that moved the red's code counts toward the unmeasurable-base stop; unrunnable reds go back to the writer as before, and the stop now fires before any further base run is launched."
+  },
+  "testsAdded": [
+    "bdr4 restored + bi14 restored (unrunnable twice -> writer, never unknown), bi15 (two moved-code reds -> unknown), brc4 unrunnable twin",
+    "bi16: a mark counting two moved-code reds stops the next red with no take_base and no launch_base, inline and background; twin launches",
+    "brc6: nested project, record-only commit is the same code, code commit is a move"
+  ],
+  "casesAdded": [
+    [
+      "bdr4",
+      "bi14",
+      "bi15",
+      "brc4"
+    ],
+    "bi16",
+    "brc6"
+  ],
+  "claims": "claims:\n1 drive-phase.py measure_base sets moved only on the code_moved branch; moved_unmeasurable/unmeasured_before/unmeasurable_bound are what the comment block, PLUGIN-BUILD-GUIDE.md and execute-task.md now describe; base_reading_for asks unmeasurable_bound before gate_in_background and in the decided branch\n2 four mutations in a scratch export, both directions (count all / count none), each red on the intended cases; unmutated 26/26\n3 grep unmeasurable_again|'earlier red of this start' over plugins tests tools *.md: drive-phase.py (replaced by bound_said) and PLUGIN-BUILD-GUIDE.md:5077 (rewritten); no other hit\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 UNMEASURED_BOUND is a constant in code; the guide names the constant, not its value",
+  "stamp": "audit-stamp: {\"content\":\"sha256:7e07e4e7caad4264b49df9e0c48e9aed9b88547a3a5db8805e1e7b592fd35466\",\"dirtyDigest\":\"sha256:5865468a7ef6f98058c9ce5252fdad75647915409a8519bef5935cd5c05bf44c\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"8ed42cf2a68fd15b\",\"plugins/audit/reference/execute-task.md\":\"7c9d88c07d703bac\",\"plugins/audit/scripts/governance/drive-phase.py\":\"9cbbbc5d3bca7cfa\",\"tests/test_drive_phase.py\":\"04e9f1c5edda2528\",\"tests/test_drive_without_model.py\":\"8aa9fbbdb0d72fae\"},\"head\":\"29726cea\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"tests/test_drive_phase.py\",\"tests/test_drive_without_model.py\"],\"scopeDigest\":\"sha256:a52e1218e3a4c406bfdcf3fe866d5ddc949cc100ea3a6be655fbee3623afb879\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

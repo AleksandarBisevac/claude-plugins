@@ -287,10 +287,13 @@ verb writes and refuses, and what the run commands leave behind, is
         its suites - or whose HEAD has since moved the code has no base reading and
         goes to the writer like any such red; that is not the unknown stop, and
         such a base decides no later red of the start, which is measured on its
-        own. A second red of one start whose base cannot be measured either stops
-        as `gate-red-base-unknown`, under `next` and `auto` alike, never another
-        gate round: the start's base mark counts them (`unmeasuredBefore`), and a
-        new start counts from zero. A base nobody can
+        own. Only a base whose code moved counts toward a stop - a red whose
+        steps cannot be re-run goes to the writer every time, bounded by the
+        writer rounds: a second red of one start whose code moved under its base
+        too stops as `gate-red-base-unknown`, under `next` and `auto` alike,
+        never another gate round, and no base run is launched for a red after
+        it. The start's base mark counts them (`unmeasuredBefore`), and a new
+        start counts from zero. A base nobody can
         know - the base run left no reading, failed or was killed, or its reading
         was taken for another red run - stops as `gate-red-base-unknown`, with no
         session sent and no round spent: `measure-base` measures the base again,

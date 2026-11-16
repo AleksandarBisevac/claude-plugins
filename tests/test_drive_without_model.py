@@ -918,7 +918,7 @@ def _auto_base_cases(check):
     """`auto` - the prompt hook's driver, no model - takes the base path
     `next` takes: a red whose record commit moved HEAD has its base measured
     by the background child auto runs and auto ends on gate-red-base, and a
-    second red of one start whose base cannot be measured surfaces the
+    second red of one start whose code moved under its base too surfaces the
     gate-red-base-unknown ask instead of another gate run."""
     import test_drive_phase as dp
     import test_run_test_gate as rtg

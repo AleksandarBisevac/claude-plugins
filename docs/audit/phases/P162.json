@@ -30,7 +30,7 @@
     {
       "id": "P162.1",
       "title": "The base run checks the code the red ran on, not a HEAD the drive's own record commits move, and an unmeasurable base cannot loop next",
-      "status": "in_progress",
+      "status": "done",
       "description": "plugins/audit/scripts/governance/drive-phase.py measure_base (around line 2922) refuses unless tree_head == the red row's baseRed.head, and _base_in builds the detached base tree at the CURRENT head. Since the base run went to the background, the drive's own record commit of the red (docs/audit evidence/journal/phase rows only) always lands first, so HEAD never equals the red's head and the base is never measured; next then reruns the red gate, records again, and loops (observed: 60 cycles in a dry run until a step bound stopped it).\n\nREQUIRED, as the structurally correct identity rather than a special case:\n1. The identity measure_base checks is the CODE the red ran on. Build the base tree at the red row's own recorded head (the commit the task's run sat on, which is immutable and is exactly the base --base-of measures), not at the current HEAD. Whether the red is still about the current code is answered by comparing the red's head and HEAD with the plugin's own written paths left out - derive those from _evidence_io.recorded_paths (the existing single definition of 'what the recorder writes', already used by run-test-gate.py and _tree_stamp for the same 'is this the tree that was measured' question); do not hand-list docs/audit. HEAD whose only difference from the red's head lies inside those paths is the same code: measure. HEAD that differs outside them is a real move: keep the current not-measurable answer. A git error answering the comparison is not 'same code' - it says so and is not measurable. Factor the comparison as one helper so any other drive caller asking 'did HEAD move under this run' uses it (grep for other same_head(tree_head(...)) style checks in drive-phase.py and route them through it where the question is the same; state in the outcome which callers you changed and which you left and why).\n2. A bound so next can never loop on a red whose base cannot be measured: within one start of a task, a second red whose base is again unmeasurable (measurable False, or unknowable) must stop as the existing gate-red-base-unknown decision (ask: rerun | measure-base | block), never another automatic rerun. State how the count is held (the start's base mark is the natural place) and that it resets on a new start.\n3. drive-phase.py auto (the prompt hook's driver, no model) must take the same path: the fixed measurement, and the bounded stop surfacing as the ask, never a loop.\n4. Prose describing the base measurement says the new identity and the bound: the comment block above BASE_MEASURE_VERDICTS / measure_base's docstring, plugins/audit/reference/execute-task.md's recorded-gate step, PLUGIN-BUILD-GUIDE.md's base-measurement passages. Keep orchestrator.md untouched unless required - it sits within a few bytes of its measure-context ceiling (tools/measure-context.py --gate). No F/P/BUG ids in comments or docstrings.\n\nDEPENDANTS: tests/test_drive_phase.py and tests/test_drive_without_model.py drive these paths; tools/measure-context.py --gate holds orchestrator.md and execute-task.md sizes; tools/prove-gates.py rows that mutate drive-phase.py; the confirm-set harness (out of repo) relies on a real-base drive ending done.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -60,14 +60,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "29726ceadebc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: code_moved(ctx, since, now) diffs the red's head against HEAD at the checkout top (--name-only --no-renames -z), puts each git path through _config.git_to_plan and leaves out _evidence_io.recorded_paths. It returns None for the same code; a code path moved, a git error or an unrecorded head each return a sentence. measure_base uses it and builds the base tree at the red's recorded head. The start's base mark carries UNMEASURED_BEFORE, set by unmeasured_before(prior) in launch_base and in the inline base path from _marked, so a new start counts from zero. unmeasurable_again makes base_reading_for return an unknown sentence, so a second unmeasurable red in one start stops as gate-red-base-unknown. auto is unchanged and dm85/dm86 run it. Left alone, each a different question: proof_drift, the head-moved/writer-committed reading, chosen_phase_gate, held_at, held_verdict, the lint probe, sign-off binding, and the recut base==head check. Prose updated: the comment block above BASE_MEASURE_VERDICTS, docstrings, execute-task.md, PLUGIN-BUILD-GUIDE.md; orchestrator.md untouched. bdr4 and bi14 changed to the new stop. Gate: the sweep over both suites -> exit 0, 2/2 files ok, 1048 cases. Also green: ruff (exit 0), vermin -t=3.8- (exit 0), measure-context --gate (exit 0), and the sweep of test__deps.py and test__output_lints.py (exit 0, 467 cases); a first version of code_moved built the paths by hand, failed test__deps gb1 (git_path_base_violations) and was rewritten to use the git_to_plan pair. Mutations in a scratch copy: stop never fires -> bdr4/brc3/bi14 red; stop always fires -> bdr3/brc3/bi14 red; git error read as same code -> brc5 red; tree built at HEAD -> brc1 red; count read across starts -> brc4 red. Dependants: drive-without-model.py still correct (it starts auto; dm85/dm86 cover it). _worktrees, test__filed_returns, test__invariants, test__worktrees, test_audit_status, test_commit_task_work and test_detect_plan_skip still correct: the new names are additions and nothing they import was renamed. README.md and orchestrator.md still correct: no decision or option renamed. prove-gates.py rows not run; whether one targets the old head check is unverified. The confirm-set harness outside the repo was not run.",
+        "descriptive": "A red gate's base is now measured at the red's own head even after the drive's record commit moved HEAD, and a second unmeasurable base in one start stops as the gate-red-base-unknown ask instead of looping."
       },
       "startedAt": "2026-11-16T07:15:18Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-16T07:51:35Z",
+      "verifiedBy": [
+        "brc1 a record-only commit before the background base run: the base is measured at the red's head and the drive stops on gate-red-base",
+        "brc2 a commit to a code path: not measurable, as before",
+        "brc5 code_moved itself: the same commit is the same code; a moved code path, a git error and an unrecorded head are not",
+        "brc3 a second unmeasurable red in one start asks, with no third gate and no writer round",
+        "brc4 the count carries within a start and starts at zero in a new one",
+        "dm85 auto measures the base after a record commit and ends on gate-red-base",
+        "dm86 auto shows the ask on the second unmeasurable red and runs no third gate"
+      ],
       "notes": [
         {
           "at": "2026-11-16T07:15:16Z",
@@ -95,6 +103,87 @@
         "runId": "2026-11-16T07:51:32Z.b102c8",
         "status": "passed",
         "at": "2026-11-16T07:51:32Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "29726ceadebc",
+        "at": "2026-11-16T07:51:35Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-16T07:41:05Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_drive_without_model.py` in a throwaway tree at HEAD exited 1 with 8 of 74 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - bdr4 (house FAIL), brc1 (house FAIL), brc5 (house FAIL), brc3 (house FAIL), brc4 (house FAIL), bi14 (house FAIL), dm85 (house FAIL), dm86 (house FAIL): SELFTEST FAILED: 72/74 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P162.2-zz6",
+      "title": "Only a moved-code base counts toward the unmeasurable stop, the stop holds before any launch, and a nested project's record commit is the same code",
+      "status": "in_progress",
+      "description": "The phase review of P162.1 (commit 29726cea) found:\n(1, med) unmeasured_before / unmeasurable_again (drive-phase.py ~2933-2950, applied ~3519) count every measurable-False mark, including a red whose steps cannot be re-run at the base (base_unrunnable). That path was already bounded by the writer rounds (MAX_RESUME_ROUNDS, then the gate-red ask), and the old bdr4 pinned it. The loop this phase fixes came only from HEAD moving, so such reds now lose the writer's second automatic round for no gain. Fix: the mark records WHY it is unmeasurable (e.g. moved: True when code_moved answered; unrunnable reds do not set it), and only moved-code marks count. Restore the old bdr4 behaviour.\n(2, low) The prose then holds again: drive-phase.py ~2858-2867 and ~3091-3094, PLUGIN-BUILD-GUIDE.md ~5082-5086, execute-task.md ~285-288. The prose added by P162.1 (the comment above BASE_MEASURE_VERDICTS, the TWICE UNMEASURABLE paragraph) must say that only a moved-code base counts.\n(3, low) The bound applies only to a mark that has already been decided. base_reading_for's due branch (~3477) returns launch_base / take_base before checking the count, so a sibling that keeps moving code can keep relaunching. Fix it as an invariant, not as one more check site: the due branch returns the gate-red-base-unknown stop when the start already counts the bound, before ANY measurement is launched, inline or background. Put the bound in one predicate used by both the due branch and the decided-mark branch.\n(4, low) No test covers code_moved for a nested project (git prints sub/docs/audit/..., recorded_paths says docs/audit/...). Add one.\nKeep orchestrator.md untouched (it is near its measure-context ceiling). No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "tests/test_drive_without_model.py",
+        "plugins/audit/reference/execute-task.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a red whose base cannot be re-run (unrunnable, code not moved) twice in one start goes to the writer both times, bounded by the writer rounds as before (old bdr4 restored), never gate-red-base-unknown; two moved-code unmeasurable reds in one start stop as the ask",
+          "tests/test_drive_phase.py: a third base measurement is never launched (background or inline) once the start's mark already counts two moved-code unmeasurable reds - the stop is returned in the due branch before launch_base/take_base",
+          "tests/test_drive_phase.py: a project nested in a subdirectory of its repository, HEAD moved by a commit of only the recorder's paths -> code_moved returns None (red if git_to_plan is dropped)"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_drive_without_model.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-16T07:57:13Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T07:57:11Z",
+          "text": "quotes the '`gates` per gate' passage of execute-task.md; the task edits only the base-measurement sentences",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-16T07:57:11Z",
+          "text": "quotes 'related listing' in PLUGIN-BUILD-GUIDE.md; the task edits only the base-measurement passages",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-16T07:57:11Z",
+          "text": "quotes the doctor trail-age sentence in PLUGIN-BUILD-GUIDE.md; the task edits only the base-measurement passages",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-16T07:57:11Z",
+          "text": "reads the generated module map heading of PLUGIN-BUILD-GUIDE.md; the task adds no module",
+          "waives": "tools/lints/_deps.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-16T08:20:03Z.532070",
+        "status": "passed",
+        "at": "2026-11-16T08:20:03Z"
       }
     }
   ],
