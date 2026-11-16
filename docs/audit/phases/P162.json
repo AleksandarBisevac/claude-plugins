@@ -1,7 +1,7 @@
 {
   "id": "P162",
   "title": "A red gate's base is measured on the code the red ran on",
-  "status": "in_progress",
+  "status": "done",
   "description": "Observed on 09dcf7cd in the confirm-set dry run (real-base leg b1, P125.23 at 48f2322d): outcome stopped after 13422 s and 181 turns, where d17e0ab5 ended done. Each cycle: the red task gate is recorded at commit X; recording it commits docs/audit evidence, journal and phase rows, so HEAD moves to Y; the background base run (measure_base, drive-phase.py `if not head or not _evio.same_head(head, want)`) refuses with `<task>'s base not measured: the red run was at X and HEAD is Y now`, measurable False; the mark is then read as no mark for the next red (unmeasurable_elsewhere), so next reruns the red gate and the cycle repeats every ~3.7 min. Before P161 the base was measured inline before the record commit, so the check held. Evidence: /private/tmp/cm-dry-20261113T221837Z out/b1-invoked/drive-state/base-runs/*.json (measurable false), work/b1/repo `git show --stat 5c897ea9` (docs/audit only).",
   "desiredOutcome": "A red task gate whose record commit moved HEAD is still measured at its base and decided gate-red-base / gate-red-writer from that reading; a red whose base cannot be measured twice in one start stops as the gate-red-base-unknown ask instead of another rerun; a real-base drive that ended done before P161 ends done again",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "09dcf7cdc58f267ce181548374005054259775fc",
   "branch": "audit/p162-a-red-gate-s-base-is-measured",
-  "mergedAt": null,
+  "mergedAt": "2026-11-16T08:47:48Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -212,5 +212,6 @@
     "runId": "2026-11-16T08:47:00Z.7c2ccf",
     "status": "passed",
     "at": "2026-11-16T08:47:00Z"
-  }
+  },
+  "mergedHead": "f54d7ca5a48a2223b3b44a9db4b2c03ad83b69a2"
 }
