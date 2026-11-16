@@ -54,6 +54,19 @@
      rule and keeps the panel fix above — the selector is a lower bar than the
      `color-mix()` this sheet already paints every status pill with. */
   .sectools:has(.fdetails[open]){position:static}
+  /* The top bar scrolls with the page here. Wrapped onto a phone it is three
+     lines - the title, the document actions and the header's filter row - and
+     pinned with the section strip and the table's own filter bar it held 58% of
+     a 390x844 screen over the rows (measured before this rule). None of those
+     three lines is what a reader needs while reading a table row; the strip
+     (where am I) and the table's bar (what is filtering it) are, and they stay
+     pinned. A viewport query rather than a container query because the cost is
+     a share of the SCREEN, and the bar is as wide as the screen anyway.
+     measureStack() reads the bar's computed position and publishes a zero
+     offset while it is static; the token below is the same answer for a page
+     whose script did not run. */
+  .topbar{position:static}
+  :root{--topbar-h:0px}
 }
 @media (max-width:40rem){
   body{padding:1.5rem .75rem 3rem;font-size:14.5px}

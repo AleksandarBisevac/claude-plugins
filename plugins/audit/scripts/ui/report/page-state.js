@@ -113,11 +113,23 @@
   const px = (el) => (el ? Math.round(el.getBoundingClientRect().height) : 0);
 
   /**
+   * The height an element pins over the content: its rendered height while it
+   * is sticky, and nothing while it scrolls with the page. Below 52rem the top
+   * bar is not sticky, and an offset still carrying its height would leave the
+   * strip, the filter bar and every anchor hanging a bar's height below the
+   * top of the screen with nothing above them. Read off the computed style so
+   * the stylesheet stays the one place that says where the bar sticks.
+   * @param {Element|null} el
+   * @returns {number}
+   */
+  const pinnedPx = (el) => (el && getComputedStyle(el).position === 'sticky' ? px(el) : 0);
+
+  /**
    * Publish the measured height of each sticky layer as a custom property.
    * @returns {void}
    */
   const measureStack = () => {
-    if (toolbar) root.style.setProperty('--topbar-h', px(toolbar) + 'px');
+    if (toolbar) root.style.setProperty('--topbar-h', pinnedPx(toolbar) + 'px');
     root.style.setProperty('--strip-h',
       (snav && stripQ && stripQ.matches ? px(snav) : 0) + 'px');
     // Queried here rather than through the sectools binding further down: the
@@ -133,6 +145,30 @@
     }
   }
   window.addEventListener('resize', measureStack, { passive: true });
+
+  // More filters, opened where it can be seen. On a phone the open bar leaves the sticky stack (the 52rem block makes it
+  // static, so an open panel cannot pin itself over the table). Opened while the
+  // bar was STUCK, that sends the bar back to its place in the flow - above the
+  // top of the screen - and the panel the reader just asked for opens out of
+  // sight. So an opened disclosure that is not wholly on screen is scrolled to
+  // the nearest edge. "On screen" starts below what stays pinned, and that line
+  // is the disclosure's own scroll-margin, which the stylesheet computes from
+  // the sticky offsets - read back resolved rather than recomputed here.
+  // Measured after the frame the layout changes in, and only acted on when the
+  // disclosure is off screen, so a panel that opened in view never moves the page.
+  const moreFilters = document.querySelector('.fdetails');
+  if (moreFilters) {
+    moreFilters.addEventListener('toggle', () => {
+      if (!moreFilters.open) return;
+      requestAnimationFrame(() => {
+        const b = moreFilters.getBoundingClientRect();
+        const clear = parseFloat(getComputedStyle(moreFilters).scrollMarginTop) || 0;
+        if (b.top < clear - 1 || b.bottom > window.innerHeight) {
+          moreFilters.scrollIntoView({ block: 'nearest' });
+        }
+      });
+    });
+  }
 
   // --- the table frames, released where their table fits -----------------------
 
@@ -237,7 +273,7 @@
    */
   const markSpy = () => {
     if (!navLinks.length) return;
-    const fold = px(toolbar) + (snav && stripQ && stripQ.matches ? px(snav) : 0) + 4;
+    const fold = pinnedPx(toolbar) + (snav && stripQ && stripQ.matches ? px(snav) : 0) + 4;
     let best = -1;
     spyTargets.forEach((el, i) => {
       if (el && el.getBoundingClientRect().top <= fold) best = i;
@@ -383,7 +419,7 @@
   const smCells = Array.from(document.querySelectorAll('.smcell'));
   const auRows = Array.from(document.querySelectorAll('.rank[data-author]'));
 
-  // The global filter row is a second line of the sticky top bar. Each control
+  // The header filter row is a second line of the top bar. Each control
   // is a compact twin of a filter that already exists (author chips, area chips,
   // the panel's date pair) over the SAME state variables, so the two
   // presentations can never disagree about what is filtered.

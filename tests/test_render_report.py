@@ -858,7 +858,8 @@ def _cases(check):
                     r'max="\d{4}-\d{2}-\d{2}"', html_out) is not None)
     check("c5: the panel is out of flow, so opening it cannot move the sticky "
           "stack every anchor and column header is pinned against",
-          ".filterpanel{position:absolute" in M._CSS and ".fdetails{position:relative}" in M._CSS)
+          ".filterpanel{position:absolute" in M._CSS
+          and ".fdetails{position:relative;scroll-margin-top:" in M._CSS)
     # The panel is a popover, so it answers to the two things every popover
     # answers to. A <details> does neither on its own — it closes only through its
     # own summary — and this one is absolutely positioned, so left open it covers
@@ -1009,6 +1010,50 @@ def _cases(check):
           "as the named line report.js writes into #audit-urange)",
           ".gfilters{flex-basis:100%" in M._CSS
           and "audit-urange" in M._SCRIPT)
+    # A focus ring drawn only as box-shadow is erased by forced-colours mode,
+    # which drops every shadow; an outline is repainted in a system colour
+    # instead. Transparent, so the ring a sighted reader sees is unchanged.
+    _css_rules = re.sub(r"(?s)/\*.*?\*/", "", M._CSS)
+    _field_focus = re.findall(r"([^{}]*:focus)\{outline:2px solid transparent;"
+                              r"outline-offset:2px;border-color:var\(--accent\);"
+                              r"box-shadow:0 0 0 3px var\(--ring\)\}", _css_rules)
+    check("fo1 every text field and select in the report's filter controls has "
+          "ONE focus rule, and it carries an outline forced-colours repaints: %r"
+          % (_field_focus,),
+          [s.strip() for s in _field_focus]
+          == ["#audit-q:focus,.frow input[type=date]:focus,.gfilters select:focus,"
+              ".gfilters input[type=date]:focus"])
+    check("fo2 SECOND-DIRECTION CASE: no rule in the report's stylesheet removes "
+          "the outline any more - one left anywhere is a control with no focus "
+          "indicator under forced colours",
+          M._CSS.count("outline:none") == 0)
+    # The phone stack. The bar carries the title, the document actions and the
+    # header's filter row, and on a phone those wrap onto lines that pinned
+    # nearly half the screen over the table. Below the breakpoint the bar scrolls
+    # with the page, and the measured offset says so.
+    # The block that opens on its own line; tables.css has a one-line rule under
+    # the same query, and a slice from that one would read the wrong block.
+    _below = M._CSS[M._CSS.index("@media (max-width:52rem){\n"):]
+    _below = _below[:_below.index("\n}\n")]
+    check("st1 below 52rem the top bar scrolls with the page, and with no script "
+          "the offset the strip pins under is zero to match",
+          ".topbar{position:static}" in _below
+          and ":root{--topbar-h:0px}" in _below)
+    check("st2 measureStack() and the scroll-spy's fold count the bar's height "
+          "only while the bar is actually sticky - one helper read off the "
+          "layout, not a second copy of the breakpoint",
+          "const pinnedPx = (el) => (el && getComputedStyle(el).position === "
+          "'sticky' ? px(el) : 0);" in M._SCRIPT
+          and "root.style.setProperty('--topbar-h', pinnedPx(toolbar) + 'px');"
+          in M._SCRIPT
+          and "const fold = pinnedPx(toolbar) + " in M._SCRIPT
+          and "px(toolbar)" not in M._SCRIPT.replace("pinnedPx(toolbar)", "")
+          and "matchMedia('(max-width:52rem)')" not in M._SCRIPT)
+    check("st3 opening More filters brings the panel into view - on a phone the "
+          "open bar leaves the sticky stack, so a panel opened while it was stuck "
+          "would otherwise open above the top of the screen",
+          "scrollIntoView({ block: 'nearest' })" in M._SCRIPT
+          and ".fdetails{position:relative;scroll-margin-top:" in M._CSS)
 
     # --- rd: Ready now as a definition list (C4) --------------------------------
     check("rd1 Ready now is a definition list naming the ready task, and the "

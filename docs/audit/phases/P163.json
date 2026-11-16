@@ -30,9 +30,37 @@
         "file": "tools/redfirst.sh:9-11",
         "issue": "The diff deletes syncAreaOptions() from areas.js (and its call in filters.js), and redfirst.sh's documented usage example still mutates `--replace \"syncAreaOptions();\" \"\"` in areas.js: the anchor now matches nothing, so the one worked example of the red-first tool names a symbol that no longer exists. The executor disclosed this; the bash-write guard refused the edit because redfirst.sh is outside every in_progress task's scope.",
         "resolution": "In a task that owns tools/redfirst.sh, point the example at an anchor that exists in the assembled report script, e.g. filters.js `--replace \"syncStatusChips();\" \"\"`, and check that the example run goes red against check-report-interactive.mjs."
+      },
+      {
+        "id": "P163-R2",
+        "severity": "med",
+        "file": "tools/check-report-interactive.mjs:2589-2631",
+        "issue": "contradicts task clause \"extend the existing sticky-share check around line 2403 rather than adding a parallel one\" and \"at most a stated share of the viewport (a figure derived from the layout, with its basis in a comment)\": ph1 is a new standalone block after the phone-panel branch with its own measurement method (hit-testing down the screen's middle) and its own bound (50%), beside the existing `covered > 40` check (de21866c:2393), which is left unchanged. The repo now has two sticky-share measurements of the phone stack, by two methods and two bounds, which is the parallel check the clause excluded. The 50% bound is derived from the word 'most' in the requirement and not from the layout: the comment's basis is 'the table keeps MOST of it', with no measured layer heights. The executor's claim admits only that ph2 extends the existing check ('ph2 sits inside the existing phone More-filters branch, right after the sticky-share check it extends. ph1 measures the resting stack...').",
+        "resolution": "Fold the resting-stack question into the existing check. Measure the stack once, by one method (the hit-test is the better one, since it sees what pins over the table), in both states: shut (resting) and open, scrolled into the table. Assert each against its bound in the same place. If ph1 has to run for a report with no More-filters panel, move the shared measurement out of the `if` and keep the open-state assertion inside it, so there are still not two methods. Derive the shut bound from the layout, e.g. the strip height plus the shut filter bar's height plus a stated tolerance, read off the elements at run time, with that basis in the comment."
+      },
+      {
+        "id": "P163-R3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/report/_usage_detail.py:481",
+        "issue": "contradicts task clause \"each chip group is role=group with an accessible label\": the heatmap granularity row `<span id=\"audit-hm-gran\">` holds a row of aria-pressed `.fchip` toggle buttons (All/Year/Month/Week/Day) and has no role or label. It is the only chip container in the rendered reports without one: a scan of examples/acme-store/acme-store-audit.html and docs/index.html with scripts stripped finds every other chip container (phase-status, areas, model, tev, tevf, presets, tf-chips, audit-authors) labelled. The tests enumerate the ids they fixed (ax2's `== 3`, pg24's two ids) instead of stating the invariant, so this row was missed and a chip row added later would be missed too.",
+        "resolution": "Give #audit-hm-gran role=group and an accessible name matching its visible context (e.g. aria-label=\"Heatmap period\"). Add one document-level case over a rendered report: every element whose direct children are `.fchip`/`.tf-chip`/`.auchip` buttons carries role=\"group\" and a non-empty aria-label. Prove it red against this tree, since hm-gran fails it now."
+      },
+      {
+        "id": "P163-R4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/report/_report_html.py:1467; tests/test_render_report.py:1032; tests/test_render_report.py:979; tools/check-report-interactive.mjs:2596; plugins/audit/scripts/ui/report-css/forced-colors.css:59",
+        "issue": "Prose in the diff disagrees with the measurements and with the code. (a) The docstring says the wrapped bar 'pinned nearly half a phone screen' and the test comment says 'nearly half the screen', but the CSS and mjs comments record 58% (486px of 844) and the claim records 61% before the fix: both are more than half, which is the whole reason for the rule. (b) There are two 'before' figures for the same stack, 58%/486px in the comments and 61% in the claim, and no comment says the 58% is a sum of heights while the 61% is ph1's hit-test. (c) The g1 case title in a touched file still reads 'the sticky top bar carries the global filter row' in the present tense. This diff makes the bar non-sticky below 52rem and removes 'global' from the row, so the title is no longer history. It is a false description of what the case pins.",
+        "resolution": "Reword (a) to 'more than half'. In (b), say which method the 58% came from, or drop it and point at ph1's printed figure. Reword g1's title to 'the top bar carries the header filter row'."
+      },
+      {
+        "id": "P163-R5",
+        "severity": "low",
+        "file": "tests/test_render_report.py:770-773",
+        "issue": "This is an inherited case in the task's gate. 'sticky: the stack is restated at runtime' checks only `\"measureStack\" in M._SCRIPT and \"--topbar-h\" in M._SCRIPT and \"ResizeObserver\" in M._SCRIPT`. measureStack() could be emptied to a no-op and the case would still pass, because all three substrings stay in the script through the declaration, the listeners and other code. This task changed what measureStack publishes. st2 now pins the pinnedPx call, but the inherited case names a behaviour it cannot see.",
+        "resolution": "Either retire the case in favour of st2 plus the browser gate's stack checks, or make it assert the setProperty calls for each of --topbar-h, --strip-h and the sectools height, so emptying the function turns it red."
       }
     ],
-    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 5 - 0 high, 2 med, 3 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -113,7 +141,7 @@
     {
       "id": "P163.2",
       "title": "When the view hides matches the empty state says how many and offers Show all phases, and the counter names its basis",
-      "status": "in_progress",
+      "status": "done",
       "description": "Read the skills refactoring-the-assembled-ui, writing-javascript, writing-css and no-silent-pass first.\n\nDEFECT: filters.js refresh() applies the View to every match (showP = matchAll && inView(seg)), and when nothing is drawn the empty state (_report_page.py around line 758) says 'No phase matches these filters.' - false on any plan with most phases archived: on the dogfood plan From 2026-10-23 shows 0 phases while 25 archived phases (309 tasks) match; acme-store's Test gate 'Before recording' shows 0 while archived P0 holds both matching tasks. #audit-count says '165 phases' while 5 show, and its task denominator counts cancelled tasks while the header excludes them. areas.js syncAreaOptions removes header Area options the view cannot show, leaving a select whose only option is 'All areas' (a control every use of which is a no-op).\n\nOWNER DECISION (binding):\n1. Only when nothing is drawn AND phases outside the current View match, the empty state names the count and the view, and offers a button that switches the View to all phases: e.g. 'No phase in Active & pending matches - 25 archived phases do · Show all phases'. Otherwise the existing sentence stays. When results are shown there is no standing row or notice (an earlier owner decision removed a standing 'matches outside this view' notice; that stands).\n2. The counter states its basis at rest and filtered, e.g. '5 of 165 phases (Active & pending)' and 'N of M tasks' where M uses the same basis as the header's task total (cancelled excluded, or named if included).\n3. Header Area: pick the structurally correct fix and justify it in the return - keep every option and let the empty state above explain (preferred: one rule, the empty state tells the truth), or annotate options outside the view. Do not leave a select with one option.\n\nrefresh() already computes matchAll before the view is applied: count matches outside the view from that, do not re-filter. The new button reuses the View control's own path (set it and dispatch its change), so the stored view and hash stay consistent.\n\nTESTS: tests/test_render_report.py and tests/test__report_page.py pins for the new empty-state markup and the counter wording (update the norows pins around test_render_report.py 892-893 and 982). tools/check-report-interactive.mjs: replace the absence pin on [data-outside] around line 502-510 with the decided rule (no notice while rows show), and add 'The empty state is true': whenever tr.norows is visible, either switching to View=All shows zero matching phases too, or the empty-state text names exactly the count View=All shows, and its button lands on that count. Use acme-store's Test gate 'Before recording' as the fixture (its default view hides the matches); if the committed example cannot exercise it, say so and add the smallest fixture that can. Prove the case red against de21866c and record the verbatim failing line. Run the browser gate yourself (it is phase-gate-only in audit.config): node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html. Re-render the committed artifacts as tools/check-rendered-artifacts.py --before-commit asks.\n\nDEPENDANTS: as task a (the same parts and pins), plus report-css/empty-state.css for the button. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/ui/report/filters.js",
@@ -160,14 +188,19 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "860dfd77167d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "filters.js refresh(): counts outP (phases with matchAll && !showP, i.e. the verdict already reached, no second pass) and the segments they sit in; the empty state shows only when anyFilter && visP === 0 (unchanged condition) and then says one of two sentences: the plain 'No phase matches these filters.' (data-norows-says), or, when outP > 0, the data-outside slot: 'No phase in <View label> matches - N <segment> phase(s) do(es)' plus a Show all phases button (data-showall) that sets #audit-view to 'all' and dispatches its change, so setView/hash/storage follow the select's own path. No standing notice while rows show. Counter: '<shown> of <M> phases (<View label>)' at rest and filtered, plus ' · N of M tasks' when filtering, with cancelled tasks excluded on both sides (the header's summary.tasks.total basis); the view label is read from the select's own option text via a new viewName() in page-state.js. Area: syncAreaOptions/AREA_OPTS (areas.js) and AREA_SEGS/areaInView (page-state.js) deleted - every area option and chip is offered in every view and the empty state explains an area the view hides (justification: one rule - the empty state tells the truth - instead of two pruning rules; the pruned select could hold only 'All areas', a control whose every use is a no-op; annotating options would be a second copy of the view rule in the select). _report_page.py: norows row carries the two slots. Pins: test__report_page pg21/pg22; test_render_report c5 (updated), c5b, c5c, vw4 (absence clause dropped), vw4b, vw4c, vw4d. check-report-interactive.mjs: 'the empty state is true' over every chip in .sectools x {active, archived} views, plus its vacuity half (FEATURE_ABSENT note 'no chip empties a view while phases outside it match'); the [data-outside] absence pin replaced by 'no matches-outside-this-view notice shows while rows do'; the archived-view area-pruning case replaced by 'the area select/chips still offer every area'; at-rest and filtered counter-basis checks against the header and the View label. Followers re-rendered: examples/acme-store (html+md, md differs only by timestamp), docs/index.html (byte copy), docs/demo-large.html, docs/screenshots (capture-screenshots.mjs exit 0). Results: task gate 4/4 files, 805 cases; full sweep 196/196 files, 18841 cases; browser gate 216 checks passed on acme; vitest 57 files/853 tests; ruff clean; check-rendered-artifacts --before-commit OK. Red on de21866c's committed acme report (git show de21866c:examples/acme-store/acme-store-audit.html), my cases' failing lines verbatim:\nFAIL at rest the count names the view it counts in (\"7 phases\"): got false, want true\nFAIL the empty state is true - whenever nothing is drawn, it names exactly the count View=All shows and its button lands there, or All shows none either (37 presses; wrong: [{\"view\":\"active\",\"chip\":\"data-tev=before-recording\",\"rows\":0,\"empty\":true,\"slot\":false,\"all\":1},{\"view\":\"archived\",\"chip\":\"data-tev=failed\",\"rows\":0,\"empty\":true,\"slot\":false,\"all\":1},{\"view\":\"archived\",\"chip\":\"data-tev=gate-mutated\",\"rows\":0,\"empty\":true,\"slot\":false,\"all\":1},{\"view\":\"archived\",\"chip\":\"data-tev=no-checks\",\"rows\":0,\"empty\":true,\"slot\":false,\"all\":1},{\"view\":\"archived\",\"chip\":\"data-tev=no-evidence\",\"rows\":0,\"empty\":true,\"slot\":false,\"all\":3},{\"view\":\"archived\",\"chip\":\"data-tev=no-gate\",\"rows\":0,\"empty\":true,\"slot\":false,\"all\":1},{\"view\":\"archived\",\"chip\":\"data-tevf=tree-mutated\",\"rows\":0,\"empty\":true,\"slot\":false,\"all\":1},{\"view\":\"archived\",\"chip\":\"data-tevf=coverage-unknown\",\"rows\":0,\"empty\":true,\"slot\":false,\"all\":1}]): got 8, want 0\nFAIL in the Archived view the area select still offers every area the plan tags ([\"auth\",\"storefront\"]): got auth,storefront, want auth,checkout,storefront,worker\nFAIL ...and so do the area chips ([\"auth\",\"storefront\"]): got auth,storefront, want auth,checkout,storefront,worker\nFAIL the count reports the filtered total: got \"1 / 7 phases · 4 of 14 tasks\"\nFAIL the filtered count names its basis - shown of the header's phases, in the view the select names, and tasks of the header's task total ({\"count\":\"1 / 7 phases · 4 of 14 tasks\",\"view\":\"All phases\",\"phases\":7,\"tasks\":14,\"shown\":1}): got false, want true\n(the cl1-cl8 failures in the same run are P163.1's, expected at that commit). Second probe: mutating `if (matchAll && !showP)` to `if (!showP)` in filters.js, rendered to scratch, turned 'the empty state is true' red ('7 active or pending or archived phases do' named, 1 landed); source restored and re-render verified by check-rendered-artifacts. OUT OF DECLARED SCOPE: tools/ui-tests/report-prototype-keys.test.mjs (its AREA_SEGS/areaInView cases reached deleted names; replaced by an areaOk case over inherited-member tags, dropped AREA_SEGS from the prototype-free list and its load mutation row) - the plan gate allowed an Edit-tool edit of it; most edits in this task were made through Bash/Python, which the Edit-time plan gate does not see. tools/redfirst.sh's usage example names `syncAreaOptions();`, which no longer exists - the bash-write guard REFUSED my edit (deny tier, outside every in_progress task's scope), so it was reverted and is LEFT STALE: it needs a task that owns tools/redfirst.sh (suggested replacement: filters.js --replace \"syncStatusChips();\" \"\"). empty-state.css needed no change: the existing `tr.norows .btn{margin-left:.6rem}` spaces the new button (checked on a screenshot). Noted, not changed: the status chips are still pruned by view (a different axis, an earlier owner decision); under the Archived view the counter reads '(Archived (done & cancelled))' - nested parentheses from following the owner's '(View label)' form literally.",
+        "descriptive": "When the View hides every match, the empty state now says how many phases outside it match and offers Show all phases; the counter names its view and uses the header's task basis; the Area controls are no longer pruned to a single option."
       },
       "startedAt": "2026-11-16T14:40:13Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-16T15:20:03Z",
+      "verifiedBy": [
+        "tests/test__report_page.py pg21: one data-outside slot, hidden as rendered, holding the Show all phases button and a text slot",
+        "tests/test__report_page.py pg22: second direction - the plain sentence stays unhidden in its own slot and Clear stays outside the slot",
+        "tests/test_render_report.py c5b/c5c/vw4b/vw4c/vw4d: counter basis, cancelled-excluded denominator, slot condition from the existing verdict, Show all via the View control, no area pruning",
+        "tools/check-report-interactive.mjs: 'the empty state is true' plus its vacuity half, the no-notice-while-rows rule, area offers in every view, counter basis at rest and filtered"
+      ],
       "notes": [
         {
           "at": "2026-11-16T14:40:09Z",
@@ -195,12 +228,24 @@
         "runId": "2026-11-16T15:17:33Z.5a94c3",
         "status": "passed",
         "at": "2026-11-16T15:17:33Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "860dfd77167d",
+        "at": "2026-11-16T15:20:03Z",
+        "return": "docs/audit/evidence/returns/P163.2/20261116T144013Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-16T15:05:54Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_render_report.py tests/test__report_page.py tests/test__report_html.py tests/test__refs.py` in a throwaway tree at HEAD: inline suite tools/check-report-interactive.mjs (its test file is its implementation file): it is not Python, and an inline suite's test hunks are read from Python definitions; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P163.3",
       "title": "On a phone the filters leave the table room, every header filter names its scope, and the filter controls are announced and focus-visible",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Read the skills refactoring-the-assembled-ui, writing-css, writing-javascript and no-silent-pass first.\n\nDEFECTS (measured on the dogfood and acme reports):\n1. At 390x844 the sticky header (0-202px), nav (202-250) and toolbar (262-465) cover 465 of 844px over the table; the header filters wrap onto three lines; the inline More filters panel is clipped.\n2. 'Global filters' mixes scopes with nothing saying which: Author narrows only the Usage section, Area only the table, the dates both, and the section's View overrides all of them.\n3. Two date controls hold one state with different wording ('From/to' in the header, 'Worked between/and' in More filters).\n4. a11y: #audit-count has no aria-live, so a filter result is silent; summary aria-label='More filters' overrides its text so the active count is never announced; chip groups have no role=group or label; focus on the header selects and dates is box-shadow only, which forced-colors mode removes.\n\nREQUIRED:\n1. Below 52rem the sticky stack measured by measureStack() (page-state.js) is shorter: the header's filter row is not sticky (or folds into a disclosure) so the table keeps most of the screen; More filters is fully visible (scrollable within the viewport if needed). Pick the structurally correct form per writing-css (tokens, :where(), container or media query, no !important) and say why.\n2. Each header control's visible label states its scope (e.g. 'Author (usage)'), or the control moves into the section it scopes - choose and justify; the table's View is not silently overriding a 'global' label.\n3. One wording for the date range across both controls.\n4. aria-live=polite on the count; the More filters summary's accessible name includes the active count; each chip group is role=group with an accessible label; header selects and date inputs get a focus indicator that survives forced-colors (outline, see report-css/forced-colors.css).\n\nTESTS: pins in tests/test_render_report.py / tests/test__report_html.py for the aria attributes, labels and the focus rule; tools/check-report-interactive.mjs: at 390x844 the sticky stack over the table is at most a stated share of the viewport (a figure derived from the layout, with its basis in a comment) and the open More filters panel's bounding box lies within the viewport; extend the existing sticky-share check around line 2403 rather than adding a parallel one. Prove each red against de21866c and record the verbatim failing line. Run the browser gate yourself (phase-gate-only in audit.config): node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html. Re-render the committed artifacts as tools/check-rendered-artifacts.py --before-commit asks.\n\nDEPENDANTS: as task a; tools/capture-screenshots.mjs captures phone shots; report-css/shell.css, controls.css and forced-colors.css are shared by the print and dark rules in motion-and-print.css. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/ui/report-css/shell.css",
@@ -220,7 +265,9 @@
         "docs/screenshots",
         "docs/index.html",
         "docs/demo-large.html",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/README.md",
+        "plugins/audit/scripts/report/_usage_overview.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -256,14 +303,14 @@
       "dependsOn": [
         "P163.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-16T15:20:05Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -282,8 +329,18 @@
           "reader": "PLUGIN-BUILD-GUIDE.md",
           "reads": "plugins/audit/scripts/report/_report_html.py",
           "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/report/_report_html.py - a section headed by its path"
+        },
+        {
+          "at": "2026-11-16T15:49:42Z",
+          "text": "Scope widened by the orchestrator: _usage_overview.py renders the Usage author chip group, which needs role=group and a label like every other chip group; plugins/audit/README.md described a global, sticky filter row, which this task makes false."
         }
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-16T16:00:51Z.1ce0c0",
+        "status": "passed",
+        "at": "2026-11-16T16:00:51Z"
+      }
     }
   ],
   "request": "Users report the filters at the top of the HTML report do not work. Fix every filter defect found by the live diagnosis: Clear filters leaves the test-gate and observed filters on (and storage brings them back); the default view hides task-level matches while the empty state says none exist; the counter states no basis; the phone layout covers most of the screen; filter scopes are invisible; and the a11y gaps.",

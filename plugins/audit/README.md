@@ -1226,9 +1226,9 @@ table) and a **Usage tab in `/audit:panel`** with live
 filtering by model, author, phase, task, agent, attribution, area, free text and an absolute date
 window, sparklined KPI tiles with a trend against the previous period, **the same
 calendar-navigated heatmap** driven by the persisted filters, and **Export CSV** of
-exactly the rows behind the current view. The report adds a **global filter row** in its sticky
-top bar (author, area, from/to date range — every choice a shareable `#` link that prints as a
-named line), renders **Ready now as a definition list** (id, title, area chips, what cleared it),
+exactly the rows behind the current view. The report adds a **header filter row** in its top bar
+(author, area, a worked-from/to date range — each labelled with the section it narrows, every
+choice a shareable `#` link that prints as a named line), renders **Ready now as a definition list** (id, title, area chips, what cleared it),
 splits long plans into **active / pending / archived segments** behind a named **View**
 (active & pending, archived, all — the archive holds both terminal states, `done` and
 `cancelled`) with per-segment **CSV export, chart PNG export (redrawn from data) and

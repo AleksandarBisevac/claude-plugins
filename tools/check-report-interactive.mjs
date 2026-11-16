@@ -201,6 +201,12 @@ const FEATURE_ABSENT = [
   { note: 'the long-print stress check was not asked for',
     covers: ['(setting up the long print) the uncut sheet was grown past the crashing',
              'a page past the length that crashed the printer prints'] },
+  // No More-filters disclosure on the phone: nothing to open while stuck. No
+  // chip inside it: nothing to switch on so the summary has a count to say.
+  { note: 'phone panel check skipped',
+    covers: ['ph2 More filters opened while the bar is stuck'] },
+  { note: 'its announced count skipped',
+    covers: ['ax3 with one filter on, More filters is announced'] },
   { note: 'nothing is ready in this plan',
     covers: ['every ready task is a term', 'the list carries as many terms',
              'every term names its task id', 'every definition says why',
@@ -1476,7 +1482,7 @@ if (areaParts.length) {
   expect('...and a= leaves the URL', /[!&]a=/.test(areaOff.hash), false);
 } else notes.push('ok   (no phase in this plan carries an area tag — area chips skipped)');
 
-// 6d. The global filter row (C1/C2): a second line of the sticky top bar
+// 6d. The header filter row (C1/C2): a second line of the top bar
 //     carrying an authors dropdown, an area dropdown and the date range. Each
 //     control is a twin of a filter that already exists elsewhere in the
 //     document, so the gates here are PAIRINGS, not a version sweep: a report
@@ -1682,8 +1688,9 @@ if (await page.$('#audit-area-select')) {
 }
 
 // The new chrome must not grow any scroll box (the assertHintsFit rule): the
-// filter row lives in the sticky bar at every width, so at no width may the
-// PAGE scroll sideways because of it. 390px is the width that found the last
+// filter row lives in the top bar at every width (sticky above 52rem, scrolling
+// with the page below it), so at no width may the PAGE scroll sideways because
+// of it. 390px is the width that found the last
 // such defect (the filter panel).
 for (const w of [1512, 390]) {
   await page.setViewportSize({ width: w, height: w > 700 ? 945 : 780 });
@@ -1693,7 +1700,7 @@ for (const w of [1512, 390]) {
     row: !!document.querySelector('.gfilters'),
   }));
   if (grow.row) {
-    expect(`at ${w}px the global filter row does not push the page sideways `
+    expect(`at ${w}px the header filter row does not push the page sideways `
       + `(scrollWidth ${grow.dw} vs client ${grow.cw})`, grow.dw <= grow.cw + 1, true);
   }
 }
@@ -2459,6 +2466,10 @@ await page.waitForTimeout(400);
 //    measurement of another, with nothing able to say so.
 await page.setViewportSize(PHONE_VIEWPORT);
 await page.waitForTimeout(250);
+//    The same width at the taller screen the sticky-stack defect was measured on.
+//    Kept apart from PHONE_VIEWPORT on purpose: every recorded figure in the
+//    layout baseline is a share of THAT size, and moving it would re-base them.
+const PHONE_TALL = { width: PHONE_VIEWPORT.width, height: 844 };
 //    The first of the two recorded figures, taken BEFORE anything is opened. It is
 //    read back with the disclosure's own state so a run cannot record the open bar
 //    under the shut figure's name: everything above this line opens and closes
@@ -2539,9 +2550,85 @@ if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
   if (covered > 40) {
     failures.push(`FAIL an open filter panel does not pin itself over the table: ${covered}% of the screen is filter bar`);
   } else notes.push(`ok   scrolled, the open filter panel gives the table the screen back (${covered}% bar)`);
+
+  //    ...and the other half of that trade: the open bar leaves the sticky stack,
+  //    so More filters tapped while the bar is STUCK over the table used to open
+  //    a panel back at the bar's place in the flow - above the top of the
+  //    screen, where the reader who just tapped it could not see it. Opened from
+  //    there, at the phone size the stack share below is measured at, the panel
+  //    has to be on screen and painted rather than covered by the strip that
+  //    stays pinned. Points are read, not only the box, because a box inside the
+  //    viewport can still sit under a sticky layer.
+  await page.click('.fdetails > summary');           // shut it, then open it stuck
+  await page.setViewportSize(PHONE_TALL);
+  await page.evaluate(() => {
+    const t = document.querySelector('table.phases');
+    window.scrollTo(0, window.scrollY + t.getBoundingClientRect().top + 10);
+  });
+  await page.waitForTimeout(300);
+  await page.click('.fdetails > summary');
+  await page.waitForTimeout(400);
+  const inView = await page.evaluate(() => {
+    const p = document.querySelector('.filterpanel');
+    const b = p.getBoundingClientRect();
+    const x = b.left + b.width / 2;
+    const hits = [b.top + 4, b.bottom - 4].map((y) => {
+      const at = document.elementFromPoint(x, y);
+      return Boolean(at && p.contains(at));
+    });
+    return { top: Math.round(b.top), bottom: Math.round(b.bottom), left: Math.round(b.left),
+             right: Math.round(b.right), w: innerWidth, h: innerHeight, painted: hits.every(Boolean) };
+  });
+  expect(`ph2 More filters opened while the bar is stuck lies within the ${PHONE_TALL.width}x`
+    + `${PHONE_TALL.height} viewport and is painted top and bottom (box ${inView.left},${inView.top}`
+    + `-${inView.right},${inView.bottom})`,
+    inView.top >= 0 && inView.bottom <= inView.h && inView.left >= 0 && inView.right <= inView.w
+      && inView.painted, true);
+  await page.click('.fdetails > summary');
+  await page.setViewportSize(PHONE_VIEWPORT);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(150);
 } else notes.push('ok   (this plan records no models or dates — phone panel check skipped)');
+
+//    The RESTING stack, which the open-panel bar above does not measure: the top
+//    bar, the section strip and the shut filter bar, all pinned at once over the
+//    rows. At 390x844 the bar's three lines (title, document actions, the
+//    header's filter row) plus the strip and the table's own bar pinned 486px -
+//    58% of the screen - over the table they filter.
+//    The bound is half the screen, because the claim being held is that the
+//    table keeps MOST of it: a stack over 50% is the filters owning the phone.
+//    Measured as what a reader sees, not as a sum of heights: from the top of
+//    the viewport down the middle, the first point that is the table's own
+//    frame is where the pinned layers end.
+{
+  await page.setViewportSize(PHONE_TALL);
+  await page.evaluate(() => {
+    const t = document.querySelector('table.phases');
+    window.scrollTo(0, window.scrollY + t.getBoundingClientRect().top + 10);
+  });
+  await page.waitForTimeout(400);
+  const stack = await page.evaluate(() => {
+    const wrap = document.querySelector('table.phases').closest('.tablewrap')
+      || document.querySelector('table.phases');
+    const x = Math.round(window.innerWidth / 2);
+    for (let y = 0; y < window.innerHeight; y += 1) {
+      const at = document.elementFromPoint(x, y);
+      if (at && wrap.contains(at)) return y;
+    }
+    return null;
+  });
+  if (stack === null) {
+    failures.push('FAIL ph1 scrolled into the phases table at the phone size, no point down the '
+      + 'middle of the screen is the table - the stack share could not be measured');
+  } else {
+    expect(`ph1 at ${PHONE_TALL.width}x${PHONE_TALL.height}, scrolled into the table, the pinned `
+      + `stack over it is at most half the screen (${stack}px, ${share(stack, PHONE_TALL.height)}%)`,
+      share(stack, PHONE_TALL.height) <= 50, true);
+  }
+  await page.setViewportSize(PHONE_VIEWPORT);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(150);
+}
 
 // --- the relative arm: what this document's layout was recorded at ------------
 //
@@ -2579,6 +2666,113 @@ await page.emulateMedia({ media: null });
 await page.setViewportSize({ width: 1512, height: 945 });
 expect('the filter bar never reaches portrait paper, where its phone rules also apply', onPaper.bar, true);
 expect('...nor the panel inside it', onPaper.panel, true);
+
+// --- interaction states: each control's own box ------------------------------
+//
+// A rest-state snapshot cannot see a hover or focus rule that stopped matching,
+// and a focus ring drawn only as box-shadow is erased by forced-colours mode,
+// which drops every shadow. So each control is put in its state and its OWN
+// computed style compared with its rest: at least one property its rule sets
+// must have moved. A focus rule must also leave an outline standing under
+// forced colours, which is what that mode repaints instead of a shadow.
+// `needs` opens whatever the control lives behind and returns its undo.
+{
+  const READ = ['outlineStyle', 'outlineWidth', 'borderTopColor', 'boxShadow',
+    'backgroundColor', 'color', 'transform', 'filter'];
+  const openPanel = async () => {
+    await page.click('.fdetails > summary');
+    await page.waitForTimeout(250);
+    return () => page.click('.fdetails > summary');
+  };
+  const expandAll = async () => {
+    await page.click('#audit-expand');
+    await page.waitForTimeout(300);
+    return () => page.click('#audit-expand');
+  };
+  const STATES = [
+    { id: 'is1', sel: '#audit-q', how: 'focus', sets: ['borderTopColor', 'boxShadow', 'outlineStyle'] },
+    { id: 'is2', sel: '.frow input[type=date]', how: 'focus', needs: openPanel,
+      sets: ['borderTopColor', 'boxShadow', 'outlineStyle'] },
+    { id: 'is3', sel: '.gfilters select', how: 'focus', sets: ['borderTopColor', 'boxShadow', 'outlineStyle'] },
+    { id: 'is4', sel: '.gfilters input[type=date]', how: 'focus',
+      sets: ['borderTopColor', 'boxShadow', 'outlineStyle'] },
+    { id: 'is5', sel: '.sectools .btn:not(.btn-primary)', how: 'hover',
+      sets: ['borderTopColor', 'backgroundColor', 'transform', 'boxShadow'] },
+    { id: 'is6', sel: '.btn-primary', how: 'hover', sets: ['filter'] },
+    { id: 'is7', sel: '#audit-phase-status .fchip:not(.on)', how: 'hover', sets: ['borderTopColor', 'transform'] },
+    { id: 'is8', sel: '.fdetails > summary', how: 'hover', sets: ['borderTopColor', 'backgroundColor'] },
+    { id: 'is9', sel: '.tf-chip:not(.on)', how: 'hover', needs: expandAll, sets: ['borderTopColor', 'transform'] },
+    { id: 'is10', sel: '.snav a:not([aria-current="true"])', how: 'hover', sets: ['color', 'backgroundColor'] },
+  ];
+  const styleOf = (loc) => loc.evaluate((el, props) => {
+    const cs = getComputedStyle(el);
+    return Object.fromEntries(props.map((p) => [p, cs[p]]));
+  }, READ);
+  const settle = async () => {
+    await page.mouse.move(1, 1);
+    await page.evaluate(() => document.activeElement && document.activeElement.blur());
+    await page.waitForTimeout(350);    // > --dur, so a transition has finished
+  };
+  await page.setViewportSize({ width: 1512, height: 945 });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  for (const s of STATES) {
+    const undo = s.needs ? await s.needs() : null;
+    const loc = page.locator(s.sel).filter({ visible: true }).first();
+    if (!(await loc.count())) {
+      failures.push(`FAIL ${s.id} no visible ${s.sel} to put in its ${s.how} state - the `
+        + 'interaction rule for it could not be checked');
+      if (undo) await undo();
+      continue;
+    }
+    await loc.scrollIntoViewIfNeeded();
+    await settle();
+    const rest = await styleOf(loc);
+    if (s.how === 'hover') await loc.hover();
+    else await loc.focus();
+    await page.waitForTimeout(350);
+    const on = await styleOf(loc);
+    const moved = s.sets.filter((p) => rest[p] !== on[p]);
+    let forced = 'n/a';
+    if (s.how === 'focus') {
+      await page.emulateMedia({ forcedColors: 'active' });
+      await loc.focus();
+      await page.waitForTimeout(100);
+      const fc = await styleOf(loc);
+      forced = fc.outlineStyle !== 'none' && parseFloat(fc.outlineWidth) >= 1 ? 'outline' : 'no outline';
+      await page.emulateMedia({ forcedColors: 'none' });
+    }
+    expect(`${s.id} ${s.sel} in its ${s.how} state changes its own box (${moved.join(',') || 'nothing'} moved)`
+      + (s.how === 'focus' ? ' and keeps an outline under forced colours' : ''),
+      `${moved.length > 0}/${forced}`, `true/${s.how === 'focus' ? 'outline' : 'n/a'}`);
+    await settle();
+    if (undo) await undo();
+  }
+
+  // The More-filters summary is NAMED by its text, so the count it shows is the
+  // count a screen reader hears. Asked of the browser's accessibility tree,
+  // because a name is computed - an aria-label replaces the text, generated
+  // content joins it - and no markup check can see either.
+  const chip = page.locator('.filterpanel .fchip').first();
+  if (await chip.count()) {
+    await page.click('.fdetails > summary');
+    await chip.click();
+    await page.waitForTimeout(200);
+    const cdp = await page.context().newCDPSession(page);
+    const { root } = await cdp.send('DOM.getDocument', { depth: -1 });
+    const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector: '.fdetails > summary' });
+    const { nodes } = await cdp.send('Accessibility.getPartialAXTree', { nodeId, fetchRelatives: false });
+    const name = (nodes[0] && nodes[0].name && nodes[0].name.value) || '';
+    const shown = await page.evaluate(() => document.querySelector('.fdetails > summary').textContent);
+    await cdp.detach();
+    expect(`ax3 with one filter on, More filters is announced by the words and the count it shows (${JSON.stringify(name)})`,
+      name, shown.trim());
+    await chip.click();
+    await page.click('.fdetails > summary');
+    await page.waitForTimeout(150);
+  } else notes.push('ok   (this plan has no chip in More filters — its announced count skipped)');
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(150);
+}
 
 // 10. The responsive contract, at every width either side of a breakpoint
 //     the report's or the panel's stylesheet declares. What existed before this was two

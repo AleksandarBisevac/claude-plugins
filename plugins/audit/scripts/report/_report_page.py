@@ -351,8 +351,9 @@ def _phase_rows(ph, psum, seg, ncol, cols, done_ids, owners, workers=None,
     out.append('<tr class="taskfilter" data-phase="%s" data-seg="%s">'
                '<td colspan="%d">'
                '<span class="tf-label">Filter tasks by status:</span>'
-               '<span class="tf-chips">%s</span></td></tr>'
-               % (e(pid), seg, ncol,
+               '<span class="tf-chips" role="group" '
+               'aria-label="Filter %s tasks by status">%s</span></td></tr>'
+               % (e(pid), seg, ncol, e(pid),
                   _chip_buttons(_tstat, "data-ts", "tf-chip")))
     for t in ph.get("tasks") or []:
         if not isinstance(t, dict):
@@ -504,9 +505,9 @@ def _topbar_block(manifest, meta, summary, usage, owners):
                 now + _parked_suffix(manifest, summary),
                 (' · <span class="stampv" title="The plugin version that '
                  'rendered this file">audit %s</span>' % e(ver)) if ver else "")]
-    # The global filter row (C1/C2): author, area and the date range, inside
-    # the sticky top bar so they stay reachable however far the reader has
-    # scrolled. Why the bar and not a new floating row is argued where the row
+    # The header filter row (C1/C2): author, area and the date range, inside
+    # the top bar, sticky above 52rem so they stay reachable however far the
+    # reader has scrolled; on a phone the bar scrolls with the page. Why the bar and not a new floating row is argued where the row
     # is built (_report_html._global_filter_row). Inputs: authors by spend
     # (matching the Usage chips' order), tags first-seen (matching the panel
     # chips), and the date bounds from ALL data actually present — task
@@ -684,7 +685,8 @@ def _table_tools(manifest, summary, evidence=None):
         '<div class="toolbar sectools" role="search" aria-label="Filter the phases table">'
         '<input id="audit-q" type="search" aria-label="Filter phases and tasks by text" '
         'placeholder="Filter phases &amp; tasks by text…">'
-        '<span class="tbl">Phase status:</span><span id="audit-phase-status">%s</span>'
+        '<span class="tbl">Phase status:</span><span id="audit-phase-status" '
+        'role="group" aria-label="Phase status">%s</span>'
         '%s'
         # vw: WHICH phases are on screen, said out loud. The archive used
         # to be a toggle nobody found — a plan with forty done phases opened
@@ -704,7 +706,9 @@ def _table_tools(manifest, summary, evidence=None):
         # state — and the only way back from it — ends up underneath the very panel
         # that caused it. A browser click found that; no string check could.
         '<button type="button" class="btn" data-clear hidden>Clear filters</button>'
-        '<span id="audit-count" class="muted"></span>'
+        # Polite: a filter result is a status, not an alert, and a reader
+        # typing in the search box should hear where it landed, not every key.
+        '<span id="audit-count" class="muted" aria-live="polite"></span>'
         "<noscript><span class=\"tbl\">Filtering and collapsing need JavaScript "
         "— every row is shown.</span></noscript></div>"
         % (_chip_buttons(statuses, "data-ps", "fchip"),

@@ -23,7 +23,6 @@
   background:var(--bg);border:1px solid var(--border);border-radius:var(--pill);
   transition:border-color var(--dur),box-shadow var(--dur)}
 #audit-q::placeholder{color:var(--muted)}
-#audit-q:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
 .tbl{font-size:.76rem;color:var(--muted);margin-left:.25rem}
 #audit-phase-status{display:inline-flex;gap:.25rem;flex-wrap:wrap}
 
@@ -71,14 +70,22 @@
    and where the scroll-spy fold sits — so a panel that pushed the bar taller
    when opened would move all three under the reader mid-scroll. Out of flow, the
    bar is one height open or shut, and the panel is drawn OVER the table. */
-.fdetails{position:relative}
+/* Brought into view below what stays pinned when it opens off screen (the
+   toggle handler in page-state.js reads this back). The gap is the smallest
+   step, so a disclosure inside the STUCK bar - whose top sits the bar's padding
+   below --sticky-2 - already counts as on screen and the page never moves. */
+.fdetails{position:relative;scroll-margin-top:calc(var(--sticky-2) + var(--sp-0))}
 .fdetails>summary{cursor:pointer;font:inherit;font-size:.82rem;line-height:1;
   display:inline-flex;align-items:center;gap:.4em;padding:.5rem .75rem;
   border-radius:var(--pill);border:1px solid var(--field-border);background:var(--surface);
   color:var(--text);list-style:none;transition:background var(--dur),border-color var(--dur)}
 .fdetails>summary::-webkit-details-marker{display:none}
-.fdetails>summary::after{content:"\25BE";font-size:.7em;color:var(--muted)}
-.fdetails[open]>summary::after{content:"\25B4"}
+/* The arrow is drawing, not words: the summary's name is its text, and with an
+   empty alternative the name stays "More filters" plus the active count rather
+   than gaining a triangle. Alt text for generated content is Baseline newly, so
+   the plain declaration comes first and an engine without it keeps that one. */
+.fdetails>summary::after{content:"\25BE";content:"\25BE" / "";font-size:.7em;color:var(--muted)}
+.fdetails[open]>summary::after{content:"\25B4";content:"\25B4" / ""}
 .fdetails>summary:hover{border-color:var(--field-border-hover);background:var(--surface-2)}
 .fdetails>summary:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 /* The count of what is narrowing the table, on the closed control. A panel that
@@ -89,9 +96,9 @@
    the bar: anchored left, a panel this wide ran off the side of the viewport and
    took its last column with it.
 
-   The floor was 19rem, then 27rem — the width at which "Worked between: [date]
-   and [date]" stopped wrapping after the word "and" and reading as a broken
-   sentence. 27rem cleared that but left the panel feeling cramped: four control
+   The floor was 19rem, then 27rem — the width at which the date row (then
+   "Worked between: [date] and [date]") stopped wrapping after its middle word
+   and reading as a broken sentence. 27rem cleared that but left the panel feeling cramped: four control
    rows at .5rem apart inside .75rem of padding, with nothing to separate the
    date range from the model chips from the note. 32rem with roomier padding and
    gap is the same content given space to be read. `max-width` still caps it to
@@ -122,7 +129,15 @@
 .frow{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}
 .frow input[type=date]{font:inherit;font-size:.78rem;padding:.3rem .45rem;color:var(--text);
   background:var(--bg);border:1px solid var(--field-border);border-radius:var(--radius)}
-.frow input[type=date]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
 #audit-model,#audit-presets{display:inline-flex;gap:.25rem;flex-wrap:wrap}
+
+/* ---- a field's focus ----------------------------------------------------
+   One rule for every text field and select in the filter controls. The ring a
+   sighted reader sees is the accent border and the soft shadow; the outline is
+   transparent, so it changes nothing here - and it is the half that survives
+   forced-colours mode, which drops every box-shadow and repaints an outline in
+   a system colour. With the outline removed, as it was, the field had no focus
+   indicator at all in that mode. */
+#audit-q:focus,.frow input[type=date]:focus,.gfilters select:focus,.gfilters input[type=date]:focus{outline:2px solid transparent;outline-offset:2px;border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
 .fnote{margin:0;font-size:.7rem;line-height:1.45;color:var(--muted)}
 

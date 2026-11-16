@@ -1339,6 +1339,15 @@ def _filter_attrs(task, view=None):
 
 
 # --- filter panel -----------------------------------------------------------
+def _chip_row(label, span_id, chips):
+    """One labelled row of chips: the visible label and the group's accessible
+    name are the same string, so a chip is announced with the question it
+    answers and the two cannot be reworded apart."""
+    return ('<div class="frow"><span class="tbl">%s:</span>'
+            '<span id="%s" role="group" aria-label="%s">%s</span></div>'
+            % (e(label), e(span_id), e(label), chips))
+
+
 def _filter_panel(manifest, evidence=None):
     """The area, model, gate and date controls, server-rendered, or "" with none.
 
@@ -1380,26 +1389,22 @@ def _filter_panel(manifest, evidence=None):
         # same `owner: <who>` the panel's area select options carry. Tags with
         # no registered owner keep the pinned untitled shape.
         _owners = _owner_map(manifest)
-        rows.append('<div class="frow"><span class="tbl">Area:</span>'
-                    '<span id="audit-areas">%s</span></div>'
-                    % _chip_buttons(tags, "data-a", "fchip", humanize=False,
-                                    titles={t: "owner: %s" % _owners[t]
-                                            for t in tags if t in _owners}))
+        rows.append(_chip_row("Area", "audit-areas",
+                              _chip_buttons(tags, "data-a", "fchip", humanize=False,
+                                            titles={t: "owner: %s" % _owners[t]
+                                                    for t in tags if t in _owners})))
     if models:
-        rows.append('<div class="frow"><span class="tbl">Model:</span>'
-                    '<span id="audit-model">%s</span></div>'
-                    % _chip_buttons(sorted(models), "data-m", "fchip",
-                                    humanize=False))
+        rows.append(_chip_row("Model", "audit-model",
+                              _chip_buttons(sorted(models), "data-m", "fchip",
+                                            humanize=False)))
     if tev_keys:
-        rows.append('<div class="frow"><span class="tbl">Test gate:</span>'
-                    '<span id="audit-tev">%s</span></div>'
-                    % _chip_buttons(tev_keys, "data-tev", "fchip",
-                                    mapping=TEV_LABELS))
+        rows.append(_chip_row("Test gate", "audit-tev",
+                              _chip_buttons(tev_keys, "data-tev", "fchip",
+                                            mapping=TEV_LABELS)))
     if tev_flags:
-        rows.append('<div class="frow"><span class="tbl">Observed:</span>'
-                    '<span id="audit-tevf">%s</span></div>'
-                    % _chip_buttons(tev_flags, "data-tevf", "fchip",
-                                    mapping=TEV_FLAG_LABELS))
+        rows.append(_chip_row("Observed", "audit-tevf",
+                              _chip_buttons(tev_flags, "data-tevf", "fchip",
+                                            mapping=TEV_FLAG_LABELS)))
     if dates:
         span = ' min="%s" max="%s"' % (e(min(dates)), e(max(dates)))
         # The presets are relative to the LAST DAY IN THE DATA, not to today.
@@ -1408,37 +1413,41 @@ def _filter_panel(manifest, evidence=None):
         # byte-compares against docs/index.html — a file that cannot stay equal to
         # itself. The script derives the dates from the rows; these carry only the
         # span, so the arithmetic has one home.
+        # Worded as the header's pair words it: the two pairs write ONE range, and
+        # two wordings read as two filters that might disagree.
         rows.append(
-            '<div class="frow"><span class="tbl">Worked between:</span>'
-            '<input type="date" id="audit-from" aria-label="Show tasks worked on '
-            'or after this date"%s>'
-            '<span class="tbl">and</span>'
-            '<input type="date" id="audit-to" aria-label="Show tasks worked on or '
-            'before this date"%s></div>' % (span, span))
-        rows.append(
-            '<div class="frow"><span class="tbl">Last:</span><span id="audit-presets">'
+            '<div class="frow"><span class="tbl">Worked from:</span>'
+            '<input type="date" id="audit-from" aria-label="Worked from: show '
+            'tasks worked on or after this date"%s>'
+            '<span class="tbl">to</span>'
+            '<input type="date" id="audit-to" aria-label="to: show tasks worked on '
+            'or before this date"%s></div>' % (span, span))
+        rows.append(_chip_row(
+            "Last", "audit-presets",
             '<button type="button" class="fchip" data-days="7" aria-pressed="false">'
             '7 days</button>'
             '<button type="button" class="fchip" data-days="30" aria-pressed="false">'
             '30 days</button>'
             '<button type="button" class="fchip" data-days="all" aria-pressed="false">'
-            'All</button></span></div>')
+            'All</button>'))
         # Says which "last 30 days" this is. Without it a reader compares the
         # dates against their own calendar, finds them stale, and concludes the
         # report is out of date rather than that it is measuring the work.
         rows.append('<p class="fnote">Counted back from %s, the last day this '
                     "plan recorded work — not from today.</p>" % e(max(dates)))
-    return ('<details class="fdetails"><summary aria-label="More filters">'
+    # No aria-label on the summary: one would REPLACE its text as the accessible
+    # name, and the active count the script writes into it would never be heard.
+    return ('<details class="fdetails"><summary>'
             'More filters<span class="fcount" id="audit-fcount"></span></summary>'
             '<div class="filterpanel">%s</div></details>' % "".join(rows))
 
 
-# --- global filter row (C1/C2) ----------------------------------------------
+# --- header filter row (C1/C2) ----------------------------------------------
 def _global_filter_row(authors, tags, dmin, dmax, owners=None):
-    """The compact global filter row — author, area, date range — or "".
+    """The compact header filter row — author, area, date range — or "".
 
     DESIGN DECISION (C2, delegated): this row is a second line INSIDE the
-    existing sticky `.topbar`, not a separate floating/anchored bar. Three
+    existing `.topbar` (sticky above 52rem), not a separate floating/anchored bar. Three
     reasons, in the order they decided it:
 
       * The report is long and its sticky stack is already measured geometry —
@@ -1453,9 +1462,18 @@ def _global_filter_row(authors, tags, dmin, dmax, owners=None):
         can never reach paper — the active range prints instead as the named
         line in the Usage section (#audit-urange).
       * Mobile width exists: inside the topbar the row wraps under the title
-        with `flex-wrap` and compact controls, and the measured `--topbar-h`
-        absorbs the extra height at every width — no breakpoint-specific
-        arithmetic, because there is no second bar to place.
+        with `flex-wrap` and compact controls. Below 52rem the whole bar stops
+        being sticky (report-css/forced-colors.css) - wrapped, its title,
+        actions and this row pinned nearly half a phone screen over the table -
+        and measureStack() publishes a zero offset while it is not, so there is
+        still no breakpoint arithmetic and no second bar to place.
+
+    SCOPE IS PART OF EACH LABEL. These controls do not narrow the same thing:
+    Author scopes the Usage section, Area the phases table, and the date range
+    both - and the phases table's own View further decides which phases are
+    drawn at all. So no label calls the row global, and each visible label says
+    which section it narrows, in the words the side nav names them with; each
+    control's accessible name starts with that same visible label.
 
     Server-rendered like every other filter control (the chips rule): built in
     JS it would be missing wherever scripts do not run, and "the filters are
@@ -1472,10 +1490,10 @@ def _global_filter_row(authors, tags, dmin, dmax, owners=None):
     if len(authors or []) >= 2:
         opts = '<option value="">All authors</option>' + "".join(
             '<option value="%s">%s</option>' % (e(a), e(a)) for a in authors)
-        bits.append('<label class="gf"><span class="tbl">Author</span>'
-                    '<select id="audit-au-select" aria-label="Scope the Usage '
-                    'section&#39;s per-author views to one author">%s</select>'
-                    "</label>" % opts)
+        bits.append('<label class="gf"><span class="tbl">Author %s</span>'
+                    '<select id="audit-au-select" aria-label="Author (usage): '
+                    'scope the Usage section&#39;s per-author views to one '
+                    'author">%s</select></label>' % (_scope("usage"), opts))
     elif authors:
         # ONE author: the question "who worked on this" still deserves an answer
         # in the header, and a one-option dropdown is not it -- a control whose
@@ -1498,25 +1516,36 @@ def _global_filter_row(authors, tags, dmin, dmax, owners=None):
                if (owners or {}).get(t) else "",
                e(t))
             for t in tags)
-        bits.append('<label class="gf"><span class="tbl">Area</span>'
-                    '<select id="audit-area-select" aria-label="Show only '
-                    'phases tagged with this area">%s</select></label>' % opts)
+        bits.append('<label class="gf"><span class="tbl">Area %s</span>'
+                    '<select id="audit-area-select" aria-label="Area (phases): '
+                    'show only phases tagged with this area">%s</select></label>'
+                    % (_scope("phases"), opts))
     if dmin and dmax:
         span = ' min="%s" max="%s"' % (e(dmin), e(dmax))
+        # Worded as the More-filters pair is: one range, one wording. The scope
+        # follows the pair rather than either half, because it is the range's.
         bits.append(
-            '<label class="gf"><span class="tbl">From</span>'
-            '<input type="date" id="audit-gfrom" aria-label="From - start of the '
-            'date range scoping the task table and the usage charts"%s></label>'
+            '<label class="gf"><span class="tbl">Worked from</span>'
+            '<input type="date" id="audit-gfrom" aria-label="Worked from (phases '
+            '&amp; usage): start of the date range scoping the phases table and '
+            'the usage charts"%s></label>'
             '<label class="gf"><span class="tbl">to</span>'
-            '<input type="date" id="audit-gto" aria-label="to - end of the date '
-            'range scoping the task table and the usage charts"%s></label>'
+            '<input type="date" id="audit-gto" aria-label="to (phases &amp; '
+            'usage): end of the date range scoping the phases table and the usage '
+            'charts"%s></label>%s'
             '<button type="button" class="btn" id="audit-gclear" hidden '
             'title="Clear the date range - back to all time">All time</button>'
-            % (span, span))
+            % (span, span, _scope("phases &amp; usage")))
     if not bits:
         return ""
-    return ('<div class="gfilters" role="group" aria-label="Global filters">'
-            "%s</div>" % "".join(bits))
+    return ('<div class="gfilters" role="group" aria-label="Report filters, '
+            'each naming the section it narrows">%s</div>' % "".join(bits))
+
+
+def _scope(words):
+    """The visible scope beside a header control: which section it narrows.
+    `words` is markup, already escaped by the caller."""
+    return '<span class="gfscope">(%s)</span>' % words
 
 
 # --- ready now (C4) ----------------------------------------------------------

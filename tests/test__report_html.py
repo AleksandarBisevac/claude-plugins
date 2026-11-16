@@ -16,6 +16,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import json
+import re
 import os
 import sys
 
@@ -322,6 +323,64 @@ def _cases(check):
     check("_global_filter_row escapes a hostile tag before it reaches an "
           "attribute",
           "&lt;script&gt;" in M._global_filter_row([], ["<script>"], None, None))
+
+    # --- what each header control scopes, said where it is read -----------------
+    # The row used to be labelled "Global filters" while Author narrowed only the
+    # Usage section and Area only the phases table. A label is the only place a
+    # reader learns the scope, so each visible label carries it, in the words the
+    # side nav names those sections with.
+    _labels = [m for m in re.findall(r'<span class="tbl">(.*?)</span>(?=<select|<input)',
+                                     _grow)]
+    check("sc1 each header control's VISIBLE label names the section it narrows "
+          "- Author the usage, Area the phases, the date pair both: %r" % (_labels,),
+          _labels == ['Author <span class="gfscope">(usage)</span>',
+                      'Area <span class="gfscope">(phases)</span>',
+                      "Worked from", "to"]
+          and _grow.count('<span class="gfscope">(phases &amp; usage)</span>') == 1
+          and _grow.index("audit-gto")
+          < _grow.index('<span class="gfscope">(phases &amp; usage)'))
+    check("sc2 SECOND-DIRECTION CASE: nothing in the row calls itself global any "
+          "more - the word was the claim that every control narrows everything, "
+          "which none of them does",
+          "global" not in _grow.lower())
+    check("sc3 each control's accessible name STARTS with its visible label, so a "
+          "reader who says what they see reaches the control (label in name): %r"
+          % (re.findall(r'aria-label="([^"]*)"', _grow),),
+          'aria-label="Author (usage): ' in _grow
+          and 'aria-label="Area (phases): ' in _grow
+          and 'aria-label="Worked from (phases &amp; usage): ' in _grow
+          and 'aria-label="to (phases &amp; usage): ' in _grow)
+    # One state, two controls: the header pair and the More-filters pair write the
+    # same range. Worded differently they read as two filters that might disagree.
+    _fp_dates = M._filter_panel(_withdates)
+    check("sc4 the date range is worded ONE way in both of its controls - "
+          "'Worked from' and 'to', never 'From', 'between' or 'and': %r"
+          % (re.findall(r'<span class="tbl">([^<]*)</span>', _fp_dates),),
+          '<span class="tbl">Worked from:</span><input type="date" id="audit-from"'
+          in _fp_dates
+          and '<span class="tbl">to</span><input type="date" id="audit-to"' in _fp_dates
+          and "between" not in _fp_dates and ">and<" not in _fp_dates
+          and ">From<" not in _grow)
+
+    # --- the filter controls, announced ------------------------------------------
+    # aria-label on a <summary> REPLACES its text as the accessible name, so the
+    # active count the script writes into the summary was never announced.
+    _fp_all = M._filter_panel({"phases": [
+        {"id": "P1", "area": "api", "tasks": [
+            {"id": "P1.1", "model": "opus", "startedAt": "2026-07-01T00:00:00Z",
+             "completedAt": "2026-07-09T00:00:00Z"}]}]})
+    _summ = re.findall(r"<summary\b[^>]*>.*?</summary>", _fp_all)
+    check("ax1 the More filters summary carries no aria-label, so its name is its "
+          "text - the words AND the active-count slot the script fills: %r" % (_summ,),
+          _summ == ['<summary>More filters<span class="fcount" id="audit-fcount">'
+                    "</span></summary>"])
+    _groups = re.findall(r'<span id="(audit-[a-z]+)" role="group" aria-label="([^"]+)">',
+                         _fp_all)
+    check("ax2 every chip row in More filters is a labelled group, named by the "
+          "label a sighted reader sees beside it: %r" % (_groups,),
+          _groups == [("audit-areas", "Area"), ("audit-model", "Model"),
+                      ("audit-presets", "Last")]
+          and _fp_all.count('role="group"') == 3)
 
     # --- _ready_now_dl(): the Ready-now definition list (C4) --------------------
     _rm = {"phases": [

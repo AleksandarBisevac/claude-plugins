@@ -14,14 +14,14 @@ lint over a differently-ordered join would clear a palette nobody serves.
 
 | part | responsibility |
 |---|---|
-| `shell.css` | Reset, scroll behaviour, the app shell, and how its cards compose as the screen grows. |
+| `shell.css` | Reset, scroll behaviour, the app shell, the header filter row and the scope beside each of its labels, and how its cards compose as the screen grows. |
 | `summary.css` | The verdict hero, the summary card and the animated progress bar. |
-| `controls.css` | Toolbar, buttons, filter chips, and the More-filters disclosure. |
+| `controls.css` | Toolbar, buttons, filter chips, the More-filters disclosure, and the one focus rule every filter field shares. |
 | `badges.css` | Status and severity badges, and the test gate's verdict — which reuses the same pill and adds only a hue, while the observations beside it are deliberately not pills. |
 | `tables.css` | The phase and bug tables. |
 | `gate-rail.css` | The gate rail and its signature. |
 | `empty-state.css` | What the page shows when a filter matches nothing. |
-| `forced-colors.css` | Colour that must survive forced-colours mode and paper. |
+| `forced-colors.css` | Colour that must print, and the tablet and phone block: tables scroll in their own frame, the More-filters panel comes into the flow, and the top bar stops being sticky. It holds no forced-colours rule; focus survives that mode through the transparent outline on each control's own focus rule (`controls.css`). |
 | `motion-and-print.css` | Reduced motion, and forcing a light sheet for print. |
 | `ready-now.css` | The ready-now list. |
 | `segments.css` | Phase segments and their headers. |

@@ -450,6 +450,24 @@ def _cases(check):
           and _nrow.count("data-clear") == 1
           and _nrow.index("data-clear") > _nrow.index("data-showall"))
 
+    # --- the table's controls, announced ------------------------------------------
+    # Over the markup alone: the script spells these ids too.
+    _ax = re.sub(r"(?is)<script\b.*?</script\s*>", "", _nr)
+    _cnt = re.findall(r'<span id="audit-count"[^>]*>', _ax)
+    check("pg23 the result count is a polite live region, so narrowing the table "
+          "is heard as well as seen: %r" % (_cnt,),
+          _cnt == ['<span id="audit-count" class="muted" aria-live="polite">'])
+    _ps = re.findall(r'<span id="audit-phase-status"[^>]*>', _ax)
+    _tf = re.findall(r'<span class="tf-chips"[^>]*>', _ax)
+    check("pg24 the phase-status chips and each phase's task-status chips are "
+          "labelled groups, a phase's group naming that phase: %r %r" % (_ps, _tf),
+          _ps == ['<span id="audit-phase-status" role="group" '
+                  'aria-label="Phase status">']
+          and sorted(_tf) == ['<span class="tf-chips" role="group" '
+                      'aria-label="Filter P1 tasks by status">',
+                      '<span class="tf-chips" role="group" '
+                      'aria-label="Filter P2 tasks by status">'])
+
 
 def _settled_cases(check):
     """`held by` releases on every TERMINAL blocker, off the derived status."""

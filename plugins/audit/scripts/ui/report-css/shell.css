@@ -68,12 +68,12 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
 .tb-id h1,.tb-id .meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}
 .tb-id .meta{font-size:.72rem}
 .tb-actions{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;justify-content:flex-end}
-/* The global filter row (C1/C2): a second line of the SAME sticky bar, never a
+/* The header filter row (C1/C2): a second line of the SAME bar, never a
    separate floating element — the full argument lives on the Python builder
    (_report_html._global_filter_row). Geometry cost is absorbed by the measured
    --topbar-h, print cost is zero (the whole .topbar is dropped from paper by a
    pinned rule), and on a phone the row wraps under the title like any flex
-   line. flex-basis:100% is what makes it a row of the bar rather than one more
+   line - and the bar stops being sticky there (forced-colors.css). flex-basis:100% is what makes it a row of the bar rather than one more
    item competing with the actions for the first line. */
 .gfilters{flex-basis:100%;display:flex;align-items:center;gap:.3rem .5rem;
   flex-wrap:wrap;padding-top:.45rem;border-top:1px solid var(--border)}
@@ -81,8 +81,10 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
 .gfilters select,.gfilters input[type=date]{font:inherit;font-size:.76rem;
   padding:.28rem .4rem;color:var(--text);background:var(--bg);
   border:1px solid var(--field-border);border-radius:var(--radius);max-width:11rem}
-.gfilters select:focus,.gfilters input[type=date]:focus{outline:none;
-  border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}
+/* Their focus ring is the one every filter field shares: controls.css. */
+/* The scope beside a label: which section the control narrows. Part of the
+   label, quieter than it, so the control's name still reads first. */
+.gfilters .gfscope{color:var(--muted);font-size:var(--t-label);font-weight:400}
 .gfilters .btn{font-size:.72rem;padding:.3rem .55rem}
 .shell{display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr);gap:var(--shell-gap);
   max-width:96rem;margin:0 auto;padding:1.25rem 1.5rem 4rem;align-items:start}

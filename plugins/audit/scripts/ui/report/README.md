@@ -11,7 +11,7 @@ against state that already exists. Reordering them is not a formatting change.
 
 | part | responsibility |
 |---|---|
-| `page-state.js` | Element lookups, theme preference, sticky header measurement, scroll spy, expand/collapse persistence, number formatting, the task index the filters read, and `FILTER_AXES` — every filter axis declared once, with its link keys, default, reset, painter and what it narrows, so Clear, the link, the restore and the counters iterate it instead of listing axes by hand. |
+| `page-state.js` | Element lookups, theme preference, sticky header measurement (a layer counts only while it is actually sticky), bringing an opened More filters into view, scroll spy, expand/collapse persistence, number formatting, the task index the filters read, and `FILTER_AXES` — every filter axis declared once, with its link keys, default, reset, painter and what it narrows, so Clear, the link, the restore and the counters iterate it instead of listing axes by hand. |
 | `filters.js` | Which phase and task rows are on screen: the filter state, the single pass that applies it, and the URL hash that survives a reload — the hash and the panel count both read off `FILTER_AXES`. The test gate is TWO of those axes and not one — what a task's last recorded run said, and what else was true about that run — because a gate can fail and rewrite the tree, and one control could only express their combination. |
 | `sorting.js` | Natural-order column sorting, inside a phase and across the table; and which order the phase rows themselves are listed in — the written plan, or the priority ranks the server stamped on the rows. |
 | `chips.js` | The toggle-chip behaviour shared by every filter bar, including which chip reads as pressed. |
