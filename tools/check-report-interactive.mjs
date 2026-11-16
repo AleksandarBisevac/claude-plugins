@@ -181,6 +181,8 @@ const FEATURE_ABSENT = [
              'Clear filters restores the hidden phases',
              '...and the chip stops reporting itself as on', '...and a= leaves the URL',
              'the area dropdown keeps only', 'the dropdown selection is a link (a=',
+             'in the Archived view the area select still offers every area',
+             '...and so do the area chips',
              'All areas restores every phase', '...and hides all',
              'the "'] },
   // A plan naming no third place, or one that merged nothing, paints no chip;
@@ -211,8 +213,13 @@ const FEATURE_ABSENT = [
   // ready task in a tagged phase keeps being checked.
   { note: 'no ready task sits in a tagged phase',
     covers: ['tasks of tagged phases wear the area chips'] },
+  // A plan where no single chip empties a narrowed view while phases outside it
+  // match: the truth rule above still runs over every press, and only the
+  // half that proves it was exercised has nothing to point at.
+  { note: 'no chip empties a view while phases outside it match',
+    covers: ['...and a view hiding every match is among the presses'] },
   { note: 'no status chips in this report',
-    covers: ['no matches-outside-this-view row is emitted any more',
+    covers: ['no matches-outside-this-view notice shows while rows do',
              '...and choosing All phases from the View select reaches them instead',
              '...with the search still applied'] },
   // The heatmap's absence is reported by the calendar block's own else, and it
@@ -230,7 +237,7 @@ const FEATURE_ABSENT = [
   { note: 'a plan with nothing active opens on all phases',
     covers: ['on load the archived phases are off screen',
              '...and the view rides the shareable fragment',
-             'no matches-outside-this-view row is emitted any more',
+             'no matches-outside-this-view notice shows while rows do',
              '...and choosing All phases from the View select reaches them instead',
              '...with the search still applied'] },
 ];
@@ -462,6 +469,18 @@ if (seg0.defaultView === 'active') {
   expect('a plan with nothing active opens on all phases', load.phases, load.total);
 }
 expect('on load, tasks are collapsed', load.tasks, 0);
+// At rest too, the count says what it counts IN. A bare "165 phases" over a
+// table showing five read as the size of the table, and the view was the reason.
+{
+  const rest = /^(\d+) of (\d+) phases? \((.+)\)$/.exec(load.count);
+  const label = await page.evaluate(() => {
+    const sel = document.getElementById('audit-view');
+    return sel ? sel.options[sel.selectedIndex].textContent : null;
+  });
+  expect('at rest the count names the view it counts in (' + JSON.stringify(load.count) + ')',
+    !!rest && Number(rest[1]) === load.phases && Number(rest[2]) === load.total
+      && rest[3] === label, true);
+}
 
 // Switching the view is an EXPANDER in the standing sense — it may not grow a
 // sideways scroll box — and it must not lose the reader's place either.
@@ -498,16 +517,22 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
   if (archivedTerm) {
     await page.fill('#audit-q', archivedTerm.trim());
     await page.waitForTimeout(350);
-    const hidden = await page.evaluate(() => ({
-      notice: !!document.querySelector('[data-outside]'),
-      visible: [...document.querySelectorAll('table.phases tbody tr.phase')]
-        .filter((r) => r.style.display !== 'none').length,
-    }));
-    // The "N phases match outside this view — Show all phases" row is GONE, on
-    // the reader's second request: the View select already offers "All phases",
-    // so the row spent a table row arguing with a choice the reader had just
-    // made. This asserts its absence rather than trusting the deletion.
-    expect('no matches-outside-this-view row is emitted any more', hidden.notice, false);
+    const hidden = await page.evaluate(() => {
+      const slot = document.querySelector('tr.norows [data-outside]');
+      return {
+        notice: !!slot && slot.getClientRects().length > 0,
+        visible: [...document.querySelectorAll('table.phases tbody tr.phase')]
+          .filter((r) => r.style.display !== 'none').length,
+      };
+    });
+    // There is no STANDING "N phases match outside this view" row: it was removed
+    // on the reader's second request, because the View select already offers
+    // "All phases" and the row argued with a choice the reader had just made.
+    // What replaced it is the empty state, which names those matches only when
+    // nothing at all is drawn - so the rule is "no notice while rows show".
+    expect('no matches-outside-this-view notice shows while rows do '
+      + '(' + hidden.visible + ' phase rows shown)',
+      hidden.notice && hidden.visible > 0, false);
     // What it must NOT cost: the route to those matches. The select is that route,
     // so the search has to survive switching to All and still find them.
     await page.selectOption('#audit-view', 'all');
@@ -522,6 +547,95 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
     expect('...with the search still applied', after.visible > 0, true);
     await page.fill('#audit-q', '');
     await page.waitForTimeout(300);
+  }
+}
+
+// THE EMPTY STATE IS TRUE. "No phase matches these filters" was printed over a
+// view that hid every match: on acme-store, Test gate "Before recording" emptied
+// the default view while the archived phase held both matching tasks. So for
+// every chip a reader can press, in each narrowed view, whenever the empty state
+// shows: either View=All shows no phase either and the plain sentence is the
+// truth, or the sentence names exactly the count View=All shows and its button
+// lands there. And while rows show, the slot that names hidden matches stays
+// hidden. The chips are read off the DOM, so a new filter axis is covered
+// without this block naming it, and everything runs inside one evaluate: a
+// refresh is synchronous, and a round trip per chip would make this the
+// slowest block in the file for no extra truth.
+{
+  const truth = await page.evaluate(() => {
+    const viewSel = document.getElementById('audit-view');
+    const norow = document.querySelector('tr.norows');
+    const clear = document.querySelector('.sectools [data-clear]');
+    if (!viewSel || !norow || !clear) return null;
+    const before = viewSel.value;
+    const slot = norow.querySelector('[data-outside]');
+    const btn = norow.querySelector('[data-showall]');
+    const seen = (el) => !!el && el.getClientRects().length > 0;
+    const shown = () => [...document.querySelectorAll('table.phases tbody tr.phase')]
+      .filter((r) => r.style.display !== 'none').length;
+    const pick = (v) => { viewSel.value = v; viewSel.dispatchEvent(new Event('change')); };
+    const ATTRS = ['data-ps', 'data-a', 'data-m', 'data-tev', 'data-tevf'];
+    const chips = [...document.querySelectorAll('.sectools button')]
+      .map((c) => ({ c, attr: ATTRS.find((a) => c.hasAttribute(a)) }))
+      .filter((x) => x.attr);
+    const out = [];
+    ['active', 'archived'].forEach((v) => {
+      chips.forEach(({ c, attr }) => {
+        clear.click();
+        pick(v);
+        if (c.hidden) return;         // a chip this view does not offer
+        c.click();
+        const r = { view: v, chip: attr + '=' + c.getAttribute(attr),
+                    rows: shown(), empty: seen(norow), slot: seen(slot) };
+        if (r.empty && r.slot) {
+          const said = slot.textContent;
+          const m = /(\d+)/.exec(said);
+          r.said = said.trim();
+          r.named = m ? Number(m[1]) : -1;
+          btn.click();
+          r.landedView = viewSel.value;
+          r.landed = shown();
+        } else if (r.empty) {
+          pick('all');
+          r.all = shown();
+        }
+        out.push(r);
+        // Released by its own second press, not by Clear alone: this block
+        // proves the empty state, and leaning on Clear would make it a second
+        // test of Clear that fails wherever Clear does.
+        pick(v);
+        if (c.getAttribute('aria-pressed') === 'true') c.click();
+      });
+    });
+    // Back to the view this block found, not the default: the steps below were
+    // written against the view the search block above left behind.
+    clear.click();
+    pick(before);
+    return { chips: chips.length, out };
+  });
+  if (!truth) {
+    failures.push('FAIL the empty state, the View select and a Clear button are all on the page');
+  } else {
+    const lies = truth.out.filter((r) => r.empty && (r.slot
+      ? (r.named !== r.landed || r.landedView !== 'all' || r.named < 1)
+      : r.all !== 0));
+    expect('the empty state is true - whenever nothing is drawn, it names exactly '
+      + 'the count View=All shows and its button lands there, or All shows none '
+      + 'either (' + truth.out.length + ' presses; wrong: ' + JSON.stringify(lies) + ')',
+      lies.length, 0);
+    const noisy = truth.out.filter((r) => r.rows > 0 && r.slot);
+    expect('...and no press that leaves rows drawn shows the hidden-matches slot ('
+      + JSON.stringify(noisy) + ')', noisy.length, 0);
+    const hiding = truth.out.filter((r) => r.empty && r.slot);
+    if (hiding.length) {
+      expect('...and a view hiding every match is among the presses, so the rule '
+        + 'above was exercised and not satisfied by never emptying a view ('
+        + hiding.map((r) => r.view + ':' + r.chip + ' says ' + JSON.stringify(r.said))
+          .join('; ') + ')', hiding.length > 0, true);
+    } else {
+      notes.push('ok   (no chip empties a view while phases outside it match - '
+        + 'the hidden-matches sentence was not exercised)');
+    }
   }
 }
 
@@ -568,32 +682,39 @@ if (seg0.defaultView === 'active' && seg0.archived > 0) {
     expect('...and the archived statuses that exist ARE offered, so the rule is '
       + 'not satisfiable by hiding everything', !wantedSome || chips.offered.length > 0, true);
   }
-  // The AREA select is the same fault one control over. Area and view
-  // are ANDed too, so in the Archived view an area whose only phase is active
-  // could still be picked, and picking it gave "0 / 4 phases". Found by
-  // sweeping every control instead of waiting for a second report.
+  // The AREA controls are NOT pruned by the view, and that is the decision rather
+  // than the oversight. Pruning them left a select whose only option was "All
+  // areas" - a control every use of which is a no-op - and an area the view
+  // hides is now answered where the answer is true: the empty state names the
+  // phases outside the view and offers the one press that shows them, which the
+  // empty-state block above holds for every area chip. So in the Archived view
+  // the select and the chips offer every area the plan tags.
   {
     const areas = await page.evaluate(() => {
-      const segs = {};
+      const tagged = new Set();
       document.querySelectorAll('table.phases tbody tr.phase').forEach((r) => {
-        (r.getAttribute('data-area') || '').split(' ').filter(Boolean).forEach((a) => {
-          (segs[a] || (segs[a] = [])).push(r.getAttribute('data-seg'));
-        });
+        (r.getAttribute('data-area') || '').split(' ').filter(Boolean)
+          .forEach((a) => tagged.add(a));
       });
       const sel = document.getElementById('audit-area-select');
-      return { segs, offered: sel
-        ? [...sel.options].filter((o) => o.value && !o.hasAttribute('data-multi'))
-            .map((o) => o.value) : [] };
+      const bar = document.getElementById('audit-areas');
+      return {
+        tagged: [...tagged].sort(),
+        offered: sel ? [...sel.options].filter((o) => o.value && !o.hasAttribute('data-multi'))
+          .map((o) => o.value).sort() : null,
+        chips: bar ? [...bar.querySelectorAll('[data-a]')].filter((c) => !c.hidden)
+          .map((c) => c.getAttribute('data-a')).sort() : null,
+      };
     });
-    const unreachable = areas.offered.filter((a) => !(areas.segs[a] || []).includes('archived'));
-    expect('in the Archived view only areas with an archived phase are offered '
-      + '(' + JSON.stringify(areas.offered) + ')', unreachable.length, 0);
-    // Same vacuity guard as the chips: an area that IS archived must survive.
-    const anyArchived = Object.keys(areas.segs)
-      .some((a) => areas.segs[a].includes('archived'));
-    expect('...and an area that does have an archived phase is still offered, so '
-      + 'the rule is not satisfiable by emptying the select',
-      !anyArchived || areas.offered.length > 0, true);
+    if (areas.offered !== null) {
+      expect('in the Archived view the area select still offers every area the plan '
+        + 'tags (' + JSON.stringify(areas.offered) + ')',
+        areas.offered.join(','), areas.tagged.join(','));
+    }
+    if (areas.chips !== null) {
+      expect('...and so do the area chips (' + JSON.stringify(areas.chips) + ')',
+        areas.chips.join(','), areas.tagged.join(','));
+    }
   }
   // The `technical` trim. The invariant holds on ANY fixture, which is what keeps
   // this out of the feature-absence table: a box that overflows five lines must
@@ -1031,9 +1152,34 @@ if (termInfo.term === null) {
   if (hit.phases < 1 || hit.phases >= load.total) {
     failures.push(`FAIL filtering by "${term}" narrows the list: got ${hit.phases} of ${load.total}${guardNote}`);
   } else notes.push(`ok   filtering by "${term}" narrows the list: ${hit.phases} of ${load.total}${guardNote}`);
-  if (!/\d+\s*\/\s*\d+/.test(hit.count)) {
+  if (!/\d+ of \d+ phases? \(/.test(hit.count)) {
     failures.push(`FAIL the count reports the filtered total: got "${hit.count}"`);
   } else notes.push(`ok   the count reports the filtered total: "${hit.count}"`);
+  // The counter's BASIS, read against the two things it must agree with: the
+  // header's own totals (whose task total leaves cancelled work out) and the
+  // View select's own wording. "165 phases" over a table showing five, and a
+  // task denominator counting what the header did not, were the defect.
+  {
+    const basis = await page.evaluate(() => {
+      const sel = document.getElementById('audit-view');
+      const meta = (document.querySelector('.tb-id .meta') || {}).textContent || '';
+      const hp = /(\d+) phases? · (\d+) tasks?/.exec(meta);
+      return {
+        count: (document.getElementById('audit-count') || {}).textContent || '',
+        view: sel ? sel.options[sel.selectedIndex].textContent : null,
+        phases: hp ? Number(hp[1]) : null,
+        tasks: hp ? Number(hp[2]) : null,
+        shown: [...document.querySelectorAll('table.phases tbody tr.phase')]
+          .filter((r) => r.style.display !== 'none').length,
+      };
+    });
+    const m = /^(\d+) of (\d+) phases? \((.*)\) · (\d+) of (\d+) tasks?$/.exec(basis.count);
+    expect('the filtered count names its basis - shown of the header\'s phases, in '
+      + 'the view the select names, and tasks of the header\'s task total ('
+      + JSON.stringify(basis) + ')',
+      !!m && Number(m[1]) === basis.shown && Number(m[2]) === basis.phases
+        && m[3] === basis.view && Number(m[5]) === basis.tasks, true);
+  }
   // A TEXT filter is the one that used to force its matches open — one character
   // typed grew the page by screens and scrolled away what was being read, and
   // clearing it afterwards shut rows that had been opened by hand. Asserted here

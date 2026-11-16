@@ -2006,7 +2006,9 @@
       "P161.8-toy",
       "P161.9-toy",
       "P162.1",
-      "P162.2-zz6"
+      "P162.2-zz6",
+      "P163.2",
+      "P163.3"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -11995,7 +11997,8 @@
     ],
     "tools/ui-tests/report-prototype-keys.test.mjs": [
       "P130.8",
-      "P131.1"
+      "P131.1",
+      "P163.2"
     ],
     ".claude/skills/no-silent-pass/SKILL.md": [
       "P130.8",

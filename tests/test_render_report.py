@@ -1037,7 +1037,23 @@ def _cases(check):
           ".pmatch[hidden]{display:none}" in M._CSS)
     check("c5: the count reports tasks as well as phases, now that a filter can "
           "narrow a phase from the inside without changing the phase count",
-          "' of ' + totT + ' tasks'" in M._SCRIPT)
+          "' of ' + plural(totT, 'task')" in M._SCRIPT)
+    # The counter's basis, pinned as the construct each half of it rests on. A
+    # count of "165 phases" over a table showing five was the defect: the view
+    # was a gate on the rows and on nothing the counter said.
+    check("c5b: the phase count names the view it counts in, at rest as well as "
+          "filtered - one sentence, never a bare total beside a narrowed table",
+          "visP + ' of ' + plural(phaseRows.length, 'phase') + ' (' + viewName() + ')'"
+          in M._SCRIPT
+          and "(phaseRows.length + ' phases')" not in M._SCRIPT)
+    check("c5c: the task denominator is the header's - cancelled work counted on "
+          "neither side of the fraction, exactly as the header's task total "
+          "leaves it out",
+          M._SCRIPT.count("t.getAttribute('data-status') !== 'cancelled'") == 1
+          and "if (counted) totT++;" in M._SCRIPT
+          and "if (counted) nCounted++;" in M._SCRIPT
+          and "visT += nCounted;" in M._SCRIPT
+          and "totT += tasks.length;" not in M._SCRIPT)
     # Same trap as tr.taskfilter: with no script running every row is shown, so an
     # empty state that rendered by default would be a statement contradicted by
     # the table directly beneath it.
@@ -1395,8 +1411,29 @@ def _cases(check):
           "because the select already says this",
           "viewMode" in M._SCRIPT
           and "audit-view" in M._SCRIPT
-          and "archOpen" not in M._SCRIPT
-          and "data-outside" not in M._SCRIPT)
+          and "archOpen" not in M._SCRIPT)
+    # The decided rule, after the standing row was removed: the matches a view
+    # hides are named ONLY by the empty state, and only when it is showing.
+    check("vw4b the matches a view hides are said only when nothing is drawn: "
+          "the slot is revealed by the same condition that reveals the empty "
+          "state, and counted from the verdict refresh() already reached - "
+          "never a second filter pass",
+          "if (matchAll && !showP)" in M._SCRIPT
+          and "const empty = anyFilter && visP === 0;" in M._SCRIPT
+          and "norowOutside.hidden = !(empty && outP > 0);" in M._SCRIPT
+          and "norowSays.hidden = empty && outP > 0;" in M._SCRIPT
+          and _markup(html_out).count("<span data-outside hidden>") == 1)
+    check("vw4d the Area controls offer every area in every view: nothing in the "
+          "script prunes them by view any more, because a select left holding "
+          "only All areas is a control every use of which is a no-op - an area "
+          "the view hides is answered by the empty state instead",
+          "syncAreaOptions" not in M._SCRIPT
+          and "areaInView" not in M._SCRIPT)
+    check("vw4c Show all phases takes the View control's own path - it sets the "
+          "select and dispatches its change, so the stored view and the link "
+          "cannot disagree with the select",
+          "viewSel.value = 'all';" in M._SCRIPT
+          and "viewSel.dispatchEvent(new Event('change'));" in M._SCRIPT)
     check("vw5 the view survives a reload - in the shareable fragment first, "
           "and in localStorage when History is refused (a report opened over "
           "file:// is the common case, and that is where filters vanished)",

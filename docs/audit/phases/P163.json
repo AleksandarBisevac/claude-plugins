@@ -23,14 +23,23 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P163-R1",
+        "severity": "low",
+        "file": "tools/redfirst.sh:9-11",
+        "issue": "The diff deletes syncAreaOptions() from areas.js (and its call in filters.js), and redfirst.sh's documented usage example still mutates `--replace \"syncAreaOptions();\" \"\"` in areas.js: the anchor now matches nothing, so the one worked example of the red-first tool names a symbol that no longer exists. The executor disclosed this; the bash-write guard refused the edit because redfirst.sh is outside every in_progress task's scope.",
+        "resolution": "In a task that owns tools/redfirst.sh, point the example at an anchor that exists in the assembled report script, e.g. filters.js `--replace \"syncStatusChips();\" \"\"`, and check that the example run goes red against check-report-interactive.mjs."
+      }
+    ],
+    "outcome": "[findings: 1 - 0 high, 0 med, 1 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P163.1",
       "title": "One filter-axis registry: Clear, the link, the stored view and the counters iterate it, so no axis can be forgotten",
-      "status": "in_progress",
+      "status": "done",
       "description": "Read the skills refactoring-the-assembled-ui, writing-javascript and no-silent-pass first, and print python3 tools/count-ui-pins.py before editing.\n\nDEFECT: date-range.js clearAll() never resets tevFilter/tevFlag nor unpaints tevBar/tevFlagBar; refresh() (filters.js) still counts them in narrows/anyFilter/fcount; syncHash writes them to the hash and to localStorage audit-view-<title>; exports.js restores them on the next open. Repro on examples/acme-store/acme-store-audit.html: open More filters, press Test gate 'Before recording' (or any data-tev chip), click Clear: the chip stays pressed, fcount stays, the hash keeps tev=..., and reopening the plain file URL restores it.\n\nREQUIRED (fix the class, not the instance - this is the third forgotten axis):\n1. Declare every filter axis ONCE in a registry next to the state in page-state.js (load order unchanged). Each entry carries what the scattered lists carry today: its hash/storage key (or none, for an axis deliberately not kept across reload - say why in one line), its default, whether it is active, how to reset it, how to repaint its control(s), whether it counts in fcount, and whether it narrows tasks (vs phases). Axes: search q, phase status, model, test gate (tev), observed flag (tevf), dates from/to, preset days, author, area, per-phase task-status chips.\n2. clearAll (date-range.js), syncHash and refresh's narrows/anyFilter/fcount (filters.js), and the restore block (exports.js) iterate the registry; none of them names an axis by hand any more. A new axis added to the registry is cleared, encoded, restored and counted by default.\n3. The per-phase task-status chips count toward fcount/anyFilter and are lifted by Clear (they already reset in clearAll; make them visible to the counter and the Clear offer through the registry).\n4. tests/test_render_report.py: replace the per-field pins (c3 clear-all around line 768, d1 around 810, the tev pins around 1870-1892) with construct pins: each axis is declared once in the registry, and clearAll/syncHash/restore/refresh iterate it (count the registry entries against the axis ids the page renders - data-ps, data-m, data-tev, data-tevf, data-a, data-au, data-days, data-ts - so an axis rendered but not registered fails by name). Prove each new pin red by removing one axis from the registry.\n5. tools/check-report-interactive.mjs: a case 'Clear lifts every axis', DERIVED FROM THE DOM so a new chip is covered without editing the gate: for every chip in .sectools and .filterpanel carrying data-ps/data-m/data-tev/data-tevf/data-a/data-days (and the header author/area controls, the search box and each date input), turn exactly that one on, click .sectools [data-clear], and assert: no [aria-pressed=true] left in the toolbar or panel, fcount empty, no filter key in location.hash, the audit-view-* storage key gone or empty, and the visible phase count equals the count at load; then reload and assert still clear. A chip the fixture does not render is reported as not exercised, not passed (no-silent-pass). Prove it red against de21866c's clearAll (it must fail on data-tev) and record the verbatim failing line in the return. The browser gate is phase-gate-only here (audit.config phaseGateOnly), so run it yourself: node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html.\n6. The committed rendered artifacts change with the page: re-render them as tools/check-rendered-artifacts.py --before-commit asks and include them.\n\nDEPENDANTS: tests/test_render_report.py, tests/test__report_page.py and tests/test__report_html.py pin the assembled script; tools/check-report-interactive.mjs and tools/capture-screenshots.mjs drive the page; tools/check-rendered-artifacts.py compares the committed examples/ renders; ui/report/README.md describes each part (update the parts you change). No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/ui/report/page-state.js",
@@ -71,25 +80,40 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "03f4114d9656",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "ATTEMPT 2 (retry) kept attempt 1's work unchanged - no defect found in it on re-run - and finished the followers now in scope. (a) docs/index.html: cp examples/acme-store/acme-store-audit.html docs/index.html (cmp clean; it differed at line 1521 before). (b) docs/demo-large.html: re-rendered with the recipe `python3 tools/check-rendered-artifacts.py --how` prints (gen-demo-manifest --phases 40 --tasks 5, gen-demo-usage, render-report with CLAUDE_PROJECT_DIR at the scratch dir, cp). check-rendered-artifacts --before-commit: was exit 1 'STALE docs/demo-large.html', now exit 0 'OK: 3 committed artifact(s) match a fresh render' and 'every byte copy this tool defers on is still compared'. (c) docs/screenshots: `node tools/capture-screenshots.mjs` exit 0 'screenshots captured - report + panel'; rewrote areas, authors, dark, expanded, filtered, filters, overview .png and captured-at.json; `--check` exit 0. tests/test__refs.py --selftest: ALL PASS 292/292 (sc1/sc2 green). Results on the final tree: sweep of test_render_report, _report_page, _report_html, _report_ui, _refs, _live_copy 6/6 files 858 cases; full sweep 196/196 files ok, 18834 cases, exit 0; vitest 854/854; browser gate exit 0, 211 checks, run at 15:21 and again at 15:27, same note both times ('41 of 45 controls exercised' - data-days=all turns on nothing to clear; data-ps=done and two data-ts=done not on screen in the default view; data-g wired but carried by no exercised control - each reported as not exercised, not passed). The brief's literal gate command exits 2 ('tools/check-report-interactive.mjs is not a suite this sweep covers ... nothing was run'), so submit runs the narrowed suite command and the browser gate was run directly with node. RED-FIRST, browser: on de21866c's committed acme report (git show de21866c:examples/acme-store/acme-store-audit.html to a scratch dir) the gate exits 1 with cl1-cl6 and cl8 FAIL - matching the orchestrator's observation; verbatim, cl2: 'FAIL cl2 Clear lifts every axis - nothing stays pressed after Clear: got data-tev=passed (still pressed: data-tev=passed) · data-tev=failed (still pressed: data-tev=failed) · ... · data-tevf=checks-unknown (still pressed: data-tevf=checks-unknown), want none'; cl1 also names #audit-au-select / data-au (link keys au, stored au=...) and data-ts (pressed, no Clear offered). ATTEMPT 1's work (unchanged): page-state.js FILTER_AXES registry (search q, phase-status data-ps, area data-a, model data-m, test-gate data-tev, observed data-tevf, dates from/to + data-days presets, author data-au, task-status data-ts), each entry carrying attrs, keys (or unkept + one-line reason, task-status only), scope, counts, on/reset/paint/encode/decode; clearAll (date-range.js), syncHash and refresh's counters (filters.js) and the restore block (exports.js) iterate it; chips.js tags each tf host with its phase id so the registry repaints per-phase chips; authors.js: author picks now call refresh(), so Clear is offered for the author axis (a second instance of the class); task-status counts toward fcount/anyFilter and offers Clear. tests/test_render_report.py rx1-rx9 replace the per-field pins; tools/check-report-interactive.mjs cl0-cl9 derived from the DOM; ui/report/README.md rows updated; examples/acme-store re-rendered. Dependants: test_render_report.py - changed (rx cases). test__report_page.py / test__report_html.py / test__report_ui.py - still correct, green; they pin markup and assembly, not the removed per-axis lines. test__output.py, test__ui_theme_lints.py / _ui_theme_lints.py - still correct, green (full sweep). tools/ui-tests/test-gate-filter.test.mjs - still correct: the per-task predicate in refresh() is unchanged; vitest green. check-report-interactive.mjs - changed (cl case). capture-screenshots.mjs - unchanged; it drives the page, the screenshots it writes were re-captured and its --check is green. check-rendered-artifacts.py - unchanged; every artifact it compares is now current. docs/index.html, docs/demo-large.html - re-rendered/copied, above. docs/screenshots - re-captured, above; test__refs.py, which pins their source digest, is green. _report_ui.py - unchanged; _SCRIPT_PARTS order untouched. heatmap.js / tables.css / panel usage-metrics.js / print-segments.css - unaffected, they read no axis state. areas.js - unchanged; paintAreas and syncAreaOptions are reused by the registry. README.md - updated. tools/affected.py / gate-parity.py / redfirst.sh / where.py name the files by path only; unchanged.",
+        "descriptive": "Every report filter axis is declared once in FILTER_AXES; Clear, the link, the restore and the counters iterate it, so tev/tevf, author and per-phase task-status are lifted, counted and offer Clear, a browser gate proves it from the DOM, and the docs demo, large demo and screenshots now match the new page."
       },
       "startedAt": "2026-11-16T14:09:26Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-16T14:39:49Z",
+      "verifiedBy": [
+        "test_render_report.py rx1-rx9: the filter-axis registry is declared once, covers every wired chip attribute, and clearAll/syncHash/restore/refresh's counters iterate it without naming an axis's state",
+        "check-report-interactive.mjs cl0-cl9: Clear lifts every axis, derived from the DOM, each control on alone, checked after Clear and after a reload"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-16T14:36:32Z.04ce4b",
         "status": "passed",
         "at": "2026-11-16T14:36:32Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "03f4114d9656",
+        "at": "2026-11-16T14:39:49Z",
+        "return": "docs/audit/evidence/returns/P163.1/20261116T140926Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-16T14:28:39Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_render_report.py` in a throwaway tree at HEAD: inline suite tools/check-report-interactive.mjs (its test file is its implementation file): it is not Python, and an inline suite's test hunks are read from Python definitions; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P163.2",
       "title": "When the view hides matches the empty state says how many and offers Show all phases, and the counter names its basis",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Read the skills refactoring-the-assembled-ui, writing-javascript, writing-css and no-silent-pass first.\n\nDEFECT: filters.js refresh() applies the View to every match (showP = matchAll && inView(seg)), and when nothing is drawn the empty state (_report_page.py around line 758) says 'No phase matches these filters.' - false on any plan with most phases archived: on the dogfood plan From 2026-10-23 shows 0 phases while 25 archived phases (309 tasks) match; acme-store's Test gate 'Before recording' shows 0 while archived P0 holds both matching tasks. #audit-count says '165 phases' while 5 show, and its task denominator counts cancelled tasks while the header excludes them. areas.js syncAreaOptions removes header Area options the view cannot show, leaving a select whose only option is 'All areas' (a control every use of which is a no-op).\n\nOWNER DECISION (binding):\n1. Only when nothing is drawn AND phases outside the current View match, the empty state names the count and the view, and offers a button that switches the View to all phases: e.g. 'No phase in Active & pending matches - 25 archived phases do · Show all phases'. Otherwise the existing sentence stays. When results are shown there is no standing row or notice (an earlier owner decision removed a standing 'matches outside this view' notice; that stands).\n2. The counter states its basis at rest and filtered, e.g. '5 of 165 phases (Active & pending)' and 'N of M tasks' where M uses the same basis as the header's task total (cancelled excluded, or named if included).\n3. Header Area: pick the structurally correct fix and justify it in the return - keep every option and let the empty state above explain (preferred: one rule, the empty state tells the truth), or annotate options outside the view. Do not leave a select with one option.\n\nrefresh() already computes matchAll before the view is applied: count matches outside the view from that, do not re-filter. The new button reuses the View control's own path (set it and dispatch its change), so the stored view and hash stay consistent.\n\nTESTS: tests/test_render_report.py and tests/test__report_page.py pins for the new empty-state markup and the counter wording (update the norows pins around test_render_report.py 892-893 and 982). tools/check-report-interactive.mjs: replace the absence pin on [data-outside] around line 502-510 with the decided rule (no notice while rows show), and add 'The empty state is true': whenever tr.norows is visible, either switching to View=All shows zero matching phases too, or the empty-state text names exactly the count View=All shows, and its button lands on that count. Use acme-store's Test gate 'Before recording' as the fixture (its default view hides the matches); if the committed example cannot exercise it, say so and add the smallest fixture that can. Prove the case red against de21866c and record the verbatim failing line. Run the browser gate yourself (it is phase-gate-only in audit.config): node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html. Re-render the committed artifacts as tools/check-rendered-artifacts.py --before-commit asks.\n\nDEPENDANTS: as task a (the same parts and pins), plus report-css/empty-state.css for the button. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/ui/report/filters.js",
@@ -106,7 +130,9 @@
         "examples",
         "docs/screenshots",
         "docs/index.html",
-        "docs/demo-large.html"
+        "docs/demo-large.html",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/ui-tests/report-prototype-keys.test.mjs"
       ],
       "tests": {
         "mode": "tdd",
@@ -132,16 +158,44 @@
       "dependsOn": [
         "P163.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-16T14:40:13Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T14:40:09Z",
+          "text": "it quotes docs/index.html as an exempt path name; a re-rendered copy of the example changes no path",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-16T14:40:09Z",
+          "text": "it greps docs/demo-large.html for a phase row marker the renderer keeps; the filter work changes no table row markup",
+          "waives": "tools/verify.sh"
+        },
+        {
+          "at": "2026-11-16T14:40:09Z",
+          "reader": "PLUGIN-BUILD-GUIDE.md",
+          "reads": "plugins/audit/scripts/report/_report_page.py",
+          "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/report/_report_page.py - a section headed by its path"
+        },
+        {
+          "at": "2026-11-16T15:05:33Z",
+          "text": "Scope widened by the orchestrator: P163.2 removes AREA_SEGS and areaInView from page-state.js, and tools/ui-tests/report-prototype-keys.test.mjs reached both names; without its edit npx vitest run goes red."
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-16T15:17:33Z.5a94c3",
+        "status": "passed",
+        "at": "2026-11-16T15:17:33Z"
+      }
     },
     {
       "id": "P163.3",
@@ -165,7 +219,8 @@
         "examples",
         "docs/screenshots",
         "docs/index.html",
-        "docs/demo-large.html"
+        "docs/demo-large.html",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -210,7 +265,25 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T14:40:11Z",
+          "text": "it quotes docs/index.html as an exempt path name; a re-rendered copy of the example changes no path",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-16T14:40:11Z",
+          "text": "it greps docs/demo-large.html for a phase row marker the renderer keeps; the filter work changes no table row markup",
+          "waives": "tools/verify.sh"
+        },
+        {
+          "at": "2026-11-16T14:40:11Z",
+          "reader": "PLUGIN-BUILD-GUIDE.md",
+          "reads": "plugins/audit/scripts/report/_report_html.py",
+          "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/report/_report_html.py - a section headed by its path"
+        }
+      ]
     }
   ],
   "request": "Users report the filters at the top of the HTML report do not work. Fix every filter defect found by the live diagnosis: Clear filters leaves the test-gate and observed filters on (and storage brings them back); the default view hides task-level matches while the empty state says none exist; the counter states no basis; the phone layout covers most of the screen; filter scopes are invisible; and the a11y gaps.",

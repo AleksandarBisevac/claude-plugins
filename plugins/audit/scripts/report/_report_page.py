@@ -750,12 +750,18 @@ def _phases_block(manifest, summary, owners, workers=None, evidence=None,
     # the table's rounded bottom corner and its missing final rule both hang off
     # that selector, and a permanently-present hidden row in the main body would
     # have quietly taken both.
-    # vw: matches the VIEW is hiding. The archive gate used to lift itself
-    # during a search, which meant the control said one thing and the table did
-    # another; this says the true thing instead — how many matched, and the one
-    # press that shows them.
+    # Two sentences, and the script says one of them. The plain one is true
+    # only when no phase matches anywhere; when the VIEW is what hides every
+    # match, the slot names how many phases outside it match and offers the
+    # one press that shows them. Hidden as rendered, because the count is the
+    # script's to make - and only an empty table carries it: a standing
+    # "matches outside this view" notice over drawn rows argued with a view
+    # the reader had just chosen, and was removed for that.
     parts.append('</tbody><tbody><tr class="norows"><td colspan="%d">'
-                 "No phase matches these filters."
+                 "<span data-norows-says>No phase matches these filters.</span>"
+                 "<span data-outside hidden><span data-outside-says></span>"
+                 '<button type="button" class="btn" data-showall>Show all phases'
+                 "</button></span>"
                  '<button type="button" class="btn" data-clear>Clear filters'
                  "</button></td></tr>"
                  "</tbody></table></div></section>" % (ncol,))

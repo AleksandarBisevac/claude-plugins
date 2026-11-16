@@ -368,6 +368,12 @@
   const fcount = document.getElementById('audit-fcount');
   const clearBtns = Array.from(document.querySelectorAll('[data-clear]'));
   const norow = grouped ? grouped.querySelector('tr.norows') : null;
+  // The empty state's two sentences: the plain one, and the slot that names the
+  // matches the view is hiding, with the press that shows them.
+  const norowSays = norow ? norow.querySelector('[data-norows-says]') : null;
+  const norowOutside = norow ? norow.querySelector('[data-outside]') : null;
+  const norowOutsideSays = norow ? norow.querySelector('[data-outside-says]') : null;
+  const showAllBtn = norow ? norow.querySelector('[data-showall]') : null;
 
   // The author chips live in the Usage section and scope ONLY it: tasks record
   // no author, so these never enter refresh() or touch the task table.
@@ -693,6 +699,19 @@
   // Object.prototype.constructor threw out of the first filter pass.
   const inView = (seg) => (lookup(VIEWS, viewMode) || VIEWS.all).includes(seg);
 
+  /**
+   * The current view as the View select words it, so the counter and the
+   * empty state name the basis in the reader's own vocabulary rather than a
+   * second copy of it. The view id stands in only when the select is absent,
+   * which is still the true basis, merely terser.
+   *
+   * @returns {string} e.g. "Active & pending"
+   */
+  const viewName = () => {
+    const opt = viewSel ? [...viewSel.options].find((o) => o.value === viewMode) : null;
+    return opt ? opt.textContent : viewMode;
+  };
+
   // Which order the phase rows are listed in, the same shape as the view above:
   // the element, the vocabulary, the default. `plan` is the written plan, which
   // is how the table always ARRIVES; `priority` is the overlay, spelled the way
@@ -730,32 +749,6 @@
   });
   /** Can a phase of this status appear in the current view at all? */
   const statusInView = (st) => !st || inView(STATUS_SEG[st]);
-
-  /**
-   * Which segments each area tag actually occurs in.
-   *
-   * An area is not one segment the way a status is: `storefront` can tag an
-   * active phase AND an archived one, so this keeps the whole set and asks
-   * whether ANY of it survives the view. Derived from the rendered rows for the
-   * same reason `STATUS_SEG` is - the alternative is a second copy of Python's
-   * segment rule, and two copies of a rule is one copy and one lie.
-   *
-   * Prototype-free for the reason STATUS_SEG above is, and this one is the
-   * plainer key: an area tag is documented free text. `'constructor' in
-   * AREA_SEGS` was true, so the array was never created and `.indexOf` on the
-   * inherited function threw while the page was still loading.
-   *
-   * @type {Object<string, string[]>}
-   */
-  const AREA_SEGS = Object.create(null);
-  phaseRows.forEach((pr) => {
-    (pr.getAttribute('data-area') || '').split(' ').filter(Boolean).forEach((a) => {
-      if (!(a in AREA_SEGS)) AREA_SEGS[a] = [];
-      if (AREA_SEGS[a].indexOf(pr.__seg) === -1) AREA_SEGS[a].push(pr.__seg);
-    });
-  });
-  /** Can a phase tagged with this area appear in the current view at all? */
-  const areaInView = (a) => !a || (AREA_SEGS[a] || []).some((seg) => inView(seg));
 
   /**
    * @param {string} pid a phase id
