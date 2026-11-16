@@ -1042,6 +1042,12 @@
       "title": "A red gate's base is measured on the code the red ran on",
       "status": "done",
       "shard": "phases/P162.json"
+    },
+    {
+      "id": "SG1",
+      "title": "A brief outranks a skill, and a weakened test is reported",
+      "status": "pending",
+      "shard": "phases/SG1.json"
     }
   ],
   "fileIndex": {
@@ -1373,7 +1379,12 @@
       "P156.22-3st",
       "P159.2",
       "P159.4-pue",
-      "P159.5-pue"
+      "P159.5-pue",
+      "SG1.5",
+      "SG1.6",
+      "SG1.7",
+      "SG1.8",
+      "SG1.9"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1476,7 +1487,9 @@
       "P155.18-gfj",
       "P155.35-gfj",
       "P156.18-3st",
-      "P156.20-3st"
+      "P156.20-3st",
+      "SG1.5",
+      "SG1.6"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -2000,7 +2013,14 @@
       "P161.8-toy",
       "P161.9-toy",
       "P162.1",
-      "P162.2-zz6"
+      "P162.2-zz6",
+      "SG1.1",
+      "SG1.2",
+      "SG1.4",
+      "SG1.5",
+      "SG1.6",
+      "SG1.7",
+      "SG1.9"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2104,7 +2124,9 @@
       "P161.5-toy",
       "P161.7-toy",
       "P161.8-toy",
-      "P161.9-toy"
+      "P161.9-toy",
+      "SG1.3",
+      "SG1.7"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -2484,7 +2506,12 @@
       "P157.9-mwz",
       "P159.2",
       "P159.4-pue",
-      "P159.5-pue"
+      "P159.5-pue",
+      "SG1.3",
+      "SG1.5",
+      "SG1.6",
+      "SG1.7",
+      "SG1.8"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -2544,7 +2571,9 @@
       "P130.33-ywo",
       "P131.1",
       "P131.2",
-      "P148.5"
+      "P148.5",
+      "SG1.1",
+      "SG1.6"
     ],
     "plugins/audit/agents/audit-explorer.md": [
       "P4.1",
@@ -2593,7 +2622,10 @@
       "P131.8",
       "P131.20-dau",
       "P148.5",
-      "P156.7"
+      "P156.7",
+      "SG1.1",
+      "SG1.5",
+      "SG1.6"
     ],
     "plugins/audit/commands/audit.md": [
       "P1.6",
@@ -2673,7 +2705,9 @@
       "P132.3",
       "P148.10-xpz",
       "P148.21-xpz",
-      "P156.8-3st"
+      "P156.8-3st",
+      "SG1.7",
+      "SG1.8"
     ],
     "plugins/audit/commands/layout.md": [
       "P57.1",
@@ -3100,7 +3134,8 @@
       "P155.45-gfj",
       "P156.7",
       "P156.16-3st",
-      "P159.2"
+      "P159.2",
+      "SG1.5"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -3171,7 +3206,8 @@
       "P130.4",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "SG1.7"
     ],
     "plugins/audit/hooks/guard-history-rewrite.py": [
       "P29.2",
@@ -3478,7 +3514,10 @@
       "P161.3-toy",
       "P161.4-toy",
       "P162.1",
-      "P162.2-zz6"
+      "P162.2-zz6",
+      "SG1.3",
+      "SG1.5",
+      "SG1.6"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -3616,7 +3655,9 @@
       "P159.1",
       "P161.1",
       "P161.4-toy",
-      "P161.5-toy"
+      "P161.5-toy",
+      "SG1.2",
+      "SG1.3"
     ],
     "plugins/audit/reference/phase-signoff.md": [
       "P61.5",
@@ -3667,7 +3708,9 @@
       "P142.51-6yq",
       "P148.5",
       "P155.11",
-      "P155.34-gfj"
+      "P155.34-gfj",
+      "SG1.2",
+      "SG1.5"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
@@ -3692,7 +3735,8 @@
       "P128.41-izt",
       "P131.5",
       "P132.4",
-      "P159.2"
+      "P159.2",
+      "SG1.5"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -3754,7 +3798,8 @@
       "P138.2",
       "P148.10-xpz",
       "P148.21-xpz",
-      "P155.35-gfj"
+      "P155.35-gfj",
+      "SG1.6"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -4892,7 +4937,8 @@
       "P156.4",
       "P156.6",
       "P156.7",
-      "P156.8-3st"
+      "P156.8-3st",
+      "SG1.6"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -5112,7 +5158,8 @@
       "P131.1",
       "P131.2",
       "P131.15-dau",
-      "P156.4"
+      "P156.4",
+      "SG1.6"
     ],
     "plugins/audit/scripts/manifest/_manifest_vocab.py": [
       "P18.2",
@@ -5429,7 +5476,8 @@
       "P156.15-3st",
       "P156.17-3st",
       "P156.18-3st",
-      "P156.20-3st"
+      "P156.20-3st",
+      "SG1.6"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -6182,7 +6230,10 @@
       "P157.9-mwz",
       "P157.12-mwz",
       "P158.1-lxm",
-      "P158.2-7vi"
+      "P158.2-7vi",
+      "SG1.2",
+      "SG1.5",
+      "SG1.6"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -10246,11 +10297,13 @@
     "plugins/audit/evals/bugfix/case.yaml": [
       "P101.3",
       "P101.4-1cb",
-      "P131.2"
+      "P131.2",
+      "SG1.9"
     ],
     "plugins/audit/evals/guard-stop/case.yaml": [
       "P101.3",
-      "P101.4-1cb"
+      "P101.4-1cb",
+      "SG1.9"
     ],
     "plugins/audit/scripts/ui/panel-css/tokens-and-reset.css": [
       "P109.1"
@@ -10735,7 +10788,8 @@
       "P125.5",
       "P128.5-0h5",
       "P125.55-0h5",
-      "P125.65-0h5"
+      "P125.65-0h5",
+      "SG1.1"
     ],
     "tools/stream-cost.py": [
       "P117.1",
@@ -10972,7 +11026,10 @@
       "P161.6-toy",
       "P161.7-toy",
       "P162.1",
-      "P162.2-zz6"
+      "P162.2-zz6",
+      "SG1.2",
+      "SG1.5",
+      "SG1.6"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11950,14 +12007,16 @@
       "P156.12-3st",
       "P156.15-3st",
       "P156.20-3st",
-      "P159.2"
+      "P159.2",
+      "SG1.4"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
       "P131.1",
       "P131.2",
       "P131.15-dau",
-      "P109.9"
+      "P109.9",
+      "SG1.6"
     ],
     "tools/ui-tests/number-format.test.mjs": [
       "P130.8",
@@ -12257,7 +12316,8 @@
       "P156.7",
       "P156.4",
       "P156.16-3st",
-      "P159.2"
+      "P159.2",
+      "SG1.5"
     ],
     "tests/test__config_rules.py": [
       "P131.1",
@@ -12380,7 +12440,9 @@
       "P131.1",
       "P131.6",
       "P132.3",
-      "P155.13"
+      "P155.13",
+      "SG1.5",
+      "SG1.6"
     ],
     "tests/test__fmt.py": [
       "P131.1"
@@ -12484,7 +12546,8 @@
     ],
     "tests/test__manifest_rules.py": [
       "P131.1",
-      "P156.4"
+      "P156.4",
+      "SG1.6"
     ],
     "tests/test__manifest_typos.py": [
       "P131.1",
@@ -12584,7 +12647,11 @@
       "P131.1",
       "P131.2",
       "P131.15-dau",
-      "P109.7"
+      "P109.7",
+      "SG1.1",
+      "SG1.3",
+      "SG1.6",
+      "SG1.8"
     ],
     "tests/test__report_html.py": [
       "P131.1",
@@ -12797,7 +12864,10 @@
       "P157.9-mwz",
       "P157.12-mwz",
       "P158.1-lxm",
-      "P158.2-7vi"
+      "P158.2-7vi",
+      "SG1.2",
+      "SG1.5",
+      "SG1.6"
     ],
     "tests/test_audit_status.py": [
       "P131.1",
@@ -12870,7 +12940,8 @@
       "P156.15-3st",
       "P156.17-3st",
       "P156.18-3st",
-      "P156.20-3st"
+      "P156.20-3st",
+      "SG1.6"
     ],
     "tests/test_audit_usage.py": [
       "P131.1",
@@ -13047,7 +13118,10 @@
       "P161.6-toy",
       "P161.7-toy",
       "P162.1",
-      "P162.2-zz6"
+      "P162.2-zz6",
+      "SG1.2",
+      "SG1.5",
+      "SG1.6"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -13076,7 +13150,8 @@
       "P131.1"
     ],
     "tests/test_guard_edits.py": [
-      "P131.1"
+      "P131.1",
+      "SG1.7"
     ],
     "tests/test_guard_history_rewrite.py": [
       "P131.1",
@@ -13109,7 +13184,8 @@
       "P131.1",
       "P159.2",
       "P159.4-pue",
-      "P159.5-pue"
+      "P159.5-pue",
+      "SG1.7"
     ],
     "tests/test_import_evidence.py": [
       "P131.1",
@@ -13287,7 +13363,8 @@
       "P156.4",
       "P156.6",
       "P156.7",
-      "P156.8-3st"
+      "P156.8-3st",
+      "SG1.6"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",
@@ -13533,6 +13610,28 @@
       "P161.4-toy",
       "P162.1",
       "P162.2-zz6"
+    ],
+    "plugins/audit/scripts/governance/_floor_guard.py": [
+      "SG1.4"
+    ],
+    "tests/test__floor_guard.py": [
+      "SG1.4"
+    ],
+    "plugins/audit/scripts/governance/_filed_returns.py": [
+      "SG1.5",
+      "SG1.6"
+    ],
+    "plugins/audit/evals/bugfix/scaffold.sh": [
+      "SG1.9"
+    ],
+    "plugins/audit/evals/guard-stop/scaffold.sh": [
+      "SG1.9"
+    ],
+    "plugins/audit/evals/build-shop.sh": [
+      "SG1.9"
+    ],
+    "tests/test_eval_scaffolds.py": [
+      "SG1.9"
     ]
   },
   "bugs": [
