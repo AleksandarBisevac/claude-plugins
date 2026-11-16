@@ -1,0 +1,18 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "tests/test_render_report.py:782-796",
+   "issue": "st5's label says measureStack() runs 'on every observed layer', but nothing in the assertion sees the observe loop (page-state.js:143-145, `for (const el of [toolbar, snav, document.querySelector('.sectools')]) { if (el) ro.observe(el); }`). Deleting that loop, or dropping one element from its array, leaves `new ResizeObserver(measureStack)` present once and st5 green, so the observer is constructed but never fires. This goes beyond the task's clause, which asked only for the setProperty calls, so it is filed low. It is the same label-claims-more-than-it-sees shape that R5 retired.",
+   "resolution": "Either assert that the observe loop names toolbar, snav and .sectools and calls ro.observe(el), for example by pinning the loop's text exactly once, or narrow the label to 'handed to a ResizeObserver' so it claims only what is asserted."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause: 'make it assert the setProperty calls for each of --topbar-h, --strip-h and the sectools height, so emptying the function turns it red.' Diff: the body of measureStack() is cut out of M._SCRIPT from 'const measureStack = () => {\\n' to the first '\\n  };\\n'. That is the true end, page-state.js:131-139, because the body is indented 4 spaces. The test then requires `sorted(_ms_sets) == [\"--sectools-h\", \"--strip-h\", \"--topbar-h\"]` and pins the pinnedPx(toolbar) and px(st) calls inside it, so an emptied body gives [] and turns the case red. The old three-substring case is gone (the '-' lines in the diff). The diff also adds the on-load call, a single ResizeObserver(measureStack) and a single resize listener; this is extra and within scope. Claim: 'replaced by st5 ... sorted list to equal exactly [--sectools-h, --strip-h, --topbar-h] ... called on load, handed to ResizeObserver exactly once and to the resize listener exactly once ... No product code changed ... 313 cases'. This matches the diff: `git diff --stat HEAD` touches only tests/test_render_report.py (+27/-4), page-state.js is clean against HEAD, and my one run printed 313 cases with exit 0. The dependants answer holds: the change touches only a test, so nothing rendered changes, and _cases/_selftest keep their names. The label 'st5' is unique in the file, though it sits above st1-st4.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "Executor: 'regression task with expectRedFirst false and no code change: HEAD's page-state.js already does what st5 asserts'. This holds: the task fixes a test and owes no red at HEAD. The extra mutation evidence also holds. /tmp/p163r5/mut.py exists and asserts that each of its six mutations landed (`assert text != orig`). It purges __pycache__ on each cycle, restores in `finally`, and prints a byte-equal check. page-state.js is clean against HEAD now (`git diff --quiet HEAD` exit 0). I did not re-run the mutations.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "tests.gate is `python3 tools/sweep-selftests.py tests/test_render_report.py`, which selects one file of 313 cases. I read only the sticky-stack cases (st1-st5, lines 767-796 and 1061-1095), not the whole suite. Among those, the retired case was the presence check that could not fail, and the diff replaced it. st2 pins exact statements, and st3 pins the scrollIntoView call and the scroll-margin rule by their text. I am not claiming anything about the other cases, which I did not read."
+ },
+ "verdict": "findings"
+}

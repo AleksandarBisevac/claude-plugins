@@ -1,0 +1,24 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_render_report.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task with expectRedFirst false and no code change: HEAD's page-state.js already does what st5 asserts, so the helper (HEAD code + this test file) has no red to find. The case was instead proven red by mutating measureStack() in the shared tree and restoring in the same script (/tmp/p163r5/mut.py, restore asserted byte-equal, __pycache__ purged per cycle): empty body -> st5 FAIL (and st2), 311/313; drop the --strip-h setProperty -> st5 FAIL 312/313; drop the --sectools-h setProperty -> st5 FAIL 312/313; ResizeObserver handed a no-op instead of measureStack -> st5 FAIL 312/313; resize listener removed -> st5 FAIL 312/313; initial measureStack() call removed -> st5 FAIL 312/313; restored: True, then 313/313. The retired case's expression evaluated True over the emptied body (printed: 'old case under empty body: True'), which is the defect R5 named.",
+    "at": "2026-11-16 (mutation script run, no helper stamp)"
+  },
+  "outcome": {
+    "technical": "tests/test_render_report.py: the inherited case 'sticky: the stack is restated at runtime' (three script-wide substring checks) is replaced by st5, which slices measureStack()'s own body out of M._SCRIPT (head 'const measureStack = () => {\\n' required exactly once, body up to the first '\\n  };\\n'), extracts every root.style.setProperty('--name' inside it and requires the sorted list to equal exactly [--sectools-h, --strip-h, --topbar-h], pins the --topbar-h call to pinnedPx(toolbar) and the sectools call to px(st), and requires the function to be called on load ('  };\\n  measureStack();\\n'), handed to ResizeObserver exactly once and to the resize listener exactly once. The label prints the extracted list. No product code changed. Gate: python3 tools/sweep-selftests.py tests/test_render_report.py exit 0, 313 cases (case count unchanged: one case replaced by one). Also ran tests/test__refs.py + tests/test__output_lints.py via the sweep: exit 0; ruff check tests/test_render_report.py: clean. Dependants: tests/test_render_report.py's dependants (.github/sweep-costs.json, render-report.py, tools/affected.py, tests/test__live_copy.py, ui/shared/README.md) - still correct: no defined name changed (_cases/_selftest untouched), the suite's runtime is the same, the path did not move. examples/, docs/index.html, docs/demo-large.html, docs/screenshots and all their listed dependants - still correct: the change is test-only, so the rendered report is byte-identical and no follower refresh was owed (orchestrator's refresh instruction is conditional on the rendered report changing); test__refs green as asked.",
+    "descriptive": "The sticky-stack case now fails when measureStack() stops publishing any of its three heights or stops being run, instead of passing over a no-op."
+  },
+  "testsAdded": [
+    "st5: measureStack()'s body publishes exactly --topbar-h (via pinnedPx), --strip-h and --sectools-h, and the function runs on load, from the ResizeObserver and from the resize listener"
+  ],
+  "casesAdded": [
+    "st5"
+  ],
+  "claims": "claims:\n1 the case's label claims measureStack publishes three heights and runs on load/resize/observe: page-state.js:131-147 (setProperty lines 132,133-134,138; call 140; ResizeObserver 142; resize 147)\n2 six mutations of measureStack -> st5 red each (311-312/313) -> restored byte-equal, 313/313; the retired case shown True over the emptied body\n3 grep -n 'measureStack' tests/test_render_report.py: 2 cases - the retired one (replaced) and st2 (left: it already pins the pinnedPx call by exact text and went red on the empty-body mutation too)\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written",
+  "stamp": "audit-stamp: {\"content\":\"sha256:a7fbe6fbcb00c1ce4a48eb1a89b388cbd0dc7f803fc9c487714285c494f414cf\",\"dirtyDigest\":\"sha256:648d9b7ea46b92040702d65aa290bd71e170aa0c0717d38cfc575295ea7540d5\",\"dirtyPaths\":{\"tests/test_render_report.py\":\"47eacef69fa64f9a\"},\"head\":\"23a80517\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"docs/demo-large.html\",\"docs/index.html\",\"docs/screenshots\",\"examples\",\"tests/test_render_report.py\"],\"scopeDigest\":\"sha256:69d609f961a76a07c078c4a908c6c3ec1adc4352d31db7d5aef655f51ae20238\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

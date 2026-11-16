@@ -59,8 +59,10 @@
         "severity": "low",
         "file": "plugins/audit/scripts/report/_report_html.py:1467; tests/test_render_report.py:1032; tests/test_render_report.py:979; tools/check-report-interactive.mjs:2596; plugins/audit/scripts/ui/report-css/forced-colors.css:59",
         "issue": "Prose in the diff disagrees with the measurements and with the code. (a) The docstring says the wrapped bar 'pinned nearly half a phone screen' and the test comment says 'nearly half the screen', but the CSS and mjs comments record 58% (486px of 844) and the claim records 61% before the fix: both are more than half, which is the whole reason for the rule. (b) There are two 'before' figures for the same stack, 58%/486px in the comments and 61% in the claim, and no comment says the 58% is a sum of heights while the 61% is ph1's hit-test. (c) The g1 case title in a touched file still reads 'the sticky top bar carries the global filter row' in the present tense. This diff makes the bar non-sticky below 52rem and removes 'global' from the row, so the title is no longer history. It is a false description of what the case pins.",
-        "resolution": "Reword (a) to 'more than half'. In (b), say which method the 58% came from, or drop it and point at ph1's printed figure. Reword g1's title to 'the top bar carries the header filter row'.",
-        "fixTask": "P163.7-d6t"
+        "resolution": "fixed in P163.7-d6t (23a805171f34): Reword (a) to 'more than half'. In (b), say which method the 58% came from, or drop it and point at ph1's printed figure. Reword g1's title to 'the top bar carries the header filter row'.",
+        "fixTask": "P163.7-d6t",
+        "commit": "23a805171f34",
+        "status": "fixed"
       },
       {
         "id": "P163-R5",
@@ -83,9 +85,16 @@
         "file": "tools/ui-checks/layout-baseline.mjs:4-8,17-19,24-33,42-47,318,329",
         "issue": "The diff makes this file's prose about the absolute arm false. The header says the gate 'bounds the share of a phone screen an OPEN filter panel may pin'. It says the absolute arm 'saturates — the gate scrolls a fixed distance past the bar'. It says 'the absolute arm catches the DESTINATION', and that 'The shut figure has NO absolute bar'. After this diff the absolute arm is a hit-test of what pins over the table, both shut and open, against layer-derived bounds. It no longer scrolls a fixed distance, and the shut state does have a bound. The executor reports this in its outcome, refused by the plan gate (the file is declared by P125.56-0h5), so it is disclosed, not hidden. It is still a stale claim the diff created, and it crosses the gate/relative-arm boundary this file exists to describe.",
         "resolution": "Rewrite the header and the two '(the absolute bar above did)' notes in a task that owns tools/ui-checks/layout-baseline.mjs (P163.7-d6t is pending on the same file), stating the new absolute arm: one hit-test, shut and open, each bounded by the layers allowed to pin."
+      },
+      {
+        "id": "P163-R8",
+        "severity": "low",
+        "file": "tests/test_render_report.py:782-796",
+        "issue": "st5's label says measureStack() runs 'on every observed layer', but nothing in the assertion sees the observe loop (page-state.js:143-145, `for (const el of [toolbar, snav, document.querySelector('.sectools')]) { if (el) ro.observe(el); }`). Deleting that loop, or dropping one element from its array, leaves `new ResizeObserver(measureStack)` present once and st5 green, so the observer is constructed but never fires. This goes beyond the task's clause, which asked only for the setProperty calls, so it is filed low. It is the same label-claims-more-than-it-sees shape that R5 retired.",
+        "resolution": "Either assert that the observe loop names toolbar, snav and .sectools and calls ro.observe(el), for example by pinning the loop's text exactly once, or narrow the label to 'handed to a ResizeObserver' so it claims only what is asserted."
       }
     ],
-    "outcome": "[findings: 7 - 0 high, 3 med, 4 low; 3 with a recorded fix commit]"
+    "outcome": "[findings: 8 - 0 high, 3 med, 5 low; 4 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -629,7 +638,7 @@
     {
       "id": "P163.7-d6t",
       "title": "fix P163-R4: Prose in the diff disagrees with the measurements and with the c...",
-      "status": "in_progress",
+      "status": "done",
       "description": "Prose in the diff disagrees with the measurements and with the code. (a) The docstring says the wrapped bar 'pinned nearly half a phone screen' and the test comment says 'nearly half the screen', but the CSS and mjs comments record 58% (486px of 844) and the claim records 61% before the fix: both are more than half, which is the whole reason for the rule. (b) There are two 'before' figures for the same stack, 58%/486px in the comments and 61% in the claim, and no comment says the 58% is a sum of heights while the 61% is ph1's hit-test. (c) The g1 case title in a touched file still reads 'the sticky top bar carries the global filter row' in the present tense. This diff makes the bar non-sticky below 52rem and removes 'global' from the row, so the title is no longer history. It is a false description of what the case pins.\n\nResolution asked: Reword (a) to 'more than half'. In (b), say which method the 58% came from, or drop it and point at ph1's printed figure. Reword g1's title to 'the top bar carries the header filter row'.",
       "files": [
         "plugins/audit/scripts/report/_report_html.py",
@@ -660,14 +669,16 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "23a805171f34",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "RETRY - FOLLOWERS REFRESHED. The orchestrator reported the task gate red only on tests/test__refs.py sc1/sc2 and tools/check-rendered-artifacts.py ra5/ra5b (the report's source digest moved). In this task tree: `sh examples/report.sh` (exit 0) re-rendered examples/acme-store/acme-store-audit.html and .md and refreshed docs/index.html; docs/demo-large.html re-rendered by the recipe check-rendered-artifacts --how prints (gen-demo-manifest --phases 40 --tasks 5, gen-demo-usage, render-report --out-dir, cp); `node tools/capture-screenshots.mjs` exit 0, 'OK (exit 0): screenshots captured - report + panel', which rewrote docs/screenshots/captured-at.json and docs/screenshots/dark.png (the other pictures came out byte-identical). Now green: test__refs.py ALL PASS 292/292 (sc1 [], sc2 25); check-rendered-artifacts --before-commit exit 0 'OK: 3 committed artifact(s) match a fresh render'; sweep over test_render_report, test__report_html, test__refs, check-rendered-artifacts: 4/4 files ok, 829 cases. GUARD NOTICE, verbatim, after the writes were done (nothing was reverted): '[bash-write-guard] BLOCKED - a phase is running, so the plan gate is in its deny tier, and that shell command wrote outside every in_progress task's scope: docs/demo-large.html' and, for the capture, '... wrote outside every in_progress task's scope: docs/screenshots/captured-at.json, docs/screenshots/dark.png'; docs/index.html and examples/acme-store/acme-store-audit.html were named as 'no plan coverage' without attribution. These are follower paths outside this task's declared files: the orchestrator asked for them, and they need the task's scope widened, or the integration's follower handling, to land. ORIGINAL CHANGE (unchanged): (a) _report_html._global_filter_row docstring and the test_render_report phone-stack comment say the wrapped bar pinned MORE than half the screen. (b) forced-colors.css drops the 58% before-figure and says the stack held more than half of a 390x844 screen before the rule, pointing at ph1 in tools/check-report-interactive.mjs, which measures it by hit-test and prints its share; the mjs comments had already lost 58%/486px in efc4868d. (c) g1 title reads 'the top bar carries the header filter row', and the g section header says 'the header filter row'. New case st4 counts 'more than half' == 1 and 'nearly half' == 0 in the docstring and the below-52rem CSS block, and requires the ph1 pointer. ruff clean; prose-number lints report nothing on the touched files; test__ui_theme_lints 20/20. DEPENDANTS: _report_html.py importers (_panel_state, _evidence_view, _report_md, _report_page, _usage_load, _usage_viz, render-report, tests/_harness) - still correct, docstring only; prose-naming files (README, status.md, orchestrator.md, run-test-gate.py) - still correct, no named token touched. tests/test_render_report.py dependants (sweep-costs.json, render-report.py, affected.py, test__live_copy.py, ui/shared/README.md) - still correct, one cheap case added, _cases/_selftest unchanged. tools/check-report-interactive.mjs and its dependants - unchanged. forced-colors.css basename dependants (_ui_theme.py, _report_html.py, shell.css, _ui_theme_lints.py, check-report-interactive.mjs) - still correct, comment-only; docs/demo-large.html, docs/index.html and examples/acme-store/acme-store-audit.html - changed, re-rendered as above. tests/test__report_html.py - unchanged. LEFT, outside this task's files: _report_page.py:496 ('the sticky top bar - identity, the global filters') and ui/report/date-range.js:81 ('the global filter bar') still call the row global in the present tense, the same class as (c); CHANGELOG.md:5668 and test__report_html.py:328 are history and stay.",
+        "descriptive": "The phone-stack reason now says more than half the screen everywhere it is written, the stylesheet points at ph1 instead of a second before-figure, g1 no longer calls the bar sticky or the row global, and the rendered followers and screenshots are refreshed to match."
       },
       "startedAt": "2026-11-16T17:59:23Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-16T18:21:54Z",
+      "verifiedBy": [
+        "st4: the docstring and the below-52rem stylesheet comment each say 'more than half' once and 'nearly half' never, and the stylesheet names ph1 for the measured share"
+      ],
       "notes": [
         {
           "at": "2026-11-16T16:04:59Z",
@@ -703,12 +714,24 @@
         "runId": "2026-11-16T18:21:50Z.9dc6ae",
         "status": "passed",
         "at": "2026-11-16T18:21:50Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "23a805171f34",
+        "at": "2026-11-16T18:21:54Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-16T18:06:24Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_render_report.py tests/test__report_html.py` in a throwaway tree at HEAD exited 1 with 1 of 313 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - st4 (house FAIL): SELFTEST FAILED: 312/313 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P163.8-d6t",
       "title": "fix P163-R5: This is an inherited case in the task's gate. 'sticky: the stack...",
-      "status": "pending",
+      "status": "in_progress",
       "description": "This is an inherited case in the task's gate. 'sticky: the stack is restated at runtime' checks only `\"measureStack\" in M._SCRIPT and \"--topbar-h\" in M._SCRIPT and \"ResizeObserver\" in M._SCRIPT`. measureStack() could be emptied to a no-op and the case would still pass, because all three substrings stay in the script through the declaration, the listeners and other code. This task changed what measureStack publishes. st2 now pins the pinnedPx call, but the inherited case names a behaviour it cannot see.\n\nResolution asked: Either retire the case in favour of st2 plus the browser gate's stack checks, or make it assert the setProperty calls for each of --topbar-h, --strip-h and the sectools height, so emptying the function turns it red.",
       "files": [
         "tests/test_render_report.py",
@@ -733,14 +756,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-16T18:22:14Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -751,11 +774,27 @@
         {
           "at": "2026-11-16T16:04:59Z",
           "text": "no test runner in this task's gate for the test P163-R5 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_render_report.py'], derived as narrowed to this task's tests.add paths, in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        },
+        {
+          "at": "2026-11-16T18:22:11Z",
+          "text": "it quotes docs/index.html as an exempt path name; a re-rendered copy changes no path",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-16T18:22:11Z",
+          "text": "it greps docs/demo-large.html for a phase row marker the renderer keeps; a test-case change alters no table markup",
+          "waives": "tools/verify.sh"
         }
       ],
       "fixes": [
         "P163-R5"
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-16T18:28:25Z.1557ce",
+        "status": "passed",
+        "at": "2026-11-16T18:28:25Z"
+      }
     }
   ],
   "request": "Users report the filters at the top of the HTML report do not work. Fix every filter defect found by the live diagnosis: Clear filters leaves the test-gate and observed filters on (and storage brings them back); the default view hides task-level matches while the empty state says none exist; the counter states no basis; the phone layout covers most of the screen; filter scopes are invisible; and the a11y gaps.",

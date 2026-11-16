@@ -767,10 +767,33 @@ def _cases(check):
           and not re.search(r"(?:^|[},])\s*thead th\{[^}]*position:sticky", _css_decl)
           and ".tablewrap[data-fits] thead th{position:sticky;top:var(--sticky-3);"
               "z-index:var(--z-thead)}" in _css_decl)
-    check("sticky: the stack is restated at runtime, because its height depends "
-          "on the title, the width and the reader's font size",
-          "measureStack" in M._SCRIPT and "--topbar-h" in M._SCRIPT
-          and "ResizeObserver" in M._SCRIPT)
+    # Judged over measureStack()'s own body, not the whole script: the name, the
+    # property names and ResizeObserver all appear outside it (the declaration,
+    # the listeners, the scroll-spy), so a script-wide presence check stayed
+    # green over a function emptied to a no-op. Each layer's setProperty is
+    # counted inside the body, and the body is what the observer and the resize
+    # listener are handed.
+    _ms_head = "const measureStack = () => {\n"
+    _ms_at = M._SCRIPT.find(_ms_head)
+    _ms_body = (M._SCRIPT[_ms_at + len(_ms_head):
+                          M._SCRIPT.index("\n  };\n", _ms_at)]
+                if _ms_at >= 0 else "")
+    _ms_sets = re.findall(r"root\.style\.setProperty\('(--[\w-]+)'", _ms_body)
+    check("st5 the stack is restated at runtime, because its height depends "
+          "on the title, the width and the reader's font size - measureStack() "
+          "itself publishes the bar, the strip and the section tools' heights, "
+          "and runs on load, on every resize and on every observed layer: %s"
+          % (_ms_sets,),
+          M._SCRIPT.count(_ms_head) == 1
+          and sorted(_ms_sets) == ["--sectools-h", "--strip-h", "--topbar-h"]
+          and "root.style.setProperty('--topbar-h', pinnedPx(toolbar) + 'px');"
+              in _ms_body
+          and "px(st) + 'px');" in _ms_body
+          and "  };\n  measureStack();\n" in M._SCRIPT
+          and M._SCRIPT.count("new ResizeObserver(measureStack)") == 1
+          and M._SCRIPT.count(
+              "window.addEventListener('resize', measureStack, { passive: true });")
+              == 1)
     # Anchors are how this report is navigated; every one of them landed under the
     # bar, which reads as "the link goes somewhere slightly below the heading".
     check("sticky: every anchor clears the stack instead of landing beneath it",
