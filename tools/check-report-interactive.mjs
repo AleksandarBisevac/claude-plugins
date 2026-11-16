@@ -67,8 +67,8 @@ import { FRAMED_BELOW } from './ui-checks/responsive.mjs';
 // file. Imported by both gates so there is one copy of it.
 import { HEATMAP_NAV, USAGE_DETAIL_CHARTS, readDisclosure,
          disclosureSummary } from './ui-checks/disclosures.mjs';
-// The RELATIVE arm of the phone-layout question, beside the absolute bar this file
-// has always carried. That file says why there are two, why they measure different
+// The RELATIVE arm of the phone-layout question, beside the absolute stack check
+// this file carries. That file says why there are two, why they measure different
 // quantities and how far a figure may move; this one measures and reports.
 import { PHONE_VIEWPORT, applyRecording, documentKey, emptyBaseline, judge,
          readBaseline, share, writeBaseline } from './ui-checks/layout-baseline.mjs';
@@ -2522,10 +2522,38 @@ if (barState.open === true) {
 //    can sit up to a pixel and a half below the layers' exact sum. Any other layer
 //    pinning - a sticky top bar is at least a line of text - clears that slack
 //    many times over.
-//    What this bound cannot see is the shut bar itself growing, because the bound
-//    grows with it; that is the relative arm's question, asked below through the
-//    filterBarShutShare figure recorded just above.
+//    What that bound cannot see is the layers themselves growing, because it grows
+//    with them: a shut bar three times its height is still exactly "the strip plus
+//    the bar". So the same measurement answers a second question whose bound comes
+//    from nothing on the page - STACK_CEILING_SHARE of the screen it is read on -
+//    and it is that ceiling, not the relative arm, that stands for a report the
+//    layout baseline is not about (outside this checkout, or a scratch render),
+//    where judge() records nothing and compares nothing.
+//    The basis of the ceiling: the pinned layers are chrome over the rows a reader
+//    scrolled down to read, so the table keeps at least half of the screen it is
+//    read on. Past that the chrome is the page and the table is what peeks out
+//    under it. It is a destination bound, not a ratchet: how far a committed
+//    report's bar moved is still the relative arm's question, asked below through
+//    the filterBarShutShare figure recorded just above.
 const STACK_SLACK_PX = 2;
+const STACK_CEILING_SHARE = 0.5;
+const STACK_CEILING_PX = Math.floor(PHONE_TALL.height * STACK_CEILING_SHARE);
+//    Both halves judge their measurement twice, on separate lines so a red says
+//    which question failed: the layers its state allows, and the ceiling.
+const judgeStack = (what, m, layers) => {
+  const bound = layers.reduce((sum, l) => sum + l.px, 0) + STACK_SLACK_PX;
+  const parts = layers.map((l) => `${l.name} ${l.px.toFixed(1)}`).join(' + ');
+  const where = `scrolled into the table at ${PHONE_TALL.width}x${PHONE_TALL.height}`;
+  const pct = share(m.stack, PHONE_TALL.height);
+  expect(`ph1 ${what}, ${where}, pins no more than the ${layers.map((l) => l.long).join(' and the ')} `
+    + `(${m.stack}px against a ${bound.toFixed(1)}px bound = ${parts} + slack ${STACK_SLACK_PX}; `
+    + `${pct}% of the screen)`,
+    m.stack <= bound, true);
+  expect(`ph1 ${what} leaves the table at least half the screen it is read on `
+    + `(${m.stack}px pinned against a ${STACK_CEILING_PX}px ceiling = ${STACK_CEILING_SHARE} `
+    + `of ${PHONE_TALL.height}px; ${pct}% of the screen)`,
+    m.stack <= STACK_CEILING_PX, true);
+};
 const STACK_UNMEASURED = 'ph1 scrolled into the phases table at the phone size, no point '
   + 'down the middle of the screen is the table - the stack over it could not be measured';
 const stackOverTable = async () => {
@@ -2563,13 +2591,10 @@ if (barState.open !== true) {
   if (shutStack.stack === null) {
     failures.push(`FAIL ${STACK_UNMEASURED} (More filters shut)`);
   } else {
-    const bound = shutStack.strip + shutStack.bar + STACK_SLACK_PX;
-    expect(`ph1 resting stack (More filters shut), scrolled into the table at ${PHONE_TALL.width}x`
-      + `${PHONE_TALL.height}, pins no more than the strip and the shut filter bar `
-      + `(${shutStack.stack}px against a ${bound.toFixed(1)}px bound = strip `
-      + `${shutStack.strip.toFixed(1)} + bar ${shutStack.bar.toFixed(1)} + slack ${STACK_SLACK_PX}; `
-      + `${share(shutStack.stack, PHONE_TALL.height)}% of the screen)`,
-      shutStack.stack <= bound, true);
+    judgeStack('resting stack (More filters shut)', shutStack, [
+      { name: 'strip', long: 'strip', px: shutStack.strip },
+      { name: 'bar', long: 'shut filter bar', px: shutStack.bar },
+    ]);
   }
 }
 //    Same pairing as step 6: the <details> without the panel inside it is a
@@ -2623,12 +2648,9 @@ if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
   } else if (openStack.stack === null) {
     failures.push(`FAIL ${STACK_UNMEASURED} (More filters open)`);
   } else {
-    const bound = openStack.strip + STACK_SLACK_PX;
-    expect(`ph1 open stack (More filters open), scrolled into the table at ${PHONE_TALL.width}x`
-      + `${PHONE_TALL.height}, pins no more than the strip (${openStack.stack}px against a `
-      + `${bound.toFixed(1)}px bound = strip ${openStack.strip.toFixed(1)} + slack ${STACK_SLACK_PX}; `
-      + `${share(openStack.stack, PHONE_TALL.height)}% of the screen)`,
-      openStack.stack <= bound, true);
+    judgeStack('open stack (More filters open)', openStack, [
+      { name: 'strip', long: 'strip', px: openStack.strip },
+    ]);
   }
 
   //    ...and the other half of that trade: the open bar leaves the sticky stack,
@@ -2672,9 +2694,9 @@ if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
 
 // --- the relative arm: what this document's layout was recorded at ------------
 //
-// The stack check above is ABSOLUTE and stays exactly as it is: shut or open, no
-// layer but the ones its bound names may pin over the table, whatever it did
-// yesterday.
+// The stack check above is ABSOLUTE: shut or open, no layer but the ones its
+// bound names may pin over the table, and never more than the ceiling's share of
+// the screen, whatever it did yesterday.
 // This asks the other question — has THIS document's filter chrome moved from the
 // figure this repository recorded — and the two are reported on separate lines so
 // a reader knows which they have.

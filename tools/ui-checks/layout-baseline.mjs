@@ -1,36 +1,47 @@
 /**
  * The RELATIVE arm beside the report gate's absolute one.
  *
- * WHAT WENT WRONG. `check-report-interactive.mjs` bounds the share of a phone
- * screen an OPEN filter panel may pin over the table it filters. That bar is
- * absolute — over it is a defect, under it is not — and it is the right thing to
- * bound: a layer that eats half the screen has stopped being a layer. What it
- * cannot see is a fixture that MOVES. Restoring the height bound's absence showed
- * `docs/demo-large.html` going red and `examples/acme-store/...` staying green on
- * the same regression, because the threshold happened to fall between the two
- * documents; the example had grown to nearly four times its former height under a
- * gate that could not say so, and what gave it away was its neighbour failing. Had
- * the change touched only the example, the regression would have shipped.
+ * WHAT WENT WRONG. `check-report-interactive.mjs` once bounded only the share of a
+ * phone screen an OPEN filter panel pinned over the table it filters, by scrolling
+ * a fixed distance past the bar. That bar is absolute — over it is a defect, under
+ * it is not. What it cannot see is a fixture that MOVES. Restoring the height
+ * bound's absence showed `docs/demo-large.html` going red and
+ * `examples/acme-store/...` staying green on the same regression, because the
+ * threshold happened to fall between the two documents; the example had grown to
+ * nearly four times its former height under a gate that could not say so, and what
+ * gave it away was its neighbour failing. Had the change touched only the example,
+ * the regression would have shipped.
  *
  * SO THERE ARE TWO QUESTIONS AND THEY FAIL APART.
  *
- *   absolute — how much of the screen does the open bar PIN over the table after
- *              the reader has scrolled past it? Owned by the gate, unchanged, and
- *              reported on its own line.
- *   relative — how tall is that bar, as a share of the screen, compared with the
- *              figure this repository recorded for THIS document? Owned here.
+ *   absolute — how much of the screen do the layers pinned over the table cover
+ *              once the reader has scrolled into it? Owned by the gate and
+ *              reported on its own lines: one hit-test down the middle of the
+ *              screen, taken with More filters shut and, on a report that has
+ *              the panel, again open. Each result is judged twice — against the
+ *              layers that state allows to pin (the section strip and the shut
+ *              bar; the strip alone once the bar opens and goes static), and
+ *              against a ceiling, a fixed share of the screen the table always
+ *              keeps. The first bound is read off the same layout it judges, so
+ *              it grows with those layers; the ceiling is what stops a layer
+ *              that grew from passing as "only the layers allowed".
+ *   relative — how tall is the filter bar, as a share of the screen, compared with
+ *              the figure this repository recorded for THIS document? Owned here.
  *
  * They measure different quantities on purpose, so a reader who sees one red knows
- * which they have. The absolute one saturates — the gate scrolls a fixed distance
- * past the bar, so every bar shorter than that scroll reports the same zero — and
- * a baseline built on a saturating measurement would be blind over its whole lower
- * range. The height share saturates nowhere.
+ * which they have. The absolute arm answers "is this layout acceptable now", for
+ * any report the gate drives, the ones this file has no row for included. A
+ * recorded height answers "did this layout move", which only a committed report
+ * can be asked. And the height share is the quantity worth recording because it
+ * says how big the chrome is in every state, where the stack only says what is
+ * pinned once the reader is in the table — open, the bar has scrolled away and the
+ * stack is the strip whatever the panel's height.
  *
  * WHAT THE PAIR DOES AND DOES NOT BUY. The relative arm catches a JUMP; the
  * absolute arm catches the DESTINATION. Neither catches slow creep on its own —
- * enough sub-tolerance moves in one direction eventually arrive somewhere the
- * absolute bar does not like, and that is the run that goes red. Saying so is
- * cheaper than pretending a tolerance is a ratchet.
+ * enough sub-tolerance moves in one direction eventually arrive at the ceiling, and
+ * that is the run that goes red. Saying so is cheaper than pretending a tolerance
+ * is a ratchet.
  *
  * TWO FIGURES, BECAUSE THE PAIR IS A DECOMPOSITION AND NOT A DUPLICATE. Today the
  * open bar is the shut bar plus the panel's own `max-height` cap plus a margin, so
@@ -39,12 +50,11 @@
  * moves, the panel's height bound is what broke, which is the very fault this arm is named for. One figure
  * could report that something moved and never which.
  *
- * The shut figure has NO absolute bar and is not getting one here: there is no
- * defensible constant for "a resting toolbar is too tall", and inventing one would
- * be the same arbitrary number this file exists to avoid. A recorded figure is the
- * honest instrument for a quantity with no natural bound — which is also why it is
- * worth having, since the gate's own comment records that bar at 156px on this
- * viewport and it measures over 200px today, with nothing having watched it grow.
+ * The ceiling is the coarse instrument and these figures the fine one. It is a
+ * share of the screen with a stated basis (the gate's comment beside
+ * `STACK_CEILING_SHARE` says it), set above what the committed reports pin today,
+ * so it bounds where a bar may end up and not how far it moved; a recorded figure
+ * is what notices the bar moving long before it gets there.
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -315,7 +325,8 @@ export function judge({ reportPath, measured, viewport,
   const key = documentKey(reportPath, repoRoot);
   if (key === null) {
     notes.push('no recorded layout baseline applies: this document is not in this '
-      + 'checkout, so the relative arm did not run for it (the absolute bar above did)');
+      + 'checkout, so the relative arm did not run for it (the absolute stack check above did, '
+      + 'against its layers and its ceiling)');
     return { failures, notes, recordable: null,
       refusal: 'it is not in this checkout, and the baseline records the committed '
         + 'reports of this repository' };
@@ -326,7 +337,8 @@ export function judge({ reportPath, measured, viewport,
     if (tracked.state === 'untracked') {
       notes.push(`no recorded layout baseline applies: "${key}" is in the tree but not in `
         + 'the repository, so it is a scratch render rather than a committed report and '
-        + 'the relative arm did not run for it (the absolute bar above did)');
+        + 'the relative arm did not run for it (the absolute stack check above did, against '
+        + 'its layers and its ceiling)');
       return { failures, notes, recordable: null,
         refusal: `"${key}" is in the tree but not in the repository, so it is a scratch `
           + 'render rather than a committed report the baseline is about' };
@@ -371,8 +383,8 @@ export function judge({ reportPath, measured, viewport,
     moved.push(metric);
     failures.push(`${label} ${delta > 0 ? 'grew' : 'shrank'} from a recorded ${before}% of `
       + `the screen to ${now}% (${delta > 0 ? '+' : ''}${delta}pp against a ${TOLERANCE_PP}pp `
-      + `tolerance) in "${key}". This is the RELATIVE arm — whether the open panel also pins `
-      + `too much of the screen is a separate line above. If the move was meant, bless it `
+      + `tolerance) in "${key}". This is the RELATIVE arm — whether the stack over the table `
+      + `pins too much of the screen is a separate line above. If the move was meant, bless it `
       + `with: ${cmd}`);
   }
   return { failures, notes, recordable: moved.length ? measured : null, refusal: null };

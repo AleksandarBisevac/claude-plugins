@@ -93,11 +93,20 @@
         "severity": "low",
         "file": "tests/test_render_report.py:782-796",
         "issue": "st5's label says measureStack() runs 'on every observed layer', but nothing in the assertion sees the observe loop (page-state.js:143-145, `for (const el of [toolbar, snav, document.querySelector('.sectools')]) { if (el) ro.observe(el); }`). Deleting that loop, or dropping one element from its array, leaves `new ResizeObserver(measureStack)` present once and st5 green, so the observer is constructed but never fires. This goes beyond the task's clause, which asked only for the setProperty calls, so it is filed low. It is the same label-claims-more-than-it-sees shape that R5 retired.",
-        "resolution": "Either assert that the observe loop names toolbar, snav and .sectools and calls ro.observe(el), for example by pinning the loop's text exactly once, or narrow the label to 'handed to a ResizeObserver' so it claims only what is asserted.",
-        "fixTask": "P163.11-d6t"
+        "resolution": "fixed in P163.11-d6t (483eedb45a63): Either assert that the observe loop names toolbar, snav and .sectools and calls ro.observe(el), for example by pinning the loop's text exactly once, or narrow the label to 'handed to a ResizeObserver' so it claims only what is asserted.",
+        "fixTask": "P163.11-d6t",
+        "commit": "483eedb45a63",
+        "status": "fixed"
+      },
+      {
+        "id": "P163-R9",
+        "severity": "low",
+        "file": "tools/check-report-interactive.mjs:2551-2554",
+        "issue": "The ceiling's expect label hard-codes the word 'half' ('leaves the table at least half the screen it is read on') while the bound it judges is STACK_CEILING_SHARE, a named constant printed two words later. Change the constant to 0.4 and the line still says 'half' while printing '= 0.4 of 844px', so the label's claim and its own basis would disagree.",
+        "resolution": "Derive the wording from the constant, for example 'leaves the table at least ${1 - STACK_CEILING_SHARE} of the screen it is read on', or drop the fraction word and keep only the printed '<px> ceiling = <share> of <height>px' basis."
       }
     ],
-    "outcome": "[findings: 8 - 0 high, 3 med, 5 low; 5 with a recorded fix commit]"
+    "outcome": "[findings: 9 - 0 high, 3 med, 6 low; 6 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -918,7 +927,7 @@
     {
       "id": "P163.11-d6t",
       "title": "fix P163-R8: st5's label says measureStack() runs 'on every observed layer', ...",
-      "status": "in_progress",
+      "status": "done",
       "description": "st5's label says measureStack() runs 'on every observed layer', but nothing in the assertion sees the observe loop (page-state.js:143-145, `for (const el of [toolbar, snav, document.querySelector('.sectools')]) { if (el) ro.observe(el); }`). Deleting that loop, or dropping one element from its array, leaves `new ResizeObserver(measureStack)` present once and st5 green, so the observer is constructed but never fires. This goes beyond the task's clause, which asked only for the setProperty calls, so it is filed low. It is the same label-claims-more-than-it-sees shape that R5 retired.\n\nResolution asked: Either assert that the observe loop names toolbar, snav and .sectools and calls ro.observe(el), for example by pinning the loop's text exactly once, or narrow the label to 'handed to a ResizeObserver' so it claims only what is asserted.",
       "files": [
         "tests/test_render_report.py"
@@ -941,14 +950,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "483eedb45a63",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_render_report.py st5: the case now matches the observe loop that follows `const ro = new ResizeObserver(measureStack);` with a regex. It extracts the loop's array and requires exactly one such loop, observing [toolbar, snav, document.querySelector('.sectools')] with `if (el) ro.observe(el);` as the body. The label now prints the observed list beside the setProperty names. The existing conjuncts are kept, including the single-constructor count. Gate: python3 tools/sweep-selftests.py tests/test_render_report.py -> exit 0, 1/1 files ok, 313 cases. ruff check tests/test_render_report.py -> All checks passed. No rendered-artifact change, because only a test changed. Dependants: .github/sweep-costs.json (path) is still correct; one added regex over the script string does not move the file's cost figure in any way that matters. plugins/audit/scripts/report/render-report.py (path) is still correct, unchanged, and only read. tools/affected.py (path, and its _cases/_selftest names) is still correct: no file was renamed and no name defined in the suite changed. tests/test__live_copy.py (basename) is still correct, since the basename is unchanged. plugins/audit/scripts/ui/shared/README.md (basename) is still correct, since the basename is unchanged.",
+        "descriptive": "st5 now sees the ResizeObserver loop, so a constructed observer that observes nothing, or misses a layer, turns it red"
       },
       "startedAt": "2026-11-16T18:30:28Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-16T18:58:25Z",
+      "verifiedBy": [
+        "st5 extended: the observe loop after the ResizeObserver constructor must exist exactly once and observe toolbar, snav and .sectools"
+      ],
       "notes": [
         {
           "at": "2026-11-16T18:29:44Z",
@@ -967,6 +978,17 @@
         "runId": "2026-11-16T18:57:22Z.958006",
         "status": "passed",
         "at": "2026-11-16T18:57:22Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "483eedb45a63",
+        "at": "2026-11-16T18:58:25Z",
+        "return": "docs/audit/evidence/returns/P163.11-d6t/20261116T183028Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression mode, expectRedFirst false: st5 locks the observe loop as HEAD already has it, so HEAD's code turns no case red. Mutation instead, from a probe script that restores in a finally (/tmp/p16311probe/mut.py), with __pycache__ purged and each mutation checked as applied before running: deleting the observe loop, dropping .sectools from its array, dropping snav, and replacing ro.observe(el) each gave 'FAIL st5 ...' and 'SELFTEST FAILED: 312/313 cases passed' (exit 1); restored: True, git status shows only tests/test_render_report.py modified.",
+        "at": "2026-11-16"
       }
     },
     {
@@ -977,7 +999,8 @@
       "files": [
         "tools/check-report-interactive.mjs",
         "tools/ui-checks/layout-baseline.mjs",
-        "tools/ui-tests/layout-baseline.test.mjs"
+        "tools/ui-tests/layout-baseline.test.mjs",
+        "CONTRIBUTING.md"
       ],
       "tests": {
         "mode": "gate-only",
@@ -1005,10 +1028,16 @@
       "verifiedBy": [],
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-11-16T18:57:24Z.d1739a",
+        "runId": "2026-11-16T19:01:14Z.9e5654",
         "status": "passed",
-        "at": "2026-11-16T18:57:24Z"
-      }
+        "at": "2026-11-16T19:01:14Z"
+      },
+      "notes": [
+        {
+          "at": "2026-11-16T18:58:36Z",
+          "text": "files widened by CONTRIBUTING.md: named outside its files at its executor's submit, widened by the answer"
+        }
+      ]
     }
   ],
   "request": "Users report the filters at the top of the HTML report do not work. Fix every filter defect found by the live diagnosis: Clear filters leaves the test-gate and observed filters on (and storage brings them back); the default view hides task-level matches while the empty state says none exist; the counter states no basis; the phone layout covers most of the screen; filter scopes are invisible; and the a11y gaps.",

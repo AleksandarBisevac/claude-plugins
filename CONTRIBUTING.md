@@ -523,7 +523,8 @@ costing more with each phase merged.
 many it kept of how many.
 
 The report gate carries TWO arms over the phone layout and they fail apart. The absolute
-one bounds the share of the screen an open filter panel may pin over the table; the
+one bounds what pins over the table once a reader scrolls into it, with More filters shut
+and open — to the layers that state allows, and to a ceiling share of the screen; the
 relative one compares this document's filter chrome against the figure recorded for it in
 `tools/ui-checks/report-layout-baseline.json`, so a fixture that moves a long way is
 reported even where the absolute bar is not crossed — one shipped example once grew to
