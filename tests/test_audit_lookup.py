@@ -3316,6 +3316,7 @@ def _selftest():
         _harness.stage(check, "ow-block", _owed_red_first_brief_cases)
         _harness.stage(check, "co-block", _conventions_order_cases)
         _harness.stage(check, "hd-block", _unborn_head_entry_cases)
+        _harness.stage(check, "rk-block", _review_skill_brief_cases)
     return _harness.run(body)
 
 
@@ -3429,6 +3430,116 @@ def _red_command_reader_cases(check):
           "over the same gate, so a gate naming tests/test_a.py_old gives none "
           "and one naming tests/test_a.py gives it: %r" % (got,),
           got == [(None, None), ("python3 tests/test_a.py", "python3 tests/test_a.py")])
+
+
+_RK_HEADING = "## Review skill"
+
+
+def _rk_brief(root, name, phase_extra, meta_extra):
+    """The phase brief `audit-lookup.py brief P1 --role phase` writes for
+    `_bf_signed_phase()` with `phase_extra` on the phase and `meta_extra` on
+    the plan's meta, or "" when none was written."""
+    manifest = _bf_signed_phase()
+    manifest["phases"][0].update(phase_extra)
+    manifest["meta"].update(meta_extra)
+    proj = os.path.join(root, name)
+    os.makedirs(os.path.join(proj, ".claude"))
+    with open(os.path.join(proj, ".claude", "audit.config.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+    os.makedirs(os.path.dirname(mpath))
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh)
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        try:
+            M.main([mpath, "brief", "P1", "--role", "phase", "--project", proj])
+        except SystemExit:
+            pass
+    try:
+        with open(os.path.join(proj, ".claude", "state", "briefs", "P1",
+                               "phase.md"), "r", encoding="utf-8") as fh:
+            return fh.read()
+    except OSError:
+        return ""
+
+
+def _rk_section(text):
+    """`(headings, body)`: how many review-skill headings `text` holds, and the
+    non-blank lines under the first one up to the next heading."""
+    lines = text.splitlines()
+    headings = [n for n, ln in enumerate(lines) if ln.strip() == _RK_HEADING]
+    if not headings:
+        return 0, []
+    body = []
+    for ln in lines[headings[0] + 1:]:
+        if ln.startswith("#"):
+            break
+        if ln.strip():
+            body.append(ln)
+    return len(headings), body
+
+
+def _review_skill_brief_cases(check):
+    """The phase brief names the review skill `_areas.resolve_review_skill`
+    resolves, with the basis it returns, and has no such section when none
+    resolves. Each level is set beside a lower one carrying a DIFFERENT name,
+    so a second precedence chain that read the levels in another order names
+    the wrong skill rather than passing."""
+    import _areas
+    root = _harness.fixture_root("audit-lookup-rk-")
+    area = {"areas": {"api": {"root": "src", "reviewSkill": "area-review"}}}
+    try:
+        levels = (
+            ("rk1", "phase", {"reviewSkill": "phase-review", "area": "api"},
+             dict(area, reviewSkill="plan-review"), "phase-review"),
+            ("rk2", "area", {"area": "api"},
+             dict(area, reviewSkill="plan-review"), "area-review"),
+            ("rk3", "meta", {}, {"reviewSkill": "plan-review"}, "plan-review"))
+        for cid, name, phase_extra, meta_extra, skill in levels:
+            manifest = _bf_signed_phase()
+            manifest["phases"][0].update(phase_extra)
+            manifest["meta"].update(meta_extra)
+            resolved = _areas.resolve_review_skill(manifest, manifest["phases"][0])
+            text = _rk_brief(root, name, phase_extra, meta_extra)
+            count, body = _rk_section(text)
+            others = [s for s in ("phase-review", "area-review", "plan-review")
+                      if s != skill and s in text]
+            check("%s the phase brief of a phase whose review skill resolves "
+                  "from the %s level names that skill once, under one %r "
+                  "heading, with the basis the resolver returns (%r), and names "
+                  "no skill another level declares: %r"
+                  % (cid, name, _RK_HEADING, resolved, (count, body, others)),
+                  resolved == (skill, resolved[1]) and resolved[1]
+                  and count == 1
+                  and len([ln for ln in body if skill in ln]) == 1
+                  and any(skill in ln and "basis: %s" % resolved[1] in ln
+                          for ln in body)
+                  and others == [])
+        # The allow direction - the case a section printed unconditionally
+        # fails, and the only one that does.
+        bare = _rk_brief(root, "none", {}, {})
+        stopped = _rk_brief(root, "null", {"area": "api"},
+                            {"areas": {"api": {"root": "src", "reviewSkill": None}},
+                             "reviewSkill": "plan-review"})
+        resolved_null = _areas.resolve_review_skill(
+            {"meta": {"areas": {"api": {"reviewSkill": None}},
+                      "reviewSkill": "plan-review"}}, {"area": "api"})
+        check("rk4 a phase with no review skill at any level gets a written "
+              "phase brief with NO review-skill section: %r"
+              % ((len(bare), _rk_section(bare)),),
+              bare != "" and _rk_section(bare) == (0, [])
+              and "review skill" not in bare.lower())
+        check("rk5 a phase whose area sets reviewSkill null - the resolver "
+              "stops there (%r) though meta.reviewSkill is set - gets a written "
+              "brief with NO review-skill section and never names the plan's "
+              "skill: %r" % (resolved_null, (len(stopped), _rk_section(stopped))),
+              resolved_null == (None, "area api")
+              and stopped != "" and _rk_section(stopped) == (0, [])
+              and "plan-review" not in stopped)
+    finally:
+        _harness.remove_tree(root)
 
 
 def _owed_red_first_brief_cases(check):

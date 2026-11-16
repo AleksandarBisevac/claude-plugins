@@ -25,7 +25,9 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    **If the resolved review skill is set**, spawn the plugin's reviewer agent
    (`subagent_type: "audit:audit-reviewer"`, `model = phase.review.model`) with the diff scope
    (`git diff <phase.baseRef> -- <files>`), the phase's `desiredOutcome`, the resolved skill name, and
-   **`mode: phase`**. The derived gate basis is a conditional input: hand `derive-phase-gate.py
+   **`mode: phase`**. On the drive route the phase brief carries that name and its basis in a
+   `## Review skill` section, written by `audit-lookup.py`'s `review_skill_lines` only when a skill
+   resolves, and the validation session over the review's findings starts with the same skill. The derived gate basis is a conditional input: hand `derive-phase-gate.py
    --brief`'s line and the runId only when `phase.testGateDerived` is already recorded — a
    re-review after a gate has run. This step runs before step 2a, so at a first sign-off nothing
    is recorded yet; hand nothing, and the reviewer reads the input as absent rather than assuming

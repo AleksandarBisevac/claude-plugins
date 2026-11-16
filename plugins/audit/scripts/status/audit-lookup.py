@@ -137,7 +137,7 @@ import _evidence_io as _evio  # noqa: E402  (project/config resolution)
 import _excerpt  # noqa: E402  (a red step's output is quoted both ends, never head-cut)
 import _loader  # noqa: E402  (the one way scripts/ loads hooks/_config as a library)
 import _clause_coverage as _cc  # noqa: E402  (task_clauses: the one numbering of a task's clauses)
-import _areas  # noqa: E402  (resolve_skills: the plan default, then the area's, then the task's)
+import _areas  # noqa: E402  (resolve_skills: the plan default, then the area's, then the task's; resolve_review_skill: the phase reviewer's)
 import _filed_returns as _fr  # noqa: E402  (where `submit` filed a return, and
 #                                            which tasks a phase review owes)
 import _config_rules  # noqa: E402  (review_per_task_mode: the config's reading now)
@@ -642,6 +642,24 @@ def skills_lines(manifest, phase, task):
                 "`skills: null`, which stops the plan and area defaults."]
     return ["No skill resolves for this task: no plan default "
             "(meta.defaultSkills), no area default and no task skill."]
+
+
+def review_skill_lines(manifest, phase):
+    """The phase brief's Review skill section, or [] when no skill resolves.
+
+    `_areas.resolve_review_skill` is the one reader of the three levels, so the
+    name and the basis are printed as it returns them; a level that answers
+    with an explicit null resolves nothing and gets no section, exactly like a
+    plan that declares none - the reviewer then reviews without a skill, which
+    agents/audit-reviewer.md already states for that case."""
+    skill, basis = _areas.resolve_review_skill(manifest, phase)
+    if not skill:
+        return []
+    return _section("Review skill", [
+        "- %s (basis: %s, as _areas.resolve_review_skill resolves "
+        "phase.reviewSkill, then each area tag's, then meta.reviewSkill)"
+        % (skill, basis),
+        "Invoke it via the Skill tool FIRST, before reading the diff."])
 
 
 def compose_executor_brief(manifest, phase, task, ctx, files, gate):
@@ -2172,6 +2190,7 @@ def phase_brief_parts(manifest, phase, ctx):
              "head: %s" % (head,) if head else
              "head: not read - %s" % (head_why,),
              "The rules and the return shape are agents/audit-reviewer.md's."]
+    lines += review_skill_lines(manifest, phase)
     lines += _section("The request, as saved", _verbatim(
         phase.get("request"),
         "No request was saved for this phase (phase.request is absent), so "

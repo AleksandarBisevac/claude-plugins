@@ -3544,8 +3544,10 @@ through `submit` too, the phase review's with `--head` - but a per-task reviewer
 session under `executor.writerModel` is told not to, and the drive files its return. The
 reviewer's carries the executor's return as filed for the task's current start
 (byte-identical), the diff, the recorded run and the gate commands, and is refused with exit 4
-(`E_REFUSED`), writing nothing, until that return is filed. The phase reviewer's carries the
-request as saved (`phase.request`, or a sentence saying none was saved), one fixed question
+(`E_REFUSED`), writing nothing, until that return is filed. The phase reviewer's carries a
+`## Review skill` section naming the skill `_areas.resolve_review_skill` resolves and the basis
+it returns (`review_skill_lines`; no section when none resolves or an explicit null stops the
+lookup, `rk1`-`rk5`), the request as saved (`phase.request`, or a sentence saying none was saved), one fixed question
 about what the request left open, and per task its commit, files, description, filed
 executor return, recorded run and `tests.gate` — an entry naming a `key:project` the plan
 cannot resolve is kept and said to be unresolved — and is refused while any task has no
@@ -6004,7 +6006,9 @@ empty list for a stream holding events and no such call, and no key when no stre
 stream holds no event at all — an empty stream is no reading, not a reading of none. A resumed
 run's stream holds that round's events alone, so its list names that round's calls alone.
 `drive-phase.py`'s `writer_argv` adds one `--skill` per name `_areas.resolve_skills` returns, for
-the writer, the reviewer and the validation session alike, and its note of each session
+the writer, the reviewer and the validation session alike; the validation session, which reviews
+at phase scope, also gets the review skill `_areas.resolve_review_skill` resolves (the
+`phase_review` argument of `session_skills`, `vk1`-`vk3`), and the per-task reviewer never does. Its note of each session
 (`session_note`, through `skills_said`) names a declared skill the session never invoked — a
 `plugin:skill` declaration is met by a call with the bare name — or says that no `skillsInvoked`
 was recorded to judge by. A resumed round is judged against the session it resumes

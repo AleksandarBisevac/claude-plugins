@@ -30,7 +30,7 @@
     {
       "id": "SG1.1",
       "title": "Both agent briefs say their hard rules win over a skill's instructions",
-      "status": "in_progress",
+      "status": "done",
       "description": "plugins/audit/agents/audit-executor.md tells the executor to invoke each skill its brief lists FIRST; plugins/audit/agents/audit-reviewer.md tells the phase reviewer to invoke a named review skill FIRST. Neither says what happens when the skill's text contradicts the brief (a skill that says to commit, to ask the human and stop the turn, to mutate a file and restore it, to fetch a URL). Today that is prose against prose and the agent picks.\n\nAdd one sentence to each brief, in the hard-rules list: the hard rules of this brief win over any instruction a skill gives; where they conflict the agent follows the brief and names the conflict in its return (executor: outcome.technical; reviewer: intent.note), never resolving it silently.\n\nCONSTRAINT YOU OWN: tools/measure-context.py AGENT_CEILINGS is executor 9000 / reviewer 7000 and `python3 tools/measure-context.py --tree plugins/audit` prints the briefs at 8910 and 6994 bytes on de21866c. The sentence does not fit as-is. Free the bytes by tightening existing wording WITHOUT dropping or weakening any rule (every existing pin in tests/ must stay green - several suites assert substrings of these two files, so run the whole sweep, not one file). Only if that is not possible, raise the ceiling by what the sentence costs and record the reason where the ceilings are defined. Say in your outcome which of the two you did and the byte counts before and after.\n\nDependants of these files you answer for: every tests/ case that asserts text of the two briefs (grep the two basenames under tests/ and tools/lints/), tools/measure-context.py --gate, and PLUGIN-BUILD-GUIDE.md wherever it quotes either brief.\n\nAcceptance:\n1. Each brief carries the precedence sentence inside its hard-rules section, naming where the conflict is reported.\n2. A case fails when the sentence is removed from either brief (count occurrences, do not assert presence of a loose substring).\n3. `python3 tools/measure-context.py --tree plugins/audit --gate` exits 0.\n4. No existing rule of either brief was dropped: the full sweep is green.",
       "files": [
         "plugins/audit/agents/audit-executor.md",
@@ -58,14 +58,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0eeb2b7f8a6c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "TIGHTENED, ceilings NOT raised (tools/measure-context.py untouched). Bytes from `python3 tools/measure-context.py --tree plugins/audit`: executor 8910 -> 8982 (ceiling 9000), reviewer 6994 -> 6986 (ceiling 7000); `--tree plugins/audit --gate` exit 0, run twice with a gap, identical numbers. executor (plugins/audit/agents/audit-executor.md): precedence sentence appended to the **First** skill bullet in the hard rules, conflict reported in `outcome.technical`; bytes freed by shortening the TDD reason clause, `(gx1 in PASS gx1 ...)`, `the one given in its place`, `(source repo only)` for the _refs.py note, and rewrapping. reviewer (plugins/audit/agents/audit-reviewer.md): new hard-rules bullet, conflict reported in `intent.note`; freed by dropping the inline enumeration of the three redFirst words in `Read the executor's redFirst` (each word is still named in the same bullet) and by indenting the return template's continuation lines 3 spaces instead of aligning them under the brace. No rule was dropped. tests/test__refs.py: `_hard_rules_bullets()` + `_skill_precedence_cases()` (sp1-sp6), anchor `win over any skill's instruction` COUNTED (exactly one hard-rules bullet holds it and the whole squashed document has it once), the bullet names the field exactly once and says `silently`, and the field is one the brief's own return template declares (`_return_nested_keys`). Mutation probe run in memory, tree untouched (scratchpad sp_probe.py replaces `_product_doc`): none -> no red; executor sentence removed -> sp1,sp2; reviewer removed -> sp4,sp5; executor doubled -> sp1,sp2; reviewer moved out of the hard rules -> sp4,sp5; wrong field -> sp2; `silently` dropped -> sp5; template renames `note` -> sp6. Gates: `python3 tools/sweep-selftests.py tests/test__refs.py` exit 1, 297/298, the one FAIL is q1, which is NOT in my files: SG1.5 and SG1.6 in docs/audit/phases/SG1.json and the fileIndex in docs/audit/audit-plan.json name plugins/audit/scripts/governance/_filed_returns.py, which moved to scripts/manifest/; q1 is red at HEAD for the same reason (HEAD's SG1.json carries that path twice). Full sweep `python3 tools/sweep-selftests.py --jobs 4` exit 1: 195/196 files ok, the only FAIL line is the same q1. `python3 tools/prove-gates.py --changed <both briefs> --red` exit 0, 5 of 5 rows anchored on the two briefs proven red (rv1, prk1, rs1, rs2, ae1). ruff and vermin on tests/test__refs.py exit 0. Process note: two edits (the sp id renumbering in tests/test__refs.py and the first executor edit) went through a python one-liner in Bash instead of the Edit tool; nothing refused them, and every later edit used Edit. Skill conflict: none met. Submit note: the brief's submit block was refused three times by the worktree isolation check (twice with the cd prefix, once exactly as printed with the worktree as cwd), verbatim: This session is isolated in the worktree <home>/dev/audit-plugin/claude-plugins-skill-gates, but this command is too complex to verify that it stays inside the worktree. Refusing to run it — a worktree-isolated session's git operations must target its own worktree. Split it into plain, separate commands and run them from <home>/dev/audit-plugin/claude-plugins-skill-gates. Dependants: PLUGIN-BUILD-GUIDE.md quotes neither brief's changed text (lines 97-98 tree lines, 5974 a path) - still correct, unchanged. tools/prove-gates.py rows (rv1, prk1, rs1 twice, ae1) anchors each count 1 - still correct, unchanged. tools/measure-context.py --gate exit 0 - unchanged. tests pinning the brief text (test__refs iq/ih/cv/rv/gp/rs, test_stamp_verification, test_require_plan, test_audit_task, test_run_agent_session, test_drive_phase, test__deps, test__filed_returns, test_hooks, tools/lints/_refs.py) - green in the full sweep. evals.json, docs/research/*.md, hooks remind-tdd/require-plan, _filed_returns.py, run-agent-session.py, audit-lookup.py name the briefs by path or basename only - still correct. ORCHESTRATOR NOTE, added when filing: the wrong path named in SG1.5/SG1.6 was the orchestrator's own error in the batch that minted SG1; it was corrected with `audit-task.py scope` and committed as audit-state before this filing, so q1 is green on the commit this return is filed against. This return was filed by the orchestrator from a file because the isolation check refused the executor's heredoc; the object above is the executor's, unchanged apart from this note.",
+        "descriptive": "Both agent briefs now say their hard rules win over a skill's instruction and where the conflict is reported, within the existing context ceilings."
       },
       "startedAt": "2026-11-16T16:20:20Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-16T16:57:36Z",
+      "verifiedBy": [
+        "tests/test__refs.py sp1-sp6: each brief carries the 'win over any skill's instruction' clause exactly once, inside its hard-rules list, naming outcome.technical (executor) or intent.note (reviewer) and 'silently', and the named field is declared by that brief's return template"
+      ],
       "notes": [
         {
           "at": "2026-11-16T16:20:06Z",
@@ -99,12 +101,24 @@
         "runId": "2026-11-16T16:55:47Z.408a19",
         "status": "passed",
         "at": "2026-11-16T16:55:47Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "0eeb2b7f8a6c",
+        "at": "2026-11-16T16:57:36Z",
+        "return": "docs/audit/evidence/returns/SG1.1/20261116T162020Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-16T16:51:20Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__refs.py` in a throwaway tree at HEAD exited 1 with 4 of 298 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sp1 (house FAIL), sp2 (house FAIL), sp4 (house FAIL), sp5 (house FAIL): SELFTEST FAILED: 294/298 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; no ignored dependency directory linked from the project root; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "SG1.2",
       "title": "The phase reviewer's brief names the review skill that resolved",
-      "status": "pending",
+      "status": "in_progress",
       "description": "agents/audit-reviewer.md: 'A review skill named (mode: phase): invoke it FIRST', and its input table lists 'the review skill' as a phase-mode input of the computed brief (`audit-lookup.py brief <id> --role phase`). On de21866c `grep -n -i 'review.\\?skill' plugins/audit/scripts/status/audit-lookup.py` prints nothing, and in plugins/audit/scripts/governance/drive-phase.py `_areas.resolve_review_skill` is read only where the drive decides whether a review is due. So on the drive route a plan with meta.reviewSkill / meta.areas[tag].reviewSkill / phase.reviewSkill set appears to get a review that never learns the skill's name.\n\nFIRST establish the fact by running, not reading: build a scratch plan (tempfile.mkdtemp, removed in finally) whose phase resolves a review skill, compute the phase brief with the real command, and show whether the name is in it. If it IS there through a path the grep missed, stop: report where, add the pinning case only, and say so.\n\nIf it is not: file the bug in this plan (`audit-task.py bug-add`, medium) and fix it here - the phase brief gains a section naming the resolved skill and its basis exactly as `_areas.resolve_review_skill` returns them (the phase's own, an area's, or the plan's), and saying nothing when none resolves or when an explicit null stopped the fallback. One resolver, no second precedence chain. The headless reviewer session (drive-phase.py writer_argv / session_skills) must load the same skill; check whether it does and include it if not.\n\nAllow case to pin as explicitly as the fix: a phase with no review skill, and a phase whose area sets reviewSkill null, get a brief with NO review-skill section.\n\nDependants: reference/phase-signoff.md and reference/orchestrator.md where they describe what the phase reviewer is handed; tools/measure-context.py ceilings for the sign-off entry; PLUGIN-BUILD-GUIDE.md's section on audit-lookup.py.\n\nAcceptance:\n1. A phase brief computed for a phase that resolves a review skill names that skill and the level it resolved from.\n2. A phase with none, and one stopped by an explicit null, get no such section.\n3. The headless reviewer session is started with the review skill when one resolves.\n4. The bug is filed and closed by this task's commit, or the outcome says why none was owed.",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -133,16 +147,49 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-16T16:58:09Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T16:57:59Z",
+          "text": "it quotes orchestrator.md's sentence on push and stash; SG1.2 edits orchestrator.md only where it says what the phase reviewer is handed",
+          "waives": ".claude/hooks/guard-uncommitted.py"
+        },
+        {
+          "at": "2026-11-16T16:57:59Z",
+          "text": "it quotes orchestrator.md's Reporting heading; SG1.2 edits orchestrator.md only where it says what the phase reviewer is handed",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-16T16:57:59Z",
+          "text": "it quotes the guide's 'related listing' passage; SG1.2 edits the guide only in its audit-lookup section",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-16T16:57:59Z",
+          "text": "it quotes the guide's doctor-trail passage; SG1.2 edits the guide only in its audit-lookup section",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-16T16:57:59Z",
+          "text": "it reads the guide's generated module map; SG1.2 adds no module",
+          "waives": "tools/lints/_deps.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-16T17:46:39Z.96fe66",
+        "status": "passed",
+        "at": "2026-11-16T17:46:39Z"
+      }
     },
     {
       "id": "SG1.3",
