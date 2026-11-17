@@ -40,9 +40,30 @@
         "file": "plugins/audit/scripts/manifest/_filed_returns.py:1496-1500; plugins/audit/README.md (floorGuard.mode row); plugins/audit/reference/execute-task.md:243-252",
         "issue": "Acceptance 4 ('An agent-supplied floor block in the return is not trusted') holds only on the `submit` route. floor_block trusts any block carrying the string mark `source: floor-guard` with well-formed lists, and `submit` is the only place that pops an agent's block. A return filed straight through `audit-task.py file-return` with a typed, marked block is read back by the briefs as the script's reading. `ffg3` only proves an unmarked block is untrusted. The README and execute-task.md say 'an agent's own block is dropped' without that limit. This is the same exposure `helper_red_first` already has for redFirst, which the task said to follow, so it is the module's existing weakness repeated, not a new one.",
         "resolution": "Word the README and execute-task.md sentence as 'dropped by `submit`', and state that the mark is a convention rather than a proof. If the class is wanted closed, record it once for redFirst and floorGuard together (for example a digest the verb binds to the return), not for this key alone."
+      },
+      {
+        "id": "SG1-R3",
+        "severity": "low",
+        "file": "plugins/audit/commands/init.md:144-146",
+        "issue": "Step 4.5 says the user 'corrects a line in the same answer that approves the plan'. The CHANGELOG entry and the README row repeat it with 'you correct a line in the same answer'. Step 6's gate is a single-choice AskUserQuestion (init.md:667, options 1-3), where a correction typed into the automatic Other field replaces the option and so cannot also approve. Step 6's own opening paragraph (init.md:575-577) says the right thing: a correction comes as the free-text answer, the synthesis it touches is redone, and the plan is presented again. So 4.5, CHANGELOG and README promise something step 6 cannot do. The task asked for the 'same turn the approval gate already uses', not the same answer.",
+        "resolution": "Reword 4.5, the CHANGELOG entry and the README row to say a correction is typed as the answer to the gate question, which re-presents the plan, and that approval is the option chosen on the next presentation. Delete 'in the same answer that approves the plan'."
+      },
+      {
+        "id": "SG1-R4",
+        "severity": "low",
+        "file": "plugins/audit/commands/init.md:129-131",
+        "issue": "Step 4.5 defines 'settled' as said 'in `$ARGUMENTS` or a step-2 answer', then lists the test runner and the stack. Recon (step 3, init.md:141 and 151) already asks the user by AskUserQuestion whether to adopt detected gates and runners, and step 3.5 asks which areas. By this wording an answer the user gave in step 3 still counts as unsettled and gets listed. That contradicts the rule's own 'list only what is unsettled' and the task's 'that the interview and recon did not settle'. It also pads the list, which the step forbids.",
+        "resolution": "Define settled as said in `$ARGUMENTS` or in any AskUserQuestion answer of steps 2-3.5."
+      },
+      {
+        "id": "SG1-R5",
+        "severity": "low",
+        "file": "tests/test__refs.py:259-260",
+        "issue": "ia7 is meant to pin that the approval gate prints the list. It checks `step 4.5` and `no open assumptions` anywhere in `_md_section(text, '## 6.')`, which spans the whole of step 6 including 6.1, 6.2 and the manifest examples. The sentence could move out of step 6's opening paragraph into a later sub-step, or be left stale there, and ia7 stays green. This reaches Acceptance 3, which is about order against the gate. The ordering half is held by ia2, ia5 and the synth < gate comparison.",
+        "resolution": "Restrict the search to the text before the first `### ` or the first code fence of step 6, and add an ia9 row that moves the sentence into 6.1."
       }
     ],
-    "outcome": "[findings: 2 - 0 high, 1 med, 1 low; 1 with a recorded fix commit]"
+    "outcome": "[findings: 5 - 0 high, 1 med, 4 low; 1 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -752,7 +773,7 @@
     {
       "id": "SG1.7",
       "title": "An agent's edit-tool write to the audit config is refused or asked",
-      "status": "in_progress",
+      "status": "done",
       "description": "`.claude/**` is in the plan gate's default exemptGlobs (hooks/_config.py DEFAULTS), and no guard names `.claude/audit.config.json`. So an executor or reviewer can write `policy.enabled: false`, `planGate: \"observe\"` or `journal.enabled: false` with Edit/Write and the only trace is a journal row. A capability policy the governed agent can switch off is advisory. guard-edits.py already protects its neighbours the same way: rule 3 (the installed plugin's own files), rule 4 (plan-bypass state files), rule 5 (the journal).\n\nFile the bug in this plan first (`audit-task.py bug-add`, medium: present since the policy shipped, not a regression), then add rule 6 to plugins/audit/hooks/guard-edits.py:\n- an edit-tool write (Edit, Write, MultiEdit, NotebookEdit, and the MCP write payloads the hook already reads) whose target is the project's audit config - resolved through the SAME function the hooks use to find that file, never a hard-coded path - from a SUBAGENT (`_config.is_subagent`) is denied, with a reason that says the owner changes it through /audit:panel or by hand;\n- the same write from the main session is `ask`: the human decides per call. Not deny - the owner legitimately asks the main session to change config.\n\nBEFORE CHOOSING `ask`, enumerate who writes this file with an edit tool today and say so in your outcome: grep plugins/audit/commands/*.md, reference/*.md and skills/ for instructions to Edit/Write the config (init's write step is the likely one), and the panel server (it writes through its own process, not a tool - confirm). A flow the plugin itself instructs must keep working: if a command tells the model to Write the config, either that flow moves to a script verb in this task, or the prompt it now meets is named in that command's text. Do not leave a shipped command that silently meets a prompt it never mentions.\n\nSTATED LIMIT, to write down rather than hide: a shell-form write (sed -i, a redirect, an interpreter) is not covered by this rule and stays journal-only; the shell reader lives in guard-secrets-read.py and is out of scope here. SECURITY.md must say exactly that in its residuals, and its fail-mode table row for guard-edits is unchanged (internal error -> allow).\n\nAllow cases to pin: an edit to another file under .claude/ (settings.json, a skill) is untouched by rule 6; a READ of the config is never asked; a write to a file merely NAMED audit.config.json elsewhere in the tree is untouched; in the plugin's own source checkout (the dev-mode exception rule 3 already defines) decide whether the rule applies and pin your answer - this repository edits its own .claude/audit.config.json rarely, and tests build theirs in scratch directories.\n\nIf the API refuses to produce guard code for this task, record the refusal verbatim as could-not-prove and stop; do not route around it.\n\nAcceptance:\n1. A subagent's Edit/Write to the resolved audit config is denied with a reason naming the owner's routes.\n2. The main session's is `ask`.\n3. The allow cases above are quiet.\n4. Every command or reference text that instructs an edit-tool write of the config either no longer does or names the prompt.\n5. SECURITY.md states the rule and the shell-form residual; the bug is closed by this commit.",
       "files": [
         "plugins/audit/hooks/guard-edits.py",
@@ -785,14 +806,18 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d383ad449074",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Fixes BUG-35-ukq (filed by the orchestrator; no second bug filed, no audit-task.py verb run). plugins/audit/hooks/guard-edits.py: new rule 7. `_is_audit_config(tree)` asks whether the path `_config.tree_for` placed is `<tree root>/_config.CONFIG_REL` - the same root+constant `_config.load` reads, never a literal path - compared over realpath (a symlinked .claude/ is the same file) and by samefile when both exist; it covers the project and a linked worktree of it (tree_for re-roots). `_config_verdict` returns block for `_config.is_subagent(data)`, with a reason naming /audit:panel and a hand edit, and ask for the main session. Wired on the edit-tool path after rule 6 (path decides, so an empty Write is held) and on the MCP path only with a write basis (a read is not held), beside rules 4 and 5. The description said 'rule 6'; the hook already numbers strict manifest state 6 in its code comments, so the new rule is 7, and the module docstring now lists 6 and 7. Dev mode decided and pinned: the rule APPLIES in the plugin's own checkout (cf14/cf15), because rule 3's exception is for plugin source and this file is governance; cf16 pins that rule 3's dev exception still holds. ENUMERATION of edit-tool writers of the config: grep -rn 'audit.config.json' over commands, reference, skills, agents (16 hits), plus a phrasing grep for writing/setting the config: only plugins/audit/commands/init.md instructs a write - section 5 (mirror gitRoot into the config) and step 7.5 (create it with executor.waveWidth auto); both run in the main session, so both now meet an ask, and both now name the prompt in init.md's text (and that a subagent is refused). Every other hit reads the config (worktree.md, report.md, manifest-conventions.md, orchestrator.md, verbs-in-full.md, guide.md, audit-codebase SKILL.md) or describes the panel (panel.md). reference/execute-task.md:593 'edited the config' is about playwright.config.ts, not this file. The panel server writes the config from its own process (scripts/panel/_panel_write.py:1555, temp + os.replace), so no tool hook sees it - confirmed by reading it. SECURITY.md: Known bypass classes item 3 states rule 7, its allow cases, dev mode, and the residual - a shell-form write (sed -i, a redirect, an interpreter) is not refused by any hook and is recorded by the journal only (journal-writes is registered on Bash pre and post, read off hooks.json); the capability-policy section says the same in one paragraph. The fail-mode table row for guard-edits is unchanged: git diff -U0 SECURITY.md holds no table line. Also: README.md hook list + guard table row, PLUGIN-BUILD-GUIDE.md guard-edits section, CHANGELOG.md Unreleased ### Security entry. Tests: tests/test_guard_edits.py gains cf0-cf18 (74/74 pass; first run on the unfixed hook was 62/72 with exactly the ten deny/ask cases red and every allow twin green). tests/test_hooks.py gains classes config-write-subagent (deny), config-write-orchestrator (ask), edit-other-claude-file (allow) and rows c01-c04 driven through every registered hook as processes at all four tiers; c03 (a subagent's sed -i of the config) is recorded as a known divergence (today allow at every tier) with the SECURITY.md residual as its basis, so the row goes red the day the residual closes (247/247). Commands run, each exit 0: python3 tools/sweep-selftests.py --jobs 4 tests/test_guard_edits.py tests/test_hooks.py (2/2 files ok, 321 cases); python3 tools/gate-parity.py (its summary line includes 'SECURITY.md's fail modes are the ones hooks.json registers'); python3 tools/prove-gates.py --list (the two rows naming SECURITY.md are 'red failmode_table_drift SECURITY.md anchored'; no row names guard-edits); python3 tools/bench-hooks.py --gate ('11 hook(s) within budget'; latency for guard-edits.py edit lane, two runs minutes apart: 50.49 ms / 54.47 ms, xbase 2.41 / 2.59, a loaded machine; only 3.14.7 measured, the tool names 3.8-3.13 NOT MEASURED); python3 tools/measure-context.py --gate; ruff check on the three .py files; vermin -t=3.8- on them; _output_lints.prose_number_claims() and _deps.doc_prose_numbers() both returned empty lists; house_style_violations() empty. Mutation probe sg1.7/mutations.py (scratch, throwaway copy of the tree): 15 rows, all applied, all caught, exit 0 - run twice, the second against the final hook text. The orchestrator's wider gate, run once unrecorded (run-test-gate.py SG1 --task SG1.7, no --record): 'GATE GREEN', exit 0. Untested property, stated: the samefile match for a case-variant spelling has no case (CI's linux volume is case-sensitive, so a case there would test nothing on one platform). Dependants: tests/test__doctor_setup.py (path; names guard-edits.py as a modified-file fixture and its dev carve-out - still correct, rule 3 unchanged); PLUGIN-BUILD-GUIDE.md (changed: section updated); plugins/audit/hooks/_config.py (basename; strictManifestState and ask_payload comments still correct - ask_payload's docstring names strict mode and the plan gate as its callers, it remains true and does not claim to list all of them; no edit, out of scope); hooks.json (basename; matchers unchanged, rule rides the existing Edit|Write|MultiEdit|NotebookEdit and mcp__.* entries); audit-config.schema.json (basename; strictManifestState description still correct); tests/test_guard_edits.py (changed); tools/bench-hooks.py (basename; lane unchanged, gate green); tools/verify.sh (basename; launcher no-interpreter probe unchanged); _decide_mcp/_self_edit_target/decide/collect callers: signatures unchanged, decide/_decide_mcp may now return ask, which main() already prints through ask(); SECURITY.md dependants (guard-release, guard-uncommitted, require-claim-block, check-prohibitions, guard-history-rewrite, test_guard_history_rewrite, before-you-claim evals): none quotes the sections edited - prove-gates' anchor still matches; tests/test_hooks.py dependants (test_commit_task_work imports _git/_write, check-git-pipeline uses decision_of, render-report's run_row is its own): no signature touched; README.md, init.md, CHANGELOG.md dependants: path/basename references only, still correct.",
+        "descriptive": "A subagent's edit-tool or MCP write to the project's audit config is now refused, the main session's is asked, and the shell-form residual is written down in SECURITY.md and pinned as a known divergence."
       },
       "startedAt": "2026-11-17T09:44:47Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-17T10:16:46Z",
+      "verifiedBy": [
+        "test_guard_edits cf1-cf7, cf2b, cf2c, cf14, cf15, cf17: a subagent's Write/Edit/MultiEdit/NotebookEdit/MCP write (an empty Write and a symlinked spelling included) of the resolved audit config is denied with /audit:panel and 'by hand' in the reason; the same payload without agent_id is ask; also in the plugin's own checkout and in a linked worktree",
+        "test_guard_edits cf8s/m-cf13s/m, cf16, cf18, plus cf0: settings.json and a skill under .claude/, a same-named file elsewhere and a nested .claude/audit.config.json, a Read and an MCP read of the config are allowed for both a subagent and the main session; dev-mode plugin source stays allowed; a worktree's settings.json stays allowed; cf0 shows the fixture path is the file _config.load reads",
+        "test_hooks rows c01-c04 with three new classes: subagent Edit of the config deny at every tier, main-session Write ask at every tier, subagent Edit of .claude/settings.json allow, and the subagent sed -i of the config recorded as a known divergence (allow) naming the SECURITY.md residual"
+      ],
       "notes": [
         {
           "at": "2026-11-17T09:44:34Z",
@@ -850,18 +875,31 @@
         "runId": "2026-11-17T10:16:43Z.e47fa3",
         "status": "passed",
         "at": "2026-11-17T10:16:43Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "d383ad449074",
+        "at": "2026-11-17T10:16:46Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-17T10:06:37Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_guard_edits.py tests/test_hooks.py` in a throwaway tree at HEAD exited 1 with 18 of 247 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cf1 (house FAIL), cf2 (house FAIL), cf2b (house FAIL), cf2c (house FAIL), cf3 (house FAIL), cf4 (house FAIL), cf5 (house FAIL), cf6 (house FAIL) and 10 more: SELFTEST FAILED: 241/247 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "SG1.8",
       "title": "/audit:init shows its assumptions before synthesis and writes checkable clauses",
-      "status": "pending",
-      "description": "plugins/audit/commands/init.md interviews (section 2), explores, then synthesizes phases (section 5) and presents them (section 6). Two gaps a requirements procedure would close, both inside the existing flow - no new artifact, the manifest stays the only record:\n\n(1) Between recon and synthesis the command never tells the user what it is assuming. Add a short step: before synthesizing, list the assumptions the plan will rest on that the interview and recon did not settle (the stack and test runner it detected, what it took 'done' to mean for each chosen dimension, what it is leaving out), each one line, and let the user correct them in the same turn the approval gate already uses - not a second gate, not an extra question round when there is nothing unsettled (say 'no open assumptions' in that case; never invent some).\n\n(2) A task's acceptance lives as numbered items after an `Acceptance:` marker in its description, and scripts/governance/_clause_coverage.py holds the writer to each clause. A clause like 'make it faster' or 'improve error handling' cannot be judged by anything. Add the rule to synthesis: each clause states an observable condition - a command and its expected result, a named behaviour with its input and output, a file that must or must not change. A finding that cannot be turned into such a clause is recorded as an open choice of the phase (the `openChoices` the batch already carries), not as a vague clause.\n\nKeep init.md navigable (it is over 400 lines: section markers per CLAUDE.md). Dependants: tests/ cases that pin init.md text (grep tests/ for 'init.md'), tools/lints/_refs.py command lints, the audit-explorer brief if it must return the facts step (1) lists, README's /audit:init description, QUICKSTART.md only if a first-run step changes.\n\nAcceptance:\n1. init.md has an assumptions step before synthesis that lists only what is unsettled and says so when nothing is.\n2. init.md's synthesis section requires each Acceptance clause to state an observable condition and sends what cannot be so stated to openChoices.\n3. A locking case pins both rules' presence and their order relative to synthesis and the approval gate.\n4. No other init step changed its order or its gate.",
+      "status": "in_progress",
+      "description": "plugins/audit/commands/init.md interviews (section 2), explores, then synthesizes phases (section 5) and presents them (section 6). Two gaps a requirements procedure would close, both inside the existing flow - no new artifact, the manifest stays the only record:\n\n(1) Between recon and synthesis the command never tells the user what it is assuming. Add a short step: before synthesizing, list the assumptions the plan will rest on that the interview and recon did not settle (the stack and test runner it detected, what it took 'done' to mean for each chosen dimension, what it is leaving out), each one line, and let the user correct them in the same turn the approval gate already uses - not a second gate, not an extra question round when there is nothing unsettled (say 'no open assumptions' in that case; never invent some).\n\n(2) A task's acceptance lives as numbered items after an `Acceptance:` marker in its description, and scripts/governance/_clause_coverage.py holds the writer to each clause. A clause like 'make it faster' or 'improve error handling' cannot be judged by anything. Add the rule to synthesis: each clause states an observable condition - a command and its expected result, a named behaviour with its input and output, a file that must or must not change. A finding that cannot be turned into such a clause is recorded as an open choice of the phase (the `openChoices` the batch already carries), not as a vague clause.\n\nKeep init.md navigable (it is over 400 lines: section markers per CLAUDE.md). Dependants: tests/ cases that pin init.md text (grep tests/ for 'init.md'), tools/lints/_refs.py command lints, the audit-explorer brief if it must return the facts step (1) lists, README's /audit:init description, QUICKSTART.md only if a first-run step changes.\n\nAcceptance:\n1. init.md has an assumptions step before synthesis that lists only what is unsettled and says so when nothing is.\n2. init.md's synthesis section requires each Acceptance clause to state an observable condition and sends what cannot be so stated to openChoices.\n3. A locking case pins both rules' presence and their order relative to synthesis and the approval gate.\n4. No other init step changed its order or its gate.\n\nADDED BEFORE START (the tree as SG1.7 left it, commit d383ad4):\n- SG1.7 edited plugins/audit/commands/init.md in two places (the gitRoot mirror and step 7.5 now say a permission prompt is coming when the model writes the audit config). Leave those sentences as they are and keep them where they sit relative to the steps they belong to.\n- PLUGIN-BUILD-GUIDE.md has a section headed by commands/init.md's path; it is added to your scope. Update it only if what it says about init's steps stops being true.\n- commands/init.md is loaded by a pipeline entry that tools/measure-context.py --gate measures against a ceiling: print the count before and after your edit and report both. Do not raise a ceiling.",
       "files": [
         "plugins/audit/commands/init.md",
         "tests/test__refs.py",
         "plugins/audit/README.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "regression",
@@ -879,16 +917,60 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-17T10:17:21Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-17T10:17:05Z",
+          "text": "it quotes one row of the README's table of drive steps; this task edits the README's description of /audit:init and leaves that table as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-17T10:17:05Z",
+          "text": "it reads the Unreleased heading of CHANGELOG.md; this task adds an entry under that heading and leaves the heading as it is",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-17T10:17:05Z",
+          "reader": "PLUGIN-BUILD-GUIDE.md",
+          "reads": "plugins/audit/commands/init.md",
+          "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/commands/init.md - a section headed by its path"
+        },
+        {
+          "at": "2026-11-17T10:17:19Z",
+          "text": "it quotes a phrase of the build guide's section on the affected-test derivation; this task edits only the section about the file it changes",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-17T10:17:19Z",
+          "text": "it quotes a sentence of the build guide's section on the doctor's trail check; this task edits only the section about the file it changes",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-17T10:17:19Z",
+          "text": "it quotes a section marker the build guide cites for the drive; this task edits only the section about the file it changes",
+          "waives": "tests/test_drive_phase.py"
+        },
+        {
+          "at": "2026-11-17T10:17:19Z",
+          "text": "it reads the heading of the build guide's generated module map; this task adds no module under scripts or hooks, so the map and its heading stay as they are",
+          "waives": "tools/lints/_deps.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T10:36:41Z.0d42a4",
+        "status": "passed",
+        "at": "2026-11-17T10:36:41Z"
+      }
     },
     {
       "id": "SG1.9",

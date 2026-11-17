@@ -1,0 +1,37 @@
+{
+  "findings": [
+    {
+      "id": 1,
+      "severity": "low",
+      "file": "plugins/audit/commands/init.md:144-146",
+      "issue": "Step 4.5 says the user 'corrects a line in the same answer that approves the plan'. The CHANGELOG entry and the README row repeat it with 'you correct a line in the same answer'. Step 6's gate is a single-choice AskUserQuestion (init.md:667, options 1-3), where a correction typed into the automatic Other field replaces the option and so cannot also approve. Step 6's own opening paragraph (init.md:575-577) says the right thing: a correction comes as the free-text answer, the synthesis it touches is redone, and the plan is presented again. So 4.5, CHANGELOG and README promise something step 6 cannot do. The task asked for the 'same turn the approval gate already uses', not the same answer.",
+      "resolution": "Reword 4.5, the CHANGELOG entry and the README row to say a correction is typed as the answer to the gate question, which re-presents the plan, and that approval is the option chosen on the next presentation. Delete 'in the same answer that approves the plan'."
+    },
+    {
+      "id": 2,
+      "severity": "low",
+      "file": "plugins/audit/commands/init.md:129-131",
+      "issue": "Step 4.5 defines 'settled' as said 'in `$ARGUMENTS` or a step-2 answer', then lists the test runner and the stack. Recon (step 3, init.md:141 and 151) already asks the user by AskUserQuestion whether to adopt detected gates and runners, and step 3.5 asks which areas. By this wording an answer the user gave in step 3 still counts as unsettled and gets listed. That contradicts the rule's own 'list only what is unsettled' and the task's 'that the interview and recon did not settle'. It also pads the list, which the step forbids.",
+      "resolution": "Define settled as said in `$ARGUMENTS` or in any AskUserQuestion answer of steps 2-3.5."
+    },
+    {
+      "id": 3,
+      "severity": "low",
+      "file": "tests/test__refs.py:259-260",
+      "issue": "ia7 is meant to pin that the approval gate prints the list. It checks `step 4.5` and `no open assumptions` anywhere in `_md_section(text, '## 6.')`, which spans the whole of step 6 including 6.1, 6.2 and the manifest examples. The sentence could move out of step 6's opening paragraph into a later sub-step, or be left stale there, and ia7 stays green. This reaches Acceptance 3, which is about order against the gate. The ordering half is held by ia2, ia5 and the synth < gate comparison.",
+      "resolution": "Restrict the search to the text before the first `### ` or the first code fence of step 6, and add an ia9 row that moves the sentence into 6.1."
+    }
+  ],
+  "preExisting": [],
+  "intent": {
+    "answer": "matches",
+    "note": "Task clause (1), assumptions step before synthesis: the diff adds '## 4.5 Assumptions (before synthesis)' (init.md:250). It lists the stack and runner with the file each was read off, what 'done' means for each dimension the user did not define, and what the plan leaves out. It says 'List only what is unsettled, and never invent a line' and 'no open assumptions' when none. It asks nothing, and step 6 prints the list and takes a correction (finding 1 and finding 2 are wording looseness only). Clause (2), the synthesis rule: bullet '**Each Acceptance clause states an observable condition.**' sits inside step 5 (init.md:349-360), and its three forms are a command and result, a behaviour with input and output, or a file that must or must not change. It writes the clause form as `Acceptance: (1) ... (2) ...`, which is what `_clause_coverage.acceptance_items` parses. What cannot be so stated goes to the phase's `openChoices`. I checked that field: it is in the phase schema (audit-plan.schema.json:1144), is allowed by the manifest vocabulary (_manifest_vocab.py:625) and is printed by the phase brief (audit-lookup.py:2234 `_choices_lines`). Acceptance items, which no mechanical check read (the item list is numbered '1.'), judged by me. (1) met: init.md:250-271. (2) met: init.md:349-360. (3) met: ia2 holds fanout < assume < synth, ia5 holds synth < clause rule < gate, and ia7 holds synth < gate and that the gate prints the list, though ia7's 'prints the list' half is loose (finding 3). ia3, ia4 and ia6 pin the 'only what is unsettled' wording, the no-question rule and the openChoices route. (4) met: the headings ascend (0-8) and 4.5 was inserted without renumbering. The only other change is step 6's opening paragraph, which is the requested printing of the list. The gate options and the park-all default on an aborted gate are unchanged, as are SG1.7's gitRoot mirror and the step 7.5 sentence (init.md:~751). The claim: the outcome describes the diff accurately. I checked the measure-context statement: `measure-context.py --tree` prints no row for commands/init.md, so the 'ADDED BEFORE START' premise that a --gate entry measures init.md does not hold, as the executor reports, and `measure-context.py --gate` prints GATE OK. The executor's remark that the task's own Acceptance items are numbered '1.' and read by no mechanical check is correct. The README and PLUGIN-BUILD-GUIDE 'size' to 'pain points' change is true: the step-2 interview asks dimensions, scope, branch and pain points, and the plan size question is asked after approval. The edit to those two summaries is unrequested but harmless. The executor's own claim 4 (nothing enforces the rules at run time) is accurate.",
+    "missing": [],
+    "redFirst": "not-attempted",
+    "redFirstBasis": "The executor filed redFirst 'not-attempted', basis 'regression task with tests.expectRedFirst false: no red-first proof is owed', with scratch mutation evidence (8 deny rows each caught, the over-fire row red on ia8, 3 allow rows green). I did not re-run that evidence. The suite has its own mutation case, ia9: it applies the deletions and moves to init.md in memory and requires each to turn its owning rule false. Its ia5 row covers deletion only, not the 'moved before synthesis' mutation the executor ran in scratch. ia8 is the in-suite allow twin. None of the new cases reaches an external service.",
+    "inheritedTests": "none-found",
+    "inheritedTestsBasis": "The gate is one literal command, `python3 tools/sweep-selftests.py tests/test__refs.py`, which selects only tests/test__refs.py. I read the new ia block in full (tests/test__refs.py:4329-4483) and the two older places that read init.md (tests/test__refs.py:3074 and 3103, both about the task-add documents' command wording), none of which would be satisfied vacuously by deleting the new behaviour. I did not read the rest of the roughly four-thousand-line suite case by case, so this answer is limited to the cases that read init.md."
+  },
+  "verdict": "findings",
+  "tasks": []
+}

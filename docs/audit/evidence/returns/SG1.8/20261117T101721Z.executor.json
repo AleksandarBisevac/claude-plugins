@@ -1,0 +1,77 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__refs.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task with tests.expectRedFirst false: no red-first proof is owed. Mutation evidence instead: scratch sg1.8/mutations.py (output sg1.8/mutations.out) ran 12 rows in a throwaway copy of the tree and exited 0 (MUTATIONS ALL HELD). Each of the 8 deny rows turned its own case red: assumptions step deleted -> ia2; moved after synthesis -> ia2; the no-open-assumptions sentence deleted -> ia3; the step asks its own AskUserQuestion -> ia4; observable-clause rule deleted -> ia5; that rule moved before synthesis -> ia5; openChoices route deleted -> ia6; approval gate moved before synthesis -> ia7. The over-fire row (ia3's pin widened to a neighbour sentence) turned ia8 red. The 3 allow rows (init.md unmodified; a neighbour sentence reworded in step 4.5; another in step 5) passed 318/318.",
+    "at": "not run: none owed"
+  },
+  "outcome": {
+    "technical": "plugins/audit/commands/init.md: new section '## 4.5 Assumptions (before synthesis)' between fan-out (4) and synthesis (5). It lists, one line each, what nobody settled: the stack/test runner and the file each was read off, what done means for each undefined dimension, and what is left out. Each line has a passing example. It says to list only what is unsettled and never invent a line, and to write `no open assumptions` when nothing is unsettled. It asks nothing; step 6 prints the list. Step 5.3 gains a bullet 'Each Acceptance clause states an observable condition': the clauses use the form `Acceptance: (1) ... (2) ...`, the one scripts/governance/_clause_coverage.py acceptance_items parses. Each clause is a command and its result, a named behaviour with input and output, or a file that must or must not change. The bullet gives one example clause that passes and one that does not, and a finding that cannot be stated that way goes to the phase's `openChoices`; audit-lookup.py:2234 prints those in the phase reviewer's brief. Step 6's opening paragraph now prints step 4.5's list (or `no open assumptions`) above the plan. A correction comes in as the free-text answer to step 6's existing gate question, so there is no new question round. No other step moved and no gate changed. Byte counts: `python3 tools/measure-context.py --tree plugins/audit` prints NO row for commands/init.md, before or after (grep -c 'init.md' on its output = 0), because no measured pipeline entry loads it. So the 'ADDED BEFORE START' premise that a --gate entry measures init.md does not hold. Measured with wc -c instead: 52351 bytes before, 55090 after. `measure-context.py --gate` printed GATE OK after the change, and no ceiling was touched. tests/test__refs.py: new block 'ia-block' with cases ia1-ia9, read off the real init.md through pure functions _ia_read/_ia_verdicts. Each case counts occurrences and compares heading offsets. ia8 is the in-suite allow twin and ia9 applies the deny mutations in memory and requires each to turn its own verdict false. PLUGIN-BUILD-GUIDE.md init bullet: the step chain now names the assumptions list, the clause rule and the approval gate, and the stale 'size' interview item is now 'pain points'. plugins/audit/README.md /audit:init row: the same two behaviours added, same stale 'size' fixed. CHANGELOG.md: an Unreleased/Added entry. Runs: `python3 tests/test__refs.py --selftest` ALL PASS 318/318 exit 0; `python3 tools/sweep-selftests.py --jobs 4 tests/test__refs.py` 1/1 files ok, 318 cases, exit 0; the orchestrator's gate run-test-gate.py ... SG1 --task SG1.8, not recorded, printed GATE GREEN with exit 0; ruff check tests/test__refs.py and vermin -t=3.8- both exit 0; the prose-number lints doc_prose_numbers()/prose_number_claims() report nothing in the touched files. Dependants, each still correct: tools/lints/_deps.py and tests/test__deps.py compare init.md's restatement of the explorer return format, which is unchanged. PLUGIN-BUILD-GUIDE.md was updated as above. docs/research/pipeline-cost-design.md greps 'section discovery', which is still present in step 3.5/6.1. _gate_derive.py, _gate_feed.py and audit-status.py cite the recon step and step 6.1, both unchanged. audit-task.py cites init.md's mode rule in 5.3, which is unchanged; the new bullet sits after the tests.add bullet. tests/test__manifest_vocab.py mv67 reads files-no-suite sentences, which are unchanged. agents/audit-explorer.md was not needed: every fact step 4.5 lists comes from recon or the orchestrator's own judgement, not from explorers. QUICKSTART.md is unchanged because no first-run step changed. Outside scope, not fixed: this task's own description numbers its Acceptance items '1.' rather than '(1)', so _clause_coverage.acceptance_items reads none of them.",
+    "descriptive": "/audit:init now shows the assumptions it plans on before synthesis (or says there are none) and takes corrections at its existing approval gate, and synthesis writes acceptance clauses something can check, sending the rest to openChoices."
+  },
+  "testsAdded": [
+    "tests/test__refs.py ia1-ia9: init.md's numbered steps ascend once each; the assumptions step sits after fan-out and before synthesis, says 'only what is unsettled', 'never invent' and `no open assumptions` in one block, asks no question and names step 6; the observable-clause rule appears once inside synthesis and before the gate, naming _clause_coverage.py; its own bullet routes to openChoices; the approval gate follows synthesis and prints the list; an allow twin with reworded neighbour sentences passes; and in-memory deletions and moves each turn their own rule red"
+  ],
+  "casesAdded": [
+    [
+      "ia1",
+      "ia2",
+      "ia3",
+      "ia4",
+      "ia5",
+      "ia6",
+      "ia7",
+      "ia8",
+      "ia9"
+    ]
+  ],
+  "claims": "claims:\n1 init.md 4.5's claim that the phase reviewer's brief prints openChoices -> plugins/audit/scripts/status/audit-lookup.py:2234 (_choices_lines in the phase brief); the clause form `(1) ... (2) ...` -> _clause_coverage.acceptance_items reads numbered (n) items after the last Acceptance:; the AskUserQuestion free-text answer -> init.md's own step-2 text names its automatic Other field\n2 mutations.py: 8 deny rows each CAUGHT by the named case, over-fire row (ia3 widened) turns ia8 red, 3 allow rows green 318/318; every anchor matched exactly once and was restored byte for byte (mutations.out, exit 0)\n3 grep 'size' in the two init summaries: PLUGIN-BUILD-GUIDE.md init bullet and README /audit:init row both said the interview asks 'size' and both are fixed; the init.md frontmatter description is left unchanged because it is still true and is listing text\n4 the rules are addressed to a model running /audit:init; nothing enforces them at run time, and the ia cases pin only that the words are present and where they sit. The rule text does not say this about itself.\n5 n/a - no property recorded beyond the byte count, which wc -c re-derives\n6 n/a - no guard\n7 the byte counts come from wc -c on plugins/audit/commands/init.md (rerun it to check); no number is written into the shipped prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:0459801495d1036c47f1c4411f4000ec255ef15291c21571754d608d8b303154\",\"dirtyDigest\":\"sha256:cdc1b92c57caf759e855419e8f3059da48b437f548c2460749a0b65a3760215d\",\"dirtyPaths\":{\"CHANGELOG.md\":\"40553f76f3519224\",\"PLUGIN-BUILD-GUIDE.md\":\"7eedbeb8201b0c79\",\"plugins/audit/README.md\":\"51db4a818aa6db0c\",\"plugins/audit/commands/init.md\":\"9914c408644cd1d1\",\"tests/test__refs.py\":\"d22ca2dc04f37f3b\"},\"head\":\"d383ad44\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/README.md\",\"plugins/audit/commands/init.md\",\"tests/test__refs.py\"],\"scopeDigest\":\"sha256:3191b784de0c0e2f7877615c7e8e23a91568664dc84544f9bd0b6cd08fcc1249\",\"v\":2}",
+  "floorGuard": {
+    "answer": "clean",
+    "basis": "read 1 of the diff's 5 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 4 file(s) not read, having no syntax known here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md, plugins/audit/commands/init.md; 1 test file(s) not compared for definition-changed, defining no test* function: tests/test__refs.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/commands/init.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "tests/test__refs.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      }
+    ],
+    "base": {
+      "commit": "d383ad4490749199dbc83665f3ecfc3e9e94840d"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-17T10:32:01Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

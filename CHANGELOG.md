@@ -60,6 +60,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   the reviewer's brief: its green-first section says the proof is owed and not measured, with
   the return's own words when it typed some, and the phase review's computed `greenFirst` for
   it is `not-attempted`, which sign-off now stops on as it stops on `not-green`.
+- **`/audit:init` shows the assumptions its plan rests on before you approve it, and writes
+  acceptance clauses something can check.** A new step between the explorers and synthesis lists,
+  one line each, what neither you nor the interview settled - the stack and test runner and the
+  file each was read off, what "done" means for a dimension you did not define, what the plan
+  leaves out - or says `no open assumptions`, never inventing one. It asks nothing: the approval
+  gate prints the list above the proposed plan and you correct a line in the same answer. Synthesis
+  now requires each `Acceptance:` clause of a task to state a command and its result, a named
+  behaviour with its input and output, or a file that must or must not change; a finding that
+  cannot be stated that way goes to the phase's `openChoices` instead of becoming a vague clause.
+  No other step moved and no gate changed; the `ia` cases in `tests/test__refs.py` pin both
+  rules' places relative to synthesis and the approval gate.
 
 ### Security
 - **An agent can no longer switch its own governance off with an edit tool.** `.claude/**` is

@@ -523,14 +523,17 @@ meta.areas[tag].reviewSkill ?? meta.reviewSkill`, stated identically in `orchest
 The creation-side commands (invoked namespaced: `/audit:init`, `/audit:task`, `/audit:bug` —
 short forms may collide with built-ins like `/init`). All three read
 `reference/manifest-conventions.md` first and revalidate after every mutation:
-- **init** — interview (dimensions/scope/branch/size) → read-only recon (detect
+- **init** — interview (dimensions/scope/branch/pain points) → read-only recon (detect
   `meta.buildCommands`; detect a **workspace** — pnpm/yarn workspaces, turbo, nx, lerna,
   `go.work`, a Cargo workspace, a `.sln` — and propose `meta.areas`, skipped entirely when
   nothing matches so a single-app repo comes out unchanged) → parallel read-only explorer
   subagents (subsystem × dimension,
-  cap 6, strict-JSON findings) → synthesis into phases/tasks (tests.mode by finding kind,
-  model by risk, `area` tags from the registry) → Write + validate. Backs up an existing
-  manifest before regenerating.
+  cap 6, strict-JSON findings) → an assumptions list (only what nobody settled, else
+  `no open assumptions`; it asks nothing) → synthesis into phases/tasks (tests.mode by
+  finding kind, model by risk, `area` tags from the registry, each `Acceptance:` clause an
+  observable condition and what cannot be one recorded in the phase's `openChoices`) →
+  the approval gate, which prints the assumptions and takes corrections in its own answer →
+  Write + validate. Backs up an existing manifest before regenerating.
 - **task** — `add "<title>" [--phase <id>]`: target-phase selection (done phases are
   immutable), full new-task template, id allocation, fileIndex maintenance.
 - **bug** — `add` (BUG-<n>, severity/repro/expected/actual) · `list` (read-only) ·

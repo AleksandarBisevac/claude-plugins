@@ -4250,6 +4250,7 @@ def _selftest():
         _harness.stage(check, "fa-block", _followed_anchor_cases)
         _harness.stage(check, "sl-block", _split_literal_cases)
         _harness.stage(check, "gfv-block", _green_first_vocabulary_cases)
+        _harness.stage(check, "ia-block", _init_assumption_cases)
     return _harness.run(body)
 
 
@@ -4323,6 +4324,162 @@ def _green_first_vocabulary_cases(check):
           "schema is a problem, never a skip: %r" % ((same, gone),),
           len(same) == 1 and "red-first-helper" in same[0]
           and len(gone) == 1 and "unreadable" in gone[0])
+
+
+# --- (ia) /audit:init shows its assumptions before synthesis ----------------------
+# What a model running `/audit:init` is TOLD, so these can only hold that the words
+# are there and where they sit: the assumptions step comes between the explorers and
+# synthesis, asks nothing, and says `no open assumptions` rather than inventing a
+# line; synthesis holds each Acceptance clause to an observable condition and sends
+# what cannot be one to `openChoices`; the approval gate still follows synthesis and
+# prints the list. Offsets are compared and occurrences counted, so a rule moved to
+# the wrong side of synthesis or of the gate is red, not only a rule deleted.
+_IA_FANOUT = "## 4. Fan-out"
+_IA_ASSUME = "## 4.5 Assumptions (before synthesis)"
+_IA_SYNTH = "## 5. Synthesis"
+_IA_GATE = "## 6. Present & approve"
+_IA_NONE = "`no open assumptions`"
+_IA_CLAUSE = "**Each Acceptance clause states an observable condition.**"
+_IA_ROUTE = "record it in the phase's `openChoices`"
+
+
+def _ia_read(text):
+    """What the `ia` cases judge, read off one copy of `commands/init.md`: the
+    numbered `## ` headings in order, each anchor's offsets, and the text of the
+    assumptions section, the gate section and the clause rule's bullet."""
+    heads = [(m.start(), float(m.group(1)), m.group(0)) for m in
+             re.finditer(r"^## (\d+(?:\.\d+)?)\.? .*$", text, re.M)]
+    at = dict((key, [off for off, _n, line in heads if line.startswith(prefix)])
+              for key, prefix in (("fanout", _IA_FANOUT), ("assume", _IA_ASSUME),
+                                  ("synth", _IA_SYNTH), ("gate", _IA_GATE)))
+    clause = [m.start() for m in re.finditer(re.escape(_IA_CLAUSE), text)]
+    bullet = ""
+    if clause:
+        stop = text.find("\n   - ", clause[0])
+        bullet = _squash(text[clause[0]:stop if stop > 0 else None])
+    return {"numbers": [n for _off, n, _line in heads], "at": at,
+            "clause": clause, "bullet": bullet,
+            "assume": _md_section(text, _IA_ASSUME),
+            "gate": _md_section(text, _IA_GATE)}
+
+
+def _ia_once(facts, key):
+    """The one offset of a heading, or None when it is absent or repeated."""
+    hits = facts["at"][key]
+    return hits[0] if len(hits) == 1 else None
+
+
+def _ia_verdicts(facts):
+    """`{case id: bool}` - each rule judged on its own, so a mutation can be
+    credited to the case that owns it."""
+    fanout, assume, synth, gate = (_ia_once(facts, k) for k in
+                                   ("fanout", "assume", "synth", "gate"))
+    nums = facts["numbers"]
+    none_blocks = _reason_blocks(facts["assume"], "only what is unsettled",
+                                 "never invent", _IA_NONE)
+    clause = facts["clause"]
+    return {
+        "ia1": bool(nums) and nums == sorted(nums) and len(set(nums)) == len(nums),
+        "ia2": None not in (fanout, assume, synth) and fanout < assume < synth,
+        "ia3": len(none_blocks) == 1 and facts["assume"].count(_IA_NONE) == 1,
+        "ia4": bool(facts["assume"]) and "AskUserQuestion" not in facts["assume"]
+        and "step 6" in facts["assume"],
+        "ia5": len(clause) == 1 and None not in (synth, gate)
+        and synth < clause[0] < gate and "_clause_coverage.py" in facts["bullet"],
+        "ia6": facts["bullet"].count(_IA_ROUTE) == 1,
+        "ia7": None not in (synth, gate) and synth < gate
+        and "step 4.5" in facts["gate"] and _IA_NONE in facts["gate"],
+    }
+
+
+def _ia_move(text, start, end, before):
+    """`text` with the span from `start` up to `end` cut out and put back in front
+    of `before`; None when an anchor is missing, so a move that did not happen is
+    never judged as one that did."""
+    a = text.find(start)
+    b = text.find(end, a + 1) if a >= 0 else -1
+    if a < 0 or b < 0:
+        return None
+    rest = text[:a] + text[b:]
+    c = rest.find(before)
+    return None if c < 0 else rest[:c] + text[a:b] + rest[c:]
+
+
+def _ia_swap(text, old, new):
+    """`text` with the ONE occurrence of `old` replaced; None when `text` is None
+    or `old` is absent or repeated, so a swap that did not land is never judged."""
+    if text is None or text.count(old) != 1:
+        return None
+    return text.replace(old, new)
+
+
+def _ia_drop(text, start, end):
+    """`text` with `start` up to the first `end` after it removed (`end` kept);
+    None when an anchor is missing."""
+    a = text.find(start)
+    b = text.find(end, a + 1) if a >= 0 else -1
+    return None if a < 0 or b < 0 else text[:a] + text[b:]
+
+
+def _init_assumption_cases(check):
+    text = _product_doc("commands/init.md")
+    facts = _ia_read(text)
+    live = _ia_verdicts(facts)
+    check("ia1 init.md's numbered top-level steps ascend with no number twice, so "
+          "no step moved and none was renumbered into another's place: %r"
+          % (facts["numbers"],), live["ia1"])
+    check("ia2 the assumptions step is one heading, after the fan-out and BEFORE "
+          "synthesis (offsets %r)" % (facts["at"],), live["ia2"])
+    check("ia3 the assumptions step says to list only what is unsettled, never to "
+          "invent a line, and to write %s when nothing is - in one block, once"
+          % (_IA_NONE,), live["ia3"])
+    check("ia4 the assumptions step asks nothing of its own (no AskUserQuestion) "
+          "and names step 6 as where a correction arrives", live["ia4"])
+    check("ia5 the observable-clause rule is stated once, inside synthesis and "
+          "before the approval gate, naming the reader of the clauses (offsets "
+          "%r)" % (facts["clause"],), live["ia5"])
+    check("ia6 the clause rule's own bullet sends what cannot be stated "
+          "observably to the phase's openChoices: %r" % (facts["bullet"][:300],),
+          live["ia6"])
+    check("ia7 the approval gate still follows synthesis and prints step 4.5's "
+          "list, or %s" % (_IA_NONE,), live["ia7"])
+
+    # THE ALLOW TWIN: a neighbour sentence reworded in each section the rules sit
+    # in changes no verdict; it is here for a pin widened to whole sentences.
+    allow = _ia_swap(_ia_swap(text, "keep the higher severity",
+                              "the higher severity wins"),
+                     "Padding buries the\nline that matters.",
+                     "A padded list hides the\nline that matters.")
+    allow_v = _ia_verdicts(_ia_read(allow or ""))
+    check("ia8 THE ALLOW CASE: init.md with a neighbour sentence reworded in the "
+          "assumptions step and in synthesis passes every rule (both rewordings "
+          "applied: %s): %r" % (allow is not None, allow_v),
+          allow is not None and all(allow_v.values()))
+
+    synth_end = "## 6. Present"
+    rows = (
+        ("ia2", "assumptions step deleted", _ia_drop(text, _IA_ASSUME, _IA_SYNTH)),
+        ("ia2", "assumptions step moved after synthesis",
+         _ia_move(text, _IA_ASSUME, _IA_SYNTH, synth_end)),
+        ("ia3", "the no-open-assumptions sentence deleted",
+         _ia_drop(text, "When nothing is unsettled", "\n\nThis step asks")),
+        ("ia4", "the assumptions step asks its own question",
+         _ia_swap(text, "This step asks nothing.",
+                  "Ask (AskUserQuestion) whether each line holds.")),
+        ("ia5", "the observable-clause rule deleted",
+         _ia_drop(text, "   - " + _IA_CLAUSE, "   - **`tests.gate`")),
+        ("ia6", "the openChoices route deleted",
+         _ia_drop(text, "**A finding that cannot be stated", "\n   - **`tests.gate`")),
+        ("ia7", "the approval gate moved before synthesis",
+         _ia_move(text, _IA_GATE, "## 7. ", _IA_SYNTH)),
+    )
+    seen = [(cid, why, mutated is not None and mutated != text
+             and not _ia_verdicts(_ia_read(mutated))[cid])
+            for cid, why, mutated in rows]
+    check("ia9 each mutation of init.md applies and turns its own rule red - "
+          "deleted, or moved to the wrong side of synthesis or of the gate: %r"
+          % ([(c, w) for c, w, red in seen if not red],),
+          all(red for _c, _w, red in seen))
 
 
 if __name__ == "__main__":

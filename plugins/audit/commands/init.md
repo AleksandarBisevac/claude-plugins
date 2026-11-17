@@ -247,6 +247,29 @@ Every prompt must include:
 
 Parse each result; findings that don't parse as JSON get one retry prompt, then are dropped (report the drop).
 
+## 4.5 Assumptions (before synthesis)
+
+Before synthesizing, write down what the plan will rest on that nobody settled. Synthesis
+builds on these whether or not they are said, and an assumption the user never saw is one
+they cannot correct before tasks are minted from it. Settled means the user said it, in
+`$ARGUMENTS` or a step-2 answer; a point recon read off a file and nobody confirmed is still
+an assumption, and naming the file makes it a one-word correction. One line each:
+
+- the stack and the test runner the gates will call, and the file each was read off
+  (`pytest, pinned in pyproject.toml`) - a runner picked from several candidates, or with no
+  file pinning it, is the line most worth showing;
+- what "done" means for each chosen dimension the user did not define (`security: no high
+  finding left open`, `test coverage: each finding's behaviour has a case - not a percentage`);
+- what the plan leaves out, and why (`vendored third_party/ skipped`, `performance: no finding`).
+
+**List only what is unsettled, and never invent a line to fill the block.** Padding buries the
+line that matters. When nothing is unsettled, the whole list is the words
+`no open assumptions`.
+
+This step asks nothing. Synthesis proceeds on the list as written, and step 6 prints it above
+the proposed plan, where the user corrects a line in the same answer that approves the plan -
+there is no separate question round for assumptions.
+
 ## 5. Synthesis (orchestrator)
 
 1. **Dedupe** findings by file + title similarity; keep the higher severity.
@@ -323,6 +346,18 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
      the finding alone, confirm each entry would fail against the change being
      described, and only then open the file it is about to change — the same ordering
      `agents/audit-executor.md` states for the executor that later implements it.
+   - **Each Acceptance clause states an observable condition.** A task's acceptance is
+     the numbered items after an `Acceptance:` marker at the end of its `description`,
+     written `Acceptance: (1) ... (2) ...` - the form `scripts/governance/_clause_coverage.py`
+     reads - and the executor must answer every clause, so a clause nothing can judge is
+     answered with prose and proves nothing. State each as one of: a command and the result
+     it must print or exit with; a named behaviour with its input and its output; a file
+     that must, or must not, change. `pytest tests/test_orders.py -k refund exits 0, and a
+     refund above the order total returns 400` passes; `improve error handling` does not -
+     no command, input or file can say it is done. **A finding that cannot be stated that
+     way is an open choice, not a clause:** record it in the phase's `openChoices` (one
+     string per choice; the phase reviewer's brief prints them) and leave it out of the
+     Acceptance list rather than writing it vaguely.
    - **`tests.gate` — and a task gate is not a small phase gate.** A **phase** gate asks
      *is the repository still whole*: it runs once, at sign-off, over everything the phase's
      tasks touched together, and it is the only thing that can catch the interaction no single
@@ -535,7 +570,10 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
 
 ## 6. Present & approve (the gate)
 
-Nothing synthesized has touched disk yet. Print the proposed plan, plain ASCII:
+Nothing synthesized has touched disk yet. Open with step 4.5's list, under the line
+`Assumptions (correct any in your answer below):`, or with `no open assumptions` alone. A
+correction arrives as the free-text answer to this step's gate question; redo the synthesis
+it touches and present the plan again. Then print the proposed plan, plain ASCII:
 
 ```
 Proposed plan — 4 phases, 23 tasks
