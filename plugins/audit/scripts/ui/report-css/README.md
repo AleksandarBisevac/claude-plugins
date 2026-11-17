@@ -18,7 +18,7 @@ lint over a differently-ordered join would clear a palette nobody serves.
 | `summary.css` | The verdict hero, the summary card and the animated progress bar. |
 | `controls.css` | Toolbar, buttons, filter chips, the More-filters disclosure, and the one focus rule every filter field shares. |
 | `badges.css` | Status and severity badges, and the test gate's verdict — which reuses the same pill and adds only a hue, while the observations beside it are deliberately not pills. |
-| `tables.css` | The phase and bug tables. |
+| `tables.css` | The phase and bug tables, and the phases table's head: the Sort select and expand-all, which order and open the rows rather than filter them, so they sit on the table and not in the pinned filter bar. |
 | `gate-rail.css` | The gate rail and its signature. |
 | `empty-state.css` | What the page shows when a filter matches nothing. |
 | `forced-colors.css` | Colour that must print, and the tablet and phone block: tables scroll in their own frame, the More-filters panel comes into the flow, and the top bar stops being sticky. It holds no forced-colours rule; focus survives that mode through the transparent outline on each control's own focus rule (`controls.css`). |

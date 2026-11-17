@@ -2158,7 +2158,8 @@
       "P163.13-d6t",
       "P163.14-d6t",
       "P163.15-d6t",
-      "P163.16-d6t"
+      "P163.16-d6t",
+      "P163.17-d6t"
     ],
     "docs/design/audit-concurrency-report.md": [
       "P60.3"
@@ -2220,7 +2221,8 @@
       "P163.13-d6t",
       "P163.14-d6t",
       "P163.15-d6t",
-      "P163.16-d6t"
+      "P163.16-d6t",
+      "P163.17-d6t"
     ],
     "docs/screenshots": [
       "P53.9",
@@ -2244,7 +2246,8 @@
       "P163.13-d6t",
       "P163.14-d6t",
       "P163.15-d6t",
-      "P163.16-d6t"
+      "P163.16-d6t",
+      "P163.17-d6t"
     ],
     "docs/screenshots/captured-at.json": [
       "P63.9",
@@ -5840,7 +5843,8 @@
       "P163.7-d6t",
       "P163.13-d6t",
       "P163.14-d6t",
-      "P163.15-d6t"
+      "P163.15-d6t",
+      "P163.17-d6t"
     ],
     "plugins/audit/scripts/report/_report_md.py": [
       "P51.9",
@@ -5874,7 +5878,8 @@
       "P163.2",
       "P163.3",
       "P163.14-d6t",
-      "P163.15-d6t"
+      "P163.15-d6t",
+      "P163.17-d6t"
     ],
     "plugins/audit/scripts/report/_report_ui.py": [
       "P11.2",
@@ -8601,7 +8606,8 @@
       "P130.32-ywo",
       "P130.45-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P163.17-d6t"
     ],
     "tools/check-committed-pii.py": [
       "P51.4",
@@ -8720,7 +8726,8 @@
       "P163.13-d6t",
       "P163.14-d6t",
       "P163.15-d6t",
-      "P163.16-d6t"
+      "P163.16-d6t",
+      "P163.17-d6t"
     ],
     "tools/gate-parity.py": [
       "P19.2",
@@ -11653,7 +11660,8 @@
       "P126.1",
       "P125.26",
       "P125.81-0h5",
-      "P125.99-0h5"
+      "P125.99-0h5",
+      "P163.17-d6t"
     ],
     "tools/ui-checks/responsive.mjs": [
       "P123.28",
@@ -11698,7 +11706,8 @@
       "P163.3",
       "P163.13-d6t",
       "P163.15-d6t",
-      "P163.16-d6t"
+      "P163.16-d6t",
+      "P163.17-d6t"
     ],
     ".github/sweep-costs.json": [
       "P127.2-bgr",
@@ -11896,7 +11905,8 @@
       "P163.2",
       "P163.3",
       "P163.13-d6t",
-      "P163.15-d6t"
+      "P163.15-d6t",
+      "P163.17-d6t"
     ],
     "tools/ui-tests/table-fit.test.mjs": [
       "P125.81-0h5",
@@ -12682,7 +12692,8 @@
       "P163.13-d6t",
       "P163.14-d6t",
       "P163.15-d6t",
-      "P163.16-d6t"
+      "P163.16-d6t",
+      "P163.17-d6t"
     ],
     "tests/test__report_md.py": [
       "P131.1"
@@ -12696,7 +12707,8 @@
       "P163.13-d6t",
       "P163.14-d6t",
       "P163.15-d6t",
-      "P163.16-d6t"
+      "P163.16-d6t",
+      "P163.17-d6t"
     ],
     "tests/test__report_ui.py": [
       "P131.1",
@@ -13289,7 +13301,8 @@
       "P163.13-d6t",
       "P163.14-d6t",
       "P163.15-d6t",
-      "P163.16-d6t"
+      "P163.16-d6t",
+      "P163.17-d6t"
     ],
     "tests/test_repair_commits.py": [
       "P131.1"
@@ -13608,11 +13621,13 @@
       "P163.13-d6t",
       "P163.14-d6t",
       "P163.15-d6t",
-      "P163.16-d6t"
+      "P163.16-d6t",
+      "P163.17-d6t"
     ],
     "plugins/audit/scripts/ui/report-css/README.md": [
       "P154.3-mkf",
-      "P163.3"
+      "P163.3",
+      "P163.17-d6t"
     ],
     "plugins/audit/scripts/ui/report/date-range.js": [
       "P154.3-mkf",
@@ -13662,7 +13677,8 @@
       "P163.13-d6t",
       "P163.14-d6t",
       "P163.15-d6t",
-      "P163.16-d6t"
+      "P163.16-d6t",
+      "P163.17-d6t"
     ],
     "plugins/audit/scripts/ui/report/chips.js": [
       "P163.1"
@@ -13683,7 +13699,8 @@
       "P163.13-d6t",
       "P163.14-d6t",
       "P163.15-d6t",
-      "P163.16-d6t"
+      "P163.16-d6t",
+      "P163.17-d6t"
     ],
     "plugins/audit/scripts/ui/report-css/empty-state.css": [
       "P163.2"
@@ -13692,7 +13709,8 @@
       "P163.3",
       "P163.13-d6t",
       "P163.15-d6t",
-      "P163.16-d6t"
+      "P163.16-d6t",
+      "P163.17-d6t"
     ],
     "plugins/audit/scripts/ui/report-css/forced-colors.css": [
       "P163.3",
@@ -13705,6 +13723,9 @@
       "P163.13-d6t",
       "P163.15-d6t",
       "P163.16-d6t"
+    ],
+    "plugins/audit/scripts/ui/report/sorting.js": [
+      "P163.17-d6t"
     ]
   },
   "bugs": [

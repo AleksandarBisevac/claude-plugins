@@ -632,8 +632,8 @@ def _doc_actions(fragment):
     status chips and expand-all act on the phases table and nothing else — in the
     top bar they were three rows of chrome following the reader through the usage
     charts, where they do nothing at all. They now sit on the table they drive
-    (`_table_tools`). Enhanced by _SCRIPT; with JS off both tables are still fully
-    readable.
+    (`_table_tools` for the filters, `_table_head` for order and expand-all).
+    Enhanced by _SCRIPT; with JS off both tables are still fully readable.
     """
     return (
         '<div class="toolbar tb-actions">'
@@ -655,17 +655,15 @@ def _doc_actions(fragment):
         + '</div>')
 
 
-def _table_tools(manifest, summary, evidence=None):
-    """Search, the status chips, the view select, the sort select and
-    expand-all — the controls that act on the phases table and on nothing else.
+def _table_head(manifest):
+    """The sort select and expand-all — what the phases table's head offers.
 
-    The chips are rendered HERE, not built by the script. Built in JS they were
-    invisible to anything that does not run it — a printed page, a reader with
-    scripting off — which is the one context where "the filters are gone" is
-    indistinguishable from "the filters are broken". Server-rendered they are
-    always present; the script only attaches behaviour to them.
+    Neither one decides WHICH rows are shown: one orders the phases and the other
+    opens them. So they sit on the table rather than in the filter bar, where
+    they were what pushed the bar onto a second line at a laptop width with
+    nothing filtering. The filter bar pins over the rows; this
+    does not, so the chrome a reader scrolls under is filters and the count alone.
     """
-    statuses = sorted({p["status"] for p in summary["phases"] if p.get("status")})
     # pr: the sort select, and only where a phase is actually pinned. The panel's
     # Overview grew `sort: priority` and this did not, so the same plan answered
     # "what runs first" in one surface and not the other. The option is spelled
@@ -674,7 +672,7 @@ def _table_tools(manifest, summary, evidence=None):
     # find them in the other. Withheld when nothing is pinned: every use of it
     # would then be a no-op, which is the defect the one-author Author cell in
     # `_global_filter_row` already refuses to ship, and withholding it is also
-    # what keeps a plan with no `priority` rendering byte-for-byte as before.
+    # what keeps a plan with no `priority` rendering without the select.
     sortpick = (
         '<span class="sortpick"><label class="tbl" for="audit-sort">Sort:</label>'
         '<select id="audit-sort" aria-label="Sort: the order the phases are '
@@ -682,6 +680,23 @@ def _table_tools(manifest, summary, evidence=None):
         '<option value="plan">plan order</option>'
         '<option value="priority">priority</option></select></span>'
     ) if _report_html.any_phase_pinned(manifest) else ""
+    return ('<div class="toolbar tablehead" role="group" '
+            'aria-label="Order and open the phases">%s'
+            '<button type="button" id="audit-expand" class="btn">expand all</button>'
+            '</div>' % sortpick)
+
+
+def _table_tools(manifest, summary, evidence=None):
+    """Search, the status chips, More filters and the view select — the controls
+    that decide which rows of the phases table are shown, and nothing else.
+
+    The chips are rendered HERE, not built by the script. Built in JS they were
+    invisible to anything that does not run it — a printed page, a reader with
+    scripting off — which is the one context where "the filters are gone" is
+    indistinguishable from "the filters are broken". Server-rendered they are
+    always present; the script only attaches behaviour to them.
+    """
+    statuses = sorted({p["status"] for p in summary["phases"] if p.get("status")})
     return (
         '<div class="toolbar sectools" role="search" aria-label="Filter the phases table">'
         '<input id="audit-q" type="search" aria-label="Filter phases and tasks by text" '
@@ -701,8 +716,6 @@ def _table_tools(manifest, summary, evidence=None):
         '<option value="active" data-short="active &amp; pending">Active &amp; pending</option>'
         '<option value="archived" data-short="archived">Archived (done &amp; cancelled)</option>'
         '<option value="all" data-short="all">All phases</option></select></span>'
-        '%s'
-        '<button type="button" id="audit-expand" class="btn">expand all</button>'
         # Shown only while something is actually filtering. It is a second copy of
         # the empty state's button on purpose: the More-filters panel is drawn OVER
         # the top of the table, so when a filter leaves no rows at all, the empty
@@ -715,7 +728,7 @@ def _table_tools(manifest, summary, evidence=None):
         "<noscript><span class=\"tbl\">Filtering and collapsing need JavaScript "
         "— every row is shown.</span></noscript></div>"
         % (_chip_buttons(statuses, "data-ps", "fchip"),
-           _filter_panel(manifest, evidence), sortpick))
+           _filter_panel(manifest, evidence)))
 
 
 def _phases_block(manifest, summary, owners, workers=None, evidence=None,
@@ -724,7 +737,7 @@ def _phases_block(manifest, summary, owners, workers=None, evidence=None,
     rows). Default-collapsed via _SCRIPT; with JS off every row is visible."""
     record = ("phases", "Phases", len(summary["phases"]), False)
     parts = ['<section id="%s" class="sec">' % _anchor(record),
-             _table_tools(manifest, summary, evidence)]
+             _table_tools(manifest, summary, evidence), _table_head(manifest)]
     # `present` is every optional column this plan HAS data for; `cols` is the
     # subset the compact row shows. The detail row renders the difference, so
     # nothing is dropped from the page — only from the row.

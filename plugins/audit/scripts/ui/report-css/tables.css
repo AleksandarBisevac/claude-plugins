@@ -107,13 +107,24 @@ table.data :is(.chip,.rchip,.bandpill,.dl,.heldby,.tevn,.tevf,.ptev){
    is a flex row, and letting the words break away from the box they name is
    how a reader ends up reading "View:" over an unrelated line.
    pr: Sort: joins the selector rather than copying the rule. Two labelled
-   selects side by side in one toolbar that did not agree on their padding or
-   their border would read as two kinds of control, and the second copy is
-   where they would stop agreeing. */
+   selects on one table that did not agree on their padding or their border
+   would read as two kinds of control, and the second copy is where they would
+   stop agreeing.
+   Each select is as wide as the option it shows, not the longest option it
+   holds: sized to "Archived (done & cancelled)" in every view, the View select
+   alone pushed the filter bar onto a second line at a laptop width with nothing
+   filtering. A browser without field-sizing drops the declaration and keeps the
+   select's intrinsic width, so no @supports is needed around it. */
 .viewpick,.sortpick{display:inline-flex;align-items:center;gap:.4rem;flex:0 0 auto}
 .viewpick select,.sortpick select{font:inherit;font-size:.8rem;padding:.25rem .4rem;
   border:1px solid var(--field-border);border-radius:var(--radius);
-  background:var(--surface);color:var(--text)}
+  background:var(--surface);color:var(--text);field-sizing:content}
+/* The phases table's head: the controls that order the phases and open them,
+   which decide nothing about WHICH rows are shown and so are not in the filter
+   bar. They sit at the table's top edge on the side away from the ids, and do
+   not pin: the chrome that follows a reader down the rows is the filters. On
+   paper the head goes with every other .toolbar (segments.css). */
+.tablehead{justify-content:flex-end;margin:0 0 var(--sp-0)}
 /* bl: "something in here is stuck" and "some of this was dropped" —
    counts, in the row's own words, wearing the status ink of what they count.
    Not chips: the phase already carries one, and a row with three pills makes

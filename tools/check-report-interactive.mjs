@@ -386,7 +386,7 @@ const REQUIRED = [
   ['.sectools', 'the sticky filter bar'],
   ['.sectools [data-clear]', 'the Clear-filters button'],
   ['#audit-q', 'the filter box'],
-  ['#audit-expand', 'the expand-all button'],
+  ['.tablehead #audit-expand', 'the expand-all button, in the phases table\'s head'],
   ['#audit-phase-status', 'the status chip row'],
   ['table.phases tbody tr.seghead', 'the segment header rows (D1)'],
   ['tr.seghead [data-segcsv]', 'the per-segment CSV export (D2)'],
@@ -2914,6 +2914,7 @@ const layoutAtTop = () => page.evaluate(() => {
     ...(countRects.some(outside) ? ['the count\'s text'] : []),
   ];
   const sort = document.getElementById('audit-sort');
+  const head = document.querySelector('.tablehead');
   return {
     said: count.textContent,
     countLines: bands(countRects),
@@ -2924,7 +2925,7 @@ const layoutAtTop = () => page.evaluate(() => {
     screenWide: window.innerWidth,
     barLines: bands(inFlow(st).map((k) => k.getBoundingClientRect())),
     barPx: Math.round(b.height),
-    sortDrawn: !!sort && shown(sort) && st.contains(sort),
+    sortDrawn: !!sort && !!head && shown(sort) && head.contains(sort),
     topPins: getComputedStyle(top).position === 'sticky',
     topPx: Math.round(top.getBoundingClientRect().height),
     rowLines: gf ? bands(inFlow(gf).map((k) => k.getBoundingClientRect())) : null,
@@ -3101,20 +3102,22 @@ const judgeStack = (id, cell, size, m) => {
   }
   notes.push(`ok   (the layout matrix read ${cells} cells: ${LAYOUT_SIZES.length} sizes by `
     + `${states.length} states)`);
-  // Whether the Sort select was in the bar the matrix measured. The select is
-  // drawn only for a plan that pins a phase, and the rows' execution ranks are
-  // the other half of that same plan fact, emitted on their own: ranks with no
-  // select is a bar measured without a control it ships with.
+  // Whether the Sort select was drawn in the phases table's head in every cell
+  // the matrix measured. The select is drawn only for a plan that pins a phase,
+  // and the rows' execution ranks are the other half of that same plan fact,
+  // emitted on their own: ranks with no select drawn is a pinned plan whose
+  // ordering control is missing, or has gone back into the bar lm4 measures.
   const ranked = await page.$$eval('table.phases tr.phase[data-porder]', (rs) => rs.length);
   if (ranked > 0 && sortCells < cells) {
     failures.push(`FAIL lm the plan pins a phase (${ranked} rows carry an execution rank) but `
-      + `the Sort select was drawn in ${sortCells} of the ${cells} cells read`);
+      + `the Sort select was drawn in the phases table's head in ${sortCells} of the ${cells} `
+      + 'cells read');
   } else if (ranked > 0) {
-    notes.push(`ok   (the Sort select was in the filter bar in every cell: ${ranked} rows carry `
-      + 'an execution rank)');
+    notes.push(`ok   (the Sort select was in the phases table's head in every cell: ${ranked} `
+      + 'rows carry an execution rank)');
   } else {
     notes.push('ok   (this plan pins no phase, so the Sort select is not drawn and no cell '
-      + 'measured the bar with it - that coverage is absent from this run)');
+      + 'measured the table\'s head with it - that coverage is absent from this run)');
   }
   await page.evaluate(() => {
     for (const n of document.querySelectorAll('[data-lm-spacer]')) n.remove();
@@ -3156,13 +3159,16 @@ await page.waitForTimeout(150);
 const onPaper = await page.evaluate(() => {
   const st = document.querySelector('.sectools');
   const fp = document.querySelector('.filterpanel');
+  const th = document.querySelector('.tablehead');
   const gone = (el) => !el || getComputedStyle(el).display === 'none' || el.offsetParent === null;
-  return { bar: gone(st), panel: gone(fp) };
+  return { bar: gone(st), panel: gone(fp), head: !!th, headGone: gone(th) };
 });
 await page.emulateMedia({ media: null });
 await page.setViewportSize({ width: 1512, height: 945 });
 expect('the filter bar never reaches portrait paper, where its phone rules also apply', onPaper.bar, true);
 expect('...nor the panel inside it', onPaper.panel, true);
+expect('...nor the phases table\'s head, whose Sort and expand-all do nothing on paper '
+  + `(the head rendered: ${onPaper.head})`, onPaper.head && onPaper.headGone, true);
 
 // --- interaction states: each control's own box ------------------------------
 //
@@ -3193,7 +3199,7 @@ expect('...nor the panel inside it', onPaper.panel, true);
     { id: 'is3', sel: '.gfilters select', how: 'focus', sets: ['borderTopColor', 'boxShadow', 'outlineStyle'] },
     { id: 'is4', sel: '.gfilters input[type=date]', how: 'focus',
       sets: ['borderTopColor', 'boxShadow', 'outlineStyle'] },
-    { id: 'is5', sel: '.sectools .btn:not(.btn-primary)', how: 'hover',
+    { id: 'is5', sel: '.tablehead .btn:not(.btn-primary)', how: 'hover',
       sets: ['borderTopColor', 'backgroundColor', 'transform', 'boxShadow'] },
     { id: 'is6', sel: '.btn-primary', how: 'hover', sets: ['filter'] },
     { id: 'is7', sel: '#audit-phase-status .fchip:not(.on)', how: 'hover', sets: ['borderTopColor', 'transform'] },

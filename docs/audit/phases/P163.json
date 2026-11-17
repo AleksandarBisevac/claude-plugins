@@ -259,28 +259,40 @@
         "severity": "med",
         "file": "tools/check-report-interactive.mjs:2844-2846,2943-2945 (lm4)",
         "issue": "contradicts task clause: clause 1 says each cell asserts 'the filter bar and the count are each one line', and R18's resolution (which clause 2 implements) asks for 'a single-line bar at rest, filtered and in every view'. lm4 instead asserts `at.barLines <= at.barNeeds` - the bar may take as many lines as its controls need packed end to end - and its own comment says the 1512x945 bar still takes a second line once anything filters on acme, demo-large and the live plan (92px against 60px at rest, per the executor's measurement). The count is one line (lm3); the bar is not, and the check written for it was relaxed to pass.",
-        "resolution": "Take the design decision the executor named (the count out of the pinned bar's flow - e.g. its own line under the bar that scrolls, or into the strip - or expand/Clear out of the bar), then make lm4 assert barLines === 1 at the laptop sizes (and say where a phone is exempt and why), so the matrix holds the clause rather than describing the shortfall."
+        "resolution": "fixed in P163.16-d6t (5378a0fdad78): Take the design decision the executor named (the count out of the pinned bar's flow - e.g. its own line under the bar that scrolls, or into the strip - or expand/Clear out of the bar), then make lm4 assert barLines === 1 at the laptop sizes (and say where a phone is exempt and why), so the matrix holds the clause rather than describing the shortfall.",
+        "fixTask": "P163.16-d6t",
+        "commit": "5378a0fdad78",
+        "status": "fixed"
       },
       {
         "id": "P163-R25",
         "severity": "med",
         "file": "plugins/audit/scripts/ui/report-css/controls.css:30",
         "issue": "`#audit-count{flex:0 0 auto;white-space:nowrap}` removes the count's only way to fit a line narrower than its text. Judged from reading, not run: on this repo's plan filtered the count reads like '6 of 166 phases · 4 of 1543 tasks, 3 cancelled not counted' - the executor measured it at 391px at 1512 (15px), so about 378px at the phone's 14.5px - while the bar's content box at 390px wide is roughly 342px (body padding .75rem each side plus the bar's .75rem padding). Unbreakable and unshrinkable, it overflows the bar's card sideways (and may give the page a horizontal scroll). No matrix question can see it: lm3 counts lines (one), and lm4's packer starts a new line for a control wider than the room, so a too-wide count raises `barNeeds` and passes.",
-        "resolution": "Add a per-cell matrix question that every in-flow control of .sectools, and the count's drawn rects, lie inside the bar's content box and that document.scrollingElement.scrollWidth <= innerWidth; prove it red on the live render at 390x844 with a chip on. Then let the count wrap where the bar is a phone's width (e.g. white-space:normal under max-width:40rem, where the bar is not the laptop's one-line problem), or shorten the filtered clause."
+        "resolution": "fixed in P163.16-d6t (5378a0fdad78): Add a per-cell matrix question that every in-flow control of .sectools, and the count's drawn rects, lie inside the bar's content box and that document.scrollingElement.scrollWidth <= innerWidth; prove it red on the live render at 390x844 with a chip on. Then let the count wrap where the bar is a phone's width (e.g. white-space:normal under max-width:40rem, where the bar is not the laptop's one-line problem), or shorten the filtered clause.",
+        "fixTask": "P163.16-d6t",
+        "commit": "5378a0fdad78",
+        "status": "fixed"
       },
       {
         "id": "P163-R26",
         "severity": "med",
         "file": "tools/check-report-interactive.mjs:2964-2971 (stackInTable `pinned`), plugins/audit/scripts/ui/report-css/forced-colors.css:65-67",
         "issue": "lm1's allowed layers are whatever is computed `position:sticky` over the scan column, the top bar included. So lm1 cannot see the top bar pinning where the forced-colors.css rule says it must scroll (max-width:52rem or max-height:32rem): the bound grows with it. The executor's own mutation 'top bar sticky on phones' went red only on lm2 (520px against the 422px ceiling), not lm1. The ph1 it replaced held the phone stacks to the strip and the shut filter bar explicitly, so it caught any top-bar pinning, not only one large enough to cross half the screen. The forced-colors.css comment still names lm1 as what measures this rule.",
-        "resolution": "In stackInTable, read matchMedia('(max-width:52rem),(max-height:32rem)') and, where it matches, drop the top bar from the allowed layers (fail lm1 if it is sticky there), keeping the computed-sticky derivation for wider and taller cells. Re-run the 'top bar sticky on phones' mutation and confirm lm1 itself goes red."
+        "resolution": "fixed in P163.16-d6t (5378a0fdad78): In stackInTable, read matchMedia('(max-width:52rem),(max-height:32rem)') and, where it matches, drop the top bar from the allowed layers (fail lm1 if it is sticky there), keeping the computed-sticky derivation for wider and taller cells. Re-run the 'top bar sticky on phones' mutation and confirm lm1 itself goes red.",
+        "fixTask": "P163.16-d6t",
+        "commit": "5378a0fdad78",
+        "status": "fixed"
       },
       {
         "id": "P163-R27",
         "severity": "low",
         "file": "tools/check-report-interactive.mjs:2918-2930 (matrix states)",
         "issue": "Clause 1 requires the gate to run on a fixture carrying the Sort select. The chosen fixture is the live render in verify.sh's rendered_plan_legs, which carries #audit-sort only while _report_html.any_phase_pinned() is true for this plan (it is today). Nothing in the matrix or the leg asserts or notes that #audit-sort was present, so the day no phase is pinned the Sort-select coverage disappears with every cell still green.",
-        "resolution": "Have the matrix note per run whether #audit-sort was drawn, and either make the live leg fail when it is absent or add a committed fixture with a pinned phase to the gate's fixture list."
+        "resolution": "fixed in P163.16-d6t (5378a0fdad78): Have the matrix note per run whether #audit-sort was drawn, and either make the live leg fail when it is absent or add a committed fixture with a pinned phase to the gate's fixture list.",
+        "fixTask": "P163.16-d6t",
+        "commit": "5378a0fdad78",
+        "status": "fixed"
       },
       {
         "id": "P163-R28",
@@ -297,7 +309,7 @@
         "resolution": "Add 'field-sizing:content' to the existing shared '.viewpick select,.sortpick select{' declaration block in tables.css, with no @supports. Then one rule styles both pickers, which is the property pr8 guards, and the structural selector goes away. tables.css must be declared, which the fix task in finding 1 needs anyway."
       }
     ],
-    "outcome": "[findings: 29 - 1 high, 10 med, 18 low; 23 with a recorded fix commit]"
+    "outcome": "[findings: 29 - 1 high, 10 med, 18 low; 27 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1535,7 +1547,7 @@
     {
       "id": "P163.16-d6t",
       "title": "The count never overflows the bar, the bar's height is stated per size, the phone stack check refuses a pinned top bar, and the Sort-select coverage is asserted",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes P163-R24 to R27, filed on P163.15-d6t. Read their full text in docs/audit/phases/P163.json review.findings.\n\nDesign decision, taken by the orchestrator (R24/R25): the count keeps one line of its own text but may move to its own row inside the bar. It is never wider than the bar.\n- It is the bar's last item, and it may wrap onto a row of its own when it does not fit beside the controls.\n- On a narrow bar it may wrap its own words rather than overflow.\n- Stated bound, asserted by the matrix: at 1024x768 and 1512x945 the bar takes at most 2 lines in every state, and 1 line at rest. On phones the bar may take more lines, but the pinned stack stays within lm1/lm2.\n- Every in-flow control of .sectools and the count's drawn rects lie inside the bar's content box, and document.scrollingElement.scrollWidth <= innerWidth, in every cell.\n- Replace lm4's 'lines its controls need' relaxation with these stated bounds.\n- Prove the overflow red on this repo's own render at 390x844 with a chip on, at HEAD 06e5cebe.\n\nR26: in stackInTable, where matchMedia('(max-width:52rem),(max-height:32rem)') matches, the top bar is not an allowed layer. lm1 fails if it pins there. Re-run the 'top bar sticky on phones' mutation and confirm lm1 goes red, restoring in the same command.\n\nR27: the matrix notes per run whether #audit-sort was drawn. The live-plan leg fails when the plan has a pinned phase but no #audit-sort is drawn; otherwise it names the coverage as absent.\n\nRun the browser gate yourself on acme, docs/demo-large.html and the live render; it is phase-gate-only. Refresh the rendered followers: examples/report.sh, docs/demo-large.html, and node tools/capture-screenshots.mjs. Confirm tests/test__refs.py is green. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/ui/report-css/controls.css",
@@ -1582,14 +1594,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "5378a0fdad78",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "GATE (tools/check-report-interactive.mjs, layout matrix). layoutAtTop() now returns the bar's content box (border+padding subtracted), `spill` (every in-flow .sectools child, and every drawn rect of the count's text, outside that box by more than 0.5px), document.scrollingElement.scrollWidth against innerWidth, the count's unbroken width (measured with white-space:nowrap set for one synchronous read and restored), and whether #audit-sort is drawn inside the bar. The barNeeds packer and natural() are deleted. lm3: the count is one line wherever its unbroken text fits the bar's content box; narrower, the cell prints an ok note naming both widths and the lines, and lm8 holds it. lm4: a stated bound, LAPTOP_BAR_LINES = {rest:1, filtered:2}, asked only at sizes marked laptop (1024x768, 1512x945); states carry rest:true for every View at rest. New lm8 per cell: spill empty AND page width <= screen width. R26: TOPBAR_SCROLLS = ['top bar', '(max-width:52rem),(max-height:32rem)'] is written in the gate, not read off the stylesheet (a query read off a deleted rule asks nothing); stackInTable takes it, and where matchMedia matches it moves a sticky top bar from `pinned` (the bound) to `refused`; judgeStack's lm1 asserts refused.length === 0 first, naming the layer and its height. R27: after the matrix, count rows carrying data-porder (emitted by phase_ranks, a separate site from the toolbar's sortpick though both ask any_phase_pinned); ranks with the select drawn in fewer than every cell is a FAIL, ranks with it everywhere is an ok note, no ranks is a note that the Sort-select coverage is absent from this run. This applies to every leg, not only the live one; the gate is not told which leg it is. The matrix comment block is rewritten for lm1's refusal, lm3's condition, lm4's stated bound and lm8; the vh1 pointer comment names lm3, lm4 and lm8. CSS: controls.css #audit-count is now flex:0 1 auto (was 0 0 auto + nowrap). Its basis is its whole text, so a wrapping flex line moves it down whole; only where the text is wider than the whole bar does it shrink and wrap its words. New: @supports (field-sizing:content){.sectools>span>select{field-sizing:content}}, so the View and Sort selects are as wide as their shown option. Selected structurally rather than by .viewpick/.sortpick because pr8 counts '.sortpick' at 2 to forbid a second rule styling the Sort select (first spelled with :is(.viewpick,.sortpick), which turned pr8 red, then rescoped); the More filters selects are not direct span children of .sectools and keep their widths. forced-colors.css: the top-bar comment says lm1 fails a top bar pinning where the query matches and carries its own copy of the query. report/README.md filters.js row: one sentence on where the count goes. NOT TOUCHED (declared, no change needed): shell.css, filters.js, layout-baseline.mjs, layout-baseline.test.mjs, report-layout-baseline.json (the relative arm stayed green on acme and the demo, no re-record), tests/test_render_report.py, tests/test__report_html.py, tests/test__report_page.py. NOT MET, stated plainly: the stated lm4 bound 'one line at rest at 1024x768' fails on two of the three fixtures. Final runs: docs/demo-large.html exit 1, only 'FAIL lm4 1024x768 View=active at rest (2 lines; 92px)' and 'View=all at rest (2 lines; 92px)'. Live render exit 1, only lm4 1024x768 at rest in View=active (99px), archived (92px) and all (99px). Every other cell on all three fixtures is green, lm8 included (live 390x844 with a chip on now fits). Measured with the search box at its 8rem minimum against the 935px bar at 1024: before the select sizing, acme needed 959/846/1020px (active/archived/all), the demo 1056/863/1117 and live 1118/1021/1195; after, acme 892/846/912 (one line, green), demo 988/863/1010 and live 1051/1021/1088. The demo's four status chips take 248px against acme's 170. A density step at 52-64rem (gap .375rem, search 6rem, chips .5rem padding) was measured and NOT taken: it brought the demo to 920 and 934 of 935 (a one-pixel margin) and left live at 989/967/1018. With the Sort select removed, live's active and archived cells fit and only 'all' stays at 2 lines, so the Sort select and 'expand all' (88px) are what hold the live plan past one line. Closing these cells needs a placement decision outside this task's files: move 'expand all' (a table action) and the Sort select (an ordering, not a filter) out of the filter bar, e.g. to the phases table's head, in _report_page.py and its pins. Recommended over relaxing lm4's rest bound at 1024 or the density step. RUNS: task gate `python3 tools/sweep-selftests.py tests/test_render_report.py tests/test__report_html.py tests/test__report_page.py tests/test__refs.py`: 4/4 files ok, 821 cases (test__refs green after re-capture; sc1/sc2 were red only on the screenshot digests before). Dependant suites: test__ui_theme, test__ui_theme_lints, test__output, test__surface_digest, test__config, test__report_ui, test__output_lints, test__deps, test_render_report, test__report_html, test__report_page: 11/11 files ok, 1651 cases. Browser gate on the final renders: acme exit 0, 'report is interactive: 414 checks passed'; demo exit 1 (2 lm4 cells above); live exit 1 (3 lm4 cells above). vitest layout-baseline + test-gate-filter: 41 passed. node --check on the gate: 0. check-rendered-artifacts --before-commit: 3 artifacts match a fresh render. capture-screenshots: exit 0, and --check exit 0. FOLLOWERS refreshed: examples/report.sh (acme html; the md changed only its generated timestamp), docs/index.html copied from it, docs/demo-large.html by the --how recipe, docs/screenshots (8 pngs + captured-at.json). DEPENDANTS: controls.css/forced-colors.css -> _ui_theme.py, _ui_theme_lints.py, test__ui_theme*.py, panel-css/usage-tab.css, report-css/README.md: still correct (lints green on the assembled sheet, no token added, no panel part touched, the README describes parts not rules). _report_html.py/_report_page.py (name forced-colors.css): unchanged, still correct. shell.css, filters.js and their dependants (test__config, test__output, test__surface_digest, redfirst.sh, _report_ui.py, test-gate-filter.test.mjs): files unchanged; the suites are green. report/README.md -> the 59 basename hits are other READMEs and the word README; tools/affected.py names README.md generically; still correct. check-report-interactive.mjs -> the rendered pages, CSS parts and test__report_html/test__report_usage name it by path only; still correct. layout-baseline.mjs/.test.mjs/report-layout-baseline.json -> unchanged; the absolute-arm prose in layout-baseline.mjs (strip and shut bar on the phone) still holds, since the phone is where the top bar is now refused. tests/*.py -> sweep-costs.json and affected.py: no suite added or renamed. examples, docs/index.html, docs/demo-large.html -> re-rendered and checked by check-rendered-artifacts; tests that read them are green. docs/screenshots -> test__refs.py green. No F/P/BUG ids in any comment.",
+        "descriptive": "The count can no longer run out of the filter bar on a phone, the top bar pinning on a phone fails lm1 by name, a pinned plan without its Sort select fails the matrix, and the bar's selects are content-sized. lm4's one-line-at-rest bound at 1024 still fails on the large demo and the live plan, and closing it needs a decision to move Sort and expand all out of the bar."
       },
       "startedAt": "2026-11-16T22:27:01Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-16T23:36:34Z",
+      "verifiedBy": [
+        "lm8 per matrix cell: every in-flow filter-bar control and every drawn line of the count lie inside the bar's content box, and the page is no wider than the screen",
+        "lm1 refusal: where (max-width:52rem),(max-height:32rem) matches, a sticky top bar is refused, not added to the bound",
+        "lm3 rewritten: one line wherever the count's unbroken text fits the bar",
+        "lm4 rewritten: at 1024x768 and 1512x945 the bar is at most 1 line at rest and 2 filtered (stated bound replacing the packer)",
+        "Sort-select verdict after the matrix: rows with execution ranks but no drawn #audit-sort in every cell fail; no ranks is noted as absent coverage",
+        "interaction-state entries: bound to the existing is1-is10 in the gate's interaction-states block, green on acme; no duplicate added"
+      ],
       "notes": [
         {
           "at": "2026-11-16T22:26:59Z",
@@ -1612,6 +1631,106 @@
         "runId": "2026-11-16T23:33:42Z.c0aae2",
         "status": "passed",
         "at": "2026-11-16T23:33:42Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "5378a0fdad78",
+        "at": "2026-11-16T23:36:34Z",
+        "return": "docs/audit/evidence/returns/P163.16-d6t/20261116T222701Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task with tests.expectRedFirst false, and the browser gate is not a runner the helper reads, so no helper run was owed. Each new or changed check was watched red by hand on scratch copies only (the tree was never mutated): (R25/lm8) HEAD 06e5cebe CSS, this repo's live render: 'FAIL lm8 390x844 View=active, one phase-status chip on: ... (outside: #audit-count, the count's text; page 443px on a 390px screen)' and the same for 'searched for P163'; green on the fixed CSS. (R26/lm1) acme render with its one '.topbar{position:static}' (asserted count 1) changed to sticky: 'FAIL lm1 390x844 View=active at rest: where (max-width:52rem),(max-height:32rem) matches, the top bar scrolls rather than pinning over the table (the query matches; pinned there and refused: top bar 268.0px): got 1, want 0', and at 844x390 'top bar 122.4px'; exit 1, 45 failures. (R27) live render with its one sortpick span removed (asserted count 1, 166 data-porder rows kept): 'FAIL lm the plan pins a phase (166 rows carry an execution rank) but the Sort select was drawn in 0 of the 25 cells read'. (lm4) HEAD render: acme 1024x768 active/all at rest 2 lines (92/99px) red; acme green after the select sizing.",
+        "at": "2026-11-16T23:41Z (HEAD renders) to 2026-11-17T00:20Z (mutations), local runs"
+      }
+    },
+    {
+      "id": "P163.17-d6t",
+      "title": "Table actions sit in the phases table's head, so the filter bar is one line at rest on every fixture and the browser gate is green on all three",
+      "status": "in_progress",
+      "description": "Fixes P163-R28 (high) and P163-R29 (low), filed on P163.16-d6t. Read their full text in docs/audit/phases/P163.json review.findings.\n\nR28: at HEAD 5378a0fd the browser gate is red at 1024x768 at rest. docs/demo-large.html shows 'lm4 1024x768 View=active at rest (2 lines; 92px)' and View=all; the live render (tools/plan-window.py + render-report.py, as verify.sh's live-plan leg does) is red at rest in active, archived and all. Both legs run on every CI run.\n\nDecision, taken by the orchestrator from the previous executor's measurement:\n- Move 'expand all' (a table action) and the Sort select (an ordering) out of .sectools into the phases table's head.\n- Keep their ids, behaviour and keyboard order sensible, and update the gate's selectors and the screenshot capture if they name the old place.\n- Do NOT relax LAPTOP_BAR_LINES.rest and do not take a one-pixel density step.\n\nR29: put field-sizing:content in the shared '.viewpick select,.sortpick select' block in tables.css, with no @supports, and drop the structural selector in controls.css.\n\nDONE MEANS all three runs exit 0, quoted in the return with their last summary lines:\n1. node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html\n2. the same on docs/demo-large.html\n3. the same on the live render.\nThe task gate does not run the browser gate, so it is your evidence.\n\nRefresh the rendered followers: examples/report.sh, docs/demo-large.html, and node tools/capture-screenshots.mjs. Confirm tests/test__refs.py is green. No F/P/BUG ids in comments.",
+      "files": [
+        "plugins/audit/scripts/report/_report_page.py",
+        "plugins/audit/scripts/report/_report_html.py",
+        "plugins/audit/scripts/ui/report-css/tables.css",
+        "plugins/audit/scripts/ui/report-css/controls.css",
+        "plugins/audit/scripts/ui/report-css/shell.css",
+        "plugins/audit/scripts/ui/report/filters.js",
+        "plugins/audit/scripts/ui/report/sorting.js",
+        "plugins/audit/scripts/ui/report/page-state.js",
+        "plugins/audit/scripts/ui/report/README.md",
+        "plugins/audit/scripts/ui/report-css/README.md",
+        "tools/check-report-interactive.mjs",
+        "tools/capture-screenshots.mjs",
+        "tests/test_render_report.py",
+        "tests/test__report_html.py",
+        "tests/test__report_page.py",
+        "examples",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [
+          "plugins/audit/scripts/ui/report-css/controls.css: #audit-q interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .btn interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .btn-primary interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .fchip interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .fdetails>summary interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .frow input[type=date] interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .gfilters input[type=date] interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .gfilters select interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .tf-chip interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/shell.css: .snav a interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/tables.css: .dtoggle interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/tables.css: .shacopy interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/tables.css: tr interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_render_report.py tests/test__report_html.py tests/test__report_page.py tests/test__refs.py",
+          "sh -c 'W=$(mktemp -d) && rc=0 && for f in examples/acme-store/acme-store-audit.html docs/demo-large.html; do node tools/check-report-interactive.mjs \"$f\" || rc=1; done && python3 tools/plan-window.py docs/audit/audit-plan.json \"$W/win\" && python3 plugins/audit/scripts/report/render-report.py \"$W/win/docs/audit/audit-plan.json\" --out-dir \"$W/lp\" --format html && node tools/check-report-interactive.mjs \"$W\"/lp/*.html || rc=1; rm -rf \"$W\"; exit $rc'"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-16T23:37:08Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-16T23:37:05Z",
+          "text": "its sections on the report modules describe each module's role; moving two controls into the table head changes nothing they state",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
+        },
+        {
+          "at": "2026-11-16T23:37:05Z",
+          "text": "it quotes docs/index.html as an exempt path name; a re-rendered copy changes no path",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-16T23:37:05Z",
+          "text": "it greps docs/demo-large.html for a phase row marker the renderer keeps",
+          "waives": "tools/verify.sh"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T00:29:15Z.46c2aa",
+        "status": "passed",
+        "at": "2026-11-17T00:29:15Z"
       }
     }
   ],
