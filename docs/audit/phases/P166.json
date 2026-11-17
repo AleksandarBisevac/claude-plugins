@@ -1,0 +1,172 @@
+{
+  "id": "P166",
+  "title": "The configured review skill reaches the phase reviewer, and a phase return that skips it is refused",
+  "status": "in_progress",
+  "description": "Hotfix ordered by the owner before 3.9.0: since v3.2.0 the phase reviewer's brief never names the configured reviewSkill (audit-lookup.py phase_brief_parts never resolves it; drive-phase.py's dispatch_phase_review/dispatch_said/DISPATCH_PROMPT do not carry it), so no code review runs while /audit:status shows the skill.",
+  "desiredOutcome": "On the drive route the phase reviewer's brief names the configured reviewSkill and the headless phase validation passes --skill; submit refuses a phase return whose phase resolved a review skill but whose return does not name it as invoked; with no skill resolved nothing changes; a live phase review with a skill still completes.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "e279081adde9c0f70735ef2692f0e942e64e9be0",
+  "branch": "audit/p166-the-configured-review-skill-re",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P166.1",
+      "title": "The phase reviewer's brief names the configured review skill, and the headless phase validation passes it",
+      "status": "in_progress",
+      "description": "Port the fix for BUG-34 (high): the configured reviewSkill never reaches the drive route's phase reviewer.\n\nThe fix already exists as SG1.2 on the skill-gates branch (audit/sg1-a-brief-outranks-a-skill-and-a, commit 2e4716d1), exported without its docs/audit state at:\n<scratchpad>/sg1.2-review-skill-in-phase-brief.patch\nIt applies clean at e279081a (git apply --check). Apply it with `git apply` and keep its hunks BYTE-IDENTICAL - a later merge of the SG1 branch into main must stay clean, so do not reword, reflow or \"improve\" any hunk. What it does: audit-lookup.py adds review_skill_lines() to the phase brief header (phase_brief_parts), and drive-phase.py's session_skills(..., phase_review=True) gives the headless phase validation --skill; tests rk1-rk5 (tests/test_audit_lookup.py) and vk1-vk3 (tests/test_drive_phase.py) come with it; docs in PLUGIN-BUILD-GUIDE.md and reference/phase-signoff.md.\n\nRed-first: the cases were proven red at e279081a (test_audit_lookup 190/193). Re-prove it in your tree: run the suites with only the tests hunks applied (code hunks reverted), quote the failing case lines, then apply the code and show green. If any hunk does not apply byte-identically, stop and say which and why. No register ids in comments (the patch already follows that; do not add any).",
+      "files": [
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_audit_lookup.py",
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/phase-signoff.md",
+        "tests/test__affected_tests.py",
+        "tests/test__doctor_trail.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_lookup.py: rk1-rk5 the phase brief names the resolved review skill",
+          "tests/test_drive_phase.py: vk1-vk3 the headless phase validation passes --skill"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test_drive_phase.py tests/test__affected_tests.py tests/test__doctor_trail.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-17T15:25:13Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "bugId": "BUG-34",
+      "notes": [
+        {
+          "at": "2026-11-17T15:25:05Z",
+          "reader": "tests/test__affected_tests.py",
+          "reads": "PLUGIN-BUILD-GUIDE.md",
+          "text": "declared to answer a reading: tests/test__affected_tests.py reads PLUGIN-BUILD-GUIDE.md - quotes its text beside its path: 'related listing'"
+        },
+        {
+          "at": "2026-11-17T15:25:05Z",
+          "reader": "tests/test__doctor_trail.py",
+          "reads": "PLUGIN-BUILD-GUIDE.md",
+          "text": "declared to answer a reading: tests/test__doctor_trail.py reads PLUGIN-BUILD-GUIDE.md - quotes its text beside its path: \"**It grades each copy's own age\""
+        },
+        {
+          "at": "2026-11-17T15:25:06Z",
+          "text": "reads import layers; no import is added or moved",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-17T15:25:07Z",
+          "text": "reads lint tables; no lint is added or changed",
+          "waives": "tools/prove-gates.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T15:53:05Z.060e69",
+        "status": "passed",
+        "at": "2026-11-17T15:53:05Z"
+      }
+    },
+    {
+      "id": "P166.2",
+      "title": "A phase return that skipped the resolved review skill is refused, and the phase brief says so",
+      "status": "pending",
+      "description": "Close the class, not only the instance: nothing checks that an Agent-dispatched phase reviewer actually invoked the review skill the phase resolved. Writer sessions are held by drive-phase.py uninvoked_skills() (it reads the runner's recorded skillsInvoked); the subagent route (the phase reviewer dispatched as an Agent, whose return is filed through `submit` / `brief --role phase` ... submit, with --head) has nothing.\n\nAdd the check:\n1. The phase reviewer's return names the skill(s) it invoked (a field in the return object - reuse the name `skillsInvoked` the runner already records, so one vocabulary covers both routes). The brief section that audit-lookup.py writes for the phase reviewer (beside review_skill_lines(), added by the preceding task) tells the reviewer to invoke the skill and to list it in that field, and says why: a return without it is refused. Put ALL explanatory text in that brief section; plugins/audit/agents/audit-reviewer.md is at its byte ceiling (measure-context / its size lint) - do not grow it.\n2. `submit` for a phase return refuses when the phase resolved a review skill and the return does not name it as invoked. The refusal states the reason and the remedy (invoke the skill, then resubmit with it listed) in the drive's own refusal style. When no skill resolved, nothing changes: a return without the field is accepted exactly as today (prove it with a case).\n3. Red-first BOTH directions, with the failing line quoted: (a) a phase that resolved a skill + a return without it -> refused (the case is red against the code without the check); (b) the allow side: no skill resolved + no field -> accepted, and a resolved skill + the field naming it -> accepted (the case is red against a check that over-fires, e.g. one that refuses whenever the field is absent).\n4. If this turns out to need an architecture change (e.g. the phase return has no seam where the resolved skill is known at submit time), STOP and say so in the return instead of building it.\n\nRead writing-python, no-silent-pass, before-you-claim. No register ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "tests/test_drive_phase.py",
+        "tests/test_audit_lookup.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/phase-signoff.md",
+        "tests/test__affected_tests.py",
+        "tests/test__doctor_trail.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a phase return missing the resolved review skill is refused; no skill resolved or the skill named is accepted"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_lookup.py tests/test__affected_tests.py tests/test__doctor_trail.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P166.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-17T15:24:58Z",
+          "text": "tdd by default (init.md's mode rule): no mode was named and the title leads with no refactor or config word, so it adds or changes observable behaviour"
+        },
+        {
+          "at": "2026-11-17T15:25:09Z",
+          "text": "reads import layers; no import is added or moved",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-17T15:25:11Z",
+          "text": "reads lint tables; no lint is added or changed",
+          "waives": "tools/prove-gates.py"
+        }
+      ]
+    }
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "988f3478-fc74-4a1e-a62b-7522b404c792",
+    "branch": "audit/p166-the-configured-review-skill-re",
+    "at": "2026-11-17T15:25:13Z"
+  },
+  "startedAt": "2026-11-17T15:25:13Z"
+}

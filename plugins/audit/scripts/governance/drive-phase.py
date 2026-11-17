@@ -371,7 +371,7 @@ import _filed_returns as _fr  # noqa: E402  (where a filed return lives, and its
 #                                            the per-task review key a task holds;
 #                                            the driver's state path, needs_human)
 import _config_rules  # noqa: E402  (review_per_task_mode: the config's reading now)
-import _areas  # noqa: E402  (resolve_review_skill: whether the phase review has a skill; resolve_skills: what a session starts with)
+import _areas  # noqa: E402  (resolve_review_skill: whether the phase review has a skill, and the one a phase-scope reviewer session starts with; resolve_skills: what a session starts with)
 import _status_facts  # noqa: E402  (ready_tasks: the one readiness rule)
 import _verdict_binding as _vb  # noqa: E402  (phase_binding: whether a held phase
 #                                              gate run is still the one sign-off binds)
@@ -2088,22 +2088,31 @@ def session_record(ctx, task, seq, role="writer"):
         "" if role == "writer" else role + ".", seq))
 
 
-def session_skills(ctx, task):
+def session_skills(ctx, task, phase_review=False):
     """The skills `task`'s session starts with: `_areas.resolve_skills` over the
     plan as it stands now - the one resolver, so the writer, the reviewer and the
-    executor subagent are given the same names."""
+    executor subagent are given the same names. A session reviewing at phase
+    scope (`phase_review`) also starts with the review skill
+    `_areas.resolve_review_skill` resolves, the one the phase brief names; a
+    per-task reviewer never does, since `mode: task` takes no review skill."""
     manifest, phase = load_phase(ctx)
-    return _areas.resolve_skills(manifest, phase, task)
+    skills = _areas.resolve_skills(manifest, phase, task)
+    if not phase_review:
+        return skills
+    review, _basis = _areas.resolve_review_skill(manifest, phase)
+    return skills + [review] if review and review not in skills else skills
 
 
 def writer_argv(ctx, task, writer, prompt, record, tree=None, resume=None,
-                role="writer"):
+                role="writer", phase_review=False):
     """The command that runs `task`'s writer session - or its reviewer's, under
     `role` - in the task's own tree when it has one, else the project; its
     scratch and its stream under `stateDir`, and one `--skill` per skill the task
     resolves to, which the runner discloses in the session's system prompt by
-    name, description and checklist; the body is the Skill tool's to load."""
-    skills = [flag for name in session_skills(ctx, task) for flag in ("--skill", name)]
+    name, description and checklist; the body is the Skill tool's to load.
+    `phase_review` is `session_skills`'s, for a reviewer at phase scope."""
+    skills = [flag for name in session_skills(ctx, task, phase_review)
+              for flag in ("--skill", name)]
     argv = ["python3", _loader.script_path(WRITER_RUNNER), "--role", role,
             "--task", task["id"],
             "--tree", member_project(ctx, tree) or ctx["project"],
@@ -10229,7 +10238,8 @@ def validation_dispatch(ctx, state, phase, head, candidates):
     with open(prompt, "w", encoding="utf-8", newline="\n") as fh:
         fh.write("\n".join(lines + ["", VALIDATE_RULE]) + "\n")
     _record, argv = open_dispatch(ctx, state, node, 0, lambda record: writer_argv(
-        ctx, node, setting, prompt, record, role="reviewer"), None, VALIDATE_KEY)
+        ctx, node, setting, prompt, record, role="reviewer", phase_review=True),
+        None, VALIDATE_KEY)
     held = writer_state(state, node, VALIDATE_KEY)
     held["asked"] = ids
     _mark(state, VALIDATE_KEY, node, held)

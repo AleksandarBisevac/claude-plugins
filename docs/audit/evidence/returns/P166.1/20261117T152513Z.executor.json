@@ -1,0 +1,40 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test_drive_phase.py tests/test__affected_tests.py tests/test__doctor_trail.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-17T15:37:43Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test_drive_phase.py tests/test__affected_tests.py tests/test__doctor_trail.py` in a throwaway tree at HEAD exited 1 with 4 of 982 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rk1 (house FAIL), rk2 (house FAIL), rk3 (house FAIL), vk1 (house FAIL): SELFTEST FAILED: 981/982 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Applied the SG1.2 patch (sha1 66253bc8 of sg1.2-review-skill-in-phase-brief.patch) with git apply in the project tree at e279081a: tests hunks first (--include='tests/*'), then the rest (--exclude='tests/*'); every hunk applied, none edited. Byte-identity verified: the six files (PLUGIN-BUILD-GUIDE.md, plugins/audit/reference/phase-signoff.md, plugins/audit/scripts/governance/drive-phase.py, plugins/audit/scripts/status/audit-lookup.py, tests/test_audit_lookup.py, tests/test_drive_phase.py) cmp-identical to the patch applied on a git-archive export of HEAD, and git apply -R --check of the whole patch passes. Gate: python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test_drive_phase.py tests/test__affected_tests.py tests/test__doctor_trail.py exit 0, '4/4 files ok, 1381 cases' (audit_lookup 193, drive_phase 982 over 88 blocks, _affected_tests 51, _doctor_trail 155). ruff and vermin -t=3.8- clean on the four touched .py. Dependants: audit-lookup.py importers (test__evidence_io 335, test__filed_returns 118, test_audit_lookup, test_drive_phase) still correct - review_skill_lines is new and phase_brief_parts adds a section only when _areas.resolve_review_skill returns a skill; drive-phase.py importers (drive-without-model.py via test_drive_without_model 74, _worktrees.py via test__worktrees 182, test__filed_returns, test__invariants 141, test_audit_status 411, test_commit_task_work 239, test_detect_plan_skip 46) still correct - session_skills/writer_argv gain phase_review=False, a defaulted keyword, so every existing caller keeps its argv and only validation_dispatch passes True; PLUGIN-BUILD-GUIDE.md and phase-signoff.md readers (test__deps 284, test__output_lints 183, test__refs 292, test__areas 130) green over the doc hunks; tests/test__affected_tests.py and tests/test__doctor_trail.py unchanged by the patch and green in the gate. All twelve dependant suites swept together: '12/12 files ok, 2435 cases'. Nothing committed; docs/audit state files untouched by me.",
+    "descriptive": "The drive route's phase reviewer brief now names the configured review skill and the headless phase validation session starts with --skill for it; nothing changes when no review skill resolves."
+  },
+  "testsAdded": [
+    "rk1-rk3: the phase brief names the review skill resolved from phase, area or meta level once under one Review skill heading with the resolver's basis",
+    "rk4-rk5: no review skill anywhere, or an area's explicit null over meta's, gives no Review skill section",
+    "vk1: the validation session's argv carries the phase's resolved review skill once beside the reviewer role",
+    "vk2: over-fire twin - no review skill resolved gives no --skill",
+    "vk3: the per-task reviewer session never gets the review skill"
+  ],
+  "casesAdded": [
+    [
+      "rk1",
+      "rk2",
+      "rk3",
+      "rk4",
+      "rk5"
+    ],
+    [
+      "vk1",
+      "vk2",
+      "vk3"
+    ]
+  ],
+  "claims": "claims:\n1 audit-lookup.py review_skill_lines + phase_brief_parts 'lines += review_skill_lines(manifest, phase)'; drive-phase.py session_skills(phase_review) and validation_dispatch passing phase_review=True - all from the patch, byte-identical, prose not mine\n2 tests-only apply -> rk1-rk3 red (190/193), vk1 red (63/64); over-fire mutations m1/m2/m3 -> rk4+rk5, vk3, vk2 red; restored, shasum -c OK, green 193/193 and 64/64\n3 n/a - port of an existing fix kept byte-identical by instruction; class sweep is the SG1 branch's\n4 n/a - no rule to an agent written by me (doc hunks are the patch's)\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written into the tree",
+  "stamp": "audit-stamp: {\"content\":\"sha256:ad3573bbf850b53587ac8a2a7dbc7e4fa6cc769ace305af205eb579fa13d3702\",\"dirtyDigest\":\"sha256:376781dfd82dfa9e4907f797bcc427ff84488ac634707198d70af74a73369fc9\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"5f329a410c859087\",\"plugins/audit/reference/phase-signoff.md\":\"6544bf617cf56e0c\",\"plugins/audit/scripts/governance/drive-phase.py\":\"4337740496f19ceb\",\"plugins/audit/scripts/status/audit-lookup.py\":\"91c9455b741ebd98\",\"tests/test_audit_lookup.py\":\"808aa01bbf5fbc55\",\"tests/test_drive_phase.py\":\"fc305c54196fb00c\"},\"head\":\"e279081a\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/phase-signoff.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test__affected_tests.py\",\"tests/test__doctor_trail.py\",\"tests/test_audit_lookup.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:52d0f99a14ad45b9a3b00fe1601c6299062e9dc5031f56bf61c1ef83e64cb8d8\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

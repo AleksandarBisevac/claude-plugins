@@ -1060,6 +1060,12 @@
       "title": "Quick lows before 3.9.0",
       "status": "done",
       "shard": "phases/P165.json"
+    },
+    {
+      "id": "P166",
+      "title": "The configured review skill reaches the phase reviewer, and a phase return that skips it is refused",
+      "status": "in_progress",
+      "shard": "phases/P166.json"
     }
   ],
   "fileIndex": {
@@ -2026,7 +2032,9 @@
       "P164.1",
       "P165.2",
       "P165.4",
-      "P165.5"
+      "P165.5",
+      "P166.1",
+      "P166.2"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -3744,7 +3752,9 @@
       "P142.51-6yq",
       "P148.5",
       "P155.11",
-      "P155.34-gfj"
+      "P155.34-gfj",
+      "P166.1",
+      "P166.2"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
@@ -6278,7 +6288,9 @@
       "P157.9-mwz",
       "P157.12-mwz",
       "P158.1-lxm",
-      "P158.2-7vi"
+      "P158.2-7vi",
+      "P166.1",
+      "P166.2"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -11094,7 +11106,9 @@
       "P161.7-toy",
       "P162.1",
       "P162.2-zz6",
-      "P165.2"
+      "P165.2",
+      "P166.1",
+      "P166.2"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -12363,7 +12377,9 @@
       "P156.19-3st",
       "P156.20-3st",
       "P157.1",
-      "P165.2"
+      "P165.2",
+      "P166.1",
+      "P166.2"
     ],
     "tests/test__areas.py": [
       "P131.1",
@@ -12512,7 +12528,9 @@
       "P155.30-gfj",
       "P155.40-gfj",
       "P155.44-gfj",
-      "P165.2"
+      "P165.2",
+      "P166.1",
+      "P166.2"
     ],
     "tests/test__evidence_io.py": [
       "P131.1",
@@ -12988,7 +13006,9 @@
       "P157.9-mwz",
       "P157.12-mwz",
       "P158.1-lxm",
-      "P158.2-7vi"
+      "P158.2-7vi",
+      "P166.1",
+      "P166.2"
     ],
     "tests/test_audit_status.py": [
       "P131.1",
@@ -13240,7 +13260,9 @@
       "P161.7-toy",
       "P162.1",
       "P162.2-zz6",
-      "P165.2"
+      "P165.2",
+      "P166.1",
+      "P166.2"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -14538,6 +14560,25 @@
       "taskId": null,
       "fixedIn": null,
       "notes": "Phase P156 answered every finding carried here: P156.1-.10 fixed or answered each by id, grouped by area, and P156.11-.22 fixed what the five review rounds and the release-tier CI runs found in that work (P156-R1 to R30, every one resolved to its fixing task). P156 signed off and landed at 524e1d72."
+    },
+    {
+      "id": "BUG-34",
+      "title": "The configured reviewSkill never runs on the drive route's phase review",
+      "status": "in_progress",
+      "severity": "high",
+      "reportedAt": "2026-11-17T15:24:03Z",
+      "reportedBy": "owner",
+      "description": "On the drive route, the phase reviewer's brief never names the configured reviewSkill, so the skill never runs and no code review in that form is performed, while /audit:status shows 'review: <skill> (meta)'. Root cause: audit-lookup.py phase_brief_parts never resolves the skill; drive-phase.py dispatch_phase_review, dispatch_said and DISPATCH_PROMPT do not carry it. Present since v3.2.0.",
+      "repro": "Configure reviewSkill to an installed skill; drive a phase to sign-off; the phase reviewer's brief never names the skill and the reviewer session makes no Skill call.",
+      "expected": "The phase reviewer's brief names the resolved review skill and the reviewer invokes it; a phase return that skipped it is refused.",
+      "actual": "The brief omits the skill; the review runs without it; nothing notices.",
+      "files": [
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/scripts/governance/drive-phase.py"
+      ],
+      "taskId": "P166.1",
+      "fixedIn": null,
+      "notes": null
     }
   ],
   "deferred": {

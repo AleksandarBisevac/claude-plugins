@@ -18071,7 +18071,73 @@ def _skill_units(check):
     check("sk3 a task that resolves no skill gets no --skill at all - the flag is "
           "not added with an empty name: %r" % ((bare,),),
           _flag(bare, "--role") == "writer" and "--skill" not in bare)
+    _review_skill_session_units(check, M)
     _skill_invoked_units(check, M)
+
+
+def _vk_validation_argv(M, root, phase, meta):
+    """The argv `validation_dispatch` starts the phase-scoped reviewer session
+    with, over `phase` in a plan carrying `meta`, its state under `root`."""
+    _step_rig(M, phase, meta=meta)
+    M.tree_head = lambda ctx, tree=None: None
+    ctx = _step_ctx(stateDir=os.path.join(root, phase.get("title", "s")),
+                    config={"executor": dict(WRITER_EXECUTOR)})
+    state = {}
+    finding = {"id": "P1-R1", "severity": "med", "file": "src/f1.txt:1",
+               "issue": "i", "resolution": "r"}
+    said = _caught(M.validation_dispatch, ctx, state, phase, "a" * 40, [finding])
+    held = M.writer_state(state, M.validation_node(phase, "a" * 40), M.VALIDATE_KEY)
+    dispatches = held.get("dispatches") or []
+    return (dispatches[-1].get("argv") if dispatches else None), said
+
+
+def _review_skill_session_units(check, M):
+    """The headless reviewer session at phase scope - the validation pass over
+    the phase review's findings - starts with the review skill the phase
+    resolves, through `_areas.resolve_review_skill`; with none resolving it
+    starts with none; the per-task reviewer (`mode: task`, which takes no
+    review skill) never gets it."""
+    root = _harness.fixture_root("drive-review-skill-")
+    try:
+        named = ["alpha-house"]
+        task_u = _step_task(skills=list(named))
+        with_skill = _step_phase([task_u], title="with", area="api")
+        argv, said = _vk_validation_argv(
+            M, root, with_skill,
+            {"areas": {"api": {"root": "src", "reviewSkill": "area-review"}},
+             "reviewSkill": "plan-review"})
+        flags = _skill_flags(argv)
+        check("vk1 the validation session's command carries the review skill "
+              "the phase resolves (an area's, over the plan's) exactly once, "
+              "beside its reviewer role, and not the level it overrode: %r"
+              % ((flags, _flag(argv or [], "--role"), said if argv is None else ""),),
+              argv is not None and _flag(argv, "--role") == "reviewer"
+              and flags.count("area-review") == 1
+              and "plan-review" not in flags)
+        none_phase = _step_phase([_step_task()], title="none")
+        bare_argv, bare_said = _vk_validation_argv(M, root, none_phase, {})
+        nulled = _step_phase([_step_task()], title="nulled", reviewSkill=None)
+        null_argv, null_said = _vk_validation_argv(
+            M, root, nulled, {"reviewSkill": "plan-review"})
+        check("vk2 THE OVER-FIRE TWIN: with no review skill anywhere, and with "
+              "the phase's explicit null stopping the plan's, the validation "
+              "session's command carries no --skill at all: %r"
+              % ((bare_argv, null_argv, bare_said if bare_argv is None else "",
+                  null_said if null_argv is None else ""),),
+              bare_argv is not None and null_argv is not None
+              and "--skill" not in bare_argv and "--skill" not in null_argv)
+        _step_rig(M, with_skill, meta={
+            "areas": {"api": {"root": "src", "reviewSkill": "area-review"}}})
+        ctx = _step_ctx(stateDir=os.path.join(root, "task"))
+        rargv = _caught(M.writer_argv, ctx, task_u, {"model": WRITER_MODEL,
+                                                    "budget": "2.5"},
+                        "/p", "/r", role="reviewer")
+        check("vk3 the per-task reviewer session, over a phase that resolves a "
+              "review skill, still carries only the task's own skills - mode "
+              "task takes no review skill: %r" % ((rargv,),),
+              isinstance(rargv, list) and _skill_flags(rargv) == named)
+    finally:
+        _harness.remove_tree(root)
 
 
 def _invoked_record(root, name, invoked, skills=("alpha-house", "audit:beta-house",
