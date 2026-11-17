@@ -4,7 +4,97 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
-## [Unreleased]
+## [3.9.0]
+
+### Fixed
+- **The configured review skill now runs at phase sign-off.** Since 3.2.0 the phase reviewer's
+  brief never named `reviewSkill` and the headless phase validation never passed it, so sign-off
+  ran without the skill and nothing said so. The phase brief now names the skill resolved for the
+  phase (`phase.reviewSkill`, then the area's, then `meta.reviewSkill`), and the headless
+  validation session is given it whenever the session's runner can find it; when the runner
+  cannot, the dispatch leaves it out and warns. A phase return must now account for the skill:
+  `drive-phase.py submit` refuses a phase review that neither names it in `skillsInvoked` nor
+  carries `skillUnavailable` with a reason. A reviewer that could not load the skill files an
+  honest `skillUnavailable` return, which is accepted and raises a `med` finding, so a skipped
+  skill is visible at triage instead of silent. `/audit:doctor`'s remedy text says the same.
+- **The report's filters say what they are doing.**
+  - *Clear lifts every filter.* Clear, the shareable link, the stored view and the counters all
+    iterate one registry of filter axes, so no axis can be left behind by one of them.
+  - *An empty view names its reason.* When the filters hide every match, the empty state says
+    how many matches they hide and offers **Show all**, and focus lands where the reader can act.
+  - *The counter states its basis*, naming the view it counts.
+  - *A link restores only filters a control shows.* A report link carrying a value no control on
+    that page can show is not applied, so a page never filters by something the reader cannot
+    see or clear.
+  - *The side-nav marks the section a jump lands on*, at every page size, including the last
+    sections of a short page.
+  - On a phone the filters leave the table room; every header filter names its scope; the filter
+    controls are announced and visibly focused.
+- **The report's layout holds under any font.** The filter bar, its counter and the phases table
+  stay within the space stated for each page size whatever font the browser substitutes, with the
+  wrapping designed rather than accidental. Chips and ids no longer break inside a word in any
+  table, and the More-filters disclosure arrow is one shared, decorative rule on the report and
+  the panel.
+- **The drive no longer loops on a red gate.** Recording a red commits the drive's own state rows,
+  and that commit used to make every later base run refuse because "HEAD has moved", so `next`
+  re-ran the red gate without end. The base run now checks the code the red ran on, and HEAD
+  counts as moved only when it changed something outside the paths the recorder writes. A second
+  base in one start that cannot be measured because the code really moved stops as the
+  `gate-red-base-unknown` ask, checked before any base run is launched.
+- **Taking over or releasing a lock claim is serialised by a kernel mutex in the lock
+  directory.** Every create, removal and rewrite of a claim runs under `flock` (POSIX) or
+  `msvcrt.locking` (Windows) on the lock directory's `.mutex` file, released by the kernel
+  however the holder exits, so two takers can no longer both believe they hold a claim. A
+  takeover removes only the claim it judged. A filesystem that refuses kernel locks outright
+  (`ENOLCK`, `EOPNOTSUPP`, `ENOTSUP`, `ENOSYS`) keeps the behaviour from before the mutex existed
+  and says so on a `mutex:` line in the answer; any other error from the lock call is an error,
+  never a silent skip.
+- **A refused `ps` is a third answer, not "alive" or "dead".** Under a sandbox that refuses
+  `/bin/ps`, a process whose state cannot be read is `unverified`: it counts as live, its basis
+  names the refusal, and a lock holder is not taken over on it.
+- `audit-task.py start` compares the plan directory and the project directory on one path
+  resolution, so a symlinked checkout is no longer read as two places.
+- The simulated-Windows test cases no longer reach for the POSIX-only `os.killpg` when the suite
+  runs on a real Windows host.
+
+### Changed
+- **The cost phase: a task run through the plugin spends less before the writer does any work.**
+  - *The writer's skills are disclosed, not appended whole.* The writer's system prompt carries
+    each declared skill's name, its description and its `## Checklist` section when it has one,
+    instead of every `SKILL.md` in full; the session record names the skills the writer actually
+    invoked, and a resumed writer is not warned about a skill it invoked in an earlier round.
+  - *A slow gate step is left to the drive.* A gate step whose recorded mean outlives the Bash
+    tool's foreground bound is not handed to the writer to run; the brief names it once, with its
+    mean and how many runs measured it, and says the drive's gate runs it.
+  - *Every gate the drive runs inside `next` is chosen one way.* A gate whose recorded mean
+    outlives that bound, or that no run has measured, is dispatched to the background
+    (`dispatch-gate`, then `wait-gate`) and decided from its recorded row, so the CLI moving a
+    long command to the background can no longer kill it into a second measurement; a
+    measured-fast gate runs inline.
+  - *The red excerpt is the failing cases.* The gate row and the drive's resume prompt read
+    failing cases through one reader and say so when no case can be read, instead of quoting
+    the tail of the output.
+  - *A task's dependants include the documents that describe it.* The brief's `Who depends on
+    this` section also lists prose that names a decision, step or config key one of the task's
+    files defines.
+  - *The writer is always told which tests to run.* Every `tests.add` suite a task declares is
+    run by a command the writer brief lists, or the brief names the suite and says why it could
+    give no command; a suite counts as run only by a command that really runs it.
+- **The base of a red gate is measured, and an unknown base stops instead of resuming the
+  writer.** When a task gate is red and no comparable base run is recorded, the drive measures
+  the red steps once per start at the base commit, in a detached tree it removes afterwards, in
+  the background when the step is slow or unmeasured. Red at base is decided only on cases both
+  runs name.
+  - A red whose base fails every case it fails stops as `gate-red-base`, with no writer session
+    sent: `block`, `rerun`, or the owner commits over it with a reason.
+  - A base nobody can know - the base run left no reading, failed or was killed - stops as
+    `gate-red-base-unknown`, an `ask` the owner answers, with no session sent and no round
+    spent: `measure-base`, `rerun`, `block`, or commit over it. Before this release that red was
+    read as introduced by the task and sent back to the writer.
+  - One launch has one base run, and a claim left by a base run that died is taken over by the
+    next one, so a killed base run never wedges the drive.
+- The drive's wait wording says a step was handed out rather than launched, and its documents
+  state the base-measure bound.
 
 ### Added
 - **A typed `/audit:run <id>` or `/audit:phase <id>` runs the drive with no model request when
@@ -22,6 +112,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   hook**: no process there can be sent a signal another process can catch, so Esc would end only
   the launcher while `auto` and its writers kept spending, and the hook stays out of the way until
   a real run proves a stop there.
+- **`drive-phase.py auto` runs the drive's mechanical steps itself** and ends with a distinct
+  answer on done, on stop, and on a step that needs a model; it is what the prompt hook above
+  starts. A wave runs under `auto` only when every member is a dispatch with a command, a step
+  that owes a board echo goes to the model, and an unreaped child or a closed terminal ends the
+  drive with an answer that says so.
+- The report's browser gate runs a wide-font pass locally, so a layout that holds only under the
+  developer's own font fails before CI.
+
+### Known limits
+- **The prompt hook passes through on Windows.** `/audit:run` and `/audit:phase` there run as
+  they did with no hook, with a model request, until a real run proves that Esc can stop the
+  drive and its writers.
 
 ## [3.8.0]
 
