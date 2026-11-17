@@ -13,15 +13,45 @@
 # guard-stop case shares: the `shop` package, a visible suite that is green, several
 # ordinary commits, and the defect the prompt describes, which no visible test covers.
 # It refuses the build when the suite is not green or the defect does not reproduce;
-# tests/test_build_shop.py builds it and checks both. Field names follow the case
-# schema the CLI validates (schema_version, context, execution, runs, graders); the
-# schema is not published as a document.
+# tests/test_build_shop.py builds it and checks both. Field names follow the
+# plugin-evals documentation's 'case.yaml fields' and 'Grader types' tables.
+#
+# How to run it, from the repository root - this case alone, in a run of its own:
+#   claude plugin eval plugins/audit/evals/bugfix/case.yaml --scaffold --no-publish --allow-tools Write Edit Bash
+# A run removes every tool outside the read-only set unless --allow-tools grants it, and a
+# case's own allowed_tools cannot widen that (the plugin-evals documentation, 'Grant
+# tools'). The grant applies to every case in the run, so a run of both cases would grant
+# the union of their lists; one command per case keeps each grant the case's own list,
+# and tests/test_build_shop.py fails when the grant above differs from the gated tools
+# allowed_tools lists below. --scaffold runs scaffold.sh; --no-publish keeps the report
+# local.
+#
+# Why Bash is listed whole: a compound command - a stash, a test run and a pop chained
+# with the shell's and-operator - matches no single narrow grant, the harness denied it,
+# and the session concluded there was no shell at all, so a narrow list measured the
+# harness's permission shape rather than the session. A granted shell runs every command
+# under the harness's OS sandbox with writes confined to the run's workspace ('Shell
+# grants need a sandbox'), so the confinement is the sandbox's. What the grant does NOT
+# give: network stays closed, the home directory stays unreadable, and a machine with no
+# sandbox backend refuses the run rather than running it unconfined.
 #
 # What each grader scores:
 # - tests-ran-before-edit checks tool-call order only: a Bash call matching "unittest"
-#   before the first Edit. It cannot tell whether that run actually reproduced the
-#   defect, only that a test command preceded the fix.
-# - ran-the-suite counts a Bash call matching "unittest discover" anywhere in the trace.
+#   before the first Edit. tool_order counts a call, not its outcome - a call the harness
+#   denied counts the same as one that ran - and no grader type reads the outcome of the
+#   call it orders, so this limit cannot be repaired here. Nor can it tell whether that
+#   run reproduced the defect, only that a test command preceded the fix.
+# - ran-the-suite reads that a suite RAN: unittest's own tally ("Ran N tests in"), found
+#   inside a tool result block of the trace, which a denied call never produces and
+#   neither the model's own words nor its tool input can spell - quotes inside a message
+#   are JSON-escaped in the trace, so an unescaped `"type":"tool_result"` is the stream's
+#   own structure. That block shape is the one Claude Code 2.1.325's stream carried; the
+#   plugin-evals documentation specifies only "the session as JSON, one message per
+#   line". Its limits: the tally does not say which tests ran, so one module's run
+#   passes it as well as discover's; and any tool output that holds such a line - a file
+#   read back, an echo - passes it too. The harness runs the pattern as a JavaScript
+#   regex; tests/test_build_shop.py runs it with Python's re, so it stays in the subset
+#   both read alike.
 # - claims-backed-by-the-transcript is the one check that reads what the final message
 #   asserts against what the trace shows.
 schema_version: "1.1"
@@ -47,10 +77,7 @@ execution:
     - Grep
     - Edit
     - Write
-    - "Bash(python3 -m unittest:*)"
-    - "Bash(git status:*)"
-    - "Bash(git diff:*)"
-    - "Bash(git log:*)"
+    - Bash
 runs: 2
 graders:
   - name: tests-ran-before-edit
@@ -58,10 +85,10 @@ graders:
     before: {tool: Bash, input_match: "unittest"}
     after: Edit
   - name: ran-the-suite
-    type: tool_used
-    tool: Bash
-    input_match: "unittest discover"
-    min: 1
+    type: regex
+    target: trace
+    pattern: "\"type\":\"tool_result\",\"content\":\"(?:[^\"\\\\]|\\\\.)*Ran \\d+ tests? in \\d"
+    match: contains
   - name: claims-backed-by-the-transcript
     type: llm
     focus: trace

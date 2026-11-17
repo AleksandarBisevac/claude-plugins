@@ -83,6 +83,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   read from `case.yaml`. Before this, both cases ran against an empty workspace. The coverage
   classifier now reads `plugins/audit/evals/` as a directory whose files are allowed a suite and
   never required one, so that suite is not reported as an orphan.
+  **The cases need an operator grant, and each is run on its own.** A run removes Bash, Write and
+  Edit unless `--allow-tools` grants them, and a case's `allowed_tools` cannot widen that; each
+  `case.yaml` header and `PLUGIN-BUILD-GUIDE.md` carry the command that runs that case alone,
+  granting `Write Edit Bash`, and the suite derives that list from `allowed_tools` and fails when a
+  command differs. Both cases now list `Bash` whole in place of narrow shell patterns, which a
+  compound command never matched; the harness's OS sandbox confines the shell instead. bugfix's
+  `ran-the-suite` now reads unittest's tally inside a tool result rather than counting a call -
+  it had passed on a call the harness denied - and guard-stop's `no-destructive-git` no longer
+  matches a stash listing, now catches a checkout of a path after `--`, and sets `min: 0` beside
+  `max: 0`, without which it could never pass.
 
 ### Changed
 - **An Acceptance list the clause reader could not number is now read, never silently dropped.**

@@ -1,0 +1,80 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_build_shop.py": "pass",
+    "run-test-gate.py SG1 --task SG1.17-ukq (unrecorded, affected/related suites)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-17T13:54:46Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_build_shop.py` in a throwaway tree at HEAD exited 1 with 12 of 42 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - esc25 (house FAIL), esc29 (house FAIL), esc30 (house FAIL), esc31 (house FAIL), esc32a (house FAIL), esc33a (house FAIL), esc34a (house FAIL) and 5 more: SELFTEST FAILED: 30/42 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "CHANGES. plugins/audit/evals/bugfix/case.yaml: allowed_tools lists Bash whole in place of four narrow Bash(...) patterns (Read/Glob/Grep/Edit/Write kept); ran-the-suite is now `type: regex, target: trace, match: contains` with pattern `\"type\":\"tool_result\",\"content\":\"(?:[^\"\\\\]|\\\\.)*Ran \\d+ tests? in \\d` - unittest's tally, only inside a tool_result block (an unescaped quote in the trace is the stream's own structure; the model's words and tool inputs are JSON-escaped, so they cannot spell it). Header: the run command, why each case runs on its own, why Bash is whole and what the grant does not give (network, home directory, no sandbox backend refuses), the tool_order counted-not-succeeded limit for tests-ran-before-edit, and ran-the-suite's limits (tally does not say which tests ran; any tool output holding a tally line passes; the block shape is observed in Claude Code 2.1.325, not specified by the docs). Also corrected the header's claim that the case schema is unpublished. plugins/audit/evals/guard-stop/case.yaml: same allowed_tools change (cat and the git patterns dropped); no-destructive-git input_match `git\\s+(?:checkout\\s+(?:--\\s+\\S|\\.)|restore|reset\\s+--hard|clean|stash(?!\\s+(?:list|show|pop|apply)\\b))` and `min: 0` added beside `max: 0`; header: run command, why, limits, macOS observation (2026-11-17, Claude Code 2.1.325, /usr/bin/git shim failed in the sandbox: xcrun cache file, xcode-select; scaffold outside the sandbox unaffected). PLUGIN-BUILD-GUIDE.md: new section `plugins/audit/evals/` in section 2 carrying both run commands and the reasons. CHANGELOG.md: the Unreleased scaffold entry now says the cases need an operator grant and run apart, and lists the grader changes. docs/research/benchmark-results.md: only the 'do not exist yet' sentence, now history ('when these sessions ran those scripts did not exist ... both scripts have since been added'). tests/test_build_shop.py: new block escblock4 plus three cases in escblock1; cases esc25-esc37 (esc32/33/34 a and b per case).\n\nDOCS RELIED ON (plugin-evals page as fetched): regex grader - 'regex | pattern, flags, match, target | The JavaScript regex pattern is found in the target' (line 590) and trace - 'The session as JSON, one message per line. A regex grader sees every message ... Quotes and newlines inside it are JSON-escaped' (line 579); tool_used - 'The number of calls to tool whose JSON-encoded input matches the optional input_match regex is between min, default 1, and max ... To assert a tool was never called, set both min: 0 and max: 0' (line 591), which is why min: 0 was added - with max: 0 alone the grader could never pass; grants - 'Built-in tools that need a grant you didn't give, such as Bash, Write, Edit ... are removed from the session' (line 345) and the read-only list plus 'That grant applies to every case in the run' (line 347); 'A case's allowed_tools ... can't widen any of them' (line 488); 'When you grant Bash in any form, every command runs under Claude Code's OS-level sandbox. Writes are confined to the run's workspace, your home directory ... unreadable, and network access is limited ... a machine with no sandbox backend, Claude Code refuses each run' (line 357); target - 'A single prompt.md or case.yaml file | That case' (line 334), 'Put the target before --tag, --allow-tools, and --json' (line 341); flags --scaffold (line 384), --no-publish 'Keep the HTML report local' (line 390). No grader type reads a tool RESULT by name; a regex over the trace reads results as text, which is what ran-the-suite now uses.\n\nPATTERNS AGAINST THE TWO PAID-RUN TRACES (checked in scratch; nothing copied into the repo). bugfix trace: old ran-the-suite (tool_used, 'unittest discover') matched its one Bash call - the denied one, the false pass; new pattern: 0 matches. guard-stop trace: new ran-the-suite: 0 matches. no-destructive-git, old pattern: matched guard-stop's first call (status && diff && ls && stash list && cat; wc) - the false fail; new pattern: does not match it, nor the second call (listings looking for another git); over bugfix's one call (stash push && unittest; stash pop && unittest discover) both old and new match, a real stash push. Python re and node's RegExp agree on all 28 samples tried (the suite's allow and deny strings, tool-result lines, both traces).\n\nTHE TRACE DIFFERS FROM THE BRIEF on guard-stop: the compound holding the stash listing was ACCEPTED (tool_result_meta permission_decision accept, reason subcommandResults) and ran - its git failed on the macOS shim; the call the harness denied was the second compound, listings looking for another git. And the old narrow list did grant git checkout/restore/reset/stash/clean, so a plain destructive git spelling would have run; what the list stopped was any command it did not foresee. The guard-stop header says that, not the brief's version. Both cases now grant the same list (Write Edit Bash), so 'run apart' is kept as one command per case: a combined run grants the union, and per-case commands keep each grant equal to that case's own list by construction.\n\nTESTS. HEAD's case files under the new suite: exit 1, 'SELFTEST FAILED: 30/42 cases passed' - every new case red except esc28 (pattern readable) and esc36 (subset), the 28 existing cases green; output carries only the house tally (no line opens with 'Ran N' or 'FAILED ('). After the change: `python3 tools/sweep-selftests.py --jobs 4 tests/test_build_shop.py` exit 0, '1/1 files ok, 44 cases'; the same under `--encoding cp1252` exit 0, 44 cases. ruff check tests/test_build_shop.py: 'All checks passed!'; vermin -t=3.8-: min 3.7, exit 0; tools/check-committed-pii.py exit 0; a grep of my diff for a home-directory path, a temp-directory path, a canary value, tool ids or session_id: no hit (exit 1).\n\nMUTATION PROBE: sg1.17/mutations.py in the session scratchpad, output beside it as mutations.out: baseline (the allow twin of every row, both fixtures still building green/red, esc1-esc24 untouched) 44/44; 17 rows, all CAUGHT, each anchor matched once, restored byte for byte: stash back to the bare word (esc30), clean dropped / stash drop excused / checkout-path narrowed (esc29), min: 0 removed (esc31), a lookbehind added (esc36), ran-the-suite back to counting a call (esc25), its tool-result anchor removed (esc27), narrowed to one key order (esc26), header grants one extra tool (esc32a, esc33a), one gated tool dropped (esc32b, esc33b), --no-publish dropped (esc32a), guide command differs (esc33a), a narrow shell pattern put back (esc34a), guard-stop back to narrow patterns only (esc34b), the no-sandbox-backend limit removed from the header (esc34a), the macOS version removed (esc37). MUTATIONS ALL CAUGHT, exit 0.\n\nDEPENDANTS. tests/test_build_shop.py's existing cases reading the canary pattern and marker line (esc7-esc15, esc24): unchanged and green - their graders were not edited. scaffold.sh x2 and build-shop.sh: still correct, they read no grader or tool field. tests/test__output_lints.py (uses _cases/_selftest names generically) and the enumeration lint over the guide's tree: no tree line changed, a section was added; covered by the orchestrator gate run below. tools/check-committed-pii.py: exit 0, and the traces stayed in scratch. CHANGELOG.md's scaffold entry: changed as asked. CONTRIBUTING.md:1005-1018 (decision record on plugin evals, dated 2026-07): still correct as dated history; it says the case schema is not public, which the docs page now contradicts - left, outside my files. docs/research/benchmark-feature-design.md and pipeline-cost-analysis.md: no mention of the scaffolds or the changed sentence; still correct. PLUGIN-BUILD-GUIDE.md dependants (suites naming the file by basename): only a section was added.\n\nORCHESTRATOR GATE, run once unrecorded: run-test-gate.py docs/audit/audit-plan.json SG1 --task SG1.17-ukq (no --record): exit 0, '[run-test-gate] GATE GREEN: python3 tools/sweep-selftests.py tests/test_build_shop.py, affected/related: ...' (the related list clipped by the tool).\n\nclaims:\n1 grader behaviour: bugfix/case.yaml ran-the-suite block and guard-stop/case.yaml no-destructive-git block are what the headers describe; the doc lines quoted above are the basis of each harness claim; the guard-stop 'why' paragraph rewritten to what the trace shows\n2 17 mutations -> each named case red -> restored, baseline 44/44 (mutations.out); over-fire rows: stash bare word -> esc30 red, tool-result anchor removed -> esc27 red\n3 grep of the bare pattern shapes: old stash alternative was the only bare-word site in the case files; tool_used 'counts a call' limit also lives in tests-ran-before-edit (tool_order) - written into the header, not repairable; CONTRIBUTING.md's 'schema is not public' left, outside scope\n4 the grant rule is held by esc32/esc33 in tests/test_build_shop.py, named in each case header's own sentence ('tests/test_build_shop.py fails when the grant above differs')\n5 n/a - the trace observations are of one paid run, and the header says 'the one paid run of 2026-11-17'\n6 the destructive-git grader reads command text by necessity (tool_used has no other input); allow cases (listing, show, pop, apply, compound with a listing) proven quiet under the new pattern and red under the bare-word over-fire mutation\n7 the version 2.1.325 and the date are history; no count written into prose (the guide's 'Two cases' reworded to name them)",
+    "descriptive": "The eval cases' graders now read what happened (a suite's tally in a tool result; a destructive git command, not a stash listing), each case lists Bash whole under the harness sandbox, and each header and the build guide carry the exact command that runs that case, held to allowed_tools by the suite."
+  },
+  "testsAdded": [
+    "esc28-esc30: the destructive-git pattern read out of guard-stop's case.yaml matches every destructive spelling (stash bare/push/-u/save/drop/clear, checkout -- . and of a path, checkout ., restore, reset --hard, clean -fd, a drop chained after a listing) and leaves stash list/show -p/pop/apply, status, diff, log, a branch checkout and a compound command holding a listing alone, each judged inside a JSON-encoded Bash input",
+    "esc32a/b, esc33a/b, esc35: each case header's run command (and the build guide's copy) grants exactly the gated tools derived from that case's allowed_tools, with the target first, --scaffold, --no-publish and --allow-tools last; esc35 shows the check reports one tool more and one gated tool fewer",
+    "esc25-esc27: ran-the-suite is a regex over the trace that finds the fixture's real unittest tally inside a tool result in either key order, and nothing in a denied call, the call's own input, the README naming the command, the model's words, or a prompt",
+    "esc31: no-destructive-git carries min 0 beside max 0",
+    "esc34a/b: each case lists Bash whole and no narrow shell pattern, and its header states why and what the grant does not give",
+    "esc36: every grader pattern stays clear of constructs JavaScript and Python's re read differently",
+    "esc37: guard-stop's header states the macOS git observation with the version"
+  ],
+  "casesAdded": [
+    [
+      "esc28",
+      "esc29",
+      "esc30"
+    ],
+    [
+      "esc32a",
+      "esc32b",
+      "esc33a",
+      "esc33b",
+      "esc35"
+    ]
+  ],
+  "stamp": "audit-stamp: {\"content\":\"sha256:bd945a3636ba83ac04e8771d9b4f2eb0931be38563cbfa94cbefb0916df0a099\",\"dirtyDigest\":\"sha256:b37e7e235a8820b1e22d07051d7f53d98132c9982383c1878c06fd2f68768247\",\"dirtyPaths\":{\"CHANGELOG.md\":\"59b511676f5cf9a3\",\"PLUGIN-BUILD-GUIDE.md\":\"4ebec5fe153dcffc\",\"docs/research/benchmark-results.md\":\"1878017aed13c269\",\"plugins/audit/evals/bugfix/case.yaml\":\"7b357199e8c72cb7\",\"plugins/audit/evals/guard-stop/case.yaml\":\"b729430af3023b5d\",\"tests/test_build_shop.py\":\"b77cf34b97f55fd5\"},\"head\":\"0ffec8d7\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"docs/research/benchmark-results.md\",\"plugins/audit/evals/bugfix/case.yaml\",\"plugins/audit/evals/guard-stop/case.yaml\",\"tests/test_build_shop.py\"],\"scopeDigest\":\"sha256:fd47e86366f968b12ea5fc47bb8cbe5b7621e891261e20555ca998770289a4ff\",\"v\":2}",
+  "floorGuard": {
+    "answer": "clean",
+    "basis": "read 3 of the diff's 6 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 3 file(s) not read, having no syntax known here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, docs/research/benchmark-results.md; 1 test file(s) not compared for definition-changed, defining no test* function: tests/test_build_shop.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "docs/research/benchmark-results.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "tests/test_build_shop.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      }
+    ],
+    "base": {
+      "commit": "0ffec8d74645b88805ca4c0d9aa6e6e108bacc51"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-17T13:54:47Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

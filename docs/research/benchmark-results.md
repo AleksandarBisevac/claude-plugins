@@ -237,8 +237,9 @@ the difference in section 2 is a judgement this run does not make.
   nothing here says whether that proof would have held had a test been added.
 - **The eval cases are written but not runnable.** `plugins/audit/evals/bugfix/case.yaml` and
   `plugins/audit/evals/guard-stop/case.yaml` each name a `scaffold.sh` that builds their fixture,
-  and those scripts do not exist yet; until they do, `claude plugin eval` runs each case against an
-  empty workspace and its score means nothing. No eval case was run.
+  and when these sessions ran those scripts did not exist, so `claude plugin eval` would have run
+  each case against an empty workspace and its score would have meant nothing; both scripts have
+  since been added beside their cases. No eval case was run.
 - **One model.** `claude-opus-5-5` at `medium` effort for every main loop; the plugin's reviewer
   subagent ran on the model its own configuration picks (section 2.4).
 - **The five-hour window share, as read.** Each stream carried `rate_limit_event` readings

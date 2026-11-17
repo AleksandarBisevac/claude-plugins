@@ -7298,6 +7298,29 @@ reported as drift unless named, with a reason, in the suite's own `_OMITTED_ALTS
 EVERY member of every matched family — not only the first — carries its own `Read(...)` entry
 in the template, individually.
 
+### `plugins/audit/evals/`
+The `claude plugin eval` cases `bugfix` and `guard-stop`, each a `case.yaml` and a
+`scaffold.sh` that builds its fixture through the shared `build-shop.sh`. Each case is run on
+its own, from the repository root, with the grant its own `allowed_tools` needs:
+
+```bash
+claude plugin eval plugins/audit/evals/bugfix/case.yaml --scaffold --no-publish --allow-tools Write Edit Bash
+claude plugin eval plugins/audit/evals/guard-stop/case.yaml --scaffold --no-publish --allow-tools Write Edit Bash
+```
+
+A run removes every tool outside the read-only set that `--allow-tools` does not grant, and a
+case's `allowed_tools` cannot widen that; the grant applies to every case in one run, so a
+combined run would grant the union of the cases' lists. One command per case keeps each grant
+that case's own. Both cases list `Bash` whole: a compound command matched no narrow shell
+pattern, the harness denied it, and the session stopped using the shell, so the run measured
+the grant list instead of the session. A granted shell runs under the harness's OS sandbox,
+which confines writes to the run's workspace, keeps network closed and the home directory
+unreadable, and refuses the run outright on a machine with no sandbox backend. Each
+`case.yaml` header carries its command, the reason, and what each grader can and cannot see;
+`tests/test_build_shop.py` builds both fixtures, derives each grant from `allowed_tools` and
+fails when a command here or in a header differs from it, and runs the grader patterns read out
+of the case files against the strings they must and must not match.
+
 ### `plugins/audit/README.md`
 End-user docs: install, run, the config table, the three-layer extensibility model, and a
 one-minute manifest overview.
