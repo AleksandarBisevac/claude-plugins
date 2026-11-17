@@ -491,8 +491,10 @@ def check_plan_skills(rep, project, cfg, cfg_mod, manifest, _discover=None):
                  "named by the plan but not resolvable here: %s"
                  % ", ".join(missing),
                  "install or place the skill if you intend to run phases here; a "
-                 "review skill that does not resolve means sign-off runs with no "
-                 "reviewer")
+                 "review skill that does not resolve here is left out of the "
+                 "headless validation session, and a phase reviewer whose Skill "
+                 "tool cannot load it says so in its return's `skillUnavailable`, "
+                 "which files the review with a med finding for triage")
     else:
         rep.ok("skills",
                "all %d skill(s) the plan names resolve on this machine"

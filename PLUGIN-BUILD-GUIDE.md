@@ -441,7 +441,7 @@ L9:
   close-phase -> _branch, _claude_home, _config_rules, _evidence_io, _excerpt, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _scoped_commit, _tree_stamp, _utc_stamp, _verdict_binding, _worktrees
   commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_vocab, _output, _panel_write, _scoped_commit, _verdict_binding, usage_ledger
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _invariants, _loader, _machine_paths, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _utc_stamp
-  drive-phase -> _affected_tests, _areas, _claude_home, _clause_coverage, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _gate_derive, _invariants, _journal_io, _loader, _locks, _manifest_io, _manifest_phases, _output, _proc_group, _runner_collects, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _tree_stamp, _verdict_binding, _wave, _worktrees
+  drive-phase -> _affected_tests, _areas, _claude_home, _clause_coverage, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _gate_derive, _invariants, _journal_io, _loader, _locks, _manifest_io, _manifest_phases, _output, _proc_group, _runner_collects, _scope_companions, _scoped_commit, _skill_places, _status_facts, _task_outputs, _tree_stamp, _verdict_binding, _wave, _worktrees
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
@@ -3547,9 +3547,11 @@ reviewer's carries the executor's return as filed for the task's current start
 (byte-identical), the diff, the recorded run and the gate commands, and is refused with exit 4
 (`E_REFUSED`), writing nothing, until that return is filed. The phase reviewer's carries a
 `## Review skill` section naming the skill `_areas.resolve_review_skill` resolves and the basis
-it returns, and asking for it to be named in the return's `skillsInvoked`, which `drive-phase.py
-submit` refuses a phase return without (`review_skill_lines`; no section when none resolves or
-an explicit null stops the lookup, `rk1`-`rk6`), the request as saved (`phase.request`, or a sentence saying none was saved), one fixed question
+it returns, and asking for it to be named in the return's `skillsInvoked` or, when the Skill
+tool will not load it, for what the tool said in `skillUnavailable` — `drive-phase.py submit`
+refuses a phase return carrying neither, and its header says the section adds both fields to
+the agent file's shape (`review_skill_lines`; no section, and the plain header, when none
+resolves or an explicit null stops the lookup, `rk1`-`rk7`), the request as saved (`phase.request`, or a sentence saying none was saved), one fixed question
 about what the request left open, and per task its commit, files, description, filed
 executor return, recorded run and `tests.gate` — an entry naming a `key:project` the plan
 cannot resolve is kept and said to be unresolved — and is refused while any task has no
@@ -5403,9 +5405,13 @@ to explain step by step: the shape check (`submitted_shape`, with the fields `su
 aside, so a malformed return costs no red run and writes nothing); for a phase reviewer's
 return - whole or one slice - when the phase resolves a review skill
 (`_areas.resolve_review_skill`), a refusal unless its `skillsInvoked` names that skill, a
-plugin-qualified spelling meeting the bare one (`skipped_review_skill`; with no skill resolved
-nothing is asked, and the slices' lists ride into the aggregated return, `rq1`-`rq5`), since an
-Agent's Skill calls reach the drive through nothing but its return; for an executor whose return
+plugin-qualified spelling meeting the bare one, or its `skillUnavailable` holds non-blank text
+(`skipped_review_skill`; with no skill resolved nothing is asked, and the slices' lists and
+reasons ride into the aggregated return), since the drive does not read an Agent's Skill calls
+— the plugin's hooks see them — and the return is where the reviewer says it used the skill; a
+return answered with `skillUnavailable` is filed with one med finding naming the skill, its
+basis and the reason, cited at the plan, for triage (`unavailable_skill_finding`,
+`rq1`-`rq9`); for an executor whose return
 is already filed for this start, a refusal before anything runs (`already_filed`); for an
 executor whose attempt changed a path its task does not declare, a refusal naming each path and
 the scope remedy (`submit_strays`), asked as the task commit asks it -
@@ -6019,7 +6025,11 @@ run's stream holds that round's events alone, so its list names that round's cal
 `drive-phase.py`'s `writer_argv` adds one `--skill` per name `_areas.resolve_skills` returns, for
 the writer, the reviewer and the validation session alike; the validation session, which reviews
 at phase scope, also gets the review skill `_areas.resolve_review_skill` resolves (the
-`phase_review` argument of `session_skills`, `vk1`-`vk3`), and the per-task reviewer never does. Its note of each session
+`phase_review` argument of `session_skills`) when `_skill_places.resolve_skill`, the runner's own
+resolver, finds it in the project — the runner refuses to start over a `--skill` it cannot find,
+so another plugin's skill is left out and the dispatch warns, naming it and the runner's reason
+(`runner_review_skill`, `vk1`, `vk2`, `vk4`) — and the per-task reviewer never does (`vk3`,
+through `reviewer_dispatch`). Its note of each session
 (`session_note`, through `skills_said`) names a declared skill the session never invoked — a
 `plugin:skill` declaration is met by a call with the bare name — or says that no `skillsInvoked`
 was recorded to judge by. A resumed round is judged against the session it resumes

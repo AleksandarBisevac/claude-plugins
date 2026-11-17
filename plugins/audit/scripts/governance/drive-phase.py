@@ -357,6 +357,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
+import _skill_places  # noqa: E402  (resolve_skill: whether the session runner finds a skill)
 import _loader  # noqa: E402  (script_path: every verb resolved by basename, never
 #                              loaded - the subprocess boundary is why no edge to
 #                              any of them is counted by `_deps`; load_hooks_config
@@ -2093,14 +2094,45 @@ def session_skills(ctx, task, phase_review=False):
     plan as it stands now - the one resolver, so the writer, the reviewer and the
     executor subagent are given the same names. A session reviewing at phase
     scope (`phase_review`) also starts with the review skill
-    `_areas.resolve_review_skill` resolves, the one the phase brief names; a
-    per-task reviewer never does, since `mode: task` takes no review skill."""
+    `_areas.resolve_review_skill` resolves, the one the phase brief names, when
+    the session runner can find it (`runner_review_skill`); a per-task reviewer
+    never does, since `mode: task` takes no review skill."""
     manifest, phase = load_phase(ctx)
     skills = _areas.resolve_skills(manifest, phase, task)
     if not phase_review:
         return skills
-    review, _basis = _areas.resolve_review_skill(manifest, phase)
+    review, _left_out = runner_review_skill(ctx, manifest, phase)
     return skills + [review] if review and review not in skills else skills
+
+
+def runner_review_skill(ctx, manifest, phase):
+    """`(skill, left_out)`: the review skill `phase` resolves when the session
+    runner would find it in the project, else `(None, why)` - one line naming
+    the skill and the runner's reason - or `(None, None)` when none resolves.
+
+    The runner refuses to start over a `--skill` it cannot find, and it looks
+    only in the user's skills, the tree's `.claude/skills` and its own plugin's
+    `skills/`; a skill another plugin ships, or one bundled with Claude Code, is
+    loadable by an Agent's Skill tool and not by the runner. So the question is
+    put to `_skill_places.resolve_skill`, the runner's own resolver, with the
+    runner's own home and plugin, and a skill it does not find is left out
+    rather than handed to a session that would never start."""
+    skill, _basis = _areas.resolve_review_skill(manifest, phase)
+    if not skill:
+        return None, None
+    hit = _skill_places.resolve_skill(
+        skill, ctx["project"], _claude_home.claude_home(), _output.PLUGIN_ROOT,
+        _skill_places.plugin_name(_output.PLUGIN_ROOT))
+    if hit["found"]:
+        return skill, None
+    why = hit["problem"] or (
+        "not found - looked in %s" % (", ".join(hit["places"]),) if hit["places"]
+        else "not found - a plugin-qualified name is read only from that "
+        "plugin's own skills/, and the runner is plugin %s"
+        % (_skill_places.plugin_name(_output.PLUGIN_ROOT) or "(name unread)",))
+    return None, ("review skill %s left out of the headless validation session: "
+                  "the session runner cannot load it (%s), and it refuses to "
+                  "start over a skill it cannot find" % (skill, why))
 
 
 def writer_argv(ctx, task, writer, prompt, record, tree=None, resume=None,
@@ -2194,6 +2226,10 @@ def open_dispatch(ctx, state, task, round_n, build, tree=None, key="writer",
 # records it by and a phase reviewer's return names it by: one word for
 # the reading on both routes.
 INVOKED_FIELD = "skillsInvoked"
+# What a phase reviewer's return says the Skill tool answered when the review
+# skill its brief named would not load: the honest alternative to naming it in
+# `INVOKED_FIELD`, which `submit` files and raises to triage.
+UNAVAILABLE_FIELD = "skillUnavailable"
 
 
 def read_sessions(path):
@@ -9325,7 +9361,8 @@ def aggregate_slice_returns(bodies):
     numbers from one), their `tasks` entries joined, the verdict `findings` when
     any slice found something, the intent of the slice that answered worst
     - its notes and missing inputs joined - standing for the phase, and the
-    skills the slices named as invoked, each once, where any named one."""
+    skills the slices named as invoked, each once, where any named one, and
+    each distinct reason a slice gave for a review skill it could not load."""
     def joined(key):
         items = [item for body in bodies for item in body.get(key) or []]
         return [dict(item, id=n) for n, item in enumerate(items, 1)]
@@ -9352,6 +9389,10 @@ def aggregate_slice_returns(bodies):
     named = [str(n) for body in bodies for n in body.get(INVOKED_FIELD) or []]
     if named:
         out[INVOKED_FIELD] = [n for i, n in enumerate(named) if n not in named[:i]]
+    said = [r for r in (unavailable_reason(body) for body in bodies) if r]
+    if said:
+        out[UNAVAILABLE_FIELD] = " | ".join(
+            r for i, r in enumerate(said) if r not in said[:i])
     return out
 
 
@@ -10250,6 +10291,9 @@ def validation_dispatch(ctx, state, phase, head, candidates):
     _record, argv = open_dispatch(ctx, state, node, 0, lambda record: writer_argv(
         ctx, node, setting, prompt, record, role="reviewer", phase_review=True),
         None, VALIDATE_KEY)
+    _skill, left_out = runner_review_skill(ctx, load_phase(ctx)[0], phase)
+    if left_out:
+        warn(ctx, left_out)
     held = writer_state(state, node, VALIDATE_KEY)
     held["asked"] = ids
     _mark(state, VALIDATE_KEY, node, held)
@@ -11816,16 +11860,18 @@ def submit_target(manifest, target):
 
 def skipped_review_skill(manifest, phase, body):
     """None when `body`, a phase reviewer's return, names the review skill
-    `_areas.resolve_review_skill` resolves for `phase` in `INVOKED_FIELD` - or
-    when no skill resolves - else the refusal `submit` stops with.
+    `_areas.resolve_review_skill` resolves for `phase` in `INVOKED_FIELD`, or
+    says in `UNAVAILABLE_FIELD` what the Skill tool answered when the skill
+    would not load - or when no skill resolves - else the refusal `submit`
+    stops with.
 
-    A REVIEWER DISPATCHED AS AN AGENT LEAVES THE DRIVE NO RECORD OF ITS SKILL
-    CALLS: a headless session's runner reads them off its stream
-    (`uninvoked_skills`), and an Agent's stream is not the drive's to read. The
-    return is the one place that reviewer can say it used the skill its brief
-    named, so a return that does not say so is refused rather than filed as a
-    review the skill never shaped. A plugin-qualified name meets a bare one, as
-    for a headless session."""
+    The drive does not read an Agent reviewer's Skill calls: a headless
+    session's runner reads them off its stream (`uninvoked_skills`), and an
+    Agent's calls are seen by the plugin's hooks, not by the drive. So the
+    return is where that reviewer says it used the skill its brief named, and a
+    return that says neither that nor why it could not is refused rather than
+    filed as a review the skill never shaped. A plugin-qualified name meets a
+    bare one, as for a headless session."""
     skill, basis = _areas.resolve_review_skill(manifest, phase)
     if not skill:
         return None
@@ -11833,14 +11879,57 @@ def skipped_review_skill(manifest, phase, body):
     listed = [str(n) for n in named] if isinstance(named, list) else []
     if _bare_skill(skill) in [_bare_skill(n) for n in listed]:
         return None
+    if unavailable_reason(body):
+        return None
     held = ("is absent" if named is None else
             "is not a list" if not isinstance(named, list) else
             "is empty" if not listed else "names only %s" % (", ".join(listed),))
     return ("the phase return for %s does not name the review skill %s (basis: "
-            "%s) as invoked: its `%s` %s. Invoke %s through the Skill tool and "
-            "review with it, then submit again with it listed in `%s`. Nothing "
-            "filed." % (phase.get("id"), skill, basis, INVOKED_FIELD, held, skill,
-                        INVOKED_FIELD))
+            "%s) as invoked: its `%s` %s, and it has no `%s`. Invoke %s through "
+            "the Skill tool and review with it, then submit again with it listed "
+            "in `%s` - or, when the Skill tool would not load it, submit again "
+            "with `%s` holding what the Skill tool said. Nothing filed."
+            % (phase.get("id"), skill, basis, INVOKED_FIELD, held,
+               UNAVAILABLE_FIELD, skill, INVOKED_FIELD, UNAVAILABLE_FIELD))
+
+
+def unavailable_reason(body):
+    """The non-blank text a return holds in `UNAVAILABLE_FIELD`, stripped, else
+    None - a blank or non-string value says nothing about why the skill did
+    not load, so it is no answer."""
+    said = body.get(UNAVAILABLE_FIELD) if isinstance(body, dict) else None
+    return said.strip() if isinstance(said, str) and said.strip() else None
+
+
+def unavailable_skill_finding(manifest, phase, body, plan_path):
+    """`body` with one med finding added when the phase resolves a review skill
+    and the return says, in `UNAVAILABLE_FIELD`, that it could not be loaded -
+    the finding naming the skill, its basis and the reason, cited at
+    `plan_path`, where the name is declared - and its verdict `findings`; else
+    `body` unchanged.
+
+    A review skill that cannot load where the reviewer runs - a misspelt name,
+    one not installed on this machine or in CI - would otherwise get every phase
+    return refused, and a refusal no reviewer can answer is no gate. Filing the
+    return and raising the gap to triage puts the decision with a human: fix
+    the name, install the skill, or accept a review without it."""
+    skill, basis = _areas.resolve_review_skill(manifest, phase)
+    reason = unavailable_reason(body)
+    if not skill or not reason:
+        return body
+    findings = list(body.get("findings") or [])
+    ids = [f.get("id") for f in findings if isinstance(f, dict)]
+    numbered = [i for i in ids if isinstance(i, int) and not isinstance(i, bool)]
+    findings.append({
+        "id": max(numbered) + 1 if numbered else len(findings) + 1,
+        "severity": "med", "file": plan_path,
+        "issue": "the review skill %s (basis: %s) could not be invoked, so this "
+                 "phase review was not shaped by it; the reviewer reported: %s"
+                 % (skill, basis, reason),
+        "resolution": "make %s loadable where the phase reviewer runs (the name "
+                      "as declared, the skill installed), then review again - or "
+                      "accept this review without it" % (skill,)})
+    return dict(body, findings=findings, verdict="findings")
 
 
 def submitted_shape(role, body, fills, task=None):
@@ -12344,6 +12433,13 @@ def submit(ctx, manifest, args, cmd, text):
         if isinstance(body, dict) and isinstance(body.get("tasks"), list):
             body["tasks"] = agreed_commits(phase, body["tasks"])
             text = json.dumps(body, indent=2) + "\n"
+        raised = unavailable_skill_finding(
+            manifest, phase, body, project_relative(ctx, ctx["manifest"]))
+        if raised is not body:
+            body, text = raised, json.dumps(raised, indent=2) + "\n"
+            ctx["did"].append("the review skill could not be invoked (%s); a med "
+                              "finding was raised for triage" % (
+                                  unavailable_reason(body),))
     extra = ["--head", head] if head else []
     if args.shown is not None:
         extra += ["--shown", args.shown]

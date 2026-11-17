@@ -652,8 +652,10 @@ def review_skill_lines(manifest, phase):
     with an explicit null resolves nothing and gets no section, exactly like a
     plan that declares none - the reviewer then reviews without a skill, which
     agents/audit-reviewer.md already states for that case. The section, not the
-    agent file, carries the `skillsInvoked` ask and why: `drive-phase.py
-    submit`'s `skipped_review_skill` is what refuses a return without it."""
+    agent file, carries the `skillsInvoked` ask, its `skillUnavailable`
+    alternative and why: `drive-phase.py submit`'s `skipped_review_skill` is
+    what refuses a return with neither, and `unavailable_skill_finding` what
+    files the second with a finding for triage."""
     skill, basis = _areas.resolve_review_skill(manifest, phase)
     if not skill:
         return []
@@ -664,11 +666,15 @@ def review_skill_lines(manifest, phase):
         "Invoke it via the Skill tool FIRST, before reading the diff.",
         "Then name it in your return's `skillsInvoked` field, a list of the "
         "skill names you invoked - the name the session runner records a "
-        "headless session's calls under. An agent's Skill calls reach the drive "
-        "through nothing else, so `drive-phase.py submit` refuses a phase "
-        "return - each slice's included - whose `skillsInvoked` does not name "
-        "this skill, and files nothing; the remedy is to invoke it and submit "
-        "again with it listed."])
+        "headless session's calls under. The drive does not read your Skill "
+        "calls (the plugin's hooks see them), so the return is where you say "
+        "you used the skill: `drive-phase.py submit` refuses a phase return - "
+        "each slice's included - that neither names this skill in "
+        "`skillsInvoked` nor carries `skillUnavailable`, and files nothing.",
+        "If the Skill tool will not load it, do not review as if it had: put "
+        "what the Skill tool said in `skillUnavailable`, a string. submit "
+        "files that return and adds a med finding naming the skill and that "
+        "reason, so a human decides whether the review stands without it."])
 
 
 def compose_executor_brief(manifest, phase, task, ctx, files, gate):
@@ -2197,9 +2203,14 @@ def phase_brief_parts(manifest, phase, ctx):
              "Computed by audit-lookup.py brief from %s at %s, plugin copy %s."
              % (ctx["manifest"], ctx["at"], ctx["plugin"]),
              "head: %s" % (head,) if head else
-             "head: not read - %s" % (head_why,),
-             "The rules and the return shape are agents/audit-reviewer.md's."]
-    lines += review_skill_lines(manifest, phase)
+             "head: not read - %s" % (head_why,)]
+    skill_lines = review_skill_lines(manifest, phase)
+    lines.append(
+        "The rules and the return shape are agents/audit-reviewer.md's, and the "
+        "Review skill section below adds `skillsInvoked` and `skillUnavailable` "
+        "to that shape." if skill_lines else
+        "The rules and the return shape are agents/audit-reviewer.md's.")
+    lines += skill_lines
     lines += _section("The request, as saved", _verbatim(
         phase.get("request"),
         "No request was saved for this phase (phase.request is absent), so "

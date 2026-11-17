@@ -15932,8 +15932,10 @@ def _submit_mutant_units(check):
 
 def _review_skill_submit_units(check):
     """A phase reviewer's return filed through `submit` names the review skill
-    the phase resolved in `skillsInvoked`, or nothing is filed; a phase that
-    resolves no skill files a return without the field as before. Each
+    the phase resolved in `skillsInvoked`, or says in `skillUnavailable` why it
+    would not load - filed then with a med finding for triage - or nothing is
+    filed; a phase that resolves no skill files a return without either field
+    as before. Each
     refusal is read off the filing verb never being called, not off the text
     alone."""
     M, _w = _unit_driver("drive_phase_review_skill_submit")
@@ -15991,6 +15993,46 @@ def _review_skill_submit_units(check):
           "named one: %r" % ((whole.get("skillsInvoked"), sorted(bare)),),
           whole.get("skillsInvoked") == ["code-review", "writing-python"]
           and "skillsInvoked" not in bare)
+    told = "Unknown skill: code-review"
+    said, bodies = filed(skill, {"skillUnavailable": told})
+    raised = [f for f in (bodies[0].get("findings") if bodies else []) or []
+              if "code-review" in (f.get("issue") or "")]
+    check("rq6 a return saying in `skillUnavailable` what the Skill tool answered "
+          "is filed, not refused, with one med finding naming the skill, its "
+          "basis and that answer, cited at the plan, and the verdict findings: "
+          "%r" % ((said, bodies),),
+          said[0] == 0 and len(bodies) == 1 and len(raised) == 1
+          and raised[0].get("severity") == "med" and told in raised[0]["issue"]
+          and "(basis: meta)" in raised[0]["issue"]
+          and raised[0].get("file") == "audit-plan.json"
+          and bodies[0].get("verdict") == "findings"
+          and bodies[0].get("skillUnavailable") == told)
+    # The mutation this is here for: a check that takes the field's mere
+    # presence as an answer, so a blank one files a review nobody explained.
+    said, bodies = filed(skill, {"skillUnavailable": "  "})
+    check("rq7 a return with neither the skill in `skillsInvoked` nor a reason "
+          "in `skillUnavailable` - here a blank one - is still refused, files "
+          "nothing, and the refusal names both ways to answer: %r"
+          % ((said, bodies),),
+          said[0] == 1 and bodies == [] and "`skillsInvoked`" in said[1]
+          and "`skillUnavailable`" in said[1] and "Nothing filed." in said[1])
+    said, bodies = filed({}, {"skillUnavailable": told})
+    check("rq8 THE OVER-FIRE TWIN: a phase that resolves no review skill files "
+          "a return carrying `skillUnavailable` with no finding raised and its "
+          "verdict as given: %r" % ((said, bodies),),
+          said[0] == 0 and len(bodies) == 1
+          and bodies[0].get("findings") == [] and bodies[0].get("verdict") == "clean")
+    sliced = M.aggregate_slice_returns([
+        {"findings": [], "intent": {"answer": "matches"}, "verdict": "clean",
+         "skillUnavailable": told},
+        {"findings": [], "intent": {"answer": "matches"}, "verdict": "clean",
+         "skillUnavailable": told},
+        {"findings": [], "intent": {"answer": "matches"}, "verdict": "clean"}])
+    check("rq9 the phase return the slices make carries the reason a slice gave "
+          "for a skill it could not load, each distinct reason once, so the "
+          "whole return raises one finding: %r" % ((sliced,),),
+          sliced.get("skillUnavailable") == told
+          and "skillUnavailable" not in bare)
 
 
 UNCHECKED_CLAUSE = ("ids bound to a suite the submit's command did not run are "
@@ -18139,13 +18181,19 @@ def _skill_units(check):
     _skill_invoked_units(check, M)
 
 
-def _vk_validation_argv(M, root, phase, meta):
+def _vk_validation_argv(M, root, phase, meta, project=None, ctx_out=None):
     """The argv `validation_dispatch` starts the phase-scoped reviewer session
-    with, over `phase` in a plan carrying `meta`, its state under `root`."""
+    with, over `phase` in a plan carrying `meta`, its state under `root` and
+    its project at `project` (where the runner looks for a project skill);
+    `ctx_out`, a list, is handed the context so a case can read its warnings."""
     _step_rig(M, phase, meta=meta)
     M.tree_head = lambda ctx, tree=None: None
     ctx = _step_ctx(stateDir=os.path.join(root, phase.get("title", "s")),
                     config={"executor": dict(WRITER_EXECUTOR)})
+    if project is not None:
+        ctx.update(project=project, gitRoot=project)
+    if ctx_out is not None:
+        ctx_out.append(ctx)
     state = {}
     finding = {"id": "P1-R1", "severity": "med", "file": "src/f1.txt:1",
                "issue": "i", "resolution": "r"}
@@ -18155,21 +18203,61 @@ def _vk_validation_argv(M, root, phase, meta):
     return (dispatches[-1].get("argv") if dispatches else None), said
 
 
+def _vk_project_skill(project, name):
+    """Plant `name` as a project skill of `project`, at the path the session
+    runner's resolver (`_skill_places.resolve_skill`) reads a project skill from."""
+    where = os.path.join(project, ".claude", "skills", name)
+    os.makedirs(where, exist_ok=True)
+    with open(os.path.join(where, "SKILL.md"), "w", encoding="utf-8") as fh:
+        fh.write("---\nname: %s\ndescription: d\n---\nbody\n" % (name,))
+
+
+def _vk_reviewer_dispatch_case(check, M, root, task_u, phase, named):
+    """vk3: the per-task reviewer, dispatched through `reviewer_dispatch` - the
+    route `reviewer_session_step` takes - over a phase that resolves a review
+    skill, starts with the task's own skills and not the review skill."""
+    _step_rig(M, phase, meta={
+        "areas": {"api": {"root": "src", "reviewSkill": "area-review"}}})
+    M.tree_head = lambda ctx, tree=None: None
+    real_prompt = M.dispatch_prompt
+    M.dispatch_prompt = lambda ctx, role, node_id, part=None: "the brief"
+    ctx = _step_ctx(stateDir=os.path.join(root, "task"),
+                    project=os.path.join(root, "project"))
+    state = {}
+    try:
+        said = _caught(M.reviewer_dispatch, ctx, state, phase, task_u,
+                       {"model": WRITER_MODEL, "budget": "2.5"}, "the brief")
+    finally:
+        M.dispatch_prompt = real_prompt
+    held = M.writer_state(state, task_u, M.REVIEWER_KEY)
+    rargv = (held.get("dispatches") or [{}])[-1].get("argv")
+    check("vk3 the per-task reviewer session, dispatched by reviewer_dispatch "
+          "over a phase that resolves a review skill, still carries only the "
+          "task's own skills - mode task takes no review skill: %r"
+          % ((rargv, said if rargv is None else ""),),
+          isinstance(rargv, list) and _flag(rargv, "--role") == "reviewer"
+          and _skill_flags(rargv) == named)
+
+
 def _review_skill_session_units(check, M):
     """The headless reviewer session at phase scope - the validation pass over
     the phase review's findings - starts with the review skill the phase
-    resolves, through `_areas.resolve_review_skill`; with none resolving it
-    starts with none; the per-task reviewer (`mode: task`, which takes no
-    review skill) never gets it."""
+    resolves, through `_areas.resolve_review_skill`, when the session runner's
+    own resolver finds it (planted here as a project skill); one the runner
+    cannot find is left out with a warning, since the runner refuses to start
+    over it; with none resolving it starts with none; the per-task reviewer
+    (`mode: task`, which takes no review skill) never gets it."""
     root = _harness.fixture_root("drive-review-skill-")
     try:
         named = ["alpha-house"]
         task_u = _step_task(skills=list(named))
         with_skill = _step_phase([task_u], title="with", area="api")
+        project = os.path.join(root, "project")
+        _vk_project_skill(project, "area-review")
         argv, said = _vk_validation_argv(
             M, root, with_skill,
             {"areas": {"api": {"root": "src", "reviewSkill": "area-review"}},
-             "reviewSkill": "plan-review"})
+             "reviewSkill": "plan-review"}, project=project)
         flags = _skill_flags(argv)
         check("vk1 the validation session's command carries the review skill "
               "the phase resolves (an area's, over the plan's) exactly once, "
@@ -18179,10 +18267,11 @@ def _review_skill_session_units(check, M):
               and flags.count("area-review") == 1
               and "plan-review" not in flags)
         none_phase = _step_phase([_step_task()], title="none")
-        bare_argv, bare_said = _vk_validation_argv(M, root, none_phase, {})
+        bare_argv, bare_said = _vk_validation_argv(M, root, none_phase, {},
+                                                   project=project)
         nulled = _step_phase([_step_task()], title="nulled", reviewSkill=None)
         null_argv, null_said = _vk_validation_argv(
-            M, root, nulled, {"reviewSkill": "plan-review"})
+            M, root, nulled, {"reviewSkill": "plan-review"}, project=project)
         check("vk2 THE OVER-FIRE TWIN: with no review skill anywhere, and with "
               "the phase's explicit null stopping the plan's, the validation "
               "session's command carries no --skill at all: %r"
@@ -18190,16 +18279,23 @@ def _review_skill_session_units(check, M):
                   null_said if null_argv is None else ""),),
               bare_argv is not None and null_argv is not None
               and "--skill" not in bare_argv and "--skill" not in null_argv)
-        _step_rig(M, with_skill, meta={
-            "areas": {"api": {"root": "src", "reviewSkill": "area-review"}}})
-        ctx = _step_ctx(stateDir=os.path.join(root, "task"))
-        rargv = _caught(M.writer_argv, ctx, task_u, {"model": WRITER_MODEL,
-                                                    "budget": "2.5"},
-                        "/p", "/r", role="reviewer")
-        check("vk3 the per-task reviewer session, over a phase that resolves a "
-              "review skill, still carries only the task's own skills - mode "
-              "task takes no review skill: %r" % ((rargv,),),
-              isinstance(rargv, list) and _skill_flags(rargv) == named)
+        _vk_reviewer_dispatch_case(check, M, root, task_u, with_skill, named)
+        # The bare name is planted too, so the only thing keeping the qualified
+        # one from the runner is that its plugin is not the running one.
+        foreign = "elsewhere-plugin:area-review"
+        out = []
+        far = _step_phase([_step_task()], title="far", reviewSkill=foreign)
+        far_argv, far_said = _vk_validation_argv(M, root, far, {}, project=project,
+                                                 ctx_out=out)
+        said_lines = [w for w in (out[0].get("warnings") or []) if foreign in w]
+        check("vk4 a review skill the session runner cannot resolve (another "
+              "plugin's qualified name) is left out of the validation session's "
+              "command, which still starts, and one warning names it and why: %r"
+              % ((far_argv, said_lines, far_said if far_argv is None else ""),),
+              far_argv is not None and _flag(far_argv, "--role") == "reviewer"
+              and _skill_flags(far_argv) == []
+              and len(said_lines) == 1 and "left out" in said_lines[0]
+              and "not found" in said_lines[0])
     finally:
         _harness.remove_tree(root)
 

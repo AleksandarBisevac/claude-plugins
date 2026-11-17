@@ -3551,6 +3551,23 @@ def _review_skill_brief_cases(check):
               % (drive.INVOKED_FIELD, body),
               len(asks) == 1 and "submit" in asks[0] and "refuses" in asks[0]
               and drive.INVOKED_FIELD == "skillsInvoked")
+        field = "`%s`" % (drive.UNAVAILABLE_FIELD,)
+        written = _rk_brief(root, "unavailable", {}, {"reviewSkill": "plan-review"})
+        _count, body = _rk_section(written)
+        tells = [ln for ln in body if field in ln and "submit" in ln
+                 and "files" in ln and "med finding" in ln]
+        rules = [ln for ln in written.splitlines() if ln.startswith("The rules")]
+        bare_rules = [ln for ln in bare.splitlines() if ln.startswith("The rules")]
+        check("rk7 the review-skill section tells a reviewer whose Skill tool "
+              "will not load the skill to say so in %s, which submit files with "
+              "a med finding; the header says the brief adds both fields to the "
+              "agent file's shape, and a brief with no review skill keeps the "
+              "plain header: %r" % (field, (tells, rules, bare_rules)),
+              len(tells) == 1 and drive.UNAVAILABLE_FIELD == "skillUnavailable"
+              and len(rules) == 1 and field in rules[0]
+              and "`skillsInvoked`" in rules[0]
+              and bare_rules == ["The rules and the return shape are "
+                                 "agents/audit-reviewer.md's."])
     finally:
         _harness.remove_tree(root)
 

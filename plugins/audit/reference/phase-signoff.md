@@ -27,10 +27,14 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    (`git diff <phase.baseRef> -- <files>`), the phase's `desiredOutcome`, the resolved skill name, and
    **`mode: phase`**. On the drive route the phase brief carries that name and its basis in a
    `## Review skill` section, written by `audit-lookup.py`'s `review_skill_lines` only when a skill
-   resolves, and the validation session over the review's findings starts with the same skill.
-   The section asks the reviewer to name the skill in its return's `skillsInvoked`, and
-   `drive-phase.py submit` refuses a phase return (each slice's included) that does not, filing
-   nothing; with no skill resolved, a return without the field files as before. The derived gate basis is a conditional input: hand `derive-phase-gate.py
+   resolves, and the validation session over the review's findings starts with the same skill
+   when the session runner can load it — one it cannot (another plugin's skill) is left out, and
+   the dispatch warns naming it. The section asks the reviewer to name the skill in its return's
+   `skillsInvoked`, or, when the Skill tool will not load it, to put what the tool said in
+   `skillUnavailable`; `drive-phase.py submit` refuses a phase return (each slice's included)
+   carrying neither, filing nothing, and files one carrying `skillUnavailable` with a med finding
+   naming the skill and the reason, for triage; with no skill resolved, a return without either
+   field files as before. The derived gate basis is a conditional input: hand `derive-phase-gate.py
    --brief`'s line and the runId only when `phase.testGateDerived` is already recorded — a
    re-review after a gate has run. This step runs before step 2a, so at a first sign-off nothing
    is recorded yet; hand nothing, and the reviewer reads the input as absent rather than assuming
