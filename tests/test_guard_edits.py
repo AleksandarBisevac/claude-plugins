@@ -352,6 +352,152 @@ def _cases(check):
             else:
                 os.environ["CLAUDE_PROJECT_DIR"] = _prev_tf
 
+    _config_cases(check, cfg, tmp, _tf if _tf_ok else None)
+
+
+# --- cf: the audit config is the owner's, not an agent's ------------------------
+# The plan gate exempts `.claude/**`, so before this rule an agent could switch the
+# capability policy, the plan gate or the journal off with one Edit, and only a
+# journal row recorded it. A subagent is refused; the orchestrator is ASKED,
+# because the owner legitimately has the main session change config.
+#
+# EVERY REFUSING CASE HAS A TWIN THAT IS QUIET, so an implementation that fires
+# on every `.claude/` path, on the basename, on a path SUFFIX, on any tool, or
+# on the subagent bit alone goes red here rather than in somebody's session.
+_CF_ROUTES = ("/audit:panel", "by hand")
+_CF_BODY = '{"policy": {"enabled": false}}\n'
+
+
+def _cf_decide(cfg, tool, ti, cwd, agent):
+    data = {"tool_name": tool, "tool_input": ti, "cwd": cwd}
+    if agent:
+        data["agent_id"] = agent
+    ok, got = _harness.attempt(M.decide, data, cfg=cfg)
+    return (got[0], got[1] or "") if ok else (got, "")
+
+
+def _config_cases(check, cfg, tmp, tf):
+    def _cf(name, expected, tool, ti, agent="agent-cf", cwd=tmp, words=()):
+        verdict, reason = _cf_decide(cfg, tool, ti, cwd, agent)
+        missing = [w for w in words if w not in reason]
+        check(name, verdict == expected and not missing,
+              "expected %s, got %s; reason lacks %s: %r"
+              % (expected, verdict, missing, reason[:300]))
+
+    def _w(path):
+        return {"file_path": path, "content": _CF_BODY}
+
+    prev = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = tmp
+    conf = os.path.join(tmp, *_config.CONFIG_REL.split("/"))
+    try:
+        # The file under test is the one the hooks read their config from, shown
+        # by having `_config.load` read a marker out of it, not by a spelling.
+        os.makedirs(os.path.dirname(conf), exist_ok=True)
+        with open(conf, "w", encoding="utf-8") as fh:
+            json.dump({"cfProbe": 7}, fh)
+        check("cf0 the fixture's config path is the file _config.load reads",
+              _config.load(tmp).get("cfProbe") == 7, _config.load(tmp))
+        os.remove(conf)
+
+        # acceptance 1 and 2: deny to a subagent, ask of the main session
+        _cf("cf1 a subagent's Write to the project's audit config is refused, "
+            "naming the owner's routes", "block", "Write", _w(conf),
+            words=_CF_ROUTES)
+        _cf("cf2 the same Write from the main session is asked, not refused",
+            "ask", "Write", _w(conf), agent=None, words=("audit config",))
+        _cf("cf2b an EMPTY Write is held too - the path decides, and truncating "
+            "the config to nothing switches every setting back to its default",
+            "block", "Write", {"file_path": conf, "content": ""})
+        if os.name != "nt":
+            # The decision reads the resolved file, not the spelling.
+            os.makedirs(os.path.dirname(conf), exist_ok=True)
+            os.symlink(os.path.dirname(conf), os.path.join(tmp, "cf-link"))
+            _cf("cf2c a subagent's Write through a symlink to .claude/ is the "
+                "same file and is refused", "block", "Write",
+                _w(os.path.join(tmp, "cf-link", os.path.basename(conf))))
+        _cf("cf3 a subagent's Edit spelled relative to the session's directory "
+            "is the same file", "block", "Edit",
+            {"file_path": _config.CONFIG_REL, "old_string": "true",
+             "new_string": "false"})
+        _cf("cf4 ...and a MultiEdit of it", "block", "MultiEdit",
+            {"file_path": conf, "edits": [{"old_string": '"observe"',
+                                           "new_string": '"deny"'}]})
+        _cf("cf5 ...and a NotebookEdit naming it", "block", "NotebookEdit",
+            {"notebook_path": conf, "new_source": _CF_BODY})
+        _cf("cf6 a subagent's MCP write of it is refused as the Edit is",
+            "block", "mcp__fs__write_file", {"path": conf, "content": _CF_BODY})
+        _cf("cf7 the main session's MCP write of it is asked", "ask",
+            "mcp__filesystem__write_file", {"path": conf, "content": _CF_BODY},
+            agent=None)
+
+        # the allow twins: the rule is one file, a write, of THIS project
+        for agent, who, k in (("agent-cf", "subagent", "s"),
+                              (None, "main session", "m")):
+            _cf("cf8%s a %s's write to .claude/settings.json is not this rule's"
+                % (k, who), "allow", "Write",
+                _w(os.path.join(tmp, ".claude", "settings.json")), agent=agent)
+            _cf("cf9%s a %s's write to a skill under .claude/ is not this rule's"
+                % (k, who), "allow", "Write",
+                _w(os.path.join(tmp, ".claude", "skills", "x", "SKILL.md")),
+                agent=agent)
+            _cf("cf10%s a %s's write to a file merely named audit.config.json "
+                "elsewhere in the tree is untouched" % (k, who), "allow",
+                "Write", _w(os.path.join(tmp, "docs", "audit.config.json")),
+                agent=agent)
+            _cf("cf11%s a %s's write to a nested .claude/audit.config.json (a "
+                "path-suffix match would refuse it) is untouched" % (k, who),
+                "allow", "Write",
+                _w(os.path.join(tmp, "sub", *_config.CONFIG_REL.split("/"))),
+                agent=agent)
+            _cf("cf12%s a %s's Read of the config is never asked" % (k, who),
+                "allow", "Read", {"file_path": conf}, agent=agent)
+            _cf("cf13%s a %s's MCP read of the config is never asked - no write "
+                "basis in the payload" % (k, who), "allow",
+                "mcp__filesystem__read_text_file", {"path": conf}, agent=agent)
+
+        # Dev mode: rule 3 exempts the plugin's own checkout from the
+        # installed-plugin rule, because editing plugin source is the work there.
+        # The config is not plugin source - it governs that checkout's own agents
+        # as it governs any project's - so this rule applies there unchanged.
+        repo = os.path.dirname(os.path.dirname(M._PLUGIN_ROOT))
+        os.environ["CLAUDE_PROJECT_DIR"] = repo
+        rconf = os.path.join(repo, *_config.CONFIG_REL.split("/"))
+        _cf("cf14 in the plugin's own checkout a subagent's write to its audit "
+            "config is still refused", "block", "Write", _w(rconf), cwd=repo)
+        _cf("cf15 ...and the main session's is still asked", "ask", "Write",
+            _w(rconf), cwd=repo, agent=None)
+        _cf("cf16 ...while the dev-mode exception for plugin source still holds "
+            "for the same subagent", "allow", "Write",
+            _w(os.path.join(M._HOOKS_DIR, "guard-edits.py")), cwd=repo)
+    finally:
+        if os.path.exists(conf):
+            os.remove(conf)
+        if prev is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = prev
+    if tf is None:
+        return
+    # A linked worktree's config is the config that tree's hooks read when a
+    # session runs there, and the one a merge carries back: the same rule.
+    prev = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = tf["main"]
+    try:
+        wconf = os.path.join(tf["wt"], *_config.CONFIG_REL.split("/"))
+        _cf("cf17 a subagent's write to a linked worktree's audit config is "
+            "refused from a session in the main checkout", "block", "Write",
+            _w(wconf), cwd=tf["main"])
+        _cf("cf18 ...while a write to a file beside it in that worktree's "
+            ".claude/ is not", "allow", "Write",
+            _w(os.path.join(tf["wt"], ".claude", "settings.json")),
+            cwd=tf["main"])
+    finally:
+        if prev is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = prev
+
 
 def _selftest():
     return _harness.run(_cases)

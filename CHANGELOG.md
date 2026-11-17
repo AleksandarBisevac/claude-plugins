@@ -61,6 +61,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   the return's own words when it typed some, and the phase review's computed `greenFirst` for
   it is `not-attempted`, which sign-off now stops on as it stops on `not-green`.
 
+### Security
+- **An agent can no longer switch its own governance off with an edit tool.** `.claude/**` is
+  outside the plan gate, so an Edit or Write of `.claude/audit.config.json` setting
+  `policy.enabled: false`, `planGate: "observe"` or `journal.enabled: false` left only a journal
+  row. `guard-edits` now refuses that write to a subagent, with a reason naming `/audit:panel`
+  and a hand edit as the owner's routes, and asks the human about it from the main session. It
+  reads the file `_config.load` reads, of the project or of a linked worktree of it, through an
+  edit tool or an MCP write; a Read, another file under `.claude/` and a file merely named like
+  it are untouched, and the rule holds in the plugin's own checkout too. `/audit:init`'s two
+  config writes now say the prompt is coming. **A shell-form write (`sed -i`, a redirect, an
+  interpreter) is not refused** and stays recorded by the journal only; SECURITY.md states it.
+
 ## [3.8.0]
 
 ### Added

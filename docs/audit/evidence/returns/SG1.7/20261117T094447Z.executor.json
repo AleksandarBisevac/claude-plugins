@@ -1,0 +1,110 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_guard_edits.py tests/test_hooks.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-17T10:06:37Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_guard_edits.py tests/test_hooks.py` in a throwaway tree at HEAD exited 1 with 18 of 247 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cf1 (house FAIL), cf2 (house FAIL), cf2b (house FAIL), cf2c (house FAIL), cf3 (house FAIL), cf4 (house FAIL), cf5 (house FAIL), cf6 (house FAIL) and 10 more: SELFTEST FAILED: 241/247 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Fixes BUG-35-ukq (filed by the orchestrator; no second bug filed, no audit-task.py verb run). plugins/audit/hooks/guard-edits.py: new rule 7. `_is_audit_config(tree)` asks whether the path `_config.tree_for` placed is `<tree root>/_config.CONFIG_REL` - the same root+constant `_config.load` reads, never a literal path - compared over realpath (a symlinked .claude/ is the same file) and by samefile when both exist; it covers the project and a linked worktree of it (tree_for re-roots). `_config_verdict` returns block for `_config.is_subagent(data)`, with a reason naming /audit:panel and a hand edit, and ask for the main session. Wired on the edit-tool path after rule 6 (path decides, so an empty Write is held) and on the MCP path only with a write basis (a read is not held), beside rules 4 and 5. The description said 'rule 6'; the hook already numbers strict manifest state 6 in its code comments, so the new rule is 7, and the module docstring now lists 6 and 7. Dev mode decided and pinned: the rule APPLIES in the plugin's own checkout (cf14/cf15), because rule 3's exception is for plugin source and this file is governance; cf16 pins that rule 3's dev exception still holds. ENUMERATION of edit-tool writers of the config: grep -rn 'audit.config.json' over commands, reference, skills, agents (16 hits), plus a phrasing grep for writing/setting the config: only plugins/audit/commands/init.md instructs a write - section 5 (mirror gitRoot into the config) and step 7.5 (create it with executor.waveWidth auto); both run in the main session, so both now meet an ask, and both now name the prompt in init.md's text (and that a subagent is refused). Every other hit reads the config (worktree.md, report.md, manifest-conventions.md, orchestrator.md, verbs-in-full.md, guide.md, audit-codebase SKILL.md) or describes the panel (panel.md). reference/execute-task.md:593 'edited the config' is about playwright.config.ts, not this file. The panel server writes the config from its own process (scripts/panel/_panel_write.py:1555, temp + os.replace), so no tool hook sees it - confirmed by reading it. SECURITY.md: Known bypass classes item 3 states rule 7, its allow cases, dev mode, and the residual - a shell-form write (sed -i, a redirect, an interpreter) is not refused by any hook and is recorded by the journal only (journal-writes is registered on Bash pre and post, read off hooks.json); the capability-policy section says the same in one paragraph. The fail-mode table row for guard-edits is unchanged: git diff -U0 SECURITY.md holds no table line. Also: README.md hook list + guard table row, PLUGIN-BUILD-GUIDE.md guard-edits section, CHANGELOG.md Unreleased ### Security entry. Tests: tests/test_guard_edits.py gains cf0-cf18 (74/74 pass; first run on the unfixed hook was 62/72 with exactly the ten deny/ask cases red and every allow twin green). tests/test_hooks.py gains classes config-write-subagent (deny), config-write-orchestrator (ask), edit-other-claude-file (allow) and rows c01-c04 driven through every registered hook as processes at all four tiers; c03 (a subagent's sed -i of the config) is recorded as a known divergence (today allow at every tier) with the SECURITY.md residual as its basis, so the row goes red the day the residual closes (247/247). Commands run, each exit 0: python3 tools/sweep-selftests.py --jobs 4 tests/test_guard_edits.py tests/test_hooks.py (2/2 files ok, 321 cases); python3 tools/gate-parity.py (its summary line includes 'SECURITY.md's fail modes are the ones hooks.json registers'); python3 tools/prove-gates.py --list (the two rows naming SECURITY.md are 'red failmode_table_drift SECURITY.md anchored'; no row names guard-edits); python3 tools/bench-hooks.py --gate ('11 hook(s) within budget'; latency for guard-edits.py edit lane, two runs minutes apart: 50.49 ms / 54.47 ms, xbase 2.41 / 2.59, a loaded machine; only 3.14.7 measured, the tool names 3.8-3.13 NOT MEASURED); python3 tools/measure-context.py --gate; ruff check on the three .py files; vermin -t=3.8- on them; _output_lints.prose_number_claims() and _deps.doc_prose_numbers() both returned empty lists; house_style_violations() empty. Mutation probe sg1.7/mutations.py (scratch, throwaway copy of the tree): 15 rows, all applied, all caught, exit 0 - run twice, the second against the final hook text. The orchestrator's wider gate, run once unrecorded (run-test-gate.py SG1 --task SG1.7, no --record): 'GATE GREEN', exit 0. Untested property, stated: the samefile match for a case-variant spelling has no case (CI's linux volume is case-sensitive, so a case there would test nothing on one platform). Dependants: tests/test__doctor_setup.py (path; names guard-edits.py as a modified-file fixture and its dev carve-out - still correct, rule 3 unchanged); PLUGIN-BUILD-GUIDE.md (changed: section updated); plugins/audit/hooks/_config.py (basename; strictManifestState and ask_payload comments still correct - ask_payload's docstring names strict mode and the plan gate as its callers, it remains true and does not claim to list all of them; no edit, out of scope); hooks.json (basename; matchers unchanged, rule rides the existing Edit|Write|MultiEdit|NotebookEdit and mcp__.* entries); audit-config.schema.json (basename; strictManifestState description still correct); tests/test_guard_edits.py (changed); tools/bench-hooks.py (basename; lane unchanged, gate green); tools/verify.sh (basename; launcher no-interpreter probe unchanged); _decide_mcp/_self_edit_target/decide/collect callers: signatures unchanged, decide/_decide_mcp may now return ask, which main() already prints through ask(); SECURITY.md dependants (guard-release, guard-uncommitted, require-claim-block, check-prohibitions, guard-history-rewrite, test_guard_history_rewrite, before-you-claim evals): none quotes the sections edited - prove-gates' anchor still matches; tests/test_hooks.py dependants (test_commit_task_work imports _git/_write, check-git-pipeline uses decision_of, render-report's run_row is its own): no signature touched; README.md, init.md, CHANGELOG.md dependants: path/basename references only, still correct.",
+    "descriptive": "A subagent's edit-tool or MCP write to the project's audit config is now refused, the main session's is asked, and the shell-form residual is written down in SECURITY.md and pinned as a known divergence."
+  },
+  "testsAdded": [
+    "test_guard_edits cf1-cf7, cf2b, cf2c, cf14, cf15, cf17: a subagent's Write/Edit/MultiEdit/NotebookEdit/MCP write (an empty Write and a symlinked spelling included) of the resolved audit config is denied with /audit:panel and 'by hand' in the reason; the same payload without agent_id is ask; also in the plugin's own checkout and in a linked worktree",
+    "test_guard_edits cf8s/m-cf13s/m, cf16, cf18, plus cf0: settings.json and a skill under .claude/, a same-named file elsewhere and a nested .claude/audit.config.json, a Read and an MCP read of the config are allowed for both a subagent and the main session; dev-mode plugin source stays allowed; a worktree's settings.json stays allowed; cf0 shows the fixture path is the file _config.load reads",
+    "test_hooks rows c01-c04 with three new classes: subagent Edit of the config deny at every tier, main-session Write ask at every tier, subagent Edit of .claude/settings.json allow, and the subagent sed -i of the config recorded as a known divergence (allow) naming the SECURITY.md residual"
+  ],
+  "casesAdded": [
+    [
+      "cf1",
+      "cf2",
+      "cf2b",
+      "cf2c",
+      "cf3",
+      "cf4",
+      "cf5",
+      "cf6",
+      "cf7",
+      "cf14",
+      "cf15",
+      "cf17"
+    ],
+    [
+      "cf0",
+      "cf8s",
+      "cf8m",
+      "cf9s",
+      "cf9m",
+      "cf10s",
+      "cf10m",
+      "cf11s",
+      "cf11m",
+      "cf12s",
+      "cf12m",
+      "cf13s",
+      "cf13m",
+      "cf16",
+      "cf18"
+    ]
+  ],
+  "claims": "claims:\n1 guard-edits.py `_is_audit_config` (root + _config.CONFIG_REL, realpath, samefile) and `_config_verdict` (is_subagent -> block, else ask) are what SECURITY.md item 3, README row, PLUGIN-BUILD-GUIDE and CHANGELOG say; the shell residual is shown by test_hooks c03 answering allow at all four tiers; 'panel writes from its own process' is scripts/panel/_panel_write.py:1555; 'journal-writes reads Bash' is hooks.json PreToolUse/PostToolUse Bash entries\n2 tests first: 62/72 on the unfixed hook, the ten deny/ask cases red, allow twins green; then sg1.7/mutations.py: 15 rows, each anchor matched once, each caught (deny rows: edit rule removed, subagent not refused, MCP rule removed, routes dropped from the reason, empty Write passes, symlink not resolved, worktree not held, dev-mode exempts; ALLOW rows: main refused, MCP read held, basename match, suffix match, whole .claude/ held, Read reaches the rule, any subagent write held), each restored byte for byte, exit 0\n3 the class is 'a governing file under the exempt .claude/ that an agent can write': grep -rn audit.config.json over commands/reference/skills/agents, 16 hits - init.md's two write instructions fixed (prompt named), the other 14 read the config or describe the panel, left because they write nothing; the shell route is the class's other door, left and stated as the SECURITY.md residual and test_hooks c03\n4 the init.md rule 'never route it through a subagent' names guard-edits as what refuses it; 'rather than writing it another way' says in its own sentence that no hook refuses a shell write and the sentence is the only rule\n5 bench-hooks guard-edits edit lane: 50.49 ms and 54.47 ms, two runs minutes apart on a loaded machine, not written into any document\n6 decision reads the resolved target (tree_for placement, realpath/samefile against the file _config.load reads) and the tool's semantics (edit tools, MCP write basis), never the text; allow twins cf8-cf13 were green on the unfixed hook before the deny existed and stay green, and each over-fire mutation turns them red\n7 no number written into a document; 'two config writes' in CHANGELOG is a word under ten naming init.md's two sites",
+  "stamp": "audit-stamp: {\"content\":\"sha256:55a8b5c9552369334b0c2ebdb3801940ab3896926113c91cd84ef92688df971f\",\"dirtyDigest\":\"sha256:f65774577e1d1205598cdc56cc4144c09ef78220d40ab7e3a325393dd0264ba7\",\"dirtyPaths\":{\"CHANGELOG.md\":\"0ffb8f57107b343f\",\"PLUGIN-BUILD-GUIDE.md\":\"a9345b4e0a9d1105\",\"SECURITY.md\":\"f5383c4b9ff929f0\",\"plugins/audit/README.md\":\"7c2917d46a46bab3\",\"plugins/audit/commands/init.md\":\"24b7087c5b783ca7\",\"plugins/audit/hooks/guard-edits.py\":\"b11d03d7b18374ea\",\"tests/test_guard_edits.py\":\"b6e866ec19ecf4e1\",\"tests/test_hooks.py\":\"5aee539eb4d6eea8\"},\"head\":\"df53ba2e\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/README.md\",\"plugins/audit/commands/init.md\",\"plugins/audit/hooks/guard-edits.py\",\"tests/test_guard_edits.py\",\"tests/test_hooks.py\"],\"scopeDigest\":\"sha256:3c44c251ccbbb231162e8bff2266393ce416c382004334f0bbddf17f60f7e0a8\",\"v\":2}",
+  "floorGuard": {
+    "answer": "clean",
+    "basis": "read 3 of the diff's 8 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 5 file(s) not read, having no syntax known here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, SECURITY.md, plugins/audit/README.md, plugins/audit/commands/init.md; 2 test file(s) not compared for definition-changed, defining no test* function: tests/test_guard_edits.py, tests/test_hooks.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "SECURITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/commands/init.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "tests/test_guard_edits.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test_hooks.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      }
+    ],
+    "base": {
+      "commit": "df53ba2e7f137f10b1bf0b55d2d6c4fbe89a210f"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-17T10:06:38Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

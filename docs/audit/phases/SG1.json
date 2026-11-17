@@ -752,7 +752,7 @@
     {
       "id": "SG1.7",
       "title": "An agent's edit-tool write to the audit config is refused or asked",
-      "status": "pending",
+      "status": "in_progress",
       "description": "`.claude/**` is in the plan gate's default exemptGlobs (hooks/_config.py DEFAULTS), and no guard names `.claude/audit.config.json`. So an executor or reviewer can write `policy.enabled: false`, `planGate: \"observe\"` or `journal.enabled: false` with Edit/Write and the only trace is a journal row. A capability policy the governed agent can switch off is advisory. guard-edits.py already protects its neighbours the same way: rule 3 (the installed plugin's own files), rule 4 (plan-bypass state files), rule 5 (the journal).\n\nFile the bug in this plan first (`audit-task.py bug-add`, medium: present since the policy shipped, not a regression), then add rule 6 to plugins/audit/hooks/guard-edits.py:\n- an edit-tool write (Edit, Write, MultiEdit, NotebookEdit, and the MCP write payloads the hook already reads) whose target is the project's audit config - resolved through the SAME function the hooks use to find that file, never a hard-coded path - from a SUBAGENT (`_config.is_subagent`) is denied, with a reason that says the owner changes it through /audit:panel or by hand;\n- the same write from the main session is `ask`: the human decides per call. Not deny - the owner legitimately asks the main session to change config.\n\nBEFORE CHOOSING `ask`, enumerate who writes this file with an edit tool today and say so in your outcome: grep plugins/audit/commands/*.md, reference/*.md and skills/ for instructions to Edit/Write the config (init's write step is the likely one), and the panel server (it writes through its own process, not a tool - confirm). A flow the plugin itself instructs must keep working: if a command tells the model to Write the config, either that flow moves to a script verb in this task, or the prompt it now meets is named in that command's text. Do not leave a shipped command that silently meets a prompt it never mentions.\n\nSTATED LIMIT, to write down rather than hide: a shell-form write (sed -i, a redirect, an interpreter) is not covered by this rule and stays journal-only; the shell reader lives in guard-secrets-read.py and is out of scope here. SECURITY.md must say exactly that in its residuals, and its fail-mode table row for guard-edits is unchanged (internal error -> allow).\n\nAllow cases to pin: an edit to another file under .claude/ (settings.json, a skill) is untouched by rule 6; a READ of the config is never asked; a write to a file merely NAMED audit.config.json elsewhere in the tree is untouched; in the plugin's own source checkout (the dev-mode exception rule 3 already defines) decide whether the rule applies and pin your answer - this repository edits its own .claude/audit.config.json rarely, and tests build theirs in scratch directories.\n\nIf the API refuses to produce guard code for this task, record the refusal verbatim as could-not-prove and stop; do not route around it.\n\nAcceptance:\n1. A subagent's Edit/Write to the resolved audit config is denied with a reason naming the owner's routes.\n2. The main session's is `ask`.\n3. The allow cases above are quiet.\n4. Every command or reference text that instructs an edit-tool write of the config either no longer does or names the prompt.\n5. SECURITY.md states the rule and the shell-form residual; the bug is closed by this commit.",
       "files": [
         "plugins/audit/hooks/guard-edits.py",
@@ -783,16 +783,74 @@
       "dependsOn": [
         "SG1.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-17T09:44:47Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-17T09:44:34Z",
+          "text": "it quotes the link text of the security contact in SECURITY.md; this task adds a rule and a residual and leaves the contact section as it is",
+          "waives": ".github/ISSUE_TEMPLATE/config.yml"
+        },
+        {
+          "at": "2026-11-17T09:44:34Z",
+          "text": "it quotes the heading of SECURITY.md's test-file exemption; this task adds a rule and a residual about the audit config and leaves that section as it is",
+          "waives": "plugins/audit/hooks/_config.py"
+        },
+        {
+          "at": "2026-11-17T09:44:34Z",
+          "text": "it quotes one sentence of SECURITY.md about the capability policy denying the tool; this task adds a rule and a residual about the audit config and leaves that sentence as it is",
+          "waives": "tests/test__panel_page.py"
+        },
+        {
+          "at": "2026-11-17T09:44:34Z",
+          "text": "it quotes a residual of SECURITY.md about the secret-read guard; this task adds a separate residual and leaves that one as it is",
+          "waives": "tests/test_guard_secrets_read.py"
+        },
+        {
+          "at": "2026-11-17T09:44:34Z",
+          "text": "it quotes a phrase of SECURITY.md about where machine identity may appear; this task does not touch that section",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-17T09:44:34Z",
+          "text": "it quotes a phrase of SECURITY.md about the write half failing loud; this task does not touch that section",
+          "waives": "tools/check-git-pipeline.py"
+        },
+        {
+          "at": "2026-11-17T09:44:34Z",
+          "text": "it reads the heading of SECURITY.md's fail-mode table; this task leaves the heading and the guard-edits row as they are - the description says the row is unchanged",
+          "waives": "tools/gate-parity.py"
+        },
+        {
+          "at": "2026-11-17T09:44:34Z",
+          "text": "it quotes the guard-edits row of SECURITY.md's fail-mode table as a mutation anchor; the description says that row is unchanged, and the executor confirms the anchor still matches once",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-17T09:44:34Z",
+          "text": "a design record with a section headed by SECURITY.md's path; it records a past decision and is not updated by a later rule",
+          "waives": "docs/research/guard-ownership-design.md"
+        },
+        {
+          "at": "2026-11-17T09:44:34Z",
+          "text": "it reads the Unreleased heading of CHANGELOG.md; this task adds an entry under that heading and leaves the heading as it is",
+          "waives": "tools/release.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T10:16:43Z.e47fa3",
+        "status": "passed",
+        "at": "2026-11-17T10:16:43Z"
+      }
     },
     {
       "id": "SG1.8",
@@ -1179,7 +1237,7 @@
     {
       "id": "SG1.14-ukq",
       "title": "A green-first proof is run on the headless writer path too, and an owed proof with no block is said as owed",
-      "status": "in_progress",
+      "status": "done",
       "description": "FOUND WHILE VERIFYING SG1.6, confirmed by the orchestrator in the tree: the green-first helper runs only where an agent files through drive-phase.py submit. On the headless writer path (executor.writerModel set; the drive files the writer's return itself through file_writer_return / writer_prove) a task with tests.expectGreenFirst true gets a red-first block of not-attempted whose basis says a green-first proof is owed in its place (unowed_red_first in plugins/audit/scripts/governance/drive-phase.py) - and then no green helper runs and no greenFirst block is filed. The reviewer brief shows the green-first section only where the filed return carries a block (audit-lookup.py: 'Green-first is a question only where the filed return answered it'), so on that path an owed proof is silently absent: two execution paths, one of which drops a check the plan asked for without saying so.\n\nBUILD:\n(1) The headless path runs the green helper for a task that owes it, through the same code submit uses - find what submit calls for green (the argv builder and the block writer next to _fr.owes_green_first in drive-phase.py) and call THAT from the writer path; do not write a second runner or a second block shape. The command is the one the writer path already derives for red-first (writer_prove's derived test command); where no command can be derived, the block is could-not-prove naming that basis, exactly as writer_prove does for red.\n(2) OWED AND ABSENT IS A STATE, said wherever the block is read: a filed executor return of a task that owes green-first (owes_green_first) and carries no trusted greenFirst block is shown in the reviewer brief's green-first section as owed and not measured, with the reason if the return says one - never omitted. A task that owes none still gets no section. Use _filed_returns' own readers; if one function there can answer 'owed, proved / not-green / could-not-prove / owed-and-absent / not owed', add it there once and have both the brief and sign-off read it.\n(3) Sign-off: read what SG1.6 made a human settle (not-green) and make owed-and-absent stop the same way or say plainly, in the code and in reference/phase-signoff.md, why it does not. Decide by this rule: a proof the plan asked for that was never run is not weaker evidence than one that ran and failed.\n\nALLOW AND DENY, each pinned: headless path, owed, test passes on base -> greenFirst proved, same mark as submit's; headless path, owed, test fails on base -> not-green; headless path, owed, no derivable command -> could-not-prove naming it; headless path, NOT owed -> no green helper runs and no block (unchanged, and the red-first behaviour of a tdd task on that path is unchanged); subagent path -> exactly as SG1.6 left it; a return on an owed task with no block (an old return, or one filed through audit-task.py file-return) -> the brief says owed and not measured; a return on a task owing none -> no section.\n\nDependants to answer for: tests/test_drive_phase.py's writer-path cases (the ones over file_writer_return and writer_prove pin the calls made and their order - several will need the new call accounted for, none deleted); tests/test_audit_lookup.py's green-first brief cases from SG1.6; tests/test__filed_returns.py; plugins/audit/reference/execute-task.md and phase-signoff.md and plugins/audit/README.md where SG1.6 wrote that submit runs the proof (make them say both paths, in the documents' own voice, no counts in prose); PLUGIN-BUILD-GUIDE.md's drive-phase section; tools/measure-context.py --gate (the agent files are at their ceilings - this task should not need to touch them; say so if it does).\n\nAcceptance:\n1. On the headless writer path a task owing green-first files a greenFirst block from the same helper and under the same mark as submit: proved, not-green or could-not-prove.\n2. A task owing none is unchanged on both paths.\n3. An owed proof with no trusted block is shown as owed and not measured in the reviewer brief, never omitted.\n4. Sign-off treats owed-and-absent as the description decides, and the reference document says which and why.\n\nADDED BEFORE START (the tree as SG1.13-ukq left it, commit 38f98b5):\n- SG1.6 holds the green-first status words in a vocabulary lint (tools/lints/_refs.py, green_first_vocabulary_drift) with a row in tools/prove-gates.py. If owed-and-absent becomes a word any surface prints or stores, it joins that vocabulary and the lint, or you say why it is a sentence and not a word. tools/lints/_refs.py and tests/test__refs.py are in your scope for that; touch them only if it is needed.\n- SG1.13-ukq made /audit:status print the floor reading of done tasks where sign-off is due (plugins/audit/scripts/status/_status_facts.py and audit-status.py). An owed-and-absent green proof is a fact of the same kind. Do NOT add it to status in this task - say in your outcome whether the reader you add in _filed_returns would serve a status line unchanged, so a later task can be one line.\n- The documents SG1.6 wrote say `submit` runs the proof and that the headless path is not covered (plugins/audit/reference/execute-task.md and CHANGELOG.md say so explicitly). Those sentences become false with this task: find each and make it true, and add this task's own CHANGELOG entry under Unreleased (CHANGELOG.md is added to your scope).",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1216,14 +1274,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "df53ba2e7f13",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: green_block(ctx, task, cmd, cases, deps_from, tree) now puts the green-first-helper mark on the block itself and is the one green run; submit calls it as before, and the new writer_green calls it from file_writer_return after the clause coverage and before the stamp, over the command writer_test_command derives. writer_test_command now derives for a task owing either proof (its no-gate-entry basis says 'no green-first proof was run' for a green task); writer_prove checks owes_red_first first, so a green task still files red-first not-attempted and runs no red helper. Where no command is derived the writer path files greenFirst could-not-prove naming the basis, with no mark, as writer_prove does for red. writer_return carries the green block and names 'green-first <word>' in outcome.technical; the case binding reads the green run's printed labels for a green task. _filed_returns.py: new green_first_reading(task, executor) - None when not owed, else {status, basis, block, measured}; an owed proof with no marked block is status not-attempted (the schema's own word for no proof made), measured false, basis 'owed and not measured: ...', plus the typed block's basis as the return's own words. green_lines(executor, task=None) and mechanical_answers(executor, gate, task=None) both ask it; phase_answers hands the task; HUMAN_GREEN_FIRST gains not-attempted, so needs_human (driver triage, audit-task signoff, close-phase) stops on owed-and-absent as on not-green. audit-lookup.py: green_section and the phase unit pass the task. Owed-and-absent is a sentence and a basis, never a stored word: the stored word is the schema's not-attempted, already in GREEN_FIRST_WORDS and named in the reviewer brief, so green_first_vocabulary_drift stays green with no new row (run: problems []); tools/lints/_refs.py comment only, tests/test__refs.py untouched. Sign-off decision (description item 3): stops, by the stated rule; phase-signoff.md says which and why. could-not-prove is left as SG1.6 left it (does not stop) - not in this task's scope, flagged for the orchestrator since the same rule could be read to reach it. Docs: execute-task.md, CHANGELOG.md (SG1.6's 'not covered' sentence corrected, plus this task's own entry), README.md, phase-signoff.md, PLUGIN-BUILD-GUIDE.md. Tests: test__filed_returns.py block gfrr-block gfr7-gfr12 (135/135), test_audit_lookup.py gfb3-gfb5 (204/204), test_drive_phase.py new block gfw-block gfw1-gfw3 and gfw4 in wj-block. The red-first command after `--` is narrowed to tests/test__filed_returns.py and tests/test_audit_lookup.py (measured once: 6.3 s); gfw1-gfw4 are therefore NOT in the red run, and the mutation probe covers each of them. The task gate ran with --jobs 4 per the session's machine-load rule: exit 0, 4/4 files ok. The orchestrator's wider gate (run-test-gate.py SG1 --task SG1.14-ukq, unrecorded) exit 0, GATE GREEN; it ran before gfb3 was tightened, after which gfb-block was rerun 204/204. Mutation probe sg1.14/mutations.py: 17 rows (allow twins included), all applied, all caught, exit 0. tools/measure-context.py --gate exit 0, agent files untouched. ruff and vermin exit 0 on every changed .py. Status: green_first_reading(task, executor) would serve a /audit:status line unchanged - the caller reads the task's filed executor return (as phase_answers does) and prints status, with measured false meaning owed and not measured.",
+        "descriptive": "A refactor's green-first proof now runs on the headless writer path through the same call and mark as submit, and an owed proof with no block is said as owed and not measured in the reviewer's brief and stops sign-off like not-green."
       },
       "startedAt": "2026-11-17T09:12:15Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-17T09:43:58Z",
+      "verifiedBy": [
+        "test_drive_phase.py gfw1-gfw3: the headless writer path files the green helper's block under the submit mark - proved when the added test passes on the base, not-green when it fails there, could-not-prove unmarked when no gate entry names the tests.add file",
+        "test_drive_phase.py gfw4 (in wj-block): a writer task owing no green-first files no greenFirst block",
+        "test_audit_lookup.py gfb3-gfb5: an owed task with no trusted block is shown as owed and not measured inside the green-first section (task and phase brief), with the return's own words; a task owing none gets no section",
+        "test__filed_returns.py gfr7-gfr12: green_first_reading answers proved / not-green / could-not-prove / owed-and-absent / not owed, and the brief lines, computed phase answer, phase_answers and needs_human read it"
+      ],
       "notes": [
         {
           "at": "2026-11-17T09:12:00Z",
@@ -1262,6 +1325,18 @@
         "runId": "2026-11-17T09:43:54Z.c4af9b",
         "status": "passed",
         "at": "2026-11-17T09:43:54Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "df53ba2e7f13",
+        "at": "2026-11-17T09:43:58Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-17T09:32:34Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__filed_returns.py tests/test_audit_lookup.py` in a throwaway tree at HEAD exited 1 with 3 of 204 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - gfr7 (house FAIL), gfb3 (house FAIL), gfb5 (house FAIL): SELFTEST FAILED: 202/204 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],

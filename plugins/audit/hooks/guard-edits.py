@@ -38,10 +38,28 @@ Inspects the *incoming* text (new content) and the target path, and blocks:
      verify` is built to name; refusing it costs nothing, because nothing
      legitimate writes those files with an edit tool.
 
+  6. Strict manifest state (opt-in, `journal.strictManifestState: "ask"`) — an
+     edit that changes task or phase state in the manifest is ASKED.
+
+  7. The audit config — a write to the file `_config.load` reads
+     (`<tree>/_config.CONFIG_REL`, for the project and for a linked worktree of
+     it) is REFUSED to a subagent (`_config.is_subagent`) and ASKED of the main
+     session. The plan gate exempts `.claude/**`, so without this an agent could
+     switch the capability policy, the plan gate or the journal off with one
+     Edit, and only a journal row would say so. Ask rather than deny for the main
+     session, because the owner legitimately has it change config; the owner's
+     own routes are /audit:panel (the panel server writes the file from its own
+     process, which no tool hook sees) and a hand edit. The rule holds in the
+     plugin's own checkout too: rule 3's dev-mode exception is for plugin
+     SOURCE, and this file is that checkout's governance, not its source.
+     NOT covered, stated: a shell-form write (`sed -i`, a redirect, an
+     interpreter) never reaches this hook; it is recorded by the journal and
+     nothing refuses it. SECURITY.md carries the same residual.
+
 WHICH OF THOSE AN MCP SERVER'S WRITE TOOL REACHES, AND WHICH IT CANNOT. An MCP
 call reaches no edit-tool matcher, so before it was wired here a filesystem
 server's `write_file` was outside every rule above. `_decide_mcp` is the branch,
-and it is deliberately not all five:
+and it is deliberately not all seven:
 
   - 3 (self-edit) is reached on the TARGET ALONE, whatever the operation, which
     is guard-secrets-read's argument for a secret file one guard over. The target
@@ -49,11 +67,12 @@ and it is deliberately not all five:
     consuming repo* — nothing an ordinary task does reads or writes there, so a
     refusal costs a retry on a call nobody makes, and it closes the shapes a write
     test cannot see (a rename, a delete).
-  - 4 (bypass forgery) and 5 (the append-only journal) are reached only with a
-    WRITE BASIS in the payload (`_config.mcp_payload`), because unlike the plugin's
-    own directory both of those live INSIDE the repo and are ordinary things to
-    read. Refusing a read there would be friction on honest traffic, which is the
-    failure direction this side is not allowed to have.
+  - 4 (bypass forgery), 5 (the append-only journal) and 7 (the audit config) are
+    reached only with a WRITE BASIS in the payload (`_config.mcp_payload`),
+    because unlike the plugin's own directory all three live INSIDE the repo and
+    are ordinary things to read. Refusing a read there would be friction on
+    honest traffic, which is the failure direction this side is not allowed to
+    have.
   - 1 (project custom rules) and 2 (the token-logging ban) are NOT reached, and
     nothing replaces them. Both grade the TEXT THAT WILL BECOME FILE BYTES, and
     `collect()` can name that text only because an edit tool's schema is fixed. An
@@ -154,9 +173,9 @@ def block(msg):
 
 
 def ask(msg):
-    """The strict-mode channel. NEVER deny: the orchestrator completes tasks
-    through these same tools, and a deny here would refuse the pipeline its own
-    bookkeeping."""
+    """The channel of rules 6 and 7, both of which the main session must be able
+    to pass with the human's approval: the orchestrator completes tasks through
+    these same tools, and the owner has it change config through them."""
     print(json.dumps(_config.ask_payload("[guard-edits] " + msg)))
     sys.exit(0)
 
@@ -268,8 +287,62 @@ _MCP_JOURNAL = (
 )
 
 
+# --- the audit config -----------------------------------------------------------
+_CONFIG_DENY = (
+    "The audit config is the owner's, not an agent's: %s\n"
+    "It holds the capability policy, the plan gate and the journal switch that "
+    "govern this agent, so a subagent's edit-tool or MCP write to it is refused. "
+    "The owner changes it through /audit:panel or by hand. If this task needs a "
+    "config change, say so in your outcome and stop.%s"
+)
+
+_CONFIG_ASK = (
+    "This writes the project's audit config: %s\n"
+    "It holds the capability policy, the plan gate and the journal switch, so "
+    "the owner decides each write to it. Approve only a change the owner asked "
+    "for; the owner's own routes are /audit:panel or a hand edit.%s"
+)
+
+
+def _is_audit_config(tree):
+    """Whether the path `tree` placed is the audit config of the tree it lands in.
+
+    The file is the one `_config.load` reads - the tree's root joined with
+    `_config.CONFIG_REL` - so a file merely NAMED like it anywhere else, a
+    nested `.claude/` included, is not it. The comparison is over resolved
+    paths, so a symlinked `.claude/` names the same file; a spelling differing
+    only in case is matched by `samefile` when both exist. NOT matched, stated: a
+    case-variant spelling that CREATES the file on a case-insensitive volume
+    before any config exists.
+    """
+    if not tree["inside"] or not tree["rel"]:
+        return False
+    root = str(tree["root"])
+    own = os.path.join(root, *_config.CONFIG_REL.split("/"))
+    target = os.path.join(root, *str(tree["rel"]).split("/"))
+    try:
+        if os.path.realpath(target) == os.path.realpath(own):
+            return True
+        return (os.path.exists(target) and os.path.exists(own)
+                and os.path.samefile(target, own))
+    except (OSError, ValueError):
+        return False
+
+
+def _config_verdict(data, rel, tail=""):
+    """("block", msg) for a subagent, ("ask", msg) for the main session.
+
+    Ask, not deny, for the main session: the owner legitimately has it change
+    config, and only the human at the prompt can tell that request from an agent
+    switching its own governance off."""
+    if _config.is_subagent(data):
+        return ("block", _CONFIG_DENY % (rel, tail))
+    return ("ask", _CONFIG_ASK % (rel, tail))
+
+
 def _decide_mcp(data, cfg):
-    """The rules an MCP call can reach. Returns ("allow", reason) / ("block", msg).
+    """The rules an MCP call can reach. Returns ("allow", reason), ("block", msg)
+    or, for the main session's write of the audit config, ("ask", msg).
 
     THE SPLIT BETWEEN THE TWO HALVES IS WHERE THE TARGET LIVES, and the module
     docstring argues it rule by rule. Self-edit is decided on the target alone
@@ -306,12 +379,17 @@ def _decide_mcp(data, cfg):
             return ("block", _MCP_BYPASS % (rel, basis, op))
         if _config.in_journal(tree["root"], cfg, loc):
             return ("block", _MCP_JOURNAL % (rel, basis, op))
+        if _is_audit_config(tree):
+            return _config_verdict(
+                data, rel, "\nThis call carries %s, which is what makes it a "
+                "write; `%s` is the operation it asked for." % (basis, op))
     return ("allow", "mcp: names no path this guard holds")
 
 
 # --- decision -----------------------------------------------------------------
 def decide(data, *, cfg=None):
-    """Pure decision core. Returns ("allow", reason) or ("block", message)."""
+    """Pure decision core. Returns ("allow", reason), ("block", message) or
+    ("ask", message) - the last from rules 6 and 7 only."""
     tool = data.get("tool_name", "")
     if str(tool).startswith("mcp__"):
         return _decide_mcp(data, cfg)
@@ -374,6 +452,11 @@ def decide(data, *, cfg=None):
                             "changes task/phase state (status, completedAt, "
                             "commit or attempts) in %s -- confirm it is "
                             "intentional." % rel)
+
+        # 7. the audit config: refused to a subagent, asked of the main session.
+        #    The path alone decides, so an empty Write is held like any other.
+        if _is_audit_config(tree):
+            return _config_verdict(data, rel)
 
     if not text:
         return ("allow", "no text")

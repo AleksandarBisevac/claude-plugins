@@ -478,7 +478,9 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
    dead-ended there. Say what the task will create, not only what it will read. When `gitRoot` is not `.`, prefer writing the
    manifest INSIDE the git root (set `manifestPath` accordingly, e.g. `test/docs/audit/audit-plan.json`,
    and mirror `gitRoot` into `.claude/audit.config.json`) so the orchestrator can commit its status
-   history; note this to the user.
+   history; note this to the user. That config write — and step 7.5's — meets a permission prompt
+   (`guard-edits` asks the human about every edit-tool write to the audit config); tell the user
+   it is coming and what it sets, and never route it through a subagent, which is refused.
 
    **Write `meta.phaseGate` alongside `meta.buildCommands`, in the same step.** `mode` is
    `"shadow"`, always — the derived gate is recorded beside the wide one for every phase this
@@ -710,7 +712,10 @@ which layout was written and why the question was not worth asking yet.
    them), so a new project runs ready tasks with disjoint files as waves — each in a worktree of
    its own, the core count less two at a time. **A config that already exists is left as it is:**
    an absent `waveWidth` means one task at a time, and writing the key into a config the user
-   already has would change what their runs do. Then run
+   already has would change what their runs do. The Write meets `guard-edits`' permission
+   prompt for the audit config: the user approves it, and a declined prompt means no config —
+   say so in the report rather than writing it another way (no hook refuses a shell write of
+   it; this sentence is the only rule). Then run
    `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/config/validate-config.py" .claude/audit.config.json`
    and say in the report that waves are on and that `"waveWidth": 1` turns them off.
 

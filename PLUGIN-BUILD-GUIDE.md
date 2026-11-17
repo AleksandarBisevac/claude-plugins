@@ -902,7 +902,11 @@ is nothing to refuse, and a guard that warned anyway would be teaching people to
 ### `plugins/audit/hooks/guard-edits.py`
 Edit/Write/MultiEdit/NotebookEdit content guard. (1) Path-based protection first: denies edits
 of the INSTALLED plugin's own files (self-edit; dev-checkout exempt) and writes to
-`plan-bypass-*` state files (bypass forgery). (2) `guardEdits.customRules` (config) — each
+`plan-bypass-*` state files (bypass forgery), and holds the audit config: a write to the file
+`_config.load` reads (`_config.CONFIG_REL` under the project or a linked worktree of it) is
+denied to a subagent (`_config.is_subagent`) and asked of the main session — dev checkout
+included, since that file is governance rather than plugin source; a shell-form write of it is
+the residual SECURITY.md names. (2) `guardEdits.customRules` (config) — each
 `{pathPrefix, bannedPattern, message}` blocks its regex under its path prefix; ships EMPTY (the
 one-library listener rule that used to be hardcoded is now just an example in the config
 template). (3) Token-logging ban built dynamically from `guardEdits.tokenVars` — blocks
@@ -911,9 +915,9 @@ debug. `--selftest` builds its token test-input at runtime (`"access"+"Token"`) 
 file itself never trips a token-logging guard .
 **On `mcp__.*` it is not all of that**, and the module docstring argues it rule by rule: the
 self-edit refusal is reached on the TARGET alone (the installed plugin's directory sits outside
-the consuming repo, so refusing a read there costs nothing), bypass forgery and the append-only
-journal are reached only with a write basis (both live inside the repo, where refusing a read
-would be friction on honest work), and the custom rules and the token-logging ban are **not
+the consuming repo, so refusing a read there costs nothing), bypass forgery, the append-only
+journal and the audit config are reached only with a write basis (all three live inside the
+repo, where refusing a read would be friction on honest work), and the custom rules and the token-logging ban are **not
 reached at all** — they grade the text that will become file bytes, and only an edit tool's
 fixed schema can name that text.
 

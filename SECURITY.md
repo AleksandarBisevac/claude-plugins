@@ -1247,6 +1247,12 @@ consequences of running as a plugin hook rather than as the platform:**
    and nothing here can refuse them. The panel inventories what is installed;
    it never claims to enforce against it.
 
+The file the policy lives in is held too: a subagent's edit-tool write to the
+audit config is refused and the main session's is asked (`guard-edits` rule 7,
+under *Known bypass classes*, item 3). A shell-form write of it is not refused —
+the residual stated there — so against a governed agent with a shell the policy
+is enforced on the edit tools and recorded, not refused, on the shell.
+
 Everything uncertain resolves to *allow*, in keeping with the fail-open posture
 above: no policy engine, a malformed block, an unreadable manifest and an
 internal error all permit the call. `onViolation` chooses what a real violation
@@ -1425,6 +1431,29 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    dev-mode exception when the plugin checkout IS the working repo. Claude Code
    settings/hook wiring files outside the plugin remain editable by design
    (upstream: anthropics/claude-code#32376).
+
+   **The audit config is held the same way, by the edit tools' route only.**
+   `.claude/**` is in the plan gate's default `exemptGlobs`, so before this rule
+   an agent could write `policy.enabled: false`, `planGate: "observe"` or
+   `journal.enabled: false` with one Edit and the only trace was a journal row.
+   `guard-edits` (rule 7) now takes an edit-tool write (Edit, Write, MultiEdit,
+   NotebookEdit, and an MCP call whose payload carries a write basis) whose
+   resolved target is the file `_config.load` reads — `<project>/.claude/audit.config.json`,
+   or the same file of a linked worktree of the project — and **denies** it to a
+   subagent, with a reason naming the owner's routes (`/audit:panel`, whose server
+   writes the file from its own process, or a hand edit), and **asks** the human
+   about it from the main session, because the owner legitimately has the main
+   session change config. It applies in the plugin's own checkout as well: the
+   dev-mode exception above is for plugin source, and this file is not source.
+   A Read of the config, another file under `.claude/`, and a file merely named
+   `audit.config.json` elsewhere are untouched.
+
+   **Residual, stated rather than hidden:** a shell-form write of the config —
+   `sed -i`, a redirect, an interpreter — never reaches `guard-edits`, and no
+   other hook refuses it; it is recorded by the journal (`journal-writes` reads
+   Bash too) and nothing more. The shell reader that could hold it lives in
+   `guard-secrets-read`, and extending it is not done. `tests/test_hooks.py`
+   carries that row as a known divergence, so the day it closes the row goes red.
 4. **Test-file exemption.** Test files are exempt from plan-first so red-first
    TDD stays frictionless — the first act of a red-first fix is writing a test
    that fails, and a gate that blocks that blocks the discipline. Logic can

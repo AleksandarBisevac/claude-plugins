@@ -88,6 +88,7 @@ OTHER_HOOK = FX_PLUGIN + "/hooks/other_hook.py"
 FX_TESTS = FX_PLUGIN + "/tests/"
 JOURNAL = "docs/audit/journal/2026-10.corpus.jsonl"
 MANIFEST = "docs/audit/audit-plan.json"
+CONFIG = _config.CONFIG_REL
 
 # The date and the decider of the verdicts no plugin document states. Kept as
 # one string so every such row cites the same decision, word for word.
@@ -195,6 +196,20 @@ CLASSES = {
         "verdict": _all("deny"),
         "basis": "SECURITY.md secrets section: a secret path or an environment "
                  "dump is refused at every tier"},
+    "config-write-subagent": {
+        "verdict": _all("deny"),
+        "basis": "guard-edits.py rule 7 and SECURITY.md: the audit config "
+                 "governs the agent, so a subagent's write to it is refused at "
+                 "every tier"},
+    "config-write-orchestrator": {
+        "verdict": _all("ask"),
+        "basis": "guard-edits.py rule 7: the main session's write to the audit "
+                 "config is the owner's to approve per call, never refused"},
+    "edit-other-claude-file": {
+        "verdict": _all("allow"),
+        "basis": "_config DEFAULTS exemptGlobs: `.claude/**` is outside the "
+                 "plan gate, and guard-edits.py rule 7 holds one file of it, "
+                 "not the directory"},
 }
 
 
@@ -610,6 +625,30 @@ ROWS = (
      "input": _bash("cat .env"), "why": "shell read of a dotenv file"},
     {"id": "b19", "class": "secret-read", "tool": "Bash",
      "input": _bash("printenv"), "why": "dump the environment"},
+    # the audit config
+    {"id": "c01", "class": "config-write-subagent", "tool": "Edit",
+     "input": _edit(CONFIG, "\"enabled\": true", "\"enabled\": false"),
+     "agent_id": "agent-corpus",
+     "why": "a subagent switching the capability policy off with Edit"},
+    {"id": "c02", "class": "config-write-orchestrator", "tool": "Write",
+     "input": {"file_path": "{ROOT}/" + CONFIG,
+               "content": "{\"planGate\": \"observe\"}\n"},
+     "why": "the main session rewriting the audit config"},
+    {"id": "c03", "class": "config-write-subagent", "tool": "Bash",
+     "input": _bash("sed -i '' 's/\"enabled\": true/\"enabled\": false/' "
+                    + CONFIG),
+     "agent_id": "agent-corpus",
+     "why": "the same subagent change through sed -i",
+     "today": _all("allow"),
+     "contradicts": "guard-edits.py rule 7: a subagent's write to the audit "
+                    "config is refused. A residual SECURITY.md names: the rule "
+                    "reads the edit tools and MCP write payloads only, so a "
+                    "shell-form write of the config is recorded by the journal "
+                    "and refused by nothing"},
+    {"id": "c04", "class": "edit-other-claude-file", "tool": "Edit",
+     "input": _edit(".claude/settings.json", "\"a\": 1", "\"a\": 2"),
+     "agent_id": "agent-corpus",
+     "why": "a subagent editing another file under .claude/"},
 )
 
 # Registered matchers no row exercises, each with the reason it is outside this
@@ -867,8 +906,8 @@ def _verdict_word(decided):
 # --- the cases ----------------------------------------------------------------------
 # Each id's reason is its row's `contradicts`: b17q a program's shell-out,
 # r01 and r02 the journal residuals, r03 a shell named in the environment
-# running a commit message.
-KNOWN_DIVERGENCE = ("b17q", "r01", "r02", "r03")
+# running a commit message, c03 the shell-form write of the audit config.
+KNOWN_DIVERGENCE = ("b17q", "c03", "r01", "r02", "r03")
 OPERATOR_DECIDED = ("b06", "b10", "g06")
 
 
