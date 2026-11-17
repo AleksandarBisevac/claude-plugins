@@ -1064,7 +1064,7 @@
     {
       "id": "P166",
       "title": "The configured review skill reaches the phase reviewer, and a phase return that skips it is refused",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P166.json"
     }
   ],

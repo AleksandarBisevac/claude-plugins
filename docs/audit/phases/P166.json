@@ -1,7 +1,7 @@
 {
   "id": "P166",
   "title": "The configured review skill reaches the phase reviewer, and a phase return that skips it is refused",
-  "status": "in_progress",
+  "status": "done",
   "description": "Hotfix ordered by the owner before 3.9.0: since v3.2.0 the phase reviewer's brief never names the configured reviewSkill (audit-lookup.py phase_brief_parts never resolves it; drive-phase.py's dispatch_phase_review/dispatch_said/DISPATCH_PROMPT do not carry it), so no code review runs while /audit:status shows the skill.",
   "desiredOutcome": "On the drive route the phase reviewer's brief names the configured reviewSkill and the headless phase validation passes --skill; submit refuses a phase return whose phase resolved a review skill but whose return does not name it as invoked; with no skill resolved nothing changes; a live phase review with a skill still completes.",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "e279081adde9c0f70735ef2692f0e942e64e9be0",
   "branch": "audit/p166-the-configured-review-skill-re",
-  "mergedAt": null,
+  "mergedAt": "2026-11-17T17:36:46Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -345,5 +345,6 @@
     "runId": "2026-11-17T17:35:54Z.4d539a",
     "status": "passed",
     "at": "2026-11-17T17:35:54Z"
-  }
+  },
+  "mergedHead": "ebb750fbcf7b5bad169b777ed0292d7720060b1c"
 }
