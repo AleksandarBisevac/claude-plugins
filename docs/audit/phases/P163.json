@@ -22,7 +22,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P163-R1",
@@ -299,19 +299,26 @@
         "severity": "high",
         "file": "tools/check-report-interactive.mjs:2846,3048; plugins/audit/scripts/ui/report-css/controls.css:33-42",
         "issue": "contradicts task clause 'at 1024x768 and 1512x945 the bar takes at most 2 lines in every state, and 1 line at rest': the diff asserts the bound (LAPTOP_BAR_LINES = { rest: 1, filtered: 2 }, lm4 at :3048) but the CSS does not meet it on two of the three fixtures the task names. By the executor's own filed runs, docs/demo-large.html exits 1 on 'lm4 1024x768 View=active at rest (2 lines; 92px)' and 'View=all at rest', and the live render exits 1 on lm4 1024x768 at rest in active/archived/all. Both are per-run gates, not only phase-gate legs: tools/verify.sh:895 slice_report runs check-report-interactive on docs/demo-large.html, and tools/verify.sh:816 runs it on the live plan render. So landing this diff as it is turns CI's report slice and live-plan leg red on every run.",
-        "resolution": "Do not land the task while either leg is red. The orchestrator should take the placement decision the executor measured and recommended (move 'expand all', a table action, and the Sort select, an ordering, out of .sectools into the phases table's head) as a follow-up fix task. It should declare plugins/audit/scripts/report/_report_page.py, tables.css and the pins in tests/test_render_report.py (pr8 and the sortpick markup pins), and rerun the browser gate on acme, demo-large and the live render to exit 0. Do not relax LAPTOP_BAR_LINES.rest or take the one-pixel density step; the executor measured both and rejected them."
+        "resolution": "fixed in P163.17-d6t (275555b45b2c): Do not land the task while either leg is red. The orchestrator should take the placement decision the executor measured and recommended (move 'expand all', a table action, and the Sort select, an ordering, out of .sectools into the phases table's head) as a follow-up fix task. It should declare plugins/audit/scripts/report/_report_page.py, tables.css and the pins in tests/test_render_report.py (pr8 and the sortpick markup pins), and rerun the browser gate on acme, demo-large and the live render to exit 0. Do not relax LAPTOP_BAR_LINES.rest or take the one-pixel density step; the executor measured both and rejected them.",
+        "fixTask": "P163.17-d6t",
+        "commit": "275555b45b2c",
+        "status": "fixed"
       },
       {
         "id": "P163-R29",
         "severity": "low",
         "file": "plugins/audit/scripts/ui/report-css/controls.css:42",
         "issue": "The field-sizing rule is a second, structurally-selected rule (.sectools>span>select) that does work the shared picker rule '.viewpick select,.sortpick select{' at tables.css:114 already exists for. Its selector was chosen to keep pr8's spelling count at 2 (the executor's note: ':is(.viewpick,.sortpick)' turned pr8 red, then it was rescoped). It is also wrapped in an @supports that changes nothing: a browser without field-sizing drops the unknown declaration anyway. The selector is tied to the markup's shape, so any future span-wrapped select in the bar silently becomes content-sized.",
-        "resolution": "Add 'field-sizing:content' to the existing shared '.viewpick select,.sortpick select{' declaration block in tables.css, with no @supports. Then one rule styles both pickers, which is the property pr8 guards, and the structural selector goes away. tables.css must be declared, which the fix task in finding 1 needs anyway."
+        "resolution": "fixed in P163.17-d6t (275555b45b2c): Add 'field-sizing:content' to the existing shared '.viewpick select,.sortpick select{' declaration block in tables.css, with no @supports. Then one rule styles both pickers, which is the property pr8 guards, and the structural selector goes away. tables.css must be declared, which the fix task in finding 1 needs anyway.",
+        "fixTask": "P163.17-d6t",
+        "commit": "275555b45b2c",
+        "status": "fixed"
       }
     ],
-    "outcome": "[findings: 29 - 1 high, 10 med, 18 low; 27 with a recorded fix commit]"
+    "outcome": "[findings: 29 - 1 high, 10 med, 18 low; 29 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "The report's filters: one FILTER_AXES registry so Clear, the link, the stored view and the counters cover every axis; a truthful empty state with Show all phases and a counter that names its view; table actions in the table head so the filter bar is one line at rest; a phone layout that leaves the table room; scope labels and a11y. Every review finding R1-R29 fixed; the browser check (with the layout matrix over five sizes) is green on acme, demo-large and the live plan. Per-task reviewer answers continued over: P163.3 intent diverges: two med findings (a parallel phone-stack check with a wording-derived bound; the heatmap period chip row unlabelled) are filed and get a fix task before sign-off; P163.13-d6t intent diverges: the med (counter lost its view name) and the low (es0 counts ineffective presses) get one fix task before sign-off; P163.15-d6t intent diverges: R24-R26 (med) and R27 get one fix task before sign-off; P163.16-d6t intent diverges: R28 (high: the browser gate is red at 1024x768 at rest on demo-large and the live render) and R29 get one fix task before sign-off",
   "tasks": [
     {
       "id": "P163.1",
@@ -1647,7 +1654,7 @@
     {
       "id": "P163.17-d6t",
       "title": "Table actions sit in the phases table's head, so the filter bar is one line at rest on every fixture and the browser gate is green on all three",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fixes P163-R28 (high) and P163-R29 (low), filed on P163.16-d6t. Read their full text in docs/audit/phases/P163.json review.findings.\n\nR28: at HEAD 5378a0fd the browser gate is red at 1024x768 at rest. docs/demo-large.html shows 'lm4 1024x768 View=active at rest (2 lines; 92px)' and View=all; the live render (tools/plan-window.py + render-report.py, as verify.sh's live-plan leg does) is red at rest in active, archived and all. Both legs run on every CI run.\n\nDecision, taken by the orchestrator from the previous executor's measurement:\n- Move 'expand all' (a table action) and the Sort select (an ordering) out of .sectools into the phases table's head.\n- Keep their ids, behaviour and keyboard order sensible, and update the gate's selectors and the screenshot capture if they name the old place.\n- Do NOT relax LAPTOP_BAR_LINES.rest and do not take a one-pixel density step.\n\nR29: put field-sizing:content in the shared '.viewpick select,.sortpick select' block in tables.css, with no @supports, and drop the structural selector in controls.css.\n\nDONE MEANS all three runs exit 0, quoted in the return with their last summary lines:\n1. node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html\n2. the same on docs/demo-large.html\n3. the same on the live render.\nThe task gate does not run the browser gate, so it is your evidence.\n\nRefresh the rendered followers: examples/report.sh, docs/demo-large.html, and node tools/capture-screenshots.mjs. Confirm tests/test__refs.py is green. No F/P/BUG ids in comments.",
       "files": [
         "plugins/audit/scripts/report/_report_page.py",
@@ -1701,14 +1708,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "275555b45b2c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "R28: plugins/audit/scripts/report/_report_page.py splits the old _table_tools. New _table_head(manifest) renders <div class=\"toolbar tablehead\" role=\"group\" aria-label=\"Order and open the phases\"> holding the sortpick span (still only when _report_html.any_phase_pinned) and #audit-expand. _table_tools now holds search, status chips, More filters, View, Clear and the count. _phases_block appends _table_head right after _table_tools, so the head sits between the filter bar and the .tablewrap. Ids, classes and JS bindings are unchanged (sorting.js and chips.js find #audit-sort and #audit-expand by id), so filters.js, sorting.js and page-state.js needed no change. Tab order is now search, chips, More filters, View, Clear, then Sort, expand all, then the table. The head is not inside thead: wireSort makes every phases thead th a role=button sort control, so a control inside a header cell would trigger a column sort when clicked. tables.css: .tablehead{justify-content:flex-end;margin:0 0 var(--sp-0)}. It does not pin, and print hides it through the existing .toolbar rule in segments.css (I first added a separate @media print rule, then removed it as a second copy of that rule). R29: field-sizing:content is now in the shared '.viewpick select,.sortpick select' block in tables.css with no @supports, and controls.css drops the .sectools>span>select rule and its comment. pr8 is still green, with .sortpick and .viewpick each counted at 2. GATE tools/check-report-interactive.mjs: REQUIRED now asks for '.tablehead #audit-expand'. layoutAtTop's sortDrawn now asks whether .tablehead contains a drawn #audit-sort, and the coverage FAIL and notes name the table head. The print block also asserts that the table head is not drawn on paper. is5 targets '.tablehead .btn:not(.btn-primary)' (it used to be '.sectools .btn...', which was expand-all and would now match only the hidden Clear button). LAPTOP_BAR_LINES is untouched and no density step was taken. READMEs: the report-css tables.css row and the report sorting.js row name the head. DONE MEANS, final renders: (1) node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html -> exit 0, 'report is interactive: 415 checks passed in examples/acme-store/acme-store-audit.html'. (2) docs/demo-large.html -> exit 0, 'report is interactive: 421 checks passed in docs/demo-large.html'. (3) live render (tools/plan-window.py + validate-manifest + render-report.py --format html, as verify.sh's live_plan_window leg does) -> exit 0, 'report is interactive: 374 checks passed in <tmp>/out/audit-report.html'. In all three, lm4 1024x768 at rest reads '1 lines; 60px' in View=active, archived and all, and filtered reads '2 lines; 92px'. The live run printed 'the Sort select was in the phases table's head in every cell: 33 rows carry an execution rank'. Measured twice with a gap of about 10 minutes, before and after removing the duplicate print rule: the first pass gave exit 0 on all three (418/424/377 checks, including three duplicate cases I then removed), with the same lm4 readings. FOLLOWERS: examples/report.sh (acme html, plus an md that differs only in its timestamp; docs/index.html cmp-identical), docs/demo-large.html via the --how recipe, node tools/capture-screenshots.mjs exit 0 (8 png + captured-at.json), and --check exit 0. RUNS: task gate 4/4 files ok, 821 cases, test__refs green after the recapture (before it, only sc1/sc2 were red, on screenshot digests). Dependant suites test__ui_theme, test__ui_theme_lints, test__output, test__surface_digest, test__config, test__report_ui, test__output_lints, test__deps, test__evidence_view, test__report_usage, test_gen_demo_manifest: 11/11 ok, 1443 cases. vitest phase-order, table-fit and test-gate-filter: 29 passed. ruff on _report_page.py: clean. check-rendered-artifacts --before-commit: 3 artifacts match a fresh render. node --check on the gate: 0. DEPENDANTS: _report_page.py -> render-report.py, test__evidence_view, test__report_page, tools/where.py, PLUGIN-BUILD-GUIDE.md: still correct (no public name removed; _table_head is new and private; the suites are green; the guide section is waived by the existing note because it describes the module's role). _report_html.py and its importers: unchanged, still correct. tables.css/controls.css -> the rendered pages (re-rendered), _ui_theme.py and _ui_theme_lints.py (theme lints green on the assembled sheet, no token added), tools/ui-checks/disclosures.mjs (runs inside the gate, green), tools/ui-tests/table-fit.test.mjs (green), panel-css/usage-tab.css (not touched, no shared rule changed), report-css/README.md (updated). shell.css, filters.js, sorting.js, page-state.js and their dependants (test__config, test__output, test__surface_digest, redfirst.sh, _report_ui.py, phase-order.test.mjs, test-gate-filter.test.mjs, heatmap.js): files unchanged, suites green. README.md basename hits are other READMEs, still correct. check-report-interactive.mjs -> the pages and CSS parts name it by path, still correct. capture-screenshots.mjs: unchanged; it reaches #audit-sort by id and expand-all by role name, both of which still resolve (capture exit 0). tests/*.py -> sweep-costs.json and affected.py: no suite added or renamed. examples, docs/index.html, docs/demo-large.html, docs/screenshots: re-rendered or recaptured and checked as above. No F/P/BUG ids in any comment.",
+        "descriptive": "Sort and expand all moved out of the pinned filter bar into a bar at the head of the phases table. The filter bar is now one line at rest at 1024x768 on acme, the large demo and the live plan, and the browser gate exits 0 on all three. Both selects are content-sized by their one shared rule."
       },
       "startedAt": "2026-11-16T23:37:08Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-17T00:32:19Z",
+      "verifiedBy": [
+        "No new case ids. is5 was retargeted from '.sectools .btn' to '.tablehead .btn', which is the same expand-all button in its new place. A new print assertion, '...nor the phases table's head ...', was added. The lm Sort-coverage check now asks for the table head and REQUIRED asks for '.tablehead #audit-expand'. The thirteen tests.add entries bind to interaction-state cases that already exist in the gate: is1-is10, plus the earlier '.dtoggle', 'tr' and '.shacopy' interaction-state parity checks. All of them print ok on all three fixtures."
+      ],
       "notes": [
         {
           "at": "2026-11-16T23:37:05Z",
@@ -1731,16 +1740,27 @@
         "runId": "2026-11-17T00:29:15Z.46c2aa",
         "status": "passed",
         "at": "2026-11-17T00:29:15Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "275555b45b2c",
+        "at": "2026-11-17T00:32:19Z",
+        "return": "docs/audit/evidence/returns/P163.17-d6t/20261116T233708Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.mode is gate-only with expectRedFirst false, and the evidence this task owes is the browser gate, which is not a runner the red-first helper reads. The new and moved browser checks were instead proven red on mutated COPIES of rendered pages in a mktemp scratch dir (never the tree): m1 the Sort select put back into .sectools on the live render -> exit 1 with 'FAIL lm4 1024x768 View=active at rest (2 lines; 92px)', 'FAIL lm4 1024x768 View=all at rest (2 lines; 92px)' and 'FAIL lm the plan pins a phase (33 rows carry an execution rank) but the Sort select was drawn in the phases table's head in 0 of the 25 cells read'; m3 the head's toolbar class removed on acme -> exit 1 'FAIL ...nor the phases table's head, whose Sort and expand-all do nothing on paper (the head rendered: true): got false, want true'; m2 tr:hover .shacopy removed -> the existing tr and .shacopy parity checks red; m4 .dtoggle:hover removed -> the existing .dtoggle parity check red.",
+        "at": "2026-11-17, scratch-copy mutation runs before filing"
       }
     }
   ],
   "request": "Users report the filters at the top of the HTML report do not work. Fix every filter defect found by the live diagnosis: Clear filters leaves the test-gate and observed filters on (and storage brings them back); the default view hides task-level matches while the empty state says none exist; the counter states no basis; the phone layout covers most of the screen; filter scopes are invisible; and the a11y gaps.",
   "openChoices": [],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "988f3478-fc74-4a1e-a62b-7522b404c792",
-    "branch": "audit/p163-the-report-s-filters-clear-cou",
-    "at": "2026-11-16T13:43:59Z"
-  },
-  "startedAt": "2026-11-16T13:43:59Z"
+  "startedAt": "2026-11-16T13:43:59Z",
+  "testEvidence": {
+    "runId": "2026-11-17T00:55:06Z.f095ad",
+    "status": "passed",
+    "at": "2026-11-17T00:55:06Z"
+  }
 }
