@@ -2865,26 +2865,44 @@ const STACK_SLACK_PX = 2;
 const STACK_CEILING_SHARE = 0.5;
 const STACK_TABLE_SHARE = +(1 - STACK_CEILING_SHARE).toFixed(2);
 // The share of the screen the pinned stack may take, per viewport class.
-// The rule the shares follow: the stack a class's tightest cell draws in the
-// wide font, plus about one control row of headroom, over that cell's height.
-// They were set before that was measured and are not computed from it; the
-// measurement is what says each one leaves a row to spare rather than fitting
-// one machine's font to the pixel. A share is a fraction of the HEIGHT while
+// The rule the shares aim at: the largest stack the class's cells draw in
+// either font, plus one row of headroom, over the class's screen height. They
+// were set before that was measured and are not computed from it, so meeting
+// the rule is not assumed: the measurement below says which classes do, and
+// the phone does not. A share is a fraction of the HEIGHT while
 // the stack is a sum of rows, so a tall screen spends a smaller share on the
 // same rows: the tablet cell is portrait and pins more pixels than the laptop
 // cell does, yet a smaller part of its screen, which is why the tablet's share
 // is the smaller of the two.
 // Measured 2026-11-17 on macOS, as headroom = budget - stack at each class's
-// tightest cell; re-derive it by running
+// tightest cell over both passes; re-derive it by running
 //   node tools/check-report-interactive.mjs <report> 2>&1 | grep lm4
 // over examples/acme-store/acme-store-audit.html and docs/demo-large.html and
-// taking the smallest gap per class between "<stack>px against <budget>px":
-//   phone    27px at 844x390, either report (stack 148px, budget 175px)
-//   laptop   37px at 1024x768, demo-large, a status chip on (270px, 307px)
-//   tablet   52px at 834x1194, wide-font pass, either report (306px, 358px)
-//   desktop  56px at 1920x1080, wide-font pass (Verdana), demo-large
-//            (214px, 270px) - the page's own font pins 182px there, so the
-//            extra is a row the desktop wraps only in the wider font.
+// taking the smallest gap per class between "<stack>px against <budget>px" -
+// a wide-font cell's label carries "[wide font: <name>]", and the wide font
+// here was Verdana. Each line names the pass its cell was read in:
+//   phone    27px at 844x390, both passes, either report, a status chip on
+//            or a search typed (stack 148px, budget 175px)
+//   laptop   37px at 1024x768, both passes, demo-large, a status chip on
+//            (270px, 307px)
+//   tablet   52px at 834x1194, a status chip on or a search typed: the
+//            wide-font pass in either report, the page's own font in
+//            acme-store only (306px, 358px)
+//   desktop  56px at 1920x1080, wide-font pass only, demo-large, a status
+//            chip on or a search typed (214px, 270px) - the page's own font
+//            pins 182px there, so the extra 32px is a row the desktop wraps
+//            only in the wider font.
+// What one more row costs at the phone was read in the wide font at 844x390
+// itself, not carried over from the desktop: the filter bar's rows sit 8px
+// apart, its shortest item is 19.4px tall and its count 24px, so a further
+// row costs at least 27.4px and, holding the count, 32px. The check prints
+// none of that; it was read off the bar's own boxes, twice with a gap, by
+//   [...document.querySelectorAll('.sectools > *')].map((e) => e.getBoundingClientRect())
+// in a page sized 844x390 with the wide-font pass's override applied.
+// So the phone has LESS than a row of headroom: its 27px is under the
+// cheapest row the bar can add there, and a phone whose filter bar wraps one
+// more row fails lm4. That is a fact of the phone's budget at 0.45, stated
+// here rather than met; the laptop, tablet and desktop each clear 32px.
 // Changing a share means re-measuring this, not editing a figure above.
 const STACK_BUDGET = { phone: 0.45, tablet: 0.3, laptop: 0.4, desktop: 0.25 };
 // A phone is where the top bar scrolls (TOPBAR_SCROLLS, read by the page's own
