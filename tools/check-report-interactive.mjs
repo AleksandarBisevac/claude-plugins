@@ -205,7 +205,11 @@ const FEATURE_ABSENT = [
   // open state for the stack over the table to be measured in. No chip inside
   // it: nothing to switch on so the summary has a count to say.
   { note: 'phone panel check skipped',
-    covers: ['lm6', 'lm7'] },
+    covers: ['lm6', 'lm7', 'lm5 with More filters open', 'lm8 with More filters open'] },
+  // No wide font installed, or none wider than the page's own: the layout
+  // matrix reads one font, and says so in its notes and its summary line.
+  { note: 'wide-font pass NOT RUN',
+    covers: ['lm the wide-font pass draws the page in the font it names'] },
   // A plan that cancelled no task has no match the task fraction leaves out;
   // the basis check above still holds the clause absent on every report.
   { note: 'no cancelled task in this plan',
@@ -510,7 +514,7 @@ expect('on load, tasks are collapsed', load.tasks, 0);
   // ...SAID, and not drawn. The View select beside the count already shows the
   // view, and drawn, the name wrapped the pinned bar at a laptop width. Drawn
   // means a text node no ancestor up to the count has clipped to a pixel - the
-  // same reading lm3 counts lines from - so a name moved out of its clipped
+  // same reading lm3 holds inside the bar - so a name moved out of its clipped
   // box, or a clipped box that kept the whole count, is told apart.
   const drawn = await page.evaluate(() => {
     const c = document.getElementById('audit-count');
@@ -532,8 +536,8 @@ expect('on load, tasks are collapsed', load.tasks, 0);
     !!rest && !!short && drawn === rest[1] + ' of ' + rest[2] + ' phase'
       + (rest[2] === '1' ? '' : 's') && load.count.indexOf(short) >= 0, true);
 }
-// ...and the count it leaves is one line wherever its text fits the bar, and
-// inside the bar everywhere: lm3, lm4 and lm8 in the layout matrix below.
+// ...and the count it leaves stays inside its bar at every size, in either
+// font: lm3 in the layout matrix below.
 
 // Switching the view is an EXPANDER in the standing sense — it may not grow a
 // sideways scroll box — and it must not lose the reader's place either.
@@ -2764,30 +2768,52 @@ if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
   await page.waitForTimeout(150);
 } else notes.push('ok   (this plan records no models or dates — phone panel check skipped)');
 
-// --- the layout matrix: every measured size, in every state ------------------
+// --- the layout matrix: every measured size, in every state, in two fonts -----
 //
 // ONE method for one question - what the pinned chrome costs a reader of the
-// table - asked at every size below and in every state a reader reaches. The
-// probes it replaced each measured one size in one state, and both wraps they
-// were written for came back where they did not look: the count wrapping the
-// laptop's filter bar once filtered, in another view, or on a plan with the Sort
-// select, and the header's filter row wrapping at a tablet's 834px. A size or a
-// state added here is asked every question; a question added here is asked of
-// every cell; a failing cell is named by size and state.
+// table - asked at every size below, in every state a reader reaches, and in
+// two fonts. A size or a state added here is asked every question; a question
+// added here is asked of every cell; a failing cell is named by size, state and
+// font.
 //
-// Sizes: a phone upright and on its side, a tablet upright, a small laptop and
-// the laptop this file reads the page at. States, read off the page: every View
-// option at rest, then the default view with one phase-status chip on, and with
-// a search typed. Each cell asks:
+// Sizes: a phone upright and on its side, a tablet upright, a small laptop, the
+// laptop this file reads the page at, and a desktop. States, read off the page:
+// every View option at rest, then the default view with one phase-status chip
+// on, and with a search typed. Each cell asks:
 //   lm1  the stack pinned over the table is no more than the layers pinned there
 //   lm2  ...and leaves the table its share of the screen, whatever those are
-//   lm3  the count is one line of text wherever its text fits the bar unbroken
-//   lm4  at a laptop size the filter bar is one line at rest and two filtered
-//   lm5  while the top bar pins, the header's filter row is one line
+//   lm3  the count's drawn text lies inside its bar
+//   lm4  the pinned stack is within the budget of the size's viewport class
+//   lm5  no control, chip or label of the chrome breaks inside a word
 //   lm6  More filters, opened over the table, is on the screen and painted
 //   lm7  ...and where it opens in the bar's flow, the bar holding it does not pin
-//   lm8  the bar's controls and the count's text lie inside the bar, and the
-//        page is no wider than the screen
+//   lm8  nothing runs past its box, no control's text is cut off, and the page
+//        is no wider than the screen
+// and lm5 and lm8 again with More filters open.
+//
+// WHY NO CELL COUNTS LINES. How many lines a row of controls takes is a property
+// of the font's metrics, and the page ships no font: it names a stack and takes
+// whatever the machine resolves. The matrix used to hold the filter bar to one
+// line at a laptop and the header's filter row to one line at a tablet; both
+// held on the machine that wrote them, with no room to spare, and both failed on
+// a CI runner whose default sans is wider. A line count asserted there is a
+// claim about one font. What the page DOES control, and what a reader pays for,
+// is asked instead: whether anything overflows or is cut off (lm8), whether a
+// word is split (lm5), whether the count stays in its bar (lm3), and how much of
+// the screen the pinned layers take (lm1, lm2, lm4). Wrapping onto another row
+// is allowed wherever those hold - the stylesheet lays the rows out with a gap
+// on purpose - and it is the budget, not a line count, that says when the rows
+// have cost the reader too much.
+//
+// THE SECOND PASS. The same cells are read again with every element's
+// font-family overridden to the first font of WIDE_FONTS that is installed and
+// draws a sample line wider than the page's own font does on this machine (the
+// pass prints both widths), so a layout that holds here has headroom against a
+// runner's wider font rather than fitting this machine's to the pixel. Every label of that pass carries "wide
+// font" and the font's name. Where no candidate is installed, or the widest one
+// installed is no wider than the page's own font, the pass does not run and the
+// output says so, in its notes and in the closing summary line; it is never
+// reported as a pass it did not make.
 //
 // lm1 measures what a reader sees, not a sum of heights: scrolled into the table,
 // from the top of the screen down its middle, the first point that is the table's
@@ -2814,123 +2840,185 @@ if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
 // destination bound, not a ratchet: how far a committed report's bar moved is the
 // relative arm's question, asked through the figures recorded above.
 //
+// lm4 is the stricter, per-class form of the same bound: STACK_BUDGET, stated
+// once below, gives each viewport class the share of its screen the pinned
+// layers may take, and viewportClass() derives a size's class from the size
+// itself, so a size added to the list is budgeted without a row of its own.
+// The shares are what each class is designed to spend - a desktop pins every
+// layer on one row each; a laptop or tablet may wrap the filter bar, and the
+// header's filter row, onto a second row; a phone pins only the strip and the
+// filter bar, which wraps the most - and every class must be reached by some
+// size, or the run fails naming the class nothing measured.
 // lm3 reads the count's lines off its text's own client rects, which is what a
-// reader sees. Emptying the text and comparing the bar's height - the probe this
-// replaces - cannot see a count that wraps its own words inside the row's height,
-// and that is how the laptop's count came to take three lines under a green check.
-// It asks only where the text, measured unbroken, fits the bar's content box:
-// narrower than that, the count wraps its words rather than run out of the bar,
-// and the cell says so instead of passing it.
-// lm4 is a stated bound and not a derived one: at the two laptop sizes the bar
-// is LAPTOP_BAR_LINES.rest line with nothing filtering, in every view, and at
-// most LAPTOP_BAR_LINES.filtered with a chip on or a search typed, where the
-// count may take a row of its own. The check it replaces packed the bar's
-// controls end to end and allowed the lines they needed, which grew with the
-// count and so could not fail on it. A phone's bar may take more lines; what it
-// costs the reader there is lm1 and lm2's question.
-// lm8 is the one a line count cannot see: a control or a count wider than the
-// bar takes one line and runs out of the card sideways. Every in-flow child of
-// the bar and every drawn line of the count is held to the bar's content box,
-// and the page to the screen's width.
+// reader sees, and holds every one to the bar's content box: the count may wrap
+// onto its own row or wrap its own words, but never run out of the card.
+// lm5 reads each word's own rects: a word drawn on two lines was split inside
+// itself, which no font makes legible. A word is a run of letters and digits, so
+// a break at a space, a hyphen or a slash is a row break and not a split word.
+// lm8 holds every in-flow child of the bar, the header's filter row, the top
+// bar's actions and the table's head to its container's content box; every
+// field to the width of what it shows - a select to the width it takes holding
+// only its chosen option, a date field to its own natural width, an empty search
+// field to its placeholder - and every button and chip to its own content; and
+// the page to the screen's width.
 const STACK_SLACK_PX = 2;
 const STACK_CEILING_SHARE = 0.5;
 const STACK_TABLE_SHARE = +(1 - STACK_CEILING_SHARE).toFixed(2);
-// `laptop` marks the sizes lm4 holds the bar's lines at.
+// The share of the screen the pinned stack may take, per viewport class.
+const STACK_BUDGET = { phone: 0.45, tablet: 0.3, laptop: 0.4, desktop: 0.25 };
+// A phone is where the top bar scrolls (TOPBAR_SCROLLS, read by the page's own
+// matchMedia); past that the class is the width's: under 64rem a tablet, under
+// 100rem a laptop, a desktop beyond.
+const viewportClass = (size, phone) => (phone ? 'phone'
+  : size.width < 1024 ? 'tablet' : size.width < 1600 ? 'laptop' : 'desktop');
 const LAYOUT_SIZES = [
   { width: PHONE_VIEWPORT.width, height: 844 },
   { width: 844, height: PHONE_VIEWPORT.width },
   { width: 834, height: 1194 },
-  { width: 1024, height: 768, laptop: true },
-  { width: 1512, height: 945, laptop: true },
+  { width: 1024, height: 768 },
+  { width: 1512, height: 945 },
+  { width: 1920, height: 1080 },
 ];
-const LAPTOP_BAR_LINES = { rest: 1, filtered: 2 };
+// Wide sans fonts, in the order a pass reaches for them: Verdana is on macOS
+// and Windows; DejaVu Sans, the usual Linux default, and Bitstream Vera Sans,
+// its parent, are the fallbacks where it is not. Which one is wider than the
+// page's own font is measured, never assumed (wideFontsHere()).
+const WIDE_FONTS = ['Verdana', 'DejaVu Sans', 'Bitstream Vera Sans'];
 // The layers that may pin over the table, by the names a label prints.
 const STACK_LAYERS = [['top bar', '.topbar'], ['strip', '.snav'], ['filter bar', '.sectools']];
 // Where the top bar scrolls instead: the query is written here and not read
 // off the stylesheet, because the fault it is held against is that rule going
 // missing, and a query read off a missing rule asks nothing.
 const TOPBAR_SCROLLS = ['top bar', '(max-width:52rem),(max-height:32rem)'];
-const layoutAtTop = () => page.evaluate(() => {
-  const shown = (n) => n && n.getClientRects().length > 0;
-  // A run of boxes, grouped into the bands they share: two boxes on one line
-  // overlap vertically, two lines do not, so a taller control does not make a
-  // line of its own.
-  const bands = (rects) => {
-    const out = [];
-    for (const r of rects) {
-      const b = out.find((x) => r.top < x.bottom && r.bottom > x.top);
-      if (b) { b.top = Math.min(b.top, r.top); b.bottom = Math.max(b.bottom, r.bottom); }
-      else out.push({ top: r.top, bottom: r.bottom });
-    }
-    return out.length;
-  };
+// The chrome lm5 and lm8 read: the pinned layers, the header's own rows and the
+// table's head. `open` adds the More-filters panel.
+const CHROME = ['.topbar', '.snav', '.sectools', '.tablehead'];
+const readChrome = (open) => page.evaluate(([roots, withPanel]) => {
+  const shown = (n) => !!n && n.getClientRects().length > 0
+    && (!n.checkVisibility || n.checkVisibility());
   const inFlow = (box) => [...(box ? box.children : [])]
     .filter((k) => shown(k) && getComputedStyle(k).position !== 'absolute');
-  // The text a reader sees: a node inside a box clipped to a pixel is said to a
-  // screen reader and drawn to nobody.
-  const drawnText = (el) => {
+  // A node inside a box clipped to a pixel is said to a screen reader and drawn
+  // to nobody, so neither its lines nor its words are on the screen.
+  const drawn = (n, upTo) => {
+    for (let p = n.parentElement; p && p !== upTo; p = p.parentElement) {
+      const b = p.getBoundingClientRect();
+      if (b.width <= 1 || b.height <= 1 || !shown(p)) return false;
+    }
+    return true;
+  };
+  const contentBox = (el) => {
+    const cs = getComputedStyle(el);
+    const b = el.getBoundingClientRect();
+    return {
+      left: b.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft),
+      right: b.right - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingRight),
+      top: b.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop),
+      bottom: b.bottom - parseFloat(cs.borderBottomWidth) - parseFloat(cs.paddingBottom),
+    };
+  };
+  // Half a pixel either way: edges land on fractional pixels, and a box laid
+  // flush against the padding edge reads a rounding error past it.
+  const outside = (r, box) => r.left < box.left - 0.5 || r.right > box.right + 0.5
+    || r.top < box.top - 0.5 || r.bottom > box.bottom + 0.5;
+  const named = (k) => (k.id ? `#${k.id}`
+    : `${k.tagName.toLowerCase()}${[...k.classList].map((c) => `.${c}`).join('')}`);
+  const textRects = (el) => {
     const rects = [];
     const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
     for (let n = walk.nextNode(); n; n = walk.nextNode()) {
-      let p = n.parentElement, clipped = false;
-      for (; p && p !== el.parentElement; p = p.parentElement) {
-        const b = p.getBoundingClientRect();
-        if (b.width <= 1 || b.height <= 1) clipped = true;
-      }
-      if (clipped) continue;
+      if (!drawn(n, el.parentElement)) continue;
       const r = document.createRange();
       r.selectNodeContents(n);
       rects.push(...[...r.getClientRects()].filter((x) => x.width > 0));
     }
     return rects;
   };
+  const rootEls = roots.concat(withPanel ? ['.filterpanel'] : [])
+    .map((s) => document.querySelector(s)).filter(shown);
+  // lm5: a word whose own rects sit on two lines was split inside itself.
+  const split = [];
+  for (const root of rootEls) {
+    const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      if (!drawn(n, root.parentElement)) continue;
+      const re = /[\p{L}\p{N}]+/gu;
+      for (let m = re.exec(n.data); m; m = re.exec(n.data)) {
+        const r = document.createRange();
+        r.setStart(n, m.index);
+        r.setEnd(n, m.index + m[0].length);
+        const tops = new Set([...r.getClientRects()].filter((x) => x.width > 0)
+          .map((x) => Math.round(x.top)));
+        if (tops.size > 1) split.push(`${named(n.parentElement)} "${m[0]}"`);
+      }
+    }
+  }
+  // lm8: children out of their row, fields cut short, buttons overrun.
+  const rows = ['.sectools', '.topbar .gfilters', '.topbar .tb-actions', '.tablehead']
+    .concat(withPanel ? ['.filterpanel'] : [])
+    .map((s) => document.querySelector(s)).filter(shown);
+  // A box that scrolls on an axis holds its rows past its edge on purpose -
+  // the More-filters panel is capped in height and scrolls the rest - so only
+  // the axis it does not scroll is held to its edges.
+  const spill = rows.flatMap((row) => {
+    const box = contentBox(row);
+    const scrollsY = /auto|scroll/.test(getComputedStyle(row).overflowY);
+    const held = scrollsY ? { ...box, top: -Infinity, bottom: Infinity } : box;
+    return inFlow(row).filter((k) => outside(k.getBoundingClientRect(), held))
+      .map((k) => `${named(k)} out of ${named(row)}`);
+  });
+  const ctx = document.createElement('canvas').getContext('2d');
+  const cut = [];
+  for (const root of rootEls) {
+    for (const el of root.querySelectorAll('input, select, button, summary, .fchip, .tf-chip')) {
+      if (!shown(el)) continue;
+      const w = el.getBoundingClientRect().width;
+      if (el.tagName === 'SELECT' || (el.tagName === 'INPUT' && el.type === 'date')) {
+        // The width the same control takes unconstrained, holding only what it
+        // shows now: a select's chosen option, a date field's own fields.
+        const twin = el.cloneNode(el.tagName !== 'SELECT');
+        if (el.tagName === 'SELECT' && el.selectedOptions[0]) {
+          twin.append(el.selectedOptions[0].cloneNode(true));
+        }
+        twin.style.cssText = 'position:absolute;visibility:hidden;width:auto;'
+          + 'min-width:0;max-width:none;flex:none';
+        el.parentElement.append(twin);
+        const need = twin.getBoundingClientRect().width;
+        twin.remove();
+        if (need > w + 0.5) cut.push(`${named(el)} ${Math.round(w)}px of ${Math.round(need)}px`);
+      } else if (el.tagName === 'INPUT') {
+        if (el.value || !el.placeholder) continue;
+        const cs = getComputedStyle(el);
+        ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+        const need = ctx.measureText(el.placeholder).width;
+        const room = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+        if (need > room + 0.5) {
+          cut.push(`${named(el)} placeholder ${Math.round(need)}px in ${Math.round(room)}px`);
+        }
+      } else if (el.scrollWidth > el.clientWidth + 1) {
+        cut.push(`${named(el)} ${el.clientWidth}px of ${el.scrollWidth}px`);
+      }
+    }
+  }
   const st = document.querySelector('.sectools');
   const count = document.getElementById('audit-count');
-  const gf = document.querySelector('.topbar .gfilters');
   const top = document.querySelector('.topbar');
-  const countRects = drawnText(count);
-  // The count's text unbroken, measured with its wrapping switched off for the
-  // one synchronous read and put back before anything paints: the sum of the
-  // drawn lines' widths drops the spaces a break swallowed.
-  const was = count.style.whiteSpace;
-  count.style.whiteSpace = 'nowrap';
-  const countWide = drawnText(count).reduce((w, r) => w + r.width, 0);
-  count.style.whiteSpace = was;
-  const cs = getComputedStyle(st);
-  const b = st.getBoundingClientRect();
-  const box = {
-    left: b.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft),
-    right: b.right - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingRight),
-    top: b.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop),
-    bottom: b.bottom - parseFloat(cs.borderBottomWidth) - parseFloat(cs.paddingBottom),
-  };
-  // Half a pixel either way: edges land on fractional pixels, and a box laid
-  // flush against the padding edge reads a rounding error past it.
-  const outside = (r) => r.left < box.left - 0.5 || r.right > box.right + 0.5
-    || r.top < box.top - 0.5 || r.bottom > box.bottom + 0.5;
-  const named = (k) => k.id ? `#${k.id}` : `${k.tagName.toLowerCase()}.${[...k.classList].join('.')}`;
-  const spill = [
-    ...inFlow(st).filter((k) => outside(k.getBoundingClientRect())).map(named),
-    ...(countRects.some(outside) ? ['the count\'s text'] : []),
-  ];
   const sort = document.getElementById('audit-sort');
   const head = document.querySelector('.tablehead');
+  const bar = contentBox(st);
   return {
-    said: count.textContent,
-    countLines: bands(countRects),
-    countWide: Math.round(countWide),
-    room: Math.round(box.right - box.left),
+    countOut: textRects(count).filter((r) => outside(r, bar)).length,
+    room: Math.round(bar.right - bar.left),
+    split,
     spill,
+    cut,
     pageWide: document.scrollingElement.scrollWidth,
     screenWide: window.innerWidth,
-    barLines: bands(inFlow(st).map((k) => k.getBoundingClientRect())),
-    barPx: Math.round(b.height),
+    barPx: Math.round(st.getBoundingClientRect().height),
     sortDrawn: !!sort && !!head && shown(sort) && head.contains(sort),
-    topPins: getComputedStyle(top).position === 'sticky',
     topPx: Math.round(top.getBoundingClientRect().height),
-    rowLines: gf ? bands(inFlow(gf).map((k) => k.getBoundingClientRect())) : null,
   };
-});
+}, [CHROME, !!open]);
 // Scrolled into the table, the hit-test and the layers it is held to, read in
 // one pass so the bound and the measurement come from one layout.
 const stackInTable = () => page.evaluate(() => {
@@ -2987,7 +3075,45 @@ const judgeStack = (id, cell, size, m) => {
   expect(`lm2 ${cell}: the table keeps at least ${STACK_TABLE_SHARE} of the screen (${m.stack}px `
     + `pinned against a ${ceiling}px ceiling = ${STACK_CEILING_SHARE} of ${size.height}px)`,
     m.stack <= ceiling, true);
+  const klass = viewportClass(size, m.phone);
+  const budget = Math.floor(size.height * STACK_BUDGET[klass]);
+  expect(`lm4 ${cell}: the pinned stack is within the ${klass} budget (${m.stack}px against `
+    + `${budget}px = ${STACK_BUDGET[klass]} of ${size.height}px; ${parts})`,
+    m.stack <= budget, true);
+  return klass;
 };
+// The font a run of the page's text is drawn in, asked of the renderer: the
+// family it actually used, not the stack the stylesheet names.
+const drawnFont = async (selector) => {
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    await cdp.send('DOM.enable');
+    await cdp.send('CSS.enable');
+    const { root } = await cdp.send('DOM.getDocument', { depth: 0 });
+    const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector });
+    const { fonts } = await cdp.send('CSS.getPlatformFontsForNode', { nodeId });
+    return fonts.map((f) => f.familyName).join(' + ') || 'no font reported';
+  } catch (e) {
+    return `unknown (${e.message.split('\n')[0]})`;
+  } finally {
+    await cdp.detach();
+  }
+};
+// Which WIDE_FONTS are installed, and how wide a sample line is in each against
+// the page's own font. Installed means the name changes what a canvas draws over
+// two different generic fallbacks, so a missing font is never read as present.
+const wideFontsHere = () => page.evaluate((names) => {
+  const ctx = document.createElement('canvas').getContext('2d');
+  const sample = 'Filter phases & tasks by text - Phase status: In progress';
+  const wide = (family) => { ctx.font = `15px ${family}`; return ctx.measureText(sample).width; };
+  const present = (n) => wide(`"${n}",monospace`) !== wide('monospace')
+    && wide(`"${n}",serif`) !== wide('serif');
+  const own = getComputedStyle(document.querySelector('.sectools .tbl')).fontFamily;
+  return { own: Math.round(wide(own)),
+           fonts: names.map((n) => ({ name: n, present: present(n),
+                                      px: Math.round(wide(`"${n}",monospace`)) })) };
+}, WIDE_FONTS);
+const FONT_PASSES = [];
 {
   const hasPanel = !!(await page.$('.fdetails > summary')) && !!(await page.$('.filterpanel'));
   const viewWas = await page.$eval('#audit-view', (s) => s.value);
@@ -3020,93 +3146,137 @@ const judgeStack = (id, cell, size, m) => {
   if (probe.term) states.push({ name: `View=${seg0.defaultView}, searched for ${probe.term}`, view: seg0.defaultView, term: probe.term });
   else failures.push('FAIL lm the default view draws no phase row, so no cell was read with a search typed');
   let cells = 0, sortCells = 0;
-  for (const s of states) {
-    await page.setViewportSize({ width: 1512, height: 945 });
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await page.selectOption('#audit-view', s.view);
-    if (s.chip) await page.click('[data-lm-chip]');
-    if (s.term) await page.fill('#audit-q', s.term);
-    await page.waitForTimeout(350);
-    for (const size of LAYOUT_SIZES) {
-      const cell = `${size.width}x${size.height} ${s.name}`;
-      await page.setViewportSize(size);
+  const classesRead = new Set();
+  const runPass = async (tag) => {
+    for (const s of states) {
+      await page.setViewportSize({ width: 1512, height: 945 });
       await page.evaluate(() => window.scrollTo(0, 0));
-      await page.waitForTimeout(250);
-      const at = await layoutAtTop();
-      cells += 1;
-      if (at.sortDrawn) sortCells += 1;
-      if (at.countWide <= at.room) {
-        expect(`lm3 ${cell}: the count, whose text fits the bar unbroken (${at.countWide}px of `
-          + `${at.room}px), is one line (${JSON.stringify(at.said)} drawn on ${at.countLines} `
-          + 'lines)', at.countLines, 1);
-      } else {
-        notes.push(`ok   lm3 ${cell}: the count's text is ${at.countWide}px unbroken against a `
-          + `${at.room}px bar, so it wraps its own words (${at.countLines} lines); lm8 holds it `
-          + 'inside the bar');
-      }
-      if (size.laptop) {
-        const most = s.rest ? LAPTOP_BAR_LINES.rest : LAPTOP_BAR_LINES.filtered;
-        expect(`lm4 ${cell}: the filter bar takes at most ${most} line${most > 1 ? 's' : ''} `
-          + `${s.rest ? 'at rest' : 'filtered'} (${at.barLines} lines; ${at.barPx}px)`,
-          at.barLines <= most, true);
-      }
-      expect(`lm8 ${cell}: every control of the filter bar and the count's text lie inside `
-        + `the bar's content box, and the page is no wider than the screen (outside: `
-        + `${at.spill.join(', ') || 'nothing'}; page ${at.pageWide}px on a ${at.screenWide}px `
-        + 'screen)', at.spill.length === 0 && at.pageWide <= at.screenWide, true);
-      if (at.topPins && at.rowLines !== null) {
-        expect(`lm5 ${cell}: while the top bar pins, the header's filter row is one line `
-          + `(${at.rowLines} lines; top bar ${at.topPx}px)`, at.rowLines, 1);
-      }
-      const shut = await stackInTable();
-      if (shut.stack === null) {
-        failures.push(`FAIL lm1 ${cell}: scrolled into the table, no point down the middle of `
-          + 'the screen is the table - the stack over it could not be measured');
-      } else judgeStack('lm1', cell, size, shut);
-      if (!hasPanel) continue;
-      await page.click('.fdetails > summary');
+      await page.selectOption('#audit-view', s.view);
+      if (s.chip) await page.click('[data-lm-chip]');
+      if (s.term) await page.fill('#audit-q', s.term);
       await page.waitForTimeout(350);
-      const open = await page.evaluate(() => {
-        const p = document.querySelector('.filterpanel');
-        const b = p.getBoundingClientRect();
-        const x = b.left + b.width / 2;
-        const painted = [b.top + 4, b.bottom - 4].every((y) => {
-          const hit = document.elementFromPoint(x, y);
-          return Boolean(hit && p.contains(hit));
+      for (const size of LAYOUT_SIZES) {
+        const cell = `${size.width}x${size.height}${tag} ${s.name}`;
+        await page.setViewportSize(size);
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await page.waitForTimeout(250);
+        const at = await readChrome(false);
+        cells += 1;
+        if (at.sortDrawn) sortCells += 1;
+        expect(`lm3 ${cell}: the count's drawn text lies inside its bar (${at.countOut} line(s) `
+          + `outside a ${at.room}px bar; bar ${at.barPx}px)`, at.countOut, 0);
+        expect(`lm5 ${cell}: no control, chip or label of the chrome breaks inside a word `
+          + `(split: ${at.split.join(', ') || 'nothing'})`, at.split.length, 0);
+        expect(`lm8 ${cell}: nothing runs past its box, no control's text is cut off, and the `
+          + `page is no wider than the screen (outside: ${at.spill.join(', ') || 'nothing'}; `
+          + `cut off: ${at.cut.join(', ') || 'nothing'}; page ${at.pageWide}px on a `
+          + `${at.screenWide}px screen; top bar ${at.topPx}px)`,
+          at.spill.length === 0 && at.cut.length === 0 && at.pageWide <= at.screenWide, true);
+        const shut = await stackInTable();
+        if (shut.stack === null) {
+          failures.push(`FAIL lm1 ${cell}: scrolled into the table, no point down the middle of `
+            + 'the screen is the table - the stack over it could not be measured');
+        } else classesRead.add(judgeStack('lm1', cell, size, shut));
+        if (!hasPanel) continue;
+        await page.click('.fdetails > summary');
+        await page.waitForTimeout(350);
+        const open = await page.evaluate(() => {
+          const p = document.querySelector('.filterpanel');
+          const b = p.getBoundingClientRect();
+          const x = b.left + b.width / 2;
+          const painted = [b.top + 4, b.bottom - 4].every((y) => {
+            const hit = document.elementFromPoint(x, y);
+            return Boolean(hit && p.contains(hit));
+          });
+          return { open: document.querySelector('.fdetails').open,
+                   inFlow: getComputedStyle(p).position === 'static',
+                   top: Math.round(b.top), bottom: Math.round(b.bottom),
+                   left: Math.round(b.left), right: Math.round(b.right),
+                   w: innerWidth, h: innerHeight, painted };
         });
-        return { open: document.querySelector('.fdetails').open,
-                 inFlow: getComputedStyle(p).position === 'static',
-                 top: Math.round(b.top), bottom: Math.round(b.bottom),
-                 left: Math.round(b.left), right: Math.round(b.right),
-                 w: innerWidth, h: innerHeight, painted };
-      });
-      expect(`lm6 ${cell}: More filters opened over the table lies within the screen and is `
-        + `painted top and bottom (open ${open.open}, box ${open.left},${open.top}-`
-        + `${open.right},${open.bottom} on ${open.w}x${open.h})`,
-        open.open && open.top >= 0 && open.bottom <= open.h && open.left >= 0
-          && open.right <= open.w && open.painted, true);
-      if (open.open && open.inFlow) {
-        const m = await stackInTable();
-        if (m.stack === null) {
-          failures.push(`FAIL lm7 ${cell}: scrolled into the table with More filters open, no `
-            + 'point down the middle of the screen is the table');
-        } else judgeStack('lm7', cell, size, m);
+        expect(`lm6 ${cell}: More filters opened over the table lies within the screen and is `
+          + `painted top and bottom (open ${open.open}, box ${open.left},${open.top}-`
+          + `${open.right},${open.bottom} on ${open.w}x${open.h})`,
+          open.open && open.top >= 0 && open.bottom <= open.h && open.left >= 0
+            && open.right <= open.w && open.painted, true);
+        const inside = await readChrome(true);
+        expect(`lm5 with More filters open, ${cell}: no control, chip or label of the chrome or `
+          + `the panel breaks inside a word (split: ${inside.split.join(', ') || 'nothing'})`,
+          inside.split.length, 0);
+        expect(`lm8 with More filters open, ${cell}: nothing runs past its box, no control's `
+          + `text is cut off, and the page is no wider than the screen (outside: `
+          + `${inside.spill.join(', ') || 'nothing'}; cut off: ${inside.cut.join(', ') || 'nothing'}; `
+          + `page ${inside.pageWide}px on a ${inside.screenWide}px screen)`,
+          inside.spill.length === 0 && inside.cut.length === 0
+            && inside.pageWide <= inside.screenWide, true);
+        if (open.open && open.inFlow) {
+          const m = await stackInTable();
+          if (m.stack === null) {
+            failures.push(`FAIL lm7 ${cell}: scrolled into the table with More filters open, no `
+              + 'point down the middle of the screen is the table');
+          } else judgeStack('lm7', cell, size, m);
+        }
+        await page.click('.fdetails > summary');
+        await page.waitForTimeout(150);
       }
-      await page.click('.fdetails > summary');
-      await page.waitForTimeout(150);
+      await page.setViewportSize({ width: 1512, height: 945 });
+      if (s.chip) await page.click('[data-lm-chip]');
+      if (s.term) await page.fill('#audit-q', '');
+      await page.waitForTimeout(300);
     }
-    await page.setViewportSize({ width: 1512, height: 945 });
-    if (s.chip) await page.click('[data-lm-chip]');
-    if (s.term) await page.fill('#audit-q', '');
-    await page.waitForTimeout(300);
+  };
+  // Pass one, in the page's own font.
+  await page.setViewportSize({ width: 1512, height: 945 });
+  const ownFont = await drawnFont('.sectools .tbl');
+  FONT_PASSES.push(`page's own font (${ownFont})`);
+  notes.push(`ok   (layout matrix, first pass: the page's own font, drawn in ${ownFont})`);
+  await runPass('');
+  const firstCells = cells;
+  // Pass two, in the first installed wide font - when there is one wider than
+  // the page's own, which is the only thing that pass is for.
+  const here = await wideFontsHere();
+  const said = here.fonts.map((f) => (f.present ? `${f.name} ${f.px}px` : `${f.name} not installed`))
+    .join(', ');
+  const installed = here.fonts.filter((f) => f.present);
+  const wide = installed.find((f) => f.px > here.own);
+  if (!installed.length) {
+    FONT_PASSES.push(`wide-font pass NOT RUN - none of ${WIDE_FONTS.join(', ')} is installed`);
+    notes.push(`ok   (layout matrix, wide-font pass NOT RUN: none of ${WIDE_FONTS.join(', ')} `
+      + 'is installed, so the layout was read in one font only)');
+  } else if (!wide) {
+    FONT_PASSES.push('wide-font pass NOT RUN - no installed candidate is wider than the page\'s '
+      + 'own font');
+    notes.push(`ok   (layout matrix, wide-font pass NOT RUN: no installed candidate draws a `
+      + `sample line wider than the ${here.own}px it takes in the page's own font, so a second `
+      + `pass would repeat the first; candidates: ${said})`);
+  } else {
+    const style = await page.addStyleTag({ content: ':root,*,*::before,*::after'
+      + `{font-family:"${wide.name}",sans-serif!important}` });
+    await page.waitForTimeout(200);
+    const wideDrawn = await drawnFont('.sectools .tbl');
+    FONT_PASSES.push(`wide font ${wide.name} (${wideDrawn})`);
+    notes.push(`ok   (layout matrix, wide-font pass: ${wide.name}, drawn in ${wideDrawn}; a `
+      + `sample line is ${wide.px}px in it against ${here.own}px in the page's own font; `
+      + `candidates: ${said})`);
+    expect(`lm the wide-font pass draws the page in the font it names (asked for ${wide.name}, `
+      + `drawn in ${wideDrawn})`, wideDrawn.split(' + ')[0], wide.name);
+    await runPass(` [wide font: ${wide.name}]`);
+    await style.evaluate((n) => n.remove());
+    await page.waitForTimeout(200);
   }
   notes.push(`ok   (the layout matrix read ${cells} cells: ${LAYOUT_SIZES.length} sizes by `
-    + `${states.length} states)`);
+    + `${states.length} states, ${cells === firstCells ? 'in one font' : 'in two fonts'})`);
+  for (const k of Object.keys(STACK_BUDGET)) {
+    if (!classesRead.has(k)) {
+      failures.push(`FAIL lm4 no size in the layout list is a ${k} by viewportClass(), so the `
+        + `${k} budget (${STACK_BUDGET[k]} of the screen) was never asked`);
+    }
+  }
   // Whether the Sort select was drawn in the phases table's head in every cell
   // the matrix measured. The select is drawn only for a plan that pins a phase,
   // and the rows' execution ranks are the other half of that same plan fact,
   // emitted on their own: ranks with no select drawn is a pinned plan whose
-  // ordering control is missing, or has gone back into the bar lm4 measures.
+  // ordering control is missing, or has gone back into the pinned filter bar.
   const ranked = await page.$$eval('table.phases tr.phase[data-porder]', (rs) => rs.length);
   if (ranked > 0 && sortCells < cells) {
     failures.push(`FAIL lm the plan pins a phase (${ranked} rows carry an execution rank) but `
@@ -4409,8 +4579,11 @@ if (RECORDING) {
   process.exit(0);
 }
 
+// The fonts the layout matrix read the page in, on the summary line itself: a
+// pass that could not run is said where the verdict is read, not only in a note.
 console.log(
-  failures.length
+  (failures.length
     ? `\nREPORT IS INERT: ${failures.length} interaction(s) did not work in ${file}`
-    : `\nreport is interactive: ${notes.length} checks passed in ${file}`);
+    : `\nreport is interactive: ${notes.length} checks passed in ${file}`)
+  + `\nlayout matrix fonts: ${FONT_PASSES.join('; ') || 'the matrix did not run'}`);
 process.exit(failures.length ? 1 : 0);

@@ -1,0 +1,159 @@
+{
+  "id": "P164",
+  "title": "The report's layout holds under any runner font",
+  "status": "in_progress",
+  "description": "Release CI run 43991712323 on a936cc11 failed the report layout matrix on the runner's fonts (lm5 834x1194 on acme and demo-large, lm4 1024x768 on demo-large) while macOS was green. One task fixes the class.",
+  "desiredOutcome": "The layout matrix asserts only what the page controls (no overflow, nothing clipped, sticky stack within a stated budget per viewport class, no wrap inside a word, counter inside its bar); toolbar and header wrapping is designed with headroom; a wide-font pass runs by default locally; release CI's browser (report) job is green on the landed SHA.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "a936cc1137d2fb6e3cb6a2ceb02ca95e5c925382",
+  "branch": "audit/p164-the-report-s-layout-holds-unde",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": [
+      {
+        "id": "P164-R1",
+        "severity": "low",
+        "file": "tools/check-report-interactive.mjs:2843-2873",
+        "issue": "STACK_BUDGET's shares (phone 0.45, tablet 0.3, laptop 0.4, desktop 0.25) are stated once and the class is derived from the size, as asked, but nothing beside the constant says where any share comes from. The comment gives an intent ('a laptop or tablet may wrap the filter bar ... onto a second row'), and a tablet getting a smaller share than a laptop is left unexplained. Measured in this review (new renders, both fonts), the margin at the tightest cell of each class is: phone 27px (844x390, 148/175), laptop 37px (1024x768 demo-large, 270/307), tablet 52px (834x1194, 306/358), desktop 56px (1920x1080 Verdana demo-large, 214/270). That is roughly one control row everywhere. So the budget was not tuned to the pixel, but the headroom is something the reader has to re-measure, not something the code states.",
+        "resolution": "State the basis beside STACK_BUDGET as a rule the shares follow, e.g. the stack a class is designed to draw in the wide font plus one bar row, and say which cell is each class's tightest. Or derive each share from that rule so the numbers are not free constants."
+      },
+      {
+        "id": "P164-R2",
+        "severity": "low",
+        "file": "plugins/audit/scripts/report/_report_html.py:1482-1484",
+        "issue": "The docstring of _global_filter_row, the function this diff edits, still says 'this row stays one line'. The diff makes the same row wrap onto rows by design (.gfrange, shell.css's new comment: 'Where its controls do not fit one row they wrap onto rows with a gap'), so the docstring now claims the opposite of what the code does.",
+        "resolution": "Reword it to say the row wraps onto rows with a gap, with the date range wrapping as one item, and that its cost is held by the pinned-stack budget."
+      },
+      {
+        "id": "P164-R3",
+        "severity": "low",
+        "file": "tests/test_render_report.py:1151-1154",
+        "issue": "The c5b comment still says the count 'is one line of text at every size and in every state - is the browser gate's (... lm3)'. lm3 now holds the count's drawn text inside its bar and explicitly allows it to wrap. The executor flagged this in its claims and left it, although the file is in the task's scope.",
+        "resolution": "Change the parenthesis to what lm3 now asserts: the count's drawn text lies inside its bar at every size, state and font."
+      }
+    ],
+    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 0 with a recorded fix commit]"
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P164.1",
+      "title": "The report's layout holds under any runner font: the matrix asserts what the page controls, wrapping is designed with headroom, and a wide-font pass runs locally",
+      "status": "in_progress",
+      "description": "The layout matrix in tools/check-report-interactive.mjs is green on macOS and red on the release CI runner (run 43991712323, head a936cc11): lm5 at 834x1194 \"header's filter row is one line\" fails on acme and demo-large in every View/state, and lm4 at 1024x768 \"filter bar at most 1 line at rest\" fails on demo-large. The page fits with no headroom at one font's width; a line count depends on font metrics the page does not ship. Fix the CLASS, nothing per pixel:\n\n1. The contract measures what the page controls. The matrix stops asserting \"one line\" anywhere. It asserts, at every size, state and fixture: (a) no horizontal overflow and nothing clipped; (b) the sticky stack's height stays within a stated budget per viewport class - the budget stated ONCE as a named constant beside the matrix (phone / tablet / laptop / desktop classes, derived from the viewport list, not per size); (c) no control or chip wraps inside a word; (d) the counter stays inside its bar. Remove the one-line assertions and say in the matrix's comment why a line count is not a contract.\n2. Wrapping is designed, not accidental. Where the toolbar or the header filter row can wrap, the CSS allows it as rows with a gap (flex-wrap + row-gap from tokens), and the breakpoints / container queries that collapse controls carry headroom - choose thresholds that hold with a font measurably wider than the one used here. The design must not sit at the edge of one font's width. Follow the writing-css and refactoring-the-assembled-ui skills.\n3. Locally the gate stresses the font. The matrix runs a SECOND pass, by default (no flag needed, so the task gate gets it), with an injected font override (a style added via page.addStyleTag / addInitScript setting font-family on :root and every element to a font wider than any runner default and present on macOS - Verdana; fall back to the next wide font present and SAY which font each pass used in the output; if no wide font is installed, the pass reports that it could not run, it never passes silently). Every lm* case in the wide pass carries a \"wide font\" label so a failure names its pass. A layout passing the wide pass passes the runner.\n4. Red-first, required, in your report: the NEW checker run over the a936cc11 renders (git show a936cc11:examples/acme-store/acme-store-audit.html and a936cc11:docs/demo-large.html into a temp dir) must FAIL in the wide pass at lm5 834x1194 and at lm4 1024x768 on demo-large, as CI did; and the same checker must PASS over your new renders. Paste both outcomes (the failing case lines and the final summary lines).\n\nRefresh every rendered follower (examples/report.sh, which also writes docs/index.html; docs/demo-large.html; node tools/capture-screenshots.mjs) so tests/test__refs.py sc1/sc2 and check-rendered-artifacts ra5/ra5b stay green. No register ids (F/P/BUG/R) in comments.",
+      "files": [
+        "plugins/audit/scripts/ui/report-css/tables.css",
+        "plugins/audit/scripts/ui/report-css/controls.css",
+        "plugins/audit/scripts/ui/report-css/shell.css",
+        "plugins/audit/scripts/ui/report-css/README.md",
+        "plugins/audit/scripts/report/_report_page.py",
+        "plugins/audit/scripts/report/_report_html.py",
+        "tools/check-report-interactive.mjs",
+        "tools/capture-screenshots.mjs",
+        "tests/test_render_report.py",
+        "tests/test__report_html.py",
+        "tests/test__report_page.py",
+        "examples",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots",
+        "CONTRIBUTING.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [
+          "plugins/audit/scripts/ui/report-css/controls.css: #audit-q interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .btn interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .btn-primary interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .fchip interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .fdetails>summary interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .frow input[type=date] interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .gfilters input[type=date] interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .gfilters select interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .tf-chip interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/shell.css: .snav a interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/tables.css: .dtoggle interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/tables.css: .shacopy interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/tables.css: tr interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_render_report.py tests/test__report_html.py tests/test__report_page.py tests/test__refs.py",
+          "sh -c 'W=$(mktemp -d) && rc=0 && for f in examples/acme-store/acme-store-audit.html docs/demo-large.html; do node tools/check-report-interactive.mjs \"$f\" || rc=1; done && python3 tools/plan-window.py docs/audit/audit-plan.json \"$W/win\" && python3 plugins/audit/scripts/report/render-report.py \"$W/win/docs/audit/audit-plan.json\" --out-dir \"$W/lp\" --format html && node tools/check-report-interactive.mjs \"$W\"/lp/*.html || rc=1; rm -rf \"$W\"; exit $rc'"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-17T01:15:04Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-17T01:14:58Z",
+          "reader": "PLUGIN-BUILD-GUIDE.md",
+          "reads": "plugins/audit/scripts/report/_report_page.py",
+          "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/report/_report_page.py - a section headed by its path"
+        },
+        {
+          "at": "2026-11-17T01:14:59Z",
+          "text": "reads rendered artifacts for machine paths; this task changes layout CSS and the checker, not what paths a render carries",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-17T01:15:00Z",
+          "text": "names check-report-interactive.mjs as a step; the task keeps its command line and exit contract",
+          "waives": "tools/verify.sh"
+        },
+        {
+          "at": "2026-11-17T01:15:01Z",
+          "text": "reads the report modules' import layers; no module is added or moved",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-17T01:15:02Z",
+          "text": "runs the suites; no suite is added or renamed",
+          "waives": "tools/sweep-selftests.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T03:02:11Z.a6a913",
+        "status": "passed",
+        "at": "2026-11-17T03:02:11Z"
+      }
+    }
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "988f3478-fc74-4a1e-a62b-7522b404c792",
+    "branch": "audit/p164-the-report-s-layout-holds-unde",
+    "at": "2026-11-17T01:15:04Z"
+  },
+  "startedAt": "2026-11-17T01:15:04Z"
+}

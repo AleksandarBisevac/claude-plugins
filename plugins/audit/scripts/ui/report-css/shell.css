@@ -74,9 +74,19 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
    --topbar-h, print cost is zero (the whole .topbar is dropped from paper by a
    pinned rule), and on a phone the row wraps under the title like any flex
    line - and the bar stops being sticky there (forced-colors.css). flex-basis:100% is what makes it a row of the bar rather than one more
-   item competing with the actions for the first line. */
-.gfilters{flex-basis:100%;display:flex;align-items:center;gap:.3rem .5rem;
+   item competing with the actions for the first line.
+   Where its controls do not fit one row they wrap onto rows with a gap, and the
+   date range wraps as ONE item (.gfrange): its scope names the pair, so the
+   pair, its scope and its All-time button move to a new row together rather
+   than leaving the scope stranded under the controls it describes. Below the
+   width of the range itself, on a phone, the range wraps inside, with the same
+   gap. How many rows that takes depends on the font the machine draws the page
+   in, which the page does not ship; what it costs the reader is the pinned
+   stack's height, and tools/check-report-interactive.mjs holds that to a
+   budget per viewport class (lm4) rather than counting rows. */
+.gfilters{flex-basis:100%;display:flex;align-items:center;gap:var(--sp-1);
   flex-wrap:wrap;padding-top:.45rem;border-top:1px solid var(--border)}
+.gfrange{display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-1)}
 .gfilters .gf{display:inline-flex;align-items:center;gap:.3rem}
 .gfilters select,.gfilters input[type=date]{font:inherit;font-size:.76rem;
   padding:.28rem .4rem;color:var(--text);background:var(--bg);
@@ -85,20 +95,23 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
 /* The scope beside a label: which section the control narrows. Part of the
    label, quieter than it, so the control's name still reads first. */
 .gfilters .gfscope{color:var(--muted);font-size:var(--t-label);font-weight:400}
-/* Between the tablet breakpoint and a small laptop the bar is still pinned and
-   the row is a line short of its labels: at an iPad's 834px the scopes pushed
-   the date range onto a second line, and the pinned bar from 122px to 160px.
-   So there each scope sits UNDER its label rather than beside it, in two short
-   lines inside the height the controls already set; it is still drawn and still
-   the first words of each control's accessible name. The selects give up the
-   width an author's address or a long area name would take, which the scopes
-   alone left a few pixels short of on the example. Above 64rem the row has
-   the room, and at 52rem and below the bar is not pinned. lm5 in
-   tools/check-report-interactive.mjs holds the pinned row to one line. */
-@media (52rem < width <= 64rem){
+/* Where the bar is pinned but the row is short of room for its labels, each
+   scope sits UNDER its label rather than beside it, in two short lines inside
+   the height the controls already set; it is still drawn and still the first
+   words of each control's accessible name. This used to switch off at 64rem,
+   exactly where the row fitted on one line in the font it was drawn in: in a
+   wider font the row wrapped above that width with the scopes still beside
+   their labels. The bound is 70rem now because the row's one-line width, read
+   in Verdana (measured 2026-11-17: 916px to 924px on the two committed
+   example reports, against 961px of row at 64rem), is more than an eighth
+   short of the row a 70rem screen leaves, so the scopes go back beside their
+   labels only where that wider font still fits them with room to spare. The selects keep the
+   width their option takes: narrowed, they cut off a long author's address.
+   At 52rem and below the bar is not pinned, and the scopes stay beside their
+   labels on the rows a phone wraps them onto. */
+@media (52rem < width < 70rem){
   .gfilters .gf>.tbl{display:inline-flex;flex-direction:column;line-height:1.1}
-  .gfilters>.gfscope{max-width:6em;line-height:1.1}
-  .gfilters select{max-width:9rem}
+  .gfrange>.gfscope{max-width:6em;line-height:1.1}
 }
 .gfilters .btn{font-size:.72rem;padding:.3rem .55rem}
 .shell{display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr);gap:var(--shell-gap);

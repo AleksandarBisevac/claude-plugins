@@ -2,7 +2,10 @@
 /* The toolbar moved into the top bar: these are global actions (search the whole
    plan, filter every phase, print, download, theme) and they were scrolling away
    from the reader halfway down a long report. */
-.toolbar{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:0}
+/* Its items wrap onto rows with the same gap between rows as between items, so
+   a bar that runs out of width - in a wider font than this machine's, or with a
+   filter's Clear button showing - grows a designed row rather than an accident. */
+.toolbar{display:flex;gap:var(--sp-1);align-items:center;flex-wrap:wrap;margin:0}
 /* Section-scoped controls sit on the thing they act on, sticky under the top bar
    so they stay reachable while you scroll the table they filter — and stop
    existing once you have scrolled past it. */
@@ -28,8 +31,9 @@
    unbroken there it ran out of the bar's card and gave the page a sideways
    scroll. The view's name is not drawn (the .vh below), which is what keeps the
    text short. tools/check-report-interactive.mjs holds this at every size and
-   state: lm3 the count one line wherever its text fits the bar, lm4 the bar's
-   lines at the laptop sizes, lm8 every control and the count inside the bar. */
+   state, in the page's own font and in a wider one: lm3 the count's drawn text
+   inside the bar, lm4 the pinned stack within its viewport class's budget, lm8
+   every control inside the bar and none of their text cut off. */
 #audit-count{flex:0 1 auto}
 /* Said to a screen reader, drawn to nobody: the count's view name, which the
    View select beside it already shows. The panel's base-controls.css carries
@@ -39,8 +43,14 @@
   overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 /* The search box gives way first: a wrapping flex line is filled by each item's
    BASIS before anything shrinks, so a 15rem basis pushed the rest of the bar's
-   controls onto a line of their own at a laptop width. */
-#audit-q{flex:1 1 9rem;min-width:8rem;max-width:15rem;padding:.5rem .75rem;font:inherit;color:var(--text);
+   controls onto a line of their own at a laptop width. It gives way no further
+   than its placeholder: the floor is counted in `ch`, the width of the field's
+   own digit, so it widens with whatever font the machine draws the field in -
+   a floor in rem cut the old, longer placeholder off in a font wider than the
+   one it was sized on. The placeholder has fewer glyphs than the count, and a
+   text glyph is on average narrower than a digit, which is the headroom; the
+   field's accessible name carries the full sentence. */
+#audit-q{flex:1 1 9rem;min-width:calc(16ch + 2 * var(--sp-2));max-width:15rem;padding:.5rem .75rem;font:inherit;color:var(--text);
   background:var(--bg);border:1px solid var(--border);border-radius:var(--pill);
   transition:border-color var(--dur),box-shadow var(--dur)}
 #audit-q::placeholder{color:var(--muted)}

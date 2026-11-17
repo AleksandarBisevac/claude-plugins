@@ -700,7 +700,7 @@ def _table_tools(manifest, summary, evidence=None):
     return (
         '<div class="toolbar sectools" role="search" aria-label="Filter the phases table">'
         '<input id="audit-q" type="search" aria-label="Filter phases and tasks by text" '
-        'placeholder="Filter phases &amp; tasks by text…">'
+        'placeholder="Filter by text…">'
         '<span class="tbl">Phase status:</span><span id="audit-phase-status" '
         'role="group" aria-label="Phase status">%s</span>'
         '%s'

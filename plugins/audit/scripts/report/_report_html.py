@@ -1526,7 +1526,10 @@ def _global_filter_row(authors, tags, dmin, dmax, owners=None):
         span = ' min="%s" max="%s"' % (e(dmin), e(dmax))
         # Worded as the More-filters pair is: one range, one wording. The scope
         # follows the pair rather than either half, because it is the range's.
+        # One item of the row, so the pair, its scope and the button that
+        # clears it wrap to a new row together (shell.css, .gfrange).
         bits.append(
+            '<span class="gfrange">'
             '<label class="gf"><span class="tbl">Worked from</span>'
             '<input type="date" id="audit-gfrom" aria-label="Worked from (phases '
             '&amp; usage): start of the date range scoping the phases table and '
@@ -1537,6 +1540,7 @@ def _global_filter_row(authors, tags, dmin, dmax, owners=None):
             'charts"%s></label>%s'
             '<button type="button" class="btn" id="audit-gclear" hidden '
             'title="Clear the date range - back to all time">All time</button>'
+            '</span>'
             % (span, span, _scope("phases &amp; usage")))
     if not bits:
         return ""
