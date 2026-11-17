@@ -21407,6 +21407,87 @@ def _start_head_cases(check):
           and seen[0] == (rows, task))
 
 
+# --- a project reached through a symlink ----------------------------------------
+def _symlinked_project_cases(check):
+    """`start` sets the plan's own directory aside on the same resolution as
+    the project it subtracts it from.
+
+    A manifest named relative to the working directory comes back resolved -
+    the working directory is the kernel's spelling, every link followed - while
+    `--project-dir` keeps the link as typed. Subtracted across the two
+    spellings, the plan directory climbed out of the project, nothing was set
+    aside, and the plan's own evidence was demanded as a reader of the task's
+    file. The link is made here under `mkdtemp()` rather than borrowed from a
+    symlinked system temp root, so every platform that can make one asks the
+    same question; one that cannot says so as a skip.
+    """
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, _run_on_stdin, base_manifest, mk, _mk_empty, task_in, _pin, _unpin,
+     _PD_SHA, _pd_fixture, _pd_repo, git) = _at_kit(tmp)
+    plan_reader = "docs/audit/evidence/run.md"
+    outside_reader = "docs/guide.md"
+    sources = {
+        "src/a.py": "def alpha():\n    return 1\n",
+        plan_reader: "# Run\n\n## `src/a.py`\n\nWhat the run touched.\n",
+        outside_reader: "# Guide\n\n## `src/a.py`\n\nWhat alpha answers.\n",
+    }
+    try:
+        fx = base_manifest()
+        fx["phases"][1]["tasks"][1] = {
+            "id": "P2.3", "title": "change src/a.py", "status": "pending",
+            "description": "", "files": ["src/a.py"],
+            "tests": {"mode": "gate-only", "add": [], "expectRedFirst": False,
+                      "gate": ["test"]},
+            "model": "sonnet", "skills": [], "risk": "low", "blockedBy": [],
+            "dependsOn": [], "attempts": 0, "maxAttempts": 3, "commit": None,
+            "outcome": {"technical": None, "descriptive": None},
+            "startedAt": None, "completedAt": None, "verifiedBy": []}
+        fx["fileIndex"]["src/a.py"] = ["P2.3"]
+        proj, mp = mk("sym-real", fx, git=True)
+        for rel, text in sources.items():
+            full = os.path.join(proj, *rel.split("/"))
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w", encoding="utf-8") as fh:
+                fh.write(text)
+        git(proj, "add", "-A")
+        git(proj, "commit", "-qm", "seed")
+
+        link = os.path.join(tmp, "sym-link")
+        try:
+            os.symlink(proj, link, target_is_directory=True)
+            refused = None
+        except (OSError, NotImplementedError, AttributeError) as exc:
+            refused = "%s: %s" % (type(exc).__name__, exc)
+        if refused is not None:
+            _harness.skip(check, "sym1", "os.symlink is refused here (%s)"
+                          % (refused,), True)
+            return
+        _pin(link, None)
+        try:
+            (code, txt), err = _stderr_of(
+                run, ["start", "P2.3", "docs/audit/audit-plan.json",
+                      "--project-dir", link])
+        finally:
+            _unpin()
+        said = txt + "\n" + err
+        status = (task_in(mp, "P2.3") or {}).get("status")
+        check("sym1 a project spelled through a symlink, its manifest named "
+              "relative to a working directory the kernel reports resolved: "
+              "the plan's own evidence is not demanded as a reader - asked of a "
+              "refusal that did search for readers, since the one outside the "
+              "plan is named: %r" % ((code, status, said[-400:]),),
+              outside_reader in said and plan_reader not in said)
+        # The mutation this one is for: a plan directory set aside so widely
+        # that a reader outside it goes unasked too. The task must still be
+        # refused, naming the reader outside the plan.
+        check("sym2 SECOND-DIRECTION CASE: ...and a reader outside the plan "
+              "directory is still demanded, so the task stays pending: %r"
+              % ((code, status, said[-400:]),),
+              code != 0 and status == "pending" and outside_reader in said)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 # --- which declared paths a files-derived gate's slot takes ----------------------
 # The kind of each path the matrix declares, written out here rather than read
 # from the module: the expectation is the rule as the task states it - a suite
@@ -23398,6 +23479,7 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("rf-block", "_retired_flag_cases"),
           ("gx-block", "_gate_entry_cases"),
           ("sh-block", "_start_head_cases"),
+          ("sym-block", "_symlinked_project_cases"),
           ("ocg-block", "_tdd_gate_clear_cases"),
           ("dd-block", "_dependant_dispatch_cases"),
           ("gk-block", "_gate_keep_cases"),

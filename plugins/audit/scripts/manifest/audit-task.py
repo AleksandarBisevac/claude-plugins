@@ -6427,6 +6427,21 @@ def _named_edits(node, paths):
     return named
 
 
+def _project_rel(path, project):
+    """`path` relative to `project`, "/"-spelled, with the directories on both
+    sides resolved first.
+
+    The two sides reach here spelled by different hands: a manifest named
+    relative to the working directory comes back through the kernel's spelling,
+    every link followed, while `--project-dir` keeps a link as typed. Subtracted
+    as strings, the plan's own directory climbed out of the project, nothing was
+    set aside, and every file under it was demanded as a reader. The last
+    component is left as it is, so a tracked link is named, not its target."""
+    head, tail = os.path.split(os.path.abspath(path))
+    return _output.posix_rel(os.path.join(os.path.realpath(head), tail),
+                             os.path.realpath(project))
+
+
 def _owed_now(project, config, mpath, node):
     """`(found, declared, waived, git_root)` - `_impact.owed` over the task as it
     stands, bounded by what the task edits; `found` is None outside a git work
@@ -6466,7 +6481,7 @@ def _owed_now(project, config, mpath, node):
                if s and s not in named]
     removed = [s for s in (spec_of(p) for p in _removed_paths(node)) if s]
     waived = [s for s in (spec_of(p) for p in _waived_paths(node)) if s]
-    plan_dir = _output.posix_rel(os.path.dirname(os.path.abspath(mpath)), project)
+    plan_dir = _project_rel(os.path.dirname(os.path.abspath(mpath)), project)
     exclude = [s for s in [spec_of(plan_dir)] if s and s not in (".", "./")]
     found = _impact.owed(git_root, declared, exclude=exclude, regions=regions,
                          readers=readers, removed=removed)
@@ -6487,8 +6502,8 @@ def _unanswered_readers(project, config, mpath, node):
     # Readers are found relative to the checkout's top and `--files` is read
     # relative to the project, so the remedy spells each the way `scope` reads it.
     for row in unanswered:
-        rel = _output.posix_rel(os.path.join(git_root, *row["file"].split("/")),
-                                project)
+        rel = _project_rel(os.path.join(git_root, *row["file"].split("/")),
+                           project)
         row["entry"] = row["file"] if rel.startswith("..") else rel
     return unanswered, found["errors"]
 

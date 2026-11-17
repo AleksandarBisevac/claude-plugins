@@ -1531,7 +1531,7 @@ def _cases(check):
           _lf_probe.returncode == 0
           and _lf_loaded == ["_output", "usage_ledger"])
 
-    # --- rx:the re-export this module exists to keep serving ---------------
+    # --- rx: the re-export this module exists to keep serving --------------
     # Nothing imports `usage_ledger` by name: every consumer loads it BY PATH and
     # reads attributes off the module object. A name that quietly stopped being
     # served would therefore fail at a call site in another file, at runtime, in
