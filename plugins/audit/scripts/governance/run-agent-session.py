@@ -33,7 +33,8 @@ WHAT THE ARGV CARRIES, AND WHY EACH ONE:
     tree finds a skill (`_skill_places.resolve_skill`), and ONE file under the
     scratch, passed as `--append-system-prompt-file`, carries each skill's name,
     its frontmatter description and its `## Checklist` section when the file has
-    one (`skill_disclosure`) - never the rest of the body. Text in the system
+    one (`skill_disclosure`) - never the rest of the body - behind a preamble
+    (`SKILLS_PREAMBLE`) saying the task prompt outranks a skill. Text in the system
     prompt is sent with every call the session makes, so a body appended whole
     is paid for on every turn whether the task needs it or not; the body reaches
     the session when the session calls the Skill tool for it. `claude --help`
@@ -364,10 +365,20 @@ def skill_disclosure(skill):
     return "\n\n".join(parts)
 
 
-# What the appended file opens with, ahead of the first skill.
+# What the appended file opens with, ahead of the first skill. Its last sentence
+# is the precedence rule: the headless writer is handed no agent body and a prompt
+# that is plain's own text with no rules (`compose_writer_prompt` in
+# audit-lookup.py), so a skill's checklist that says otherwise than the prompt (to
+# commit, to run the whole suite, to stop and ask) is settled here or by nothing
+# the plugin hands it; the reviewer is handed this same text beside its agent
+# body. It lives in this text alone because the file is written only when a skill
+# is named - a session naming none keeps the prompt it was measured on.
 SKILLS_PREAMBLE = ("The skills declared for this task, each disclosed by its name, its "
                    "description and its checklist when it has one. The Skill tool "
-                   "loads a skill's full instructions.\n\n")
+                   "loads a skill's full instructions. The skills are guidance for how "
+                   "to do the task, and the task prompt outranks them: where a skill "
+                   "conflicts with the prompt, follow the prompt and name the conflict "
+                   "in your closing answer.\n\n")
 
 
 def skills_prompt(loaded):

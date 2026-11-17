@@ -1,0 +1,57 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test__refs.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-17T12:23:21Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test__refs.py` in a throwaway tree at HEAD exited 1 with 2 of 83 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ras69 (house FAIL), ras69b (house FAIL): SELFTEST FAILED: 81/83 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "plugins/audit/scripts/governance/run-agent-session.py: SKILLS_PREAMBLE gains one closing sentence - 'The skills are guidance for how to do the task, and the task prompt outranks them: where a skill conflicts with the prompt, follow the prompt and name the conflict in your closing answer.' - with a comment above it saying why it lives there (the headless writer is handed no agent body and a prompt with no rules, compose_writer_prompt in audit-lookup.py; the reviewer is handed the same appended text beside its agent body) and why only there (the file is written only when a skill is named); the module docstring's --skill bullet names the preamble. No code path changed: skills_prompt, the `if loaded:` guard on the skills-file write and session_argv are untouched. tests/test_run_agent_session.py: new _precedence_cases (called from _skill_cases) with ras69 (writer naming a skill: the anchor 'follow the prompt' and 'closing answer' each once in the appended text, the sentence holding them also holds 'conflict', sits ahead of the first <skill> element and is SKILLS_PREAMBLE's own, stdin == the given prompt), ras69b (the same for the reviewer), ras70 (writer naming no skill: no --append-system-prompt-file, no skills_path, no skills_file, stdin bytes equal to the given prompt's, the anchor in neither argv nor stdin). PLUGIN-BUILD-GUIDE.md run-agent-session section: the preamble now says the prompt wins with the conflict named in the closing answer, why, that the sentence reaches a session through the appended file alone (ras69/ras69b), and that a session naming no skill is handed its measured prompt byte for byte and no file (ras70). RED FIRST (tdd, before reading the implementation): `python3 tests/test_run_agent_session.py --selftest` on unchanged code printed FAIL ras69, FAIL ras69b, PASS ras70, 'SELFTEST FAILED: 81/83 cases passed'; after the change 'ALL PASS: 83/83 cases passed', exit 0. GATE: `python3 tools/sweep-selftests.py --jobs 4 tests/test_run_agent_session.py tests/test__refs.py` exit 0, '2/2 files ok, 401 cases' (test__refs 318, test_run_agent_session 83). BYTE IDENTITY, measured before and after the change, not read from code: scratch probe sg1.10/baseline.py composes compose_writer_prompt for every task of the live plan (1545 prompts, sha256 each) and runs the script with the stub and no --skill (stdin digest, skills_path, skills_file, argv with paths elided, scratch files); output before the edit and after it compared with cmp: exit 0, identical (no-skill: skills_path None, skills_file None, stdin equal to the given prompt). MUTATION PROBE sg1.10/mutations.py (in a throwaway copy, anchors asserted once, restored byte for byte, __pycache__ purged), exit 0: sentence removed -> ras69, ras69b red (81/83); sentence duplicated -> ras69, ras69b red (81/83); sentence moved from the preamble into the stdin prompt of a no-skill session -> ras69, ras69b, ras70 red (plus ras5, ras13, 78/83); skills file written with no skill named -> ras70, ras38 red (plus ras17, ras58, 79/83); ALLOW twins quiet at 83/83: the unmodified tree, and the neighbouring 'The Skill tool loads...' sentence reworded with the rule kept. FAILURE OUTPUT of the helper's command with the sentence removed (sweep over the copy) carries only the house tallies: 'SELFTEST FAILED: 81/83 cases passed' and the sweep's '1/2 files ok, 318 cases'. ruff check on both .py files: exit 0. WIDE GATE, unrecorded: run-test-gate.py docs/audit/audit-plan.json SG1 --task SG1.10-ukq (no --record) exit 0, '[run-test-gate] GATE GREEN: python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test__refs.py, affected/related: ...'. DEPENDANTS: run-agent-session.py <- tests/test__config_rules.py, tests/test__doctor_policy.py, tests/test_drive_phase.py (import): still correct, no name they use changed and no argv/exit/config behaviour changed; tests/test_run_agent_session.py: changed, the cases above; tools/affected.py (path): still correct, the path is unchanged; PLUGIN-BUILD-GUIDE.md: changed, the section above; plugins/audit/schema/audit-config.schema.json and plugins/audit/scripts/config/_config_rules.py (basename / prose at :96): still correct, they name the script for executor.writerModel and nothing about the appended text; the reviewer session: gets the same sentence through the same file, pinned by ras69b; its agent body (agents/audit-reviewer.md, not edited) already says its rules win over a skill and to name the conflict in intent.note, which this sentence does not contradict (the prompt and the rules both outrank a skill). PLUGIN-BUILD-GUIDE.md <- the eight files reading it by basename and _doctor_hygiene.py's prose mention: no tree line, section heading or enumerated name changed, only prose inside the run-agent-session section; the test__refs pin (sko6, `_between(guide, \"The executor's carries the resolved skills\", \"the description verbatim\")`) reads the audit-lookup.py brief passage, which this edit did NOT touch, and test__refs stays 318/318. tests/test__refs.py: not edited; its dependants unaffected. tests/test_run_agent_session.py <- .github/sweep-costs.json: the new cases add three stub runs; the cost figure was not re-recorded.",
+    "descriptive": "A headless writer or reviewer session handed a skill now reads, once, that the task prompt outranks the skill and that a conflict is named in its closing answer; a session naming no skill is handed exactly what it was before."
+  },
+  "testsAdded": [
+    "ras69/ras69b: the text appended for a writer and for a reviewer naming a skill carries the precedence sentence exactly once, ahead of the first skill, as SKILLS_PREAMBLE's own; ras70: a writer naming no skill gets no appended file and the given prompt byte for byte"
+  ],
+  "casesAdded": [
+    [
+      "ras69",
+      "ras69b",
+      "ras70"
+    ]
+  ],
+  "claims": "claims:\n1 run-agent-session.py SKILLS_PREAMBLE (the sentence) and the unchanged `if loaded:` guard before the skills-file write are what the guide and the comment describe; 'the headless writer is handed no agent body and a prompt with no rules' rests on session_argv adding --agents only with agents_file (reviewer) and compose_writer_prompt's docstring in audit-lookup.py ('no brief path, no rules, no skills, no submit'); an earlier draft said a headless session reads no agent file, which is false for the reviewer (agents/audit-reviewer.md:97) and was rewritten\n2 sentence removed -> ras69, ras69b red (81/83); duplicated -> ras69, ras69b red; moved into the no-skill prompt -> ras70 red; file written for no skill -> ras70, ras38 red; allow twins (unmodified tree, neighbouring sentence reworded) quiet at 83/83; all in sg1.10/mutations.py, restored byte for byte\n3 grep -rn 'SKILLS_PREAMBLE|skills_prompt|Skill tool loads' over tests/ tools/ plugins/ PLUGIN-BUILD-GUIDE.md: hits in run-agent-session.py (constant, its use, docstring) and PLUGIN-BUILD-GUIDE.md:6139 (updated); no other test pins the preamble text\n4 the rule is addressed to a model session: nothing mechanically makes a session follow it; what is enforced is that the sentence is handed to it once (ras69/ras69b) and to no skill-less session (ras70); the guide sentence names those cases\n5 byte identity measured twice, before and after the change, on this tree: baseline.py output identical (cmp exit 0); not a timing property\n6 n/a - no guard\n7 n/a - no number written into prose (the guide names case ids only)",
+  "stamp": "audit-stamp: {\"content\":\"sha256:98fc309c7c3c53bb3853442c1661348cbddf5ebf35877d4fb09f418994c3320f\",\"dirtyDigest\":\"sha256:2aca8ebd8986f2a5f9589dd4290c57b820ea67bef82d866f10ac70e36bfcd6ed\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"50d75a19851861c2\",\"plugins/audit/scripts/governance/run-agent-session.py\":\"ab6582bd9b30f9b0\",\"tests/test_run_agent_session.py\":\"ef4664d17b67fed6\"},\"head\":\"61e04e05\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/governance/run-agent-session.py\",\"tests/test__refs.py\",\"tests/test_run_agent_session.py\"],\"scopeDigest\":\"sha256:8116dc9d0e47cb9f4c0e8feb130d8dbc5537af83314963d263edff44d6a58215\",\"v\":2}",
+  "floorGuard": {
+    "answer": "clean",
+    "basis": "read 2 of the diff's 3 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 1 file(s) not read, having no syntax known here: PLUGIN-BUILD-GUIDE.md; 1 test file(s) not compared for definition-changed, defining no test* function: tests/test_run_agent_session.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "tests/test_run_agent_session.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      }
+    ],
+    "base": {
+      "commit": "61e04e05c92f62b4e1acb647c87af4d494ac3220"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-17T12:23:21Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

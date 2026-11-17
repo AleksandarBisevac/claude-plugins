@@ -1387,7 +1387,8 @@
       "SG1.9",
       "SG1.14-ukq",
       "SG1.15-ukq",
-      "SG1.16-ukq"
+      "SG1.16-ukq",
+      "SG1.17-ukq"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -2032,7 +2033,8 @@
       "SG1.14-ukq",
       "SG1.8",
       "SG1.15-ukq",
-      "SG1.16-ukq"
+      "SG1.16-ukq",
+      "SG1.17-ukq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -10336,7 +10338,8 @@
     ],
     "docs/research/benchmark-results.md": [
       "P101.3",
-      "P101.4-1cb"
+      "P101.4-1cb",
+      "SG1.17-ukq"
     ],
     "docs/README.md": [
       "P101.3",
@@ -10351,13 +10354,15 @@
       "P101.4-1cb",
       "P131.2",
       "SG1.9",
-      "SG1.16-ukq"
+      "SG1.16-ukq",
+      "SG1.17-ukq"
     ],
     "plugins/audit/evals/guard-stop/case.yaml": [
       "P101.3",
       "P101.4-1cb",
       "SG1.9",
-      "SG1.16-ukq"
+      "SG1.16-ukq",
+      "SG1.17-ukq"
     ],
     "plugins/audit/scripts/ui/panel-css/tokens-and-reset.css": [
       "P109.1"
@@ -12723,7 +12728,8 @@
       "SG1.8",
       "SG1.11-ukq",
       "SG1.5",
-      "SG1.14-ukq"
+      "SG1.14-ukq",
+      "SG1.10-ukq"
     ],
     "tests/test__report_html.py": [
       "P131.1",
@@ -13723,7 +13729,8 @@
       "SG1.9"
     ],
     "tests/test_build_shop.py": [
-      "SG1.16-ukq"
+      "SG1.16-ukq",
+      "SG1.17-ukq"
     ]
   },
   "bugs": [

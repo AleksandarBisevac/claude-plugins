@@ -6139,8 +6139,16 @@ level-one or level-two heading outside a fence by `skill_checklist`), each wrapp
 `<skill name="...">` after a preamble saying the Skill tool loads a skill's full instructions, in one
 `<stream name>.skills.md` under the scratch passed as `--append-system-prompt-file`. The rest of
 the body is not appended: system-prompt text goes with every call a session makes, and the body
-reaches the session through its own Skill tool call, as it does in a plain session. The argv
-carries that flag only when a skill was named, and the prompt on stdin is untouched. The
+reaches the session through its own Skill tool call, as it does in a plain session. The preamble
+(`SKILLS_PREAMBLE`) also says which wins when a skill and the task prompt disagree — the prompt,
+with the conflict named in the session's closing answer — because the headless writer is handed
+no agent body and a prompt with no rules (`compose_writer_prompt`), and the reviewer, whose agent
+body carries its own rule of
+the kind, is handed the same file. The sentence reaches a session through that file alone
+(`ras69`, `ras69b`). The argv
+carries that flag only when a skill was named, and the prompt on stdin is untouched, so a session
+naming no skill is handed the prompt it was measured on, byte for byte, and no appended file
+(`ras70`). The
 subagent-definition `skills` field was probed on claude 2.1.307 and the session did not see the
 skill, so the reviewer's `--agents` body is left as it was and its skills ride in the same appended
 file. `--record` adds a `"skills"` key to its line — name, path and the sha256 of the file's bytes —

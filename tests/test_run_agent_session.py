@@ -1094,6 +1094,7 @@ def _skill_cases(check, M, root, bindir, e_io):
 
     _disclosure_cases(check, root, bindir, pinned, project_dir)
     _invoked_cases(check, M, root, bindir, pinned)
+    _precedence_cases(check, M, root, bindir, pinned)
 
     # `claude --help` does not list the flag the skills ride on; the file must say
     # it was probed, when, and on which build, beside the flag.
@@ -1291,6 +1292,57 @@ def _invoked_cases(check, M, root, bindir, pinned):
     check("ras68 THE OVER-FIRE TWIN: a stream holding an event and no Skill call "
           "reads as the empty list: %r" % (M.invoked_skills(calm),),
           M.invoked_skills(calm) == [])
+
+
+# The words that find the precedence rule in the appended text. The headless
+# session reads only its prompt and that text, so the rule has to say there which
+# of the two wins and what the session does about a conflict.
+RULE_ANCHOR = "follow the prompt"
+
+
+def _sentence_with(text, words):
+    """The sentence of `text` holding `words`, split here on a full stop, a
+    question or an exclamation mark followed by whitespace - not through any
+    reader of the script's - or "" when no sentence holds them."""
+    return next((s for s in re.split(r"(?<=[.!?])\s+", text) if words in s), "")
+
+
+def _precedence_cases(check, M, root, bindir, pinned):
+    """Which wins when a skill and the task prompt disagree: the appended text of a
+    session naming a skill says the prompt does, once, ahead of the skills, for the
+    writer and the reviewer alike; a session naming no skill is handed exactly what
+    it was handed before - no file, and the prompt unchanged."""
+    preamble = getattr(M, "SKILLS_PREAMBLE", "")
+    for role, tag in (("writer", "spw"), ("reviewer", "spv")):
+        code, out, err, rec, dirs = _run(root, bindir, role, tag=tag, env_extra=pinned,
+                                         extra=["--skill", "user-only"])
+        held = (rec or {}).get("skills_file") or ""
+        first = held.find("<skill ")
+        head = held[:first] if first >= 0 else ""
+        rule = _sentence_with(head, RULE_ANCHOR)
+        check("ras69%s the text appended for a %s naming a skill says, ahead of the "
+              "first skill and exactly once, that where a skill conflicts with the "
+              "prompt the session follows the prompt and names the conflict in its "
+              "closing answer - and that sentence is SKILLS_PREAMBLE's: count %d, "
+              "sentence %r"
+              % ("" if role == "writer" else "b", role, held.count(RULE_ANCHOR), rule),
+              code == 0 and first >= 0
+              and held.count(RULE_ANCHOR) == 1 and held.count("closing answer") == 1
+              and "conflict" in rule and "closing answer" in rule
+              and bool(rule) and rule in preamble
+              and rec["stdin"] == PROMPT)
+    # The baseline every measured run of a task with no skill was taken on: the
+    # mutation this guards is the rule moved where a skill-less session reads it.
+    code, out, err, rec, dirs = _run(root, bindir, "writer", tag="spn", env_extra=pinned)
+    argv = (rec or {}).get("argv") or []
+    check("ras70 THE OTHER DIRECTION: a session naming no skill is handed no appended "
+          "file and the prompt byte for byte as given, the rule in neither its stdin "
+          "nor its argv: %r" % ((code, argv, err[-200:]),),
+          code == 0 and rec is not None and rec["skills_file"] is None
+          and rec["skills_path"] is None
+          and "--append-system-prompt-file" not in argv
+          and rec["stdin"].encode("utf-8") == PROMPT.encode("utf-8")
+          and not any(RULE_ANCHOR in a for a in argv + [rec["stdin"]]))
 
 
 def _record_lines(path):
