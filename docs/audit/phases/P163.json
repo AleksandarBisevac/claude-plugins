@@ -1,7 +1,7 @@
 {
   "id": "P163",
   "title": "The report's filters clear, count and explain what they show",
-  "status": "in_progress",
+  "status": "done",
   "description": "Diagnosed live (headless Chromium over v3.8.0, de21866c and ab2e9547, acme-store and the dogfood plan; identical on all three, no console error). Root causes: (1) plugins/audit/scripts/ui/report/date-range.js clearAll() resets q, phaseStatus, modelFilter, dates, preset, taskStatus, auFilter, areaFilter but never tevFilter/tevFlag nor their bars, while filters.js refresh() counts both in narrows/anyFilter/fcount and syncHash writes them to the hash and to localStorage audit-view-<title>; exports.js restores them on reopen. Introduced by d073dbcf; third instance of one class (auFilter and areaFilter were each forgotten before; tests/test_render_report.py c3 and d1 pin one field each). Every axis is listed by hand in about seven places across four parts. (2) filters.js showP = matchAll && inView(seg): on a plan with most phases archived the default Active & pending view turns date range, 7/30-day presets, test gate and observed into 0 phases with 'No phase matches these filters' (_report_page.py:758) although e.g. 309 tasks in 25 phases match under View=All; areas.js syncAreaOptions removes header Area options the view cannot show, leaving a select with only 'All areas'; #audit-count says '165 phases' while 5 show and counts cancelled tasks in its denominator while the header excludes them. (3) phone 390x844: sticky header+nav+toolbar cover 465px; More filters panel clipped. (4) Global filters mix scopes invisibly (Author scopes Usage only, Area the table only, dates both). Owner decision for (2): only when nothing is drawn AND matches exist outside the view, the empty state names the count and offers Show all phases (e.g. 'No phase in Active & pending matches - 25 archived phases do · Show all phases'); when results show there is no standing row (the earlier owner decision against a standing 'matches outside this view' notice stands); the counter states its basis ('5 of 165 phases (Active & pending)') and task denominators use the header's basis. Probes from the diagnosis: <outside-repo> and extras.mjs (renders under ../out/<sha>/{acme,dogfood}/).",
   "desiredOutcome": "Clear filters lifts every filter axis, in the page, the hash and storage, and a new axis is cleared, encoded, restored and counted without being listed by hand; when the view hides matches the empty state says how many and offers Show all phases; the counter names its basis; on a 390px phone the filters do not cover the table and More filters is not clipped; every header control names its scope; and the browser gate proves Clear and the empty state on a fixture whose default view hides matches",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "de21866c48c0eb59ac5f336d637ed73797ebd2a2",
   "branch": "audit/p163-the-report-s-filters-clear-cou",
-  "mergedAt": null,
+  "mergedAt": "2026-11-17T00:56:25Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -1762,5 +1762,6 @@
     "runId": "2026-11-17T00:55:06Z.f095ad",
     "status": "passed",
     "at": "2026-11-17T00:55:06Z"
-  }
+  },
+  "mergedHead": "705588b0fdef0cd738562d8329335650b1f83fac"
 }
