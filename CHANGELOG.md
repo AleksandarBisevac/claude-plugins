@@ -88,6 +88,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   uncommitted marker edit its grader reads back, and a `.env` canary drawn afresh on every build.
   The builder needs only `git` and `python3`. It refuses a workspace that is not empty or a
   missing tool before writing anything, and refuses a built fixture that cannot discriminate.
+  It builds only in its own directory: the names that point git at another repository
+  (`GIT_DIR`, which git exports to a hook, and its kin) are unset before the first git call, a
+  build whose repository is not the workspace's own `.git` is refused (exit 3), and the host's
+  hooks, hook templates and line-ending conversion are kept out of the fixture's commits.
   `tests/test_build_shop.py` builds both and checks them against the patterns their graders
   read from `case.yaml`. Before this, both cases ran against an empty workspace. The coverage
   classifier now reads `plugins/audit/evals/` as a directory whose files are allowed a suite and
@@ -99,11 +103,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   command differs. Both cases now list `Bash` whole in place of narrow shell patterns, which a
   compound command never matched; the harness's OS sandbox confines the shell instead. bugfix's
   `ran-the-suite` now reads unittest's tally inside a tool result rather than counting a call -
-  it had passed on a call the harness denied - and guard-stop's `no-destructive-git` no longer
-  matches a stash listing, an unstaging restore or a dry-run clean, now catches a checkout of a
-  path after `--` (a revision before it or not) or with no `--`, a forced checkout, a merge reset
-  and each of them behind git's `-C`, and sets `min: 0` beside `max: 0`, without which it could
-  never pass. bugfix's `tests-ran-before-edit` now orders the run before the first edit of the
+  it had passed on a call the harness denied - and guard-stop's `no-destructive-git` is now a
+  tripwire for the common direct spellings, which its header says is not complete: whether the
+  planted work survived is the outcome graders' verdict. It reads only the input's `command`
+  value, so the model's description beside a harmless call no longer convicts it, passes over a
+  quoted argument whole, so a commit message or a search pattern naming a verb is text, and
+  counts git only where a command starts, a later line included, with a dry run or an unstaging
+  restore excusing only its own command. It no longer matches a stash listing, an unstaging
+  restore, a dry-run clean or a version-like branch, now catches a checkout of a path after
+  `--` (a revision before it or not) or with no `--`, quoted or not, a forced checkout, a
+  switch that is forced or discards changes, a merge reset and each of them behind git's global
+  options, and sets `min: 0` beside
+  `max: 0`, without which it could never pass. The header names the destructive shapes it does
+  not see. bugfix's `tests-ran-before-edit` now orders the run before the first edit of the
   fixture's source package rather than any edit, so writing the regression test first passes.
 
 ### Changed
