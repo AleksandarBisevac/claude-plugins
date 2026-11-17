@@ -4947,7 +4947,8 @@ itself, which nothing knows before it runs, so it is weighed as unmeasured. The 
 `dispatch-gate`, whose `run:` line is the command `gate_args` (or `phase_gate_args`) spells for the
 inline run too, under `WRITER_RULE`, with the reason on the line below it, and marks the launch
 with the subject's ledger rows as they stood. A `next` before a new row exists is `wait-gate`,
-printing the same `run:` line; a new `cancelled` row - a gate stopped mid-run - launches it again;
+printing the same `run:` line and the moment the dispatch was handed out - which is all the drive
+saw, since it never sees the gate process start; a new `cancelled` row - a gate stopped mid-run - launches it again;
 a `passed` or `failed` row is repeated through the same call, which on the same tree content
 measures nothing (`GATE VERDICT REUSED`), an `empty-gate` row - the runner's own green - is asked
 again the same way, and a row of any other word is decided from as recorded (`read_back`, one
@@ -5074,17 +5075,20 @@ False): that mark is no mark to any red but its own (`unmeasurable_elsewhere`), 
 measured on its own, and the first such red goes to the writer as no-base. Only a base whose
 code moved counts toward a bound: the mark records that reason (`moved`, set when `code_moved`
 answered), and a red whose steps cannot be re-run at the base (`base_unrunnable`) never sets it,
-so it goes to the writer every time, bounded by the writer rounds. The start's mark counts the
+so it goes to the writer every time until the start reaches the bound below, bounded by the
+writer rounds. The start's mark counts the
 moved-code reds up to it (`unmeasuredBefore`, `unmeasured_before`), and a start that has reached
-`UNMEASURED_BOUND` of them (`unmeasurable_bound`) stops as `gate-red-base-unknown` rather than
+`UNMEASURED_BOUND` of them (`unmeasurable_bound`) stops a red whose own reading names no base
+run (`base_behind`) as `gate-red-base-unknown` rather than
 another gate or writer round, under `next` and under `auto` alike, so neither can loop on a HEAD
 that keeps moving. That one predicate is asked of a mark just decided and in the due branch before
-any measurement is launched, inline or in the background; the count lives on the mark, so a new
+any measurement is launched, inline or in the background - where a red whose own reading does
+name a base run is decided by it, with nothing measured; the count lives on the mark, so a new
 start counts from zero (`bdr4`, `bi14`-`bi16`, `brc3`, `brc4`, `brc6`, and `dm85`, `dm86` in
 `test_drive_without_model.py`). A mark's reading decides
 only the red run it was measured for or a repeat of it, and a mark an earlier version wrote for
 a cut base (no `ran`, no `background`, no base run named) reads as unknown. A red run whose code HEAD has since moved (`code_moved`) keeps reading
-`no-base` and goes to the writer as before, and so does a red whose steps `--base-of` answered it
+`no-base` and goes to the writer as before until the start reaches that bound, and so does a red whose steps `--base-of` answered it
 cannot run again at all (`base_unrunnable`: every red step in `notRun`): no later measurement could
 answer either, so neither is the unknown stop, which stays for a base run that was started and
 then cut, killed, failed or left no row. `bq2` and `bq3` drive it, the `bdr` cases a derived

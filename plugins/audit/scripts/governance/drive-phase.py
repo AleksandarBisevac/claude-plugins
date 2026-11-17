@@ -514,8 +514,8 @@ STEPS = {
                 "gate, measured in the background",
         "rule": (WRITER_RULE,)},
     "wait-gate": {
-        "line": "wait %(task)s: the gate launched %(since)s has recorded no run "
-                "for it yet",
+        "line": "wait %(task)s: the gate was handed out at %(since)s; no "
+                "run recorded for it since",
         "rule": ("Started: wait for it to exit, then next. Killed or not "
                  "started: run the run: line --explain prints, in the "
                  "background.",)},
@@ -524,8 +524,8 @@ STEPS = {
                 "%(run)s, measured in the background",
         "rule": (WRITER_RULE,)},
     "wait-base": {
-        "line": "wait %(task)s: the base measurement launched %(since)s has "
-                "left no reading yet",
+        "line": "wait %(task)s: the base measurement was handed out "
+                "at %(since)s; no reading left since",
         "rule": ("Started: wait for it to exit, then next. Not started: run "
                  "the run: line --explain prints, in the background.",)},
     "dispatch-reviewer-session": {
@@ -2892,16 +2892,19 @@ def rerun_alongside(ctx, state, manifest, pending):
 # TWICE MOVED IN ONE START IS A STOP. Only a base unmeasurable because HEAD no
 # longer held the red's code counts: the mark records that reason (`moved`,
 # from `code_moved`), and a red whose steps cannot be re-run at the base
-# (`base_unrunnable`) never sets it - that red goes to the writer every time,
-# bounded by the writer rounds as it always was, since no stop would change
-# what it measures. The start's mark carries how many earlier reds of the start
-# had a moved-code base (`UNMEASURED_BEFORE`, counted by `unmeasured_before`
-# from the mark it replaces); once the start counts `UNMEASURED_BOUND` of them
-# (`unmeasurable_bound`), the red stops as `gate-red-base-unknown`, never
-# another automatic round, so neither `next` nor `auto` can loop gate - moved
-# HEAD - gate. That one predicate is asked twice: of a mark just decided, and
-# in the due branch BEFORE any measurement is launched, inline or in the
-# background, so a sibling that keeps moving the code cannot keep relaunching.
+# (`base_unrunnable`) never sets it - that red goes to the writer every time
+# until the start reaches the bound below, bounded by the writer rounds as it
+# always was, since no stop would change what it measures. The start's mark
+# carries how many earlier reds of the start had a moved-code base
+# (`UNMEASURED_BEFORE`, counted by `unmeasured_before` from the mark it
+# replaces); once the start counts `UNMEASURED_BOUND` of them
+# (`unmeasurable_bound`), a red whose own reading names no base run
+# (`base_behind`) stops as `gate-red-base-unknown`, never another automatic
+# round, so neither `next` nor `auto` can loop gate - moved HEAD - gate; one
+# whose reading does name a base run is decided by it, unmeasured. That one
+# predicate is asked twice: of a mark just decided, and in the due branch
+# BEFORE any measurement is launched, inline or in the background, so a
+# sibling that keeps moving the code cannot keep relaunching.
 # The count lives on the mark, so a new start (`_marked` reads a mark of an
 # earlier start as none) counts from zero, and `measure-base`, which drops the
 # mark, is the owner's own answer rather than a round the drive took.
@@ -3438,8 +3441,9 @@ def base_said(ctx, task_id, run_id, argv, why=None):
 
 
 def base_wait_said(ctx, task_id, since, argv):
-    """The wait on a base measurement launched at `since` that has left no
-    reading yet, with its command printed again as the `run:` line."""
+    """The wait on a base measurement handed out at `since` - the moment the
+    drive printed its dispatch, never a process it saw start - that has left
+    no reading yet, with its command printed again as the `run:` line."""
     return background_wait(
         "wait-base", task_id, step_text("wait-base", task=task_id, since=since),
         "no base reading for %s since %s" % (task_id, since),
@@ -3489,7 +3493,9 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
     (`unmeasurable_elsewhere`), which is read as no mark; a start that counts
     `UNMEASURED_BOUND` moved-code bases is unknown (`unmeasurable_bound`) -
     asked of the decided mark, and in the due branch before anything is
-    launched - so the drive asks rather than looping. Its reading
+    launched - so the drive asks rather than looping; there a red whose own
+    reading names a base run (`base_behind`) is decided by that reading,
+    with nothing measured. Its reading
     decides only the red it was measured for, or a repeat of that red
     (`red_runs`); any other red of the start is decided by its own row's
     reading, and is unknown where that names no base run. A measurement that
@@ -3506,6 +3512,12 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
     if base_measure_due(state, task, row, runs):
         before = _marked(state, BASE_MEASURED, task)
         if unmeasurable_bound(before):
+            # Past the bound nothing is measured again; a red whose own
+            # reading already stands on a base run is decided by it, as the
+            # decided-mark branch below decides one, and only a red with no
+            # base run of its own is the unknown stop.
+            if base_behind(reading):
+                return None, reading, None
             return None, reading, bound_said(before)
         due, why = gate_in_background(ctx, _evio.red_step_names(row))
         if due:
@@ -6007,8 +6019,9 @@ def gate_said(ctx, subject, argv, phase_gate=False, why=None):
 
 
 def gate_wait_said(ctx, task_id, since, argv):
-    """The wait on a gate launched at `since` that has recorded no row yet,
-    with its command printed again as the `run:` line."""
+    """The wait on a gate handed out at `since` - the moment the drive
+    printed its dispatch, never a process it saw start - that has recorded no
+    row yet, with its command printed again as the `run:` line."""
     return background_wait(
         "wait-gate", task_id, step_text("wait-gate", task=task_id, since=since),
         "no gate row for %s since %s" % (task_id, since),

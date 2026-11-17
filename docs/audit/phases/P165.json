@@ -1,0 +1,371 @@
+{
+  "id": "P165",
+  "title": "Quick lows before 3.9.0",
+  "status": "in_progress",
+  "description": "The last phase of 3.9.0: lows whose fix is small and needs no design decision. Each fix closes its class at a shared seam.",
+  "desiredOutcome": "The quick, decision-free lows left after P163 and P164 are closed: report link decode, side-nav highlight, bugs-table chip wrap, Sort-select coverage, panel arrow a11y, STACK_BUDGET wording, three drive lows, a symlink spelling in start, a test marker.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "eed7a78b63b36b1880edc94c54e1a617f078a714",
+  "branch": "audit/p165-quick-lows-before-3-9-0",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P165.1",
+      "title": "A report link restores only filters a control shows, and the side-nav highlights the section a jump lands on",
+      "status": "in_progress",
+      "description": "Two report behaviour lows, one class each, fixed at the shared seam rather than per instance.\n\n1. A report link can restore a filter no control shows. Hash decode (the FILTER_AXES registry in plugins/audit/scripts/ui/report/page-state.js) accepts values no control offers and hides rows behind them with nothing pressed: `#!m=bogus`, `#!a=nosuch` (unknown model/area), `#!tev=constructor` (a prototype key), `#!from=notadate`, `#!au=nobody` (hides Usage rows). Separately `#!ps=done` is dropped without a word in the Active view. Fix: every axis's decode keeps only values its control offers (read off the control/DOM, own-property lookups only), and what it drops is not applied; the restored state is exactly what the controls show. Decide the ps-in-Active-view case so the user is not silently given a different filter than the link named (e.g. switch the View to one that shows it, or keep it as an honest no-op the counter states) - pick the least surprising, say why in the code comment. Add browser-gate cases in tools/check-report-interactive.mjs: per axis, a bogus value in the hash restores nothing hidden and nothing pressed; red-first them: the render committed at eed7a78b (git show eed7a78b:examples/acme-store/acme-store-audit.html) must fail the new cases; quote the failing lines.\n\n2. The side-nav highlights the section above after a nav jump, at every width: a section's scroll-margin is --sp-2 while markSpy (page-state.js) treats a section as current only past the layers' height + 4px, so a jump lands just short of that line. Fix: derive both from ONE value (one source the CSS scroll-margin and markSpy both read), not two constants kept equal by hand. Add a browser-gate case that clicks each side-nav entry at more than one width and reads that the highlight names the clicked section; red-first it on the current committed render.\n\nRefresh rendered followers (examples/report.sh, docs/demo-large.html via `python3 tools/check-rendered-artifacts.py --how`, `node tools/capture-screenshots.mjs`) so tests/test__refs.py and check-rendered-artifacts stay green. Read writing-javascript, refactoring-the-assembled-ui, no-silent-pass. No register ids in comments.",
+      "files": [
+        "plugins/audit/scripts/ui/report/page-state.js",
+        "plugins/audit/scripts/ui/report/filters.js",
+        "plugins/audit/scripts/ui/report/areas.js",
+        "plugins/audit/scripts/ui/report/README.md",
+        "plugins/audit/scripts/ui/report-css/shell.css",
+        "plugins/audit/scripts/ui/report-css/README.md",
+        "tools/check-report-interactive.mjs",
+        "tests/test_render_report.py",
+        "tests/test__report_html.py",
+        "tests/test__report_page.py",
+        "examples",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [
+          "plugins/audit/scripts/ui/report-css/shell.css: .snav a interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_render_report.py tests/test__report_html.py tests/test__report_page.py tests/test__refs.py",
+          "sh -c 'W=$(mktemp -d) && rc=0 && for f in examples/acme-store/acme-store-audit.html docs/demo-large.html; do node tools/check-report-interactive.mjs \"$f\" || rc=1; done && python3 tools/plan-window.py docs/audit/audit-plan.json \"$W/win\" && python3 plugins/audit/scripts/report/render-report.py \"$W/win/docs/audit/audit-plan.json\" --out-dir \"$W/lp\" --format html && node tools/check-report-interactive.mjs \"$W\"/lp/*.html || rc=1; rm -rf \"$W\"; exit $rc'"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-17T05:25:05Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-17T05:24:58Z",
+          "text": "scans rendered artifacts for machine paths; this task changes report behaviour/CSS, not what paths a render carries",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-17T05:24:59Z",
+          "text": "names check-report-interactive.mjs as a step; the task keeps its command line and exit contract",
+          "waives": "tools/verify.sh"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T06:43:41Z.16dad4",
+        "status": "passed",
+        "at": "2026-11-17T06:43:41Z"
+      }
+    },
+    {
+      "id": "P165.2",
+      "title": "The drive's base-measure bound reads the red before asking, its documents say the bound, and a wait names a hand-out rather than a launch",
+      "status": "in_progress",
+      "description": "Three drive lows in plugins/audit/scripts/governance/drive-phase.py and the documents that describe it.\n\n1. In base_reading_for, the due-branch bound check (around the `unmeasurable_bound` call in the due branch) runs before the red's own reading is read. A `not-knowable` reading already names a base run (base_behind), and the decided-mark branch sends such a red to the writer; so once a start holds UNMEASURED_BOUND moved-code bases, a later not-knowable red gets a spurious `gate-red-base-unknown` ask whose sentence claims the base \"could not be measured either\". Fix: in the due branch check `unmeasurable_bound(before) and not base_behind(reading)` (read the reading first). Add a twin of the bi16 case in tests/test_drive_phase.py that goes red without the fix (prove it).\n\n2. PLUGIN-BUILD-GUIDE.md (around the base-measure section, near \"goes to the writer every time, bounded by the writer rounds\") and the block comment above BASE_MEASURE_VERDICTS say an unrunnable red always goes to the writer. That stops being true once a start reaches UNMEASURED_BOUND moved-code bases (the due branch then stops every red of the start before it is measured). Add \"until the start reaches the bound\" (or equivalent) in both places, matching plugins/audit/reference/execute-task.md which already says it correctly.\n\n3. The `wait-gate` and the matching wait line for a phase gate say \"the gate launched %(since)s has recorded no run for it yet\", but the drive stamps that time when it HANDS OUT the run-test-gate step, not when a gate process starts - so the line asserts a launch it never observed. Fix the claim: word it as what the drive knows (\"handed out at %(since)s; no run recorded since\") everywhere this stamp is rendered, and keep the remedy rule. Update any test pins on the old wording.\n\nRead writing-python, before-you-claim, no-silent-pass. No register ids in comments.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/execute-task.md",
+        "tests/test__affected_tests.py",
+        "tests/test__doctor_trail.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test__affected_tests.py tests/test__doctor_trail.py"
+        ],
+        "gateBasis": "files"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-17T05:25:22Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-17T05:24:24Z",
+          "text": "tdd by default (init.md's mode rule): no mode was named and the title leads with no refactor or config word, so it adds or changes observable behaviour"
+        },
+        {
+          "at": "2026-11-17T05:25:18Z",
+          "reader": "tests/test__affected_tests.py",
+          "reads": "PLUGIN-BUILD-GUIDE.md",
+          "text": "declared to answer a reading: tests/test__affected_tests.py reads PLUGIN-BUILD-GUIDE.md - quotes its text beside its path: 'related listing'"
+        },
+        {
+          "at": "2026-11-17T05:25:18Z",
+          "reader": "tests/test__doctor_trail.py",
+          "reads": "PLUGIN-BUILD-GUIDE.md",
+          "text": "declared to answer a reading: tests/test__doctor_trail.py reads PLUGIN-BUILD-GUIDE.md - quotes its text beside its path: \"**It grades each copy's own age\""
+        },
+        {
+          "at": "2026-11-17T05:25:19Z",
+          "text": "reads import layers; no import is added or moved",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-17T05:25:20Z",
+          "text": "reads lint tables; no lint is added or changed",
+          "waives": "tools/prove-gates.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T06:48:38Z.801dd5",
+        "status": "passed",
+        "at": "2026-11-17T06:48:38Z"
+      }
+    },
+    {
+      "id": "P165.3",
+      "title": "start compares the plan directory and the project directory on one path resolution; a test marker is restored",
+      "status": "in_progress",
+      "description": "Two small manifest/test lows.\n\n1. `audit-task.py start` counts the plan's own evidence as undeclared readers when the project directory is spelled through a symlink: the plan-directory exclude is computed from os.path.abspath(mpath), which resolves through the cwd's real path (/private/tmp/...), then taken relative to a --project-dir spelled /tmp/..., so the exclude comes out empty and ~20 files under docs/audit/evidence count as readers and start refuses. Fix: compare both sides on one resolution (os.path.realpath on both, or the module's existing canonical-path helper if one exists - search before adding). Look for the same abspath-vs-realpath mix elsewhere in the start/scope reader path and fix the class with one helper, not per call site. Add a case in tests/test_audit_task.py that builds a project under a symlinked directory and runs start through the symlinked spelling; prove it red without the fix (macOS /tmp -> /private/tmp is one such link; build your own symlink under tempfile.mkdtemp() so it is portable, and skip with a printed reason on a platform without symlinks).\n\n2. tests/test_usage_ledger.py has a section marker `# --- rx:the re-export` with the space after the colon dropped by an earlier edit; restore `# --- rx: the re-export`.\n\nRead writing-python and no-silent-pass. No register ids in comments.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_audit_task.py",
+        "tests/test_usage_ledger.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test_usage_ledger.py"
+        ],
+        "gateBasis": "files"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-17T05:25:38Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-17T05:24:25Z",
+          "text": "tdd by default (init.md's mode rule): no mode was named and the title leads with no refactor or config word, so it adds or changes observable behaviour"
+        },
+        {
+          "at": "2026-11-17T05:25:36Z",
+          "text": "describes audit-task.py's verbs; resolving both paths the same way changes no documented behaviour, and P165.2 owns the guide in this wave",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T06:29:27Z.ed020a",
+        "status": "passed",
+        "at": "2026-11-17T06:29:27Z"
+      }
+    },
+    {
+      "id": "P165.4",
+      "title": "The More-filters disclosure arrow is one shared rule, decorative on both surfaces",
+      "status": "pending",
+      "description": "The panel's More-filters disclosure arrow is drawn as text content that screen readers announce (plugins/audit/scripts/ui/panel-css/usage-tab.css). The report's equivalent was fixed earlier (report-css/controls.css, .fdetails>summary). Fix it with ONE shared rule both surfaces use, not a second copy: put the disclosure-arrow rule in the shared layer the two surfaces already concatenate (see plugins/audit/scripts/ui/shared/ and the refactoring-the-assembled-ui skill on shared partials) and have both summaries use it; the glyph must not be exposed to assistive tech (e.g. a decorative pseudo-element with an empty alt in `content: \"x\" / \"\"`, or a background/border-drawn arrow - choose one that works in forced-colors, and say which and why). Remove the per-surface copies. Prove it: a browser check (panel via `node tools/capture-screenshots.mjs --check` is preconditions only, so add an assertion where the panel/report runtime is driven - e.g. in tools/check-report-interactive.mjs for the report and the panel's equivalent gate if one exists, else a computed-accessible-name check through Playwright's accessibility snapshot) that the summary's accessible name carries no arrow glyph, red-first on the current panel and report. Refresh followers (examples/report.sh, docs/demo-large.html via `python3 tools/check-rendered-artifacts.py --how`, `node tools/capture-screenshots.mjs`). Read writing-css and refactoring-the-assembled-ui. No register ids in comments.",
+      "files": [
+        "plugins/audit/scripts/ui/panel-css/usage-tab.css",
+        "plugins/audit/scripts/ui/panel-css/usage-narrow.css",
+        "plugins/audit/scripts/ui/report-css/controls.css",
+        "plugins/audit/scripts/ui/report-css/forced-colors.css",
+        "plugins/audit/scripts/ui/report-css/README.md",
+        "plugins/audit/scripts/ui/shared",
+        "plugins/audit/scripts/_ui_theme.py",
+        "plugins/audit/scripts/report/_report_page.py",
+        "tools/check-report-interactive.mjs",
+        "tests/test__report_ui.py",
+        "tests/test__ui_theme.py",
+        "tests/test__ui_theme_lints.py",
+        "tests/test_render_report.py",
+        "examples",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [
+          "plugins/audit/scripts/ui/panel-css/usage-tab.css: .fdetails>summary interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/panel-css/usage-tab.css: .lnk interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/panel-css/usage-tab.css: .uchip interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/panel-css/usage-tab.css: .ulegend b.pick interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/panel-css/usage-tab.css: .urow.pick interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: #audit-q interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .btn interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .btn-primary interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .fchip interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .fdetails>summary interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .frow input[type=date] interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .gfilters input[type=date] interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .gfilters select interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its focus state, not only rest",
+          "plugins/audit/scripts/ui/report-css/controls.css: .tf-chip interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__report_ui.py tests/test__ui_theme.py tests/test__ui_theme_lints.py tests/test_render_report.py tests/test__refs.py",
+          "node tools/capture-screenshots.mjs --check",
+          "sh -c 'W=$(mktemp -d) && rc=0 && for f in examples/acme-store/acme-store-audit.html docs/demo-large.html; do node tools/check-report-interactive.mjs \"$f\" || rc=1; done && python3 tools/plan-window.py docs/audit/audit-plan.json \"$W/win\" && python3 plugins/audit/scripts/report/render-report.py \"$W/win/docs/audit/audit-plan.json\" --out-dir \"$W/lp\" --format html && node tools/check-report-interactive.mjs \"$W\"/lp/*.html || rc=1; rm -rf \"$W\"; exit $rc'"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P165.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-17T05:25:00Z",
+          "text": "scans rendered artifacts for machine paths; this task changes report behaviour/CSS, not what paths a render carries",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-17T05:25:01Z",
+          "text": "names check-report-interactive.mjs as a step; the task keeps its command line and exit contract",
+          "waives": "tools/verify.sh"
+        }
+      ]
+    },
+    {
+      "id": "P165.5",
+      "title": "Chips and ids never break inside a word in any table, the Sort select is always in the matrix, and the stack-budget basis says only what it measured",
+      "status": "pending",
+      "description": "Three report layout lows, closed together because they share the layout matrix in tools/check-report-interactive.mjs.\n\n1. The bugs table's STATUS chip wraps inside the word at 1440x900 (\"Fixe / d\", \"Won' / t fix\") and the ID column breaks \"BUG- / 10\". Fix in report-css/tables.css: chips and ids do not break inside a word (white-space: nowrap on the chip and id cells, or a min width from the longest chip - whichever keeps the table inside the page at the phone size). Widen the matrix's \"no word split across lines\" assertion (lm5) from the chrome to EVERY table's chips and ids (phases, tasks, bugs, ready-now, usage), so a table added later is covered by default; red-first it on the current committed acme render and quote the failing lines.\n\n2. The Sort select in the phases table's head renders only when any phase is pinned (any_phase_pinned), and no committed fixture has a pinned phase, so the layout matrix never sees it. Add a pinned phase to the demo-large fixture's generator (tools/demo/gen-demo-manifest.py; re-render docs/demo-large.html via `python3 tools/check-rendered-artifacts.py --how`), and make the matrix FAIL by name on demo-large when no Sort select is present (a fixture that stops carrying it must not pass silently). Keep tests/test_gen_demo_manifest.py green and update its pins honestly.\n\n3. Two wording fixes beside STACK_BUDGET (change no share): (a) the sentence saying a phone whose filter bar wraps one more row fails lm4 - the cheapest row measured is 27.4px against 27px of headroom and lm4's stack is a whole-pixel scan that can sit up to 1.5px off, so only the 32px arm (a row holding the count) is shown to fail; say exactly that; (b) the rule's \"over the class's screen height\" must read \"over that size's height\" - a class holds sizes with different heights and lm4 applies the share per size.\n\nRefresh rendered followers (examples/report.sh, docs/demo-large.html, `node tools/capture-screenshots.mjs`) so tests/test__refs.py and check-rendered-artifacts stay green. Read writing-css, refactoring-the-assembled-ui, before-you-claim. No register ids in comments.",
+      "files": [
+        "plugins/audit/scripts/ui/report-css/tables.css",
+        "plugins/audit/scripts/ui/report-css/README.md",
+        "tools/check-report-interactive.mjs",
+        "tools/demo/gen-demo-manifest.py",
+        "tests/test_gen_demo_manifest.py",
+        "tests/test_render_report.py",
+        "tests/test__report_html.py",
+        "examples",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [
+          "plugins/audit/scripts/ui/report-css/tables.css: .dtoggle interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/tables.css: .shacopy interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest",
+          "plugins/audit/scripts/ui/report-css/tables.css: tr interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_render_report.py tests/test__report_html.py tests/test__report_page.py tests/test__refs.py tests/test_gen_demo_manifest.py",
+          "sh -c 'W=$(mktemp -d) && rc=0 && for f in examples/acme-store/acme-store-audit.html docs/demo-large.html; do node tools/check-report-interactive.mjs \"$f\" || rc=1; done && python3 tools/plan-window.py docs/audit/audit-plan.json \"$W/win\" && python3 plugins/audit/scripts/report/render-report.py \"$W/win/docs/audit/audit-plan.json\" --out-dir \"$W/lp\" --format html && node tools/check-report-interactive.mjs \"$W\"/lp/*.html || rc=1; rm -rf \"$W\"; exit $rc'"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P165.4"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-17T05:25:02Z",
+          "text": "scans rendered artifacts for machine paths; this task changes report behaviour/CSS, not what paths a render carries",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-17T05:25:03Z",
+          "text": "names check-report-interactive.mjs as a step; the task keeps its command line and exit contract",
+          "waives": "tools/verify.sh"
+        }
+      ]
+    }
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "988f3478-fc74-4a1e-a62b-7522b404c792",
+    "branch": "audit/p165-quick-lows-before-3-9-0",
+    "at": "2026-11-17T05:25:05Z"
+  },
+  "startedAt": "2026-11-17T05:25:05Z"
+}

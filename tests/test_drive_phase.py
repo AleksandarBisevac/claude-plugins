@@ -1442,6 +1442,7 @@ def _background_gate_cases(check):
           code == 0 and _signal_head(line) == ("wait", "P1.1") and not calls
           and argv and _run_argv(wait_block) == argv
           and not _measured_rows(root, mpath, "P1.1"))
+    _handout_wait_case(check, M, root, wait_block)
     ran, said = _play_gate(root, argv)
     code, line = _signal_raw(M, root, mpath)
     check("bg3 the next call after the gate ran decides from its recorded row: "
@@ -1476,6 +1477,30 @@ def _background_gate_cases(check):
     else:
         _background_kill_case(check, M)
     _background_doc_case(check, M)
+
+
+def _handout_wait_case(check, M, root, wait_block):
+    """The wait on a background gate or base run names the moment the drive
+    handed its dispatch out - the stamp on the launch mark - and claims no
+    launch: the drive never sees the process start, so a line saying the run
+    was launched then asserts what nobody observed. Read off the real wait a
+    `next` printed for the gate, and off the base wait's own renderer."""
+    marks = _drive_state(root).get(getattr(M, "GATE_LAUNCH_KEY", "")) or {}
+    entry = (marks.get("P1.1") or {}) if isinstance(marks, dict) else {}
+    stamp = (entry.get("value") or {}).get("at")
+    gate_lines = [ln for ln in wait_block.splitlines() if "wait P1.1:" in ln]
+    base = M.base_wait_said({"did": [], "manifest": "plan.json",
+                             "project": root, "phase": "P1"},
+                            "P1.1", "2026-10-14T18:24:20Z", ["python3", "x"])
+    base_lines = [ln for ln in base.get("lines") or [] if "wait P1.1:" in ln]
+    said = gate_lines + base_lines
+    check("bg2h the gate's wait and the base's wait each name the stamp as the "
+          "moment the run was handed out and claim no launch: %r"
+          % ((stamp, gate_lines, base_lines),),
+          bool(stamp) and len(gate_lines) == 1 and len(base_lines) == 1
+          and gate_lines[0].count("handed out at %s;" % (stamp,)) == 1
+          and base_lines[0].count("handed out at 2026-10-14T18:24:20Z;") == 1
+          and not [ln for ln in said if "launched" in ln])
 
 
 def _background_kill_case(check, M):
@@ -21531,8 +21556,10 @@ def _bi_bound_due_case(check, M):
     """Once the start's mark already counts the bound of moved-code
     unmeasurable reds, a new red is stopped before ANY measurement is
     launched - inline or in the background; THE TWIN, a mark counting the
-    same reds as unrunnable, its code never moved, is measured as before."""
-    def _read(moved, background):
+    same reds as unrunnable, its code never moved, is measured as before; and
+    past the bound a red whose own reading names a base run is decided by it,
+    neither stopped as unknown nor measured."""
+    def _read(moved, background, reading=None):
         ctx, task, phase = _bi_world(M, "drive-bi-due-")
         state = {}
         M._mark(state, M.BASE_MEASURED, task, {
@@ -21540,7 +21567,7 @@ def _bi_bound_due_case(check, M):
             "moved": moved, "unmeasuredBefore": 1, "reading": None,
             "verdict": None, "run": None, "atBase": [], "introduced": [],
             "said": "HEAD moved"})
-        row = dict(_bi_row("r-third"), **{_evio.BASE_RED_KEY: {
+        row = dict(_bi_row("r-third"), **{_evio.BASE_RED_KEY: reading or {
             "verdict": "no-base", "run": None, "head": "abc1234"}})
         started = []
 
@@ -21571,6 +21598,8 @@ def _bi_bound_due_case(check, M):
 
     stopped = [_read(True, bg) for bg in (False, True)]
     twin = [_read(False, bg) for bg in (False, True)]
+    behind = {"verdict": "not-knowable", "run": "r-base", "head": "abc1234"}
+    decided = [_read(True, bg, behind) for bg in (False, True)]
     check("bi16 a start whose mark already counts two moved-code unmeasurable "
           "reds stops a third red as unknown before any base run is launched, "
           "inline or in the background; THE TWIN, the same count of reds "
@@ -21580,6 +21609,12 @@ def _bi_bound_due_case(check, M):
               for got, st in stopped)
           and [st for _g, st in twin] == [[("take", "r-third")],
                                           [("launch", "r-third")]])
+    check("bi17 past the same bound, a red whose own reading already names a "
+          "base run is decided by that reading - no unknown stop claiming its "
+          "base could not be measured, and nothing launched, inline or in the "
+          "background: %r" % (decided,),
+          all(st == [] and got == (None, behind, None)
+              for got, st in decided))
 
 
 def _bi_claim_case(check, M):
