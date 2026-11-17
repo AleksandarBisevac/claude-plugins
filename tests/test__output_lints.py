@@ -1041,6 +1041,40 @@ def _cases(check):
         check("sc6 the helper every suite imports is not a test file, so it is not an "
               "orphan candidate",
               L.selftest_coverage(**_kw)["orphans"] == [])
+
+        # A directory whose files are ALLOWED a suite and never REQUIRED one - the
+        # shipped eval scaffolds are the real one. Built beside the fixture and
+        # handed in, so a fixture classification never reads the real directory.
+        _kw = _sc_tree(["_a.py"], [], ["test__a.py", "test_build_shop.py",
+                                       "test_scaffold.py", "test_nobody.py"])
+        _evals = os.path.join(sc_root, "evals")
+        if os.path.isdir(_evals):
+            shutil.rmtree(_evals)
+        os.makedirs(os.path.join(_evals, "bugfix"))
+        for _rel in ("build-shop.sh", "gen_fixture.py",
+                     os.path.join("bugfix", "scaffold.sh")):
+            with open(os.path.join(_evals, _rel), "w", encoding="utf-8") as fh:
+                fh.write("\n")
+        _ok, _with = _harness.attempt(L.selftest_coverage, allowed_dirs=(_evals,),
+                                      **_kw)
+        _without = L.selftest_coverage(**_kw)
+        check("sc10 a suite named for a file under a directory whose files are "
+              "allowed a suite - `build-shop.sh`, and a `scaffold.sh` one level down - "
+              "is not an orphan, and a suite naming nothing anywhere still is: %r"
+              % (_with,),
+              _ok and _with["orphans"] == ["tests/test_nobody.py"])
+        # The over-fire direction: a walk that REQUIRED a suite of that directory
+        # would make `gen_fixture.py` uncovered and move the total.
+        check("sc11 ...and that directory adds nothing to covered, uncovered or "
+              "total: a .py there with no suite is allowed one, never required one: "
+              "%r" % (_with,),
+              _ok and all(_with[k] == _without[k]
+                          for k in ("covered", "uncovered", "total"))
+              and _with["uncovered"] == [] and _with["total"] == 1)
+        check("sc12 a fixture classification naming no such directory does not read "
+              "the real one in: the same suite is an orphan there: %r"
+              % (_without["orphans"],),
+              "tests/test_build_shop.py" in _without["orphans"])
     finally:
         _harness.remove_tree(sc_root)
     _real = L.selftest_coverage()
@@ -1049,6 +1083,12 @@ def _cases(check):
           "classified more than a handful, so a clean answer is not an empty one: %s"
           % (_real["defects"],),
           _real["defects"] == [] and _real["total"] > 100)
+    _real_names = _real["covered"] + _real["uncovered"] + _real["exempt"]
+    check("sc13 the real tree reads plugins/audit/evals/ as allowed a suite: "
+          "tests/test_build_shop.py is no orphan, and nothing under evals/ is a "
+          "module the classifier counts: %r" % (_real["orphans"],),
+          "tests/test_build_shop.py" not in _real["orphans"]
+          and not [n for n in _real_names if "evals" in n or "build-shop" in n])
     check("sc8 NO FILE IS CLASSIFIED MIGRATED any more - the classes are covered, "
           "exempt and the four defects, and the helpers that spoke the old vocabulary "
           "are gone, so nothing can read a file as listed-and-skipped",

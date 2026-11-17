@@ -277,8 +277,11 @@ claude-plugins/                           # this repo (personal, public)
         audit-plan.starter.json           # minimal manifest skeleton with $schema
         permissions-deny.example.json     # optional Claude Code permissions.deny fragment
       evals/                              # `claude plugin eval` cases: plugin arm vs no-plugin baseline, same prompt
-        bugfix/case.yaml                  # a symptom-only defect; graded on the transcript; not runnable until scaffold.sh exists beside it
-        guard-stop/case.yaml              # a dirty tree + a .env canary; the safe outcome leaves both alone; not runnable until scaffold.sh exists beside it
+        build-shop.sh                     # the one fixture builder both scaffolds source; refuses a fixture that cannot discriminate
+        bugfix/case.yaml                  # a symptom-only defect; graded on the transcript
+        bugfix/scaffold.sh                # builds its fixture in the empty workspace: green suite, the defect reproduces
+        guard-stop/case.yaml              # a dirty tree + a .env canary; the safe outcome leaves both alone
+        guard-stop/scaffold.sh            # builds its fixture: red suite, uncommitted marker edit, a fresh canary per build
         results/                          # written by `claude plugin eval`; gitignored
       README.md                           # end-user install/config/extend docs
 ```
@@ -7489,7 +7492,10 @@ and every development module whose cases live in `tests/` in exactly one class: 
 suite in `tests/` named for the module exists), `exempt` (a row in `COVERAGE_EXEMPT` says why it has none), or
 one of four defects - `uncovered`, `stale_exempt`, an orphan test file, two modules wanting one
 test name - and `tests/test__output_lints.py` asserts the classes, because a rule with an OR in it
-is exactly the shape that lets a file with NEITHER through. There is no `migrated` class:
+is exactly the shape that lets a file with NEITHER through. A test file is an orphan when no file
+under `scripts/`, `hooks/`, the development directories or `ALLOWED_DIRS` (the shipped eval
+scaffolds under `evals/`) maps to its name; a file under `ALLOWED_DIRS` may have a suite and is
+never counted as a module. There is no `migrated` class:
 `tools/sweep-selftests.py` does not run a shipped module at all, so the sweep's half of the rule is
 a coverage verdict (`coverage_findings`) beside its per-file grades.
 `_deps.tests_import_violations()`

@@ -7,12 +7,15 @@
 # after the session, so the hidden regression test stays in the internal harness and an
 # eval score is reported beside the harness's metrics, never in their place.
 #
-# The fixture comes from scaffold.sh, which `claude plugin eval` runs only under
-# --scaffold; without it the case runs against an empty workspace and its score means
-# nothing. This case must not be run until that script exists alongside this file
-# (PLUGIN-BUILD-GUIDE.md's tree line says the same). Field names follow the case schema
-# the CLI validates (schema_version, context, execution, runs, graders); the schema is
-# not published as a document.
+# The fixture comes from scaffold.sh beside this file, which `claude plugin eval` runs
+# only under --scaffold; without that flag the case runs against an empty workspace and
+# its score means nothing. scaffold.sh builds through ../build-shop.sh, the builder the
+# guard-stop case shares: the `shop` package, a visible suite that is green, several
+# ordinary commits, and the defect the prompt describes, which no visible test covers.
+# It refuses the build when the suite is not green or the defect does not reproduce;
+# tests/test_build_shop.py builds it and checks both. Field names follow the case
+# schema the CLI validates (schema_version, context, execution, runs, graders); the
+# schema is not published as a document.
 #
 # What each grader scores:
 # - tests-ran-before-edit checks tool-call order only: a Bash call matching "unittest"

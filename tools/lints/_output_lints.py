@@ -55,7 +55,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 from _output import (  # noqa: E402
-    HOOKS_DIR, LINTS_DIR, LOADER_PROBE_DIR, REPO_ROOT, SCRIPTS_DIR,
+    HOOKS_DIR, LINTS_DIR, LOADER_PROBE_DIR, PLUGIN_ROOT, REPO_ROOT, SCRIPTS_DIR,
     TESTS_DIR, lint_py_files, posix_rel, script_files)
 
 
@@ -2493,6 +2493,13 @@ DEV_FILES = (("tools", os.path.join(REPO_ROOT, "tools", "_usage_bench.py")),
              ("tools", os.path.join(REPO_ROOT, "tools", "bench-report.py")),
              ("tools", os.path.join(REPO_ROOT, "tools", "plan-window.py")))
 
+# Directories whose files are ALLOWED a suite and never REQUIRED one: a
+# `tests/test_<name>.py` named for a file under one is not an orphan, and nothing
+# under one is a module, so `covered`, `uncovered` and `total` never see it. The
+# eval scaffolds are shell scripts the plugin ships beside `scripts/`, on the terms
+# `_coverable_test_names` states for `py-launch.sh`.
+ALLOWED_DIRS = (os.path.join(PLUGIN_ROOT, "evals"),)
+
 # The classes a build must be empty of. Named once, here, rather than re-spelled as a
 # tuple of keys at each call site.
 _DEFECT_CLASSES = ("uncovered", "stale_exempt", "orphans", "collisions")
@@ -2531,7 +2538,7 @@ def _coverable_test_names(directory):
 
 
 def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None,
-                      dev_dirs=None, dev_files=None, exempt=None):
+                      dev_dirs=None, dev_files=None, exempt=None, allowed_dirs=None):
     """Where every module's cases live right now - a classification, not a verdict.
 
     Returns a dict of sorted lists, keyed by what is true of a module:
@@ -2544,7 +2551,8 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None,
                    that has a test file after all
       orphans      DEFECT: a `tests/test_*.py` naming no module that exists. Asked of
                    every file under `scripts/` and `hooks/` WHATEVER its extension,
-                   unlike the other classes - `_coverable_test_names` says why
+                   unlike the other classes - `_coverable_test_names` says why - and
+                   of every file under `allowed_dirs`, which adds no module
       collisions   DEFECT: two modules mapping to one test name (`a-b.py` and `a_b.py`
                    both want `test_a_b.py`)
       defects      every name in every defect class above, each tagged with the class
@@ -2561,13 +2569,15 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None,
 
     A caller handing in its own `script_dir` is classifying a fixture, and the real
     development modules must not leak into the fixture's answer: `dev_dirs`,
-    `dev_files` and `exempt` default to the real ones only when the real `scripts/`
-    is the subject.
+    `dev_files`, `exempt` and `allowed_dirs` default to the real ones only when the
+    real `scripts/` is the subject.
     """
     real = script_dir is None
     dev_dirs = dev_dirs if dev_dirs is not None else (DEV_DIRS if real else ())
     dev_files = dev_files if dev_files is not None else (DEV_FILES if real else ())
     exempt = exempt if exempt is not None else (COVERAGE_EXEMPT if real else {})
+    allowed_dirs = (allowed_dirs if allowed_dirs is not None
+                    else (ALLOWED_DIRS if real else ()))
     script_dir = script_dir or SCRIPTS_DIR
     hooks_dir = hooks_dir if hooks_dir is not None else HOOKS_DIR
     tests_dir = tests_dir if tests_dir is not None else TESTS_DIR
@@ -2606,7 +2616,8 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None,
             out["stale_exempt"].append("%s (has a test file)" % named)
 
     coverable = set(claimed)
-    for directory in (script_dir, hooks_dir) + tuple(d for _k, d in dev_dirs):
+    for directory in ((script_dir, hooks_dir) + tuple(d for _k, d in dev_dirs)
+                      + tuple(allowed_dirs)):
         if directory is not None and os.path.isdir(directory):
             coverable |= _coverable_test_names(directory)
     for name in sorted(test_files - coverable):

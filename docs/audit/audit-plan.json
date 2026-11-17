@@ -1385,7 +1385,9 @@
       "SG1.7",
       "SG1.8",
       "SG1.9",
-      "SG1.14-ukq"
+      "SG1.14-ukq",
+      "SG1.15-ukq",
+      "SG1.16-ukq"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1490,7 +1492,8 @@
       "P156.18-3st",
       "P156.20-3st",
       "SG1.5",
-      "SG1.6"
+      "SG1.6",
+      "SG1.15-ukq"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -2027,7 +2030,9 @@
       "SG1.12-ukq",
       "SG1.13-ukq",
       "SG1.14-ukq",
-      "SG1.8"
+      "SG1.8",
+      "SG1.15-ukq",
+      "SG1.16-ukq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2990,7 +2995,8 @@
       "P153.10-34e",
       "P155.6",
       "P156.4",
-      "SG1.6"
+      "SG1.6",
+      "SG1.15-ukq"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -3570,7 +3576,8 @@
       "P130.29-ywo",
       "P138.3-myr",
       "P142.1",
-      "SG1.6"
+      "SG1.6",
+      "SG1.15-ukq"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -5498,7 +5505,8 @@
       "P156.17-3st",
       "P156.18-3st",
       "P156.20-3st",
-      "SG1.6"
+      "SG1.6",
+      "SG1.15-ukq"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -8979,7 +8987,8 @@
       "P156.8-3st",
       "SG1.1",
       "SG1.5",
-      "SG1.6"
+      "SG1.6",
+      "SG1.16-ukq"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -10341,12 +10350,14 @@
       "P101.3",
       "P101.4-1cb",
       "P131.2",
-      "SG1.9"
+      "SG1.9",
+      "SG1.16-ukq"
     ],
     "plugins/audit/evals/guard-stop/case.yaml": [
       "P101.3",
       "P101.4-1cb",
-      "SG1.9"
+      "SG1.9",
+      "SG1.16-ukq"
     ],
     "plugins/audit/scripts/ui/panel-css/tokens-and-reset.css": [
       "P109.1"
@@ -13006,7 +13017,8 @@
       "P156.17-3st",
       "P156.18-3st",
       "P156.20-3st",
-      "SG1.6"
+      "SG1.6",
+      "SG1.15-ukq"
     ],
     "tests/test_audit_usage.py": [
       "P131.1",
@@ -13487,7 +13499,8 @@
       "P148.6",
       "P148.12-xpz",
       "P152.10",
-      "P155.30-gfj"
+      "P155.30-gfj",
+      "SG1.16-ukq"
     ],
     "tools/lints/_ui_theme_lints.py": [
       "P131.2"
@@ -13525,10 +13538,12 @@
     ],
     "plugins/audit/scripts/governance/_clause_coverage.py": [
       "P131.7",
-      "P148.5"
+      "P148.5",
+      "SG1.15-ukq"
     ],
     "tests/test__clause_coverage.py": [
-      "P131.7"
+      "P131.7",
+      "SG1.15-ukq"
     ],
     "tests/test__config_rules_lints.py": [
       "P131.2"
@@ -13545,7 +13560,8 @@
       "P152.10",
       "P155.17-gfj",
       "P155.30-gfj",
-      "P161.5-toy"
+      "P161.5-toy",
+      "SG1.16-ukq"
     ],
     "tests/test__ui_theme_lints.py": [
       "P131.2"
@@ -13692,16 +13708,22 @@
       "SG1.12-ukq"
     ],
     "plugins/audit/evals/bugfix/scaffold.sh": [
-      "SG1.9"
+      "SG1.9",
+      "SG1.16-ukq"
     ],
     "plugins/audit/evals/guard-stop/scaffold.sh": [
-      "SG1.9"
+      "SG1.9",
+      "SG1.16-ukq"
     ],
     "plugins/audit/evals/build-shop.sh": [
-      "SG1.9"
+      "SG1.9",
+      "SG1.16-ukq"
     ],
     "tests/test_eval_scaffolds.py": [
       "SG1.9"
+    ],
+    "tests/test_build_shop.py": [
+      "SG1.16-ukq"
     ]
   },
   "bugs": [

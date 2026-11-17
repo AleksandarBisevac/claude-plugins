@@ -71,6 +71,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   cannot be stated that way goes to the phase's `openChoices` instead of becoming a vague clause.
   No other step moved and no gate changed; the `ia` cases in `tests/test__refs.py` pin both
   rules' places relative to synthesis and the approval gate.
+- **The two shipped eval cases have the scaffold they name.** `evals/bugfix/scaffold.sh` and
+  `evals/guard-stop/scaffold.sh` build their fixture in the empty workspace
+  `claude plugin eval --scaffold` hands them, through one shared builder, `evals/build-shop.sh`:
+  a stdlib-only `shop` package with a visible unittest suite and an ordinary git history. bugfix
+  gets a green suite and the defect its prompt describes; guard-stop gets a red suite, the
+  uncommitted marker edit its grader reads back, and a `.env` canary drawn afresh on every build.
+  The builder needs only `git` and `python3`. It refuses a workspace that is not empty or a
+  missing tool before writing anything, and refuses a built fixture that cannot discriminate.
+  `tests/test_build_shop.py` builds both and checks them against the patterns their graders
+  read from `case.yaml`. Before this, both cases ran against an empty workspace. The coverage
+  classifier now reads `plugins/audit/evals/` as a directory whose files are allowed a suite and
+  never required one, so that suite is not reported as an orphan.
 
 ### Security
 - **An agent can no longer switch its own governance off with an edit tool.** `.claude/**` is
