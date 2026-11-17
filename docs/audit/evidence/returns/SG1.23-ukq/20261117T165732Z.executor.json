@@ -1,0 +1,95 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_guard_edits.py tests/test_run_agent_session.py tests/test_sweep_selftests.py tests/test__config.py tests/test_hooks.py": "could-not-run",
+    "python3 tools/sweep-selftests.py tests/test_guard_edits.py tests/test_run_agent_session.py tools/sweep-selftests.py tests/test__config.py tests/test_hooks.py": "pass",
+    "python3 tools/bench-hooks.py --gate": "pass",
+    "python3 tools/gate-parity.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-17T17:23:42Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_guard_edits.py tests/test_run_agent_session.py` in a throwaway tree at HEAD exited 1 with 6 of 84 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cf20 (house FAIL), cf20b (house FAIL), cf22b (house FAIL), cf22c (house FAIL), cf22d (house FAIL), ras31c (house FAIL): SELFTEST FAILED: 83/84 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "UNTRUE IN THE BRIEF: tests/test_sweep_selftests.py does not exist (the sweep's own cases are tools/sweep-selftests.py --selftest), and creating it would be an orphan suite under selftest_coverage(). So the task's literal gate exited 2 ('tests/test_sweep_selftests.py is not a suite this sweep covers ... nothing was run'), which is could-not-run, not a failure. I replaced tests.gate through the scope verb (audit-task.py scope SG1.23-ukq --gate ... --replace) with the same command naming tools/sweep-selftests.py. It exits 0: 5/5 files ok, 999 cases. The sweep case went into tools/sweep-selftests.py. SCOPE WIDENED through the scope verb (+CONTRIBUTING.md, +tests/_harness.py), and the plan gate allowed both edits. Changes: (1) plugins/audit/hooks/guard-edits.py: a new _is_tree_config(target) matches CONFIG_REL under a directory where _config._holds_repository holds (a .git file or directory, no git process). The string shape is checked before any stat. _is_audit_config calls it after the project-config comparison. A new _drive_started() reads AUDIT_DRIVE_SESSION from os.environ; an empty or blank value marks nothing. _config_verdict refuses a marked session with _CONFIG_DRIVE_DENY, after the subagent check and before the ask. Rule 7's docstring now names the nested worktree, the drive session, the subagent-hooks condition, the unprobed ask and the no-basis MCP write beside the shell residual. The deny text is unchanged. No new import, so the hook import budget passed. hooks/_config.py is unchanged because the helper already existed. (2) run-agent-session.py: DRIVE_SESSION_MARK=(AUDIT_DRIVE_SESSION,'1'). _session_env sets it after the parent-session filter, over any inherited value. WHAT I READ: _session_env builds the dict, main passes it at line 852 to run_session, and Popen([claude]+argv, cwd=tree, env=env) uses it. ras31c checks it in the stub child's recorded os.environ. That the host passes its own environment on to its hook processes is the documented hook behaviour; it was not probed here, because that needs a real claude. (3) tools/sweep-selftests.py: SESSION_NAMES gains AUDIT_DRIVE_SESSION. The comment gives the reason. New case se0b; x8's planted environment and its probe now include the mark. (4) tests/test_hooks.py: _hook_env drops the mark, so c02's ask holds when the suite runs inside a drive session. (5) SECURITY.md item 3 and the capability-policy paragraph: the nested worktree, the drive-started refusal, the empty value, an ask with nobody to answer 'was not probed', the flag-1 subagent-hooks condition, and the no-basis MCP write residual. (6) CONTRIBUTING.md and tests/_harness.py docstring: the dropped-name list adds the mark. CLAUDE.md names the same list (around line 266) and was NOT edited; it now omits the mark. RUNS: probe_guard.py before showed NESTED rows allow/allow; after, both are block. The OUTSIDE row still reads block, and a diff of the before and after outputs shows only those two lines changed. Live hook drive, the hook run as a process (scratch live_drive.py): marked config Write gives block with 'drive' in the reason; no mark gives ask; mark '' and mark '  ' give ask; a marked Read gives allow; a src Write gives allow both marked and unmarked. Suites direct: test_guard_edits 87/87, test_run_agent_session 84/84, sweep --selftest 168/168. Before the fix they stood at 82/87 (cf20, cf20b, cf22b, cf22c, cf22d red), 83/84 (ras31c) and 166/168 (se0b, x8). ruff and vermin are clean on the changed files. The lints prose_number_claims, doc_prose_numbers and house_style_violations report nothing on the changed files. Mutation probe (scratch sg1.23/mutations.py, 11 rows incl. 4 ALLOW twins): MUTATIONS ALL CAUGHT. The orchestrator's run-test-gate without --record widened to the phase gate, because tests/_harness.py changed. That ran the shots and interactive browser slices, which the session notes keep for the orchestrator; the tree was unchanged afterwards. Every phase-gate slice exited 0, and the only red was the nonexistent-suite entry, since fixed. PLUGIN-BUILD-GUIDE.md (declared by SG1.24-ukq) now under-states two things. Its guard-edits section says the config write is 'asked of the main session', which no longer holds for a drive-started session. Its run-agent-session section says 'the rest of the environment is passed on' but does not name the mark. It needs a widening there. Dependants: test_guard_edits cf0-cf19 unchanged and green. test_hooks c01-c04 green; c03 stays a known divergence. bench-hooks --gate passes. gate-parity passes: the fail-mode table is unchanged, still allow on an internal error. test_drive_phase, test__doctor_policy and test__config_rules import the launcher, and none of them asserts on the child environment. test__doctor_setup names the hook's path only. The schema and hooks.json are untouched.",
+    "descriptive": "The audit config is now held for a linked worktree nested under the project and for a session the drive started, which the launcher marks and the sweep strips from its children; SECURITY.md states what was and was not measured."
+  },
+  "testsAdded": [
+    "test_guard_edits cf20/cf20b: a session carrying the launcher's mark with no agent id is refused the config Write and MCP write, in words naming the drive; cf21/cf21b/cf21c/cf21d: unmarked asked, empty mark asked, marked Read allowed, marked ordinary write answers as unmarked",
+    "test_guard_edits cf22-cf22f: a real git worktree at <project>/.claude/worktrees/agent-cf - its config refused to a subagent from the project and from the worktree, asked of the main session; a plain folder of the same shape and a sibling file stay allowed",
+    "test_run_agent_session ras31c: the stub child's recorded environment carries AUDIT_DRIVE_SESSION=1, over a parent value of another spelling",
+    "tools/sweep-selftests.py se0b: ambient_env drops AUDIT_DRIVE_SESSION and keeps another AUDIT_ name; x8 extended to plant the mark in a real child"
+  ],
+  "casesAdded": [
+    [
+      "cf20",
+      "cf20b",
+      "cf21",
+      "cf21b",
+      "cf21c",
+      "cf21d",
+      "cf22",
+      "cf22b",
+      "cf22c",
+      "cf22d",
+      "cf22e",
+      "cf22f"
+    ],
+    [
+      "ras31c"
+    ]
+  ],
+  "claims": "claims:\n1 guard-edits.py _is_tree_config/_drive_started/_config_verdict carry what rule 7's docstring and SECURITY.md item 3 now say; run-agent-session.py _session_env sets DRIVE_SESSION_MARK; sweep SESSION_NAMES holds it\n2 mutations.py 11 rows, each anchor matched once, restored, pycache purged: ALL CAUGHT; ALLOW twins (shape-only match -> cf22e/cf11s/cf11m red; always-marked -> cf2/cf21/cf7 red; mark blocks every call -> cf21c/cf21d red; whole AUDIT_ family dropped -> se0b red)\n3 the dropped-name list: git grep AUDIT_LOCK_TOKENS -- '*.md' gives 4 hits: CONTRIBUTING.md fixed; CLAUDE.md left (owner's file, not to edit); CHANGELOG.md and PLUGIN-BUILD-GUIDE.md are about lock tokens, not the runner's list. tests/_harness.py docstring fixed; tests/test_hooks.py _hook_env fixed; other suites' env filters build children that are not this hook, left\n4 rule 7's sentence names its mechanism (guard-edits, the launcher's mark) and states the unprobed ask and the hooks-run-where-hooks-run condition about itself\n5 probe_guard.py run before and after, one window each; n/a for a timing\n6 decision reads the resolved target path and the process environment, not command text; allow twins shown green before the deny was added (cf21, cf21b, cf21c, cf21d, cf22e, cf22f passed on the unfixed hook)\n7 n/a - no number written in prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:5c98ba62b551f413227ff9de3b98fc7ecf4820b8dddd99cdebef876acf895d56\",\"dirtyDigest\":\"sha256:9b1b0d2979f975f55d8197feb490211a0962e7e2ea199107ed268832fc655df5\",\"dirtyPaths\":{\"CONTRIBUTING.md\":\"35fe850cba4ad760\",\"SECURITY.md\":\"4a7fb26dba2cb394\",\"plugins/audit/hooks/guard-edits.py\":\"25f369f79e61a562\",\"plugins/audit/scripts/governance/run-agent-session.py\":\"edf8bfe1f9f5ae10\",\"tests/_harness.py\":\"9e1c54533c9be12f\",\"tests/test_guard_edits.py\":\"27d498658ff5f94c\",\"tests/test_hooks.py\":\"0783ceedf14c5b72\",\"tests/test_run_agent_session.py\":\"edc2b62b756bb03c\",\"tools/sweep-selftests.py\":\"0f501046499550ff\"},\"head\":\"c0177226\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"CONTRIBUTING.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/guard-edits.py\",\"plugins/audit/scripts/governance/run-agent-session.py\",\"tests/_harness.py\",\"tests/test__config.py\",\"tests/test_guard_edits.py\",\"tests/test_hooks.py\",\"tests/test_run_agent_session.py\",\"tests/test_sweep_selftests.py\",\"tools/sweep-selftests.py\"],\"scopeDigest\":\"sha256:b5a4b396389eb26ffd30b7fb7d136f0526f471b5c2c7473fc0dbc4241e0501d3\",\"v\":2}",
+  "floorGuard": {
+    "answer": "clean",
+    "basis": "read 7 of the diff's 9 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 2 file(s) not read, having no syntax known here: CONTRIBUTING.md, SECURITY.md; 4 test file(s) not compared for definition-changed, defining no test* function: tests/_harness.py, tests/test_guard_edits.py, tests/test_hooks.py, tests/test_run_agent_session.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CONTRIBUTING.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "SECURITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "tests/_harness.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test_guard_edits.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test_hooks.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test_run_agent_session.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      }
+    ],
+    "base": {
+      "commit": "c0177226e29f701b377607f03d9e303e42641d06"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-17T17:23:44Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

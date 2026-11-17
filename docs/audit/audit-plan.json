@@ -1591,7 +1591,8 @@
       "P155.9",
       "P155.30-gfj",
       "P157.7-mwz",
-      "SG1.18-ukq"
+      "SG1.18-ukq",
+      "SG1.23-ukq"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -12324,7 +12325,8 @@
       "P156.7",
       "P156.8-3st",
       "P157.1",
-      "P157.7-mwz"
+      "P157.7-mwz",
+      "SG1.23-ukq"
     ],
     "tests/fixtures/pricing-page-2026-10-10.md": [
       "P131.1"
@@ -12442,7 +12444,8 @@
       "P156.4",
       "P156.16-3st",
       "P159.2",
-      "SG1.5"
+      "SG1.5",
+      "SG1.23-ukq"
     ],
     "tests/test__config_rules.py": [
       "P131.1",
@@ -13347,7 +13350,8 @@
       "P159.2",
       "P159.4-pue",
       "P159.5-pue",
-      "SG1.7"
+      "SG1.7",
+      "SG1.23-ukq"
     ],
     "tests/test_import_evidence.py": [
       "P131.1",

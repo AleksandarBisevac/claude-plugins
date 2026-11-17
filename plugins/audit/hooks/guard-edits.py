@@ -43,18 +43,28 @@ Inspects the *incoming* text (new content) and the target path, and blocks:
 
   7. The audit config — a write to the file `_config.load` reads
      (`<tree>/_config.CONFIG_REL`, for the project and for a linked worktree of
-     it) is REFUSED to a subagent (`_config.is_subagent`) and ASKED of the main
-     session. The plan gate exempts `.claude/**`, so without this an agent could
-     switch the capability policy, the plan gate or the journal off with one
-     Edit, and only a journal row would say so. Ask rather than deny for the main
-     session, because the owner legitimately has it change config; the owner's
-     own routes are /audit:panel (the panel server writes the file from its own
-     process, which no tool hook sees) and a hand edit. The rule holds in the
-     plugin's own checkout too: rule 3's dev-mode exception is for plugin
-     SOURCE, and this file is that checkout's governance, not its source.
+     it wherever that worktree sits, one placed under the project included:
+     `_is_tree_config`) is REFUSED to a subagent (`_config.is_subagent`) and to
+     a session the drive started (the launcher's mark, `_drive_started`), and
+     ASKED of the main session. The plan gate exempts `.claude/**`, so without
+     this an agent could switch the capability policy, the plan gate or the
+     journal off with one Edit, and only a journal row would say so. Ask rather
+     than deny for the main session, because the owner legitimately has it
+     change config; the owner's own routes are /audit:panel (the panel server
+     writes the file from its own process, which no tool hook sees) and a hand
+     edit. A session the drive started has no human at its prompt, so it is
+     refused instead; what the host does with an ask there was not probed, and
+     the refusal does not rest on it. The refusal is this hook, so it holds where
+     hooks run: a Claude Code version that runs no hooks inside a subagent runs
+     none of this there (SECURITY.md, the capability policy's first flag). The
+     rule holds in the plugin's own checkout too: rule 3's dev-mode exception is
+     for plugin SOURCE, and this file is that checkout's governance, not its
+     source.
      NOT covered, stated: a shell-form write (`sed -i`, a redirect, an
      interpreter) never reaches this hook; it is recorded by the journal and
-     nothing refuses it. SECURITY.md carries the same residual.
+     nothing refuses it. Nor does an MCP write whose payload carries no write
+     basis (`_config.mcp_payload`): a body that is one line of JSON, or a move
+     onto the config, is allowed. SECURITY.md carries both residuals.
 
 WHICH OF THOSE AN MCP SERVER'S WRITE TOOL REACHES, AND WHICH IT CANNOT. An MCP
 call reaches no edit-tool matcher, so before it was wired here a filesystem
@@ -303,17 +313,64 @@ _CONFIG_ASK = (
     "for; the owner's own routes are /audit:panel or a hand edit.%s"
 )
 
+_CONFIG_DRIVE_DENY = (
+    "The audit config is the owner's, not an agent's: %s\n"
+    "This session was started by the audit drive (run-agent-session.py marks it "
+    "with AUDIT_DRIVE_SESSION), so nobody is at its prompt to approve a "
+    "write to the capability policy, the plan gate or the journal switch that "
+    "govern it, and the write is refused as a subagent's is. The owner changes "
+    "it through /audit:panel or by hand. If this task needs a config change, say "
+    "so in your outcome and stop.%s"
+)
+
+# The environment name run-agent-session.py sets for every session it starts. A
+# session the drive started is top-level, so its tool calls carry no agent id and
+# `_config.is_subagent` cannot tell it from the owner's own session; this is the
+# only witness of it. Spelled here and in the launcher, which this hook may not
+# import; each side's suite writes the name out, so a rename goes red there.
+_DRIVE_MARK = "AUDIT_DRIVE_SESSION"
+
+
+def _drive_started():
+    """Whether the launcher marked this session. An empty or blank value marks
+    nothing, so a caller that clears the name by setting it empty is unmarked."""
+    return bool(os.environ.get(_DRIVE_MARK, "").strip())
+
+
+def _is_tree_config(target):
+    """Whether `target` sits where `_config.load` would read a config for a tree
+    of its own: `_config.CONFIG_REL` under a directory holding a repository (a
+    `.git` file or directory, `_config._holds_repository`, no git process).
+
+    This is how a linked worktree placed UNDER the project is seen: the tree
+    placement answers by containment first, so such a worktree's config arrives
+    as a long relative path inside the project. A plain folder holding a
+    `.claude/audit.config.json` holds no repository and is not matched. A nested
+    repository of any kind is matched, since its config is the one its own
+    hooks read when a session runs there. The string shape is checked before
+    the disk is asked, so an ordinary write costs no stat."""
+    parts = _config.CONFIG_REL.split("/")
+    real = os.path.realpath(target)
+    top = real
+    for _ in parts:
+        top = os.path.dirname(top)
+    shaped = os.path.join(top, *parts)
+    if os.path.normcase(shaped) != os.path.normcase(real):
+        return False
+    return _config._holds_repository(top)
+
 
 def _is_audit_config(tree):
     """Whether the path `tree` placed is the audit config of the tree it lands in.
 
     The file is the one `_config.load` reads - the tree's root joined with
-    `_config.CONFIG_REL` - so a file merely NAMED like it anywhere else, a
-    nested `.claude/` included, is not it. The comparison is over resolved
-    paths, so a symlinked `.claude/` names the same file; a spelling differing
-    only in case is matched by `samefile` when both exist. NOT matched, stated: a
-    case-variant spelling that CREATES the file on a case-insensitive volume
-    before any config exists.
+    `_config.CONFIG_REL` - or the same file of a working tree nested inside it
+    (`_is_tree_config`); a file merely NAMED like it anywhere else, a nested
+    `.claude/` of a plain folder included, is not it. The comparison is over
+    resolved paths, so a symlinked `.claude/` names the same file; a spelling
+    differing only in case is matched by `samefile` when both exist. NOT
+    matched, stated: a case-variant spelling that CREATES the file on a
+    case-insensitive volume before any config exists.
     """
     if not tree["inside"] or not tree["rel"]:
         return False
@@ -323,6 +380,8 @@ def _is_audit_config(tree):
     try:
         if os.path.realpath(target) == os.path.realpath(own):
             return True
+        if _is_tree_config(target):
+            return True
         return (os.path.exists(target) and os.path.exists(own)
                 and os.path.samefile(target, own))
     except (OSError, ValueError):
@@ -330,13 +389,18 @@ def _is_audit_config(tree):
 
 
 def _config_verdict(data, rel, tail=""):
-    """("block", msg) for a subagent, ("ask", msg) for the main session.
+    """("block", msg) for a subagent or a session the drive started, ("ask",
+    msg) for the main session.
 
     Ask, not deny, for the main session: the owner legitimately has it change
     config, and only the human at the prompt can tell that request from an agent
-    switching its own governance off."""
+    switching its own governance off. A session the drive started has no human
+    at its prompt, so it is refused like a subagent; what the host does with an
+    ask nobody can answer is not what this rule rests on."""
     if _config.is_subagent(data):
         return ("block", _CONFIG_DENY % (rel, tail))
+    if _drive_started():
+        return ("block", _CONFIG_DRIVE_DENY % (rel, tail))
     return ("ask", _CONFIG_ASK % (rel, tail))
 
 

@@ -1248,10 +1248,12 @@ consequences of running as a plugin hook rather than as the platform:**
    it never claims to enforce against it.
 
 The file the policy lives in is held too: a subagent's edit-tool write to the
-audit config is refused and the main session's is asked (`guard-edits` rule 7,
-under *Known bypass classes*, item 3). A shell-form write of it is not refused —
-the residual stated there — so against a governed agent with a shell the policy
-is enforced on the edit tools and recorded, not refused, on the shell.
+audit config is refused — where hooks run inside a subagent, which is flag 1 again —
+as is the write of a session the drive started, and the main session's is asked
+(`guard-edits` rule 7, under *Known bypass classes*, item 3). A shell-form write of
+it is not refused, nor an MCP write carrying no write basis — the residuals stated
+there — so against a governed agent with a shell the policy is enforced on the edit
+tools and recorded, not refused, on the shell.
 
 Everything uncertain resolves to *allow*, in keeping with the fail-open posture
 above: no policy engine, a malformed block, an unreadable manifest and an
@@ -1439,21 +1441,39 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    `guard-edits` (rule 7) now takes an edit-tool write (Edit, Write, MultiEdit,
    NotebookEdit, and an MCP call whose payload carries a write basis) whose
    resolved target is the file `_config.load` reads — `<project>/.claude/audit.config.json`,
-   or the same file of a linked worktree of the project — and **denies** it to a
-   subagent, with a reason naming the owner's routes (`/audit:panel`, whose server
-   writes the file from its own process, or a hand edit), and **asks** the human
-   about it from the main session, because the owner legitimately has the main
-   session change config. It applies in the plugin's own checkout as well: the
-   dev-mode exception above is for plugin source, and this file is not source.
-   A Read of the config, another file under `.claude/`, and a file merely named
-   `audit.config.json` elsewhere are untouched.
+   or the same file of a linked worktree of the project, wherever that worktree
+   sits: beside the project, or under it (where an isolated subagent's worktree is
+   placed, `.claude/worktrees/<name>/`), which is read as `.claude/audit.config.json`
+   under any directory holding a `.git` entry, with no git process — and **denies**
+   it to a subagent, with a reason naming the owner's routes (`/audit:panel`, whose
+   server writes the file from its own process, or a hand edit), and **asks** the
+   human about it from the main session, because the owner legitimately has the
+   main session change config. A session the drive started (`run-agent-session.py`,
+   the writer `executor.writerModel` names) is a top-level session whose calls carry
+   no agent id, and nobody is at its prompt: the launcher marks it with
+   `AUDIT_DRIVE_SESSION`, and `guard-edits` **denies** a marked session the write as
+   it denies a subagent; an empty value marks nothing. What the host does with a
+   hook's `ask` in a headless session where nobody can answer was **not probed** —
+   it needs a paid session — so the refusal does not rest on that answer. The
+   refusal is a PreToolUse hook, so it holds where hooks run: inside a subagent on
+   a Claude Code version that does not run hooks there, the first flag of the
+   capability policy above applies to it as it does to the policy. It applies in the
+   plugin's own checkout as well: the dev-mode exception above is for plugin source,
+   and this file is not source. A Read of the config, another file under `.claude/`,
+   and a file merely named `audit.config.json` elsewhere — under a `.claude/` of a
+   plain folder that holds no repository included — are untouched.
 
-   **Residual, stated rather than hidden:** a shell-form write of the config —
+   **Residuals, stated rather than hidden:** a shell-form write of the config —
    `sed -i`, a redirect, an interpreter — never reaches `guard-edits`, and no
    other hook refuses it; it is recorded by the journal (`journal-writes` reads
    Bash too) and nothing more. The shell reader that could hold it lives in
    `guard-secrets-read`, and extending it is not done. `tests/test_hooks.py`
    carries that row as a known divergence, so the day it closes the row goes red.
+   An MCP call whose payload carries no write basis is not held either, though it
+   writes the config: a body that is one line of JSON (a whole config is naturally
+   one line) or a move onto the config. The write basis is chosen to under-cover
+   (`_config.mcp_payload`), so that an MCP read of the files it holds is never
+   refused; this is the cost of that choice.
 4. **Test-file exemption.** Test files are exempt from plan-first so red-first
    TDD stays frictionless — the first act of a red-first fix is writing a test
    that fails, and a gate that blocks that blocks the discipline. Logic can

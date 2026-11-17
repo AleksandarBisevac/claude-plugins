@@ -366,19 +366,38 @@ def _cases(check):
 # on the subagent bit alone goes red here rather than in somebody's session.
 _CF_ROUTES = ("/audit:panel", "by hand")
 _CF_BODY = '{"policy": {"enabled": false}}\n'
+# The name the launcher marks the sessions it starts with, written out here and
+# not read from the hook or the launcher: the hook reads it, the launcher sets it,
+# and `tests/test_run_agent_session.py` spells it out too, so a rename on either
+# side turns a case red instead of passing a name compared with itself.
+_DRIVE_MARK = "AUDIT_DRIVE_SESSION"
 
 
-def _cf_decide(cfg, tool, ti, cwd, agent):
+def _cf_decide(cfg, tool, ti, cwd, agent, mark=None):
+    """The verdict with the launcher's mark set to `mark`, or absent for None.
+
+    Every case pins the mark, set or absent, rather than inheriting the caller's:
+    a suite run from inside a session the drive started would otherwise read every
+    main-session ask below as a refusal."""
     data = {"tool_name": tool, "tool_input": ti, "cwd": cwd}
     if agent:
         data["agent_id"] = agent
-    ok, got = _harness.attempt(M.decide, data, cfg=cfg)
+    prev = os.environ.pop(_DRIVE_MARK, None)
+    if mark is not None:
+        os.environ[_DRIVE_MARK] = mark
+    try:
+        ok, got = _harness.attempt(M.decide, data, cfg=cfg)
+    finally:
+        os.environ.pop(_DRIVE_MARK, None)
+        if prev is not None:
+            os.environ[_DRIVE_MARK] = prev
     return (got[0], got[1] or "") if ok else (got, "")
 
 
 def _config_cases(check, cfg, tmp, tf):
-    def _cf(name, expected, tool, ti, agent="agent-cf", cwd=tmp, words=()):
-        verdict, reason = _cf_decide(cfg, tool, ti, cwd, agent)
+    def _cf(name, expected, tool, ti, agent="agent-cf", cwd=tmp, words=(),
+            mark=None):
+        verdict, reason = _cf_decide(cfg, tool, ti, cwd, agent, mark=mark)
         missing = [w for w in words if w not in reason]
         check(name, verdict == expected and not missing,
               "expected %s, got %s; reason lacks %s: %r"
@@ -430,6 +449,33 @@ def _config_cases(check, cfg, tmp, tf):
         _cf("cf7 the main session's MCP write of it is asked", "ask",
             "mcp__filesystem__write_file", {"path": conf, "content": _CF_BODY},
             agent=None)
+
+        # A session the drive started is a top-level session: its tool calls carry
+        # no agent id, and nobody sits at its prompt. The launcher's mark is what
+        # tells it apart from the owner's own session. Each refusal has its twin:
+        # the same payload unmarked, and the mark set to nothing, are asked; a Read
+        # under the mark is not held; and the mark changes no other verdict.
+        _cf("cf20 a session the drive started (the launcher's mark, no agent id) "
+            "is refused the config write, in words naming the drive", "block",
+            "Write", _w(conf), agent=None, mark="1", words=("drive",))
+        _cf("cf20b ...and its MCP write of it, as a subagent's is", "block",
+            "mcp__fs__write_file", {"path": conf, "content": _CF_BODY},
+            agent=None, mark="1")
+        _cf("cf21 the same Write with no mark is the owner's session and is "
+            "asked, not refused", "ask", "Write", _w(conf), agent=None,
+            mark=None)
+        _cf("cf21b the mark set to an empty value marks nothing - asked",
+            "ask", "Write", _w(conf), agent=None, mark="")
+        _cf("cf21c a marked session's Read of the config is never held",
+            "allow", "Read", {"file_path": conf}, agent=None, mark="1")
+        _src = {"file_path": os.path.join(tmp, "src", "cf-app.ts"),
+                "content": "export const a = 1;\n"}
+        _plain = _cf_decide(cfg, "Write", _src, tmp, None, mark=None)[0]
+        _marked = _cf_decide(cfg, "Write", _src, tmp, None, mark="1")[0]
+        check("cf21d the mark changes no verdict but the config's: a marked "
+              "session's write of an ordinary source file answers what an "
+              "unmarked one does (%s vs %s)" % (_marked, _plain),
+              _plain == "allow" and _marked == _plain)
 
         # The config spelled in other letter cases. Whether that is the same file
         # is the filesystem's answer, so it is read off the scratch directory the
@@ -525,6 +571,41 @@ def _config_cases(check, cfg, tmp, tf):
         _cf("cf18 ...while a write to a file beside it in that worktree's "
             ".claude/ is not", "allow", "Write",
             _w(os.path.join(tf["wt"], ".claude", "settings.json")),
+            cwd=tf["main"])
+
+        # A linked worktree placed UNDER the project - where the harness puts an
+        # isolated subagent's tree, and where a worktree root inside the project
+        # puts the drive's - is a working tree of the repository all the same. A
+        # containment test calls it the project, and its config then reads as a
+        # nested file the rule does not hold; so it is a REAL `git worktree add`
+        # here, beside a plain folder of the same shape that is no tree (cf11's
+        # twin at this depth) and must stay allowed.
+        nested = os.path.join(tf["main"], ".claude", "worktrees", "agent-cf")
+        plain = os.path.join(tf["main"], ".claude", "worktrees", "plain-cf")
+        built, why = _harness.attempt(
+            _harness.git, tf["main"], "worktree", "add", "-q", nested, "-b",
+            "nested/agent-cf", prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+        check("cf22 the nested worktree fixture builds and is a linked tree "
+              "(%s)" % (why if not built else "built",),
+              built and os.path.isfile(os.path.join(nested, ".git")))
+        _config.forget_git_standing()
+        nconf = os.path.join(nested, *_config.CONFIG_REL.split("/"))
+        _cf("cf22b a subagent's write to the config of a linked worktree nested "
+            "under the project is refused, from a session in the project",
+            "block", "Write", _w(nconf), cwd=tf["main"], words=_CF_ROUTES)
+        _cf("cf22c ...and from a session whose directory is that worktree",
+            "block", "Write", _w(nconf), cwd=nested)
+        _cf("cf22d ...while the main session's write of it is asked", "ask",
+            "Write", _w(nconf), cwd=tf["main"], agent=None)
+        os.makedirs(plain)
+        _cf("cf22e a plain folder of the same shape, which holds no repository, "
+            "keeps its answer: its .claude/audit.config.json is untouched",
+            "allow", "Write",
+            _w(os.path.join(plain, *_config.CONFIG_REL.split("/"))),
+            cwd=tf["main"])
+        _cf("cf22f ...and a file beside the nested worktree's config is not "
+            "this rule's", "allow", "Write",
+            _w(os.path.join(nested, ".claude", "settings.json")),
             cwd=tf["main"])
     finally:
         if prev is None:

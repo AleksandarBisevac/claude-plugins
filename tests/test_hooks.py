@@ -797,9 +797,11 @@ def _fill(value, root, scratch):
 
 def _hook_env(root, home):
     """The caller's environment minus the session's own variables, which would
-    point a hook at the real project, plus the fixture as the project."""
+    point a hook at the real project or, for the drive's session mark, turn the
+    config rows' main-session ask into a refusal; plus the fixture as the project."""
     env = dict((k, v) for k, v in os.environ.items()
-               if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+               if not k.startswith("CLAUDE")
+               and k not in ("AUDIT_LOCK_TOKENS", "AUDIT_DRIVE_SESSION"))
     env["CLAUDE_PROJECT_DIR"] = root
     env["HOME"] = home
     env["USERPROFILE"] = home

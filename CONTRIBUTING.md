@@ -290,7 +290,8 @@ home lookup reads, not just `HOME`: the `XDG_*` roots are set independently on l
 hand.
 
 WHAT IS NOT A DIRECTORY IS FILTERED, NOT PASSED THROUGH. The Claude session's variables -
-every `CLAUDE_` name, plus `CLAUDECODE` and `AUDIT_LOCK_TOKENS` - are dropped, and so is
+every `CLAUDE_` name, plus `CLAUDECODE`, `AUDIT_LOCK_TOKENS` and the drive's session mark
+`AUDIT_DRIVE_SESSION` - are dropped, and so is
 any identity the caller exports (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`, `EMAIL`); git runs with
 `GIT_CONFIG_NOSYSTEM` set and `user.useConfigOnly` refusing a guessed identity. No branch
 and no identity are supplied in their place: a suite leaning on the host's git must fail

@@ -595,13 +595,25 @@ def _cases(check):
                             "CLAUDE_CODE_SKIP_VERTEX_AUTH": "1",
                             "CLAUDE_CODE_SKIP_FOUNDRY_AUTH": "1",
                             "CLAUDE_CODE_USE_VERTEX": "1"}
+        # The mark the launcher puts on the session it starts, so the config hold
+        # in hooks/guard-edits.py refuses that session as it refuses a subagent.
+        # Written out, not read from the script; and the parent carries the name
+        # with ANOTHER value, so a launcher that only passes an inherited mark on,
+        # or sets it only where absent, hands the child the parent's value.
+        drive_mark, drive_value = "AUDIT_DRIVE_SESSION", "1"
         parent = dict((name, "parent-" + name) for name in parent_session)
         parent.update(dict((name, "parent-" + name) for name in unlisted_session))
         parent.update(kept_decoys)
         parent.update(kept_credentials)
+        parent[drive_mark] = "parent-" + drive_mark
         code, out, err, rec, dirs = _run(root, bindir, "writer", tag="env",
                                          env_extra=parent)
         seen = (rec or {}).get("env") or {}
+        check("ras31c the child session's environment carries the launcher's "
+              "mark %s=%s, set by the launcher over whatever the parent carried: "
+              "the child saw %r" % (drive_mark, drive_value, seen.get(drive_mark)),
+              rec is not None and "env" in rec
+              and seen.get(drive_mark) == drive_value, repr(seen))
         leaked_unlisted = sorted(name for name in unlisted_session if name in seen)
         check("ras30b a CLAUDE_CODE_* name on no list reaches no child either - the "
               "drop is by prefix, not by a closed list; leaked: %r" % (leaked_unlisted,),

@@ -455,12 +455,15 @@ def home_env(home):
 # THE SESSION FAMILY IS DERIVED BY PREFIX, not listed, because the harness adds
 # members to it and a list would be one release behind. The names outside the
 # prefix are listed with their reason: `CLAUDECODE` is the harness's own marker that
-# a process was spawned by it, and `AUDIT_LOCK_TOKENS` is how a lock holder hands
+# a process was spawned by it, `AUDIT_LOCK_TOKENS` is how a lock holder hands
 # its claims to its children - a sweep typed from inside a held run would hand
-# every suite a claim it never took. Nothing is allowed through by name: CI's
+# every suite a claim it never took - and `AUDIT_DRIVE_SESSION` is the mark
+# run-agent-session.py puts on a session the drive started, which turns the config
+# hold's ask into a refusal, so a sweep typed from inside such a session would turn
+# every main-session ask case red. Nothing is allowed through by name: CI's
 # runners carry none of this family, and a suite that needs one of them sets it.
 SESSION_PREFIX = "CLAUDE_"
-SESSION_NAMES = ("CLAUDECODE", "AUDIT_LOCK_TOKENS")
+SESSION_NAMES = ("CLAUDECODE", "AUDIT_LOCK_TOKENS", "AUDIT_DRIVE_SESSION")
 
 # AN IDENTITY THE CALLER EXPORTS IS AMBIENT TOO. Refusing git's guess closes only
 # half of it: a developer with one of these exported hands every suite an identity
@@ -4465,6 +4468,18 @@ def _cases(check):
           not any(k in _amb for k in ("CLAUDE_CODE_SESSION_ID",
                                       "CLAUDE_PLUGIN_ROOT", "CLAUDECODE",
                                       "AUDIT_LOCK_TOKENS")))
+    # The drive's mark on a session it started: a sweep typed from inside one
+    # would otherwise hand it to every suite, and guard-edits' config cases would
+    # read each main-session ask as a refusal. Written out here, not read off
+    # SESSION_NAMES, with an AUDIT_ neighbour that must pass, so a filter widened
+    # to the whole AUDIT_ family goes red too.
+    _marked = ambient_env({"AUDIT_DRIVE_SESSION": "1", "PATH": "/bin",
+                           "AUDIT_SWEEP_NEIGHBOUR": "kept"})
+    check("se0b the drive's session mark AUDIT_DRIVE_SESSION is dropped by name, "
+          "while another AUDIT_ name passes: %r" % (sorted(_marked),),
+          "AUDIT_DRIVE_SESSION" not in _marked
+          and _marked.get("AUDIT_SWEEP_NEIGHBOUR") == "kept"
+          and _marked.get("PATH") == "/bin")
     # se1 IS THE SECOND DIRECTION: se0 passes against a filter that drops
     # everything, or one that matches the prefix anywhere in a name.
     check("se1 ...and nothing else is: a name that merely CONTAINS the prefix, "
@@ -4735,7 +4750,8 @@ def _cases(check):
                             "e = os.environ\n"
                             "sys.stdout.write('ENV=' + json.dumps({\n"
                             "    'session': sorted(k for k in e if "
-                            "k.startswith('CLAUDE') or k == 'AUDIT_LOCK_TOKENS'),\n"
+                            "k.startswith('CLAUDE') or k in "
+                            "('AUDIT_LOCK_TOKENS', 'AUDIT_DRIVE_SESSION')),\n"
                             "    'identity': sorted(k for k in e if k in %r),\n"
                             % (list(GIT_IDENTITY_NAMES),)
                             + "    'prompt': e.get('GIT_TERMINAL_PROMPT'),\n"
@@ -4758,6 +4774,7 @@ def _cases(check):
                          "CLAUDE_PID": str(os.getpid()),
                          "CLAUDECODE": "1",
                          "AUDIT_LOCK_TOKENS": "sweep-probe-token",
+                         "AUDIT_DRIVE_SESSION": "1",
                          "GIT_CONFIG_NOSYSTEM": "0",
                          "SWEEP_CLAUDE_PROBE": "kept",
                          "GIT_TERMINAL_PROMPT": "0"})
@@ -4781,7 +4798,8 @@ def _cases(check):
         _shown = (dict((k, v) for k, v in _env.items() if k != "path")
                   if _env else ran["output"][-400:])
         check("x8 a child sees NONE of the Claude session it was typed from - the "
-              "prefix family, the harness marker and a lock holder's tokens - "
+              "prefix family, the harness marker, a lock holder's tokens and the "
+              "drive's session mark - "
               "which the lock and journal code otherwise read as a live holder "
               "and an actor that a bare runner never has: %r" % (_shown,),
               ran["code"] == 0 and bool(_env) and _env.get("session") == [])

@@ -98,7 +98,10 @@ session inherits (`KEEP_SESSION_VARS`, `KEEP_SESSION_PREFIXES` - a judgement,
 unverified against a CLI release). Any other `CLAUDE_CODE_` name is dropped on
 purpose, an exported configuration switch included; the comment above
 `PARENT_SESSION_VARS` says why, and how an operator keeps one. Everything else in
-the environment (PATH, HOME, credentials, provider switches) is passed on.
+the environment (PATH, HOME, credentials, provider switches) is passed on, and one
+name is added: the drive's mark (`DRIVE_SESSION_MARK`), by which the config hold
+in hooks/guard-edits.py refuses this session the config write instead of asking a
+prompt nobody is at.
 
 THE STREAM IS SAVED under `<state-dir>/sessions/`, one file per run (a resumed
 session is a second stream, which is how a transcript re-price reads a session),
@@ -220,6 +223,15 @@ KEEP_SESSION_VARS = ("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_API_KEY_HELPER_TTL_
                      "CLAUDE_CODE_SKIP_BEDROCK_AUTH", "CLAUDE_CODE_SKIP_VERTEX_AUTH",
                      "CLAUDE_CODE_SKIP_FOUNDRY_AUTH")
 KEEP_SESSION_PREFIXES = ("CLAUDE_CODE_USE_",)
+
+# THE ONE NAME THIS RUNNER ADDS: the mark that a session was started by the audit
+# drive. Such a session is top-level, so its tool calls carry no agent id and the
+# config hold in hooks/guard-edits.py would ask it - a prompt nobody is at. The
+# hook reads this name and refuses the write as it refuses a subagent's. Set over
+# whatever the parent carried, so it never depends on an inherited value; spelled
+# again in the hook, which may not import this file, and written out in both
+# suites so a rename on either side goes red.
+DRIVE_SESSION_MARK = ("AUDIT_DRIVE_SESSION", "1")
 
 ROLES = ("writer", "reviewer")
 REVIEWER = "audit-reviewer"
@@ -523,10 +535,12 @@ def _is_parent_session_var(name):
 
 def _session_env(tmpdir):
     """The child's environment: the parent's, less its Claude session variables
-    (`_is_parent_session_var`), with the session's own TMPDIR."""
+    (`_is_parent_session_var`), with the session's own TMPDIR and the drive's
+    mark (`DRIVE_SESSION_MARK`)."""
     env = dict((k, v) for k, v in os.environ.items() if not _is_parent_session_var(k))
     for name in ("TMPDIR", "TEMP", "TMP"):
         env[name] = tmpdir
+    env[DRIVE_SESSION_MARK[0]] = DRIVE_SESSION_MARK[1]
     return env
 
 

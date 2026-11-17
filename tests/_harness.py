@@ -206,8 +206,9 @@ def fixture_root(prefix):
     the two watched channels free of a premise nobody re-checks.
 
     AND THE REST OF THE ENVIRONMENT IS FILTERED. The runner drops the Claude
-    session's variables - every `CLAUDE_` name, plus `CLAUDECODE` and
-    `AUDIT_LOCK_TOKENS` - and any identity the caller exports (`GIT_AUTHOR_*`,
+    session's variables - every `CLAUDE_` name, plus `CLAUDECODE`,
+    `AUDIT_LOCK_TOKENS` and the drive's session mark `AUDIT_DRIVE_SESSION` - and
+    any identity the caller exports (`GIT_AUTHOR_*`,
     `GIT_COMMITTER_*`, `EMAIL`), and runs git with `GIT_CONFIG_NOSYSTEM` set and
     `user.useConfigOnly` refusing a guessed identity, supplying no branch and no
     identity instead. So a fixture here that commits must configure its own
