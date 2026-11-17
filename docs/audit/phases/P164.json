@@ -1,7 +1,7 @@
 {
   "id": "P164",
   "title": "The report's layout holds under any runner font",
-  "status": "in_progress",
+  "status": "done",
   "description": "Release CI run 43991712323 on a936cc11 failed the report layout matrix on the runner's fonts (lm5 834x1194 on acme and demo-large, lm4 1024x768 on demo-large) while macOS was green. One task fixes the class.",
   "desiredOutcome": "The layout matrix asserts only what the page controls (no overflow, nothing clipped, sticky stack within a stated budget per viewport class, no wrap inside a word, counter inside its bar); toolbar and header wrapping is designed with headroom; a wide-font pass runs by default locally; release CI's browser (report) job is green on the landed SHA.",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "a936cc1137d2fb6e3cb6a2ceb02ca95e5c925382",
   "branch": "audit/p164-the-report-s-layout-holds-unde",
-  "mergedAt": null,
+  "mergedAt": "2026-11-17T05:06:55Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -456,5 +456,6 @@
     "runId": "2026-11-17T05:06:07Z.404b1d",
     "status": "passed",
     "at": "2026-11-17T05:06:07Z"
-  }
+  },
+  "mergedHead": "4f459790e6a50dd7f7e053cca19dfa9237edf4da"
 }
