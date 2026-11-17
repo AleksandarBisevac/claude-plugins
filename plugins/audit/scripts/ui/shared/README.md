@@ -4,7 +4,11 @@ Parts here are concatenated into **both** surfaces — the report's script and t
 panel's — ahead of every part that reads them. `_report_ui._SCRIPT_PARTS` and
 `_panel_ui._JS_PARTS` both list this directory first, and that order is the
 dependency direction made mechanical: a shared part cannot call a surface helper,
-because the surface has not been declared yet.
+because the surface has not been declared yet. A `.css` part here joins the two
+stylesheets instead, through `_ui_theme.REPORT_CSS_PARTS` and
+`_ui_theme.PANEL_CSS_PARTS`, read before every surface part but the panel's
+token-and-reset one; `cs8` and `cs9` in `tests/test__ui_theme.py` hold both tuples
+to that.
 
 ## What belongs here, as a rule you can check
 
@@ -94,4 +98,5 @@ responsibility with nothing in this table to grow with it.
 | `clipboard.js` | Copying text, and BOTH of the ways it fails from disk — one browser throws, another rejects. The remedy stays the caller's: the panel toasts, the report selects in place. |
 | `download.js` | Handing the viewer a file: one object-URL revoke policy, and the text wrapper so no caller picks a charset. |
 | `lookup.js` | Reading a table the code wrote as a literal with a key that did not: one own-property read, so an inherited member name is a MISS rather than `Object.prototype`'s function. The panel owned it while the report carried the identical class and threw on `#!v=constructor`, which is what a second surface is for. It says in full what it does NOT cover — a map the code BUILDS from outside keys needs `Object.create(null)` instead, and then needs no read helper at all. |
+| `disclosure.css` | The arrow on a filter fold's summary, and the platform marker it replaces. The one stylesheet part here: it joins `_ui_theme.REPORT_CSS_PARTS` and `_ui_theme.PANEL_CSS_PARTS` rather than the two script tuples, ahead of every surface part but the panel's token-and-reset part. The panel announced its triangle while the report's carried an empty alternative, which is the disagreement a second copy is free to have. |
 | `storage.js` | Remembering something across reloads when the page is allowed to. Fourteen sites carried their own `try`/`catch`; the report may be opened from disk, where storage is refused. |

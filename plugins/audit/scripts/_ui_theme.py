@@ -875,13 +875,15 @@ UI_DIR = _output.UI_DIR
 
 # THE CASCADE ORDER of the report's stylesheet parts, declared once. Two rules
 # of equal specificity are decided by which is read last, so this sequence is
-# behaviour and not filing: the shell before what sits in it, and the print
-# and forced-colours blocks after the colours they override.
+# behaviour and not filing: the shared layer before every surface part, the
+# shell before what sits in it, and the print and forced-colours blocks after
+# the colours they override.
 #
 # It lives HERE rather than beside the assembler because the theme lints run
 # at this layer and must audit the sheet in the order that SHIPS. Sorting
 # these names alphabetically would audit a sheet nobody serves.
 REPORT_CSS_PARTS = (
+    "shared/disclosure.css",
     "report-css/shell.css",
     "report-css/summary.css",
     "report-css/controls.css",
@@ -902,7 +904,9 @@ REPORT_CSS_PARTS = (
 # that SHIPS, so the one declaration has to sit where they can see it.
 #
 # The sequence is the file's own, cut and not regrouped: the token placeholder
-# and the reset first, then the shell the five views are drawn in, then the
+# and the reset first, then the shared layer - after the token part because the
+# panel's tokens arrive by placeholder inside it, where the report's are
+# prepended in Python - then the shell the five views are drawn in, then the
 # primitives they compose from, then one view at a time. Some names say out loud
 # that the order is not filing - `usage-narrow.css` holds the usage tab's
 # below-34rem overrides, which sit AFTER the tooltip in the sheet and therefore
@@ -911,6 +915,7 @@ REPORT_CSS_PARTS = (
 # these names alphabetically would change what ships.
 PANEL_CSS_PARTS = (
     "panel-css/tokens-and-reset.css",
+    "shared/disclosure.css",
     "panel-css/app-shell.css",
     "panel-css/base-controls.css",
     "panel-css/usage-tab.css",

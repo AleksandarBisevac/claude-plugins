@@ -4,8 +4,9 @@ The parts are joined in the order `_ui_theme.REPORT_CSS_PARTS` lists, behind the
 token layer, and served as a single inline `<style>` in a self-contained HTML file.
 
 **Order is the cascade.** Two rules of equal specificity are decided by which one is
-read last, so this sequence is behaviour: the shell before the components that sit
-in it, and the print and forced-colours blocks after the colours they override.
+read last, so this sequence is behaviour: the shared layer (`ui/shared/*.css`, which
+the panel joins too) before every part here, the shell before the components that
+sit in it, and the print and forced-colours blocks after the colours they override.
 Sorting these names alphabetically changes what ships.
 
 The order is declared in `_ui_theme` rather than beside the assembler, because the

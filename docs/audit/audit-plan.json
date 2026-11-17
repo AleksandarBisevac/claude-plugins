@@ -8647,7 +8647,8 @@
       "P131.1",
       "P131.2",
       "P163.17-d6t",
-      "P164.1"
+      "P164.1",
+      "P165.4"
     ],
     "tools/check-committed-pii.py": [
       "P51.4",
@@ -11761,7 +11762,8 @@
       "P163.17-d6t",
       "P164.1",
       "P165.1",
-      "P165.6-r5e"
+      "P165.6-r5e",
+      "P165.5"
     ],
     ".github/sweep-costs.json": [
       "P127.2-bgr",
@@ -11962,7 +11964,8 @@
       "P163.15-d6t",
       "P163.17-d6t",
       "P165.1",
-      "P165.6-r5e"
+      "P165.6-r5e",
+      "P165.5"
     ],
     "tools/ui-tests/table-fit.test.mjs": [
       "P125.81-0h5",
@@ -12684,7 +12687,8 @@
     ],
     "tests/test__panel_page.py": [
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P165.4"
     ],
     "tests/test__panel_paths.py": [
       "P131.1"
@@ -12776,7 +12780,8 @@
       "P164.1",
       "P165.1",
       "P165.4",
-      "P165.6-r5e"
+      "P165.6-r5e",
+      "P165.5"
     ],
     "tests/test__report_ui.py": [
       "P131.1",
@@ -12853,7 +12858,8 @@
       "P129.8-izt"
     ],
     "tests/test__surface_digest.py": [
-      "P131.1"
+      "P131.1",
+      "P165.4"
     ],
     "tests/test__task_outputs.py": [
       "P131.1",
@@ -13550,7 +13556,8 @@
       "P155.30-gfj"
     ],
     "tools/lints/_ui_theme_lints.py": [
-      "P131.2"
+      "P131.2",
+      "P165.4"
     ],
     "plugins/audit/scripts/governance/run-agent-session.py": [
       "P131.3",
@@ -13707,7 +13714,8 @@
       "P163.16-d6t",
       "P163.17-d6t",
       "P165.1",
-      "P165.6-r5e"
+      "P165.6-r5e",
+      "P165.5"
     ],
     "plugins/audit/scripts/ui/report-css/README.md": [
       "P154.3-mkf",
@@ -13833,6 +13841,9 @@
       "P165.4"
     ],
     "plugins/audit/scripts/ui/panel-css/usage-narrow.css": [
+      "P165.4"
+    ],
+    "plugins/audit/scripts/ui/panel-css/README.md": [
       "P165.4"
     ]
   },

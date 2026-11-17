@@ -3491,6 +3491,45 @@ expect('...nor the phases table\'s head, whose Sort and expand-all do nothing on
     await page.click('.fdetails > summary');
     await page.waitForTimeout(150);
   } else notes.push('ok   (this plan has no chip in More filters — its announced count skipped)');
+
+  // The arrow beside "More filters" is a picture, so it must not join the name
+  // in either state - shut and open draw different triangles, and a rule that
+  // gave one of them an empty alternative and not the other would be heard half
+  // the time. Independent of a chip, so it runs on every plan with the control.
+  // Then forced colours, which repaints text rather than dropping it: the arrow
+  // must still be generated there, in a colour that paints.
+  if (await page.$('.fdetails > summary')) {
+    const ARROWS = /[■-◿]/;
+    const axName = async () => {
+      const cdp = await page.context().newCDPSession(page);
+      try {
+        const { root } = await cdp.send('DOM.getDocument', { depth: -1 });
+        const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector: '.fdetails > summary' });
+        const { nodes } = await cdp.send('Accessibility.getPartialAXTree', { nodeId, fetchRelatives: false });
+        return (nodes[0] && nodes[0].name && nodes[0].name.value) || '';
+      } finally { await cdp.detach(); }
+    };
+    await page.evaluate(() => { document.querySelector('.fdetails').open = false; });
+    await page.waitForTimeout(150);
+    const shutName = await axName();
+    await page.evaluate(() => { document.querySelector('.fdetails').open = true; });
+    await page.waitForTimeout(150);
+    const openName = await axName();
+    expect(`ax4 the More-filters summary's accessible name carries no arrow glyph, shut or open (shut ${JSON.stringify(shutName)}, open ${JSON.stringify(openName)})`,
+      `${!!shutName && !ARROWS.test(shutName)}/${!!openName && !ARROWS.test(openName)}`, 'true/true');
+    await page.evaluate(() => { document.querySelector('.fdetails').open = false; });
+    await page.emulateMedia({ forcedColors: 'active' });
+    await page.waitForTimeout(150);
+    const fc = await page.evaluate(() => {
+      const cs = getComputedStyle(document.querySelector('.fdetails > summary'), '::after');
+      return { content: cs.content, color: cs.color };
+    });
+    await page.emulateMedia({ forcedColors: 'none' });
+    await page.waitForTimeout(150);
+    const painted = ARROWS.test(fc.content) && !/^rgba\(.*,\s*0\)$|^transparent$/.test(fc.color);
+    expect(`ax5 under forced colours the arrow is still generated, in a colour that paints (content ${fc.content}, color ${fc.color})`,
+      painted, true);
+  } else notes.push('ok   (this report has no More-filters control — its arrow name skipped)');
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(150);
 }

@@ -868,7 +868,8 @@ async function openUsageFilters(page) {
       chipsFirst: c ? c.compareDocumentPosition(d) === 4 : null,
     };
   });
-  if (!page.__usageFoldSeen) {
+  const firstSight = !page.__usageFoldSeen;
+  if (firstSight) {
     page.__usageFoldSeen = true;
     if (st.open) {
       fail('usage: the Filters fold was already open when the tab was first '
@@ -887,7 +888,116 @@ async function openUsageFilters(page) {
          + 'nothing on screen naming what is scoping every number below it');
     }
   }
+  const shutName = firstSight ? await usageFoldName(page) : null;
   if (!st.open) await page.click('#usage summary[data-ufilters]');
+  if (firstSight) {
+    // The arrow beside "Filters" is a picture: the summary's name is its words
+    // and its count, in both states, because shut and open draw different
+    // triangles. Asked of the browser's accessibility tree - the name is
+    // computed, and generated content joins it unless it says otherwise.
+    const openName = await usageFoldName(page);
+    const ARROWS = /[■-◿]/;
+    const bad = [['shut', shutName], ['open', openName]]
+      .filter(([, n]) => !n || ARROWS.test(n));
+    if (bad.length) {
+      fail(`pa1 usage: the Filters summary is announced as ${bad.map(([s, n]) => `${s} `
+         + JSON.stringify(n)).join(' and ')} - the disclosure arrow is decoration `
+         + 'and must not join the name');
+    } else {
+      note(`pa1 usage: the Filters summary is named ${JSON.stringify(shutName)} shut and `
+         + `${JSON.stringify(openName)} open, no arrow in either`);
+    }
+  }
+}
+
+/** The Usage Filters summary's accessible name, as the browser computes it. */
+async function usageFoldName(page) {
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    const { root } = await cdp.send('DOM.getDocument', { depth: -1 });
+    const { nodeId } = await cdp.send('DOM.querySelector',
+      { nodeId: root.nodeId, selector: '#usage summary[data-ufilters]' });
+    if (!nodeId) return '';
+    const { nodes } = await cdp.send('Accessibility.getPartialAXTree',
+      { nodeId, fetchRelatives: false });
+    return (nodes[0] && nodes[0].name && String(nodes[0].name.value || '')) || '';
+  } finally { await cdp.detach(); }
+}
+
+/**
+ * The usage tab's pointer states, each read in its OWN box.
+ *
+ * A hover rule that names the wrong selector, or one a later rule out-ranks,
+ * leaves the control looking inert under the pointer while every substring pin
+ * still finds the rule. So each control's computed style is read at rest and
+ * again under the pointer, and at least one property its rule sets must have
+ * moved. The pointer is moved twice per read because headless hover applies on
+ * the next move, not the first.
+ *
+ * The chip row and its "clear all" link exist only while a filter is on, so a
+ * ranked row is clicked first - the way a reader turns one on - and the filters
+ * are cleared again at the end, leaving the tab as the next leg expects it.
+ */
+async function assertUsageHoverParity(page) {
+  const READ = ['borderTopColor', 'backgroundColor', 'textDecorationLine', 'color'];
+  const styleOf = (loc) => loc.evaluate((el, props) => {
+    const cs = getComputedStyle(el);
+    return Object.fromEntries(props.map((p) => [p, cs[p]]));
+  }, READ);
+  const park = async () => {
+    await page.mouse.move(1, 1);
+    await page.mouse.move(2, 2);
+    await page.waitForTimeout(150);
+  };
+  const pointAt = async (loc) => {
+    const b = await loc.boundingBox();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.move(b.x + b.width / 2 + 1, b.y + b.height / 2);
+    await page.waitForTimeout(150);
+  };
+  const STATES = [
+    { id: 'ph1', sel: '#usage .fdetails > summary', sets: ['borderTopColor', 'backgroundColor'] },
+    { id: 'ph2', sel: '#usage .urow.pick:not(.on)', sets: ['backgroundColor'] },
+    { id: 'ph3', sel: '#usage .ulegend b.pick', sets: ['textDecorationLine'] },
+    { id: 'ph4', sel: '#usage .uchip', sets: ['borderTopColor'], filtered: true },
+    { id: 'ph5', sel: '#usage .uchips .lnk', sets: ['textDecorationLine'], filtered: true },
+  ];
+  let filtered = false;
+  for (const s of STATES) {
+    if (s.filtered && !filtered) {
+      const row = page.locator('#usage .urow.pick:not(.on):not(.tail)')
+        .filter({ visible: true }).first();
+      if (await row.count()) {
+        await row.click();
+        await page.waitForTimeout(250);
+      }
+      filtered = true;
+    }
+    const loc = page.locator(s.sel).filter({ visible: true }).first();
+    if (!(await loc.count())) {
+      fail(`${s.id} usage: no visible ${s.sel} to put in its hover state - a parity `
+         + 'check over nothing would read as a pass');
+      continue;
+    }
+    await loc.scrollIntoViewIfNeeded();
+    await park();
+    const rest = await styleOf(loc);
+    await pointAt(loc);
+    const hot = await styleOf(loc);
+    const moved = s.sets.filter((p) => rest[p] !== hot[p]);
+    if (moved.length) {
+      note(`${s.id} usage: ${s.sel} in its hover state changes its own box `
+         + `(${moved.join(',')} moved)`);
+    } else {
+      fail(`${s.id} usage: ${s.sel} in its hover state changes nothing its rule `
+         + `sets (${s.sets.join(',')} read the same at rest and under the pointer)`);
+    }
+  }
+  await park();
+  if (filtered) {
+    await page.evaluate(() => clearAll());
+    await page.waitForTimeout(200);
+  }
 }
 
 /** The defect this whole script exists to prevent. */
@@ -1254,6 +1364,8 @@ async function assertUsageWorks(page) {
   // arrival, which is the claim no substring pin can make.
   await openUsageFilters(page);
   await compare('unfiltered', 'true');
+  await assertUsageHoverParity(page);
+  await compare('unfiltered again, after the pointer-state reads', 'true');
 
   // --- sparklines -----------------------------------------------------------
   // Drawn, not merely present: a path element with one point, or with a `d` the

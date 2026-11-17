@@ -270,7 +270,7 @@ claude-plugins/                           # this repo (personal, public)
           _panel_usage.py                 # the Usage tab's facts, and the one manifest read per request
           _panel_state.py                 # the panel's READ side: everything GET /api/* answers with
           _panel_write.py                 # the panel's WRITE side: everything PUT /api/* actually does
-        ui/                               # four directories of ordered parts (report/, report-css/, panel/, panel-css/) + panel.html, no .py
+        ui/                               # directories of ordered parts (shared/, report/, report-css/, panel/, panel-css/) + panel.html, no .py
       templates/
         audit.config.example.json         # per-repo hook config template
         audit-plan.starter.json           # minimal manifest skeleton with $schema
@@ -6714,7 +6714,8 @@ reordering it would change every diff against an earlier render for a presentati
 
 ### `plugins/audit/scripts/report/_report_ui.py`
 The report's CSS and inline JS, off disk as the ordered feature parts under
-`scripts/ui/report-css/` and `scripts/ui/report/`, mirroring `_panel_ui.py`'s split so both
+`scripts/ui/report-css/` and `scripts/ui/report/`, behind the `scripts/ui/shared/` parts both
+surfaces join, mirroring `_panel_ui.py`'s split so both
 surfaces follow one convention. Each `_PARTS` tuple IS the load/cascade order, and a part
 nothing joins is a feature that silently never ships. `render-report.py`
 used to carry `_CSS`/`_SCRIPT` as raw-string literals (plain CSS plus `_ui_theme.TOKEN_CSS`,

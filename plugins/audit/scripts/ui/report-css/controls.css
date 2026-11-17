@@ -110,13 +110,7 @@
   display:inline-flex;align-items:center;gap:.4em;padding:.5rem .75rem;
   border-radius:var(--pill);border:1px solid var(--field-border);background:var(--surface);
   color:var(--text);list-style:none;transition:background var(--dur),border-color var(--dur)}
-.fdetails>summary::-webkit-details-marker{display:none}
-/* The arrow is drawing, not words: the summary's name is its text, and with an
-   empty alternative the name stays "More filters" plus the active count rather
-   than gaining a triangle. Alt text for generated content is Baseline newly, so
-   the plain declaration comes first and an engine without it keeps that one. */
-.fdetails>summary::after{content:"\25BE";content:"\25BE" / "";font-size:.7em;color:var(--muted)}
-.fdetails[open]>summary::after{content:"\25B4";content:"\25B4" / ""}
+/* The arrow, and the platform marker it replaces, are `shared/disclosure.css`. */
 .fdetails>summary:hover{border-color:var(--field-border-hover);background:var(--surface-2)}
 .fdetails>summary:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 /* The count of what is narrowing the table, on the closed control. A panel that

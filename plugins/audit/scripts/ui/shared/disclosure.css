@@ -1,0 +1,19 @@
+/* ---- the disclosure arrow ------------------------------------------------ */
+/* The arrow on a filter fold's summary, drawn once for both surfaces. It is a
+   picture, not words: the summary's accessible name is its text, so the glyph
+   carries an EMPTY alternative and the name stays "More filters" or "Filters"
+   plus the active count rather than gaining a triangle.
+
+   A text glyph rather than a border or background drawing, because forced-colours
+   mode repaints text in the system text colour and keeps it, so the arrow survives
+   the one mode that strips decoration. Alt text for generated content is Baseline
+   newly, so the plain declaration comes first and an engine without the alt form
+   keeps that one - announced, but drawn.
+
+   `:where()` keeps the selector at zero class weight, so a surface that needs a
+   different arrow overrides it without escalating. The platform's own marker is
+   hidden here too, since this arrow replaces it. */
+:where(.fdetails)>summary::-webkit-details-marker{display:none}
+:where(.fdetails)>summary::after{content:"\25BE";content:"\25BE" / "";font-size:.7em;
+ color:var(--muted)}
+:where(.fdetails[open])>summary::after{content:"\25B4";content:"\25B4" / ""}

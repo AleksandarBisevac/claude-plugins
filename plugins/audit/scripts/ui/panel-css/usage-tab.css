@@ -13,17 +13,16 @@
    missing. Only the arrangement differs, and it differs for a stated reason -
    the report's is an absolutely positioned overlay because the bar it hangs from
    is what --sectools-h pins the whole document against, while this one sits in
-   the flow of a card that pins nothing. There is no shared stylesheet layer to
-   hold the summary pill yet, so the declarations are the report's twin rather
-   than its extraction; `report-css/controls.css` carries the other copy. */
+   the flow of a card that pins nothing. The arrow lives in
+   `shared/disclosure.css`; the pill's own declarations are still the report's
+   twin rather than its extraction, and `report-css/controls.css` carries the
+   other copy. */
 .fdetails{flex:1 1 20rem;min-width:0}
 .fdetails>summary{cursor:pointer;font:inherit;font-size:.78rem;line-height:1;
  display:inline-flex;align-items:center;gap:.4em;padding:var(--sp-0) var(--sp-2);
  border-radius:var(--pill);border:1px solid var(--field-border);
  background:var(--surface);color:var(--text);list-style:none}
-.fdetails>summary::-webkit-details-marker{display:none}
-.fdetails>summary::after{content:"\25BE";font-size:.7em;color:var(--muted)}
-.fdetails[open]>summary::after{content:"\25B4"}
+/* The arrow, and the platform marker it replaces, are `shared/disclosure.css`. */
 .fdetails>summary:hover{border-color:var(--field-border-hover);
  background:var(--surface-2)}
 .fdetails>summary:focus-visible{outline:2px solid var(--ring);outline-offset:2px}

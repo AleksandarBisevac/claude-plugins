@@ -1,0 +1,40 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__report_ui.py tests/test__ui_theme.py tests/test__ui_theme_lints.py tests/test_render_report.py tests/test__refs.py": "pass",
+    "node tools/capture-screenshots.mjs --check": "pass",
+    "sh -c 'W=$(mktemp -d) && rc=0 && for f in examples/acme-store/acme-store-audit.html docs/demo-large.html; do node tools/check-report-interactive.mjs \"$f\" || rc=1; done && python3 tools/plan-window.py docs/audit/audit-plan.json \"$W/win\" && python3 plugins/audit/scripts/report/render-report.py \"$W/win/docs/audit/audit-plan.json\" --out-dir \"$W/lp\" --format html && node tools/check-report-interactive.mjs \"$W\"/lp/*.html || rc=1; rm -rf \"$W\"; exit $rc'": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "gate-only task with tests.expectRedFirst false. The retry's one change is a test pin (sd5), not code: at HEAD the first part read is report-css/shell.css, which the new pin also accepts, so a HEAD-tree helper run could not turn it red. Its red was shown instead by mutating the error text sd5 reads, in place and restored in the same command, __pycache__ purged: (a) the ui path segment rewritten to /elsewhere/ -> sd5 FAIL, named parts [], suite exit 1; (b) disclosure.css renamed to notapart.css in the error -> sd5 FAIL, named parts [], suite exit 1; anchor count asserted == 1 before each mutation, file cmp-equal to the original after.",
+    "at": "2026-11-17"
+  },
+  "outcome": {
+    "technical": "RETRY (attempt 2): only tests/test__surface_digest.py changed. sd5 pinned the literal \"shell.css\" in the child's error when ui/ is hidden, i.e. whichever part the assembly happened to read first; with shared/disclosure.css now read first the error names that file (probed: FileNotFoundError ... plugin/scripts/ui/shared/disclosure.css). New helper _missing_ui_parts(error, sources) returns the ui/-relative tails of paths in the error that are parts ui_surface_sources() lists, and only when the error is a FileNotFoundError; it reads only the tail after a `ui` segment (the error is a 300-char traceback tail, a deep TMPDIR can cut the head) and treats any run of / or \\ as one separator (the text is a repr of a repr, which multiplies Windows backslashes). sd5 now requires len(named) > 0 and prints the named parts; it currently names ['shared/disclosure.css']. Part order was not touched. Red-first by mutation (see redFirst.basis): both mutations red, restored byte-equal. Class sweep: grep -rn 'shell\\.css|disclosure\\.css|tokens-and-reset\\.css' tests tools --include='*.py' (excluding the lints file that declares UI_ASSETS) -> test__output.py:535,538,557,559 (surface classification by name - left, not order-dependent); test__ui_theme.py:437,442 (read_asset of a named file - left); test__ui_theme.py:453,464,490 (cs1/cs4/cs9 pin the cascade order, which IS the contract - left); test__ui_theme_lints.py:211 (unreadable-asset fixture - left); test__config.py:133-134 (fs4 recursion by basename - left). No other pin depends on the first-read part. Gates, from the project dir: sweep of the gate's five suites plus test__surface_digest.py exit 0, 6/6 files ok, 768 cases (surface_digest 8/8); capture-screenshots --check exit 0 (pa1, ph1-ph5 printed); gate 3 exit 0: 858 checks acme, 864 demo-large, 817 the windowed live plan. Attempt 1's work (shared/disclosure.css, both surfaces wired, per-surface copies removed, ax4/ax5, da1, cs8/cs9, uf7, pa1, ph1-ph5, docs, followers) stands as filed in its outcome and was not redone. Its dependants answers stand; test__surface_digest.py is the one dependant that changed, as above.",
+    "descriptive": "sd5 now asserts the class it means - the error names a missing part of the removed ui/ tree - instead of whichever part the assembly reads first."
+  },
+  "testsAdded": [
+    "sd5 (rewritten pin): the child's error names a missing part of the removed ui/ tree, via _missing_ui_parts",
+    "attempt 1: ph1-ph5 panel hover parity and pa1 accessible-name cases in tools/capture-screenshots.mjs; ax4/ax5 in check-report-interactive.mjs; da1, cs8, cs9, uf7"
+  ],
+  "casesAdded": [
+    "ph1",
+    "ph5",
+    "ph4",
+    "ph3",
+    "ph2",
+    "is1",
+    "is5",
+    "is6",
+    "is7",
+    "is8",
+    "is2",
+    "is4",
+    "is3",
+    "is9"
+  ],
+  "claims": "claims:\n1 tests/test__surface_digest.py _missing_ui_parts: the FileNotFoundError check, the [/\\\\]ui tail regex and the `t in parts` filter are the three lines its docstring describes; sd5 reads len(named) > 0\n2 error ui-segment rewritten to /elsewhere/ -> sd5 FAIL, exit 1 -> restored; disclosure.css renamed in the error to a non-part -> sd5 FAIL, exit 1 -> restored (cmp-equal); allow case: unmutated suite 8/8, sd5 names ['shared/disclosure.css']\n3 grep -rn 'shell\\.css|disclosure\\.css|tokens-and-reset\\.css' tests tools --include='*.py': hits in test__output (535,538,557,559), test__ui_theme (437,442,453,464,490), test__ui_theme_lints (211), test__config (133,134) - each left: classification by name, read of a named file, cascade-order pins that are the contract, a fixture, and a basename-recursion case; none depends on the first-read part\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:9f237bb7c0f7803b246c06e175e39c61aeea8bc092260c8b702000945710c17b\",\"dirtyDigest\":\"sha256:bef5358e7f5bf7a2347b48dd14e79cf164d378651a90b7d60cd00bcc82fd0a59\",\"dirtyPaths\":null,\"head\":\"6e26bb8c\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"docs/demo-large.html\",\"docs/index.html\",\"docs/screenshots\",\"examples\",\"plugins/audit/scripts/_ui_theme.py\",\"plugins/audit/scripts/report/_report_page.py\",\"plugins/audit/scripts/ui/panel-css/README.md\",\"plugins/audit/scripts/ui/panel-css/usage-narrow.css\",\"plugins/audit/scripts/ui/panel-css/usage-tab.css\",\"plugins/audit/scripts/ui/report-css/README.md\",\"plugins/audit/scripts/ui/report-css/controls.css\",\"plugins/audit/scripts/ui/report-css/forced-colors.css\",\"plugins/audit/scripts/ui/shared\",\"tests/test__panel_page.py\",\"tests/test__report_page.py\",\"tests/test__report_ui.py\",\"tests/test__surface_digest.py\",\"tests/test__ui_theme.py\",\"tests/test__ui_theme_lints.py\",\"tests/test_render_report.py\",\"tools/capture-screenshots.mjs\",\"tools/check-report-interactive.mjs\",\"tools/lints/_ui_theme_lints.py\"],\"scopeDigest\":\"sha256:7ecfde8f738872684fdb99725c7d73a6fa74c125dbdd6291e4a362bf521b09e6\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -449,7 +449,8 @@ def _cases(check):
           "rules of equal specificity are decided by which is read last, so "
           "sorting these %d names would change what ships" % (len(_rc),),
           len(_rc) >= 5 and list(_rc) != sorted(_rc)
-          and _rc[0].endswith("shell.css"))
+          and [_n for _n in _rc if _n.startswith("report-css/")][0]
+          == "report-css/shell.css")
 
     # The panel's sheet, same three claims. It is a SEPARATE tuple with a
     # separate failure: the report's parts could be perfectly declared while the
@@ -467,6 +468,27 @@ def _cases(check):
           "twice, and every var() would still resolve, so nothing else here "
           "would go red" % (_panel_join.count("/*__THEME_TOKENS__*/"),),
           _panel_join.count("/*__THEME_TOKENS__*/") == 1)
+
+    # The shared stylesheet layer, held to the rule the shared script layer is
+    # held to: the SAME parts on both surfaces, read before the surface's own.
+    # Both halves are needed - a shared part joined into one tuple only is a
+    # rule one surface quietly lacks, and one read AFTER a surface part would
+    # beat that surface's override of it on source order.
+    _rs = [_n for _n in _rc if _n.startswith("shared/")]
+    _ps = [_n for _n in _pc if _n.startswith("shared/")]
+    check("cs8 the shared stylesheet parts are the same list, in the same order, "
+          "in both cascades (report %r, panel %r)" % (_rs, _ps),
+          bool(_rs) and _rs == _ps)
+    _r_own = [_i for _i, _n in enumerate(_rc) if _n.startswith("report-css/")]
+    _p_own = [_i for _i, _n in enumerate(_pc) if _n.startswith("panel-css/")]
+    _r_sh = [_rc.index(_n) for _n in _rs]
+    _p_sh = [_pc.index(_n) for _n in _ps]
+    check("cs9 every shared stylesheet part is read before every report part, and "
+          "before every panel part but the token-and-reset one that carries the "
+          "panel's tokens (report shared at %r, panel shared at %r)" % (_r_sh, _p_sh),
+          bool(_r_sh) and bool(_p_sh) and max(_r_sh) < min(_r_own)
+          and _pc[0] == "panel-css/tokens-and-reset.css"
+          and max(_p_sh) < min(_i for _i in _p_own if _i != 0))
 
 
     # --- a comment that names a function is a claim that the function exists ---

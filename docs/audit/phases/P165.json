@@ -51,9 +51,23 @@
         "file": "plugins/audit/scripts/ui/report-css/shell.css:37-39",
         "issue": "The room after the content is a fixed calc(100vh - var(--sticky-anchor)) on every report, whatever the last targets actually need, so scrolling to the end shows a viewport that is mostly blank: measured on the new renders (Playwright, file://, the gate's LAYOUT_SIZES), spacer / blank at bottom-of-scroll / room actually needed for the furthest nav target to reach the line = 390x844 784/896/282 px (93% of vh), 844x390 330/394/27 (85%), 834x1194 1012/1076/709 (85%), 1024x768 586/650/283 (76%), 1512x945 811/875/508 (86%), 1920x1080 946/1010/643 (88%) for acme; docs/demo-large.html gets the identical spacer and blank tail while its needed room is 0 px at every size (every target already reaches the line at HEAD). A reader pressing End on any report sees roughly a screenful of empty page below a few lines of content, and on demo-large it serves no purpose at all. Print is clean: under emulateMedia print the ::after computes content:none, and the A4 PDF page count equals HEAD's (acme 18/18, demo-large 148/148). sn0 pins the CSS string and sn1 only asserts the marker, so nothing bounds the tail.",
         "resolution": "Size the room by what the last targets need, not by a viewport: page-state.js already measures the sticky stack and reads the line back (landingLine); publish one custom property, e.g. max(0, innerHeight - line - (content end - furthest nav target's top)), on load and resize and let the screen-only ::after read it (still keyed to --sticky-anchor through the line, so it tracks it). A CSS-only alternative, min-height on the last section, needs the renderer to wrap that section, since .content is flat (H2#ready then DL.ready). Then add a browser-gate bound beside sn1: at every LAYOUT_SIZES size the blank tail at bottom-of-scroll is at most the needed room plus the content's own bottom padding (64 px at HEAD), so demo-large reads ~64 px and acme reads needed+64, and prove it red against this render."
+      },
+      {
+        "id": "P165-R5",
+        "severity": "med",
+        "file": "tools/check-report-interactive.mjs:3493-3524; tools/capture-screenshots.mjs:356-375",
+        "issue": "contradicts task clause \"a browser check ... that the summary's accessible name carries no arrow glyph, red-first on the current panel and report\": none of the browser cases the clause asks for (ax4, ax5, pa1) was ever seen red. Attempt 1's redFirst is could-not-prove (the helper refused a CSS file as an inline suite), and attempt 2's red-first covers only the sd5 pin. On the report side the unfixed tree already carried `content:\"\\25BE\" / \"\"` in report-css/controls.css, so ax4 passes on HEAD as it stands; its red can only come from a mutation, and none was recorded. pa1's red is the HEAD panel (usage-tab.css had `content:\"\\25BE\"` with no alternative), and no run against it was recorded either. As handed, ax4/pa1 are checks only ever seen green.",
+        "resolution": "Record a red for each in its own driven runtime, restoring in the same command: (a) panel — run `node tools/capture-screenshots.mjs --check` with shared/disclosure.css's `/ \"\"` alternatives removed (equivalent to HEAD's panel) and show `pa1 ... FAIL` plus a non-zero exit; (b) report — re-render acme with the same mutation and show `ax4` FAIL from check-report-interactive.mjs; (c) ax5 — drop the shared ::after rule and show ax5 FAIL. Assert that the anchor matched once before each mutation, check the file is cmp-equal afterwards, and put command, exit code and failing case id in redFirst.basis."
+      },
+      {
+        "id": "P165-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/ui/shared/README.md:101",
+        "issue": "The new `disclosure.css` row says \"The one stylesheet part here\" — a present-tense count claim about the directory's contents that goes false the moment a second shared .css part joins, and nothing re-derives it. Comment/doc-only.",
+        "resolution": "Delete the count: e.g. \"A stylesheet part: it joins `_ui_theme.REPORT_CSS_PARTS` and `_ui_theme.PANEL_CSS_PARTS` rather than the two script tuples, ...\"."
       }
     ],
-    "outcome": "[findings: 4 - 0 high, 3 med, 1 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 6 - 0 high, 4 med, 2 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -294,7 +308,7 @@
     {
       "id": "P165.4",
       "title": "The More-filters disclosure arrow is one shared rule, decorative on both surfaces",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The panel's More-filters disclosure arrow is drawn as text content that screen readers announce (plugins/audit/scripts/ui/panel-css/usage-tab.css). The report's equivalent was fixed earlier (report-css/controls.css, .fdetails>summary). Fix it with ONE shared rule both surfaces use, not a second copy: put the disclosure-arrow rule in the shared layer the two surfaces already concatenate (see plugins/audit/scripts/ui/shared/ and the refactoring-the-assembled-ui skill on shared partials) and have both summaries use it; the glyph must not be exposed to assistive tech (e.g. a decorative pseudo-element with an empty alt in `content: \"x\" / \"\"`, or a background/border-drawn arrow - choose one that works in forced-colors, and say which and why). Remove the per-surface copies. Prove it: a browser check (panel via `node tools/capture-screenshots.mjs --check` is preconditions only, so add an assertion where the panel/report runtime is driven - e.g. in tools/check-report-interactive.mjs for the report and the panel's equivalent gate if one exists, else a computed-accessible-name check through Playwright's accessibility snapshot) that the summary's accessible name carries no arrow glyph, red-first on the current panel and report. Refresh followers (examples/report.sh, docs/demo-large.html via `python3 tools/check-rendered-artifacts.py --how`, `node tools/capture-screenshots.mjs`). Read writing-css and refactoring-the-assembled-ui. No register ids in comments.",
       "files": [
         "plugins/audit/scripts/ui/panel-css/usage-tab.css",
@@ -315,7 +329,12 @@
         "docs/demo-large.html",
         "docs/screenshots",
         "PLUGIN-BUILD-GUIDE.md",
-        "tests/test__report_page.py"
+        "tests/test__report_page.py",
+        "plugins/audit/scripts/ui/panel-css/README.md",
+        "tests/test__panel_page.py",
+        "tools/lints/_ui_theme_lints.py",
+        "tools/capture-screenshots.mjs",
+        "tests/test__surface_digest.py"
       ],
       "tests": {
         "mode": "gate-only",
@@ -351,14 +370,14 @@
         "P165.1",
         "P165.6-r5e"
       ],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-17T11:07:15Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -384,7 +403,13 @@
           "reads": "plugins/audit/scripts/report/_report_page.py",
           "text": "declared to answer a reading: tests/test__report_page.py reads plugins/audit/scripts/report/_report_page.py - its own suite"
         }
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T12:13:44Z.c864ff",
+        "status": "passed",
+        "at": "2026-11-17T12:13:44Z"
+      }
     },
     {
       "id": "P165.5",
@@ -402,7 +427,11 @@
         "examples",
         "docs/index.html",
         "docs/demo-large.html",
-        "docs/screenshots"
+        "docs/screenshots",
+        "plugins/audit/scripts/ui/report-css/shell.css",
+        "plugins/audit/scripts/ui/report/page-state.js",
+        "plugins/audit/scripts/ui/report/README.md",
+        "tests/test__report_page.py"
       ],
       "tests": {
         "mode": "gate-only",
@@ -445,13 +474,17 @@
           "at": "2026-11-17T05:25:03Z",
           "text": "names check-report-interactive.mjs as a step; the task keeps its command line and exit contract",
           "waives": "tools/verify.sh"
+        },
+        {
+          "at": "2026-11-17T08:50:16Z",
+          "text": "Coordinator refinement of the end-space fix: derive it per page from what it needs, never a constant - the room is only what the furthest/last nav target lacks to reach the highlight line (viewport height minus the sticky stack minus the height from that target's top to the content end, floored at 0). Recompute on resize AND on phase expand/collapse (any change in content height). When it is 0, add nothing (no pseudo-element height, no padding). The browser check asserts both sides at every LAYOUT_SIZES size: sn1 still marks the clicked section, and the blank tail after End stays within the bound (needed room + the content's own bottom padding). If the bound and sn1 cannot both hold on some fixture, STOP and say so in the return - do not loosen either."
         }
       ]
     },
     {
       "id": "P165.6-r5e",
       "title": "Link validation is the registry's, derived from each axis's attrs; every side-nav jump marks its section at every size; hr0 reads the page's own keys",
-      "status": "in_progress",
+      "status": "done",
       "description": "Fix the P165.1 review's findings on the unlanded diff (ad08e5bc), at the seam, not per axis.\n\n1. Link validation lives at the REGISTRY level in plugins/audit/scripts/ui/report/page-state.js. Today each FILTER_AXES entry's decode re-implements `if (!offeredBy(<bar>, 'data-<x>').includes(h.<x>)) return false` by hand and re-spells the chip attribute its own `attrs` already declares. Make the registry itself keep only values a control offers, derived from each axis's `attrs` (one helper the restore path calls for every axis), so an axis supplies only its genuine exceptions (area's select-backed vocabulary, the date fields' parse) as a declared hook. A new axis written with no hook is validated by default. Add a browser-gate case in tools/check-report-interactive.mjs that goes red when an axis restores an unoffered value: drive EVERY axis in the page's registry with a bogus value and assert nothing is hidden and nothing pressed. Prove it red-first by a mutation: drop the registry-level check on a scratch copy of the new render (or bypass it for one axis) and quote the failing line.\n\n2. Remove the sn1 exemption (\"side-nav jumps the document ends before\" printed as a note). Give the document enough end space (e.g. padding or a spacer after the last section, sized from the same one value the scroll line uses, so it tracks it) that every section can scroll to the line, so clicking Bugs at 1512x945 marks Bugs, not Ready. Assert, at EVERY size in the layout matrix, that each side-nav click marks the clicked entry - no carve-out. Red-first: the render committed at ad08e5bc must fail at 1512 on Bugs; quote it.\n\n3. hr0 derives link keys with a regex over the page source. Read the keys from the page's own registry at runtime instead (expose a read-only list of axis keys on the page, the same way the gate already reads other runtime state, or evaluate the registry in page context), and fail by name if the page exposes none.\n\nRefresh rendered followers (examples/report.sh, docs/demo-large.html via `python3 tools/check-rendered-artifacts.py --how`, `node tools/capture-screenshots.mjs`). Read writing-javascript, refactoring-the-assembled-ui, no-silent-pass. No register ids in comments.",
       "files": [
         "plugins/audit/scripts/ui/report/page-state.js",
@@ -490,14 +523,21 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6e26bb8c35b0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "page-state.js: link validation moved to the registry. offeredBy(axis) derives the vocabulary from the toggles ([aria-pressed][attr]) carrying each axis's declared attrs plus an optional declared `twin` select; keptFromLink(axis, h) keeps per key what the axis's `takes` hook keeps, or with no hook the whole value when offered (takesOffered); FILTER_AXES is built as `[...].map((axis) => ({ ...axis, decode: (h) => axis.decode(keptFromLink(axis, h)) }))`, so every decode, including one added later with no hook, only sees checked values and no caller can bypass it. Entries' decodes went back to plain assignments; the exceptions are declared hooks: search takes free text, area takes tag-by-tag (twin areaSelect), dates take what a date field holds (dateFieldTakes); author declares twin auSelect. The registry publishes its keys as data-link-keys on the root. exports.js (not declared) is untouched; its restore loop still calls axis.decode(HASH), now the wrapped decode. markSpy's end-of-document clamp is removed. shell.css: :root{--sticky-anchor:calc(var(--sticky-2) + var(--sp-2))}, [id]{scroll-margin-top:var(--sticky-anchor)}, and @media screen{.snav ~ .content::after{...height:calc(100vh - var(--sticky-anchor))}}, so every target can reach the one line (named --sticky-* because the theme-symmetry lint treats that prefix as geometry; --anchor-line was flagged as a light-only colour token). Gate: hr0 reads data-link-keys at runtime, fails by name when it is absent, and fails if the free-text exemption ['q'] names a key the page no longer publishes; hr1 is red on an empty key set rather than passing vacuously; sn1 clicks every visible entry at every LAYOUT_SIZES size with the 'document ends before' note/carve-out removed; is11 hovers .snav a at 1000x800 (the strip presentation). Tests: _registry_text tolerates the .map close; new rx10 (check sits once on the registry, no decode reads controls, only area/dates/search declare takes) and sn0 (no end-of-document rule in markSpy, spacer and scroll-margin share --sticky-anchor, screen only); the anchor pin updated to the token. READMEs (report/, report-css/) updated. Followers: examples/report.sh (acme html+md, docs/index.html byte copy), docs/demo-large.html per check-rendered-artifacts --how, node tools/capture-screenshots.mjs (exit 0, 26 png/json rewritten). Runs: gate 1 4/4 files ok, 823 cases, exit 0; gate 2 exit 0 over acme, demo-large and the live render, each with both font passes ('layout matrix fonts: page's own font (.SF NS); wide font Verdana (Verdana)'); neighbour suites test__ui_theme, test__ui_theme_lints, test__report_ui, test__output, test__surface_digest, test__config, test__panel_page 7/7 ok, 1145 cases; npx vitest run 853/853 (a first version of keptFromLink used reduce(..., Object.create(null)), which duplicated the anchor of report-prototype-keys.test.mjs's 'goes red when the hash map gets a prototype back' proof, so it went red; rewritten as a loop, green); ruff clean; check-rendered-artifacts --before-commit OK. Dependants: renders/index/demo-large/screenshots refreshed in this task; _report_ui.py assembles parts by name (no parts added) so it still holds; heatmap.js/controls.css read page-state names (px, root, pinnedPx) that did not change; test__report_ui/test__output/test__config/test__surface_digest/test__panel_page/_ui_theme_lints re-run green; filters.js/areas.js unchanged (syncHash still encodes via keys, paintAreas still reads areaFilter); tools/redfirst.sh, ui-tests and affected.py name files whose paths did not change; .github/sweep-costs.json entries still name the same suites; examples/README/handbook dependants are prose or basename hits that this change does not touch.",
+        "descriptive": "A report link restores only what a control offers, checked once by the filter registry for every axis; every side-nav jump lights its own entry at every layout size because the page leaves room after the content; the browser gate reads the link keys from the running page."
       },
       "startedAt": "2026-11-17T07:04:26Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-17T08:49:28Z",
+      "verifiedBy": [
+        "is11: .snav a hover at the strip width (1000x800) changes its own box's color and background",
+        "hr0 rewritten: link keys read from the page's data-link-keys at runtime, red by name when absent or when the free-text exemption is stale",
+        "hr1 now red on an empty key set",
+        "sn1 widened to every layout-matrix size, end-of-document carve-out removed",
+        "rx10: link check sits once on the registry, no decode reads controls, only area/dates/search declare takes",
+        "sn0: no end-of-document rule in markSpy; spacer and scroll-margin share --sticky-anchor, on screen only"
+      ],
       "notes": [
         {
           "at": "2026-11-17T07:04:23Z",
@@ -515,6 +555,17 @@
         "runId": "2026-11-17T08:40:42Z.46174a",
         "status": "passed",
         "at": "2026-11-17T08:40:42Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "6e26bb8c35b0",
+        "at": "2026-11-17T08:49:28Z",
+        "return": "docs/audit/evidence/returns/P165.6-r5e/20261117T070426Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task with tests.expectRedFirst false, so no helper red was owed; the reds the orchestrator asked for were watched by hand, each quoted. (2)+(3) the new gate over the render committed at ad08e5bc (examples/acme-store/acme-store-audit.html == HEAD, exit 1): 'FAIL sn1 clicking a side-nav entry lights that entry, at every layout size (390x844, 844x390, 834x1194, 1024x768, 1512x945, 1920x1080; 34 clicks): got 834x1194 #bugs lit #ready (landed at 420px, line 218px, the document ended first) · 1512x945 #bugs lit #ready (landed at 295px, line 134px, the document ended first) · 1920x1080 #usage-budget lit #ready ... · 1920x1080 #bugs lit #ready ...' and 'FAIL hr0 the running page publishes its registry's link keys (no data-link-keys on the root) ...: got the page publishes no link keys, want ok' (same hr0 FAIL on docs/demo-large.html at HEAD). (1) mutations on scratch copies of the NEW acme render, gate run over each (all exit 1): bypass (registry wrap -> decode: (h) => axis.decode(h)): 'FAIL hr1 a link naming a value no control offers restores nothing, on every key of every axis the registry declares (ps,a,m,tev,tevf,from,to,au) ...: got ps=nosuch-value: phases \"\" (no link: \"P2 BF1 P3 P4 P5\"); clear true ...'; default-open (takesOffered returns v, i.e. an axis with no hook unchecked): same hr1 FAIL listing ps, m, tev, tevf, au while the hooked area/dates stay held; keeps-nothing (over-fire): 'FAIL hr2 a link naming a value its control offers restores it on: got ps=done: NOT restored ([]) · a=storefront nosuch-value: NOT restored ([]) ...' plus hr3 FAIL. Each mutant was written by /tmp/p1656_mut/mutate.py, which refuses unless its anchor matches exactly once; the shared tree was never mutated.",
+        "at": "2026-11-17 (local runs, this session)"
       }
     }
   ],
