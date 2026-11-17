@@ -14564,7 +14564,7 @@
     {
       "id": "BUG-34",
       "title": "The configured reviewSkill never runs on the drive route's phase review",
-      "status": "in_progress",
+      "status": "fixed",
       "severity": "high",
       "reportedAt": "2026-11-17T15:24:03Z",
       "reportedBy": "owner",
@@ -14577,7 +14577,7 @@
         "plugins/audit/scripts/governance/drive-phase.py"
       ],
       "taskId": "P166.1",
-      "fixedIn": null,
+      "fixedIn": "8cb47b74c523",
       "notes": null
     }
   ],

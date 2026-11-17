@@ -14663,6 +14663,7 @@ def _steps_unit_cases(check):
     _lock_units(check)
     _owed_red_first_units(check)
     _submit_mutant_units(check)
+    _review_skill_submit_units(check)
     _unchecked_ids_units(check)
     _brief_scope_units(check)
     _banner_units(check)
@@ -15927,6 +15928,69 @@ def _submit_mutant_units(check):
           and "stamp taken" in did_m
           and ran_m == [("stamp-verification.py", "take"),
                         ("audit-task.py", "file-return")])
+
+
+def _review_skill_submit_units(check):
+    """A phase reviewer's return filed through `submit` names the review skill
+    the phase resolved in `skillsInvoked`, or nothing is filed; a phase that
+    resolves no skill files a return without the field as before. Each
+    refusal is read off the filing verb never being called, not off the text
+    alone."""
+    M, _w = _unit_driver("drive_phase_review_skill_submit")
+
+    def filed(meta, extra):
+        phase_u = _step_phase([_step_task()])
+        plan_u = _step_plan(phase_u, meta)
+        ctx, calls = _submit_rig(M, None)
+        body = dict({"findings": [], "intent": {"answer": "matches",
+                                                "note": "the phase as asked"},
+                     "verdict": "clean"}, **extra)
+        try:
+            said = _caught(M.submit, ctx, plan_u, _submit_args(PHASE, "reviewer"),
+                           None, json.dumps(body))
+        finally:
+            _harness.remove_tree(ctx["project"])
+        return said, _filed_bodies(calls)
+
+    skill = {"reviewSkill": "code-review"}
+    said, bodies = filed(skill, {})
+    check("rq1 a phase that resolves a review skill refuses a return with no "
+          "`skillsInvoked`, naming the skill and the remedy, and files nothing: "
+          "%r" % ((said, bodies),),
+          said[0] == 1 and "code-review" in said[1]
+          and "`skillsInvoked`" in said[1] and "submit again" in said[1]
+          and "Nothing filed." in said[1] and bodies == [])
+    said, bodies = filed(skill, {"skillsInvoked": ["writing-python"]})
+    check("rq2 the same phase refuses a return whose `skillsInvoked` names "
+          "other skills only - a check that accepted any listed skill goes red "
+          "here: %r" % ((said, bodies),),
+          said[0] == 1 and "code-review" in said[1] and bodies == [])
+    # The allow direction: a check that refuses whenever the field is absent,
+    # or that asks a phase with no skill resolved, goes red on rq3.
+    said, bodies = filed({}, {})
+    check("rq3 a phase that resolves no review skill files a return with no "
+          "`skillsInvoked` exactly as before, the field not added: %r"
+          % ((said, bodies),),
+          said[0] == 0 and len(bodies) == 1
+          and "skillsInvoked" not in bodies[0])
+    said, bodies = filed(skill, {"skillsInvoked": ["superpowers:code-review"]})
+    check("rq4 a return naming the resolved skill - here by a plugin-qualified "
+          "spelling, which the Skill tool's caller may use - files once, the "
+          "list kept on it: %r" % ((said, bodies),),
+          said[0] == 0 and len(bodies) == 1
+          and bodies[0].get("skillsInvoked") == ["superpowers:code-review"])
+    whole = M.aggregate_slice_returns([
+        {"findings": [], "intent": {"answer": "matches"}, "verdict": "clean",
+         "skillsInvoked": ["code-review"]},
+        {"findings": [], "intent": {"answer": "matches"}, "verdict": "clean",
+         "skillsInvoked": ["code-review", "writing-python"]}])
+    bare = M.aggregate_slice_returns([
+        {"findings": [], "intent": {"answer": "matches"}, "verdict": "clean"}])
+    check("rq5 the phase return the slices make keeps the skills they named, "
+          "each once in first-named order, and adds no field when no slice "
+          "named one: %r" % ((whole.get("skillsInvoked"), sorted(bare)),),
+          whole.get("skillsInvoked") == ["code-review", "writing-python"]
+          and "skillsInvoked" not in bare)
 
 
 UNCHECKED_CLAUSE = ("ids bound to a suite the submit's command did not run are "

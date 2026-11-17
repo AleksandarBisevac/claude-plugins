@@ -3547,8 +3547,9 @@ reviewer's carries the executor's return as filed for the task's current start
 (byte-identical), the diff, the recorded run and the gate commands, and is refused with exit 4
 (`E_REFUSED`), writing nothing, until that return is filed. The phase reviewer's carries a
 `## Review skill` section naming the skill `_areas.resolve_review_skill` resolves and the basis
-it returns (`review_skill_lines`; no section when none resolves or an explicit null stops the
-lookup, `rk1`-`rk5`), the request as saved (`phase.request`, or a sentence saying none was saved), one fixed question
+it returns, and asking for it to be named in the return's `skillsInvoked`, which `drive-phase.py
+submit` refuses a phase return without (`review_skill_lines`; no section when none resolves or
+an explicit null stops the lookup, `rk1`-`rk6`), the request as saved (`phase.request`, or a sentence saying none was saved), one fixed question
 about what the request left open, and per task its commit, files, description, filed
 executor return, recorded run and `tests.gate` — an entry naming a `key:project` the plan
 cannot resolve is kept and said to be unresolved — and is refused while any task has no
@@ -5399,7 +5400,12 @@ a print does not grow with where the project sits on disk.
 executor|reviewer [--head SHA] [--case ...] [--introduces ...] [--deps-from DIR]
 [-- <test command>]` reads the return on stdin and runs, in order, what the agent prompts used
 to explain step by step: the shape check (`submitted_shape`, with the fields `submit` fills set
-aside, so a malformed return costs no red run and writes nothing); for an executor whose return
+aside, so a malformed return costs no red run and writes nothing); for a phase reviewer's
+return - whole or one slice - when the phase resolves a review skill
+(`_areas.resolve_review_skill`), a refusal unless its `skillsInvoked` names that skill, a
+plugin-qualified spelling meeting the bare one (`skipped_review_skill`; with no skill resolved
+nothing is asked, and the slices' lists ride into the aggregated return, `rq1`-`rq5`), since an
+Agent's Skill calls reach the drive through nothing but its return; for an executor whose return
 is already filed for this start, a refusal before anything runs (`already_filed`); for an
 executor whose attempt changed a path its task does not declare, a refusal naming each path and
 the scope remedy (`submit_strays`), asked as the task commit asks it -

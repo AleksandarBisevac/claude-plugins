@@ -2190,6 +2190,12 @@ def open_dispatch(ctx, state, task, round_n, build, tree=None, key="writer",
     return record, argv
 
 
+# The list of skills a session invoked, under the name the session runner
+# records it by and a phase reviewer's return names it by: one word for
+# the reading on both routes.
+INVOKED_FIELD = "skillsInvoked"
+
+
 def read_sessions(path):
     """Each outcome the runner appended to one record, in order, as `{"session",
     "cost", "stream", "line", "exit", "declared", "invoked"}` - `session` and
@@ -2217,7 +2223,7 @@ def read_sessions(path):
         line = str(body.get("line") or "")
         hit = _SESSION_LINE.match(line)
         skills = body.get("skills")
-        invoked = body.get("skillsInvoked")
+        invoked = body.get(INVOKED_FIELD)
         runs.append({"session": hit.group(1) if hit else None,
                      "cost": hit.group(4) if hit else None,
                      "stream": hit.group(6).strip() if hit else None,
@@ -9317,8 +9323,9 @@ def aggregate_slice_returns(bodies):
     """The one phase return the slice returns `bodies` make, in slice order:
     their findings and pre-existing findings numbered afresh (every slice
     numbers from one), their `tasks` entries joined, the verdict `findings` when
-    any slice found something, and the intent of the slice that answered worst
-    - its notes and missing inputs joined - standing for the phase."""
+    any slice found something, the intent of the slice that answered worst
+    - its notes and missing inputs joined - standing for the phase, and the
+    skills the slices named as invoked, each once, where any named one."""
     def joined(key):
         items = [item for body in bodies for item in body.get(key) or []]
         return [dict(item, id=n) for n, item in enumerate(items, 1)]
@@ -9342,6 +9349,9 @@ def aggregate_slice_returns(bodies):
            "tasks": [entry for body in bodies for entry in body.get("tasks") or []]}
     if any("preExisting" in body for body in bodies):
         out["preExisting"] = joined("preExisting")
+    named = [str(n) for body in bodies for n in body.get(INVOKED_FIELD) or []]
+    if named:
+        out[INVOKED_FIELD] = [n for i, n in enumerate(named) if n not in named[:i]]
     return out
 
 
@@ -11804,6 +11814,35 @@ def submit_target(manifest, target):
     return None, None
 
 
+def skipped_review_skill(manifest, phase, body):
+    """None when `body`, a phase reviewer's return, names the review skill
+    `_areas.resolve_review_skill` resolves for `phase` in `INVOKED_FIELD` - or
+    when no skill resolves - else the refusal `submit` stops with.
+
+    A REVIEWER DISPATCHED AS AN AGENT LEAVES THE DRIVE NO RECORD OF ITS SKILL
+    CALLS: a headless session's runner reads them off its stream
+    (`uninvoked_skills`), and an Agent's stream is not the drive's to read. The
+    return is the one place that reviewer can say it used the skill its brief
+    named, so a return that does not say so is refused rather than filed as a
+    review the skill never shaped. A plugin-qualified name meets a bare one, as
+    for a headless session."""
+    skill, basis = _areas.resolve_review_skill(manifest, phase)
+    if not skill:
+        return None
+    named = body.get(INVOKED_FIELD) if isinstance(body, dict) else None
+    listed = [str(n) for n in named] if isinstance(named, list) else []
+    if _bare_skill(skill) in [_bare_skill(n) for n in listed]:
+        return None
+    held = ("is absent" if named is None else
+            "is not a list" if not isinstance(named, list) else
+            "is empty" if not listed else "names only %s" % (", ".join(listed),))
+    return ("the phase return for %s does not name the review skill %s (basis: "
+            "%s) as invoked: its `%s` %s. Invoke %s through the Skill tool and "
+            "review with it, then submit again with it listed in `%s`. Nothing "
+            "filed." % (phase.get("id"), skill, basis, INVOKED_FIELD, held, skill,
+                        INVOKED_FIELD))
+
+
 def submitted_shape(role, body, fills, task=None):
     """The ways `body` falls short of `role`'s shape, judged with each field in
     `fills` set aside: those are `submit`'s to supply, not the agent's. `task`
@@ -12184,6 +12223,12 @@ def submit(ctx, manifest, args, cmd, text):
     if machine:
         return _stopped(ctx, "the %s return for %s: %s" % (
             args.role, args.id, machine))
+    if task is None and args.role == "reviewer":
+        # Asked of each slice's return as well as a whole one: every slice's
+        # brief carries the same review-skill section.
+        skipped = skipped_review_skill(manifest, phase, body)
+        if skipped:
+            return _stopped(ctx, skipped)
     owed = task is not None and _fr.owes_red_first(task)
     executor = task is not None and args.role == "executor"
     if executor and owed and not cmd:

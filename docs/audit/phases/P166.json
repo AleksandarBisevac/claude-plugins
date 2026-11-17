@@ -23,14 +23,44 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P166-R1",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:12226-12231",
+        "issue": "The resolved-skill check sits at submit, not at the one write every phase return passes through: `audit-task.py file-return <phaseId> --role reviewer --head <sha>` files a phase return with no `skillsInvoked` under a resolved skill, since `_phase_return_refusal` (audit-task.py) asks no skill question. That verb is still printed as the remedy by the sign-off refusal (audit-task.py:12289, 'file its return (audit-task.py file-return %s --role reviewer --head ...)') and documented at reference/verbs-in-full.md:1037. On the drive route it is NOT a bypass a user hits: the phase brief prints a `drive-phase.py submit` block (audit-lookup.py:2328), the drive files a phase review only through submit (drive-phase.py:12351), audit-reviewer.md allows the reviewer one submit and no other write, and no hook routes an agent to file-return. It is reached only by a hand-run, or by a model following the sign-off refusal's remedy text after a review was never submitted - exactly the case where the field would be missing.",
+        "resolution": "Hold the invariant at the sink: in audit-task.py `_phase_return_refusal` (audit-task.py already imports `_areas`) refuse a phase return whose `skillsInvoked` does not name `_areas.resolve_review_skill`'s answer, sharing one predicate with submit; keep submit's per-slice check, because the aggregate carries the union of the slices' lists. At minimum, make the sign-off refusal's remedy name `drive-phase.py submit <phaseId> --role reviewer --head ...` instead of `file-return`."
+      },
+      {
+        "id": "P166-R2",
+        "severity": "low",
+        "file": "tests/test_drive_phase.py:15933-15993",
+        "issue": "No case files a slice through `submit --slice n/N` under a resolved skill, so the claim that each slice's return is refused (brief text audit-lookup.py:666-669, PLUGIN-BUILD-GUIDE.md submit paragraph, phase-signoff.md:32 'each slice's included') rests on statement order alone. Moving the check below the `--slice` branch, so that only the aggregated return is asked, keeps rq1-rq5 green: rq1-rq4 submit whole returns, and rq5 calls aggregate_slice_returns directly.",
+        "resolution": "Add a case that submits slice 1/2 with no `skillsInvoked` on a phase resolving a skill and asserts the refusal and that no slice return is held (slice_return_paths empty), and prove it red against the check moved after take_slice."
+      },
+      {
+        "id": "P166-R3",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:11842",
+        "issue": "`_bare_skill` strips the qualifier on both sides, so a resolved plugin-qualified skill (`superpowers:code-review`) is met by a different plugin's same-named skill (`engineering:code-review`) - two distinct skills that both exist in a normal Claude Code install. The same leniency already exists in uninvoked_skills on the headless route, so this matches that route's vocabulary, but for a qualified resolved name it accepts a skill the plan did not name.",
+        "resolution": "Strip only the return side when the resolved name is bare; when it is qualified, accept the exact qualified name or its bare spelling and refuse a differently-qualified one - in one helper both submit and uninvoked_skills use, with a case for the differently-qualified spelling."
+      },
+      {
+        "id": "P166-R4",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:9352",
+        "issue": "aggregate_slice_returns iterates `body.get(INVOKED_FIELD) or []` with no list check. With no skill resolved nothing refuses the field's type, so a slice writing `\"skillsInvoked\": \"code-review\"` aggregates to one entry per character (['c','o','d','e','-','r','v','i','w']) in the filed phase return.",
+        "resolution": "Read only list values (`v if isinstance(v, list) else []`), as skipped_review_skill already does, or refuse a non-list field on every phase return."
+      }
+    ],
+    "outcome": "[findings: 4 - 0 high, 0 med, 4 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P166.1",
       "title": "The phase reviewer's brief names the configured review skill, and the headless phase validation passes it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Port the fix for BUG-34 (high): the configured reviewSkill never reaches the drive route's phase reviewer.\n\nThe fix already exists as SG1.2 on the skill-gates branch (audit/sg1-a-brief-outranks-a-skill-and-a, commit 2e4716d1), exported without its docs/audit state at:\n<scratchpad>/sg1.2-review-skill-in-phase-brief.patch\nIt applies clean at e279081a (git apply --check). Apply it with `git apply` and keep its hunks BYTE-IDENTICAL - a later merge of the SG1 branch into main must stay clean, so do not reword, reflow or \"improve\" any hunk. What it does: audit-lookup.py adds review_skill_lines() to the phase brief header (phase_brief_parts), and drive-phase.py's session_skills(..., phase_review=True) gives the headless phase validation --skill; tests rk1-rk5 (tests/test_audit_lookup.py) and vk1-vk3 (tests/test_drive_phase.py) come with it; docs in PLUGIN-BUILD-GUIDE.md and reference/phase-signoff.md.\n\nRed-first: the cases were proven red at e279081a (test_audit_lookup 190/193). Re-prove it in your tree: run the suites with only the tests hunks applied (code hunks reverted), quote the failing case lines, then apply the code and show green. If any hunk does not apply byte-identically, stop and say which and why. No register ids in comments (the patch already follows that; do not add any).",
       "files": [
         "plugins/audit/scripts/status/audit-lookup.py",
@@ -61,14 +91,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8cb47b74c523",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Applied the SG1.2 patch (sha1 66253bc8 of sg1.2-review-skill-in-phase-brief.patch) with git apply in the project tree at e279081a: tests hunks first (--include='tests/*'), then the rest (--exclude='tests/*'); every hunk applied, none edited. Byte-identity verified: the six files (PLUGIN-BUILD-GUIDE.md, plugins/audit/reference/phase-signoff.md, plugins/audit/scripts/governance/drive-phase.py, plugins/audit/scripts/status/audit-lookup.py, tests/test_audit_lookup.py, tests/test_drive_phase.py) cmp-identical to the patch applied on a git-archive export of HEAD, and git apply -R --check of the whole patch passes. Gate: python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test_drive_phase.py tests/test__affected_tests.py tests/test__doctor_trail.py exit 0, '4/4 files ok, 1381 cases' (audit_lookup 193, drive_phase 982 over 88 blocks, _affected_tests 51, _doctor_trail 155). ruff and vermin -t=3.8- clean on the four touched .py. Dependants: audit-lookup.py importers (test__evidence_io 335, test__filed_returns 118, test_audit_lookup, test_drive_phase) still correct - review_skill_lines is new and phase_brief_parts adds a section only when _areas.resolve_review_skill returns a skill; drive-phase.py importers (drive-without-model.py via test_drive_without_model 74, _worktrees.py via test__worktrees 182, test__filed_returns, test__invariants 141, test_audit_status 411, test_commit_task_work 239, test_detect_plan_skip 46) still correct - session_skills/writer_argv gain phase_review=False, a defaulted keyword, so every existing caller keeps its argv and only validation_dispatch passes True; PLUGIN-BUILD-GUIDE.md and phase-signoff.md readers (test__deps 284, test__output_lints 183, test__refs 292, test__areas 130) green over the doc hunks; tests/test__affected_tests.py and tests/test__doctor_trail.py unchanged by the patch and green in the gate. All twelve dependant suites swept together: '12/12 files ok, 2435 cases'. Nothing committed; docs/audit state files untouched by me.",
+        "descriptive": "The drive route's phase reviewer brief now names the configured review skill and the headless phase validation session starts with --skill for it; nothing changes when no review skill resolves."
       },
       "startedAt": "2026-11-17T15:25:13Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-17T15:53:09Z",
+      "verifiedBy": [
+        "rk1-rk3: the phase brief names the review skill resolved from phase, area or meta level once under one Review skill heading with the resolver's basis",
+        "rk4-rk5: no review skill anywhere, or an area's explicit null over meta's, gives no Review skill section",
+        "vk1: the validation session's argv carries the phase's resolved review skill once beside the reviewer role",
+        "vk2: over-fire twin - no review skill resolved gives no --skill",
+        "vk3: the per-task reviewer session never gets the review skill"
+      ],
       "bugId": "BUG-34",
       "notes": [
         {
@@ -99,12 +135,24 @@
         "runId": "2026-11-17T15:53:05Z.060e69",
         "status": "passed",
         "at": "2026-11-17T15:53:05Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "8cb47b74c523",
+        "at": "2026-11-17T15:53:09Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-17T15:37:43Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test_drive_phase.py tests/test__affected_tests.py tests/test__doctor_trail.py` in a throwaway tree at HEAD exited 1 with 4 of 982 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rk1 (house FAIL), rk2 (house FAIL), rk3 (house FAIL), vk1 (house FAIL): SELFTEST FAILED: 981/982 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P166.2",
       "title": "A phase return that skipped the resolved review skill is refused, and the phase brief says so",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Close the class, not only the instance: nothing checks that an Agent-dispatched phase reviewer actually invoked the review skill the phase resolved. Writer sessions are held by drive-phase.py uninvoked_skills() (it reads the runner's recorded skillsInvoked); the subagent route (the phase reviewer dispatched as an Agent, whose return is filed through `submit` / `brief --role phase` ... submit, with --head) has nothing.\n\nAdd the check:\n1. The phase reviewer's return names the skill(s) it invoked (a field in the return object - reuse the name `skillsInvoked` the runner already records, so one vocabulary covers both routes). The brief section that audit-lookup.py writes for the phase reviewer (beside review_skill_lines(), added by the preceding task) tells the reviewer to invoke the skill and to list it in that field, and says why: a return without it is refused. Put ALL explanatory text in that brief section; plugins/audit/agents/audit-reviewer.md is at its byte ceiling (measure-context / its size lint) - do not grow it.\n2. `submit` for a phase return refuses when the phase resolved a review skill and the return does not name it as invoked. The refusal states the reason and the remedy (invoke the skill, then resubmit with it listed) in the drive's own refusal style. When no skill resolved, nothing changes: a return without the field is accepted exactly as today (prove it with a case).\n3. Red-first BOTH directions, with the failing line quoted: (a) a phase that resolved a skill + a return without it -> refused (the case is red against the code without the check); (b) the allow side: no skill resolved + no field -> accepted, and a resolved skill + the field naming it -> accepted (the case is red against a check that over-fires, e.g. one that refuses whenever the field is absent).\n4. If this turns out to need an architecture change (e.g. the phase return has no seam where the resolved skill is known at submit time), STOP and say so in the return instead of building it.\n\nRead writing-python, no-silent-pass, before-you-claim. No register ids in comments.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -134,14 +182,14 @@
       "dependsOn": [
         "P166.1"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-17T15:53:11Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -159,7 +207,13 @@
           "text": "reads lint tables; no lint is added or changed",
           "waives": "tools/prove-gates.py"
         }
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T16:20:24Z.1b4950",
+        "status": "passed",
+        "at": "2026-11-17T16:20:24Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

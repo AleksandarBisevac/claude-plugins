@@ -651,7 +651,9 @@ def review_skill_lines(manifest, phase):
     name and the basis are printed as it returns them; a level that answers
     with an explicit null resolves nothing and gets no section, exactly like a
     plan that declares none - the reviewer then reviews without a skill, which
-    agents/audit-reviewer.md already states for that case."""
+    agents/audit-reviewer.md already states for that case. The section, not the
+    agent file, carries the `skillsInvoked` ask and why: `drive-phase.py
+    submit`'s `skipped_review_skill` is what refuses a return without it."""
     skill, basis = _areas.resolve_review_skill(manifest, phase)
     if not skill:
         return []
@@ -659,7 +661,14 @@ def review_skill_lines(manifest, phase):
         "- %s (basis: %s, as _areas.resolve_review_skill resolves "
         "phase.reviewSkill, then each area tag's, then meta.reviewSkill)"
         % (skill, basis),
-        "Invoke it via the Skill tool FIRST, before reading the diff."])
+        "Invoke it via the Skill tool FIRST, before reading the diff.",
+        "Then name it in your return's `skillsInvoked` field, a list of the "
+        "skill names you invoked - the name the session runner records a "
+        "headless session's calls under. An agent's Skill calls reach the drive "
+        "through nothing else, so `drive-phase.py submit` refuses a phase "
+        "return - each slice's included - whose `skillsInvoked` does not name "
+        "this skill, and files nothing; the remedy is to invoke it and submit "
+        "again with it listed."])
 
 
 def compose_executor_brief(manifest, phase, task, ctx, files, gate):

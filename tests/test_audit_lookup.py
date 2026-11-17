@@ -3538,6 +3538,19 @@ def _review_skill_brief_cases(check):
               resolved_null == (None, "area api")
               and stopped != "" and _rk_section(stopped) == (0, [])
               and "plan-review" not in stopped)
+        # The field the section asks for is the one `drive-phase.py submit`
+        # reads, so a rename on either side reads as this case going red.
+        drive = _loader.load_script("drive-phase.py", "drive_phase_rk",
+                                    cache=False)
+        _count, body = _rk_section(_rk_brief(root, "field", {},
+                                             {"reviewSkill": "plan-review"}))
+        asks = [ln for ln in body if "`%s`" % (drive.INVOKED_FIELD,) in ln]
+        check("rk6 the review-skill section asks, on one line, for the skill to "
+              "be named in the return's `%s` field and says submit refuses a "
+              "phase return that does not name it: %r"
+              % (drive.INVOKED_FIELD, body),
+              len(asks) == 1 and "submit" in asks[0] and "refuses" in asks[0]
+              and drive.INVOKED_FIELD == "skillsInvoked")
     finally:
         _harness.remove_tree(root)
 
