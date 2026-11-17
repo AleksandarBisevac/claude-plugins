@@ -25,7 +25,9 @@ html{background:var(--bg);scrollbar-gutter:stable}
 /* Every anchor in this document lands under a sticky bar unless it says otherwise
    — and this report is navigated almost entirely by anchor. One rule covers the
    section headings, the phase rows a "held by" link points at, and anything a
-   later section adds an id to. */
+   later section adds an id to. The side nav's marker reads this margin back
+   off each target (landingLine in page-state.js), so the line a jump lands on
+   and the line that decides which section is lit are this one value. */
 [id]{scroll-margin-top:calc(var(--sticky-2) + var(--sp-2))}
 body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
      margin:0;padding:0;-webkit-font-smoothing:antialiased}

@@ -4407,6 +4407,182 @@ if (!STRESS) {
       + `(not exercised, not passed): ${notExercised.join(', ')}` : ''));
 }
 
+// --- a link restores only what a control can show -----------------------------
+// A filtered view is a link, and a link is typed by whoever sends it. A value
+// no control offers - an area the plan has no tag for, a model nobody ran, a
+// prototype key, a string that is not a date - used to be restored as it
+// stood: it hid rows, and nothing on the page was pressed to say why. Each
+// axis the page's script writes to the link is loaded ALONE with such a
+// value, and the page has to open exactly as it opens with no link. The keys
+// are read off the shipped script's own axis registry (`keys: [...]`), not
+// listed here, and the allow half (hr2) loads each one with a value its
+// control DOES offer and wants that value back on - so a key read wrongly, or
+// a decode that drops everything, is red rather than vacuously quiet.
+{
+  const HR_KEYS = [...new Set([...source.matchAll(/\bkeys: \[([^\]]*)\]/g)]
+    .flatMap((m) => [...m[1].matchAll(/'([a-z]+)'/g)].map((k) => k[1])))]
+    // Free text: every string is a value a search box offers.
+    .filter((k) => k !== 'q');
+  const HR_DATE_KEYS = { from: ['#audit-from', '#audit-gfrom'], to: ['#audit-to', '#audit-gto'] };
+  const HR_BOGUS = ['nosuch-value', 'constructor', 'toString'];
+  const HR_BOGUS_DATE = ['notadate', '2026-02-30', 'constructor'];
+  const hctx = await browser.newContext({ viewport: { width: 1512, height: 945 } });
+  const hp = await hctx.newPage();
+  const hrErrors = [];
+  hp.on('pageerror', (e) => hrErrors.push(e.message));
+  const openAt = async (frag) => {
+    await hp.goto('about:blank');
+    await hp.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
+    await hp.goto('file://' + path + (frag ? '#!' + frag : ''));
+    await hp.waitForTimeout(60);
+  };
+  // Everything a restored filter can change that a reader sees: which phases
+  // and usage rows are drawn, what is pressed, what the fields hold, whether
+  // More filters counts anything and whether Clear is offered.
+  const hrSnap = () => hp.evaluate(() => {
+    const g = document.querySelector('table.phases');
+    const shown = (sel) => [...document.querySelectorAll(sel)]
+      .filter((r) => !r.hidden && r.style.display !== 'none').length;
+    return {
+      phases: g ? [...g.querySelectorAll('tbody tr.phase')].filter((r) => r.style.display !== 'none')
+        .map((r) => r.getAttribute('data-phase')).join(' ') : '',
+      usage: shown('.smcell') + '/' + shown('.rank[data-author]'),
+      pressed: [...document.querySelectorAll('.sectools [aria-pressed="true"], .auchips [aria-pressed="true"]')]
+        .map((c) => [...c.attributes].filter((a) => a.name.indexOf('data-') === 0)
+          .map((a) => a.name + '=' + a.value)[0] || c.textContent.trim()).sort().join(' '),
+      fields: [...document.querySelectorAll('.sectools input, .gfilters input, .gfilters select, #audit-view')]
+        .map((e) => (e.id || e.tagName) + '=' + e.value).join(' '),
+      fcount: ((document.getElementById('audit-fcount') || {}).textContent || '').trim(),
+      clear: !!document.querySelector('.sectools [data-clear]:not([hidden])'),
+    };
+  });
+  const hrDiff = (a, b) => Object.keys(a).filter((k) => a[k] !== b[k])
+    .map((k) => `${k} ${JSON.stringify(b[k])} (no link: ${JSON.stringify(a[k])})`).join('; ');
+  await openAt('');
+  const hrBase = await hrSnap();
+  const leaked = [];
+  const kept = [];
+  const gaps = [];
+  let bogusRan = 0;
+  for (const key of HR_KEYS) {
+    for (const bad of (HR_DATE_KEYS[key] ? HR_BOGUS_DATE : HR_BOGUS)) {
+      await openAt(key + '=' + encodeURIComponent(bad));
+      const d = hrDiff(hrBase, await hrSnap());
+      bogusRan++;
+      if (d) leaked.push(`${key}=${bad}: ${d}`);
+    }
+    // The allow half: a value the control offers comes back on.
+    const offered = await hp.evaluate(([k, dateSels]) => {
+      if (dateSels) {
+        const f = dateSels.map((s) => document.querySelector(s)).find(Boolean);
+        return f ? { v: f.min || f.max || '', sels: dateSels } : null;
+      }
+      const c = document.querySelector('[data-' + k + ']');
+      return c ? { v: c.getAttribute('data-' + k) } : null;
+    }, [key, HR_DATE_KEYS[key] || null]);
+    if (!offered || !offered.v) { gaps.push(key); continue; }
+    // An area link may name several tags: the one offered must survive the
+    // bogus one beside it, not be dropped with it.
+    const val = key === 'a' ? offered.v + ' ' + HR_BOGUS[0] : offered.v;
+    await openAt(key + '=' + encodeURIComponent(val));
+    const got = await hp.evaluate(([k, v, sels]) => {
+      if (sels) return sels.map((s) => document.querySelector(s)).filter(Boolean).map((f) => f.value === v);
+      return [...document.querySelectorAll('[data-' + k + ']')]
+        .filter((c) => c.getAttribute('aria-pressed') === 'true')
+        .map((c) => c.getAttribute('data-' + k) === v);
+    }, [key, offered.v, offered.sels || null]);
+    const ok = got.length > 0 && got.every(Boolean);
+    kept.push(`${key}=${val}: ${ok ? 'on' : 'NOT restored (' + JSON.stringify(got) + ')'}`);
+  }
+  expect(`hr0 the link keys were read off the page's own axis registry (${HR_KEYS.join(',')})`,
+    HR_KEYS.length > 0 && bogusRan > 0, true);
+  expect('hr1 a link naming a value no control offers restores nothing - nothing hidden, '
+    + 'nothing pressed, no field filled', leaked.join(' · ') || 'none', 'none');
+  expect('hr2 a link naming a value its control offers restores it on'
+    + (gaps.length ? ` (no control on this page for: ${gaps.join(', ')})` : ''),
+    kept.filter((k) => !/: on$/.test(k)).join(' · ') || (kept.length ? 'none' : 'no axis had a control'),
+    'none');
+
+  // A status the restored view hides. The link writer never emits that pairing -
+  // a view change clears a status it hides - so it is a hand-made link, or one
+  // made before the plan's default view changed. Either way the reader asked
+  // for those phases, and the page answers with a chip pressed for that status
+  // and the phases of it drawn under a view that holds them, never with a
+  // filter silently dropped or a pressed chip the view has hidden.
+  const statuses = await hp.evaluate(() => [...document.querySelectorAll('#audit-phase-status [data-ps]')]
+    .map((c) => c.getAttribute('data-ps')));
+  const psWrong = [];
+  for (const st of statuses) {
+    await openAt('ps=' + encodeURIComponent(st));
+    const r = await hp.evaluate((s) => {
+      const chip = document.querySelector('#audit-phase-status [data-ps="' + s + '"]');
+      const drawn = [...document.querySelectorAll('table.phases tbody tr.phase')]
+        .filter((p) => p.style.display !== 'none');
+      return { pressed: !!chip && chip.getAttribute('aria-pressed') === 'true' && !chip.hidden,
+               drawn: drawn.length, other: drawn.filter((p) => p.getAttribute('data-status') !== s).length,
+               view: (document.getElementById('audit-view') || {}).value || '' };
+    }, st);
+    if (!r.pressed || !r.drawn || r.other) psWrong.push(`ps=${st} in view ${r.view}: ${JSON.stringify(r)}`);
+  }
+  expect(`hr3 a link naming any status the plan has presses that chip and draws only its phases, `
+    + `whatever view the page opens on (${statuses.length} statuses)`,
+    psWrong.join(' · ') || (statuses.length ? 'none' : 'no status chips'), 'none');
+  expect('hr4 the page raised no error while restoring links', hrErrors.slice(0, 2).join(' | ') || 'none', 'none');
+  await hctx.close();
+}
+
+// --- a side-nav jump lights the section it lands on ----------------------------
+// The nav's links are plain anchors and the marker is a script, so the two
+// decide "which section is this" separately: the jump by the scroll-margin the
+// stylesheet gives every id, the marker by a line of its own. When those lines
+// differed the jump stopped just short of the marker's, and every click lit the
+// section ABOVE the one it opened, at every width. Each visible entry is clicked
+// at a column width, a strip width and a phone width, and the marker has to
+// name it. An entry whose target cannot reach the line because the document
+// ends first is reported, not judged: there the last section is what is read.
+{
+  const SN_SIZES = [[1512, 945], [1000, 800], [390, 844]];
+  const sctx = await browser.newContext({ viewport: { width: 1512, height: 945 } });
+  const snp = await sctx.newPage();
+  const snErrors = [];
+  snp.on('pageerror', (e) => snErrors.push(e.message));
+  const wrong = [];
+  const short = [];
+  let clicked = 0;
+  for (const [w, h] of SN_SIZES) {
+    await snp.setViewportSize({ width: w, height: h });
+    await snp.goto('about:blank');
+    await snp.goto('file://' + path);
+    await snp.waitForTimeout(150);
+    const hrefs = await snp.evaluate(() => [...document.querySelectorAll('.snav a')]
+      .filter((a) => a.getClientRects().length && getComputedStyle(a).visibility !== 'hidden')
+      .map((a) => a.getAttribute('href')));
+    for (const href of hrefs) {
+      await snp.locator(`.snav a[href="${href}"]`).first().click();
+      await snp.waitForTimeout(200);
+      const r = await snp.evaluate((hr) => {
+        const cur = document.querySelector('.snav a[aria-current="true"]');
+        let t = null;
+        try { t = document.getElementById(decodeURIComponent(hr.slice(1))); } catch (e) { t = null; }
+        const top = t ? t.getBoundingClientRect().top : NaN;
+        const line = t ? parseFloat(getComputedStyle(t).scrollMarginTop) || 0 : NaN;
+        const atEnd = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+        return { cur: cur ? cur.getAttribute('href') : '', top: Math.round(top), line: Math.round(line), atEnd };
+      }, href);
+      clicked++;
+      if (r.cur === href) continue;
+      if (r.atEnd && r.top > r.line + 1) short.push(`${w}px ${href} (document ends ${r.top - r.line}px short)`);
+      else wrong.push(`${w}px ${href} lit ${r.cur || 'nothing'} (landed at ${r.top}px, line ${r.line}px)`);
+    }
+  }
+  await sctx.close();
+  if (short.length) notes.push(`note side-nav jumps the document ends before: ${short.join(', ')}`);
+  expect(`sn1 clicking a side-nav entry lights that entry, at ${SN_SIZES.map((s) => s[0]).join('/')}px `
+    + `(${clicked} clicks)`, clicked > 0 ? (wrong.join(' · ') || 'none') : 'no entry clicked', 'none');
+  expect('sn2 the page raised no error while the side nav was driven',
+    snErrors.slice(0, 2).join(' | ') || 'none', 'none');
+}
+
 assertLivenessWasChecked('report', liveness, {
   report: (m) => failures.push(`FAIL ${m}`),
   ok: (m) => notes.push(`ok   ${m}`),

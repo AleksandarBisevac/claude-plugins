@@ -739,11 +739,16 @@ def _cases(check):
     # viewport. Most targets are <h2> elements a line and a half tall, so usually
     # NONE was in the band and the nav marked nothing at all. Order, not
     # visibility: whichever heading last passed under the bar is where you are.
-    check("shell: the marker is decided by which heading last passed the fold, so "
-          "one link is always marked - a band-based observer marked none",
+    # The line is the one a jump lands on - each target's own scroll-margin,
+    # read back resolved - so a nav click lights the section it opened; the
+    # browser gate's sn1 clicks every entry at three widths to hold that.
+    check("shell: the marker is decided by which heading last reached the line a "
+          "jump lands on, so one link is always marked - a band-based observer "
+          "marked none",
           "new IntersectionObserver" not in M._SCRIPT
           and "if (best < 0) best = 0;" in M._SCRIPT
-          and "getBoundingClientRect().top <= fold" in M._SCRIPT)
+          and "getBoundingClientRect().top <= landingLine(el)" in M._SCRIPT
+          and "getComputedStyle(el).scrollMarginTop" in M._SCRIPT)
 
     # --- the sticky stack ------------------------------------------------------
     # Four hand-tuned offsets (4.1rem nav, 3.6rem filter bar, 3.5rem headers,
@@ -1085,14 +1090,18 @@ def _cases(check):
           ".topbar{position:static}" in _below
           and ":root{--topbar-h:0px}" in _below
           and M._CSS.count(".topbar{position:static}") == 1)
-    check("st2 measureStack() and the scroll-spy's fold count the bar's height "
-          "only while the bar is actually sticky - one helper read off the "
-          "layout, not a second copy of the breakpoint",
+    # The scroll-spy keeps no line of its own any more: it reads the
+    # scroll-margin the stylesheet derives from --topbar-h, which is this
+    # measurement, so the bar is counted in one place for both.
+    check("st2 measureStack() counts the bar's height only while the bar is "
+          "actually sticky, and the scroll-spy reads that measure back through "
+          "the stylesheet rather than keeping a fold of its own - one helper "
+          "read off the layout, not a second copy of the breakpoint",
           "const pinnedPx = (el) => (el && getComputedStyle(el).position === "
           "'sticky' ? px(el) : 0);" in M._SCRIPT
           and "root.style.setProperty('--topbar-h', pinnedPx(toolbar) + 'px');"
           in M._SCRIPT
-          and "const fold = pinnedPx(toolbar) + " in M._SCRIPT
+          and "const fold" not in M._SCRIPT
           and "px(toolbar)" not in M._SCRIPT.replace("pinnedPx(toolbar)", "")
           and "matchMedia('(max-width:52rem)')" not in M._SCRIPT)
     check("st3 opening More filters brings the panel into view - on a phone the "

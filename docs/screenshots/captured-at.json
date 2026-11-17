@@ -8,7 +8,7 @@
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "10cda192e4c15b01f93a38a31938760f1991845d13fa2cb13d810e54131bda21"
+      "uiDigest": "f0aabf7bbe03464188916da320ecb6e576f5c38425d3f1d7a229107e5c02feff"
     },
     "authors.png": {
       "sha256": "ad03a191d9ebd82020aa1f67a28c4ad793fc6899cf4769cf0932c48af3e39e64",
@@ -17,16 +17,16 @@
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "10cda192e4c15b01f93a38a31938760f1991845d13fa2cb13d810e54131bda21"
+      "uiDigest": "f0aabf7bbe03464188916da320ecb6e576f5c38425d3f1d7a229107e5c02feff"
     },
     "dark.png": {
-      "sha256": "8aceb6cc52db7ccf34fccfcb5396e61a556d53911ec15c11c6bf369cd9a63a7b",
+      "sha256": "7675175d00246928eb48901799f0e99311326546ef8e5ac9096a062f16df5ba9",
       "version": "3.8.0",
       "surface": "report",
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "10cda192e4c15b01f93a38a31938760f1991845d13fa2cb13d810e54131bda21"
+      "uiDigest": "f0aabf7bbe03464188916da320ecb6e576f5c38425d3f1d7a229107e5c02feff"
     },
     "expanded.png": {
       "sha256": "85e84d5a8ec8537912cb1b74ada0f1a6aedb2f071494c9c3eda2b9076aa9e3d1",
@@ -35,7 +35,7 @@
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "10cda192e4c15b01f93a38a31938760f1991845d13fa2cb13d810e54131bda21"
+      "uiDigest": "f0aabf7bbe03464188916da320ecb6e576f5c38425d3f1d7a229107e5c02feff"
     },
     "filtered.png": {
       "sha256": "8509bcaf48d165d6bd5b88c11d9b33773d3ca29564b5a7a05ec17993fed16c71",
@@ -44,7 +44,7 @@
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "10cda192e4c15b01f93a38a31938760f1991845d13fa2cb13d810e54131bda21"
+      "uiDigest": "f0aabf7bbe03464188916da320ecb6e576f5c38425d3f1d7a229107e5c02feff"
     },
     "filters.png": {
       "sha256": "c4ebb3587021b5ebede02c98d37c9baa1de9ab41386f3b158fcb7205c6a5e84f",
@@ -53,7 +53,7 @@
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "10cda192e4c15b01f93a38a31938760f1991845d13fa2cb13d810e54131bda21"
+      "uiDigest": "f0aabf7bbe03464188916da320ecb6e576f5c38425d3f1d7a229107e5c02feff"
     },
     "mobile.png": {
       "sha256": "aef27add6fbdf0ec6e795038b6bf91a19614a100912b0eba13293461213b8aee",
@@ -62,7 +62,7 @@
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "10cda192e4c15b01f93a38a31938760f1991845d13fa2cb13d810e54131bda21"
+      "uiDigest": "f0aabf7bbe03464188916da320ecb6e576f5c38425d3f1d7a229107e5c02feff"
     },
     "overview.png": {
       "sha256": "a80d768d612954deb6196db31125b553e57c8a3498c7614ff189d1995393b451",
@@ -71,7 +71,7 @@
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "10cda192e4c15b01f93a38a31938760f1991845d13fa2cb13d810e54131bda21"
+      "uiDigest": "f0aabf7bbe03464188916da320ecb6e576f5c38425d3f1d7a229107e5c02feff"
     },
     "panel-appearance.png": {
       "sha256": "2f9a033fe30681c7aa2aed6fe9cde4fe38605b0f811f522fd56d00788ecaabc6",

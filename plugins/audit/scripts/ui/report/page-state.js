@@ -269,15 +269,27 @@
   });
 
   /**
+   * The line a jump to this element puts its top on: the scroll-margin the
+   * stylesheet gives every id, read back resolved. A section is being read
+   * once its top has reached that line, so the section a nav click scrolls to
+   * is the section the marker lights. The marker used to keep a line of its
+   * own a few pixels above the stylesheet's, and every jump then stopped just
+   * short of it and lit the section above. One pixel of slack, because the
+   * browser rounds a scroll offset to whole device pixels.
+   * @param {Element} el a nav link's target
+   * @returns {number} in viewport pixels
+   */
+  const landingLine = (el) => (parseFloat(getComputedStyle(el).scrollMarginTop) || 0) + 1;
+
+  /**
    * Mark exactly one nav link as the section being read.
    * @returns {void}
    */
   const markSpy = () => {
     if (!navLinks.length) return;
-    const fold = pinnedPx(toolbar) + (snav && stripQ && stripQ.matches ? px(snav) : 0) + 4;
     let best = -1;
     spyTargets.forEach((el, i) => {
-      if (el && el.getBoundingClientRect().top <= fold) best = i;
+      if (el && el.getBoundingClientRect().top <= landingLine(el)) best = i;
     });
     if (best < 0) best = 0;   // above the first heading, the first link still answers
     // At the end of the document nothing further can cross the fold, so a short
@@ -434,6 +446,68 @@
   const auSelect = document.getElementById('audit-au-select');
   const areaSelect = document.getElementById('audit-area-select');
 
+  // --- what a link may restore -------------------------------------------------
+
+  // A link is typed by whoever sends it, so each axis's decode keeps only a
+  // value its own control offers. Restored as it stood, a value no control
+  // offers hid rows with nothing pressed to say why, and Clear was the only
+  // sign anything was on. The offered set is read off the controls rather than
+  // kept beside them, so a chip the renderer adds is offered with nothing else
+  // to edit. Array membership, never a property read: `constructor` is a key
+  // every plain object answers.
+
+  /**
+   * The values a filter's controls offer: the attribute every chip in its bar
+   * carries, and every option of its select twin bar the synthetic summary one.
+   * @param {Element|null} bar the chip row; null when the page renders none
+   * @param {string} attr the chip attribute carrying the value
+   * @param {HTMLSelectElement|null} [sel] the select twin, when the axis has one
+   * @returns {string[]} the non-empty values, in page order
+   */
+  const offeredBy = (bar, attr, sel) => [
+    ...(bar ? [...bar.querySelectorAll('[' + attr + ']')].map((c) => c.getAttribute(attr)) : []),
+    ...(sel ? [...sel.options].filter((o) => !o.hasAttribute('data-multi')).map((o) => o.value) : []),
+  ].filter(Boolean);
+
+  /**
+   * Whether the page's date fields would hold this value. A date field empties
+   * itself on anything that is not a real calendar day, so the control answers
+   * for its own vocabulary; it is asked through a detached copy, so the field
+   * the reader sees is never written by the question.
+   * @param {string} v
+   * @returns {boolean} false too when the page renders no date field
+   */
+  const dateFieldTakes = (v) => {
+    const field = fromInput || gFrom || toInput || gTo;
+    if (!field || !v) return false;
+    const probe = field.cloneNode(false);
+    probe.value = v;
+    return probe.value === v;
+  };
+
+  /**
+   * Bring a status a link names into the view, when the restored view hides
+   * it. The link writer never emits that pairing - a view change clears a
+   * status its view hides - so it is a link typed by hand, or one made before
+   * the plan's default view changed. Either way the sender asked for those
+   * phases. Dropping the status would show a different filter than the link
+   * named, and keeping it under a view that hides its chip would press a
+   * control nobody can see over a table with nothing in it. Switching the View
+   * select is the one answer where every control agrees with the rows drawn,
+   * and the select is on screen saying so. The first view VIEWS declares that
+   * holds the status, which is the narrowest, so a done phase opens under
+   * Archived rather than under every phase.
+   * @param {string} st a phase status some row carries
+   * @returns {void}
+   */
+  const viewForStatus = (st) => {
+    if (statusInView(st)) return;
+    const holds = Object.keys(VIEWS).find((v) => lookup(VIEWS, v).includes(STATUS_SEG[st]));
+    if (!holds) return;
+    viewMode = holds;
+    if (viewSel) viewSel.value = holds;
+  };
+
   // --- the filter axes, declared once ------------------------------------------
 
   /**
@@ -460,7 +534,8 @@
    *   is how a reader learns something is on behind the closed disclosure.
    * - `on`, `reset`, `paint`, `encode`, `decode`: is it filtering; return it to
    *   its default; repaint every control that shows it; its values for `keys`;
-   *   take its state from the decoded link, saying whether there was any.
+   *   take its state from the decoded link - keeping only a value its own
+   *   control offers - saying whether any was kept.
    *
    * The behaviours call painters declared in later parts (`highlight`,
    * `paintAreas`, `paintDates`, `applyAuthor`, `tfHosts`). They run only once
@@ -487,7 +562,12 @@
       reset: () => { phaseStatus = ''; },
       paint: () => { if (phaseStatusBar) highlight(phaseStatusBar, 'data-ps', phaseStatus); },
       encode: () => [phaseStatus],
-      decode: (h) => { if (!h.ps) return false; phaseStatus = h.ps; return true; },
+      decode: (h) => {
+        if (!offeredBy(phaseStatusBar, 'data-ps').includes(h.ps)) return false;
+        phaseStatus = h.ps;
+        viewForStatus(h.ps);
+        return true;
+      },
     },
     {
       // Space-joined in the link, mirroring the data-area attribute: one
@@ -499,8 +579,12 @@
       encode: () => [areaFilter.join(' ')],
       decode: (h) => {
         if (!h.a) return false;
-        areaFilter = h.a.split(/\s+/).filter(Boolean);
-        return true;
+        const offered = offeredBy(areaBar, 'data-a', areaSelect);
+        // Each tag on its own: a link naming one real area beside one that is
+        // not keeps the real one. Once each, since a chip holds a tag or not.
+        areaFilter = h.a.split(/\s+/)
+          .filter((t, i, all) => offered.includes(t) && all.indexOf(t) === i);
+        return areaFilter.length > 0;
       },
     },
     {
@@ -509,7 +593,11 @@
       reset: () => { modelFilter = ''; },
       paint: () => { if (modelBar) highlight(modelBar, 'data-m', modelFilter); },
       encode: () => [modelFilter],
-      decode: (h) => { if (!h.m) return false; modelFilter = h.m; return true; },
+      decode: (h) => {
+        if (!offeredBy(modelBar, 'data-m').includes(h.m)) return false;
+        modelFilter = h.m;
+        return true;
+      },
     },
     {
       // Two axes and two keys, never one: a link can carry either alone.
@@ -519,7 +607,11 @@
       reset: () => { tevFilter = ''; },
       paint: () => { if (tevBar) highlight(tevBar, 'data-tev', tevFilter); },
       encode: () => [tevFilter],
-      decode: (h) => { if (!h.tev) return false; tevFilter = h.tev; return true; },
+      decode: (h) => {
+        if (!offeredBy(tevBar, 'data-tev').includes(h.tev)) return false;
+        tevFilter = h.tev;
+        return true;
+      },
     },
     {
       id: 'observed', attrs: ['data-tevf'], keys: ['tevf'], scope: 'tasks',
@@ -528,7 +620,11 @@
       reset: () => { tevFlag = ''; },
       paint: () => { if (tevFlagBar) highlight(tevFlagBar, 'data-tevf', tevFlag); },
       encode: () => [tevFlag],
-      decode: (h) => { if (!h.tevf) return false; tevFlag = h.tevf; return true; },
+      decode: (h) => {
+        if (!offeredBy(tevFlagBar, 'data-tevf').includes(h.tevf)) return false;
+        tevFlag = h.tevf;
+        return true;
+      },
     },
     {
       // The presets are a way of SETTING this range, not a filter of their
@@ -540,10 +636,11 @@
       reset: () => { dFrom = ''; dTo = ''; preset = ''; },
       paint: () => { paintDates(); },
       encode: () => [dFrom, dTo],
+      // Each end on its own, so a link with one real date keeps that end.
       decode: (h) => {
-        if (!h.from && !h.to) return false;
-        dFrom = h.from || ''; dTo = h.to || '';
-        return true;
+        dFrom = dateFieldTakes(h.from) ? h.from : '';
+        dTo = dateFieldTakes(h.to) ? h.to : '';
+        return dFrom !== '' || dTo !== '';
       },
     },
     {
@@ -557,7 +654,11 @@
         applyAuthor();
       },
       encode: () => [auFilter],
-      decode: (h) => { if (!h.au) return false; auFilter = h.au; return true; },
+      decode: (h) => {
+        if (!offeredBy(authorBar, 'data-au', auSelect).includes(h.au)) return false;
+        auFilter = h.au;
+        return true;
+      },
     },
     {
       id: 'task-status', attrs: ['data-ts'], keys: [],

@@ -23,7 +23,30 @@
     "tool": null,
     "model": "sonnet",
     "status": "pending",
-    "findings": []
+    "findings": [
+      {
+        "id": "P165-R1",
+        "severity": "med",
+        "file": "plugins/audit/scripts/ui/report/page-state.js:565-661",
+        "issue": "Link validation is not at one seam: each FILTER_AXES entry's decode re-implements it by hand - five near-identical bodies `if (!offeredBy(<bar>, 'data-<x>').includes(h.<x>)) return false; <state> = h.<x>; return true;` plus bespoke area and date variants - and each re-spells the chip attribute its own `attrs` already declares (a third copy beside `attrs` and `paint`). The registry therefore holds the rule as an enumeration: a new axis whose decode omits the offeredBy call restores any value, and nothing in the code refuses it; only the browser gate's hr1 catches it, through a regex over the source spelling (finding 3). The task asked for the fix 'at the shared seam rather than per instance'.",
+        "resolution": "Declare what each axis's control offers once, in the entry (e.g. `offers: () => offeredBy(bar, entry.attrs[0], sel)`; search and the date pair declare their own acceptor), and have the one restore loop (exports.js `FILTER_AXES.forEach((axis) => { if (axis.decode(HASH)) ... })`) hand each decode only the HASH values its acceptor admits, so an unoffered value never reaches a decode by construction and the per-axis decodes shrink back to plain assignments. Keep hr1 as the browser-side proof."
+      },
+      {
+        "id": "P165-R2",
+        "severity": "med",
+        "file": "tools/check-report-interactive.mjs:4555-4580 (sn1 `short` carve-out); plugins/audit/scripts/ui/report/page-state.js:296-300 (end-of-document rule)",
+        "issue": "contradicts task clause 'Add a browser-gate case that clicks each side-nav entry at more than one width and reads that the highlight names the clicked section': sn1 excuses any entry the document ends before reaching the line and prints it as a note instead of judging it. Re-run on the new acme render: `note side-nav jumps the document ends before: 1512px #bugs (document ends 161px short)` - clicking Bugs at 1512px lights Ready (the end-of-document rule lights the last section), so the highlight does not name the clicked section and sn1 is green over it. The executor flagged this as a design call; the behaviour predates the diff (same on eed7a78b), but the gate as written does not read what the clause asked.",
+        "resolution": "Recommended: at the end of the document, let the section the reader jumped to (location.hash's target, when its top is on screen) win over 'light the last section', then delete the `short` carve-out so sn1 judges every entry. If the owner prefers the end rule, record that as a decision/fault and keep the note - but then the clause is narrowed by decision, not by the gate."
+      },
+      {
+        "id": "P165-R3",
+        "severity": "low",
+        "file": "tools/check-report-interactive.mjs:4422-4425",
+        "issue": "hr0 derives the link keys by spelling: `/\\bkeys: \\[([^\\]]*)\\]/` and `'([a-z]+)'` over the page source. An axis written `keys:['x']`, with a double-quoted key, or a key holding a digit or capital is silently not exercised, and hr0 only asserts HR_KEYS.length > 0, so a dropped key stays green.",
+        "resolution": "Cross-check the derivation against the registry's own shape: e.g. count the `decode:` members of FILTER_AXES in the source and require one keys match per entry (the empty `keys: []` of task-status included), or tolerate whitespace/quote variants in the regex and fail when an entry yields no match."
+      }
+    ],
+    "outcome": "[findings: 3 - 0 high, 2 med, 1 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -184,7 +207,7 @@
     {
       "id": "P165.3",
       "title": "start compares the plan directory and the project directory on one path resolution; a test marker is restored",
-      "status": "in_progress",
+      "status": "done",
       "description": "Two small manifest/test lows.\n\n1. `audit-task.py start` counts the plan's own evidence as undeclared readers when the project directory is spelled through a symlink: the plan-directory exclude is computed from os.path.abspath(mpath), which resolves through the cwd's real path (/private/tmp/...), then taken relative to a --project-dir spelled /tmp/..., so the exclude comes out empty and ~20 files under docs/audit/evidence count as readers and start refuses. Fix: compare both sides on one resolution (os.path.realpath on both, or the module's existing canonical-path helper if one exists - search before adding). Look for the same abspath-vs-realpath mix elsewhere in the start/scope reader path and fix the class with one helper, not per call site. Add a case in tests/test_audit_task.py that builds a project under a symlinked directory and runs start through the symlinked spelling; prove it red without the fix (macOS /tmp -> /private/tmp is one such link; build your own symlink under tempfile.mkdtemp() so it is portable, and skip with a printed reason on a platform without symlinks).\n\n2. tests/test_usage_ledger.py has a section marker `# --- rx:the re-export` with the space after the colon dropped by an earlier edit; restore `# --- rx: the re-export`.\n\nRead writing-python and no-silent-pass. No register ids in comments.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -207,14 +230,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6a8605d4ae67",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "audit-task.py: new private helper _project_rel(path, project) - posix_rel of `path` against `project` with the directories on both sides resolved through os.path.realpath (last component of `path` left unresolved so a tracked link is named, not its target). Used at both subtractions in the start/scope reader path: _owed_now's plan-directory exclude (the bug: abspath(mpath) resolved through the physical cwd vs a --project-dir spelled through a link climbed out of the project, so the exclude came out empty) and _unanswered_readers' remedy spelling (behaviour-neutral today: git_root is derived from project's own spelling; applied so the reader path has one subtraction). Searched for an existing helper first: hooks/_config has _resolved/_same_dir (comparators, not a relative path) and entry points have private ones (close-phase._same_path, stamp-verification._canonical_path) that the layer rule forbids importing; none answers 'relative to project on one resolution'. tests/test_audit_task.py: new block sym-block (_symlinked_project_cases, added to STAGES): a real git project, a symlink to it made under mkdtemp(), start run with cwd = the link (getcwd reports the resolved path), the manifest named relative, --project-dir the link; tracked readers of src/a.py at docs/audit/evidence/run.md (inside the plan dir) and docs/guide.md (outside). sym1: the refusal names docs/guide.md (proves the reader search ran - the first draft passed vacuously on a usage error, which is why) and not the evidence file. sym2 (second direction): still refused, task pending, outside reader named. Symlink refusal goes through _harness.skip with the exception text. tests/test_usage_ledger.py:1534 marker restored to `# --- rx: the re-export ...` (one trailing dash dropped to keep the width). Mutations, each restored in the same command with __pycache__ purged: fix reverted -> sym1 FAIL, 1/2; exclude widened to ['docs'] -> sym1 FAIL and sym2 FAIL (0, 'in_progress'), 0/2. Gate: 2/2 files ok, 1393 cases. Also green: test__output_lints.py + test__deps.py (2/2 files ok, 467 cases), ruff, vermin -t=3.8-. Dependants: full-gate.py, run-test-gate.py, test__doctor_trail, test__invariants, test__scoped_commit, test_audit_task, test_close_phase, test_commit_task_work import audit-task - still correct: no public or test-used name changed, the only new name is private and the two edited lines keep their return shapes. test__config uses _answered_readers - still correct, same signature and return shape. Prose naming verbs in verbs-in-full.md / PLUGIN-BUILD-GUIDE.md / manifest-conventions.md - still correct, no verb changed; PLUGIN-BUILD-GUIDE.md:3565/3614 say readers are searched with the plan's own directory left out, which is now true under a symlinked spelling too. test_audit_task.py dependants (test_commit_task_work, test__filed_returns import _attempt_cases/_held_cases/...; tools/affected.py, sweep-selftests.py, sweep-costs.json, CHANGELOG, research doc by path) - still correct: no existing helper renamed; .github/sweep-costs.json has no figure for sym-block, which the sweep weighs by the suite's figure over its blocks (the gate ran it, 1.1s). test_usage_ledger.py dependants - still correct: a comment-only change.",
+        "descriptive": "start no longer demands the plan's own files as readers when the project is spelled through a symlink; a stray section marker is restored."
       },
       "startedAt": "2026-11-17T05:25:38Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-17T06:53:56Z",
+      "verifiedBy": [
+        "sym-block in tests/test_audit_task.py: start through a symlinked project spelling sets the plan directory aside (sym1) and still demands a reader outside it (sym2)"
+      ],
       "notes": [
         {
           "at": "2026-11-17T05:24:25Z",
@@ -231,6 +256,18 @@
         "runId": "2026-11-17T06:53:52Z.f8e09d",
         "status": "passed",
         "at": "2026-11-17T06:53:52Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "6a8605d4ae67",
+        "at": "2026-11-17T06:53:56Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-17T05:31:36Z",
+        "basis": "`python3 tests/test_audit_task.py --selftest --stage sym-block` in a throwaway tree at HEAD exited 1 with 1 of 2 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests on HEAD's code failing only the unknown-stage check for `sym-block`, which the task's test files add - the stage is new at HEAD: its cases did not exist at HEAD, which is red for them), each passing with the working tree's implementation - sym1 (house FAIL): SELFTEST FAILED: 1/2 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
