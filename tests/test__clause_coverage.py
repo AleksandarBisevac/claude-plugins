@@ -371,8 +371,218 @@ def _reading_line_cases(check):
           quiet == ["", "", ""])
 
 
+def _marker_cases(check):
+    """Where the marker counts: opening a line or a sentence, outside a code
+    fence, never inside a sentence or behind a backtick or a quote.
+
+    Each deny row has its allow twin, so a reader that took the marker
+    anywhere again (the deny rows go red) is told apart from one that took it
+    nowhere (the twins go red).
+    """
+    one_line = ("Do it. Acceptance: (1) a passes (2) b passes. Notes: see the "
+                "Acceptance: list above.")
+    md_then = ("Do it.\nAcceptance:\n1. a passes\n2. b passes\n\nNotes: see the "
+               "Acceptance: list above.")
+    got = [_reading(one_line), _reading(md_then)]
+    check("cr1 a marker mentioned inside a sentence opens no list, and the real "
+          "list before it is read - in both shapes: %r" % (got,),
+          got[0][0] == "parenthesised" and len(got[0][1]) == 2
+          and got[0][1][0] == "a passes"
+          and got[1][0] == "line-numbered" and len(got[1][1]) == 2
+          and got[1][1][0] == "a passes" and got[1][1][1].startswith("b passes"))
+
+    ticked = "Teach the reader that an `Acceptance:` list numbered `1.` is read too."
+    quoted = "The brief must say \"Acceptance: see below\" verbatim.\n"
+    check("cr2 a marker in backticks or inside a quotation is no marker: no "
+          "shape, no item, nothing printed: %r"
+          % ([_reading(ticked), _reading(quoted)],),
+          _reading(ticked) == (None, []) and _reading(quoted) == (None, [])
+          and M.reading_line(ticked) == "" and M.reading_line(quoted) == "")
+
+    sentence = "Do it. Acceptance: the sweep is green."
+    bold = "Do it. **Acceptance:** (1) a (2) b"
+    check("cr2b TWIN of cr2: a marker that opens a sentence part-way along a "
+          "line still counts, bare or in bold: %r"
+          % ([_reading(sentence), _reading(bold)],),
+          _reading(sentence) == ("unnumbered", ["the sweep is green."])
+          and _reading(bold) == ("parenthesised", ["a", "b"]))
+
+    fenced = ("Do it.\nAcceptance:\n1. a\n2. b\n\nExample of a bad description:\n"
+              "```\nAcceptance: none\n```\n")
+    check("cr3 a marker inside a code fence after the real list opens nothing: "
+          "the list is read, and the reading line names no second marker: %r"
+          % ((_reading(fenced), M.reading_line(fenced)),),
+          _reading(fenced)[0] == "line-numbered"
+          and _reading(fenced)[1][0] == "a" and len(_reading(fenced)[1]) == 2
+          and "marker" not in M.reading_line(fenced))
+
+    bold_empty = "Do it.\n\n**Acceptance:**"
+    heading_empty = "## Acceptance:\n\n## Notes\nnothing here"
+    check("cr4 a bold marker with nothing after it, and a heading marker "
+          "followed by another heading, yield no item - neither the closing "
+          "asterisks nor the next section: %r"
+          % ([_reading(bold_empty), _reading(heading_empty)],),
+          _reading(bold_empty) == (None, []) and _reading(heading_empty) == (None, []))
+
+    bold_list = "**Acceptance:**\n1. a\n2. b"
+    heading_list = "## Acceptance:\n1. a\n2. b\n\n## Notes\nnothing here"
+    check("cr4b TWIN of cr4: a bold marker and a heading marker over a real "
+          "list read that list, and the heading after it ends the last item: %r"
+          % ([_reading(bold_list), _reading(heading_list)],),
+          _reading(bold_list) == ("line-numbered", ["a", "b"])
+          and _reading(heading_list) == ("line-numbered", ["a", "b"]))
+
+
+def _two_marker_cases(check):
+    """More than one line-opening marker: the reading says so, and takes the
+    one holding a numbered list when exactly one does, else the last."""
+    first_holds = ("Acceptance:\n1. a passes\n2. b passes\n\n"
+                   "Acceptance: see the list above.")
+    line = M.reading_line(first_holds)
+    check("cr5 two line-opening markers, the first holding the numbered list: "
+          "that list is read, and the reading line names both markers and why "
+          "it took the first: %r" % ((_reading(first_holds), line),),
+          _reading(first_holds) == ("line-numbered", ["a passes", "b passes"])
+          and "2 Acceptance markers" in line and "numbered list" in line
+          and "\n" not in line)
+
+    both_hold = "Acceptance: (1) old a (2) old b\nAcceptance: (1) new a"
+    line_b = M.reading_line(both_hold)
+    check("cr5b both markers hold a numbered list: the last is read, and the "
+          "line says the last was taken: %r" % ((_reading(both_hold), line_b),),
+          _reading(both_hold) == ("parenthesised", ["new a"])
+          and "2 Acceptance markers" in line_b and "last" in line_b)
+
+    neither = "Acceptance: first prose.\nAcceptance: second prose."
+    check("cr5c neither marker holds a numbered list: the last is read as its "
+          "one unnumbered item: %r" % (_reading(neither),),
+          _reading(neither) == ("unnumbered", ["second prose."])
+          and "2 Acceptance markers" in M.reading_line(neither))
+
+    crlf = first_holds.replace("\n", "\r\n")
+    check("cr5d Windows line endings read two markers the same: %r"
+          % ((_reading(crlf), M.reading_line(crlf)),),
+          _reading(crlf) == _reading(first_holds)
+          and M.reading_line(crlf) == line)
+
+
+def _shape_rule_cases(check):
+    """A parenthesised number opens an item only at the body's start or after
+    whitespace, and when both shapes yield items the one opening first is
+    read and the other is named."""
+    call = ("Acceptance:\n1. a bad flag ends the script with sys.exit(1)\n"
+            "2. the sweep is green\n3. ruff is clean")
+    check("cr6 a line-numbered list whose first item ends in a call with a "
+          "literal argument is read as all three numbered items, the call "
+          "inside item one: %r" % ((_reading(call), M.reading_line(call)),),
+          _reading(call) == ("line-numbered",
+                             ["a bad flag ends the script with sys.exit(1)",
+                              "the sweep is green", "ruff is clean"])
+          and M.reading_line(call).startswith("acceptance: 3 items"))
+
+    prose_call = ("Acceptance: the hook ends with sys.exit(1) when refused; the "
+                  "sweep is green.")
+    check("cr6b a call glued to a word inside unnumbered text opens nothing: "
+          "the whole text is one item: %r" % (_reading(prose_call),),
+          _reading(prose_call)
+          == ("unnumbered", ["the hook ends with sys.exit(1) when refused; the "
+                             "sweep is green."]))
+
+    spaced = ("Acceptance:\n1. the function returns (1) for an empty input\n"
+              "2. the sweep is green\n3. ruff is clean")
+    line = M.reading_line(spaced)
+    check("cr6c a `(1)` after a space inside a numbered item does not win: the "
+          "list opening first is read, all three items, and the line says the "
+          "parenthesised shape would have given one item: %r"
+          % ((_reading(spaced), line),),
+          _reading(spaced)[0] == "line-numbered" and len(_reading(spaced)[1]) == 3
+          and "parenthesised shape would give 1 item" in line)
+
+    starts = ["Acceptance: (1) a\n(2) b", "Acceptance:(1) a (2) b"]
+    check("cr6d TWIN of cr6: a `(1)` after whitespace or at the very start of "
+          "the body still opens the parenthesised list: %r"
+          % ([_reading(s) for s in starts],),
+          all(_reading(s) == ("parenthesised", ["a", "b"]) for s in starts))
+
+    substeps = "Acceptance: (1) do:\n1. x\n2. y\n(2) b"
+    check("cr6e ALLOW: a parenthesised item holding sub-steps numbered `1.` "
+          "`2.` stays one item, and a parenthesised list accounting for the "
+          "whole body prints nothing: %r"
+          % ((_reading(substeps), M.reading_line(substeps)),),
+          _reading(substeps)[0] == "parenthesised"
+          and len(_reading(substeps)[1]) == 2
+          and "1. x" in _reading(substeps)[1][0]
+          and "2. y" in _reading(substeps)[1][0]
+          and M.reading_line(substeps) == "")
+
+
+def _boundary_cases(check):
+    """Item boundaries of the line-numbered shape, and what the reading line
+    owes when the reading is not the plain one."""
+    lead = "Acceptance: the suite is green on python 3.8, and:\n1. a\n2. b"
+    line = M.reading_line(lead)
+    check("cr7 text between the marker and the first item is left out of "
+          "every item, and the line says so, quoting it: %r"
+          % ((_reading(lead), line),),
+          _reading(lead) == ("line-numbered", ["a", "b"])
+          and "in no item" in line and "the suite is green" in line)
+
+    paren_lead = ("Acceptance: the helper prints (1) and nothing else; the sweep "
+                  "is green.")
+    check("cr7b a parenthesised list with text before its `(1)` is not the "
+          "plain reading, so the line is printed: %r"
+          % (M.reading_line(paren_lead),),
+          "in no item" in M.reading_line(paren_lead)
+          and "the helper prints" in M.reading_line(paren_lead))
+
+    restart = "Acceptance:\n1. a\n1. b\n1. c"
+    check("cr8 a list numbered `1.` `1.` `1.` is three items, and the line "
+          "says the numbering restarts: %r"
+          % ((_reading(restart), M.reading_line(restart)),),
+          _reading(restart) == ("line-numbered", ["a", "b", "c"])
+          and "restart" in M.reading_line(restart))
+
+    nested = ("Acceptance:\n1. the build:\n   1. compiles\n   2. links\n"
+              "2. the sweep is green")
+    check("cr9 a nested sub-step at a deeper indent opens no item: two items, "
+          "the sub-steps inside the first: %r" % (_reading(nested),),
+          _reading(nested) == ("line-numbered",
+                               ["the build:\n   1. compiles\n   2. links",
+                                "the sweep is green"]))
+
+    section = ("Acceptance:\n1. a is green\n2. b is green\n\n## Out of scope\n"
+               "Do not touch the panel.\n\nContext: the number is internal.")
+    check("cr10 the last item ends at a following heading line: %r"
+          % (_reading(section),),
+          _reading(section) == ("line-numbered", ["a is green", "b is green"]))
+
+    big = "Acceptance:\n1. a\n" + "9" * 5000 + ". b"
+    big_paren = "Acceptance: (1) a (" + "9" * 5000 + ") b"
+    try:
+        got = [_reading(big), _reading(big_paren), M.reading_line(big)]
+        raised = None
+    except ValueError as exc:
+        got, raised = None, exc
+    check("cr11 a digit run at a line start or in parentheses past the "
+          "interpreter's integer limit raises nothing and opens no item: %r"
+          % ((got, raised),),
+          raised is None and got[0][0] == "line-numbered" and len(got[0][1]) == 1
+          and got[1][0] == "parenthesised" and len(got[1][1]) == 1)
+
+    md = "Acceptance:\n1. the first\n2. the second"
+    check("cr12 the reading line says who is held to the items: the writer on "
+          "the headless-writer route (`executor.writerModel` set): %r"
+          % (M.reading_line(md),),
+          "executor.writerModel" in M.reading_line(md)
+          and "headless-writer route" in M.reading_line(md))
+
+
 def _cases(check):
     _harness.stage(check, "cc-shape", _shape_cases)
+    _harness.stage(check, "cc-marker", _marker_cases)
+    _harness.stage(check, "cc-two", _two_marker_cases)
+    _harness.stage(check, "cc-rule", _shape_rule_cases)
+    _harness.stage(check, "cc-bound", _boundary_cases)
     _harness.stage(check, "cc-line", _reading_line_cases)
     _harness.stage(check, "cc-number", _numbering_cases)
     _harness.stage(check, "cc-verdict", _verdict_cases)

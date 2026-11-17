@@ -4629,6 +4629,7 @@ def _locked_add(args, project, config, mpath, title, out):
         result.update(project_basis_key(args))
         result.update(_index_dirty_key(index_note))
         result.update(_phase_branch_key(branch_note))
+        result.update(_acceptance_key(task.get("description")))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] %s added to %s -- %s" % (task_id, phase_id, title))
@@ -4730,6 +4731,7 @@ def _dry_run_report(args, out, vm, assembled, task, phase_id, gate_basis, missin
                   "testsAddNamingNoFile": list(unnamed_add),
                   "warnings": _wg.collapse_machine(warnings, assembled)}
         result.update(project_basis_key(args))
+        result.update(_acceptance_key(task.get("description")))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     if findings:
@@ -4741,6 +4743,7 @@ def _dry_run_report(args, out, vm, assembled, task, phase_id, gate_basis, missin
     out("[audit-task] DRY RUN: would add %s to %s -- %s; nothing written, and the "
         "plan validates with it" % (task["id"], phase_id, task["title"]))
     out("  gate: %s (%s)" % (", ".join(task["tests"]["gate"]) or "none", gate_basis))
+    _say_acceptance_reading(task.get("description"), out)
     if task["files"]:
         out("  files: %s" % ", ".join(task["files"]))
     for note in (_unnamed_add_note(unnamed_add), _not_on_disk_note(project, missing)):
@@ -10151,6 +10154,7 @@ def _locked_batch_add(args, project, config, mpath, doc, out, seed=None):
                   "journaled": not unjournaled}
         result.update(project_basis_key(args))
         result.update(_index_dirty_key(index_note))
+        result.update(_batch_acceptance_key(phase["tasks"][first:]))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     if appends:
@@ -10199,18 +10203,22 @@ def _batch_dry_run_report(args, out, vm, assembled, phase, pid, ids, appends,
         for line in findings:
             out("FINDING: " + line)
         return E_INVALID
+    added = [t for t in phase["tasks"] if t.get("id") in ids]
     if args.as_json:
         result = {"ok": True, "dryRun": True, "id": pid, "phase": phase,
                   "tasks": ids, "written": [], "testGateBasis": gate_basis,
                   "appended": appends,
                   "warnings": _wg.collapse_machine(warnings, assembled)}
         result.update(project_basis_key(args))
+        result.update(_batch_acceptance_key(added))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] DRY RUN: would %s %s%s -- nothing written, and the plan "
         "validates with it" % (
             "add %s to" % (", ".join(ids),) if appends else "add phase",
             pid, "" if appends else " with %s" % (", ".join(ids),)))
+    for task in added:
+        _say_acceptance_reading(task.get("description"), out, task["id"])
     for line in _wg.collapse(warnings, assembled):
         out("WARNING: " + line)
     return 0
@@ -11303,6 +11311,8 @@ def _locked_scope(args, project, config, mpath, tid, out):
         result.update(_phase_branch_key(branch_note))
         if held_now is not None:
             result["gateNowHolds"] = held_now
+        if args.description:
+            result.update(_acceptance_key(node.get("description")))
         out(json.dumps(result, indent=2, sort_keys=True))
         return 0
     out("[audit-task] %s scoped in %s%s"
@@ -16851,6 +16861,24 @@ def _say_acceptance_reading(description, out, subject=None):
     line = _clause_coverage.reading_line(description, subject)
     if line:
         out("  " + line)
+
+
+def _acceptance_key(description):
+    """`{"acceptanceReading": {"shape", "items", "line"}}` for a `--json`
+    result - the human form's reading line as data, its `line` empty where the
+    human form prints none - or `{}` when the description holds no item, so a
+    reader of the key never meets a reading of nothing."""
+    summary = _clause_coverage.reading_summary(description)
+    return {"acceptanceReading": summary} if summary else {}
+
+
+def _batch_acceptance_key(tasks):
+    """The batch form of `_acceptance_key`: one reading per task that holds an
+    item, keyed by the id the task takes, or `{}` when none does."""
+    readings = dict((t["id"], _clause_coverage.reading_summary(t.get("description")))
+                    for t in tasks)
+    kept = dict((tid, r) for tid, r in readings.items() if r)
+    return {"acceptanceReading": kept} if kept else {}
 
 
 def _decided_lines(body, ids):

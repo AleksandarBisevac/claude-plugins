@@ -323,15 +323,20 @@ current. Neither is legacy, and a mutating command does not nudge you off either
 - **A task description's Acceptance list is read in more shapes, and that is a behaviour
   change on upgrade, named as one.** The items after the last `Acceptance:` used to be read
   only when numbered `(1) ... (2) ...`; a Markdown numbered list (`1.` starting a line) and
-  unnumbered text after the marker read as no clause at all, and the executor was held to
-  none of them. Now the first is read item by item and the second as one item. What that
-  changes for a plan that exists: **a task whose Acceptance list was unread owes an answer
-  per clause at its NEXT submit** — the executor's closing line asks for one, and the drive
-  reads the answer against them. A `done` task is not re-read: its clauses were judged, or
+  unnumbered text after the marker read as no clause at all, and the headless writer was
+  held to none of them. Now the first is read item by item and the second as one item, and
+  only a marker opening a line or a sentence, outside a code fence, counts. What that
+  changes for a plan that exists depends on the route. **On the headless-writer route
+  (`executor.writerModel` set), a task whose Acceptance list was unread owes an answer per
+  clause the next time the drive files its writer's work** — the writer's closing line asks
+  for one, and the drive reads the answer against them before filing. **On the executor
+  subagent route nothing changes**: `submit` reads no clause and the executor's brief asks
+  for none. A `done` task is not re-read: its clauses were judged, or
   not, when it closed, and this change reopens nothing. **Nothing a plan holds stops
-  validating** — the validator does not read the description's list, and the parenthesised form reads
-  exactly the items it always did. `/audit:task add` and `scope --description` say how a
-  list in either of the new shapes was read; nothing else in the output changes.
+  validating** — the validator does not read the description's list, and a parenthesised
+  list opening at the marker reads exactly the items it always did. `/audit:task add` and
+  `scope --description` say how any other reading was taken, and their `--json` results
+  gain the optional `acceptanceReading` key; nothing else in the output changes.
 
 ### Not promised
 

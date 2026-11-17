@@ -1,0 +1,125 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__clause_coverage.py tests/test_audit_task.py tests/test_audit_lookup.py tests/test__refs.py tests/test_drive_phase.py --jobs 4": "pass",
+    "python3 tools/sweep-selftests.py tests/test__output_lints.py tests/test__clause_coverage.py tests/test__deps.py --jobs 4": "pass",
+    "python3 tools/measure-context.py --gate": "pass",
+    "ruff check (the six touched .py files)": "pass",
+    "vermin -t=3.8- --no-tips --violations (the six touched .py files)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-17T18:24:05Z",
+    "basis": "`python3 tests/test__clause_coverage.py --selftest` in a throwaway tree at HEAD exited 1 with 18 of 56 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cr1 (house FAIL), cr2 (house FAIL), cr3 (house FAIL), cr4 (house FAIL), cr4b (house FAIL), cr5 (house FAIL), cr5b (house FAIL), cr5c (house FAIL) and 10 more: SELFTEST FAILED: 38/56 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "WHAT CHANGED. plugins/audit/scripts/governance/_clause_coverage.py: acceptance_reading now (i) counts an `Acceptance:` only where it opens a line (after indent and Markdown heading/quote/list/emphasis marks) or opens a sentence, never inside a code fence (_markers, _fenced_spans); each marker's body runs to the next marker and ends at the first heading line outside a fence (_body); with several markers the one holding a numbered list is read when exactly one does, else the last; a bold marker's closing asterisks are dropped. (ii) `(n)` opens an item only at the body start or after whitespace (`(?<!\\S)`). When both numbered shapes yield items, the one whose first item opens earlier is read and the other's count is kept. Line-numbered items open only at the indent of the first `1.` (a sub-step on the marker's own line takes the marker line's indent); a `1.` at that indent opens a new item and sets `restart`. Both digit captures bounded to six digits. \\r\\n normalised. The reading dict now carries markers, markerLine, why, leadIn, other, restart. (iii) reading_line prints for every reading except a parenthesised list under one marker with no lead-in (is_plain), naming a second marker, the other shape's count, the left-out lead-in (quoted, shortened with textwrap.shorten) and a restart, and says the route: `held on the headless-writer route (executor.writerModel set): the writer answers each`. New reading_summary feeds the JSON key. audit-task.py: _say_acceptance_reading added to both dry-run reports (single and batch); optional `acceptanceReading` key added to add --json, add --dry-run --json, add --from-file --json (real and dry run, keyed by task id) and scope --description --json; key absent when the description holds no item; no existing key changed. scope has no --dry-run flag (audit-task.py VERB_FLAGS scope row), so 'under dry-run' applies to add only. audit-lookup.py _acceptance_named: names the marker's line when more than one marker exists, and says a restarted numbering. Documents: COMPATIBILITY.md Acceptance paragraph, CHANGELOG.md Changed entry (both sentences that named the executor/next submit), reference/manifest-conventions.md, commands/init.md, reference/verbs-in-full.md (the JSON key, after step 3 of the plan-writing call), PLUGIN-BUILD-GUIDE.md (_clause_coverage and audit-lookup sections only).\n\nWHERE THE DESCRIPTION IS UNTRUE AGAINST THE CODE. Rule (i) says the marker counts ONLY where it opens a line. Taken literally that breaks the binding allow side: cc1, cs7, cs9b (tests/test__clause_coverage.py) and ar2/ar3 (tests/test_audit_task.py) use `Do it. Acceptance: (1) ...` with the marker mid-line, and the committed plans do too: count_sentence_markers.py under the scratchpad's sg1.24 directory prints `descriptions with a counted marker: 101; with one opening a sentence part-way along a line: 75`. So the implemented rule is: opens a line OR opens a sentence (after . ! ? plus optional closing quote/bracket/emphasis and whitespace). Every mention the description lists (inside a sentence, in backticks, in quotes, in a fence) is still excluded. Mutation row 'ALLOW the marker counted only at a line start' turns cc1, cs7, cr2b and the cc* verdict cases red, which is the measurement behind this choice.\n\nBEFORE/AFTER OVER THE COMMITTED PLANS (probe_plans.py, HEAD reader exported with git show vs the tree's): `files read: 1240; descriptions holding the marker text: 102; changed reading: 1; reading line silent<->said: 1`. Changed reading: docs/audit/phases/P142.json P142.37-6yq (cancelled): HEAD read 1 parenthesised item from a QUOTED marker inside a sentence (`contradicts task clause 'Acceptance: (1) time python3 ...'`); now no item. Defended: the marker is a quotation of another task's clause, exactly rule (i)'s excluded class; the task is cancelled, so nothing is owed. Line change: SG1.24-ukq (this task) - reading unchanged (8 parenthesised items), now prints `2 Acceptance markers ... read the one on line 27 (the last)` because its description shows an example list headed by a line-opening `Acceptance:`; both bodies hold a numbered list, so the last (the real one) is taken.\n\nPROBES. probe_before_after.py (review/d/probe_clauses.py CASES + probe_lints.py block 4, HEAD vs tree) - output in the scratchpad's sg1.24/probe_before_after.out. Rows the description calls wrong, now right: two markers last in prose (HEAD unnumbered ['list above.'] -> parenthesised ['a passes', ...]); backticks and quoted sentence (unnumbered fragment -> no item); code block (unnumbered ['none ```'] -> line-numbered 2 items, a, b...); bold empty (['**'] -> none); marker then heading (['## Notes...'] -> none); block 4a (parenthesised 1 item, silent -> line-numbered 3 items); block 4b (parenthesised ['when refused...'] -> unnumbered whole text); paren inside md list (-> 3 items, line names the parenthesised shape's 1 item); nested sublist (-> 2 items, sub-steps inside item 1); list then prose section (last item ends at the heading); restart (1 item -> 3 items, line says restart); big number (CRASH -> no exception). Rows that were right read the same items (substeps in paren item, lowercase, heading no colon, criteria, starts at 0/2, wrapped number, cr only, 1.) form, tab, unicode, superscript, bullet, quoted list); their reading line changed only in the route wording, plus a lead-in note for starts at 0, preamble and paren 1 in prose only. The code-block row's last item still runs into the fenced example (the rule ends an item at a heading, not at a fence) - left as the rule states. add_probe.py drove the orchestrator's seven descriptions through add under plain, --dry-run and --json (output sg1.24/add_probe.out): the plain parenthesised list prints nothing in plain and dry-run, and carries {shape: parenthesised, items: 2, line: ''} in JSON; every other one prints the same line in all three.\n\nMUTATIONS. sg1.24/mutations.py, throwaway copy, anchor asserted once per row, __pycache__ purged, restored byte for byte: `MUTATIONS ALL CAUGHT`, exit 0; output in sg1.24/mutations.out. Rows asked for: rfind over the whole text (cr1 cr2 cr3 cr5 red), fence exclusion removed (cr3), paren glued to a word (cr6b), reading line silent on two shapes (cr6c), indent rule removed (cr9), each digit bound removed (cr11), dry-run line removed single and batch (ar8), JSON key removed single/scope (ar9 ar10) and batch (ar11). Allow twins: plain paren list prints (cs9b cr6e ar3 ar6 red), paren item with numbered sub-steps split (cr6e cs4 red), key written for no item (ar10), single-marker line in closing line (wp17b). Plus heading cut, last-always, lead-in silent, restart, route wording, closing-line marker line.\n\nGATES RUN. The five named suites through the sweep: `5/5 files ok, 2845 cases`, exit 0, both before and after the lint fix below. measure-context --gate: exit 0 `GATE OK`. ruff `All checks passed!`, vermin 3.8 clean. The orchestrator's gate without --record (run-test-gate.py ... --task SG1.24-ukq) went RED once on my code: tests/test__output_lints.py te11 and ln1 flagged _clause_coverage.py:296 (a length check beside a slice in the quote-shortening helper). Fixed by textwrap.shorten; then `python3 tools/sweep-selftests.py tests/test__output_lints.py tests/test__clause_coverage.py tests/test__deps.py --jobs 4` -> `3/3 files ok, 528 cases`. No other suite in that gate failed.\n\nRED-FIRST. tdd: the new cases ran red on HEAD's code before any implementation: `python3 tests/test__clause_coverage.py --selftest` -> `SELFTEST FAILED: 38/56 cases passed`; `python3 tests/test_audit_task.py --selftest --stage ar-block` -> `SELFTEST FAILED: 7/11 cases passed` (ar8-ar11, key absent / no dry-run line). The command handed to submit is `python3 tests/test__clause_coverage.py --selftest` (one house runner, finishes in seconds); it leaves out the ar8-ar11 cases of tests/test_audit_task.py and wp17b of tests/test_audit_lookup.py, whose red was watched by hand as above and by the mutation rows.\n\nDEPENDANTS. drive-phase.py's two callers of the check: file_writer_return (drive-phase.py:4607-4611) and aside_gap (drive-phase.py:5255-5261) - code unchanged; both call task_clauses on the task's CURRENT description at filing time. A TASK IN PROGRESS on the headless-writer route whose item list the new reader changes: the writer's closing line was composed at session start (audit-lookup.py compose_writer_prompt, writer_closing_line call at :1479) from the old numbering, and the drive checks the answer against the new one. If the new list is longer, the extra clause numbers are gaps (`no-answer`) -> clauses_uncovered (drive-phase.py:4410-4425): while a resume round is left the decision is `clauses-uncovered-writer`, which resumes the session with resume_text naming each uncovered clause's number and words, so the writer can answer; once rounds are spent it is plain `clauses-uncovered` (a fresh retry). If the new list is shorter, the writer's surplus keys land in `unknown`, never a gap. A key whose number now names a different clause is still judged only on whether its cited path is in the diff (check never reads clause meaning), so a renumbering can pass a clause on an answer written for another one - stated, not fixed here. On the committed plans no in-progress task's reading changed (probe above). audit-lookup.py writer closing line and task_clauses: changed only in _acceptance_named (marker line, restart); task_clauses unchanged; wp17 still green, wp17b added. tests/test_audit_lookup.py closing-line cases: green (206/206). tests/test__refs.py pins quoting commands/init.md (ia cases: _IA_CLAUSE, _IA_ROUTE, `_clause_coverage.py` inside the bullet) kept and green; no pin quotes the manifest-conventions passage. tools/measure-context.py --gate: exit 0 (init.md is not a measured entry). PLUGIN-BUILD-GUIDE.md: only the _clause_coverage.py and audit-lookup.py sections edited. audit-task.py: reading_line unchanged in signature; new reading_summary.\n\nOPEN QUESTION FOR THE OWNER (not built, as instructed): the two routes differ. On the headless-writer route (executor.writerModel set) the writer is asked for an answer per clause and the drive checks it at filing; on the executor subagent route submit reads no clause and the executor's brief asks for none (compose_executor_brief, audit-lookup.py:665, has no clause line; agents/audit-executor.md never mentions Acceptance). Whether submit should run the clause check, and the executor brief carry the closing line, is the owner's call.",
+    "descriptive": "The Acceptance reader no longer takes a mentioned marker or a call like sys.exit(1) for a list, says every non-plain reading at the write (dry run and JSON included), and the documents name the one route that is held to the clauses."
+  },
+  "testsAdded": [
+    "tests/test__clause_coverage.py cr1-cr12: a marker in a sentence, backticks, quotes or a code fence opens no list and the real list is read (with the allow twins: a sentence-opening and a bold marker still count); two line-opening markers named and the numbered one taken, else the last; sys.exit(1) inside a numbered item does not win and a spaced (1) is named as the other shape; text left out of every item and a restart stated; a nested sub-step opens no item; the last item ends at a heading; a long digit run raises nothing; the line names the headless-writer route",
+    "tests/test_audit_task.py ar8-ar11: add --dry-run prints the reading line (single and batch) and stays quiet for a parenthesised list; add --json, add --dry-run --json and scope --json carry acceptanceReading {shape, items, line}; a parenthesised list carries an empty line and no marker carries no key; add --from-file --dry-run --json carries one reading per task id",
+    "tests/test_audit_lookup.py wp17b: with two markers the writer's closing line names the line of the marker read and says a restarted numbering"
+  ],
+  "casesAdded": [
+    [
+      "cr1",
+      "cr2",
+      "cr2b",
+      "cr3",
+      "cr4",
+      "cr4b",
+      "cr5",
+      "cr5b",
+      "cr5c",
+      "cr5d",
+      "cr6",
+      "cr6b",
+      "cr6c",
+      "cr6d",
+      "cr6e",
+      "cr7",
+      "cr7b",
+      "cr8",
+      "cr9",
+      "cr10",
+      "cr11",
+      "cr12"
+    ],
+    [
+      "ar8",
+      "ar9",
+      "ar10",
+      "ar11"
+    ]
+  ],
+  "claims": "claims:\n1 _clause_coverage.py _markers/_body/_line_opens/_read_body/describe_reading do what the docstring and the five documents say; route sentence checked against drive-phase.py:4607 and :5255 (the only _cc.check calls) and audit-lookup.py:1479 (the only writer_closing_line call)\n2 mutations.py: every row applied once and was caught (MUTATIONS ALL CAUGHT, exit 0), deny rows and their ALLOW twins; new cases red on HEAD code first (38/56, 7/11)\n3 the class is 'a marker or number read where it is not the list': grep of the reader's callers (audit-task.py _say_acceptance_reading: grep -c prints 6 = the def plus five call sites - add, add dry run, batch, batch dry run, scope; audit-lookup.py _acceptance_named, drive-phase.py x2) - each reads acceptance_reading, so the fix is in the one reader; documents: every sentence E-documents finding 2 lists reworded (COMPATIBILITY, CHANGELOG, manifest-conventions, init.md, the printed line)\n4 the route rule is enforced by code placement (only file_writer_return/aside_gap call check), named in COMPATIBILITY.md and manifest-conventions.md sentences; nothing enforces a clause on submit, and the documents say so\n5 n/a - no timing recorded; the committed-plans comparison is a deterministic count with its command (probe_plans.py)\n6 the reader decides on the marker's position in the text it reads (line start, sentence start, fence span), not a spelling pattern over a command; allow twins proven: cr2b, cr6d, cr6e, cs9b/ar3/ar6\n7 the counts in this outcome carry their command (probe_plans.py, count_sentence_markers.py, the sweep's tally); no number written into a document",
+  "stamp": "audit-stamp: {\"content\":\"sha256:bfec6e475cc40331e0e4eb6c1764cb573a6a91e793169e68c918d9f641d812a9\",\"dirtyDigest\":\"sha256:447e981083b43ce132ef373e160fec574e1493bbb26622be21bbd1a17241595a\",\"dirtyPaths\":{\"CHANGELOG.md\":\"ffedf86aa45f513d\",\"COMPATIBILITY.md\":\"a89644c011317da4\",\"PLUGIN-BUILD-GUIDE.md\":\"55ac023c49b49f1b\",\"plugins/audit/commands/init.md\":\"7c51f8073abc777d\",\"plugins/audit/reference/manifest-conventions.md\":\"894393cabcb5231f\",\"plugins/audit/reference/verbs-in-full.md\":\"bb74acab5efce146\",\"plugins/audit/scripts/governance/_clause_coverage.py\":\"c5a411c11bee15bd\",\"plugins/audit/scripts/manifest/audit-task.py\":\"41888740c1cb5714\",\"plugins/audit/scripts/status/audit-lookup.py\":\"c7726b2f1d832fc5\",\"tests/test__clause_coverage.py\":\"2c66e13c2fae4449\",\"tests/test_audit_lookup.py\":\"8a26d8e611d972e4\",\"tests/test_audit_task.py\":\"85a24cb27e483273\"},\"head\":\"df453a29\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"COMPATIBILITY.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/commands/init.md\",\"plugins/audit/reference/manifest-conventions.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/scripts/governance/_clause_coverage.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test__clause_coverage.py\",\"tests/test__refs.py\",\"tests/test_audit_lookup.py\",\"tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:7f5367f05e162b147e6e4a4018795f93a56acf085a1e7edae4ea12de055bd87f\",\"v\":2}",
+  "floorGuard": {
+    "answer": "clean",
+    "basis": "read 6 of the diff's 12 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 6 file(s) not read, having no syntax known here: CHANGELOG.md, COMPATIBILITY.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/commands/init.md, plugins/audit/reference/manifest-conventions.md, plugins/audit/reference/verbs-in-full.md; 3 test file(s) not compared for definition-changed, defining no test* function: tests/test__clause_coverage.py, tests/test_audit_lookup.py, tests/test_audit_task.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "COMPATIBILITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/commands/init.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/reference/manifest-conventions.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/reference/verbs-in-full.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "tests/test__clause_coverage.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test_audit_lookup.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test_audit_task.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      }
+    ],
+    "base": {
+      "commit": "df453a296b9e1922314accb90a4b0465445061b4"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-17T18:24:08Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": [
+    "tests/test_audit_task.py: add and scope carry the acceptance reading under dry-run and in their JSON result - not checked: the submit's command did not run `tests/test_audit_task.py`, so the ids bound to it were not compared with any printed label"
+  ]
+}

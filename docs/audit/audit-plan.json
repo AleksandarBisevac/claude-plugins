@@ -12795,7 +12795,8 @@
       "SG1.14-ukq",
       "SG1.10-ukq",
       "SG1.18-ukq",
-      "SG1.22-ukq"
+      "SG1.22-ukq",
+      "SG1.24-ukq"
     ],
     "tests/test__report_html.py": [
       "P131.1",

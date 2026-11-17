@@ -2393,6 +2393,19 @@ def _writer_prompt_cases(check):
           and "clauses 1 to 2" in listed_closing and "line start" in listed_closing
           and "(1)" not in listed_closing)
 
+    twice = _wp_manifest(add=(), description="Fix it.\n\nAcceptance:\n1. one holds\n"
+                                             "1. two holds\n\nAcceptance: see above.")
+    twice_closing = _wp_text(twice).split("\n")[-2]
+    check("wp17b with two markers the closing line names the line of the one "
+          "read, and a restarted numbering is said - the writer is pointed at "
+          "the list the drive reads, whose numbers are not the clause numbers; "
+          "one marker and a plain list carry neither (wp17's closing): %r / %r"
+          % (twice_closing, listed_closing),
+          "clauses 1 to 2" in twice_closing
+          and "marker on line 3" in twice_closing and "restart" in twice_closing
+          and "marker on line" not in listed_closing
+          and "restart" not in listed_closing)
+
     check("wp11 two calls give identical bytes: %r"
           % (_wp_text(man) == text,),
           _wp_text(man) == text and _wp_text(_wp_manifest()) == text)

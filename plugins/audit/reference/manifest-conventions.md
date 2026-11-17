@@ -167,14 +167,24 @@ not yet `done` or `cancelled` the validator **refuses** an entry naming no file
 (`COMPATIBILITY.md` → *Validation stays additive*). For `regression` and `gate-only`
 the shape is recommended, not required.
 
-**A task's Acceptance list is the text after the LAST `Acceptance:` in its `description`, and
-each item is a clause the executor answers** after the `tests.add` entries
-(`scripts/governance/_clause_coverage.py`'s `acceptance_reading`). Write it `Acceptance: (1) ...
-(2) ...` — the recommended form. A Markdown list (`1.` or `1)` starting a line) is read too, by
-the same rule that a number opens an item only after the one before it; prose with no number is
-read whole as ONE item; a marker with nothing after it is no item. When either of those two
-readings applied, `/audit:task add` and `scope --description` print one `acceptance:` line with
-the item count and the shape, so the author sees what the executor will be held to.
+**A task's Acceptance list is the text after an `Acceptance:` that opens a line or a sentence
+in its `description`, and on the headless-writer route (`executor.writerModel` set) each item
+is a clause the writer answers** after the `tests.add` entries, read by the drive when it files
+the writer's work (`scripts/governance/_clause_coverage.py`'s `acceptance_reading` and `check`);
+the executor subagent filing through `submit` is asked for no clause and checked against none.
+A marker inside a sentence, behind a backtick or a quotation mark, or in a code fence is no
+marker. With more than one, the one holding a numbered list is read when exactly one does, and
+otherwise the last; the list ends at the next heading line. Write it `Acceptance: (1) ...
+(2) ...` — the recommended form; a `(n)` opens an item only at the list's start or after
+whitespace, so `sys.exit(1)` inside an item is a call. A Markdown list (`1.` or `1)` starting a
+line) is read too, at the indent of its first `1.` (a nested sub-step opens nothing) and by the
+rule that a number opens an item only after the one before it, a restarted `1.` aside; when both
+shapes number items, the one opening first is read. Prose with no number is read whole as ONE
+item; a marker with nothing after it is no item. Whenever the reading is anything but one
+parenthesised list covering the whole text, `/audit:task add` (dry run included) and `scope
+--description` print one `acceptance:` line with the item count, the shape and what departed
+from the plain reading - a second marker, the other shape's count, text left out of every item,
+a restarted numbering - and `--json` carries the same as `acceptanceReading`.
 
 **A CSS file named in `--files` that gives a selector a `:focus` or `:hover` rule gets an
 entry of its own, appended after the author's own `tests.add`.** `/audit:task add` reads

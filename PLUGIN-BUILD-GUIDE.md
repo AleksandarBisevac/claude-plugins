@@ -3654,6 +3654,13 @@ tests it adds: a slow step naming a `tests.add` file is listed again cut down to
 compound command left uncut). A gate whose every declared command is left to the phase gate
 says so in the list; `none declared` is said only when the gate declares no command.
 
+The writer's prompt ends on `writer_closing_line`, which asks for one answer per clause of
+`_clause_coverage.task_clauses` and names the Acceptance items as the reader read them
+(`_acceptance_named`): by shape, with the line of the marker read when the description holds
+more than one, and saying so when a restarted numbering means the numbers the writer sees are
+not the clause numbers (`wp17`, `wp17b`). The executor's brief carries no such line - the
+clause check is the headless-writer route's alone.
+
 Every `tests.add` file read as a suite (`_manifest_phases.is_suite_path`) then ends on the list,
 whatever the slow steps are spelled as (`suite_coverage`). A listed command runs a suite when it
 names it, or when it is a whole run: one simple command of a runner the plan hands that kind of
@@ -5643,16 +5650,25 @@ are `tests/test__wave.py`.
 Whether a writer answered every clause its task owes.
 
 `task_clauses(task)` is the one numbering: the `tests.add` entries in order, then the items of the
-description after its last `Acceptance:` marker. `acceptance_reading(description)` reads those items in
-these shapes, the first that yields an item deciding, so they never mix: parenthesised numbers
-(`(1) ... (2) ...`, the recommended form and the only one read before); else a number closed by a full
-stop or a parenthesis at the start of a line, by the same sequence rule, so a version number inside a
-sentence opens nothing; else the whole non-empty text after the marker, as ONE item. A marker followed
-by nothing but whitespace has no items. Before the second and third shapes, a list written either way
-read as no clause at all and the writer was held to none of it. `reading_line(description)` is the
-line `audit-task.py`'s `add` (single or `--from-file`) and `scope --description` print when the second
-or third shape read the list, naming the count and the shape; the first prints nothing new.
-`audit-lookup.py` builds the writer's closing
+description's Acceptance list. **Which marker:** `acceptance_reading(description)` counts an
+`Acceptance:` only where it opens a line (after an indent and Markdown's heading, quote, list or
+emphasis marks) or a sentence, and outside a code fence, so one named in a sentence, in backticks or
+in a fenced example is no marker; each marker's text runs to the next and ends at the first heading
+line, and with several the one holding a numbered list is read when exactly one does, else the last.
+**Which shape:** parenthesised numbers (`(1) ... (2) ...`, the recommended form), a `(n)` opening an
+item only at the text's start or after whitespace; a number closed by a full stop or a parenthesis at
+the start of a line, read at the indent of its first `1.` so a nested sub-step opens nothing, with a
+restarted `1.` opening a new item; both by the sequence rule, so a version number inside a sentence
+opens nothing. When both yield items the one opening first is read and the other's count is kept;
+else the whole non-empty text, as ONE item. A marker followed by nothing but whitespace has no
+items, and both digit captures are bounded so a long digit run cannot raise. `reading_line(description)`
+is the line `audit-task.py`'s `add` (single or `--from-file`, dry run included) and `scope
+--description` print whenever the reading is anything but one parenthesised list covering the whole
+text - a second marker, the other shape's count, text left out of every item and a restarted
+numbering each named - and `reading_summary` is the same as the `acceptanceReading` key of their
+`--json` results. **The check runs on the headless-writer route alone** (`executor.writerModel`
+set): the executor subagent filing through `submit` reads no clause, and the line says which route it
+is true of. `audit-lookup.py` builds the writer's closing
 line from it and `drive-phase.py` reads the writer's answer against it, which is why it lives below
 both rather than in either - two entry points may not load each other. `check(clauses, message,
 changed, root)` reads the JSON object the message ends with and returns `covered`, or a `gaps` list

@@ -351,8 +351,10 @@ next presentation - there is no separate question round for assumptions.
    - **Each Acceptance clause states an observable condition.** A task's acceptance is
      the numbered items after an `Acceptance:` marker at the end of its `description`,
      written `Acceptance: (1) ... (2) ...` - the form `scripts/governance/_clause_coverage.py`
-     reads - and the executor must answer every clause, so a clause nothing can judge is
-     answered with prose and proves nothing. State each as one of: a command and the result
+     reads - and on the headless-writer route (`executor.writerModel` set) the writer must
+     answer every clause before the drive files its work, so a clause nothing can judge is
+     answered with prose and proves nothing; the executor subagent filing through `submit`
+     is asked for no clause. State each as one of: a command and the result
      it must print or exit with; a named behaviour with its input and its output; a file
      that must, or must not, change. `pytest tests/test_orders.py -k refund exits 0, and a
      refund above the order total returns 400` passes; `improve error handling` does not -

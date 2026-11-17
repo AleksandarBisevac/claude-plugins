@@ -994,16 +994,25 @@ def _clause_span(first, last):
 def _acceptance_named(task, count):
     """The Acceptance items as the reader numbered them - by the shape
     `_clause_coverage.acceptance_reading` read the description in, so a list
-    it did not find numbered in parentheses is never pointed at as one."""
-    shape = _cc.acceptance_reading(task.get("description"))["shape"]
+    it did not find numbered in parentheses is never pointed at as one. With
+    more than one marker the one read is named by its line, and a restarted
+    numbering is said, since the numbers the writer sees are then not the
+    clause numbers."""
+    reading = _cc.acceptance_reading(task.get("description"))
+    shape = reading["shape"]
+    where = (" (the list after the Acceptance marker on line %d)"
+             % (reading["markerLine"],) if reading["markers"] > 1 else "")
     if shape == _cc.SHAPE_LINE_NUMBERED:
         return ("the Acceptance items of the task description numbered %s at "
-                "line starts" % ("1" if count == 1 else "1 to %d" % count))
+                "line starts%s%s" % (
+                    "1" if count == 1 else "1 to %d" % count,
+                    ", in order, the restarted numbers counted on"
+                    if reading["restart"] else "", where))
     if shape == _cc.SHAPE_UNNUMBERED:
         return ("the whole unnumbered text after the task description's "
-                "Acceptance marker, read as one item")
-    return ("the Acceptance items %s of the task description"
-            % ("(1)" if count == 1 else "(1) to (%d)" % count))
+                "Acceptance marker, read as one item%s" % (where,))
+    return ("the Acceptance items %s of the task description%s"
+            % ("(1)" if count == 1 else "(1) to (%d)" % count, where))
 
 
 def writer_closing_line(task):

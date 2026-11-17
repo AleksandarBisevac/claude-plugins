@@ -23543,12 +23543,81 @@ def _acceptance_reading_cases(check):
                                  {"title": "paren", "files": ["src/b.ts"],
                                   "description": paren,
                                   "tests": {"mode": "gate-only"}}]}, fh)
+        code_bd, txt_bd = _cli_here(["add", "--from-file", path, "--dry-run"], proj)
+        code_bj, txt_bj = _cli_here(["add", "--from-file", path, "--dry-run",
+                                     "--json"], proj)
         code_b, txt_b = _cli_here(["add", "--from-file", path], proj)
         check("ar7 `add --from-file` names the task whose list was read by line "
               "starts, and prints nothing for the parenthesised one beside it: "
               "%r" % ((code_b, said(txt_b), txt_b),),
               code_b == 0 and len(said(txt_b)) == 1
               and said(txt_b)[0].startswith("acceptance (P2.1): 2 items"))
+
+        proj = project("dry")
+        code_dm, txt_dm = _cli_here(["add", "A task", "--phase", "P1", "--files",
+                                     "src/a.ts", "--tests-mode", "tdd",
+                                     "--description", md, "--dry-run"], proj)
+        code_dq, txt_dq = _cli_here(["add", "A task", "--phase", "P1", "--files",
+                                     "src/a.ts", "--tests-mode", "tdd",
+                                     "--description", paren, "--dry-run"], proj)
+        check("ar8 `add --dry-run` prints the same one reading line the real add "
+              "does, for one task and for a batch, and stays quiet for the "
+              "parenthesised form (the twin: a line printed for every marker "
+              "goes red here): %r"
+              % ((code_dm, said(txt_dm), code_dq, said(txt_dq), code_bd,
+                  said(txt_bd)),),
+              code_dm == 0 and len(said(txt_dm)) == 1
+              and said(txt_dm)[0].startswith("acceptance: 2 items")
+              and code_dq == 0 and said(txt_dq) == []
+              and code_bd == 0 and len(said(txt_bd)) == 1
+              and said(txt_bd)[0].startswith("acceptance (P2.1): 2 items"))
+
+        def as_json(txt):
+            try:
+                return json.loads(txt)
+            except ValueError:
+                return {}
+
+        runs = {}
+        for label, extra, description in (
+                ("md", [], md), ("md-dry", ["--dry-run"], md),
+                ("paren", [], paren), ("none", [], "Do it, with no marker.")):
+            code_j, txt_j = _cli_here(["add", "A task", "--phase", "P1", "--files",
+                                       "src/a.ts", "--tests-mode", "tdd",
+                                       "--description", description, "--json"]
+                                      + extra, proj)
+            runs[label] = (code_j, as_json(txt_j).get("acceptanceReading", "absent"))
+        # A description differing from the one `add` wrote: a scope that
+        # changes nothing answers `changed: false` and reads no description.
+        code_sj, txt_sj = _cli_here(["scope", "P1.1", "--description",
+                                     md.replace("Do it.", "Do it again."),
+                                     "--json"], proj)
+        runs["scope"] = (code_sj, as_json(txt_sj).get("acceptanceReading", "absent"))
+        check("ar9 `add --json`, `add --dry-run --json` and `scope --json` carry "
+              "`acceptanceReading` with the shape, the item count and the line "
+              "the human form prints: %r" % (runs,),
+              all(runs[k][0] == 0 for k in runs)
+              and all(isinstance(runs[k][1], dict)
+                      and runs[k][1].get("shape") == "line-numbered"
+                      and runs[k][1].get("items") == 2
+                      and runs[k][1].get("line", "").startswith("acceptance: 2 items")
+                      for k in ("md", "md-dry", "scope")))
+        check("ar10 TWIN of ar9: a parenthesised list carries its reading with an "
+              "empty line, and a description with no marker carries no key: %r"
+              % ((runs["paren"], runs["none"]),),
+              runs["paren"][1] == {"shape": "parenthesised", "items": 2, "line": ""}
+              and runs["none"][1] == "absent")
+
+        batch_json = as_json(txt_bj).get("acceptanceReading", "absent")
+        check("ar11 `add --from-file --dry-run --json` carries one reading per "
+              "task, keyed by the id each task takes: %r"
+              % ((code_bj, batch_json),),
+              code_bj == 0 and isinstance(batch_json, dict)
+              and sorted(batch_json) == ["P2.1", "P2.2"]
+              and batch_json["P2.1"].get("shape") == "line-numbered"
+              and batch_json["P2.1"].get("items") == 2
+              and batch_json["P2.2"].get("shape") == "parenthesised"
+              and batch_json["P2.2"].get("line") == "")
     finally:
         _harness.remove_tree(root)
 

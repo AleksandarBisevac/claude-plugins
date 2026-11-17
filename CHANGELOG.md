@@ -121,16 +121,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 ### Changed
 - **An Acceptance list the clause reader could not number is now read, never silently dropped.**
   The items after a task description's last `Acceptance:` were read only when numbered
-  `(1) ... (2) ...`; a Markdown numbered list and unnumbered prose read as no clause, so the
-  executor was held to its `tests.add` entries alone and nothing said so. The reader now takes
-  the parenthesised form exactly as before, else a number closed by `.` or `)` at the start of a
-  line, by the same rule that a number opens an item only after the one before it (a version
-  number inside a sentence opens nothing), else the whole text after the marker as one item; a
-  marker with nothing after it is still no item. `/audit:task add` (single and `--from-file`) and
-  `scope --description` print one `acceptance:` line with the count and the shape when either new
-  reading applied, and nothing new for the parenthesised form. **On upgrade:** a task whose list
-  was unread owes an answer per clause at its next submit; a `done` task is not re-read, and
-  nothing a plan holds stops validating (`COMPATIBILITY.md` names the change).
+  `(1) ... (2) ...`; a Markdown numbered list and unnumbered prose read as no clause, so on the
+  headless-writer route (`executor.writerModel` set) the writer was held to its `tests.add`
+  entries alone and nothing said so. The reader now takes a parenthesised list, else a number
+  closed by `.` or `)` at the start of a line, by the same rule that a number opens an item only
+  after the one before it (a version number inside a sentence opens nothing), else the whole text
+  after the marker as one item; a marker with nothing after it is still no item. The marker counts
+  only where it opens a line or a sentence and outside a code fence, so one named in a sentence or
+  in backticks no longer reads its tail as a clause; with two, the one holding a numbered list is
+  read when exactly one does, else the last. A `(1)` opens an item only at the list's start or
+  after whitespace, so `sys.exit(1)` inside a Markdown item no longer swallows the list; when both
+  shapes number items, the one opening first is read. A Markdown list's items open only at the
+  indent of its first `1.`, a restarted `1.` opens a new item, and the last item ends at a heading
+  line. A digit run too long for the interpreter's integer conversion no longer raises out of the
+  reader. `/audit:task add` (single and `--from-file`, dry run included) and `scope --description`
+  print one `acceptance:` line whenever the reading is anything but a parenthesised list covering
+  the whole text, naming a second marker, the other shape's item count, text left out of every
+  item and a restarted numbering; their `--json` results carry it as the optional
+  `acceptanceReading` key. **On upgrade:** on the headless-writer route a task whose list was
+  unread owes an answer per clause the next time the drive files its writer's work; the executor
+  subagent route reads no clause, before or after. A `done` task is not re-read, and nothing a
+  plan holds stops validating (`COMPATIBILITY.md` names the change).
 
 ### Security
 - **An agent can no longer switch its own governance off with an edit tool.** `.claude/**` is

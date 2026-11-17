@@ -1899,6 +1899,18 @@ finding rolls every written file back byte for byte. Then it journals one `phase
 row and one `task.add` row per task. `--verbose` adds the gate and its basis, the open
 choices it saved, and the validator's warnings.
 
+**How each task's Acceptance list was read is said, on every route of the call.** A task
+whose list was read any way but one parenthesised list covering the whole text gets one
+`acceptance (<id>): ...` line, under `--dry-run` too, naming the item count, the shape and
+what departed from the plain reading (`reference/manifest-conventions.md` states the reading
+rules). Under `--json`, dry run or not, the result carries the optional key
+`acceptanceReading`: one entry per task whose description holds an item, keyed by the id it
+takes, each `{"shape": "parenthesised" | "line-numbered" | "unnumbered", "items": <count>,
+"line": "<the human form's line, or \"\" where it prints none>"}`; the key is absent when no
+task's description holds an item. A single `add` (`--dry-run` included) and `scope
+--description` carry the same key holding one such object for the task they wrote. `scope`
+has no `--dry-run`.
+
 **Every refusal comes before any write, and the batch is the thing to fix:** an empty
 stdin; a batch that is not JSON or carries a key the batch does not read; a missing request, open-choices
 list, title, outcome or task list; a dependency neither the plan nor the batch holds,

@@ -2389,7 +2389,7 @@
     {
       "id": "SG1.23-ukq",
       "title": "The config hold covers a worktree under the project and a session the drive started",
-      "status": "in_progress",
+      "status": "done",
       "description": "MEASURED, in the phase review (probe under the session scratchpad: review/c/probe_guard.py, built on real linked worktrees; the orchestrator ran it). hooks/guard-edits.py rule 7 holds the audit config: a subagent's edit-tool or MCP write is refused, the main session is asked. Two callers the rule's own text covers are not covered.\n\n(a) A LINKED WORKTREE PLACED UNDER THE PROJECT. The harness puts an isolated subagent's worktree at .claude/worktrees/NAME under the project, and executor.worktreeRoot may name a directory inside the project too. A subagent's write of that worktree's own .claude/audit.config.json:\n\nworktree OUTSIDE the project, its config (subagent) block\nworktree NESTED under .claude/worktrees, its config (subagent) allow\nworktree NESTED, session directory = the worktree (subagent) allow\n\nRule 7's text, SECURITY.md and the comment above case cf17 all say a linked worktree's config is held (it is the one a merge carries back). Cause: _config.tree_for answers by containment before it asks about a repository, so the tree root stays the project and the relative path is the long nested one, which _is_audit_config compares with the project's own config path. Case cf11 pins a nested sub/.claude/audit.config.json as allowed and has no twin where sub is a tree.\n\n(b) A SESSION THE DRIVE STARTED. With executor.writerModel set, the drive starts each task's writer through run-agent-session.py: a top-level headless session in the task's tree. Its tool calls carry no agent id, so _config.is_subagent is false and the writer's edit of the config gets ask, never the refusal. That writer is exactly the governed agent the rule exists for, and there is no human at that prompt. What the host does with a hook's ask in such a session was NOT probed (it needs a paid session, and none is authorised) - so the fix must not depend on the answer.\n\nTHE RULE. The audit config of any working tree of this repository is held, wherever that tree sits; and any session the plugin itself started is refused the write like a subagent, because nobody is there to be asked.\n\nWHAT TO BUILD.\n1. _is_audit_config answers yes as well when the target is a file named as the config under a .claude directory whose parent directory holds a repository (a .git entry - file or directory - read with no git process; hooks/_config.py has the helper that asks this). The project's own config keeps its present path. A plain nested directory that is not a tree (case cf11) stays allowed.\n2. The launcher marks the sessions it starts: one environment name set by run-agent-session.py for the child session, read in the hook where the verdict asks is_subagent, so a marked session is refused with wording that fits (the session was started by the drive; the owner makes this change). Choose the name by what it says (a session the audit drive started). It must reach the hook process: confirm by reading how the launcher builds the child's environment, and state in your outcome what you read.\n3. The test runner drops session variables from each child (tools/sweep-selftests.py, the names it filters): add the new name there, so a sweep run from inside a drive-started session does not turn the ask cases into refusals, and state it in the paragraphs that list those names if the lint or the documents require it.\n4. Say the truth about the remaining unknown: SECURITY.md's item on the config hold says the hook asks the human from the main session. Add that a session the drive starts is refused, and that what the host does with an ask where nobody can answer was not probed. Carry the existing condition about hooks inside subagents (the capability policy's first flag, same document) into rule 7's sentence: the refusal is a hook, and holds where hooks run.\n5. Rule 7's docstring and the deny text say every MCP write is held; a one-line MCP body or a move onto the config carries no write basis and is allowed. Name that beside the shell residual in the docstring and SECURITY.md (statement only - no behaviour change in this task).\n\nDO NOT change how the main interactive session is treated: it is asked, as today. Do not add any refusal for the panel (it writes from its own process). Do not touch the shell route.\n\nIf the API refuses work on the guard's code, record the refusal word for word in your outcome and stop; do not route around it.\n\nALLOW SIDE: every existing cf case stays green; a file named audit.config.json under a .claude directory of a plain nested folder is allowed; a Read is never held; an unmarked main session is asked, not refused; the same environment name set to an empty value marks nothing.\n\nDependants to answer for: tests/test_guard_edits.py cf cases and tests/test_hooks.py c01 to c04; tools/bench-hooks.py --gate (the hook import budget - no new import in the hook); SECURITY.md's fail-mode table (unchanged: allow on an internal error); tests/test_run_agent_session.py cases on the child's environment; tests/test_sweep_selftests.py cases on the filtered names; CONTRIBUTING.md and CLAUDE.md paragraphs that list what the runner drops, only if a check holds them to the runner.\n\nAcceptance:\n(1) A subagent's edit-tool write of the config of a linked worktree placed under the project is refused, on a real linked worktree, with the session directory at the project and at the worktree.\n(2) A nested directory that is not a working tree keeps its present answer.\n(3) A session marked by the launcher is refused the config write, an unmarked main session is asked, and an empty value marks nothing.\n(4) run-agent-session.py sets the mark for the session it starts, and the test runner drops it from each child.\n(5) SECURITY.md states the drive-started case, the unprobed ask, the subagent-hooks condition and the no-basis MCP write.",
       "files": [
         "plugins/audit/hooks/guard-edits.py",
@@ -2426,14 +2426,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "df453a296b9e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "UNTRUE IN THE BRIEF: tests/test_sweep_selftests.py does not exist (the sweep's own cases are tools/sweep-selftests.py --selftest), and creating it would be an orphan suite under selftest_coverage(). So the task's literal gate exited 2 ('tests/test_sweep_selftests.py is not a suite this sweep covers ... nothing was run'), which is could-not-run, not a failure. I replaced tests.gate through the scope verb (audit-task.py scope SG1.23-ukq --gate ... --replace) with the same command naming tools/sweep-selftests.py. It exits 0: 5/5 files ok, 999 cases. The sweep case went into tools/sweep-selftests.py. SCOPE WIDENED through the scope verb (+CONTRIBUTING.md, +tests/_harness.py), and the plan gate allowed both edits. Changes: (1) plugins/audit/hooks/guard-edits.py: a new _is_tree_config(target) matches CONFIG_REL under a directory where _config._holds_repository holds (a .git file or directory, no git process). The string shape is checked before any stat. _is_audit_config calls it after the project-config comparison. A new _drive_started() reads AUDIT_DRIVE_SESSION from os.environ; an empty or blank value marks nothing. _config_verdict refuses a marked session with _CONFIG_DRIVE_DENY, after the subagent check and before the ask. Rule 7's docstring now names the nested worktree, the drive session, the subagent-hooks condition, the unprobed ask and the no-basis MCP write beside the shell residual. The deny text is unchanged. No new import, so the hook import budget passed. hooks/_config.py is unchanged because the helper already existed. (2) run-agent-session.py: DRIVE_SESSION_MARK=(AUDIT_DRIVE_SESSION,'1'). _session_env sets it after the parent-session filter, over any inherited value. WHAT I READ: _session_env builds the dict, main passes it at line 852 to run_session, and Popen([claude]+argv, cwd=tree, env=env) uses it. ras31c checks it in the stub child's recorded os.environ. That the host passes its own environment on to its hook processes is the documented hook behaviour; it was not probed here, because that needs a real claude. (3) tools/sweep-selftests.py: SESSION_NAMES gains AUDIT_DRIVE_SESSION. The comment gives the reason. New case se0b; x8's planted environment and its probe now include the mark. (4) tests/test_hooks.py: _hook_env drops the mark, so c02's ask holds when the suite runs inside a drive session. (5) SECURITY.md item 3 and the capability-policy paragraph: the nested worktree, the drive-started refusal, the empty value, an ask with nobody to answer 'was not probed', the flag-1 subagent-hooks condition, and the no-basis MCP write residual. (6) CONTRIBUTING.md and tests/_harness.py docstring: the dropped-name list adds the mark. CLAUDE.md names the same list (around line 266) and was NOT edited; it now omits the mark. RUNS: probe_guard.py before showed NESTED rows allow/allow; after, both are block. The OUTSIDE row still reads block, and a diff of the before and after outputs shows only those two lines changed. Live hook drive, the hook run as a process (scratch live_drive.py): marked config Write gives block with 'drive' in the reason; no mark gives ask; mark '' and mark '  ' give ask; a marked Read gives allow; a src Write gives allow both marked and unmarked. Suites direct: test_guard_edits 87/87, test_run_agent_session 84/84, sweep --selftest 168/168. Before the fix they stood at 82/87 (cf20, cf20b, cf22b, cf22c, cf22d red), 83/84 (ras31c) and 166/168 (se0b, x8). ruff and vermin are clean on the changed files. The lints prose_number_claims, doc_prose_numbers and house_style_violations report nothing on the changed files. Mutation probe (scratch sg1.23/mutations.py, 11 rows incl. 4 ALLOW twins): MUTATIONS ALL CAUGHT. The orchestrator's run-test-gate without --record widened to the phase gate, because tests/_harness.py changed. That ran the shots and interactive browser slices, which the session notes keep for the orchestrator; the tree was unchanged afterwards. Every phase-gate slice exited 0, and the only red was the nonexistent-suite entry, since fixed. PLUGIN-BUILD-GUIDE.md (declared by SG1.24-ukq) now under-states two things. Its guard-edits section says the config write is 'asked of the main session', which no longer holds for a drive-started session. Its run-agent-session section says 'the rest of the environment is passed on' but does not name the mark. It needs a widening there. Dependants: test_guard_edits cf0-cf19 unchanged and green. test_hooks c01-c04 green; c03 stays a known divergence. bench-hooks --gate passes. gate-parity passes: the fail-mode table is unchanged, still allow on an internal error. test_drive_phase, test__doctor_policy and test__config_rules import the launcher, and none of them asserts on the child environment. test__doctor_setup names the hook's path only. The schema and hooks.json are untouched.",
+        "descriptive": "The audit config is now held for a linked worktree nested under the project and for a session the drive started, which the launcher marks and the sweep strips from its children; SECURITY.md states what was and was not measured."
       },
       "startedAt": "2026-11-17T16:57:32Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-17T17:52:59Z",
+      "verifiedBy": [
+        "test_guard_edits cf20/cf20b: a session carrying the launcher's mark with no agent id is refused the config Write and MCP write, in words naming the drive; cf21/cf21b/cf21c/cf21d: unmarked asked, empty mark asked, marked Read allowed, marked ordinary write answers as unmarked",
+        "test_guard_edits cf22-cf22f: a real git worktree at <project>/.claude/worktrees/agent-cf - its config refused to a subagent from the project and from the worktree, asked of the main session; a plain folder of the same shape and a sibling file stay allowed",
+        "test_run_agent_session ras31c: the stub child's recorded environment carries AUDIT_DRIVE_SESSION=1, over a parent value of another spelling",
+        "tools/sweep-selftests.py se0b: ambient_env drops AUDIT_DRIVE_SESSION and keeps another AUDIT_ name; x8 extended to plant the mark in a real child"
+      ],
       "notes": [
         {
           "at": "2026-11-17T16:57:28Z",
@@ -2513,12 +2518,24 @@
         "runId": "2026-11-17T17:50:06Z.7a06ef",
         "status": "passed",
         "at": "2026-11-17T17:50:06Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "df453a296b9e",
+        "at": "2026-11-17T17:52:59Z",
+        "return": "docs/audit/evidence/returns/SG1.23-ukq/20261117T165732Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-17T17:23:42Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_guard_edits.py tests/test_run_agent_session.py` in a throwaway tree at HEAD exited 1 with 6 of 84 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cf20 (house FAIL), cf20b (house FAIL), cf22b (house FAIL), cf22c (house FAIL), cf22d (house FAIL), ras31c (house FAIL): SELFTEST FAILED: 83/84 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "SG1.24-ukq",
       "title": "The Acceptance marker is read where it opens a line, and every reading that is not the plain one is printed",
-      "status": "pending",
+      "status": "in_progress",
       "description": "MEASURED, in the phase review (probes under the session scratchpad: review/d/probe_clauses.py and review/d/probe_lints.py block 4; the orchestrator ran both). This reader was widened earlier in the phase so a list it cannot number is still read. Two inputs now get a wrong reading with nothing printed, and this is the second time the reader's shapes are being corrected - so the task states the rule and implements the rule.\n\n(a) ANY MENTION OF THE MARKER BECOMES A CLAUSE. The marker is found with rfind anywhere in the text, and the unnumbered fallback turns whatever follows the LAST one into an item:\na description ending ... Notes: see the Acceptance: list above. -> one item: list above. (the real numbered list before it stays unread)\nthe marker named in backticks inside a sentence -> one item: the rest of that sentence\nthe marker inside a code fence after the real list -> one item: none plus the closing fence\na bold marker with nothing after it -> one item: two asterisks\nthe marker as a heading followed by another heading -> one item: the next section\n(b) A (1) INSIDE AN ITEM WINS. The parenthesised shape is tried first and matches any (1), including a call with a literal argument such as sys.exit(1):\nAcceptance: then three lines numbered 1. 2. 3., the first ending with sys.exit(1)\n-> read as ONE parenthesised item holding lines 2 and 3; line 1 is dropped; the reading line printed at the write is empty\nThe docstring says there is no silent other reading; here there is one.\n\nTHE RULE. (i) The marker counts only where it opens a line - after optional heading, emphasis, list or quote marks and spaces - and outside a code fence. When more than one such marker exists, the reading says so and takes the one that holds a numbered list if exactly one does; otherwise the last. (ii) A parenthesised number opens an item only at the start of the body or after whitespace, never glued to a word. (iii) Whenever the reading is anything other than a parenthesised list that accounts for the whole body, the reading line is printed - including when two shapes both yield items (say which was taken and how many items the other would have given) and when text between the marker and the first item was left out of every item.\n\nWHAT TO BUILD.\n1. The three rules above in _clause_coverage.py, with the reading structure carrying what the line needs.\n2. Item boundaries of the line-numbered shape: items open only at the indent of the first opening number (a nested sub-step does not open item two); the last item ends at a following heading line; a restart of the numbering (1. 1. 1.) is read as that many items or reported, not folded into one silently.\n3. Bound the digit capture in both patterns so a long digit run at a line start cannot raise out of the reader.\n4. The write verbs say the reading on every route: add and scope print it under dry-run too, and carry it in their JSON results (one optional key - shape and item count, per task for a batch). verbs-in-full.md documents the JSON form as the plan-writing call, so that is the route that most needs it.\n5. Which route is held to the clauses. The documents say the executor answers each clause at its next submit. The clause check runs only where the drive files a headless writer's work (executor.writerModel set); submit reads no clause and the executor agent's brief asks for none. Word every such sentence to the route it is true of: COMPATIBILITY.md (the Acceptance paragraph), CHANGELOG.md (both entries), reference/manifest-conventions.md, commands/init.md, and the line the verb prints (the executor answers each) - which must say who is held. Do NOT add a clause check to submit in this task; record in your outcome that the two routes differ, as an open question for the owner.\n\nALLOW SIDE, as binding: every existing case of tests/test__clause_coverage.py and the ar cases of tests/test_audit_task.py stay green; a plain parenthesised list prints nothing, as today; a parenthesised item that itself contains sub-steps numbered 1. 2. stays one item; Windows line endings read the same. Then run the reader over every task description under docs/audit and examples (the reader's probe review/d/probe_plans.py does this against the base reader - adapt it to compare before and after your change) and report the count of descriptions whose reading changed, with each one named: a changed reading of a committed task must be a correction you can defend, not a side effect.\n\nDependants to answer for: audit-lookup.py's writer closing line and task_clauses (the numbering the drive's check reads - a changed item list changes what a running task owes; say what happens to a task in progress); drive-phase.py's two callers of the check; tests/test_audit_lookup.py cases on the closing line; tools/measure-context.py --gate for commands/init.md; pins in tests/test__refs.py that quote commands/init.md or manifest-conventions.md.\n\nAcceptance:\n(1) A marker mentioned inside a sentence, in backticks, or inside a code fence opens no list, and the real list before it is read.\n(2) Two line-opening markers are named in the reading line, and the one holding the numbered list is taken.\n(3) A line-numbered list whose item contains a call such as sys.exit(1) is read as its numbered items, all of them.\n(4) Text left out of every item, a second shape that also yielded items, and a restarted numbering are each stated in the printed reading line.\n(5) A nested sub-step does not open an item, and the last item ends at a following heading.\n(6) add and scope carry the reading under dry-run and in JSON.\n(7) Each document sentence about who answers the clauses names the route it is true of, and the verb's printed line does too.\n(8) The before and after comparison over the committed plans is reported, each changed reading named.",
       "files": [
         "plugins/audit/scripts/governance/_clause_coverage.py",
@@ -2532,7 +2549,8 @@
         "plugins/audit/reference/manifest-conventions.md",
         "plugins/audit/reference/verbs-in-full.md",
         "plugins/audit/commands/init.md",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__refs.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -2542,7 +2560,7 @@
         ],
         "expectRedFirst": true,
         "gate": [
-          "python3 tools/sweep-selftests.py tests/test__clause_coverage.py tests/test_audit_task.py tests/test_audit_lookup.py"
+          "python3 tools/sweep-selftests.py tests/test__clause_coverage.py tests/test_audit_task.py tests/test_audit_lookup.py tests/test__refs.py"
         ],
         "gateBasis": "tests.add"
       },
@@ -2551,16 +2569,60 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-17T17:53:13Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-17T17:53:10Z",
+          "text": "it quotes a phrase of COMPATIBILITY.md about a file beside the manifest; this task rewords only the Acceptance paragraph of that document",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        },
+        {
+          "at": "2026-11-17T17:53:10Z",
+          "text": "it quotes a phrase of COMPATIBILITY.md about which of two keys wins; this task rewords only the Acceptance paragraph",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-17T17:53:10Z",
+          "text": "it quotes the sentence that validation stays additive; this task rewords only the Acceptance paragraph",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-17T17:53:10Z",
+          "text": "it quotes a phrase of COMPATIBILITY.md about a task that names no file; this task rewords only the Acceptance paragraph",
+          "waives": "tests/test__manifest_phases.py"
+        },
+        {
+          "at": "2026-11-17T17:53:10Z",
+          "text": "it reads the Unreleased heading of CHANGELOG.md; this task rewords two entries under that heading and leaves the heading as it is",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-17T17:53:10Z",
+          "text": "it quotes a heading of manifest-conventions.md about the operator's words; this task rewords only the sentence on who answers an Acceptance item",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-17T17:53:10Z",
+          "reader": "tests/test__refs.py",
+          "reads": "PLUGIN-BUILD-GUIDE.md",
+          "text": "declared to answer a reading: tests/test__refs.py reads PLUGIN-BUILD-GUIDE.md - quotes its text beside its path: \"The executor's carries the resolved skills\""
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T18:36:13Z.72deaa",
+        "status": "passed",
+        "at": "2026-11-17T18:36:13Z"
+      }
     }
   ],
   "parentBranch": "integration/skill-gates",
