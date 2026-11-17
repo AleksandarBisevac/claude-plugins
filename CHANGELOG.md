@@ -36,7 +36,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `floorGuard` is an object: `mode` `report` (the default) or `off`, and
   `acceptedSuppressions`, the codes never reported (`["noqa: E402"]`); a value of another shape
   reads as the defaults and is a validator finding. The panel's Settings tab gains a *Weakened
-  tests* card for both.
+  tests* card for both, and `/audit:status` prints, under a phase due for sign-off, one line per
+  kind of floor reading that is not a plain clean, read off each done task's filed executor return.
 - **A refactor can prove its tests were green before the change.** A task with the new
   `tests.expectGreenFirst` true - written by `/audit:task add --expect-green-first`, or the
   same key in an `add --from-file` batch - owes tests that PASS on the base instead of a red.
@@ -122,6 +123,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   fixture's source package rather than any edit, so writing the regression test first passes.
 
 ### Changed
+- **A brief's rules win over a skill's instruction, and the phase review is handed its review
+  skill.** Both agent bodies, the executor's and the reviewer's, now say their hard rules win over
+  any skill's instruction and that a conflict is named in the return; a headless session started
+  naming a skill gets the same rule in the preamble appended to its system prompt (the task prompt
+  outranks the skills). The phase brief gains a *Review skill* section naming the review skill
+  that resolves - the phase's, else an area tag's, else `meta.reviewSkill` - with its basis, and the drive's validation
+  session, which reviews at phase scope, is started with that skill beside the task's own; the
+  per-task reviewer is not.
 - **The floor guard says clean only for what it compared.** A binary test file, a Python test
   file whose helpers, tables or fixtures changed, and a test file in a language whose assertions
   the guard cannot see were read as clean; each is now listed as a file that could hold a move
@@ -165,8 +174,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 - **An agent can no longer switch its own governance off with an edit tool.** `.claude/**` is
   outside the plan gate, so an Edit or Write of `.claude/audit.config.json` setting
   `policy.enabled: false`, `planGate: "observe"` or `journal.enabled: false` left only a journal
-  row. `guard-edits` now refuses that write to a subagent, with a reason naming `/audit:panel`
-  and a hand edit as the owner's routes, and asks the human about it from the main session. It
+  row. `guard-edits` now refuses that write to a subagent and to a session the drive started
+  (`run-agent-session.py` marks it), with a reason naming `/audit:panel` and a hand edit as the
+  owner's routes, and asks the human about it from the main session. It
   reads the file `_config.load` reads, of the project or of a linked worktree of it, through an
   edit tool or an MCP write; a Read, another file under `.claude/` and a file merely named like
   it are untouched, and the rule holds in the plugin's own checkout too. `/audit:init`'s two

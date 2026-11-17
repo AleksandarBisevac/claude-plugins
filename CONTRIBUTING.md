@@ -1003,14 +1003,22 @@ deny-all policy cannot switch off the thing that explains the policy.
 shows — that would mean the static half is not being found, which is a UI problem, not an
 argument for a skill.
 
-### Plugin evals (evaluated 2026-07, v0.6.0): deferred — feature is early access
+### ~~Plugin evals (evaluated 2026-07, v0.6.0): deferred — feature is early access~~ — RUNS (re-checked 2026-11-17)
+
+**Re-checked 2026-11-17, with Claude Code 2.1.325: the command runs.** It was invoked
+twice over the cases under `plugins/audit/evals/` — with the scaffold step, no
+ablation, one run per case and a local report — and both times each case built its
+fixture, ran a session and returned a score for each of its graders. The deferral
+below is kept as it was written; the trigger it named, the feature opening up, has
+fired.
 
 `claude plugin eval` (evals/**/case.yaml + graders) is the right tool for
 testing the COMMAND PROSE (the orchestrator behavior CI cannot reach), but as
 of v0.6.0 it prints "currently in early access" and `eval init` does not
 scaffold — the case schema was not public then. (It is now: the plugin-evals
 documentation describes it in its 'case.yaml fields' and 'Grader types' tables, which
-the two shipped cases under `plugins/audit/evals/` follow.) Adopt as soon as it opens up:
+the cases shipped under `plugins/audit/evals/` follow — `ls plugins/audit/evals/*/case.yaml`
+lists them.) Adopt as soon as it opens up:
 priority cases are `/audit:status` on a missing manifest, `run` guards on a
 done task, and the `#no-plan` bypass round-trip.
 

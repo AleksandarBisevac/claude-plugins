@@ -1635,7 +1635,8 @@ def executor_return_lines():
     last."""
     return ["Your last act files the return object agents/audit-executor.md "
             "declares, with one `submit` call: it checks the shape, runs the "
-            "red-first helper on the command after `--`, takes the stamp and "
+            "proof the task owes (the red-first or the green-first helper) on "
+            "the command after `--`, takes the stamp and "
             "files the return once. The command, resolved for this task, is "
             "the last section of this brief (%s). %s."
             % (SUBMIT_SECTION, RETURN_ON_STDIN)]
@@ -2069,8 +2070,9 @@ PER_TASK_QUESTIONS = (
 
 
 def answer_lines(answers, owed):
-    """The two lines saying, for one owed task, whether the filing verb fills
-    its red-first and inherited-test answers or the reviewer gives them - and,
+    """The lines saying, for one owed task, whether the filing verb fills its
+    red-first and inherited-test answers - and its green-first one where the
+    filed return carries it - or the reviewer gives them - and,
     for a filled one, the word only a human settles that may be typed over it
     (`_fr.ESCALATIONS`)."""
     lines = []

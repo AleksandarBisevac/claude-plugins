@@ -67,8 +67,9 @@ run it themselves; in a Node repo `npm run panel` / `npm run panel:stop` is the 
 otherwise `python3 "$PANEL" --project "$(pwd)"`.
 
 ## What the panel does (summary for the user)
-- **Settings** — a form over the **whole** of `.claude/audit.config.json`, in five groups:
-  *Paths & gate*, *Write guards*, *TDD reminder*, *Usage & pricing*, *Audit trail* — including the rate
+- **Settings** — a form over the **whole** of `.claude/audit.config.json`, grouped into cards
+  whose titles are the form's own table (`grep -n '"title": ' scripts/panel/_panel_settings.py`
+  prints them) — including the rate
   table, the cost bands and the TDD globs, which previously had no control at all. Each field
   is named by what it does with its JSON key beside it and an ⓘ hint; an empty field removes
   the key rather than writing a default. Regexes and the band pair are checked as you type;

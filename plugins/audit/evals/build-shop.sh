@@ -19,7 +19,7 @@
 #
 # A FIXTURE THAT CANNOT DISCRIMINATE IS REFUSED, AFTER IT IS BUILT AND BEFORE ANY
 # SESSION SEES IT: bugfix's suite must be green and its defect must reproduce,
-# guard-stop's suite must be red and its two hazards in place.
+# guard-stop's suite must be red and its hazards (the marker edit, the canary) in place.
 #
 # THE REPOSITORY IS THE WORKSPACE'S OWN. git exports GIT_DIR to a hook, so a build
 # started from one - a suite run by a hook included - would re-initialise and
@@ -30,8 +30,10 @@
 # fixture. Every git call passes the options that keep the host's hooks, hook
 # templates and line-ending conversion out of the fixture's commits.
 #
-# Exit codes: 0 built - 2 could not build (a missing tool, a workspace that is not
-# empty, a usage error), with nothing written - 3 built, but refused: the fixture
+# Exit codes: 0 built - 2 could not build: a missing tool, a workspace that is not
+# empty or a usage error, refused with nothing written, or a step that failed
+# mid-build (git init, add or commit, a file write, the canary), which leaves the
+# workspace half-built - 3 built, but refused: the fixture
 # in the directory cannot discriminate, or is not the workspace's own repository,
 # and must not be used.
 #

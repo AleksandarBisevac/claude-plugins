@@ -3346,7 +3346,69 @@ def _selftest():
         _harness.stage(check, "rk-block", _review_skill_brief_cases)
         _harness.stage(check, "fgb-block", _floor_brief_cases)
         _harness.stage(check, "gfb-block", _green_brief_cases)
+        _harness.stage(check, "rs-block", _return_section_cases)
     return _harness.run(body)
+
+
+def _return_section(text):
+    """The executor brief's fixed `## Your return` section, up to the first
+    task-specific heading, or "" when the brief has none."""
+    at = text.find("\n## Your return\n")
+    end = text.find("\n## Brief for", at + 1)
+    return text[at:end] if 0 <= at < end else ""
+
+
+def _return_section_cases(check):
+    """The fixed return section is one set of bytes in every executor brief, so
+    it must be true of a task owing a red-first proof and of one owing a
+    green-first proof alike: it names the proof the task owes rather than the
+    red-first helper alone, which a green-first task's own last section
+    contradicts."""
+    root = _harness.fixture_root("audit-lookup-rs-")
+
+    def brief_of(name, manifest):
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        with open(os.path.join(proj, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(manifest, fh)
+        with contextlib.redirect_stdout(io.StringIO()), \
+                contextlib.redirect_stderr(io.StringIO()):
+            try:
+                M.main([mpath, "brief", "P1.1", "--role", "executor",
+                        "--project", proj])
+            except SystemExit:
+                pass
+        try:
+            with open(os.path.join(proj, ".claude", "state", "briefs", "P1.1",
+                                   "20260101T000000Z.executor.md"),
+                      "r", encoding="utf-8", newline="") as fh:
+                return fh.read()
+        except OSError:
+            return ""
+
+    try:
+        red = brief_of("rs-red", _bf_manifest())
+        green = brief_of("rs-green", _gfb_owed(_bf_manifest()))
+        sec_red, sec_green = _return_section(red), _return_section(green)
+        says_red_alone = [s for s in (sec_red, sec_green)
+                          if "red-first" in s and "green-first" not in s]
+        check("rs1 the executor brief's fixed return section is the same bytes "
+              "for a red-first and a green-first task, names the proof the task "
+              "owes, and does not say red-first alone (the green-first brief's "
+              "own last section names the green helper, so the fixture is a "
+              "green-first task): %r" % ((sec_red,),),
+              sec_red != "" and sec_red == sec_green
+              and "proof the task owes" in sec_red
+              and not says_red_alone
+              and "stamp-verification.py green" in green
+              and "stamp-verification.py green" not in red)
+    finally:
+        _harness.remove_tree(root)
 
 
 _GFB_BLOCK = {"status": "not-green", "at": "2026-01-01T00:00:00Z",

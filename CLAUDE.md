@@ -263,7 +263,7 @@ HOME it was handed cannot convict the suite that triggered it, and `GIT_CONFIG_G
 runner-owned git config in a fourth, for the one git the switches below cannot otherwise
 reach. The rest of the environment is
 filtered rather than pointed anywhere: the Claude session's variables — every `CLAUDE_` name,
-plus `CLAUDECODE` and `AUDIT_LOCK_TOKENS` — are dropped, and so is any identity the caller
+plus `CLAUDECODE`, `AUDIT_LOCK_TOKENS` and `AUDIT_DRIVE_SESSION` — are dropped, and so is any identity the caller
 exports (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`, `EMAIL`); git runs with
 `GIT_CONFIG_NOSYSTEM` set and `user.useConfigOnly` refusing a guessed identity. No branch and no
 identity are supplied in their place, so a suite leaning on the host's git fails here the way it

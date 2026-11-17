@@ -13837,7 +13837,7 @@ def _answer_units(check, M):
     got = M.answer_refusal(_unit_ctx(), pending, "sign-off", SUMMARY)
     check("sa2 sign-off is refused while those answers wait on a human: %r"
           % (got,),
-          got == "sign-off waits on 3 reviewer answer(s) a human settles: "
+          got == "sign-off waits on 3 answer(s) a human settles: "
                  "answer accept --reason <their word on each> first")
     words = "the human: P1.1 was asked to edit f2 after all"
     state = {}

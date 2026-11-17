@@ -53,8 +53,9 @@ Inspects the *incoming* text (new content) and the target path, and blocks:
      change config; the owner's own routes are /audit:panel (the panel server
      writes the file from its own process, which no tool hook sees) and a hand
      edit. A session the drive started has no human at its prompt, so it is
-     refused instead; what the host does with an ask there was not probed, and
-     the refusal does not rest on it. The refusal is this hook, so it holds where
+     refused instead; the host's hooks reference documents an ask there as
+     denied, which was read and not probed (SECURITY.md quotes it), and the
+     refusal does not rest on it. The refusal is this hook, so it holds where
      hooks run: a Claude Code version that runs no hooks inside a subagent runs
      none of this there (SECURITY.md, the capability policy's first flag). The
      rule holds in the plugin's own checkout too: rule 3's dev-mode exception is
@@ -69,7 +70,7 @@ Inspects the *incoming* text (new content) and the target path, and blocks:
 WHICH OF THOSE AN MCP SERVER'S WRITE TOOL REACHES, AND WHICH IT CANNOT. An MCP
 call reaches no edit-tool matcher, so before it was wired here a filesystem
 server's `write_file` was outside every rule above. `_decide_mcp` is the branch,
-and it is deliberately not all seven:
+and it is deliberately not all of them:
 
   - 3 (self-edit) is reached on the TARGET ALONE, whatever the operation, which
     is guard-secrets-read's argument for a secret file one guard over. The target
@@ -410,9 +411,9 @@ def _decide_mcp(data, cfg):
 
     THE SPLIT BETWEEN THE TWO HALVES IS WHERE THE TARGET LIVES, and the module
     docstring argues it rule by rule. Self-edit is decided on the target alone
-    because its target set sits OUTSIDE the consuming repo; the bypass state and
-    the journal sit inside it, where refusing a read would be friction on honest
-    work, so those two wait for a write basis.
+    because its target set sits OUTSIDE the consuming repo; the bypass state, the
+    journal and the audit config sit inside it, where refusing a read would be
+    friction on honest work, so those wait for a write basis.
 
     NO VERDICT READS THE SERVER'S NAME OR AN ARGUMENT KEY. The locators are values
     resolved by `_config.mcp_payload`; the operation is used in the sentence only,
@@ -517,7 +518,8 @@ def decide(data, *, cfg=None):
                             "commit or attempts) in %s -- confirm it is "
                             "intentional." % rel)
 
-        # 7. the audit config: refused to a subagent, asked of the main session.
+        # 7. the audit config: refused to a subagent and to a session the drive
+        #    started, asked of the main session.
         #    The path alone decides, so an empty Write is held like any other.
         if _is_audit_config(tree):
             return _config_verdict(data, rel)

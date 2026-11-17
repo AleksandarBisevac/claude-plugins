@@ -1246,7 +1246,7 @@ def red_first_vocabulary_drift(repo_root=None):
 
 # --- one green-first vocabulary, from the schema outward -----------------------
 # A refactor's mirror of the red-first proof (`tests.expectGreenFirst`) has its
-# words in five places, and each would read as consistent on its own the way the
+# words in each of the places below, and each would read as consistent on its own the way the
 # red-first briefs once did. THE SCHEMA ENUM IS THE ONE SOURCE again, and held to
 # it:
 #   - the helper (`stamp-verification.py green`) writes only schema words, and

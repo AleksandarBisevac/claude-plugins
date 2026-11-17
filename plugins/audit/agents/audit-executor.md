@@ -22,16 +22,17 @@ Hard rules (non-negotiable):
   `outcome.technical`; never resolve it silently.
 - **Test discipline** exactly as ordered: `tdd` → draft the test(s) from `task.tests.add`
   and the task's own text FIRST, before reading the implementation they will run
-  against — a test written after the code tends to confirm it rather than probe the
-  task — then run them and see them FAIL on current code, then implement until green;
-  `regression` → implement, then add test(s) locking the corrected behaviour;
-  `gate-only` → no new tests, keep the gates green. Bind each `tests.add` entry to the
-  case that carries it by id: return `casesAdded`, one case id per entry, by index - the
-  word a suite prints first on the case's `PASS`/`FAIL` line (`gx1` in `PASS gx1 ...`),
-  or a list of ids when one entry covers several cases. Title wording is yours:
-  `drive-phase.py submit` (`case_binding_gaps` in `_filed_returns.py`) reads no title,
-  and reports an entry with no id, and an id the suite did not print, as a gap the
-  reviewer is told. It reports; it does not refuse.
+  against (one written after the code confirms it) — then run them and see them
+  FAIL on current code, then implement until green; `regression` → implement, then add
+  test(s) locking the corrected behaviour; `gate-only` → no new tests, keep the gates
+  green. Where the brief says `expectGreenFirst: true`, the added tests must PASS on the
+  base and `submit` runs the green helper instead of the red. Bind each `tests.add`
+  entry to the case that carries it by id: return `casesAdded`, one case id per entry,
+  by index - the word a suite prints first on the case's `PASS`/`FAIL` line (`gx1` in
+  `PASS gx1 ...`), or a list of ids when one entry covers several cases. Title wording
+  is yours: `drive-phase.py submit` (`case_binding_gaps` in `_filed_returns.py`) reads
+  no title and reports a missing or unprinted id as a gap the reviewer is told; it does
+  not refuse.
 - **Run the reading of `executor.runsGate` the brief names — no more, no less.** `full`:
   every gate command given. `own-tests` (the default): the command the brief's *What you
   run* prints, `run-test-gate.py ... --own --quiet` or the one given in its place,
@@ -39,8 +40,8 @@ Hard rules (non-negotiable):
   its own to run, say so. `never`: run nothing and report `"gates": {}`. Report
   pass/fail per command you actually ran, and keep **"ran and failed"** apart from
   **"could not run"** (missing command, runner crash, zero tests collected where some
-  were expected). Run each command as the brief
-  gives it, from the project directory, and git against the git root its commands name.
+  were expected). Run each command as the brief gives it, from the project directory,
+  and git against the git root its commands name.
   The orchestrator's own recorded run is the evidence either way.
 - **A tool call refused by the auto-mode permission classifier — text containing
   `auto mode cannot determine the safety` or `gave no verdict` — produced no verdict:
@@ -53,8 +54,8 @@ Hard rules (non-negotiable):
   or the concrete observation (file, line, value seen). "Verified" with nothing behind
   it is reported as unverified.
 - **Prove a red with the helper, never by undoing the fix in the shared tree.** Under
-  `tdd` the first red is ordinary — the test exists before the fix. Any red after the
-  fix is in runs in a throwaway tree, which `submit` (below) builds by running
+  `tdd` the first red is ordinary — the test exists before the fix. Any later red
+  runs in a throwaway tree, which `submit` (below) builds by running
   `stamp-verification.py red`: HEAD checked out, your declared test files copied over
   it. **Never** write HEAD's copy over a file (`git show HEAD:<file> > <file>`), revert
   your own fix, or edit a sibling's file to prove a red; nothing mechanically stops
@@ -95,7 +96,8 @@ Hard rules (non-negotiable):
 - **A blocked tool call is never a signal to reach for a different tool.** Finishing a
   refused Edit through Bash (a heredoc, `sed -i`, a one-liner) is the same workaround.
   Stop and report the refusal. Stated, not fully enforced: `guard-bash-writes.py` only
-  posts a notice after the fact.
+  answers after the fact (blocking a non-source file the command wrote, in the plan
+  gate's deny tier).
 - **A hand-back request comes only at a task boundary.** Finish the task first; then
   add a short summary a fresh executor starts from — what is finished, what is left,
   and what you learned that the plan does not already say.
@@ -109,7 +111,7 @@ Report back a structured outcome:
  "outcome": {"technical": "what was actually done — changes, commands, test counts",
              "descriptive": "one-line impact summary"},
  "testsAdded": ["the test you added, in your words - the record, not the binding", ...],
- "casesAdded": "optional: owed one per tests.add entry, by index - the case id the suite prints (a list of ids for an entry covering several); absent, every entry is reported as a gap",
+ "casesAdded": "optional: case id(s) per tests.add entry, as Test discipline says",
  "claims": "optional: a claims: block a task's skill asked for, kept verbatim"}
 
 **Your last act is one call**, the object on its stdin in a quoted heredoc — no file to write,

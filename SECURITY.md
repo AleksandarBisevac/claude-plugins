@@ -178,14 +178,14 @@ commit and the command above does not.
 | Hook | Event | No interpreter | On internal error |
 |---|---|---|---|
 | `guard-secrets-read` | PreToolUse Read/Grep/Bash/MCP | **ask** (manual approval prompt, loud) | allow (fail-open) |
-| `guard-edits` | PreToolUse edits | **ask** | allow |
+| `guard-edits` | PreToolUse edits + MCP | **ask** | allow |
 | `guard-history-rewrite` | PreToolUse Bash | **ask** | allow |
-| `require-plan` | PreToolUse edits | **ask** | allow |
+| `require-plan` | PreToolUse edits + MCP | **ask** | allow |
 | `guard-capabilities` | PreToolUse Skill/Task/Agent/MCP | **ask** | allow |
-| `require-plan` (state commit) | PostToolUse edits | silent | no-op |
+| `require-plan` (state commit) | PostToolUse edits + MCP | silent | no-op |
 | `guard-bash-writes` | PostToolUse Bash + edits | silent | no-op |
 | `remind-tdd` | PostToolUse edits | silent | no-op |
-| `journal-writes` | PreToolUse edits **+ Bash**, PostToolUse edits + Bash | silent | no-op |
+| `journal-writes` | PreToolUse edits **+ Bash** + MCP, PostToolUse edits + Bash + MCP | silent | no-op |
 | `detect-plan-skip` | UserPromptSubmit | silent | no-op |
 | `drive-without-model` | UserPromptSubmit | silent | no-op |
 | `meter-usage` | Stop / SubagentStop / SessionEnd / SessionStart | silent | no-op |
@@ -1452,9 +1452,24 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    the writer `executor.writerModel` names) is a top-level session whose calls carry
    no agent id, and nobody is at its prompt: the launcher marks it with
    `AUDIT_DRIVE_SESSION`, and `guard-edits` **denies** a marked session the write as
-   it denies a subagent; an empty value marks nothing. What the host does with a
-   hook's `ask` in a headless session where nobody can answer was **not probed** —
-   it needs a paid session — so the refusal does not rest on that answer. The
+   it denies a subagent; an empty value marks nothing. The host's hooks reference
+   (code.claude.com/docs/en/hooks, **read on 2026-11-17, not probed here** — a probe
+   needs a paid session) documents two facts this leans on. A hook's `ask` in a `-p`
+   run where no one can answer the prompt is denied, the reason reaching the model in
+   the tool result instead (*PreToolUse decision control*, `permissionDecisionReason`);
+   in auto mode an `ask` normally goes to the permission prompt and the classifier does not
+   decide it (*PreToolUse `ask` decisions in auto mode*). And a hook process inherits
+   the parent environment, which is what carries the launcher's mark to this hook,
+   apart from the OTEL exporter variables and, when
+   `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` is set to `1`, the variables that setting strips
+   (*Common input fields*). The page does not say which variables those are, so under
+   that setting the mark may not arrive; the verdict is then the main session's `ask`,
+   which the same page documents as denied in such a run. So the refusal of a marked
+   session rests on the documented inheritance, read and not observed here; where the
+   mark does not arrive, what becomes of the `ask` rests on the documented denial, read
+   and not observed here. What the suite observes is the hook's own verdict under a
+   marked and an unmarked environment (`cf20`, `cf20b`, `cf21` and `cf21b` in
+   `tests/test_guard_edits.py`). The
    refusal is a PreToolUse hook, so it holds where hooks run: inside a subagent on
    a Claude Code version that does not run hooks there, the first flag of the
    capability policy above applies to it as it does to the policy. It applies in the

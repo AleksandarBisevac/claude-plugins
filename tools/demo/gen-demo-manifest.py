@@ -1053,7 +1053,7 @@ SCHEMA_EXEMPTIONS = {
     # carried or exempted, and never asks whether a row's own stated trigger has
     # come true. That is the same shape this project has recorded under other
     # names, and it is recorded here rather than papered over by this deletion.
-    # `task.redFirst` AND ITS THREE FIELDS. The block records what happened to a
+    # `task.redFirst` AND ITS FIELDS. The block records what happened to a
     # task's red-first proof - `proved`, `could-not-prove` with the refusal
     # verbatim, or `not-attempted`. No exemption here carries a REVISIT trigger,
     # deliberately: this follows `phase.priority` above, whose row was re-armed
@@ -1068,7 +1068,7 @@ SCHEMA_EXEMPTIONS = {
         "`could-not-prove` - publishing a fixture whose proofs were refused would "
         "advertise a refused proof as the normal state of a finished plan.",
     "redFirst.status":
-        "one of the three words, and unreachable for the reason the block itself "
+        "one of the schema's words, and unreachable for the reason the block itself "
         "is: a status inside an object the fixture does not carry has nowhere to "
         "sit. Coverage for the vocabulary is the schema enum plus "
         "_refs.red_first_drift(), which reads the documents that name it.",
@@ -1082,7 +1082,7 @@ SCHEMA_EXEMPTIONS = {
         "of its own: every other timestamp this generator stamps is derived from "
         "the plan's own dates, and an attempt has no date in a fixture where no "
         "attempt happened.",
-    # `task.greenFirst` AND ITS THREE FIELDS, with `tests.expectGreenFirst`
+    # `task.greenFirst` AND ITS FIELDS, with `tests.expectGreenFirst`
     # beside them: the refactor's mirror of the red-first proof, exempt on
     # `task.redFirst`'s own argument - no rendered surface reads either key.
     "task.greenFirst":
@@ -1093,7 +1093,7 @@ SCHEMA_EXEMPTIONS = {
         "and a published fixture carrying either would advertise a refused proof "
         "as the normal state of a finished plan.",
     "greenFirst.status":
-        "one of the four words, and unreachable for the reason the block itself "
+        "one of the schema's words, and unreachable for the reason the block itself "
         "is. Coverage for the vocabulary is the schema enum plus "
         "_refs.green_first_vocabulary_drift(), which reads the helper, the "
         "filing verb and both agent briefs.",
@@ -1130,7 +1130,7 @@ SCHEMA_EXEMPTIONS = {
         "Unreachable for the reason the block itself is, and a fabricated reason "
         "in a published fixture would be a quoted sentence nobody said.",
     "intentCheck.answer":
-        "one of the four words, and unreachable for the reason the block itself "
+        "one of the schema's words, and unreachable for the reason the block itself "
         "is: an answer inside an object the fixture does not carry has nowhere to "
         "sit. Coverage for the vocabulary is the schema enum.",
     "intentCheck.commit":

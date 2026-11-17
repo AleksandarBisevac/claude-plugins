@@ -2393,7 +2393,7 @@
     {
       "id": "SG1.22-ukq",
       "title": "A green-first answer only a human settles reaches a human under every review setting",
-      "status": "in_progress",
+      "status": "done",
       "description": "MEASURED, in the phase review (probes under the session scratchpad: review/b/probe_signoff.py and review/e/probe_docs.py part 1; the orchestrator ran both). A task carries tests.expectGreenFirst true and its filed executor return holds a greenFirst block with status not-green, or the proof is owed and the return holds no helper block at all. The documents and the briefs say sign-off stops on that and only a human settles it. It is true only for a task the phase review owes an entry:\n\nreview.perTask phase - owed an entry: yes - needs_human names green-first not-green\nreview.perTask always - owed an entry: no - an entry typed anyway is REFUSED (owed no answer) - needs_human is empty\nreview.perTask signals - the same as always\na recorded fix task under the default key - the same as always\n\nCause: the only reader that stops on green-first is _filed_returns.needs_human, and it reads the tasks entries of filed PHASE returns. An entry exists only for a task owed_answer names, and an entry for any other task is refused. Nothing else reads greenFirst to stop anything. So under always or signals a refactor whose characterisation tests fail on the base closes, the phase is reviewed and signed off, and no human is asked - while the task-mode reviewer brief (which exists exactly under those two settings) prints the sentence saying sign-off stops on it.\n\nTHE RULE. Whether an owed green-first proof needs a human is a property of the task's filed executor return, not of which review route the task took. Sign-off asks green_first_reading of every done task of the phase that owes the proof, whatever its review key and whether or not it is a fix task, and a reading of not-green or of owed-and-not-measured is put to a human through the same settlement the phase route uses today (the same key shape, the same record, settled once for the content it was given for). A task the phase review does owe an entry keeps its present path: the reviewer may still type the word over a computed answer, and the two sources must not ask twice about one task.\n\nWHAT TO BUILD.\n1. In the place sign-off collects what only a human settles (drive-phase.py near its needs_human call, and audit-task.py's settlement verb that reads the same list): add the executor-return source for every done task owing green-first that no phase-return entry already speaks for. One function in _filed_returns.py that both callers use; no second copy of the rule.\n2. The settlement verb must be able to settle such an answer: its key, its content signature and its wording follow the existing shape, and a settlement is honoured only for the content it was given for.\n3. Status and the phase report: an answer waiting on a human from this source is shown the way the phase-route one is.\n4. Every sentence that says sign-off stops on not-green is then true as written - check each against the code after the change and correct any that is still wrong: CHANGELOG.md (the two entries on not-green and not-attempted), plugins/audit/README.md (the row on answers only a human settles), reference/execute-task.md (both mentions), reference/phase-signoff.md, GREEN_NOT_MEANS and the lines around it in _filed_returns.py, the executor brief's last section in audit-lookup.py, and agents/audit-reviewer.md's escalation list, which names not-green and must name not-attempted in its green-first meaning as well (the verb accepts both; the brief prints both).\n5. The lint that holds the reviewer's escalation words (tools/lints/_refs.py, green_first_vocabulary_drift): it is met today by the word not-attempted appearing in two red-first sentences. Read the words out of the one sentence that lists escalations, and report an absent or non-literal HUMAN_GREEN_FIRST as a problem, not as nothing to check. Give tools/prove-gates.py's row for it the mutation that removes the green-first word from that sentence.\n\nALLOW SIDE: a task with greenFirst proved stops nothing; could-not-prove stops nothing (that stays an open question for the owner, recorded elsewhere - do not decide it here); a task that owes no green-first proof is never asked about; a phase whose every answer is settled signs off; under review.perTask phase the present cases stay green and no task is asked about twice.\n\nDependants to answer for: drive-phase.py's sign-off pass and its auto route (auto_answer must stop where a human is needed, never answer it); audit-task.py's settlement verb and its listing; _status_facts and audit-status.py where they show answers waiting; tests/test_drive_phase.py, tests/test__filed_returns.py, tests/test_audit_task.py cases on needs_human; tests/test__refs.py gfv cases; PLUGIN-BUILD-GUIDE.md's paragraphs on _filed_returns and the green-first lint; COMPATIBILITY.md if it states when sign-off stops.\n\nAcceptance:\n(1) Under review.perTask always and signals, a done task whose filed return says not-green stops sign-off and is named to a human, and so does an owed proof with no helper block.\n(2) A recorded fix task under the default key is held the same way.\n(3) The answer is settled through the existing settlement verb, once, for the content it was given for, and the phase then signs off.\n(4) Under review.perTask phase no task is asked about twice, and a proved or could-not-prove reading stops nothing.\n(5) The reviewer agent file's escalation sentence names both green-first words, and the lint goes red when either is removed from that sentence even while the word stands elsewhere in the file.\n(6) Each document sentence about sign-off stopping on a green-first answer matches what the code does after the change.\n\nADDED BEFORE START MEASURED after this task was written, by the end-of-phase mutation probe: the arm in _filed_returns.py that answers not-attempted for a task that owes the green-first proof and whose filed return holds no helper block sits beside the arm that copies the helper block's status, and no mutation row of the phase's probes breaks it - the rows break only the helper-block arm. Whatever this task builds on that arm must come with a case that goes red when the arm is removed, and the same for the new executor-return source: a row that removes it, and its allow twin (a proved reading asks nobody). Another session has since changed the phase-review return and submit path on the main branch (a phase return must now name the review skill the reviewer invoked); this branch does not have that change yet and will be merged with it later - so in drive-phase.py, audit-task.py and audit-lookup.py touch only the functions this task needs and do not reflow, re-order or rename anything else.",
       "files": [
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -2434,14 +2434,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "29668cb7fe06",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "A green-first answer only a human settles is now asked of every done task owing the proof, whatever its review key. plugins/audit/scripts/manifest/_filed_returns.py: new green_first_waiting(phase, live, executors, returns, bound) - the one rule: for each done task recording a commit, its green_first_reading off its filed executor return; not-green or owed not-attempted (HUMAN_GREEN_FIRST) is an answer in needs_human's shape (key '<executor return rel>#<task>#green-first <word>', sha256 = return_signature of that return, note = the reading's basis), skipped when a phase-return entry answers that commit or the task is still owed one (owed_answer), so no task is asked twice; a (key, sha256) pair in bound settles it, so a return filed again with other content is asked again. green_first_waiting_at reads the executor returns from the evidence directory. Callers: drive-phase.py human_answers (triage, advance_applies, triage_refusal and the accept all read its list unchanged) and audit-task.py _human_settlement (new phase= keyword, passed by _carry_answers; the refusal names 'filed returns hold' when an executor-return answer is among them, and the tip-only remedy is asked of the phase-return answers alone). The settlement is the existing one: drive-phase.py next <phase> --answer accept --reason \"<their word on each>\" (through /audit:phase <phase>), which records key + signature via settlement_after. tools/lints/_refs.py green_first_vocabulary_drift: the HUMAN_GREEN_FIRST words are read inside the one escalation parenthesis (ESCALATION_ANCHOR 'unless escalating it ('), a reviewer file with zero or several such lists is a problem, and an absent or non-literal GREEN_WORDS / GREEN_FIRST_WORDS / HUMAN_GREEN_FIRST is a problem. agents/audit-reviewer.md escalation sentence names green-first `not-green`/`not-attempted` (reviewer entry at its ceiling, measured by tools/measure-context.py --gate, exit 0). tools/prove-gates.py: the gfv1 row now removes `not-attempted` from that sentence (the word still stands in a red-first sentence), plus a gfv6 row reading the whole file again. Documents: CHANGELOG.md (both entries), plugins/audit/README.md (the test-discipline row and the review.perTask row), reference/execute-task.md (first mention changed; the second, 'the phase sign-off stops on it ... as on not-green', was already true after the change), reference/phase-signoff.md, PLUGIN-BUILD-GUIDE.md (_filed_returns, the lint, the triage paragraph), the HUMAN_GREEN_FIRST comments in _filed_returns.py; GREEN_NOT_MEANS, green_lines and audit-lookup.py's executor-brief sentence were true as written once the code changed and were left. Tests: tests/test__filed_returns.py gsh1-gsh7, tests/test_drive_phase.py gfh1, gfh1s, gfh2, gfh2s, gfh3 (M.triage over a plan and evidence on disk, plus auto_answer on the triage's signal -> needs-model), tests/test__refs.py gfv6, gfv7 (fixtures updated so the allow tree names both words), tests/test_audit_task.py hdg1 (the verb by hand). Runs: own suites in the gate command green; the wider seven-suite sweep '7/7 files ok', exit 0; run-test-gate.py without --record GATE GREEN, exit 0; mutation probe in the session scratchpad (sg1.22/mutations.py) 20 rows ALL CAUGHT, exit 0. Red-first command narrowed to python3 tests/test__filed_returns.py --selftest (about two seconds): it leaves out gfh*, gfv6/gfv7 and hdg1, which the mutation probe shows red instead.",
+        "descriptive": "Sign-off now stops on a not-green or owed-and-unmeasured green-first answer under every review setting and for fix tasks, asked once and settled once for the return it was given for."
       },
       "startedAt": "2026-11-17T19:40:21Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-17T20:25:13Z",
+      "verifiedBy": [
+        "tests/test__filed_returns.py gsh1-gsh7: under always and signals a done task's not-green return and an owed return with no helper block are each one answer for a human, keyed and signed by the executor return; no return filed is owed not-attempted; a recorded fix task under phase is asked while its owed sibling is not; under phase a task with a computed phase entry is asked once; a settlement holds only for the content it was given for; proved, could-not-prove, a task owing no proof and a task not done ask nobody; the reading off the evidence directory",
+        "tests/test_drive_phase.py gfh1/gfh2 (+ gfh1s/gfh2s) and gfh3: the triage under review.perTask always names P1.1 for a not-green return and for an owed return with no block, refuses sign-off, auto ends on needs-model; the accept settles it and the next triage asks nothing; a proved return asks nothing",
+        "tests/test__refs.py gfv6, gfv7: the escalation words are read from the one escalation sentence (not-attempted dropped from it is reported although it stands elsewhere; a file with no such sentence is a problem), and a non-literal or absent HUMAN_GREEN_FIRST is a problem",
+        "tests/test_audit_task.py hdg1: audit-task.py signoff by hand under always refuses over a not-green executor return, writing nothing, and passes once the triage's accept record binds it"
+      ],
       "notes": [
         {
           "at": "2026-11-17T19:40:12Z",
@@ -2480,6 +2485,18 @@
         "runId": "2026-11-17T20:25:09Z.a035d1",
         "status": "passed",
         "at": "2026-11-17T20:25:09Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "29668cb7fe06",
+        "at": "2026-11-17T20:25:13Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-17T20:08:40Z",
+        "basis": "`python3 tests/test__filed_returns.py --selftest` in a throwaway tree at HEAD exited 1 with 5 of 146 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - gsh1 (house FAIL), gsh2 (house FAIL), gsh3 (house FAIL), gsh5 (house FAIL), gsh7 (house FAIL): SELFTEST FAILED: 141/146 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2734,6 +2751,188 @@
         "basis": "`python3 tests/test__clause_coverage.py --selftest` in a throwaway tree at HEAD exited 1 with 18 of 56 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cr1 (house FAIL), cr2 (house FAIL), cr3 (house FAIL), cr4 (house FAIL), cr4b (house FAIL), cr5 (house FAIL), cr5b (house FAIL), cr5c (house FAIL) and 10 more: SELFTEST FAILED: 38/56 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
         "status": "proved",
         "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "SG1.25-ukq",
+      "title": "The documents say what the phase's fixes made true",
+      "status": "in_progress",
+      "description": "Statements found false or incomplete by the phase review and by the reviewers of the fix tasks. Each is wording, held by a pin where one already reads the passage; none changes what the plugin does. Find the pins before editing (tests/test__refs.py and the suites the readers check names at start) and keep them green or move them with the sentence.\n\n1. THE CONFIG HOLD, after a session the drive started became refused. plugins/audit/README.md (the two rows on the config hold) and PLUGIN-BUILD-GUIDE.md (the guard-edits section) still say the write is denied to a subagent and asked of the main session; add that a session the drive started is refused. The guide's run-agent-session section does not name the mark the launcher sets (DRIVE_SESSION_MARK in run-agent-session.py); name it and say what reads it.\n\n2. WHAT THE RUNNER DROPS. CLAUDE.md's paragraph on the environment each sweep child is given names the session variables that are dropped; the runner now drops one more (SESSION_NAMES in tools/sweep-selftests.py). That paragraph says itself that it is not checked against the runner and that whoever adds a name owes the mention. Add the one name, in the paragraph's own sentence, and change nothing else in that file.\n\n3. WHAT THE HOST DOES WITH AN ASK NOBODY CAN ANSWER. SECURITY.md's item on the config hold says this was not probed. The host's hooks reference documents it; it was READ on 2026-11-17 at code.claude.com/docs/en/hooks and not probed here. Three sentences, quoted from that page: (a) section PreToolUse decision control, row permissionDecisionReason - For ask, shown to the user in the permission prompt. When Claude Code denies the call in a -p run where no one can answer that prompt, Claude reads the reason in the tool result instead. (b) section PreToolUse ask decisions in auto mode - In auto mode, a PreToolUse hook's ask normally sends the tool call to the permission prompt, and the classifier doesn't decide it. (c) section Common input fields - A hook process inherits the parent environment, apart from the OTEL exporter variables that Claude Code removes from every subprocess it spawns and, when CLAUDE_CODE_SUBPROCESS_ENV_SCRUB is set to 1, the variables it strips. So write: documented as denied where nobody can answer, documented that a hook inherits the session's environment, which is what carries the launcher's mark; neither probed here; under the scrub setting the mark may not arrive (the page does not say which variables it strips), and the verdict is then the ask, which the same page documents as denied in such a run. State the date and the page. Do not write more than the three quotations support.\n\n4. THE DENY TIER IS NOT A RUNNING PHASE. plugins/audit/README.md, the row on the shell-write guard, says while a phase runs (the plan gate's deny tier). The blocking arm fires whenever the tier is deny, which the gate also answers for a plan holding phases with none running and for a pinned tier (guard-bash-writes.py tests the tier and nothing else; _config.plan_gate_mode). Say in the plan gate's deny tier, and point at the doctor for which tier is active. agents/audit-executor.md says the same guard only posts a notice after the fact: add the same qualifier there, within the agent body's context ceiling (tools/measure-context.py --gate).\n\n5. A GREEN-FIRST TASK'S BRIEF SAYS TWO THINGS. The executor brief's fixed section on the return says submit runs the red-first helper on the command after the double dash; for a task with tests.expectGreenFirst its last section says submit runs the green one; the agent body says only the first and has no word on green-first, while its test-discipline rule for tdd says see the tests fail. Word the fixed section so it is true of both (the proof the task owes) without making it task-specific - it is the same bytes in every brief, and a suite pins that. Give agents/audit-executor.md one clause: where the brief says expectGreenFirst true, the added tests must pass on the base and submit runs the green helper in place of the red one.\n\n6. THE UNRELEASED SECTION OF CHANGELOG.md has no entry for three changes of this phase that a reader upgrading will meet: both agent bodies and the headless skills preamble now say the brief's rules win over a skill's instruction; the phase brief carries a Review skill section and the validation session is handed the review skill; and the status command prints the floor lines under a phase due for sign-off. Add them - one Changed entry for the precedence rule and the review-skill plumbing, one clause in the floor-guard entry for the status lines.\n\n7. THE SETTINGS GROUPS. plugins/audit/README.md lists the panel's Settings groups and stops before the last card; commands/panel.md says the form has five groups and names five. Both are lists nothing derives. Replace each enumeration with the statement that the groups are the titles the form's own table holds and the command that prints them (the grep over _panel_settings.py for the title key), or hold the README sentence to the table with a pin in the panel suite that already derives the form's controls. No count in prose.\n\n8. THE DECISION RECORD ON THE EVAL COMMAND (CONTRIBUTING.md). Its heading says deferred, its 2026-08-19 re-check says the command writes nothing, a parenthesis added in this phase says the schema is public and cases ship, and the next words are adopt as soon as it opens up. Add a dated re-check in the record's own form with what was invoked and what it answered: on 2026-11-17, with Claude Code 2.1.325, the command was run twice over the two cases under plugins/audit/evals (scaffold, no ablation, one run each, local report); both times each case built its fixture, ran a session and returned a score per grader. Then re-head the entry as the record does for an entry whose trigger fired, and remove the count of shipped cases (the listing of case files under plugins/audit/evals re-derives it).\n\n9. THE FAIL-MODE TABLE'S EVENT CELL (SECURITY.md). The rows for guard-edits, require-plan and journal-writes say PreToolUse edits; hooks.json also registers each on the MCP matcher, which is where the config hold reaches. Write the event as the registration has it. tools/gate-parity.py reads this table: run it after the edit and say what it compares.\n\n10. THREE SENTENCES THAT SAY LESS THAN THE CODE. guard-edits.py, the docstring of the MCP decision: says the bypass state and the journal wait for a write basis - the audit config is the third. The same module's docstring: it is deliberately not all seven - a count of the list above it; say not all of them. audit-lookup.py, the docstring of answer_lines: the two lines - the loop also yields a green-first line; say the lines.\n\n11. COUNTS IN PROSE THAT NOTHING PRINTS. tools/demo/gen-demo-manifest.py (one of the four words; and its three fields), tools/lints/_refs.py (has its words in five places), plugins/audit/evals/build-shop.sh (its two hazards). Drop each numeral and keep the pointer. The same builder's header says exit 2 is with nothing written; a mid-build failure exits 2 with a half-built workspace - say so.\n\n12. AN ANSWER NOBODY REVIEWED IS CALLED A REVIEWER'S. Seen on a real drive under review.perTask always, a task whose green-first proof read not-green: the triage's refusal says sign-off waits on 1 reviewer answer(s) a human settles, and its accept says 1 reviewer answer(s) accepted - the answer was read off the task's filed executor return, and no reviewer gave it. Both lines are in drive-phase.py (the refusal of a sign-off while answers wait, and the line the accept appends). Word both so they are true of either source - answer(s) a human settles, answer(s) accepted - and move the one pin that quotes the first (tests/test_drive_phase.py) with it. Change those two strings and nothing else in that file: another branch has edited it and the two will be merged.\n\nHOW TO PROVE. Items 5 and 7 each get a case that is red on the tree as it stands (the fixed section's wording; the README sentence against the form's table, if you choose the pin). The rest is wording: for each, name in your outcome the pin that reads the passage, or say that none does. tools/check-rendered-artifacts.py and the demo ledger check must stay green after the edit to gen-demo-manifest.py - a comment-only change must not move a rendered byte; show it.\n\nNOT in this task: any behaviour change; the lows of the review that are code (they stay listed for the next batch).\n\nAcceptance:\n(1) The README rows, the guide's two sections and SECURITY.md say a session the drive started is refused the config write, and SECURITY.md states the three documented facts with the date and the page, as read and not probed.\n(2) CLAUDE.md's paragraph names the one added variable and is otherwise unchanged.\n(3) The README row and the executor agent body name the deny tier, not a running phase, and the agent body stays under its context ceiling.\n(4) The executor brief's fixed return section is true of a green-first task and identical in every brief, and the agent body has the green-first clause.\n(5) The Unreleased section carries the precedence rule, the review-skill plumbing and the status lines.\n(6) Neither the README nor commands/panel.md enumerates the Settings groups by hand or by count.\n(7) The decision record carries the dated re-check and no longer says deferred.\n(8) The fail-mode table's Event cells match the registration, and tools/gate-parity.py exits 0.\n(9) The three sentences and the four counts are corrected, and the rendered artifacts are byte-identical.\n(10) The triage's two lines name an answer, not a reviewer's answer, and the suite's pin reads the new words.",
+      "files": [
+        "plugins/audit/README.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CLAUDE.md",
+        "SECURITY.md",
+        "plugins/audit/agents/audit-executor.md",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "tests/test_audit_lookup.py",
+        "CHANGELOG.md",
+        "plugins/audit/commands/panel.md",
+        "tests/test__panel_settings.py",
+        "CONTRIBUTING.md",
+        "plugins/audit/hooks/guard-edits.py",
+        "tools/demo/gen-demo-manifest.py",
+        "tools/lints/_refs.py",
+        "plugins/audit/evals/build-shop.sh",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "tests/test__refs.py",
+        "tests/test_hooks.py",
+        "tools/gate-parity.py",
+        "tests/test_guard_edits.py",
+        "tests/test_gen_demo_manifest.py",
+        "tests/test_build_shop.py",
+        "tools/prove-gates.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_lookup.py: the executor brief's fixed return section names the proof the task owes, is the same bytes for a red-first and a green-first task, and does not say red-first alone",
+          "tests/test__panel_settings.py: the README's sentence on the Settings groups names no group the form's table does not hold and omits none, or names none at all"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test__panel_settings.py tests/test_drive_phase.py tests/test__refs.py tests/test_hooks.py tests/test_guard_edits.py tests/test_gen_demo_manifest.py tests/test_build_shop.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-17T20:26:04Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-17T20:25:56Z",
+          "text": "it quotes the README row on the high-risk decision; this task edits the rows on the config hold, the shell-write guard and the Settings groups and leaves that row as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-17T20:25:56Z",
+          "text": "it quotes a phrase of the build guide's section on the affected-test derivation; this task edits only the guard-edits and run-agent-session sections",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-17T20:25:56Z",
+          "text": "it quotes a sentence of the build guide's section on the doctor's trail check; this task edits only the guard-edits and run-agent-session sections",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-17T20:25:56Z",
+          "text": "it reads the generated module map heading of the build guide; this task adds no module and leaves that section as generated",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-17T20:25:56Z",
+          "text": "it quotes the house-style rule of CLAUDE.md; this task adds one variable name to the paragraph on the sweep's environment and changes nothing else in that file",
+          "waives": "tests/test__output_lints.py"
+        },
+        {
+          "at": "2026-11-17T20:25:56Z",
+          "text": "a research note with a section headed by the path of CLAUDE.md; it states nothing about the sweep's environment paragraph this task edits",
+          "waives": "docs/research/pipeline-cost-levers.md"
+        },
+        {
+          "at": "2026-11-17T20:25:56Z",
+          "text": "it quotes the security contact line of SECURITY.md; this task edits the config-hold item and the fail-mode table's event cells only",
+          "waives": ".github/ISSUE_TEMPLATE/config.yml"
+        },
+        {
+          "at": "2026-11-17T20:25:56Z",
+          "text": "it quotes the heading of SECURITY.md's test-file exemption; this task edits the config-hold item and the fail-mode table's event cells only",
+          "waives": "plugins/audit/hooks/_config.py"
+        },
+        {
+          "at": "2026-11-17T20:25:56Z",
+          "text": "it quotes a sentence of SECURITY.md on the capability policy; this task edits the config-hold item and the fail-mode table's event cells only",
+          "waives": "tests/test__panel_page.py"
+        },
+        {
+          "at": "2026-11-17T20:25:56Z",
+          "text": "it quotes the heading of SECURITY.md's secret-read item; this task edits the config-hold item and the fail-mode table's event cells only",
+          "waives": "tests/test_guard_secrets_read.py"
+        },
+        {
+          "at": "2026-11-17T20:25:56Z",
+          "text": "it quotes a phrase of SECURITY.md on committed names; this task edits the config-hold item and the fail-mode table's event cells only",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-17T20:25:56Z",
+          "text": "it quotes a phrase of SECURITY.md on the write half; this task edits the config-hold item and the fail-mode table's event cells only",
+          "waives": "tools/check-git-pipeline.py"
+        },
+        {
+          "at": "2026-11-17T20:25:56Z",
+          "text": "a research note with a section headed by the path of SECURITY.md; it states nothing about the config hold or the event cells this task edits",
+          "waives": "docs/research/guard-ownership-design.md"
+        },
+        {
+          "at": "2026-11-17T20:25:56Z",
+          "text": "it reads the Unreleased heading of CHANGELOG.md; this task adds entries under that heading and leaves the heading as it is",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-17T20:25:56Z",
+          "text": "it quotes a phrase of CONTRIBUTING.md on the runner refusing to start; this task edits the decision record on the eval command only",
+          "waives": "tools/sweep-selftests.py"
+        },
+        {
+          "at": "2026-11-17T20:25:56Z",
+          "reader": "tests/test__refs.py",
+          "reads": "PLUGIN-BUILD-GUIDE.md",
+          "text": "declared to answer a reading: tests/test__refs.py reads PLUGIN-BUILD-GUIDE.md - quotes its text beside its path: \"The executor's carries the resolved skills\""
+        },
+        {
+          "at": "2026-11-17T20:25:56Z",
+          "reader": "tests/test_hooks.py",
+          "reads": "SECURITY.md",
+          "text": "declared to answer a reading: tests/test_hooks.py reads SECURITY.md - quotes its text beside its path: 'write, after the fact'"
+        },
+        {
+          "at": "2026-11-17T20:25:56Z",
+          "reader": "tools/gate-parity.py",
+          "reads": "SECURITY.md",
+          "text": "declared to answer a reading: tools/gate-parity.py reads SECURITY.md - quotes its text beside its path: 'Fail modes (by design)'"
+        },
+        {
+          "at": "2026-11-17T20:25:56Z",
+          "reader": "tests/test_guard_edits.py",
+          "reads": "plugins/audit/hooks/guard-edits.py",
+          "text": "declared to answer a reading: tests/test_guard_edits.py reads plugins/audit/hooks/guard-edits.py - its own suite"
+        },
+        {
+          "at": "2026-11-17T20:25:56Z",
+          "reader": "tests/test_gen_demo_manifest.py",
+          "reads": "tools/demo/gen-demo-manifest.py",
+          "text": "declared to answer a reading: tests/test_gen_demo_manifest.py reads tools/demo/gen-demo-manifest.py - its own suite"
+        },
+        {
+          "at": "2026-11-17T20:25:56Z",
+          "reader": "tests/test_build_shop.py",
+          "reads": "plugins/audit/evals/build-shop.sh",
+          "text": "declared to answer a reading: tests/test_build_shop.py reads plugins/audit/evals/build-shop.sh - its own suite"
+        },
+        {
+          "at": "2026-11-17T20:59:15Z",
+          "text": "tools/prove-gates.py added to the scope after start: its failmode_table_drift row quotes the guard-edits row of SECURITY.md's fail-mode table byte for byte as its mutation anchor, and this task rewrites that row's Event cell; the waiver written at start covered only the file's quote of the README. The edit moves that one row's anchor and replacement to the new cell text and changes nothing else in the file."
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T21:13:14Z.4db116",
+        "status": "passed",
+        "at": "2026-11-17T21:13:14Z"
       }
     }
   ],

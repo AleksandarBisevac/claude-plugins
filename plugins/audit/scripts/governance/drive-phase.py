@@ -8998,7 +8998,7 @@ def triage_refusal(pending, answer):
     there is nothing for it to act on."""
     answers = pending.get("answers") or []
     if answer == "sign-off" and answers:
-        return ("sign-off waits on %d reviewer answer(s) a human settles: answer "
+        return ("sign-off waits on %d answer(s) a human settles: answer "
                 "accept --reason <their word on each> first" % (len(answers),))
     if answer in ("accept", "decline") and not answers:
         return ("no reviewer answer waits on a human here, so %s settles nothing"
@@ -11529,7 +11529,7 @@ def apply_phase_answer(ctx, state, manifest, phase, pending, answer, reason,
         state[_fr.SETTLED_FIELD] = _fr.settlement_after(
             state.get(_fr.SETTLED_FIELD), pending.get("answers") or [], reason)
         write_state(ctx, state)
-        ctx["did"].append("%d reviewer answer(s) accepted"
+        ctx["did"].append("%d answer(s) accepted"
                           % (len(pending.get("answers") or []),))
         return None
     if answer in ("sign-off", "carry"):

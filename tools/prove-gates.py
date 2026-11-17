@@ -1016,8 +1016,8 @@ TABLE = (
  # the claim someone reads while deciding whether to trust this plugin with their
  # repository. `fm0` is the case that reads the real table against the real wiring.
  ("failmode_table_drift", "SECURITY.md", "replace",
-  "| `guard-edits` | PreToolUse edits | **ask** | allow |",
-  "| `guard-edits` | PreToolUse edits | silent | no-op |",
+  "| `guard-edits` | PreToolUse edits + MCP | **ask** | allow |",
+  "| `guard-edits` | PreToolUse edits + MCP | silent | no-op |",
   "tools/gate-parity.py", "fm0"),
  # ...AND THE DIRECTION A ONE-SIDED RULE CANNOT SEE: the row is DELETED rather than
  # changed. Every cell that remains then agrees with its registration, so a check

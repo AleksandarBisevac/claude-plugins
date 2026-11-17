@@ -1,0 +1,119 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_audit_lookup.py tests/test__panel_settings.py tests/test_drive_phase.py tests/test__refs.py tests/test_hooks.py tests/test_guard_edits.py tests/test_gen_demo_manifest.py tests/test_build_shop.py": "pass",
+    "python3 tools/sweep-selftests.py --jobs 4 (whole tree)": "pass",
+    "python3 tools/sweep-selftests.py --selftest": "pass",
+    "python3 tools/gate-parity.py": "pass",
+    "python3 tools/measure-context.py --gate": "pass",
+    "python3 tools/check-rendered-artifacts.py --before-commit": "pass",
+    "python3 tools/check-example-ledgers.py": "pass",
+    "ruff check plugins/audit tools tests .claude/hooks": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-17T20:59:56Z",
+    "basis": "`python3 tests/test_audit_lookup.py --selftest` in a throwaway tree at HEAD exited 1 with 1 of 207 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rs1 (house FAIL): SELFTEST FAILED: 206/207 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Twelve wording items; no behaviour change. (1) CONFIG HOLD: plugins/audit/README.md guard-edits bullet ('refuses a write to the audit config from a subagent or a session the drive started') and the config-hold row ('**deny** to a subagent and to a session the drive started (`run-agent-session.py` marks it)'); PLUGIN-BUILD-GUIDE.md guard-edits section ('denied to a subagent ... and to a session the drive started (the launcher's mark, `_drive_started`)') and run-agent-session section ('One name is added ... `DRIVE_SESSION_MARK`, `AUDIT_DRIVE_SESSION`', read by guard-edits `_drive_started`, dropped by the sweep's `SESSION_NAMES`). Same class also fixed: CHANGELOG Security entry and the guard-edits.py rule-7 inline comment. SECURITY.md already said a marked session is denied (no change needed there). No pin reads these passages. (2) CLAUDE.md: one line, `AUDIT_DRIVE_SESSION` added to 'plus `CLAUDECODE`, `AUDIT_LOCK_TOKENS` and ...'; no pin. (3) SECURITY.md rule 7: 'The host's hooks reference (code.claude.com/docs/en/hooks, read on 2026-11-17, not probed here ...)' states the three quoted facts with section names, the scrub caveat and that the verdict then is the ask, documented as denied in such a run; guard-edits.py docstring sibling sentence updated to 'documents an ask there as denied, which was read and not probed'. No pin. (4) README shell-write row 'In the plan gate's deny tier (`/audit:doctor` prints which tier is active)'; audit-executor.md 'only answers after the fact (blocking a non-source file the command wrote, in the plan gate's deny tier)'. No pin. (5) audit-lookup.py executor_return_lines: 'runs the proof the task owes (the red-first or the green-first helper) on the command after `--`'; audit-executor.md Test discipline: 'Where the brief says `expectGreenFirst: true`, the added tests must PASS on the base and `submit` runs the green helper instead of the red.' Pinned by new rs1 (tests/test_audit_lookup.py, rs-block) and existing bo3 (same prefix bytes). Executor body measured 8982/9000 before, 8997/9000 after; to fit, I shortened rationale and wording only (the tdd parenthesis, the casesAdded template value, the case-binding sentence, 'Any later red runs'), no rule dropped; reviewer body untouched (6999/7000). (6) CHANGELOG Unreleased: new Changed entry 'A brief's rules win over a skill's instruction, and the phase review is handed its review skill'; floor-guard Added entry gains the /audit:status clause. No pin. (7) README 'grouped into cards whose titles are the form's own table (`grep -n '\"title\": ' scripts/panel/_panel_settings.py` prints them)'; commands/panel.md same, 'five groups' removed. Pinned by new psg1 (both documents) and psg2 (the detector, both directions). (8) CONTRIBUTING.md decision record re-headed '~~Plugin evals ... deferred ...~~ - RUNS (re-checked 2026-11-17)' with the dated re-check in the record's form (Claude Code 2.1.325, invoked twice, scaffold, no ablation, one run per case, local report; each case built its fixture, ran a session, returned a score per grader); 'the two shipped cases' replaced by the ls command; no cost or score figures. No pin. (9) SECURITY.md fail-mode Event cells: guard-edits and require-plan 'PreToolUse edits + MCP', require-plan (state commit) 'PostToolUse edits + MCP', journal-writes '... + MCP' on both events, as hooks.json registers. gate-parity exits 0; it compares (hook, event name) pairs and the No-interpreter mode with hooks.json and the launcher, not the matcher, so the cell's words beyond the event name are not compared. OUT OF SCOPE EDIT: tools/prove-gates.py quotes the guard-edits row verbatim as a mutation anchor (row failmode_table_drift -> fm0), which the waiver for that file did not foresee; its c2 case went red in the orchestrator gate run ('anchor occurs 0 time(s)'), so I moved the anchor and its replacement to the new cell text (two lines); the plan gate allowed the Edit; tools/prove-gates.py then 66/66. (10) guard-edits.py _decide_mcp docstring 'the bypass state, the journal and the audit config sit inside it ... so those wait'; module docstring 'not all of them'; audit-lookup.py answer_lines 'The lines saying ... red-first and inherited-test answers - and its green-first one where the filed return carries it'. No pin. (11) gen-demo-manifest.py: 'AND ITS FIELDS' (redFirst and greenFirst comments), 'one of the schema's words' (redFirst.status, greenFirst.status and intentCheck.answer - the class, three sites); _refs.py 'has its words in each of the places below'; build-shop.sh 'its hazards (the marker edit, the canary)' and the exit-2 header now says a mid-build failure leaves the workspace half-built. Rendered artifacts byte-identical (check-rendered-artifacts --before-commit exit 0), ledgers exit 0. No pin reads these. (12) drive-phase.py: 'sign-off waits on %d answer(s) a human settles' and '%d answer(s) accepted'; the sa2 pin in tests/test_drive_phase.py moved. git diff of drive-phase.py is those two lines. Left, same class: 'no reviewer answer waits on a human here' in the same function (told to change only two strings); README /audit:task row and verbs-in-full.md still say submit 'runs the red-first helper on a tdd task' (scoped to tdd, true as scoped; verbs-in-full.md not in my files). Untrue in the description against the tree: item 1 - SECURITY.md already stated the drive-started refusal; item 9 - require-plan (state commit) also registers PostToolUse on mcp__ (fixed too); item 11 - gen-demo-manifest also carried the same counts on the redFirst and intentCheck rows; the tools/prove-gates.py waiver did not cover its SECURITY.md anchor. Mutation probe: 12 rows, all held (deny rows red, allow rows green), with anchors asserted to apply once and caches purged between rows. Dependants listed in the brief: still correct - the whole-tree sweep (198/198 files) and gate-parity are green over the changed README, guide, CLAUDE.md, SECURITY.md, agent body, audit-lookup.py, CHANGELOG, panel.md, CONTRIBUTING, guard-edits.py and gen-demo-manifest.py; no listed dependant quoted a passage I changed except prove-gates (above).",
+    "descriptive": "Twelve documents and docstrings now say what the phase's fixes made true, held by pins where a passage can be checked"
+  },
+  "testsAdded": [
+    "tests/test_audit_lookup.py rs1: the executor brief's fixed return section is the same bytes for a red-first and a green-first task, names the proof the task owes and does not say red-first alone",
+    "tests/test__panel_settings.py psg1: the README's and panel.md's Settings sentence names every group title or none, and never counts them",
+    "tests/test__panel_settings.py psg2: the group-naming detector reports an omission, an invented title and a count, and passes the full list and a bare sentence"
+  ],
+  "casesAdded": [
+    "rs1",
+    [
+      "psg1",
+      "psg2"
+    ]
+  ],
+  "claims": "claims:\n1 audit-lookup.py executor_return_lines is the bytes rs1 reads; README/guide/SECURITY sentences checked against guard-edits.py _drive_started and _CONFIG_DRIVE_DENY, run-agent-session.py _session_env and DRIVE_SESSION_MARK, guard-bash-writes.py plan_mode == 'deny', hooks.json registrations, audit-status floor_readings_block, audit-lookup review_skill_lines, run-agent-session SKILLS_PREAMBLE, build-shop.sh fail() calls\n2 mutations.py 12 rows all held: rs1 red on red-first-only and green-only wording and on a red-first fixture, green on 'proof the task owes' alone; psg1 red on an omission, an invented title, a count, a missing anchor, green on the full list; psg2 red when the detector stops reporting, psg1+psg2 red when it over-fires; sa2 red when 'reviewer' returns\n3 greps: 'asked of the main session|refused to a subagent' -> guide, CHANGELOG, guard-edits comment fixed; 'one of the (three|four) words|THREE FIELDS' -> five sites in gen-demo-manifest fixed; 'runs the red-first helper' -> README /audit:task row, guide 3620, verbs-in-full left (scoped to tdd, true); 'not probed' -> guard-edits docstring fixed; 'reviewer answer' -> one more in triage_refusal left by instruction\n4 executor body: green-first clause names `submit` as what runs the green helper; deny-tier clause names guard-bash-writes.py\n5 measure-context executor 8982 before, 8997 after, measured on separate runs over the edits\n6 n/a - no guard\n7 counts dropped: 'five groups', 'two shipped cases' (ls command beside), 'all seven', 'two lines', 'four words', 'three fields', 'five places', 'two hazards'; numbers left are dated history (2026-11-17 re-check)",
+  "stamp": "audit-stamp: {\"content\":\"sha256:8ec96b31dc8a887a2b19dd730128daef1cdfd48ac44372a1c8609e42acb34dd8\",\"dirtyDigest\":\"sha256:f7b5827ce670a825ae215857158b907d88d7ce476cbf6b6cb06ca28499dd1c25\",\"dirtyPaths\":{\"CHANGELOG.md\":\"f5a30a1c5d095b42\",\"CLAUDE.md\":\"94f5d6ea4b601bca\",\"CONTRIBUTING.md\":\"d99743c9b68d28b7\",\"PLUGIN-BUILD-GUIDE.md\":\"7755ae5b510f5227\",\"SECURITY.md\":\"77d0ae8b27cf4795\",\"plugins/audit/README.md\":\"245d15d73b78dece\",\"plugins/audit/agents/audit-executor.md\":\"ae16aa5ac0a532ab\",\"plugins/audit/commands/panel.md\":\"7838e4f948e6f26d\",\"plugins/audit/evals/build-shop.sh\":\"63e3b8fa30ae17ab\",\"plugins/audit/hooks/guard-edits.py\":\"8033133c6ec7f209\",\"plugins/audit/scripts/governance/drive-phase.py\":\"6cda0b5239a5545c\",\"plugins/audit/scripts/status/audit-lookup.py\":\"5c766bdb30294da8\",\"tests/test__panel_settings.py\":\"2d6feea0cf33c97c\",\"tests/test_audit_lookup.py\":\"2812021ce35ec5f3\",\"tests/test_drive_phase.py\":\"e86bf8051d08dfb2\",\"tools/demo/gen-demo-manifest.py\":\"38ef520efe03fb0a\",\"tools/lints/_refs.py\":\"4548b2b6e060fa48\",\"tools/prove-gates.py\":\"682f9766cb5eb271\"},\"head\":\"29668cb7\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"CLAUDE.md\",\"CONTRIBUTING.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/README.md\",\"plugins/audit/agents/audit-executor.md\",\"plugins/audit/commands/panel.md\",\"plugins/audit/evals/build-shop.sh\",\"plugins/audit/hooks/guard-edits.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test__panel_settings.py\",\"tests/test__refs.py\",\"tests/test_audit_lookup.py\",\"tests/test_build_shop.py\",\"tests/test_drive_phase.py\",\"tests/test_gen_demo_manifest.py\",\"tests/test_guard_edits.py\",\"tests/test_hooks.py\",\"tools/demo/gen-demo-manifest.py\",\"tools/gate-parity.py\",\"tools/lints/_refs.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:e1ce756d53ae88e1a018ceda1f2a445214e7e5b5ce3f60e55befc8cedee1699c\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 8 of the diff's 18 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 8 file(s) not read that cannot hold a move as read here: CHANGELOG.md, CLAUDE.md, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md, SECURITY.md, plugins/audit/README.md, plugins/audit/agents/audit-executor.md, plugins/audit/commands/panel.md; 2 file(s) that could hold a move not compared: tests/test__panel_settings.py, tests/test_drive_phase.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "CLAUDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "CONTRIBUTING.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "SECURITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/agents/audit-executor.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/commands/panel.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test__panel_settings.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks changed (line 387 of the base copy), and that code - a helper, a table a case reads, a fixture - is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test_drive_phase.py",
+        "move": "definition-changed",
+        "reason": "code outside its test definitions changed (line 13838 of the base copy), and that code - a helper, a table a case reads, a fixture - is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "29668cb7fe068910435df6aeab658e506ed88f11"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-17T21:00:00Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": [
+    "tests/test__panel_settings.py: the README's sentence on the Settings groups names no group the form's table does not hold and omits none, or names none at all - not checked: the submit's command did not run `tests/test__panel_settings.py`, so the ids bound to it were not compared with any printed label"
+  ]
+}

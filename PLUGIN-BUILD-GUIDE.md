@@ -910,7 +910,8 @@ Edit/Write/MultiEdit/NotebookEdit content guard. (1) Path-based protection first
 of the INSTALLED plugin's own files (self-edit; dev-checkout exempt) and writes to
 `plan-bypass-*` state files (bypass forgery), and holds the audit config: a write to the file
 `_config.load` reads (`_config.CONFIG_REL` under the project or a linked worktree of it) is
-denied to a subagent (`_config.is_subagent`) and asked of the main session — dev checkout
+denied to a subagent (`_config.is_subagent`) and to a session the drive started (the launcher's
+mark, `_drive_started`), and asked of the main session — dev checkout
 included, since that file is governance rather than plugin source; a shell-form write of it is
 the residual SECURITY.md names. (2) `guardEdits.customRules` (config) — each
 `{pathPrefix, bannedPattern, message}` blocks its regex under its path prefix; ships EMPTY (the
@@ -6265,7 +6266,11 @@ pid, effort, project directory and the plugin's lock tokens) are dropped by name
 under `CLAUDE_CODE_` (`PARENT_SESSION_PREFIXES`) is dropped by prefix, so a session variable a later
 CLI release exports needs no entry. A top-level session does start with the provider and
 credential switches, so those are kept (`KEEP_SESSION_VARS`, `KEEP_SESSION_PREFIXES`); the rest of
-the environment is passed on. Its stream is saved under
+the environment is passed on. One name is added, set over whatever the parent carried: the drive's
+mark (`DRIVE_SESSION_MARK`, `AUDIT_DRIVE_SESSION`). It is read by `guard-edits.py`
+(`_drive_started`), which refuses a marked session the audit config write as it refuses a
+subagent's, since a session the drive started is top-level, carries no agent id, and has nobody at
+its prompt; the sweep runner drops the name from every suite it starts (`SESSION_NAMES`). Its stream is saved under
 `<state-dir>/sessions/`, one file per run, with stderr beside it.
 
 **What it prints**: one line, `session=<id> subtype=<subtype> is_error=<is_error>

@@ -24,6 +24,8 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import json
+import os
+import re
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -383,9 +385,88 @@ def _retired_rung_cases(check):
           not _found, "found: %r" % _found)
 
 
+# The sentence each document opens on the Settings tab with, found by its anchor
+# and read up to its first full stop. Both enumerated the groups by hand once and
+# fell behind the table.
+_GROUP_SENTENCE_DOCS = (
+    ("README.md", "for most of them it is a box in the **Settings**"),
+    (os.path.join("commands", "panel.md"), "- **Settings** "),
+)
+_COUNTED_GROUPS = re.compile(
+    r"\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)"
+    r"\s+groups\b", re.IGNORECASE)
+
+
+def _group_sentence(text, anchor):
+    """The sentence of `text` that starts at `anchor`, up to its first full
+    stop, with line breaks folded to spaces; "" when the anchor is absent."""
+    at = text.find(anchor)
+    if at < 0:
+        return ""
+    stop = re.search(r"\.(\s|$)", text[at:])
+    return " ".join(text[at:at + (stop.start() if stop else len(text) - at)].split())
+
+
+def _named_groups(sentence):
+    """The single-asterisk italics of `sentence` - how both documents spelled a
+    group's title - with bold spans left out."""
+    return re.findall(r"(?<!\*)\*(?!\*)([^*]+?)(?<!\*)\*(?!\*)", sentence)
+
+
+def _group_naming_problem(sentence, titles):
+    """None when `sentence` names every title and nothing else, or names no
+    group and gives no count of them; otherwise the reason it does not."""
+    named = _named_groups(sentence)
+    counted = _COUNTED_GROUPS.findall(sentence)
+    if counted:
+        return "a count of groups: %r" % (counted,)
+    if not named:
+        return None
+    missing = [t for t in titles if t not in named]
+    unknown = [n for n in named if n not in titles]
+    if missing or unknown:
+        return "missing: %r | unknown: %r" % (missing, unknown)
+    return None
+
+
+def _group_sentence_cases(check):
+    titles = [g["title"] for g in M.SETTINGS_GROUPS]
+    # The detector itself, both directions: an omission, an invented group and
+    # a count are each reported; the full list and the bare sentence are not.
+    whole = "tab, grouped into %s." % ", ".join("*%s*" % t for t in titles)
+    short = "tab, grouped into %s." % ", ".join("*%s*" % t for t in titles[:-1])
+    extra = "tab, grouped into %s, *Not a card*." % ", ".join(
+        "*%s*" % t for t in titles)
+    counted = "a form over the **whole** config, in five groups."
+    bare = "a form over the **whole** config, grouped into cards."
+    check("psg2 the group-naming detector reports an omitted title, an invented "
+          "one and a count of groups, and passes the full list and a sentence "
+          "naming none",
+          all(_group_naming_problem(s, titles) for s in (short, extra, counted))
+          and _group_naming_problem(whole, titles) is None
+          and _group_naming_problem(bare, titles) is None
+          and len(titles) > 1,
+          "short=%r extra=%r counted=%r whole=%r bare=%r"
+          % tuple(_group_naming_problem(s, titles)
+                  for s in (short, extra, counted, whole, bare)))
+    found = []
+    for rel, anchor in _GROUP_SENTENCE_DOCS:
+        with open(os.path.join(M._output.PLUGIN_ROOT, rel), encoding="utf-8") as fh:
+            sentence = _group_sentence(fh.read(), anchor)
+        found.append((rel, sentence, _group_naming_problem(sentence, titles)
+                      if sentence else "the sentence was not found"))
+    bad = [(rel, why) for rel, _s, why in found if why]
+    check("psg1 the README's sentence on the Settings groups, and the panel "
+          "command's, names no group the form's table does not hold and omits "
+          "none, or names none at all - and neither counts them",
+          len(found) == len(_GROUP_SENTENCE_DOCS) and not bad,
+          "problems: %r | sentences: %r" % (bad, [s for _r, s, _w in found]))
+
+
 def _selftest():
     return _harness.run(lambda check: (_cases(check), _ladder_cases(check),
-                                       _retired_rung_cases(check)))
+                                       _retired_rung_cases(check),
+                                       _group_sentence_cases(check)))
 
 
 if __name__ == "__main__":
