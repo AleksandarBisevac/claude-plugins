@@ -22,7 +22,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P164-R1",
@@ -59,27 +59,34 @@
         "severity": "low",
         "file": "tools/check-report-interactive.mjs:2868-2871,2882",
         "issue": "The new basis says the shares give 'about one control row of headroom' and that 'the measurement is what says each one leaves a row to spare', but the comment's own figures do not show that for the phone. The only row height the comment measures is the desktop's: 214px in the wide font against 182px in the page font, so a row is 32px. The phone's headroom is 27px (148/175), which is less than that row, so a phone whose filter bar wraps one more row would fail lm4. Laptop (37), tablet (52) and desktop (56) do clear 32px. A second, smaller mismatch: the rule is phrased as 'the stack a class's tightest cell draws in the wide font', yet the phone and laptop tightest cells listed are not labelled as wide-font cells ('either report', 'a status chip on'), unlike the tablet and desktop lines, so for those two classes the rule names a different cell from the one the figure was read at.",
-        "resolution": "Say the phone's margin is just under one row: 27px against the 32px row the desktop line measures. Either keep 0.45 and state that the phone has less than a row of headroom, or raise the phone share until its margin clears a row. Also word the rule as 'the largest stack the class's cells draw in either font' (or mark which font each listed cell was read in), so the rule and the listed cells describe the same measurement.",
-        "fixTask": "P164.5-y2u"
+        "resolution": "fixed in P164.5-y2u (636f2ea1955f): Say the phone's margin is just under one row: 27px against the 32px row the desktop line measures. Either keep 0.45 and state that the phone has less than a row of headroom, or raise the phone share until its margin clears a row. Also word the rule as 'the largest stack the class's cells draw in either font' (or mark which font each listed cell was read in), so the rule and the listed cells describe the same measurement.",
+        "fixTask": "P164.5-y2u",
+        "commit": "636f2ea1955f",
+        "status": "fixed"
       },
       {
         "id": "P164-R5",
         "severity": "low",
         "file": "tools/check-report-interactive.mjs:2902-2904",
         "issue": "'its 27px is under the cheapest row the bar can add there, and a phone whose filter bar wraps one more row fails lm4' claims more than its figures show for the cheapest-row arm. The headroom is an integer: lm4's stack is the first table pixel of a whole-pixel scan (stackInTable, `y += 1`) and its budget is Math.floor(390 * 0.45) = 175. The cheapest row is 27.4px, only 0.4px more than the 27px headroom. The file's own lm1 comment (around line 2828) says the scan's first table pixel can sit up to a pixel and a half below the layers' exact sum. So whether a 27.4px row takes the stack from 148 to 175 (a pass) or to 176 (a fail) depends on a fraction the comment never measured. Only the other arm, a row that holds the count (32px), is shown to fail lm4.",
-        "resolution": "Word it as what the figures show: the phone's 27px is under a row holding the count (32px), so that row fails lm4. The cheapest row (27.4px) is within the scan's whole-pixel resolution of the headroom, so it may land exactly on the budget. Or measure the layers' fractional bottom at the tightest phone cell and state which way the cheapest row goes."
+        "resolution": "Word it as what the figures show: the phone's 27px is under a row holding the count (32px), so that row fails lm4. The cheapest row (27.4px) is within the scan's whole-pixel resolution of the headroom, so it may land exactly on the budget. Or measure the layers' fractional bottom at the tightest phone cell and state which way the cheapest row goes.",
+        "status": "accepted-open",
+        "acceptedReason": "comment-only lows; recorded in the internal register for the next low batch, per the owner's instruction to end comment-only review rounds in this phase"
       },
       {
         "id": "P164-R6",
         "severity": "low",
         "file": "tools/check-report-interactive.mjs:2869-2870",
         "issue": "The reworded rule divides 'the largest stack the class's cells draw in either font, plus one row of headroom' by 'the class's screen height', but a class can have more than one height. viewportClass() puts both 390x844 and 844x390 in phone (TOPBAR_SCROLLS's max-height:32rem matches the landscape one), and both 1024x768 and 1512x945 in laptop. lm4 applies the share per size (`Math.floor(size.height * STACK_BUDGET[klass])`). The old wording was 'over that cell's height'. The new one names a quantity that does not exist for two of the four classes, and the measured lines below are each read against one size's height (844x390, 1024x768).",
-        "resolution": "Say 'over the screen height of the cell it is drawn at' (or 'of each size in the class'), so the rule divides by the height lm4 actually multiplies the share by."
+        "resolution": "Say 'over the screen height of the cell it is drawn at' (or 'of each size in the class'), so the rule divides by the height lm4 actually multiplies the share by.",
+        "status": "accepted-open",
+        "acceptedReason": "comment-only lows; recorded in the internal register for the next low batch, per the owner's instruction to end comment-only review rounds in this phase"
       }
     ],
-    "outcome": "[findings: 6 - 0 high, 0 med, 6 low; 3 with a recorded fix commit]"
+    "outcome": "[findings: 6 - 0 high, 0 med, 6 low; 4 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "P164 replaces the report layout matrix's line-count contract with what the page controls (no overflow/clipping, sticky stack within a per-class budget, no in-word wrap, count inside its bar), designs the toolbar/header wrapping with headroom, and adds a default wide-font (Verdana) pass. Red-first: the new checker fails a936cc11's acme and demo-large renders (56 lm8 each, incl. 834x1194 and 1024x768) and passes the new renders on all three fixtures in both fonts. Lows R5/R6 left for the next batch. Per-task reviewer answers continued over: P164.2-y2u intent diverges: the divergence is scope only: the orchestrator folded the three P164.1 comment lows into this one task (P164.3/.4 cancelled with that reason)",
   "tasks": [
     {
       "id": "P164.1",
@@ -377,7 +384,7 @@
     {
       "id": "P164.5-y2u",
       "title": "fix P164-R4: The new basis says the shares give 'about one control row of hea...",
-      "status": "in_progress",
+      "status": "done",
       "description": "The new basis says the shares give 'about one control row of headroom' and that 'the measurement is what says each one leaves a row to spare', but the comment's own figures do not show that for the phone. The only row height the comment measures is the desktop's: 214px in the wide font against 182px in the page font, so a row is 32px. The phone's headroom is 27px (148/175), which is less than that row, so a phone whose filter bar wraps one more row would fail lm4. Laptop (37), tablet (52) and desktop (56) do clear 32px. A second, smaller mismatch: the rule is phrased as 'the stack a class's tightest cell draws in the wide font', yet the phone and laptop tightest cells listed are not labelled as wide-font cells ('either report', 'a status chip on'), unlike the tablet and desktop lines, so for those two classes the rule names a different cell from the one the figure was read at.\n\nResolution asked: Say the phone's margin is just under one row: 27px against the 32px row the desktop line measures. Either keep 0.45 and state that the phone has less than a row of headroom, or raise the phone share until its margin clears a row. Also word the rule as 'the largest stack the class's cells draw in either font' (or mark which font each listed cell was read in), so the rule and the listed cells describe the same measurement.",
       "files": [
         "tools/check-report-interactive.mjs"
@@ -399,13 +406,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "636f2ea1955f",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Comment-only edit beside STACK_BUDGET in tools/check-report-interactive.mjs (no share changed; STACK_BUDGET stays phone 0.45, tablet 0.3, laptop 0.4, desktop 0.25). (1) The rule is reworded to 'the largest stack the class's cells draw in either font, plus one row of headroom, over the class's screen height', and no longer claims each share leaves a row to spare: it says meeting the rule is not assumed, the measurement says which classes do, and the phone does not. (2) Each tightest cell now names the pass it was read in, re-measured over both reports with `node tools/check-report-interactive.mjs <report> 2>&1 | grep lm4` and all lm4 lines tabulated per class and pass: phone 27px at 844x390, both passes, either report, chip on or search typed (148/175); laptop 37px at 1024x768, both passes, demo-large, chip on (270/307); tablet 52px at 834x1194, chip/search, wide pass in either report and page font in acme-store only (306/358); desktop 56px at 1920x1080, wide-font pass only, demo-large (214/270; page font 182). (3) The phone row was measured in the wide font at 844x390 itself (Playwright probe outside the repo, Verdana override as the pass applies it, children of .sectools clustered by top), run twice 20s apart with identical figures: rows sit 8px apart, shortest item 19.4px, count 24px, row below the controls 31.1px, so one more row costs at least 27.4px and 32px holding the count. The comment states the phone has LESS than a row of headroom (27px under the cheapest row the bar can add), that a phone whose bar wraps one more row fails lm4, that this is a fact of the phone budget at 0.45, and that laptop/tablet/desktop each clear 32px. It says the check prints none of the row figures and gives the console expression they were read by. Verification: node --check exit 0; node tools/check-report-interactive.mjs examples/acme-store/acme-store-audit.html exit 0, 0 FAIL lines; tests/test__report_html.py 181/181, tests/test__report_usage.py 111/111, tests/test_render_report.py 315/315, each exit 0 read without a pipe. Dependants: docs/demo-large.html, docs/index.html, examples/acme-store/acme-store-audit.html - still correct, they are inputs the check reads and a comment changes no assertion; plugins/audit/scripts/report/_report_html.py, report-css/controls.css, forced-colors.css, shell.css - still correct, they render what lm4 measures and nothing in them changed; tests/test__report_html.py - still correct, 181/181 after the edit.",
+        "descriptive": "STACK_BUDGET's basis now claims only what its figures show: the phone's 27px is under one wide-font row, stated as a fact of its budget, and each tightest cell names its pass."
       },
       "startedAt": "2026-11-17T04:07:15Z",
-      "completedAt": null,
+      "completedAt": "2026-11-17T04:41:31Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -429,14 +436,25 @@
         "runId": "2026-11-17T04:39:38Z.809248",
         "status": "passed",
         "at": "2026-11-17T04:39:38Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "636f2ea1955f",
+        "at": "2026-11-17T04:41:31Z",
+        "return": "docs/audit/evidence/returns/P164.5-y2u/20261117T040715Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.expectRedFirst is false on this tdd task: it names no case to prove a red by, so no red-first proof is owed",
+        "at": "2026-11-17T04:19:33Z"
       }
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "988f3478-fc74-4a1e-a62b-7522b404c792",
-    "branch": "audit/p164-the-report-s-layout-holds-unde",
-    "at": "2026-11-17T01:15:04Z"
-  },
-  "startedAt": "2026-11-17T01:15:04Z"
+  "startedAt": "2026-11-17T01:15:04Z",
+  "testEvidence": {
+    "runId": "2026-11-17T05:06:07Z.404b1d",
+    "status": "passed",
+    "at": "2026-11-17T05:06:07Z"
+  }
 }
