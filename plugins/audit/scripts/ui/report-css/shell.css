@@ -28,7 +28,15 @@ html{background:var(--bg);scrollbar-gutter:stable}
    later section adds an id to. The side nav's marker reads this margin back
    off each target (landingLine in page-state.js), so the line a jump lands on
    and the line that decides which section is lit are this one value. */
-[id]{scroll-margin-top:calc(var(--sticky-2) + var(--sp-2))}
+:root{--sticky-anchor:calc(var(--sticky-2) + var(--sp-2))}
+[id]{scroll-margin-top:var(--sticky-anchor)}
+/* Room after the content for the last target to reach that line. Without it
+   the document ended before a short final section - or the one above it - got
+   there, so a jump stopped short and the marker lit a different entry. Sized
+   from the same line, so it tracks the sticky stack as that is measured; on
+   screen only, since a printed page has no line to reach. */
+@media screen{.snav ~ .content::after{content:"";display:block;
+  height:calc(100vh - var(--sticky-anchor))}}
 body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
      margin:0;padding:0;-webkit-font-smoothing:antialiased}
 

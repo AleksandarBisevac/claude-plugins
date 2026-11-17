@@ -142,7 +142,9 @@ def _registry_text(script):
     start = script.find("const FILTER_AXES = [")
     if start < 0:
         return ""
-    end = script.find("\n  ];\n", start)
+    # The literal closes at its own indent, whatever follows the bracket: the
+    # registry maps its entries through the link check on the same line.
+    end = script.find("\n  ]", start)
     return script[start:end] if end > 0 else ""
 
 
@@ -177,6 +179,15 @@ def _filter_axes(script):
                                            reset.group(1)))) if reset else [],
         })
     return axes
+
+
+def _axis_body(registry, axis_id):
+    """The text of one registry entry, from its `id:` to the next entry's."""
+    i = registry.find("id: '%s'" % axis_id)
+    if i < 0:
+        return ""
+    j = registry.find("\n    {\n", i)
+    return registry[i:j] if j > 0 else registry[i:]
 
 
 def _names_in(text, names):
@@ -292,6 +303,27 @@ def _filter_axis_cases(check):
           "scope, not the Usage-only one)",
           len(ts) == 1 and ts[0]["counts"] == "false"
           and ts[0]["scope"] not in ("usage",), repr(ts))
+    # A construct pin: that a link naming a value no control offers restores
+    # nothing, on every key the page publishes, is hr1's in the browser gate.
+    # What this holds is WHERE the check sits - once, on the registry, wrapping
+    # every entry's decode as the array is built - so no entry re-implements
+    # it and an entry declared with no hook is held to it. A `takes` hook is
+    # the declared exception, for values that are not whole chip values.
+    reg = _registry_text(script)
+    wrap = ("].map((axis) => ({ ...axis, decode: (h) => "
+            "axis.decode(keptFromLink(axis, h)) }));")
+    hooked = sorted(a["id"] for a in axes
+                    if re.search(r"(?m)^      takes: ", _axis_body(reg, a["id"])))
+    check("rx10 the registry applies the link check to every axis as it is "
+          "built, no entry's decode reads the controls itself, and only the "
+          "axes whose values are not whole chip values declare a `takes` hook "
+          "(%s)" % ", ".join(hooked),
+          bool(reg) and page_state.count(wrap) == 1
+          and page_state.index(wrap) > page_state.index("const FILTER_AXES = [")
+          and "offeredBy(" not in reg and ".includes(h." not in reg
+          and "const takes = axis.takes || takesOffered;" in page_state
+          and hooked == ["area", "dates", "search"],
+          repr(hooked))
 
 
 # --- cases --------------------------------------------------------------------
@@ -741,7 +773,7 @@ def _cases(check):
     # visibility: whichever heading last passed under the bar is where you are.
     # The line is the one a jump lands on - each target's own scroll-margin,
     # read back resolved - so a nav click lights the section it opened; the
-    # browser gate's sn1 clicks every entry at three widths to hold that.
+    # browser gate's sn1 clicks every entry at every layout size to hold that.
     check("shell: the marker is decided by which heading last reached the line a "
           "jump lands on, so one link is always marked - a band-based observer "
           "marked none",
@@ -749,6 +781,25 @@ def _cases(check):
           and "if (best < 0) best = 0;" in M._SCRIPT
           and "getBoundingClientRect().top <= landingLine(el)" in M._SCRIPT
           and "getComputedStyle(el).scrollMarginTop" in M._SCRIPT)
+    # A construct pin: that every entry is lit by its own jump at every size is
+    # sn1's, in the browser gate. What this holds is that the marker has ONE
+    # rule - the line - and no end-of-document rule lighting the last entry
+    # for a jump the document ended before, and that the room after the
+    # content that makes the line reachable is sized from the line itself.
+    _spy_at = M._SCRIPT.find("const markSpy = () => {")
+    _spy = (M._SCRIPT[_spy_at:M._SCRIPT.find("\n  };\n", _spy_at)]
+            if _spy_at >= 0 else "")
+    check("sn0 the scroll-spy keeps no end-of-document rule, and the room after "
+          "the content that replaces it is sized from the one anchor line "
+          "every id lands on, on screen only",
+          bool(_spy) and "scrollHeight" not in _spy
+          and "findLastIndex" not in _spy
+          and ":root{--sticky-anchor:calc(var(--sticky-2) + var(--sp-2))}" in M._CSS
+          and "[id]{scroll-margin-top:var(--sticky-anchor)}" in M._CSS
+          and "@media screen{.snav ~ .content::after{content:\"\";display:block;\n"
+              "  height:calc(100vh - var(--sticky-anchor))}}" in M._CSS
+          and M._CSS.count("var(--sticky-anchor)") == 2,
+          "markSpy %d chars" % len(_spy))
 
     # --- the sticky stack ------------------------------------------------------
     # Four hand-tuned offsets (4.1rem nav, 3.6rem filter bar, 3.5rem headers,
@@ -818,7 +869,8 @@ def _cases(check):
     # Anchors are how this report is navigated; every one of them landed under the
     # bar, which reads as "the link goes somewhere slightly below the heading".
     check("sticky: every anchor clears the stack instead of landing beneath it",
-          "[id]{scroll-margin-top:calc(var(--sticky-2)" in M._CSS)
+          "[id]{scroll-margin-top:var(--sticky-anchor)}" in M._CSS
+          and "--sticky-anchor:calc(var(--sticky-2)" in M._CSS)
     check("sticky: the scrollbar's width is reserved, so a short page and a long "
           "one do not centre the shell at two different offsets",
           "scrollbar-gutter:stable" in M._CSS)

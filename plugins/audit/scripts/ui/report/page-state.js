@@ -292,12 +292,11 @@
       if (el && el.getBoundingClientRect().top <= landingLine(el)) best = i;
     });
     if (best < 0) best = 0;   // above the first heading, the first link still answers
-    // At the end of the document nothing further can cross the fold, so a short
-    // final section would otherwise be unreachable by the marker.
-    if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2) {
-      const lastResolved = spyTargets.findLastIndex((el) => Boolean(el));
-      if (lastResolved >= 0) best = lastResolved;
-    }
+    // No end-of-document rule: the stylesheet leaves room after the content
+    // (shell.css, `--sticky-anchor`), so every target, the last included, can
+    // scroll to its line. A rule lighting the last entry at the bottom used to
+    // stand in for that room, and it lit the last entry for a jump to an
+    // earlier one the document had ended before.
     navLinks.forEach((a, i) => {
       if (i === best) a.setAttribute('aria-current', 'true');
       else a.removeAttribute('aria-current');
@@ -448,26 +447,61 @@
 
   // --- what a link may restore -------------------------------------------------
 
-  // A link is typed by whoever sends it, so each axis's decode keeps only a
-  // value its own control offers. Restored as it stood, a value no control
+  // A link is typed by whoever sends it, so the restore keeps only a value some
+  // control on the page offers. Restored as it stood, a value no control
   // offers hid rows with nothing pressed to say why, and Clear was the only
-  // sign anything was on. The offered set is read off the controls rather than
-  // kept beside them, so a chip the renderer adds is offered with nothing else
-  // to edit. Array membership, never a property read: `constructor` is a key
+  // sign anything was on. The check is the registry's, applied to every axis
+  // on the way in (keptFromLink), so an axis declared with no hook of its own
+  // is held to it: its vocabulary is read off the toggles carrying its
+  // `attrs`, and a chip the renderer adds is offered with nothing else to
+  // edit. Array membership, never a property read: `constructor` is a key
   // every plain object answers.
 
   /**
-   * The values a filter's controls offer: the attribute every chip in its bar
-   * carries, and every option of its select twin bar the synthetic summary one.
-   * @param {Element|null} bar the chip row; null when the page renders none
-   * @param {string} attr the chip attribute carrying the value
-   * @param {HTMLSelectElement|null} [sel] the select twin, when the axis has one
+   * The values an axis's controls offer: every toggle carrying one of its
+   * `attrs`, and every option of its `twin` select bar the synthetic summary
+   * one. A toggle is an element with `aria-pressed`, which is what tells it
+   * from a table row carrying the same attribute as data.
+   * @param {{attrs: string[], twin?: HTMLSelectElement|null}} axis
    * @returns {string[]} the non-empty values, in page order
    */
-  const offeredBy = (bar, attr, sel) => [
-    ...(bar ? [...bar.querySelectorAll('[' + attr + ']')].map((c) => c.getAttribute(attr)) : []),
-    ...(sel ? [...sel.options].filter((o) => !o.hasAttribute('data-multi')).map((o) => o.value) : []),
+  const offeredBy = (axis) => [
+    ...axis.attrs.flatMap((attr) => [...document.querySelectorAll('[aria-pressed][' + attr + ']')]
+      .map((c) => c.getAttribute(attr))),
+    ...(axis.twin ? [...axis.twin.options].filter((o) => !o.hasAttribute('data-multi'))
+      .map((o) => o.value) : []),
   ].filter(Boolean);
+
+  /**
+   * One link value as an axis with no `takes` hook keeps it: whole, when a
+   * control offers it, and not at all otherwise.
+   * @param {string} v the value the link carries
+   * @param {string[]} offered offeredBy() of the axis
+   * @returns {string} `v`, or '' for nothing kept
+   */
+  const takesOffered = (v, offered) => (offered.includes(v) ? v : '');
+
+  /**
+   * The link as one axis may restore it: each of the axis's keys, holding only
+   * what its `takes` hook keeps of the value - or, with no hook, the value
+   * whole when a control offers it. Every axis's decode is handed this and
+   * never the link itself, so no axis restores past the check.
+   * @param {{keys: string[], attrs: string[], twin?: HTMLSelectElement|null,
+   *   takes?: (v: string, offered: string[]) => string}} axis
+   * @param {Object<string, string>} h the decoded link
+   * @returns {Object<string, string>} prototype-free; a key the axis keeps
+   *   nothing of is absent
+   */
+  const keptFromLink = (axis, h) => {
+    const offered = offeredBy(axis);
+    const takes = axis.takes || takesOffered;
+    const kept = Object.create(null);
+    for (const k of axis.keys) {
+      const v = h[k] ? takes(h[k], offered) : '';
+      if (v) kept[k] = v;
+    }
+    return kept;
+  };
 
   /**
    * Whether the page's date fields would hold this value. A date field empties
@@ -534,21 +568,30 @@
    *   is how a reader learns something is on behind the closed disclosure.
    * - `on`, `reset`, `paint`, `encode`, `decode`: is it filtering; return it to
    *   its default; repaint every control that shows it; its values for `keys`;
-   *   take its state from the decoded link - keeping only a value its own
-   *   control offers - saying whether any was kept.
+   *   take its state from the link as keptFromLink() hands it - only what a
+   *   control offers - saying whether there was any.
+   * - `twin` (optional): the select showing the same state as the chips, whose
+   *   options join what the axis offers.
+   * - `takes` (optional): what the axis keeps of one link value, for an axis
+   *   whose values are not whole chip values - a tag list, a date, free text.
+   *   Without it, a value is kept whole when a control offers it.
    *
    * The behaviours call painters declared in later parts (`highlight`,
    * `paintAreas`, `paintDates`, `applyAuthor`, `tfHosts`). They run only once
    * the whole script has loaded, never while this array is being built.
    *
    * @type {Array<{id: string, attrs: string[], keys: string[], unkept?: string,
-   *   scope: string, counts: boolean, on: () => boolean, reset: () => void,
+   *   scope: string, counts: boolean, twin?: HTMLSelectElement|null,
+   *   takes?: (v: string, offered: string[]) => string,
+   *   on: () => boolean, reset: () => void,
    *   paint: () => void, encode: () => string[],
    *   decode: (h: Object<string, string>) => boolean}>}
    */
   const FILTER_AXES = [
     {
       id: 'search', attrs: [], keys: ['q'], scope: 'text', counts: false,
+      // Free text: every string is a value a search box offers.
+      takes: (v) => v,
       on: () => !!q && q.value.trim() !== '',
       reset: () => { if (q) q.value = ''; },
       paint: () => {},
@@ -563,7 +606,7 @@
       paint: () => { if (phaseStatusBar) highlight(phaseStatusBar, 'data-ps', phaseStatus); },
       encode: () => [phaseStatus],
       decode: (h) => {
-        if (!offeredBy(phaseStatusBar, 'data-ps').includes(h.ps)) return false;
+        if (!h.ps) return false;
         phaseStatus = h.ps;
         viewForStatus(h.ps);
         return true;
@@ -573,19 +616,16 @@
       // Space-joined in the link, mirroring the data-area attribute: one
       // separator rule for both carriers of a tag list.
       id: 'area', attrs: ['data-a'], keys: ['a'], scope: 'phases', counts: true,
+      twin: areaSelect,
+      // Each tag on its own: a link naming one real area beside one that is
+      // not keeps the real one. Once each, since a chip holds a tag or not.
+      takes: (v, offered) => v.split(/\s+/)
+        .filter((t, i, all) => offered.includes(t) && all.indexOf(t) === i).join(' '),
       on: () => areaFilter.length > 0,
       reset: () => { areaFilter = []; },
       paint: () => { paintAreas(); },
       encode: () => [areaFilter.join(' ')],
-      decode: (h) => {
-        if (!h.a) return false;
-        const offered = offeredBy(areaBar, 'data-a', areaSelect);
-        // Each tag on its own: a link naming one real area beside one that is
-        // not keeps the real one. Once each, since a chip holds a tag or not.
-        areaFilter = h.a.split(/\s+/)
-          .filter((t, i, all) => offered.includes(t) && all.indexOf(t) === i);
-        return areaFilter.length > 0;
-      },
+      decode: (h) => { if (!h.a) return false; areaFilter = h.a.split(' '); return true; },
     },
     {
       id: 'model', attrs: ['data-m'], keys: ['m'], scope: 'tasks', counts: true,
@@ -593,11 +633,7 @@
       reset: () => { modelFilter = ''; },
       paint: () => { if (modelBar) highlight(modelBar, 'data-m', modelFilter); },
       encode: () => [modelFilter],
-      decode: (h) => {
-        if (!offeredBy(modelBar, 'data-m').includes(h.m)) return false;
-        modelFilter = h.m;
-        return true;
-      },
+      decode: (h) => { if (!h.m) return false; modelFilter = h.m; return true; },
     },
     {
       // Two axes and two keys, never one: a link can carry either alone.
@@ -607,11 +643,7 @@
       reset: () => { tevFilter = ''; },
       paint: () => { if (tevBar) highlight(tevBar, 'data-tev', tevFilter); },
       encode: () => [tevFilter],
-      decode: (h) => {
-        if (!offeredBy(tevBar, 'data-tev').includes(h.tev)) return false;
-        tevFilter = h.tev;
-        return true;
-      },
+      decode: (h) => { if (!h.tev) return false; tevFilter = h.tev; return true; },
     },
     {
       id: 'observed', attrs: ['data-tevf'], keys: ['tevf'], scope: 'tasks',
@@ -620,11 +652,7 @@
       reset: () => { tevFlag = ''; },
       paint: () => { if (tevFlagBar) highlight(tevFlagBar, 'data-tevf', tevFlag); },
       encode: () => [tevFlag],
-      decode: (h) => {
-        if (!offeredBy(tevFlagBar, 'data-tevf').includes(h.tevf)) return false;
-        tevFlag = h.tevf;
-        return true;
-      },
+      decode: (h) => { if (!h.tevf) return false; tevFlag = h.tevf; return true; },
     },
     {
       // The presets are a way of SETTING this range, not a filter of their
@@ -632,21 +660,25 @@
       // range comes back as a range and the chip stays unlit.
       id: 'dates', attrs: ['data-days'], keys: ['from', 'to'], scope: 'tasks',
       counts: true,
+      // Its chips carry a span of days, not a date, so the date fields answer
+      // for the values. Each end on its own: a link with one real date keeps
+      // that end.
+      takes: (v) => (dateFieldTakes(v) ? v : ''),
       on: () => dFrom !== '' || dTo !== '',
       reset: () => { dFrom = ''; dTo = ''; preset = ''; },
       paint: () => { paintDates(); },
       encode: () => [dFrom, dTo],
-      // Each end on its own, so a link with one real date keeps that end.
       decode: (h) => {
-        dFrom = dateFieldTakes(h.from) ? h.from : '';
-        dTo = dateFieldTakes(h.to) ? h.to : '';
-        return dFrom !== '' || dTo !== '';
+        if (!h.from && !h.to) return false;
+        dFrom = h.from || ''; dTo = h.to || '';
+        return true;
       },
     },
     {
       // Scopes the Usage section only: tasks record no author, so this never
       // narrows the table and the badge in the table's own panel skips it.
       id: 'author', attrs: ['data-au'], keys: ['au'], scope: 'usage', counts: false,
+      twin: auSelect,
       on: () => auFilter !== '',
       reset: () => { auFilter = ''; },
       paint: () => {
@@ -654,11 +686,7 @@
         applyAuthor();
       },
       encode: () => [auFilter],
-      decode: (h) => {
-        if (!offeredBy(authorBar, 'data-au', auSelect).includes(h.au)) return false;
-        auFilter = h.au;
-        return true;
-      },
+      decode: (h) => { if (!h.au) return false; auFilter = h.au; return true; },
     },
     {
       id: 'task-status', attrs: ['data-ts'], keys: [],
@@ -676,7 +704,16 @@
       encode: () => [],
       decode: () => false,
     },
-  ];
+  // The check is applied HERE, to every entry as the registry is built, so each
+  // `decode` an entry declares is only ever handed what keptFromLink kept, and
+  // no caller can reach a decode past it.
+  ].map((axis) => ({ ...axis, decode: (h) => axis.decode(keptFromLink(axis, h)) }));
+
+  // The keys the link carries, published on the root the way the measured
+  // stack is: the browser gate reads them here to drive every axis with a value
+  // no control offers, so an axis added to the registry is driven with nothing
+  // else to edit. A copy, written once: nothing reads it back.
+  root.setAttribute('data-link-keys', FILTER_AXES.flatMap((axis) => axis.keys).join(' '));
 
   /**
    * The per-day usage layer that both the range controls and the heatmap

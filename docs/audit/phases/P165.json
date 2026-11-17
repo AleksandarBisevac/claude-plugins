@@ -44,16 +44,23 @@
         "file": "tools/check-report-interactive.mjs:4422-4425",
         "issue": "hr0 derives the link keys by spelling: `/\\bkeys: \\[([^\\]]*)\\]/` and `'([a-z]+)'` over the page source. An axis written `keys:['x']`, with a double-quoted key, or a key holding a digit or capital is silently not exercised, and hr0 only asserts HR_KEYS.length > 0, so a dropped key stays green.",
         "resolution": "Cross-check the derivation against the registry's own shape: e.g. count the `decode:` members of FILTER_AXES in the source and require one keys match per entry (the empty `keys: []` of task-status included), or tolerate whitespace/quote variants in the regex and fail when an entry yields no match."
+      },
+      {
+        "id": "P165-R4",
+        "severity": "med",
+        "file": "plugins/audit/scripts/ui/report-css/shell.css:37-39",
+        "issue": "The room after the content is a fixed calc(100vh - var(--sticky-anchor)) on every report, whatever the last targets actually need, so scrolling to the end shows a viewport that is mostly blank: measured on the new renders (Playwright, file://, the gate's LAYOUT_SIZES), spacer / blank at bottom-of-scroll / room actually needed for the furthest nav target to reach the line = 390x844 784/896/282 px (93% of vh), 844x390 330/394/27 (85%), 834x1194 1012/1076/709 (85%), 1024x768 586/650/283 (76%), 1512x945 811/875/508 (86%), 1920x1080 946/1010/643 (88%) for acme; docs/demo-large.html gets the identical spacer and blank tail while its needed room is 0 px at every size (every target already reaches the line at HEAD). A reader pressing End on any report sees roughly a screenful of empty page below a few lines of content, and on demo-large it serves no purpose at all. Print is clean: under emulateMedia print the ::after computes content:none, and the A4 PDF page count equals HEAD's (acme 18/18, demo-large 148/148). sn0 pins the CSS string and sn1 only asserts the marker, so nothing bounds the tail.",
+        "resolution": "Size the room by what the last targets need, not by a viewport: page-state.js already measures the sticky stack and reads the line back (landingLine); publish one custom property, e.g. max(0, innerHeight - line - (content end - furthest nav target's top)), on load and resize and let the screen-only ::after read it (still keyed to --sticky-anchor through the line, so it tracks it). A CSS-only alternative, min-height on the last section, needs the renderer to wrap that section, since .content is flat (H2#ready then DL.ready). Then add a browser-gate bound beside sn1: at every LAYOUT_SIZES size the blank tail at bottom-of-scroll is at most the needed room plus the content's own bottom padding (64 px at HEAD), so demo-large reads ~64 px and acme reads needed+64, and prove it red against this render."
       }
     ],
-    "outcome": "[findings: 3 - 0 high, 2 med, 1 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 4 - 0 high, 3 med, 1 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P165.1",
       "title": "A report link restores only filters a control shows, and the side-nav highlights the section a jump lands on",
-      "status": "in_progress",
+      "status": "done",
       "description": "Two report behaviour lows, one class each, fixed at the shared seam rather than per instance.\n\n1. A report link can restore a filter no control shows. Hash decode (the FILTER_AXES registry in plugins/audit/scripts/ui/report/page-state.js) accepts values no control offers and hides rows behind them with nothing pressed: `#!m=bogus`, `#!a=nosuch` (unknown model/area), `#!tev=constructor` (a prototype key), `#!from=notadate`, `#!au=nobody` (hides Usage rows). Separately `#!ps=done` is dropped without a word in the Active view. Fix: every axis's decode keeps only values its control offers (read off the control/DOM, own-property lookups only), and what it drops is not applied; the restored state is exactly what the controls show. Decide the ps-in-Active-view case so the user is not silently given a different filter than the link named (e.g. switch the View to one that shows it, or keep it as an honest no-op the counter states) - pick the least surprising, say why in the code comment. Add browser-gate cases in tools/check-report-interactive.mjs: per axis, a bogus value in the hash restores nothing hidden and nothing pressed; red-first them: the render committed at eed7a78b (git show eed7a78b:examples/acme-store/acme-store-audit.html) must fail the new cases; quote the failing lines.\n\n2. The side-nav highlights the section above after a nav jump, at every width: a section's scroll-margin is --sp-2 while markSpy (page-state.js) treats a section as current only past the layers' height + 4px, so a jump lands just short of that line. Fix: derive both from ONE value (one source the CSS scroll-margin and markSpy both read), not two constants kept equal by hand. Add a browser-gate case that clicks each side-nav entry at more than one width and reads that the highlight names the clicked section; red-first it on the current committed render.\n\nRefresh rendered followers (examples/report.sh, docs/demo-large.html via `python3 tools/check-rendered-artifacts.py --how`, `node tools/capture-screenshots.mjs`) so tests/test__refs.py and check-rendered-artifacts stay green. Read writing-javascript, refactoring-the-assembled-ui, no-silent-pass. No register ids in comments.",
       "files": [
         "plugins/audit/scripts/ui/report/page-state.js",
@@ -90,14 +97,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ad08e5bc8d8d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "1) Link decode (plugins/audit/scripts/ui/report/page-state.js): new offeredBy(bar, attr, sel) reads the values a control offers off its chips and select options (minus the synthetic multi option), array membership only so constructor/toString are never offered; dateFieldTakes(v) asks a detached clone of the page's date field whether it would hold the value (a date input empties itself on a non-date); every FILTER_AXES decode now keeps only offered values (ps, m, tev, tevf, au whole; a per tag, deduplicated, keeping real tags beside bogus ones; from/to per end). Search stays free text. Dropped values are never applied, and the first refresh rewrites the link without them. Status hidden by the view (#!ps=done in Active): viewForStatus switches viewMode and the View select to the first view VIEWS declares that holds the status's segment (done -> Archived). Reason is in the code comment: the link writer never emits that pairing, so the sender asked for those phases; dropping it gives a different filter than named, and keeping it presses a hidden chip over an empty table. Switching the visible View select is the only answer where every control agrees with the rows. 2) Side-nav: markSpy no longer computes its own fold (layers + 4px). New landingLine(el) reads each target's resolved scroll-margin-top (+1px rounding slack), the same [id] rule a jump uses (shell.css: calc(var(--sticky-2) + var(--sp-2))), so there is one source. shell.css only gains a comment naming the reader. 3) Browser gate (tools/check-report-interactive.mjs): hr0-hr4 (link keys read from the shipped script's own keys: [...] registry; each loaded alone with nosuch-value/constructor/toString, or notadate/2026-02-30/constructor for dates, must open exactly like no link: phases, usage rows, pressed chips, fields, More-filters count, Clear; hr2 is the allow half, an offered value comes back on, so a mis-derived key or a decode that drops everything is red; hr3: every status chip's link presses it and draws only its phases whatever the default view) and sn1/sn2 (every visible side-nav entry clicked at 1512, 1000 and 390px must light itself; an entry the document ends too early to land is reported as a note, not judged). 4) tests/test_render_report.py: two source pins that named the old fold constant were updated on purpose (shell marker pin now wants landingLine(el) and scrollMarginTop; st2 now wants no const fold). 5) README row for page-state.js updated. 6) Followers: sh examples/report.sh (acme html + md; the md change is only the generated timestamp), docs/index.html byte copy, docs/demo-large.html via the --how recipe, node tools/capture-screenshots.mjs (dark.png + captured-at.json changed; exit 0). Commands run: gate 1 exit 0 (821 cases: refs 292, report_html 181, report_page 33, render_report 315); gate 2 exit 0 (acme 856 checks, demo-large 861, live render 814, both font passes: page font and Verdana); python3 tools/check-rendered-artifacts.py --before-commit exit 0; npx vitest run 853 passed; sweep of dependant suites (test__report_ui, test__ui_theme_lints, test__ui_theme, test__output, test__surface_digest, test__config, test_run_test_gate, test_gen_demo_manifest, test__invariants, test__panel_page, test__live_copy) exit 0, 2050 cases; test__output_lints + test__deps exit 0; ruff on the edited test exit 0. Dependants: generated pages (docs/demo-large.html, docs/index.html, examples/acme-store html) re-rendered and checked; _report_ui.py unchanged (part order untouched, no part added); controls.css unchanged (its .fdetails scroll-margin is read by the More-filters code, which still reads it); heatmap.js still correct (setView/syncStatusChips unchanged; syncStatusChips no longer meets an offered status the view hides on restore, because viewForStatus runs first); test__report_ui, test__ui_theme_lints, _ui_theme_lints, test__surface_digest, test__ui_theme, test__output, test__config ran green; filters.js and areas.js were declared but needed no change (paintAreas and syncHash read the state the decodes now limit); redfirst.sh, ui-tests and gate-parity/affected/where reference the files by path and need nothing; docs/screenshots dependants (test__panel_page, test__invariants, test_gen_demo_manifest) ran green after re-capture. Not done, needs a decision: at 1512px in acme, clicking #bugs lights #ready, because the page ends before #bugs reaches the landing line and the end-of-document rule lights the last section. That was the same on the committed render (probe: lit #ready both before and after). Choosing whether a clicked entry beats the end-of-page rule is a design call, so sn1 reports this case as a note rather than a failure.",
+        "descriptive": "A report link now restores only filters a control shows (and widens the View for a status the view hides), and a side-nav jump lights the section it lands on, because the marker reads the same scroll-margin the jump uses."
       },
       "startedAt": "2026-11-17T05:25:05Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-17T07:02:47Z",
+      "verifiedBy": [
+        "hr0-hr4 in tools/check-report-interactive.mjs: a bogus value on every link axis restores nothing; an offered value comes back on; a status link presses its chip and draws only its phases under a view that holds them; no page error",
+        "sn1-sn2 in tools/check-report-interactive.mjs: clicking each visible side-nav entry at 1512/1000/390px lights that entry; no page error"
+      ],
       "notes": [
         {
           "at": "2026-11-17T05:24:58Z",
@@ -115,6 +125,17 @@
         "runId": "2026-11-17T06:43:41Z.16dad4",
         "status": "passed",
         "at": "2026-11-17T06:43:41Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "ad08e5bc8d8d",
+        "at": "2026-11-17T07:02:47Z",
+        "return": "docs/audit/evidence/returns/P165.1/20261117T052505Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task with expectRedFirst false, so no helper proof is owed; the browser gate is not a runner the helper reads a tally from. Reds were watched by hand instead. (1) New cases against the render committed at eed7a78b (git show eed7a78b:examples/acme-store/acme-store-audit.html): FAIL hr1 ... got ps=nosuch-value: phases '' (no link: 'P2 BF1 P3 P4 P5'); clear true ... a=nosuch-value ... m=constructor ... tev=toString ... from=notadate ... au=nosuch-value: usage '0/0' (no link: '3/3') ...; FAIL hr2 ... got ps=done: NOT restored ([]); FAIL hr3 ... got ps=done in view active: {pressed:false,drawn:5,other:5,view:active}; FAIL sn1 ... got 1512px #phases lit #gate (landed at 134px, line 134px) · 1512px #usage lit #phases ... · 1000px #phases lit #gate (landed at 182px, line 182px) ... · 390px #phases lit #gate (landed at 60px, line 60px) ...; REPORT IS INERT: 4 interaction(s). (2) Mutations of the fix, each rendered to a temp dir and restored by cmp in the same command: offeredBy keeping nothing -> FAIL hr2 (ps, a, m, tev, tevf, au NOT restored) and FAIL hr3, hr1 stays ok; landing line 8px above the margin -> FAIL sn1; date probe accepting anything -> FAIL hr1 from=notadate/2026-02-30/constructor; viewForStatus a no-op -> FAIL hr3 ps=done and FAIL hr2 ps=done. (3) Source pins in tests/test_render_report.py: reintroducing a separate fold constant in markSpy -> FAIL shell: the marker is decided by which heading last reached the line ... and FAIL st2 ...; restored -> 315 cases ok.",
+        "at": "2026-11-17, by hand in the P165.1 worktree; no helper run"
       }
     },
     {
@@ -292,7 +313,9 @@
         "examples",
         "docs/index.html",
         "docs/demo-large.html",
-        "docs/screenshots"
+        "docs/screenshots",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__report_page.py"
       ],
       "tests": {
         "mode": "gate-only",
@@ -325,7 +348,8 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [
-        "P165.1"
+        "P165.1",
+        "P165.6-r5e"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -347,6 +371,18 @@
           "at": "2026-11-17T05:25:01Z",
           "text": "names check-report-interactive.mjs as a step; the task keeps its command line and exit contract",
           "waives": "tools/verify.sh"
+        },
+        {
+          "at": "2026-11-17T07:03:51Z",
+          "reader": "PLUGIN-BUILD-GUIDE.md",
+          "reads": "plugins/audit/scripts/_ui_theme.py",
+          "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/_ui_theme.py - a section headed by its path"
+        },
+        {
+          "at": "2026-11-17T07:03:51Z",
+          "reader": "tests/test__report_page.py",
+          "reads": "plugins/audit/scripts/report/_report_page.py",
+          "text": "declared to answer a reading: tests/test__report_page.py reads plugins/audit/scripts/report/_report_page.py - its own suite"
         }
       ]
     },
@@ -411,6 +447,75 @@
           "waives": "tools/verify.sh"
         }
       ]
+    },
+    {
+      "id": "P165.6-r5e",
+      "title": "Link validation is the registry's, derived from each axis's attrs; every side-nav jump marks its section at every size; hr0 reads the page's own keys",
+      "status": "in_progress",
+      "description": "Fix the P165.1 review's findings on the unlanded diff (ad08e5bc), at the seam, not per axis.\n\n1. Link validation lives at the REGISTRY level in plugins/audit/scripts/ui/report/page-state.js. Today each FILTER_AXES entry's decode re-implements `if (!offeredBy(<bar>, 'data-<x>').includes(h.<x>)) return false` by hand and re-spells the chip attribute its own `attrs` already declares. Make the registry itself keep only values a control offers, derived from each axis's `attrs` (one helper the restore path calls for every axis), so an axis supplies only its genuine exceptions (area's select-backed vocabulary, the date fields' parse) as a declared hook. A new axis written with no hook is validated by default. Add a browser-gate case in tools/check-report-interactive.mjs that goes red when an axis restores an unoffered value: drive EVERY axis in the page's registry with a bogus value and assert nothing is hidden and nothing pressed. Prove it red-first by a mutation: drop the registry-level check on a scratch copy of the new render (or bypass it for one axis) and quote the failing line.\n\n2. Remove the sn1 exemption (\"side-nav jumps the document ends before\" printed as a note). Give the document enough end space (e.g. padding or a spacer after the last section, sized from the same one value the scroll line uses, so it tracks it) that every section can scroll to the line, so clicking Bugs at 1512x945 marks Bugs, not Ready. Assert, at EVERY size in the layout matrix, that each side-nav click marks the clicked entry - no carve-out. Red-first: the render committed at ad08e5bc must fail at 1512 on Bugs; quote it.\n\n3. hr0 derives link keys with a regex over the page source. Read the keys from the page's own registry at runtime instead (expose a read-only list of axis keys on the page, the same way the gate already reads other runtime state, or evaluate the registry in page context), and fail by name if the page exposes none.\n\nRefresh rendered followers (examples/report.sh, docs/demo-large.html via `python3 tools/check-rendered-artifacts.py --how`, `node tools/capture-screenshots.mjs`). Read writing-javascript, refactoring-the-assembled-ui, no-silent-pass. No register ids in comments.",
+      "files": [
+        "plugins/audit/scripts/ui/report/page-state.js",
+        "plugins/audit/scripts/ui/report/filters.js",
+        "plugins/audit/scripts/ui/report/areas.js",
+        "plugins/audit/scripts/ui/report/README.md",
+        "plugins/audit/scripts/ui/report-css/shell.css",
+        "plugins/audit/scripts/ui/report-css/README.md",
+        "tools/check-report-interactive.mjs",
+        "tests/test_render_report.py",
+        "tests/test__report_html.py",
+        "tests/test__report_page.py",
+        "examples",
+        "docs/index.html",
+        "docs/demo-large.html",
+        "docs/screenshots"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [
+          "plugins/audit/scripts/ui/report-css/shell.css: .snav a interaction-state parity - a clipped snapshot (or a computed-style assertion) of its OWN box in its hover state, not only rest"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_render_report.py tests/test__report_html.py tests/test__report_page.py tests/test__refs.py",
+          "sh -c 'W=$(mktemp -d) && rc=0 && for f in examples/acme-store/acme-store-audit.html docs/demo-large.html; do node tools/check-report-interactive.mjs \"$f\" || rc=1; done && python3 tools/plan-window.py docs/audit/audit-plan.json \"$W/win\" && python3 plugins/audit/scripts/report/render-report.py \"$W/win/docs/audit/audit-plan.json\" --out-dir \"$W/lp\" --format html && node tools/check-report-interactive.mjs \"$W\"/lp/*.html || rc=1; rm -rf \"$W\"; exit $rc'"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P165.1"
+      ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-17T07:04:26Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-17T07:04:23Z",
+          "text": "scans rendered artifacts for machine paths; this task changes report behaviour, not what paths a render carries",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-17T07:04:24Z",
+          "text": "names check-report-interactive.mjs as a step; the task keeps its command line and exit contract",
+          "waives": "tools/verify.sh"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T08:40:42Z.46174a",
+        "status": "passed",
+        "at": "2026-11-17T08:40:42Z"
+      }
     }
   ],
   "reviewPerTask": "signals",

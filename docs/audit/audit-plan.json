@@ -2024,7 +2024,8 @@
       "P163.2",
       "P163.3",
       "P164.1",
-      "P165.2"
+      "P165.2",
+      "P165.4"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2178,7 +2179,8 @@
       "P164.1",
       "P165.1",
       "P165.4",
-      "P165.5"
+      "P165.5",
+      "P165.6-r5e"
     ],
     "docs/design/audit-concurrency-report.md": [
       "P60.3"
@@ -2245,7 +2247,8 @@
       "P164.1",
       "P165.1",
       "P165.4",
-      "P165.5"
+      "P165.5",
+      "P165.6-r5e"
     ],
     "docs/screenshots": [
       "P53.9",
@@ -2274,7 +2277,8 @@
       "P164.1",
       "P165.1",
       "P165.4",
-      "P165.5"
+      "P165.5",
+      "P165.6-r5e"
     ],
     "docs/screenshots/captured-at.json": [
       "P63.9",
@@ -8769,7 +8773,8 @@
       "P164.5-y2u",
       "P165.1",
       "P165.4",
-      "P165.5"
+      "P165.5",
+      "P165.6-r5e"
     ],
     "tools/gate-parity.py": [
       "P19.2",
@@ -11755,7 +11760,8 @@
       "P163.16-d6t",
       "P163.17-d6t",
       "P164.1",
-      "P165.1"
+      "P165.1",
+      "P165.6-r5e"
     ],
     ".github/sweep-costs.json": [
       "P127.2-bgr",
@@ -11955,7 +11961,8 @@
       "P163.13-d6t",
       "P163.15-d6t",
       "P163.17-d6t",
-      "P165.1"
+      "P165.1",
+      "P165.6-r5e"
     ],
     "tools/ui-tests/table-fit.test.mjs": [
       "P125.81-0h5",
@@ -12749,7 +12756,8 @@
       "P164.3-y2u",
       "P164.2-y2u",
       "P165.1",
-      "P165.5"
+      "P165.5",
+      "P165.6-r5e"
     ],
     "tests/test__report_md.py": [
       "P131.1"
@@ -12766,7 +12774,9 @@
       "P163.16-d6t",
       "P163.17-d6t",
       "P164.1",
-      "P165.1"
+      "P165.1",
+      "P165.4",
+      "P165.6-r5e"
     ],
     "tests/test__report_ui.py": [
       "P131.1",
@@ -13371,7 +13381,8 @@
       "P164.2-y2u",
       "P165.1",
       "P165.4",
-      "P165.5"
+      "P165.5",
+      "P165.6-r5e"
     ],
     "tests/test_repair_commits.py": [
       "P131.1"
@@ -13695,7 +13706,8 @@
       "P163.15-d6t",
       "P163.16-d6t",
       "P163.17-d6t",
-      "P165.1"
+      "P165.1",
+      "P165.6-r5e"
     ],
     "plugins/audit/scripts/ui/report-css/README.md": [
       "P154.3-mkf",
@@ -13704,7 +13716,8 @@
       "P164.1",
       "P165.1",
       "P165.4",
-      "P165.5"
+      "P165.5",
+      "P165.6-r5e"
     ],
     "plugins/audit/scripts/ui/report/date-range.js": [
       "P154.3-mkf",
@@ -13756,7 +13769,8 @@
       "P163.15-d6t",
       "P163.16-d6t",
       "P163.17-d6t",
-      "P165.1"
+      "P165.1",
+      "P165.6-r5e"
     ],
     "plugins/audit/scripts/ui/report/chips.js": [
       "P163.1"
@@ -13764,7 +13778,8 @@
     "plugins/audit/scripts/ui/report/areas.js": [
       "P163.1",
       "P163.2",
-      "P165.1"
+      "P165.1",
+      "P165.6-r5e"
     ],
     "plugins/audit/scripts/ui/report/authors.js": [
       "P163.1"
@@ -13783,7 +13798,8 @@
       "P164.1",
       "P165.1",
       "P165.4",
-      "P165.5"
+      "P165.5",
+      "P165.6-r5e"
     ],
     "plugins/audit/scripts/ui/report-css/controls.css": [
       "P163.3",

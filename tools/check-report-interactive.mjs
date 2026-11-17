@@ -3415,6 +3415,11 @@ expect('...nor the phases table\'s head, whose Sort and expand-all do nothing on
     { id: 'is8', sel: '.fdetails > summary', how: 'hover', sets: ['borderTopColor', 'backgroundColor'] },
     { id: 'is9', sel: '.tf-chip:not(.on)', how: 'hover', needs: expandAll, sets: ['borderTopColor', 'transform'] },
     { id: 'is10', sel: '.snav a:not([aria-current="true"])', how: 'hover', sets: ['color', 'backgroundColor'] },
+    // The same links drawn as the strip under the bar, where shell.css gives
+    // them a presentation of their own (a bottom border, not a left one), so
+    // the hover is read again in that box rather than assumed from the column.
+    { id: 'is11', sel: '.snav a:not([aria-current="true"])', how: 'hover', at: { width: 1000, height: 800 },
+      sets: ['color', 'backgroundColor'] },
   ];
   const styleOf = (loc) => loc.evaluate((el, props) => {
     const cs = getComputedStyle(el);
@@ -3428,12 +3433,14 @@ expect('...nor the phases table\'s head, whose Sort and expand-all do nothing on
   await page.setViewportSize({ width: 1512, height: 945 });
   await page.evaluate(() => window.scrollTo(0, 0));
   for (const s of STATES) {
+    if (s.at) await page.setViewportSize(s.at);
     const undo = s.needs ? await s.needs() : null;
     const loc = page.locator(s.sel).filter({ visible: true }).first();
     if (!(await loc.count())) {
       failures.push(`FAIL ${s.id} no visible ${s.sel} to put in its ${s.how} state - the `
         + 'interaction rule for it could not be checked');
       if (undo) await undo();
+      if (s.at) await page.setViewportSize({ width: 1512, height: 945 });
       continue;
     }
     await loc.scrollIntoViewIfNeeded();
@@ -3454,10 +3461,12 @@ expect('...nor the phases table\'s head, whose Sort and expand-all do nothing on
       await page.emulateMedia({ forcedColors: 'none' });
     }
     expect(`${s.id} ${s.sel} in its ${s.how} state changes its own box (${moved.join(',') || 'nothing'} moved)`
+      + (s.at ? ` at ${s.at.width}x${s.at.height}` : '')
       + (s.how === 'focus' ? ' and keeps an outline under forced colours' : ''),
       `${moved.length > 0}/${forced}`, `true/${s.how === 'focus' ? 'outline' : 'n/a'}`);
     await settle();
     if (undo) await undo();
+    if (s.at) await page.setViewportSize({ width: 1512, height: 945 });
   }
 
   // The More-filters summary is NAMED by its text, so the count it shows is the
@@ -4411,18 +4420,19 @@ if (!STRESS) {
 // A filtered view is a link, and a link is typed by whoever sends it. A value
 // no control offers - an area the plan has no tag for, a model nobody ran, a
 // prototype key, a string that is not a date - used to be restored as it
-// stood: it hid rows, and nothing on the page was pressed to say why. Each
-// axis the page's script writes to the link is loaded ALONE with such a
-// value, and the page has to open exactly as it opens with no link. The keys
-// are read off the shipped script's own axis registry (`keys: [...]`), not
-// listed here, and the allow half (hr2) loads each one with a value its
-// control DOES offer and wants that value back on - so a key read wrongly, or
-// a decode that drops everything, is red rather than vacuously quiet.
+// stood: it hid rows, and nothing on the page was pressed to say why. Each key
+// of every axis in the page's registry is loaded ALONE with such a value, and
+// the page has to open exactly as it opens with no link. The keys are the
+// ones the running page publishes off its own registry (`data-link-keys` on
+// the root), not listed here and not read out of the source text, and the
+// allow half (hr2) loads each one with a value its control DOES offer and
+// wants that value back on - so a key read wrongly, or a check that drops
+// everything, is red rather than vacuously quiet.
 {
-  const HR_KEYS = [...new Set([...source.matchAll(/\bkeys: \[([^\]]*)\]/g)]
-    .flatMap((m) => [...m[1].matchAll(/'([a-z]+)'/g)].map((k) => k[1])))]
-    // Free text: every string is a value a search box offers.
-    .filter((k) => k !== 'q');
+  // Free text: every string is a value a search box offers, so a link's value
+  // there is the reader's query, not a filter nothing shows. The one exemption,
+  // and it must name a key the page still publishes (hr0).
+  const HR_FREE_TEXT = ['q'];
   const HR_DATE_KEYS = { from: ['#audit-from', '#audit-gfrom'], to: ['#audit-to', '#audit-gto'] };
   const HR_BOGUS = ['nosuch-value', 'constructor', 'toString'];
   const HR_BOGUS_DATE = ['notadate', '2026-02-30', 'constructor'];
@@ -4460,6 +4470,10 @@ if (!STRESS) {
     .map((k) => `${k} ${JSON.stringify(b[k])} (no link: ${JSON.stringify(a[k])})`).join('; ');
   await openAt('');
   const hrBase = await hrSnap();
+  const published = await hp.evaluate(() => document.documentElement.getAttribute('data-link-keys'));
+  const pageKeys = (published || '').split(' ').filter(Boolean);
+  const HR_KEYS = pageKeys.filter((k) => !HR_FREE_TEXT.includes(k));
+  const staleFree = HR_FREE_TEXT.filter((k) => !pageKeys.includes(k));
   const leaked = [];
   const kept = [];
   const gaps = [];
@@ -4494,10 +4508,17 @@ if (!STRESS) {
     const ok = got.length > 0 && got.every(Boolean);
     kept.push(`${key}=${val}: ${ok ? 'on' : 'NOT restored (' + JSON.stringify(got) + ')'}`);
   }
-  expect(`hr0 the link keys were read off the page's own axis registry (${HR_KEYS.join(',')})`,
-    HR_KEYS.length > 0 && bogusRan > 0, true);
-  expect('hr1 a link naming a value no control offers restores nothing - nothing hidden, '
-    + 'nothing pressed, no field filled', leaked.join(' · ') || 'none', 'none');
+  expect(`hr0 the running page publishes its registry's link keys (${published === null
+    ? 'no data-link-keys on the root' : JSON.stringify(published)}), every one but free text `
+    + `was driven, and the free-text exemption names a key the page still has`,
+    published === null ? 'the page publishes no link keys'
+      : !HR_KEYS.length ? 'no key to drive'
+        : staleFree.length ? `exempt key the page no longer has: ${staleFree.join(', ')}`
+          : bogusRan > 0 ? 'ok' : 'nothing driven',
+    'ok');
+  expect(`hr1 a link naming a value no control offers restores nothing, on every key of every `
+    + `axis the registry declares (${HR_KEYS.join(',')}) - nothing hidden, nothing pressed, `
+    + 'no field filled', !HR_KEYS.length ? 'no key driven' : (leaked.join(' · ') || 'none'), 'none');
   expect('hr2 a link naming a value its control offers restores it on'
     + (gaps.length ? ` (no control on this page for: ${gaps.join(', ')})` : ''),
     kept.filter((k) => !/: on$/.test(k)).join(' · ') || (kept.length ? 'none' : 'no axis had a control'),
@@ -4534,22 +4555,22 @@ if (!STRESS) {
 // --- a side-nav jump lights the section it lands on ----------------------------
 // The nav's links are plain anchors and the marker is a script, so the two
 // decide "which section is this" separately: the jump by the scroll-margin the
-// stylesheet gives every id, the marker by a line of its own. When those lines
-// differed the jump stopped just short of the marker's, and every click lit the
-// section ABOVE the one it opened, at every width. Each visible entry is clicked
-// at a column width, a strip width and a phone width, and the marker has to
-// name it. An entry whose target cannot reach the line because the document
-// ends first is reported, not judged: there the last section is what is read.
+// stylesheet gives every id, the marker by the line it reads back off the same
+// rule. When those lines differed the jump stopped just short of the marker's,
+// and every click lit the section ABOVE the one it opened. And where the
+// document ended before a target reached the line, the jump stopped short of
+// it and a different entry was lit. Each visible entry is clicked at every
+// size of the layout matrix, and the marker has to name it - with no
+// exemption for the end of the document, which the stylesheet's room after
+// the content is there to remove.
 {
-  const SN_SIZES = [[1512, 945], [1000, 800], [390, 844]];
   const sctx = await browser.newContext({ viewport: { width: 1512, height: 945 } });
   const snp = await sctx.newPage();
   const snErrors = [];
   snp.on('pageerror', (e) => snErrors.push(e.message));
   const wrong = [];
-  const short = [];
   let clicked = 0;
-  for (const [w, h] of SN_SIZES) {
+  for (const { width: w, height: h } of LAYOUT_SIZES) {
     await snp.setViewportSize({ width: w, height: h });
     await snp.goto('about:blank');
     await snp.goto('file://' + path);
@@ -4571,14 +4592,14 @@ if (!STRESS) {
       }, href);
       clicked++;
       if (r.cur === href) continue;
-      if (r.atEnd && r.top > r.line + 1) short.push(`${w}px ${href} (document ends ${r.top - r.line}px short)`);
-      else wrong.push(`${w}px ${href} lit ${r.cur || 'nothing'} (landed at ${r.top}px, line ${r.line}px)`);
+      wrong.push(`${w}x${h} ${href} lit ${r.cur || 'nothing'} (landed at ${r.top}px, line ${r.line}px`
+        + `${r.atEnd ? ', the document ended first' : ''})`);
     }
   }
   await sctx.close();
-  if (short.length) notes.push(`note side-nav jumps the document ends before: ${short.join(', ')}`);
-  expect(`sn1 clicking a side-nav entry lights that entry, at ${SN_SIZES.map((s) => s[0]).join('/')}px `
-    + `(${clicked} clicks)`, clicked > 0 ? (wrong.join(' · ') || 'none') : 'no entry clicked', 'none');
+  expect(`sn1 clicking a side-nav entry lights that entry, at every layout size `
+    + `(${LAYOUT_SIZES.map((s) => s.width + 'x' + s.height).join(', ')}; ${clicked} clicks)`,
+    clicked > 0 ? (wrong.join(' · ') || 'none') : 'no entry clicked', 'none');
   expect('sn2 the page raised no error while the side nav was driven',
     snErrors.slice(0, 2).join(' | ') || 'none', 'none');
 }
