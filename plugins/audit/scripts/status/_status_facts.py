@@ -67,7 +67,7 @@ import _manifest_vocab  # noqa: E402  (the FULL_STATUS words - the third place's
 import _areas  # noqa: E402  (meta.areas registry + the resolution every surface shares)
 import _priority  # noqa: E402  (the ONE expression of execution order, and the skip note)
 import _usage_core  # noqa: E402  (parse_ts — the tree's one ISO reader)
-import _filed_returns as _fr  # noqa: E402  (INTENT_DEFERRED: the word a close writes for an answer still owed)
+import _filed_returns as _fr  # noqa: E402  (INTENT_DEFERRED, and floor_block: the one reader of a return's floor block)
 
 # --- vocabulary -----------------------------------------------------------------
 CONDITIONS = ("invalid", "open-high-bugs", "open-bugs", "blocked-tasks",
@@ -749,6 +749,48 @@ def intent_unanswered(phase):
     return [str(t.get("id")) for t in (phase.get("tasks") or [])
             if isinstance(t, dict) and t.get("status") == "done"
             and _intent_word(t) in (None, _fr.INTENT_DEFERRED)]
+
+
+# The four kinds of floor reading a phase's done task can carry that is not a
+# plain clean, in the order status prints them.
+FLOOR_KINDS = ("findings", "notCompared", "couldNotTell", "notMeasured")
+
+
+def _floor_kind(executor):
+    """The kind `executor`'s floor reading is, or None for a plain clean: a
+    trusted block reporting no move and leaving no file uncompared."""
+    block, _why = _fr.floor_block(executor)
+    if block is None:
+        return "notMeasured"
+    if block["answer"] == "findings":
+        return "findings"
+    if block["answer"] == "could-not-tell":
+        return "couldNotTell"
+    return "notCompared" if block["notRead"] else None
+
+
+def floor_readings(phase, read_executor):
+    """`phase`'s DONE tasks whose floor reading is not a plain clean, as four
+    lists of task ids under `FLOOR_KINDS`: findings, a clean answer with a file
+    it did not compare, could-not-tell, and NOT MEASURED - no return filed, no
+    block, or one `_filed_returns.floor_block` does not trust. Not measured is
+    its own list because it is no reading: folded into clean it would say a
+    diff nobody read had no move in it. A task answering findings is listed
+    there alone, whatever else its block holds.
+
+    `read_executor(task)` is the caller's: the task's filed executor return as
+    an object, or None when there is none or it cannot be read. This module
+    opens no file, so finding the return is the command's. The block itself is
+    read through `floor_block` alone, the trust rule's one home."""
+    out = dict((k, []) for k in FLOOR_KINDS)
+    tasks = phase.get("tasks") if isinstance(phase, dict) else None
+    for t in tasks or []:
+        if not (isinstance(t, dict) and t.get("status") == "done"):
+            continue
+        kind = _floor_kind(read_executor(t))
+        if kind is not None:
+            out[kind].append(str(t.get("id")))
+    return out
 
 
 def findings_left_open(phase):

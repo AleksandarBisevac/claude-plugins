@@ -2458,7 +2458,8 @@ answer word from `FLOOR_ANSWERS` and list-typed lists, so a block an agent wrote
 as not measured (`ffg3`); `floor_summary` is the one-line form, which says *not measured*
 for no block and never calls a reading clean while any file went unread (`ffg5`); and
 `floor_lines` is the reviewer brief's section - findings, files not read with each one's move
-and reason, and could-not-tell kept under separate headings.
+and reason, and could-not-tell kept under separate headings. `/audit:status` reads it through
+`floor_block` too, by way of `_status_facts.floor_readings`.
 
 ### `plugins/audit/scripts/manifest/_task_outputs.py`
 What a task's **`outputs`** pattern may be, and what an honoured one reaches.
@@ -3165,6 +3166,12 @@ share it — `_panel_state` (rollup), `audit-doctor` (submodules) and `render-re
 stayed with the command. `live_view`, `row_copies` and `ready_counts` are the pure half of
 reading a phase in flight elsewhere: `_live_copy` reads the copies, and these lay them over the
 plan and name each row's copy, the same way for every surface that shows one.
+`intent_unanswered` and `floor_readings` are the two facts `/audit:status` prints under a phase
+whose sign-off is due: `floor_readings(phase, read_executor)` sorts the phase's done tasks into
+findings, not compared (a clean answer with a file left unread), could not tell and not measured,
+reading each block through `_filed_returns.floor_block` alone; the reader of a task's filed return
+is the caller's, since nothing here opens a file, and a task with no trusted block is not measured,
+never clean (`fl1`-`fl8`).
 
 ### `plugins/audit/scripts/status/_live_copy.py`
 Which copy holds a phase in flight live: a phase run under a lock, or worked on in
@@ -3190,6 +3197,10 @@ plan that has never recorded a run must not start failing builds on upgrade, and
 read phases as well as tasks). The human render carries the same words in a `tests`
 column, which — like the report's optional columns — is drawn only when a task in view
 has recorded a run, so an unchanged plan renders exactly as it did before.
+Under a phase whose sign-off is due the human render adds a line per kind of floor reading that
+is not a plain clean (`floor_readings_block`, read through `_fr.read_filed_return_checked` against
+the journal's filing rows); a phase read from another copy says its returns are filed there, and
+`--json` carries the lists no more than it carries the intent one (`fg1`-`fg7`).
 `--submodules <.gitmodules> [--git-root
 <prefix>]` (v0.6.2) is the submodule preflight guard — exit 1 when any `task.files` entry lives
 inside a git submodule (which the parent repo cannot stage/commit). Exit 0/1/2. `--selftest`

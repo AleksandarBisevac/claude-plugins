@@ -4876,9 +4876,157 @@ def _standing_approval_cases(check):
     _harness.remove_tree(root)
 
 
+def _floor_status_plan():
+    """Four phases over one evidence directory. P1 is due for sign-off and holds
+    every kind of floor reading; P2 is signed off and P4 still has open work,
+    both carrying a task with findings; P3 is due with only plainly clean done
+    tasks. Every task records a start, so each has a return path to file under."""
+    started = "2026-01-02T03:04:05Z"
+
+    def task(tid, status="done"):
+        return {"id": tid, "title": "t", "status": status, "startedAt": started}
+    return {
+        "meta": {"version": 2},
+        "phases": [
+            {"id": "P1", "title": "due", "status": "in_progress", "tasks": [
+                task("P1.1"), task("P1.2"), task("P1.3"), task("P1.4"),
+                task("P1.5"), task("P1.6"), task("P1.7"),
+                task("P1.8", "cancelled")]},
+            {"id": "P2", "title": "signed", "status": "in_progress",
+             "review": {"status": "passed"}, "tasks": [task("P2.1")]},
+            {"id": "P3", "title": "clean", "status": "in_progress",
+             "tasks": [task("P3.1"), task("P3.2")]},
+            {"id": "P4", "title": "open", "status": "in_progress",
+             "tasks": [task("P4.1"), task("P4.2", "pending")]},
+        ],
+        "bugs": [], "fileIndex": {},
+    }
+
+
+def _floor_return(answer="clean", findings=(), not_read=(), mark=True):
+    """An executor return carrying a floor block in the shape `submit` files,
+    its field and mark spelled through `_filed_returns`' own names."""
+    block = {"answer": answer, "basis": "read", "findings": list(findings),
+             "declared": [], "renamed": [], "couldNotTell": [],
+             "notRead": list(not_read), "base": {"commit": "c" * 40},
+             "acceptedSuppressions": [], "at": "2026-01-01T00:00:00Z"}
+    if mark:
+        block["source"] = M._fr.FLOOR_SOURCE
+    return json.dumps({"outcome": {"technical": "t", "descriptive": "d"},
+                       M._fr.FLOOR_FIELD: block})
+
+
+def _floor_status_cases(check):
+    """`/audit:status` names, under a phase due for sign-off, the done tasks
+    whose floor reading is not a plain clean: one line per kind, none for an
+    empty kind, nothing at all on a phase not due or one plainly clean."""
+    import contextlib as _ctx_fg
+    import io as _io_fg
+    move = {"move": "assertion-removed", "path": "tests/test_a.py", "line": 3,
+            "side": "base", "what": "an assert went"}
+    unread = {"path": "tests/test_b.py", "move": "definition-changed",
+              "reason": "no test definition"}
+    texts = {
+        "P1.1": _floor_return("findings", findings=[move]),
+        "P1.2": _floor_return("clean", not_read=[unread]),
+        "P1.3": _floor_return("could-not-tell"),
+        # P1.4 files nothing.
+        "P1.5": _floor_return("clean", mark=False),
+        "P1.6": "{this return was damaged",
+        "P1.7": _floor_return("clean"),
+        "P1.8": _floor_return("findings", findings=[move]),
+        "P2.1": _floor_return("findings", findings=[move]),
+        "P3.1": _floor_return("clean"),
+        "P3.2": _floor_return("clean"),
+        "P4.1": _floor_return("findings", findings=[move]),
+    }
+    plan = _floor_status_plan()
+    with _own_project() as root:
+        mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(plan, fh)
+        evidence = _ebio.evidence_dir(*_ebio.project_config_for(mpath, root))
+        for ph in plan["phases"]:
+            for t in ph["tasks"]:
+                if t["id"] in texts:
+                    M._fr.file_once(M._fr.return_path(evidence, t, "executor"),
+                                    texts[t["id"]])
+        out, js = _io_fg.StringIO(), _io_fg.StringIO()
+        # A raise is recorded as the run's answer, so a render that a damaged
+        # return stopped fails fg4 by name rather than taking the block down.
+        try:
+            with _ctx_fg.redirect_stdout(out):
+                code = M.main([mpath, "--view", "all"])
+        except Exception as exc:                  # the answer under test
+            code = "raised %s: %s" % (type(exc).__name__, exc)
+        with _ctx_fg.redirect_stdout(js):
+            js_code = M.main([mpath, "--json"])
+    lines = out.getvalue().splitlines()
+    rows = [ln.strip() for ln in lines if "floor guard," in ln]
+    check("fg1 a phase due for sign-off names each kind of floor reading on a "
+          "line of its own - moves found, files not compared, could not tell, "
+          "not measured - with a missing, an unmarked and an unreadable return "
+          "all NOT MEASURED, and the plain clean and the cancelled task on none: "
+          "exit=%r %r" % (code, rows),
+          code == 0 and rows == [
+              "floor guard, moves found: P1.1",
+              "floor guard, files not compared: P1.2",
+              "floor guard, could not tell: P1.3",
+              "floor guard, not measured: P1.4, P1.5, P1.6"])
+    starts = [i for i, ln in enumerate(lines) if ln.strip().startswith("P1 ")]
+    intent = [i for i, ln in enumerate(lines) if "no intent answer:" in ln]
+    first = [i for i, ln in enumerate(lines) if "floor guard," in ln]
+    check("fg2 the floor lines sit under the phase, straight after its intent "
+          "line: phase=%r intent=%r floor=%r" % (starts, intent, first),
+          len(starts) == 1 and intent and first
+          and starts[0] < intent[0] and first[0] == intent[0] + 1)
+    # Each phase's own lines, header to the next header, so an empty line
+    # printed under the wrong phase is seen even though it names no task.
+    heads = [i for i, ln in enumerate(lines)
+             if re.match(r"^  P[0-9]+ ", ln)] + [len(lines)]
+    under = dict((lines[a].split()[0], [ln for ln in lines[a:b] if "floor guard" in ln])
+                 for a, b in zip(heads, heads[1:]))
+    check("fg3 SECOND DIRECTION: a phase signed off, a phase with open work and a "
+          "phase whose done tasks are all plainly clean print no floor line, "
+          "whatever their returns hold: %r" % (under,),
+          sorted(under) == ["P1", "P2", "P3", "P4"]
+          and not (under["P2"] or under["P3"] or under["P4"]))
+    check("fg4 a damaged return does not stop status: the phase holding it still "
+          "prints, and so does the rest of the plan: exit=%r" % (code,),
+          code == 0 and any(ln.strip().startswith("P3 ") for ln in lines)
+          and any(ln.strip().startswith("P4 ") for ln in lines))
+    payload = js.getvalue()
+    check("fg5 the --json rollup carries no floor lists, as it carries no intent "
+          "list: exit=%r" % (js_code,),
+          js_code == 0 and "notMeasured" not in payload
+          and "notCompared" not in payload and "floor" not in payload.lower())
+
+    # A phase whose row was read from another copy, and returns that could not
+    # be looked for at all: each says what was not read, never "not measured".
+    nowhere = os.path.join(_tf_own.gettempdir(), "fg-no-such-dir", "plan.json")
+    elsewhere = M.floor_readings_block(
+        plan, {"phases": [{"id": "P1", "signoffDue": True,
+                           "copy": {"read": True, "basis": "read from branch b"}},
+                          {"id": "P3", "signoffDue": False}]}, nowhere, None)
+    away = M._floor_lines(elsewhere, "P1")
+    check("fg6 a due phase read from another copy says its returns are filed "
+          "there - not read here, never not measured: %r %r" % (elsewhere, away),
+          elsewhere == {"P1": {"elsewhere": "read from branch b"}}
+          and len(away) == 1 and "not read here" in away[0]
+          and "read from branch b" in away[0] and "not measured" not in away[0])
+    broken = M._floor_lines({"error": "no evidence dir"}, "P1")
+    check("fg7 returns that could not be looked for say so on the phase, and no "
+          "due phase means nothing is read: %r" % (broken,),
+          broken == ["       floor guard, not read: no evidence dir"]
+          and M.floor_readings_block(plan, {"phases": [{"id": "P1"}]},
+                                     nowhere, None) == {})
+
+
 def _selftest():
     def body(record):
         _cases(record)
+        _harness.stage(record, "fg-block", _floor_status_cases)
         _resolve_cases(record)
         _other_checkout_cases(record)
         _harness.stage(record, "lb", _locked_copy_cases)

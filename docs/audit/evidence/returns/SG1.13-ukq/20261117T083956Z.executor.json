@@ -1,0 +1,87 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__status_facts.py tests/test_audit_status.py tests/test_audit_lookup.py tests/test_drive_phase.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-17T08:58:51Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__status_facts.py tests/test_audit_status.py` in a throwaway tree at HEAD exited 1 with 2 of 417 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fg1 (house FAIL), fg2 (house FAIL): SELFTEST FAILED: 414/417 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "BUILT (1): plugins/audit/scripts/status/_status_facts.py gains FLOOR_KINDS and floor_readings(phase, read_executor) beside intent_unanswered, with one helper _floor_kind. For the phase's DONE tasks only it returns four lists of ids - findings, notCompared (answer clean, notRead non-empty), couldNotTell, notMeasured (no return, no block, an unmarked block, a return that is not an object) - a plain clean task in none, a findings task under findings alone. The block is read ONLY through _fr.floor_block (fl8 pins that the two functions call it and spell no field of the return). The module still opens nothing: the reader is the caller's. BUILT (2): audit-status.py gains _executor_reader, floor_readings_block, FLOOR_LINE_WORDS and _floor_lines. The reader is _fr.read_filed_return_checked(_fr.return_path(evidence_dir, task, 'executor'), journal rows, project) - the CHECKED read, which plain_read_violations allows anywhere, so no exemption row was needed (plain_read_violations() returns [] after the change); a journal that cannot be read leaves the read unchecked as a close's does, and any raise in the per-task read is no reading (not measured). floor_readings_block reads only phases whose rollup entry has signoffDue, and is injected into the summary for the human render alone (beside keptTrees in main), so --json is unchanged. _floor_lines prints under the 'no intent answer' line, inside the same signoffDue branch, one line per non-empty kind: 'floor guard, moves found: <ids>', 'floor guard, files not compared: <ids>', 'floor guard, could not tell: <ids>', 'floor guard, not measured: <ids>'. Two lines beyond the brief, each so a missing reading is never printed as 'not measured' or as nothing: a due phase whose row was read from another copy (rollup copy.read) prints 'floor guard, not read here: this phase was read from <copy>, and its returns are filed there' instead of reading this checkout's returns, and an evidence directory that cannot be resolved prints 'floor guard, not read: <why>'. (3) JSON: intent_unanswered's fact is NOT in audit-status's --json rollup (its only JSON home is audit-task.py's sign-off output, intentUnanswered), so I added neither list to the rollup; fg5 pins that the payload carries no floor key. NOT IN THIS TASK: the HTML/Markdown report and the panel render task objects from the manifest and never read filed returns; showing the floor reading there needs the block copied onto the task object, a new key the plan schema would promise - left as the owner's open question, nothing built. Not tested: a return edited after filing reading as not measured is the checked read's own behaviour, pinned in its own suite (tests/test__filed_returns.py), not re-pinned here. DOCS: plugins/audit/commands/status.md gets one paragraph on what a sign-off-due phase prints (intent line, then the four floor kinds, not measured never shown as clean, no line for a plain clean phase, the other-copy line, --json carries neither); plugins/audit/README.md's floorGuard.mode row gets one sentence; PLUGIN-BUILD-GUIDE.md gets sentences in the _status_facts.py, audit-status.py and _filed_returns floor-block sections. No count written into prose. DEPENDANTS: tests/test_audit_status.py and tests/test__status_facts.py - changed (new cases), every existing case still green (418/418 and 196/196, the ni/fo sign-off-due cases included); plugins/audit/README.md, plugins/audit/commands/status.md, PLUGIN-BUILD-GUIDE.md - changed as above; tests/test__help_lints.py, test__refs.py, test__deps.py, test__output_lints.py, test__filed_returns.py all green over the edited docs and code (sweep --jobs 4: 5/5 files ok); tools/measure-context.py --gate - GATE OK, status.md is not among its gated entries; tools/lints/_deps.py - no new edge: _status_facts already imported _filed_returns as _fr, audit-status already imported _fr, _evidence_io and _loader; audit-lookup.py, drive-phase.py and their suites - not edited, still correct, green in the task gate. COMMANDS: python3 tools/sweep-selftests.py tests/test__status_facts.py tests/test_audit_status.py tests/test_audit_lookup.py tests/test_drive_phase.py -> 4/4 files ok, exit 0. Red before the fix (first run, tests written before the code): test__status_facts.py 188/189 with 'FAIL fl RAISED ... no attribute floor_readings'; test_audit_status.py 414/416 with FAIL fg1 (rows []) and FAIL fg2. The orchestrator's wider gate, run once unrecorded (run-test-gate.py ... SG1 --task SG1.13-ukq, no --record): GATE GREEN, exit 0. ruff check and vermin -t=3.8- on the four code files: clean. Red-first command narrowed to tests/test__status_facts.py and tests/test_audit_status.py (measured 11.2 s); it runs every case this task added and leaves out only the two slow suites, which hold none of them. Mutation probe: scratch sg1.13/mutations.py, one row per rule with an ALLOW twin per deny, output in mutations.out.",
+    "descriptive": "/audit:status now names, under a phase due for sign-off, the done tasks whose floor guard reading found moves, left files uncompared, could not tell, or was never measured."
+  },
+  "testsAdded": [
+    "tests/test__status_facts.py fl1-fl8: floor_readings keeps four lists apart; findings alone under findings; clean with a file not compared listed, never omitted; could-not-tell its own; missing, block-less, unmarked and non-object returns not measured; plain clean, cancelled and pending tasks in none; an all-clean phase reads four empty lists; the block is read through floor_block alone",
+    "tests/test_audit_status.py fg1-fg7: through main() over a real evidence directory, a due phase prints exactly the four kind lines (a missing, an unmarked and an unreadable return all not measured) straight after its intent line; a signed-off phase, one with open work and an all-clean due phase print none; a damaged return does not stop the render; --json carries no floor list; a phase read from another copy and an unresolvable evidence directory say what was not read"
+  ],
+  "casesAdded": [
+    [
+      "fl1",
+      "fl2",
+      "fl3",
+      "fl4",
+      "fl5",
+      "fl6",
+      "fl7",
+      "fl8"
+    ],
+    [
+      "fg1",
+      "fg2",
+      "fg3",
+      "fg4",
+      "fg5",
+      "fg6",
+      "fg7"
+    ]
+  ],
+  "claims": "claims:\n1 _status_facts.py floor_readings/_floor_kind do what their docstrings say (fl1-fl8); audit-status.py _floor_lines prints the four kinds and the two not-read lines (fg1, fg6, fg7); the status.md paragraph names exactly those lines and the signoffDue condition at the call site under 'no intent answer'; the '--json carries neither list' sentence is fg5\n2 mutation probe sg1.13/mutations.py: every row a deny with its ALLOW twin (plain clean listed, non-done read, empty kind printed, not-due phases read); result in mutations.out\n3 grep -rn 'floor_block\\|floor_summary\\|floor_lines' over plugins/audit/scripts: readers are audit-lookup.py (briefs), drive-phase.py (its one line) and now _status_facts.floor_readings; report and panel left, because they read no filed return (owner's open question, named in the outcome)\n4 n/a - no rule addressed to an agent\n5 n/a - no timing or property recorded in a document; the 11.2 s narrow-command time is in this return only, measured once\n6 n/a - no guard; status is advisory and the trust decision stays floor_block's\n7 no number written into prose; 'four lists' in docstrings sits beside FLOOR_KINDS, which holds them",
+  "stamp": "audit-stamp: {\"content\":\"sha256:9532b47ee51cba6cdc028ed6b5ea0447cdcd9194d55028b223bf612647f30f38\",\"dirtyDigest\":\"sha256:072bd79add4c54b66475863be4ee44f4649d53585e431fcd78644dab1f4ec3e7\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"25ee1d25572acb04\",\"plugins/audit/README.md\":\"9e5adc62e3af8d77\",\"plugins/audit/commands/status.md\":\"7bc1f35af218ce7a\",\"plugins/audit/scripts/status/_status_facts.py\":\"a41e5735248742c0\",\"plugins/audit/scripts/status/audit-status.py\":\"7f65d067f690605a\",\"tests/test__status_facts.py\":\"6e58217fb60f0601\",\"tests/test_audit_status.py\":\"283ae6eabbcd9a44\"},\"head\":\"0fb6194c\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/README.md\",\"plugins/audit/commands/status.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/status/_status_facts.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"plugins/audit/scripts/status/audit-status.py\",\"tests/test__status_facts.py\",\"tests/test_audit_lookup.py\",\"tests/test_audit_status.py\",\"tests/test_drive_phase.py\"],\"scopeDigest\":\"sha256:788e83f706dfd78a66d2cc981fae75b34ea4f16cd265194574eda83f1274719e\",\"v\":2}",
+  "floorGuard": {
+    "answer": "clean",
+    "basis": "read 4 of the diff's 7 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 3 file(s) not read, having no syntax known here: PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md, plugins/audit/commands/status.md; 2 test file(s) not compared for definition-changed, defining no test* function: tests/test__status_facts.py, tests/test_audit_status.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/commands/status.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "tests/test__status_facts.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test_audit_status.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      }
+    ],
+    "base": {
+      "commit": "0fb6194c52147a2dd1b3f77dfa7bbb5319c019a6"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-17T08:58:53Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

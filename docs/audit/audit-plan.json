@@ -2024,7 +2024,8 @@
       "SG1.10-ukq",
       "SG1.3",
       "SG1.12-ukq",
-      "SG1.13-ukq"
+      "SG1.13-ukq",
+      "SG1.14-ukq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2517,7 +2518,8 @@
       "SG1.6",
       "SG1.7",
       "SG1.8",
-      "SG1.13-ukq"
+      "SG1.13-ukq",
+      "SG1.14-ukq"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -3526,7 +3528,8 @@
       "SG1.3",
       "SG1.5",
       "SG1.6",
-      "SG1.11-ukq"
+      "SG1.11-ukq",
+      "SG1.14-ukq"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -3720,7 +3723,8 @@
       "P155.11",
       "P155.34-gfj",
       "SG1.2",
-      "SG1.5"
+      "SG1.5",
+      "SG1.14-ukq"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
@@ -6251,7 +6255,8 @@
       "SG1.2",
       "SG1.5",
       "SG1.6",
-      "SG1.13-ukq"
+      "SG1.13-ukq",
+      "SG1.14-ukq"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -11066,7 +11071,8 @@
       "SG1.2",
       "SG1.5",
       "SG1.6",
-      "SG1.13-ukq"
+      "SG1.13-ukq",
+      "SG1.14-ukq"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11247,7 +11253,8 @@
       "P132.3",
       "P155.13",
       "SG1.5",
-      "SG1.6"
+      "SG1.6",
+      "SG1.14-ukq"
     ],
     "plugins/audit/tests/test__filed_returns.py": [
       "P118.3",
@@ -12485,7 +12492,8 @@
       "P132.3",
       "P155.13",
       "SG1.5",
-      "SG1.6"
+      "SG1.6",
+      "SG1.14-ukq"
     ],
     "tests/test__fmt.py": [
       "P131.1"
@@ -12918,7 +12926,8 @@
       "SG1.2",
       "SG1.5",
       "SG1.6",
-      "SG1.13-ukq"
+      "SG1.13-ukq",
+      "SG1.14-ukq"
     ],
     "tests/test_audit_status.py": [
       "P131.1",
@@ -13174,7 +13183,8 @@
       "SG1.2",
       "SG1.5",
       "SG1.6",
-      "SG1.13-ukq"
+      "SG1.13-ukq",
+      "SG1.14-ukq"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"

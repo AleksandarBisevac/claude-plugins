@@ -1296,6 +1296,7 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None):
             if unanswered:
                 out.append("       no intent answer: %s"
                            % _clip(", ".join(unanswered), 70))
+            out += _floor_lines((summary or {}).get("floorReadings"), pe.get("id"))
         # A finding sign-off left open on purpose, with the reason or the
         # destination it was recorded with - on every phase that holds one,
         # signed off or not, since the signed-off phase is where it lives.
@@ -2227,6 +2228,93 @@ def _kept_tree_lines(summary, pt=None):
     return out
 
 
+def _executor_reader(manifest_path, project):
+    """`read(task)` -> the executor return filed for `task`'s current start as
+    an object, or None when none is filed there or it does not read.
+
+    THE CHECKED READ (`_fr.read_filed_return_checked`), the one
+    `plain_read_violations` allows anywhere, against the journal's filing rows:
+    a return edited after it was filed is a problem, so it reads as no return
+    rather than as the reading it now claims. A journal that cannot be read
+    leaves the read unchecked, as a close's does. Raises when the evidence
+    directory cannot be resolved - the caller says so."""
+    project_root, config = _evidence_io.project_config_for(manifest_path, project)
+    evidence = _evidence_io.evidence_dir(project_root, config)
+    try:
+        journal = _loader.load_hooks_config(modname="audit__config").journal_lib()
+        rows = journal.read_all(project, config) if journal is not None else None
+    except Exception:                              # unchecked, not refused
+        rows = None
+
+    def read(task):
+        try:
+            _text, body, _problem, _unchecked = _fr.read_filed_return_checked(
+                _fr.return_path(evidence, task, "executor"), rows, project)
+        except Exception:                          # a damaged file is no reading
+            return None
+        return body
+    return read
+
+
+def floor_readings_block(manifest, summary, manifest_path, project):
+    """`{phase id: _status_facts.floor_readings(...)}` for each phase due for
+    sign-off, or `{"error": why}` when the returns could not be looked for.
+
+    Only where sign-off is due, for `intent_unanswered`'s reason: a plan older
+    than the floor block has no reading on any finished phase, and a line
+    about that is history nobody can rewrite. A phase whose row was read from
+    another copy is `{"elsewhere": basis}` instead - its returns were filed in
+    that copy, so reading this checkout's would call measured work unmeasured.
+    Nothing is read when no phase is due."""
+    due = [pe for pe in (summary or {}).get("phases") or []
+           if isinstance(pe, dict) and pe.get("signoffDue")]
+    out = {}
+    for pe in due:
+        copy = pe.get("copy")
+        if isinstance(copy, dict) and copy.get("read"):
+            out[str(pe.get("id"))] = {"elsewhere": copy.get("basis")}
+    here = [pe for pe in due if str(pe.get("id")) not in out]
+    if not here:
+        return out
+    try:
+        read = _executor_reader(manifest_path, project)
+    except Exception as exc:                       # advisory; said, never raised
+        return dict(out, error="the evidence directory could not be resolved: "
+                               "%s" % (exc,))
+    by_id = dict((str(p.get("id")), p) for p in (manifest or {}).get("phases") or []
+                 if isinstance(p, dict))
+    for pe in here:
+        pid = str(pe.get("id"))
+        out[pid] = _status_facts.floor_readings(by_id.get(pid), read)
+    return out
+
+
+# Each kind of floor reading, as a reader who never saw the guard reads it.
+FLOOR_LINE_WORDS = (("findings", "moves found"),
+                    ("notCompared", "files not compared"),
+                    ("couldNotTell", "could not tell"),
+                    ("notMeasured", "not measured"))
+
+
+def _floor_lines(block, phase_id):
+    """The floor lines under a phase due for sign-off: one per kind with a task
+    in it, none for an empty kind, so a phase whose done tasks are all plainly
+    clean prints nothing. Not measured is a kind of its own and is never
+    printed as none found."""
+    if not isinstance(block, dict):
+        return []
+    reading = block.get(str(phase_id))
+    if not isinstance(reading, dict) and block.get("error"):
+        return ["       floor guard, not read: %s" % _clip(_one_line(block["error"]), 100)]
+    if not isinstance(reading, dict):
+        return []
+    if "elsewhere" in reading:
+        return ["       floor guard, not read here: this phase was %s, and its "
+                "returns are filed there" % (reading.get("elsewhere") or "read from another copy",)]
+    return ["       floor guard, %s: %s" % (words, _clip(", ".join(reading[key]), 70))
+            for key, words in FLOOR_LINE_WORDS if reading.get(key)]
+
+
 def standing_approval_block(manifest_path, project):
     """The owner's standing high-risk approval as the hooks read it: `{}` when
     none was ever armed or revoked (nothing to say), else the answer of
@@ -2460,6 +2548,10 @@ def main(argv):
     # this checkout now, read by the surface a person opens, not by a payload.
     if not (want_json or want_gate):
         summary["keptTrees"] = kept_trees_block(manifest_path, project, manifest)
+        # The floor reading travels the same way: the payload carries no intent
+        # list either, and the two are printed side by side where sign-off is due.
+        summary["floorReadings"] = floor_readings_block(plan, summary,
+                                                        manifest_path, project)
 
     # THE THIRD PLACE'S OWN ANSWER, injected on the SAME asymmetry as `locks`
     # above and for a sibling reason: the human render's `tests` column names it

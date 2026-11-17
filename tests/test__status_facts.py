@@ -2035,6 +2035,100 @@ def _intent_unanswered_cases(check):
           and "P1.5" not in listed and "P1.6" not in listed)
 
 
+def _floor_block_fixture(answer="clean", findings=None, not_read=None,
+                         could_not_tell=None, source=True):
+    """A floor block in the shape `drive-phase.py submit` files it, its field and
+    mark spelled through `_filed_returns`' own names so a renamed key follows."""
+    block = {"answer": answer, "basis": "read %s" % (answer,),
+             "findings": list(findings or []), "declared": [], "renamed": [],
+             "couldNotTell": list(could_not_tell or []),
+             "notRead": list(not_read or []), "base": {"commit": "b" * 40},
+             "acceptedSuppressions": [], "at": "2026-01-01T00:00:00Z"}
+    if source:
+        block["source"] = M._fr.FLOOR_SOURCE
+    return {"outcome": {"technical": "t"}, M._fr.FLOOR_FIELD: block}
+
+
+def _floor_reading_cases(check):
+    """The floor reading of a phase's DONE tasks, four lists kept apart. NOT
+    MEASURED is its own list and never folds into a clean one: no return, a
+    return with no block, a block without the verb's mark and a return that is
+    not an object each land there. A plain clean task, and any task not done,
+    lands nowhere."""
+    move = {"move": "assertion-removed", "path": "tests/test_a.py", "line": 3,
+            "side": "base", "what": "an assert went"}
+    unread = {"path": "tests/test_b.py", "move": "definition-changed",
+              "reason": "no test definition"}
+    returns = {
+        "P1.1": _floor_block_fixture("findings", findings=[move]),
+        # findings AND a file not compared: listed under findings alone.
+        "P1.2": _floor_block_fixture("findings", findings=[move],
+                                     not_read=[unread]),
+        "P1.3": _floor_block_fixture("clean", not_read=[unread]),
+        "P1.4": _floor_block_fixture(
+            "could-not-tell", could_not_tell=[{"path": "x.py",
+                                               "reason": "does not parse"}]),
+        "P1.5": None,                                   # no return filed
+        "P1.6": {"outcome": {"technical": "t"}},          # floor guard was off
+        "P1.7": _floor_block_fixture("clean", source=False),   # unmarked
+        "P1.8": ["not", "an", "object"],                # a damaged return
+        "P1.9": _floor_block_fixture("clean"),          # plain clean
+        "P1.10": _floor_block_fixture("findings", findings=[move]),
+        "P1.11": _floor_block_fixture("findings", findings=[move]),
+    }
+    status = {"P1.10": "cancelled", "P1.11": "pending"}
+    phase = {"id": "P1", "tasks": [
+        {"id": tid, "status": status.get(tid, "done")}
+        for tid in sorted(returns, key=lambda t: int(t.split(".")[1]))]}
+    asked = []
+
+    def read(task):
+        asked.append(task.get("id"))
+        return returns.get(task.get("id"))
+    got = M.floor_readings(phase, read)
+    check("fl1 the reading is four lists under their own keys, findings first: %r"
+          % (got,),
+          isinstance(got, dict) and list(got) == ["findings", "notCompared",
+                                                  "couldNotTell", "notMeasured"])
+    lists = got if isinstance(got, dict) else {}
+    check("fl2 a task whose answer is findings is listed under findings and "
+          "nowhere else, a file it did not compare included: %r" % (lists,),
+          lists.get("findings") == ["P1.1", "P1.2"]
+          and not any("P1.1" in v or "P1.2" in v
+                      for k, v in lists.items() if k != "findings"))
+    check("fl3 a clean answer with a file not compared is NOT COMPARED, never "
+          "omitted as clean: %r" % (lists.get("notCompared"),),
+          lists.get("notCompared") == ["P1.3"])
+    check("fl4 could-not-tell is its own list: %r" % (lists.get("couldNotTell"),),
+          lists.get("couldNotTell") == ["P1.4"])
+    check("fl5 NOT MEASURED, never none found: no return, a return with no block, "
+          "a block without the verb's mark and a return that is not an object: %r"
+          % (lists.get("notMeasured"),),
+          lists.get("notMeasured") == ["P1.5", "P1.6", "P1.7", "P1.8"])
+    every = [t for v in lists.values() for t in v]
+    check("fl6 THE ALLOW TWIN: a plain clean task, a cancelled one and a pending "
+          "one are in no list, and each listed task is listed once: %r" % (every,),
+          "P1.9" not in every and "P1.10" not in every and "P1.11" not in every
+          and len(every) == len(set(every)) == 8)
+    clean_phase = {"id": "P2", "tasks": [{"id": "P2.1", "status": "done"},
+                                         {"id": "P2.2", "status": "cancelled"}]}
+    plain = M.floor_readings(clean_phase, lambda task: _floor_block_fixture("clean"))
+    check("fl7 a phase whose done tasks are all plainly clean reads four empty "
+          "lists, and a phase that is not an object reads the same: %r" % (plain,),
+          plain == {"findings": [], "notCompared": [], "couldNotTell": [],
+                    "notMeasured": []}
+          and M.floor_readings(None, read) == plain)
+    import inspect
+    # The reading and the one helper it classifies through.
+    src = "".join(inspect.getsource(fn) for fn in (
+        getattr(M, "floor_readings", None), getattr(M, "_floor_kind", None))
+        if fn is not None)
+    check("fl8 the block is read through `_filed_returns.floor_block` alone - the "
+          "reading calls it and spells no field of the return itself",
+          "_fr.floor_block(" in src and "FLOOR_FIELD" not in src
+          and "floorGuard" not in src and '"source"' not in src)
+
+
 def _left_open_cases(check):
     """Findings a sign-off left open on purpose stay visible, with the reason or
     the destination; fixed and unsettled ones are not this list's subject."""
@@ -2213,6 +2307,7 @@ def _selftest():
     def body(check):
         _harness.stage(check, "gx", _gate_exemption_cases)
         _harness.stage(check, "iu", _intent_unanswered_cases)
+        _harness.stage(check, "fl", _floor_reading_cases)
         _harness.stage(check, "lf", _left_open_cases)
         _cases(check)
         _derived_status_cases(check)

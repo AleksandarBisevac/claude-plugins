@@ -69,6 +69,15 @@ run going on, not one to resume; UNFINISHED reads the lock on disk. A phase left
 `in_progress` by a command that died is not the same state as a lock nobody gave back,
 and one heading over both pieces of evidence is how a reader stops trusting either.
 
+**Under a phase whose sign-off is due**, the render names what that sign-off still has to
+look at: the done tasks with no intent answer, then, read from each done task's filed
+executor return, the floor guard's reading wherever it is not a plain clean — one line per
+kind: moves found, files not compared, could not tell, and not measured (no return filed,
+the guard off, a block the filing verb did not write, or a return that does not read). Not
+measured is never shown as clean, and a phase whose done tasks were all read clean prints
+no floor line. A phase read from another copy says its returns are filed there instead of
+reading this checkout's. `--json` carries neither list.
+
 This used to be prose telling you how to lay the rollup out. That cost tokens on every
 call and produced a different layout each time — the same self-defeating shape
 `/audit:usage` already refuses. You do **not** need to read the manifest either: the
