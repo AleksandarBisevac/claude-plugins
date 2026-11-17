@@ -14843,6 +14843,50 @@ def _held_cases(check):
               h4[0] == M.E_USAGE and read(mpath) == before
               and "cannot be read" in h4[1])
 
+        # A green-first answer only a human settles stops the verb under
+        # `always` too, read off the task's own filed executor return - no
+        # phase entry carries it there - and the triage's accept settles it.
+        green_tests = {"mode": "regression", "add": ["tests/t.py: keeps v"],
+                       "expectRedFirst": False, "expectGreenFirst": True,
+                       "gate": ["test"]}
+        proj, mpath = project("signoff-green-always", [ph("P1", [
+            done_tk("P1.1", _FR_SHA, key="always", tests=green_tests,
+                    intentCheck={"answer": "matches", "commit": _FR_SHA})],
+            reviewPerTask="always")], "always")
+        evidence = os.path.join(proj, "docs", "audit", "evidence")
+        exec_path = _fr.return_path(evidence, task(mpath, "P1.1"), "executor")
+        os.makedirs(os.path.dirname(exec_path))
+        with open(exec_path, "w", encoding="utf-8") as fh:
+            fh.write(_fr_executor(greenFirst={
+                "status": "not-green", "at": "2026-01-01T00:05:00Z",
+                "source": _fr.GREEN_HELPER_SOURCE,
+                "basis": "`python3 tests/t.py` in a throwaway tree at HEAD "
+                         "exited 1 with failing cases c1"}))
+        before = read(mpath)
+        g1 = signoff(proj, "P1", "skipped")
+        unchanged = read(mpath) == before
+        waiting = _fr.green_first_waiting_at(evidence, phase(mpath, "P1"),
+                                             "always", [])
+        hc = _loader.load_hooks_config()
+        state = os.path.join(str(hc.state_dir(pathlib.Path(proj), {})),
+                             "drive", "P1.json")
+        os.makedirs(os.path.dirname(state))
+        with open(state, "w", encoding="utf-8") as fh:
+            json.dump({_fr.SETTLED_FIELD: _fr.settlement_after(
+                {}, waiting, "the owner: written to the new value on purpose")},
+                fh)
+        g2 = signoff(proj, "P1", "skipped")
+        check("hdg1 under `always` a done task whose filed executor return reads "
+              "green-first `not-green` refuses sign-off by hand, writing nothing "
+              "and naming the task; the triage's accept, bound to that return, "
+              "settles it and the same sign-off passes: %r"
+              % ((g1[0], g1[1][:240], waiting, g2[0], g2[1][-200:]),),
+              g1[0] == M.E_USAGE and unchanged
+              and "P1.1: green-first not-green" in g1[1]
+              and "filed returns hold" in g1[1]
+              and [a["who"] for a in waiting] == ["P1.1"] and g2[0] == 0
+              and "green-first not-green" in g2[1])
+
         proj, mpath = project("signoff-intent-always", [ph("P1", [
             done_tk("P1.1", _FR_SHA, key="always",
                     intentCheck={"answer": "matches", "commit": _FR_SHA})],

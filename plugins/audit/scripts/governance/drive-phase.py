@@ -9373,8 +9373,17 @@ def human_answers(ctx, phase):
     predicate the sign-off verb refuses over too, so the triage and the verb
     run by hand cannot disagree about which answers wait on a human. Under
     `always` the per-task reviewer's `review_items` raise the same answers at
-    each close; the triage is where every key meets them before the landing."""
-    return _fr.needs_human(_fr.phase_returns(ctx["evidence"], phase["id"]))
+    each close; the triage is where every key meets them before the landing.
+
+    A green-first answer only a human settles is read off each done task's
+    filed executor return too, under every review key
+    (`_fr.green_first_waiting_at`), where no phase entry speaks for the task.
+    A config whose `review.perTask` does not read leaves `live` None, which
+    asks every task whose key is not recorded rather than none."""
+    returns = _fr.phase_returns(ctx["evidence"], phase["id"])
+    live = _config_rules.review_per_task_mode(ctx.get("config") or {})[0]
+    return _fr.needs_human(returns) + _fr.green_first_waiting_at(
+        ctx["evidence"], phase, live, returns)
 
 
 def is_ancestor(ctx, commit, head):

@@ -4264,8 +4264,10 @@ _GFV_VERB = ('HELPER_SOURCE = "red-first-helper"\n'
              'GREEN_HELPER_SOURCE = "green-first-helper"\n'
              'GREEN_FIRST_WORDS = ("proved", "not-green", "could-not-prove",\n'
              '                     "not-attempted")\n'
-             'HUMAN_GREEN_FIRST = ("not-green",)\n')
-_GFV_REVIEWER = "Omit a pair unless escalating it (`not-proved`, `not-green`).\n"
+             'HUMAN_GREEN_FIRST = ("not-green", "not-attempted")\n')
+_GFV_REVIEWER = ("`redFirst` is `not-attempted` when the task owes none.\n"
+                 "Omit a pair unless escalating it (`not-proved`, green-first "
+                 "`not-green` or `not-attempted`).\n")
 _GFV_EXECUTOR = '{"redFirst": {"status": "proved|could-not-prove|not-attempted"}}\n'
 
 
@@ -4303,7 +4305,7 @@ def _green_first_vocabulary_cases(check):
     allow = run()
     alien = run(helper=_GFV_HELPER.replace('"not-green"', '"red-ish"'))
     short = run(verb=_GFV_VERB.replace('"not-green", "could', '"could'))
-    mute = run(reviewer=_GFV_REVIEWER.replace(", `not-green`", ""))
+    mute = run(reviewer=_GFV_REVIEWER.replace("`not-green` or ", ""))
     typed = run(executor=_GFV_EXECUTOR + '{"greenFirst": {"status": "proved"}}\n')
     same = run(verb=_GFV_VERB.replace('"green-first-helper"', '"red-first-helper"'))
     gone = run(schema=None)
@@ -4324,6 +4326,25 @@ def _green_first_vocabulary_cases(check):
           "schema is a problem, never a skip: %r" % ((same, gone),),
           len(same) == 1 and "red-first-helper" in same[0]
           and len(gone) == 1 and "unreadable" in gone[0])
+    elsewhere = run(reviewer=_GFV_REVIEWER.replace(" or `not-attempted`", ""))
+    no_list = run(reviewer=_GFV_REVIEWER.replace("unless escalating it", "unless"))
+    check("gfv6 the escalation words are read out of the ONE sentence that lists "
+          "them: `not-attempted` dropped from it is reported although the word "
+          "still stands in another sentence of the file, and a file with no "
+          "such sentence is a problem, never a pass: %r" % ((elsewhere, no_list),),
+          "`not-attempted` when" in _GFV_REVIEWER
+          and len(elsewhere) == 1 and "not-attempted" in elsewhere[0]
+          and len(no_list) == 1 and "escalat" in no_list[0])
+    computed = run(verb=_GFV_VERB.replace(
+        'HUMAN_GREEN_FIRST = ("not-green", "not-attempted")',
+        'HUMAN_GREEN_FIRST = tuple(GREEN_FIRST_WORDS[1::2])'))
+    absent = run(verb=_GFV_VERB.replace(
+        'HUMAN_GREEN_FIRST = ("not-green", "not-attempted")\n', ""))
+    check("gfv7 a HUMAN_GREEN_FIRST that is not a literal, or is absent, is "
+          "reported as a problem - not read as no word to hold the reviewer "
+          "to: %r" % ((computed, absent),),
+          len(computed) == 1 and "HUMAN_GREEN_FIRST" in computed[0]
+          and len(absent) == 1 and "HUMAN_GREEN_FIRST" in absent[0])
 
 
 # --- (ia) /audit:init shows its assumptions before synthesis ----------------------

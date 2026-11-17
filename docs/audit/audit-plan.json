@@ -13020,7 +13020,8 @@
       "SG1.14-ukq",
       "SG1.18-ukq",
       "SG1.19-ukq",
-      "SG1.24-ukq"
+      "SG1.24-ukq",
+      "SG1.22-ukq"
     ],
     "tests/test_audit_status.py": [
       "P131.1",

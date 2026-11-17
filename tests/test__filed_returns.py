@@ -1054,6 +1054,7 @@ def _selftest():
         _harness.stage(check, "ffg-block", _floor_block_cases)
         _harness.stage(check, "gfr-block", _green_first_cases)
         _harness.stage(check, "gfrr-block", _green_reading_cases)
+        _harness.stage(check, "gsh-block", _green_signoff_cases)
     return _harness.run(body)
 
 
@@ -2194,6 +2195,156 @@ def _owes_red_first_cases(check):
           "written before the field), tdd+true yes, regression no even with the "
           "field true, gate-only no, no tests object no, no task no: %r" % (got,),
           got == [False, True, True, False, False, False, False])
+
+
+# --- (gsh) a green-first answer only a human settles, read off the executor return ---
+# The phase return carries a computed green-first answer only for a task the phase
+# review owes an entry; every other done task owing the proof - a task under
+# `always` or `signals`, a recorded fix task under `phase` - is read off its own
+# filed executor return, so the stop does not depend on the review route.
+_GS_CANNOT = {"status": "could-not-prove", "at": "2026-01-01T00:00:00Z",
+              "basis": "`python3 tests/t.py` in a throwaway tree at HEAD exited 2 "
+                       "and collected no case"}
+
+
+def _gs_task(tid, commit, key=None, owes=True, **over):
+    """A done task owing (or, with `owes` false, not owing) green-first."""
+    tests = {"mode": "regression", "expectRedFirst": False,
+             "add": ["tests/t.py: keeps v"]}
+    if owes:
+        tests["expectGreenFirst"] = True
+    task = {"id": tid, "status": "done", "commit": commit, "startedAt": _START,
+            "tests": tests}
+    if key is not None:
+        task["reviewPerTask"] = key
+    task.update(over)
+    return task
+
+
+def _gs_exec(tid, block):
+    """`(rel, body, problem)` of `tid`'s filed executor return carrying
+    `block` as its greenFirst, or none when `block` is None."""
+    body = _executor(greenFirst=block) if block is not None else _executor()
+    return (M.return_rel(tid, _START, "executor"), body, None)
+
+
+def _gs_whats(got):
+    return [(a.get("who"), a.get("what")) for a in got]
+
+
+def _green_signoff_cases(check):
+    """`green_first_waiting`: every done task owing green-first whose filed
+    executor return reads `not-green`, or owed with no helper block, is put to
+    a human under every review key; a task the phase route answers is asked
+    there alone; a settlement holds for the content it was given for."""
+    # A module without the reading asks nobody: every deny case below is then
+    # red on its own assertion, and the allow twins stay green.
+    waiting = getattr(M, "green_first_waiting", lambda *a, **k: [])
+    waiting_at = getattr(M, "green_first_waiting_at", lambda *a, **k: [])
+    mark = M.GREEN_HELPER_SOURCE
+    not_green = dict(_green_block(2, code=1) or {}, source=mark)
+    proved = dict(_green_block(2) or {}, source=mark)
+    cannot = dict(_GS_CANNOT, source=mark)
+    got = {}
+    for key in ("always", "signals"):
+        phase = _phase([_gs_task("P1.1", _SHA), _gs_task("P1.2", _SHA2)], key=key)
+        execs = {"P1.1": _gs_exec("P1.1", not_green), "P1.2": _gs_exec("P1.2", None)}
+        got[key] = waiting(phase, key, execs, [])
+    rel = M.return_rel("P1.1", _START, "executor")
+    first = (got["always"] or [{}])[0]
+    check("gsh1 under review.perTask always and signals a done task whose filed "
+          "executor return says `not-green`, and one owing the proof whose return "
+          "holds no helper block, are each one answer for a human, keyed by the "
+          "executor return, the task and the word, signed with that return's "
+          "content and carrying the reading's basis: %r" % (got,),
+          all(_gs_whats(got[k]) == [("P1.1", "green-first not-green"),
+                                    ("P1.2", "green-first not-attempted")]
+              for k in ("always", "signals"))
+          and first.get("key") == rel + "#P1.1#green-first not-green"
+          and first.get("sha256") == M.return_signature(_gs_exec("P1.1", not_green))
+          and str(not_green.get("basis")) in str(first.get("note"))
+          and "owed and not measured" in str((got["always"][1:] or [{}])[0]
+                                             .get("note")))
+    unfiled = waiting(_phase([_gs_task("P1.1", _SHA)], key="always"), "always",
+                      {}, [])
+    check("gsh2 OWED AND ABSENT: a done task owing the proof with no executor "
+          "return filed at all is asked as `not-attempted`, never read as "
+          "nothing to ask: %r" % (unfiled,),
+          _gs_whats(unfiled) == [("P1.1", "green-first not-attempted")])
+    finding = {"id": "P1-R1", "fixTask": "P1.1"}
+    fix_phase = _phase([_gs_task("P1.1", _SHA, fixes=["P1-R1"]),
+                        _gs_task("P1.2", _SHA2)], key="phase", findings=[finding])
+    fix_execs = {"P1.1": _gs_exec("P1.1", not_green),
+                 "P1.2": _gs_exec("P1.2", not_green)}
+    fixed = waiting(fix_phase, "phase", fix_execs, [])
+    check("gsh3 a recorded fix task under the default `phase` key - owed no phase "
+          "entry - is asked off its executor return, while its sibling the phase "
+          "review owes an entry is left to that review's answer: %r" % (fixed,),
+          M.is_fix_task(fix_phase["tasks"][0], fix_phase)
+          and _gs_whats(fixed) == [("P1.1", "green-first not-green")])
+    phase_rel = "returns/P1/abc1234.reviewer.json"
+    phase = _phase([_gs_task("P1.1", _SHA)], key="phase")
+    execs = {"P1.1": _gs_exec("P1.1", not_green)}
+    answers, _owed = M.mechanical_answers(execs["P1.1"], ("whole", "all"),
+                                          phase["tasks"][0])
+    done, _took, problems = M.complete_phase_return(
+        _hn_body([_hn_entry("P1.1")]), {"P1.1": answers})
+    returns = [(phase_rel, done, "")]
+    both = M.needs_human(returns) + waiting(phase, "phase", execs, returns)
+    owed_only = waiting(phase, "phase", execs, [])
+    check("gsh4 ASKED ONCE: under `phase` a task whose phase entry carries the "
+          "computed `not-green` is asked through that entry alone - the executor "
+          "source adds nothing for it, before the review files and after: %r"
+          % ((problems, both, owed_only),),
+          problems == [] and _gs_whats(both) == [("P1.1", "green-first not-green")]
+          and both[0]["key"].startswith(phase_rel) and owed_only == [])
+    phase = _phase([_gs_task("P1.1", _SHA)], key="always")
+    asked = waiting(phase, "always", execs, [])
+    pairs = set((a["key"], a["sha256"]) for a in asked)
+    settled = waiting(phase, "always", execs, [], bound=pairs)
+    changed = {"P1.1": _gs_exec("P1.1", dict(not_green,
+                                             at="2026-02-02T00:00:00Z"))}
+    again = waiting(phase, "always", changed, [], bound=pairs)
+    check("gsh5 a settlement holds for the content it was given for: the pair "
+          "of key and signature settles the answer, and the same task's return "
+          "filed again with other content, under the same key, is asked again: "
+          "%r" % ((asked, settled, again),),
+          len(asked) == 1 and settled == []
+          and _gs_whats(again) == [("P1.1", "green-first not-green")]
+          and again[0]["key"] == asked[0]["key"]
+          and again[0]["sha256"] != asked[0]["sha256"])
+    quiet = [waiting(_phase([_gs_task("P1.1", _SHA)], key="always"), "always",
+                     {"P1.1": _gs_exec("P1.1", block)}, [])
+             for block in (proved, cannot)]
+    free = waiting(_phase([_gs_task("P1.1", _SHA, owes=False)], key="always"),
+                   "always", {"P1.1": _gs_exec("P1.1", not_green)}, [])
+    open_task = waiting(_phase([_gs_task("P1.1", _SHA, status="in_progress"),
+                                _gs_task("P1.2", None)], key="always"),
+                        "always", {"P1.1": _gs_exec("P1.1", not_green),
+                                   "P1.2": _gs_exec("P1.2", not_green)}, [])
+    check("gsh6 THE ALLOW TWINS: a `proved` reading asks nobody, a "
+          "`could-not-prove` reading asks nobody, a task owing no green-first "
+          "proof is never asked whatever its return carries, and a task not done "
+          "or recording no commit is not asked yet - so a source asking of every "
+          "task goes red here: %r" % ((quiet, free, open_task),),
+          quiet == [[], []] and free == [] and open_task == [])
+    root = _harness.fixture_root("filed-returns-gsh-")
+    try:
+        phase = _phase([_gs_task("P1.1", _SHA), _gs_task("P1.2", _SHA2)],
+                       key="always")
+        for tid, block in (("P1.1", not_green), ("P1.2", proved)):
+            path = M.return_path(root, phase["tasks"][0 if tid == "P1.1" else 1],
+                                 "executor")
+            os.makedirs(os.path.dirname(path))
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(_gs_exec(tid, block)[1], fh)
+        on_disk = waiting_at(root, phase, "always", [])
+    finally:
+        _harness.remove_tree(root)
+    check("gsh7 the sign-off's reading off the evidence directory: the filed "
+          "executor returns are read where `submit` files them, the not-green "
+          "one asked and the proved one not: %r" % (on_disk,),
+          _gs_whats(on_disk) == [("P1.1", "green-first not-green")])
 
 
 if __name__ == "__main__":

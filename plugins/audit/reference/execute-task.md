@@ -122,7 +122,9 @@ verb writes and refuses, and what the run commands leave behind, is
        A new jest or vitest file is left absent from HEAD's run and a new `--stage` block
        read as new, as `red` does (`_baseline_files`). `not-green` is a collected test
        failing on the base - by an assertion or by raising, an expected failure included -
-       written to the new code, and only a human settles it (`_filed_returns.needs_human`);
+       written to the new code, and only a human settles it at sign-off under every
+       `review.perTask` value (`_filed_returns.needs_human` for a phase entry,
+       `green_first_waiting` off the filed executor return where no entry carries it);
        zero collected, only skips, a compile or import error, output no reader reads, or a
        refusal is `could-not-prove` with the reason verbatim.
        The headless drive's own filing of a writer session runs the same call

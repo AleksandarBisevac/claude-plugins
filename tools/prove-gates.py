@@ -713,12 +713,17 @@ TABLE = (
  ("red_first_vocabulary_drift", "plugins/audit/agents/audit-reviewer.md", "replace",
   '"redFirst": "proved|not-proved|could-not-prove|not-attempted"',
   '"redFirst": "proved|not-proved|could-not-prove|not-applicable"', REF, "rv1"),
- # The reviewer's escalation list loses `not-green`: a computed green-first
- # answer then has no word a reviewer may type over it, and the sign-off's human
- # question is reachable only through the verb's own computation.
+ # The reviewer's escalation list loses the green-first `not-attempted` while the
+ # word still stands in the file as a red-first word: the lint reads the list's
+ # own sentence, so a word met only elsewhere in the file does not satisfy it.
  ("green_first_vocabulary_drift", "plugins/audit/agents/audit-reviewer.md",
-  "replace", "(`not-proved`, `not-green`, `flagged`,", "(`not-proved`, `flagged`,",
+  "replace", "`not-green`/`not-attempted`, with a basis", "`not-green`, with a basis",
   REF, "gfv1"),
+ # ...and the lint reading the whole reviewer file again: the same word is then
+ # met by the red-first sentence while the escalation list lacks it.
+ ("green_first_vocabulary_drift", L + "_refs.py", "replace",
+  "for w in human if \"`%s`\" % (w,) not in passage)",
+  "for w in human if \"`%s`\" % (w,) not in text)", REF, "gfv6"),
  # The phase review's per-task entry loses `commit`, the key that binds each
  # answer to the diff it was given: every reviewer following the format files
  # an entry the verb refuses, and sign-off can never write the answers.

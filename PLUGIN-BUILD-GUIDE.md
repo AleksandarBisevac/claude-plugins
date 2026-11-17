@@ -2036,9 +2036,12 @@ rule. The `fa` cases in `tests/test__refs.py` hold each refusal beside the allow
 the schema's `greenFirst.status` enum is the one source, and the helper's `GREEN_WORDS` (every
 schema word but `GREEN_FIRST_UNWRITTEN`), the filing verb's `GREEN_FIRST_WORDS` (the enum
 itself), its `GREEN_HELPER_SOURCE` (the red-first mark spelled for green, never equal to it),
-the reviewer brief's backticked `HUMAN_GREEN_FIRST` words and the executor brief's silence about
-a `greenFirst` block are each held to it, read off their source by AST. An unreadable schema is
-a problem, never a skip (`gfv1`-`gfv5`).
+the `HUMAN_GREEN_FIRST` words backticked inside the reviewer brief's one escalation list (the
+parenthesis opening `ESCALATION_ANCHOR`, read alone because `not-attempted` is also a red-first
+word elsewhere in that file) and the executor brief's silence about a `greenFirst` block are each
+held to it, read off their source by AST. An unreadable schema, a name the source binds to no
+literal, and a reviewer file holding no one escalation list are each a problem, never a skip
+(`gfv1`-`gfv7`).
 
 `--selftest`.
 
@@ -2471,6 +2474,15 @@ typed block's basis as the return's own words. `green_lines` given the task and
 rather than omitting it, and the phase entry's computed `not-attempted` is in
 `HUMAN_GREEN_FIRST`, which sign-off stops on as on `not-green`; owed-and-absent is a sentence
 the brief prints and a basis, never a stored word of its own (`gfr7`-`gfr11`).
+**`green_first_waiting` asks it where no phase entry does**: a phase return carries the pair
+only for a task the phase review owes an entry, so every other done task owing the proof -
+under `review.perTask` `always` or `signals`, or a recorded fix task under `phase` - is read off
+its own filed executor return, and a `not-green` or owed `not-attempted` is an answer in
+`needs_human`'s shape, keyed by that return and signed with its content, so the triage's accept
+settles it once for what it was given. A task with an entry for its commit, or owed one, is
+left to the phase route, so none is asked twice; `proved` and `could-not-prove` ask nobody.
+`green_first_waiting_at` reads the returns from the evidence directory, and the driver's
+`human_answers` and `audit-task.py signoff` both call it (`gsh1`-`gsh7`).
 
 **The floor guard's block** (`FLOOR_FIELD`) is read here once for every surface that shows it:
 `floor_block` trusts a block only with the source mark `submit` stamps (`FLOOR_SOURCE`), an
@@ -5237,7 +5249,9 @@ stays inside `TRIAGE_LINE_BYTES`. **The review's answers reach a human there too
 (`human_answers`, which is `_filed_returns.needs_human` - the predicate `audit-task.py signoff`
 refuses over as well, so the verb run by hand stops where the triage does): every task entry of a filed phase return answering `diverges` or `cannot-tell`,
 grading red-first `not-proved` or inherited tests `flagged`, and a phase intent of `diverges` or
-`cannot-tell`, is an `[accept]` line, and `sign-off` is refused (`triage_refusal`) until `--answer
+`cannot-tell`, is an `[accept]` line - and so is a done task's green-first `not-green` or owed
+`not-attempted` read off its filed executor return under any review key where no phase entry
+carries it (`_filed_returns.green_first_waiting_at`) - and `sign-off` is refused (`triage_refusal`) until `--answer
 accept --reason` settles them - the reason is kept in the summary - or `--answer decline --reason`
 hands the phase back to the work (`decline_answer`). A review filed at the marked
 head while a task added since is owed its answers is dispatched again (`owed_tasks`), and a

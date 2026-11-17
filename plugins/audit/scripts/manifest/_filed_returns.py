@@ -2139,12 +2139,15 @@ def _typed_over(tid, entry, answers, word, basis):
 # agent settles. The driver's
 # triage stops on them and the sign-off verb refuses over them, through this one
 # predicate, so the documented verb run by hand cannot sign off what the driver
-# would have stopped. A phase intent counts under every review key.
+# would have stopped. A phase intent counts under every review key, and so does
+# a green-first answer: where no phase entry carries it, both read it off the
+# task's executor return through `green_first_waiting`.
 HUMAN_ANSWERS = ("diverges", "cannot-tell")
 HUMAN_RED_FIRST = ("not-proved",)
 HUMAN_INHERITED = ("flagged",)
 # A refactor's tests seen failing on the base: the green helper's `not-green`,
-# computed into the phase entry, is settled the way a `not-proved` is - and so
+# computed into the phase entry or read off the executor return where no entry
+# carries it (`green_first_waiting`), is settled the way a `not-proved` is - and so
 # is `not-attempted`, computed for a task owing the proof whose return carries
 # no helper block (`green_first_reading`): a proof the plan asked for that never
 # ran is no weaker a question than one that ran and failed.
@@ -2215,6 +2218,66 @@ def needs_human(returns, settled=(), bound=()):
     taken, pairs = set(settled or ()), set(bound or ())
     return [a for a in found if a["key"] not in taken
             and (a["key"], a["sha256"]) not in pairs]
+
+
+# A green-first answer only a human settles is a property of the task's filed
+# executor return, not of the review route it took: a phase return carries one
+# only in an entry, and an entry exists only for a task the phase review owes
+# (`owed_answer`) - never under `always` or `signals`, never for a recorded fix
+# task. So the sign-off reads every other done task owing the proof off its own
+# return, in the shape `needs_human` gives, keyed by that return and signed with
+# its content, so the triage's accept settles it once for what it was given. A
+# task the phase route answers - an entry for its commit, or one still owed -
+# is left to that route, so no task is asked about twice.
+def green_first_waiting(phase, live, executors, returns, bound=()):
+    """`[{"key", "who", "what", "note", "sha256"}]` - for every task of `phase`
+    that is done, records a commit, owes green-first and is neither answered
+    by an entry of `returns` (`phase_returns`' list) for that commit nor owed
+    one (`owed_answer` under `live`), its `green_first_reading` when that is a
+    word of `HUMAN_GREEN_FIRST`. `executors` is `{task id: (rel, body,
+    problem)}` of the filed executor returns; a task it lacks is read as none
+    filed, which is owed and not measured. An answer whose `(key, sha256)` is
+    in `bound` is settled."""
+    tasks = [t for t in (phase.get("tasks") or []) if isinstance(t, dict)] \
+        if isinstance(phase, dict) else []
+    answered = answered_entries(returns)
+    found = []
+    for task in tasks:
+        tid, commit = str(task.get("id")), task.get("commit")
+        if task.get("status") != "done" or not commit:
+            continue
+        if (tid, commit) in answered or owed_answer(task, phase, live, answered):
+            continue
+        rel, body, problem = executors.get(tid) or (
+            return_rel(tid, task.get("startedAt"), "executor"), None, "")
+        reading = green_first_reading(task, None if problem else body)
+        if reading is None or reading["status"] not in HUMAN_GREEN_FIRST:
+            continue
+        what = "green-first %s" % (reading["status"],)
+        found.append({"key": "%s#%s#%s" % (rel, tid, what), "who": tid,
+                      "what": what, "note": "%s (read from %s%s)" % (
+                          reading["basis"], rel, ", which does not read: %s"
+                          % (problem,) if problem else ""),
+                      "sha256": return_signature((rel, body, problem))})
+    pairs = set(bound or ())
+    return [a for a in found if (a["key"], a["sha256"]) not in pairs]
+
+
+def green_first_waiting_at(evidence_dir, phase, live, returns, bound=()):
+    """`green_first_waiting` over the executor returns filed in
+    `evidence_dir` for the done tasks of `phase` owing green-first - the one
+    reading the driver's triage and the sign-off verb both ask."""
+    executors = {}
+    for task in (phase.get("tasks") or []) if isinstance(phase, dict) else []:
+        if not (isinstance(task, dict) and task.get("status") == "done"
+                and task.get("commit") and owes_green_first(task)):
+            continue
+        tid = str(task.get("id"))
+        _text, body, problem = read_filed_return(
+            return_path(evidence_dir, task, "executor"))
+        executors[tid] = (return_rel(tid, task.get("startedAt"), "executor"),
+                          body, problem)
+    return green_first_waiting(phase, live, executors, returns, bound)
 
 
 def drive_state_path(state_dir, phase_id):

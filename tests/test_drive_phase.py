@@ -13461,6 +13461,7 @@ def _signoff_unit_cases(check):
     _red_gate_units(check, M)
     _advance_units(check, M)
     _answer_units(check, M)
+    _green_first_signoff_units(check, M)
     _findings_units(check, M)
     _decline_units(check, M)
     _landing_units(check, M)
@@ -13885,6 +13886,101 @@ def _answer_units(check, M):
           [a["key"] for a in seen[0]] == _HUMAN_KEYS)
     check("sa5b THE ALLOW TWIN: the same settlement bound to each answer's "
           "signature settles them all: %r" % (seen[1],), seen[1] == [])
+
+
+_GFH_BASIS = ("`python3 tests/test_x.py` in a throwaway tree at HEAD exited 1 with "
+              "failing cases c1 against HEAD's own tests green on HEAD's code")
+
+
+def _gfh_triage(M, block, settlement=None):
+    """`(said, state, ctx, manifest, phase)` - the triage of a phase under
+    `review.perTask: always` whose one done task owes green-first and whose
+    filed executor return carries `block` as its greenFirst (none when `block`
+    is None), the driver's state holding `settlement` as its accept record.
+    Run over a plan and an evidence directory on disk, then removed."""
+    task = {"id": "P1.1", "status": "done", "files": ["src/f1.txt"],
+            "commit": _HEAD_A, "startedAt": "2026-01-01T00:00:00Z",
+            "reviewPerTask": "always",
+            "tests": {"mode": "regression", "expectRedFirst": False,
+                      "expectGreenFirst": True,
+                      "add": ["tests/test_x.py: keeps the old value"]}}
+    phase = _unit_phase(tasks=[task], reviewPerTask="always")
+    tmp, mpath = _with_manifest(phase)
+    try:
+        body = {"gates": {}, "testsAdded": ["kept"],
+                "outcome": {"technical": "t", "descriptive": "d"}}
+        if block is not None:
+            body["greenFirst"] = block
+        path = _fr.return_path(tmp, task, "executor")
+        os.makedirs(os.path.dirname(path))
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(body, fh)
+        ctx = _unit_ctx(manifest=mpath, evidence=tmp, project=tmp, stateDir=tmp,
+                        config={"review": {"perTask": "always"}})
+        state = {} if settlement is None else {_fr.SETTLED_FIELD: settlement}
+        manifest, phase = M.load_phase(ctx)
+        said = M.triage(ctx, state, manifest, phase)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return said, state, ctx, manifest, phase
+
+
+def _green_first_signoff_units(check, M):
+    """A green-first answer only a human settles stops the sign-off off the
+    task's own filed executor return under `review.perTask: always`, where no
+    phase entry carries it; the triage's accept settles it once, and a proved
+    reading stops nothing."""
+    mark = _fr.GREEN_HELPER_SOURCE
+    not_green = {"status": "not-green", "basis": _GFH_BASIS,
+                 "at": "2026-01-01T00:00:00Z", "source": mark}
+    words = "the owner: the new cases assert the refactored value on purpose"
+    for label, block, what in (("gfh1", not_green, "green-first not-green"),
+                               ("gfh2", None, "green-first not-attempted")):
+        said, state, ctx, manifest, phase = _gfh_triage(M, block)
+        pending = state.get("pending") or {}
+        answers = pending.get("answers") or []
+        refused = M.answer_refusal(ctx, pending, "sign-off", SUMMARY)
+        fields = (said or {}).get("signal") or {} if isinstance(said, dict) else {}
+        step = fields.get("step")
+        auto = M.auto_answer({"verb": M.SIGNAL_VERBS.get(step), "step": step,
+                              "runs": fields.get("runs") or [],
+                              "prompts": fields.get("prompts") or []}, set())
+        check("%s under review.perTask always the sign-off stops on the task's "
+              "filed executor return reading `%s`: the triage names P1.1 to a "
+              "human, refuses sign-off while it waits, and the auto route ends "
+              "there for a model rather than answering it: %r"
+              % (label, what, ([(a.get("who"), a.get("what")) for a in answers],
+                               refused, auto)),
+              pending.get("decision") == "triage"
+              and [(a.get("who"), a.get("what")) for a in answers]
+              == [("P1.1", what)]
+              and "P1.1 %s" % (what,) in _text_of(said)
+              and refused is not None and "waits on 1" in refused
+              and auto == "needs-model")
+        applied = M.apply_phase_answer(ctx, state, manifest, phase, pending,
+                                       "accept", words, ())
+        settled = state.get(_fr.SETTLED_FIELD)
+        _said2, state2, ctx2, _m2, _p2 = _gfh_triage(M, block, settled)
+        pending2 = state2.get("pending") or {}
+        check("%ss the triage's accept settles it once, bound to that return's "
+              "content: the next triage asks nothing and sign-off is no longer "
+              "refused: %r" % (label, (applied, settled, pending2.get("answers"))),
+              applied is None and pending2.get("decision") == "triage"
+              and pending2.get("answers") == []
+              and M.answer_refusal(ctx2, pending2, "sign-off", SUMMARY) is None
+              and [s.get("sha256") for s in
+                   (settled or {}).get(_fr.SIGNATURES_FIELD) or []]
+              == [answers[0].get("sha256")] if answers else False)
+    proved = dict(not_green, status="proved",
+                  basis=_GFH_BASIS.replace("exited 1 with failing cases c1",
+                                           "exited 0 with the task's cases passing"))
+    _said, state, ctx, _m, _p = _gfh_triage(M, proved)
+    pending = state.get("pending") or {}
+    check("gfh3 THE ALLOW TWIN: the same task whose return reads `proved` puts "
+          "nothing to a human, and sign-off is not refused: %r"
+          % (pending.get("answers"),),
+          pending.get("decision") == "triage" and pending.get("answers") == []
+          and M.answer_refusal(ctx, pending, "sign-off", SUMMARY) is None)
 
 
 def _evidence_with(returns):

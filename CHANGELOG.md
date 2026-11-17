@@ -51,7 +51,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   baseline step `red` takes, which the two verbs now share with their set-up and teardown.
   `not-green` - a collected test failing on the base by an assertion or by raising, or an
   expected failure, so written to the new code - is an answer only a human settles, which the
-  reviewer's brief explains and sign-off waits on; zero collected, only skips, a compile or
+  reviewer's brief explains and sign-off waits on under every `review.perTask` value, reading a
+  task no phase entry answers - under `always` or `signals`, or a recorded fix task - off its own
+  filed executor return, settled once by the triage's accept; zero collected, only skips, a compile or
   import error, no tally and a refusal are `could-not-prove` with the reason verbatim. The
   validator refuses the field beside `expectRedFirst` true and beside an empty `tests.add`,
   and `green_first_vocabulary_drift()` holds the status words to the schema. The headless
@@ -66,7 +68,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   return, or one filed straight through `audit-task.py file-return` - is no longer left out of
   the reviewer's brief: its green-first section says the proof is owed and not measured, with
   the return's own words when it typed some, and the phase review's computed `greenFirst` for
-  it is `not-attempted`, which sign-off now stops on as it stops on `not-green`.
+  it is `not-attempted`, which sign-off now stops on as it stops on `not-green` - for a task no
+  phase entry answers, read off its filed executor return the same way.
 - **`/audit:init` shows the assumptions its plan rests on before you approve it, and writes
   acceptance clauses something can check.** A new step between the explorers and synthesis lists,
   one line each, what neither you nor the interview settled - the stack and test runner and the

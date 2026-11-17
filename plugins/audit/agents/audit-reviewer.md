@@ -34,8 +34,9 @@ diff line. In `mode: phase` ask it against `desiredOutcome`:
 
 Under `review.perTask: phase`, ask all three of each owed task in its `tasks` entry,
 with the commit the brief handed.
-Omit a pair marked `computed` unless escalating it (`not-proved`, `not-green`, `flagged`,
-with a basis): the verb fills it, records an override, refuses other disagreement; re-review: fix tasks only.
+Omit a pair marked `computed` unless escalating it (`not-proved`, `flagged`, green-first
+`not-green`/`not-attempted`, with a basis): the verb fills it, records an override, else
+refuses; re-review: fix tasks only.
 
 ## Can this test fail?
 

@@ -1272,6 +1272,28 @@ GREEN_FIRST_VERB = "scripts/manifest/_filed_returns.py"
 # (`green_first_reading`) - owed and not measured, a word only a human settles.
 GREEN_FIRST_UNWRITTEN = ("not-attempted",)
 _GF_EXEC_SHAPE = re.compile(r'"greenFirst":')
+# The reviewer's words over a computed answer are listed in ONE parenthesis, and
+# only that passage is read: `not-attempted` is also a red-first word the file
+# uses for "owes none", so a whole-file search is met by a sentence about
+# something else while the list itself lacks the green-first meaning.
+ESCALATION_ANCHOR = "unless escalating it ("
+
+
+def _escalation_passage(text):
+    """`(passage, problem)` - the text between ESCALATION_ANCHOR and the next
+    `)` in the reviewer file, or why there is no one such passage."""
+    found = text.count(ESCALATION_ANCHOR)
+    if found != 1:
+        return None, ("%s: holds %d escalation list(s) opening %r, not one, so "
+                      "the words a reviewer may type over a computed answer "
+                      "cannot be read" % (RED_FIRST_REVIEWER_BRIEF, found,
+                                          ESCALATION_ANCHOR))
+    start = text.index(ESCALATION_ANCHOR) + len(ESCALATION_ANCHOR)
+    end = text.find(")", start)
+    if end < 0:
+        return None, ("%s: the escalation list opening %r never closes"
+                      % (RED_FIRST_REVIEWER_BRIEF, ESCALATION_ANCHOR))
+    return text[start:end], None
 
 
 def _module_literals(root, rel, names):
@@ -1358,14 +1380,24 @@ def green_first_vocabulary_drift(repo_root=None):
                         "helper's %r - it must be that mark spelled for green, "
                         "so the two blocks are told apart" % (
                             GREEN_FIRST_VERB, mark, red_mark))
+    problems.extend("%s: declares no literal %s, so there is nothing to hold "
+                    "the sources to" % (rel, name)
+                    for rel, held, names in (
+                        (GREEN_FIRST_HELPER, helper, ("GREEN_WORDS",)),
+                        (GREEN_FIRST_VERB, verb, ("GREEN_FIRST_WORDS",
+                                                  "HUMAN_GREEN_FIRST")))
+                    for name in names if name not in held)
     text, problem = _brief_text(root, RED_FIRST_REVIEWER_BRIEF)
+    passage, problem = (None, problem) if problem else \
+        _escalation_passage(text)
     if problem:
         problems.append(problem)
     else:
-        problems.extend("%s: never names `%s`, the green-first word only a human "
-                        "settles, so no reviewer can type it over a computed "
-                        "answer" % (RED_FIRST_REVIEWER_BRIEF, w)
-                        for w in human if "`%s`" % (w,) not in text)
+        problems.extend("%s: its escalation list (%r) never names `%s`, the "
+                        "green-first word only a human settles, so no reviewer "
+                        "is told it may type it over a computed answer"
+                        % (RED_FIRST_REVIEWER_BRIEF, ESCALATION_ANCHOR, w)
+                        for w in human if "`%s`" % (w,) not in passage)
     text, problem = _brief_text(root, RED_FIRST_EXECUTOR_BRIEF)
     if problem:
         problems.append(problem)

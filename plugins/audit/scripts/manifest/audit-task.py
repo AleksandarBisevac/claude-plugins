@@ -12061,7 +12061,7 @@ _CARRIED = ("answer", "redFirst", "redFirstBasis", "inheritedTests",
 
 
 def _human_settlement(proj, cfg, pid, filed, group=False, local=None,
-                      branch=None):
+                      branch=None, phase=None):
     """`(lines, refusal)` - the sign-off's stop on a reviewer answer only a
     human settles (`_fr.needs_human`), read against the settlement the
     driver's triage records, under every review key. `lines` names what a
@@ -12099,7 +12099,13 @@ def _human_settlement(proj, cfg, pid, filed, group=False, local=None,
     does not report prunable (`_settlement_checkouts`, through
     `_fr.settlement_checkouts`, the helper `close-phase.py` reads the same
     set through), so a return the tip commits, settled where the branch is
-    checked out, is settled for a sign-off run from any checkout."""
+    checked out, is settled for a sign-off run from any checkout.
+
+    A GREEN-FIRST ANSWER IS ASKED UNDER EVERY REVIEW KEY. Given `phase`, each
+    done task's filed executor return is read for a green-first answer only a
+    human settles where no phase entry speaks for the task
+    (`_fr.green_first_waiting_at`, the reading the driver's triage asks), and
+    settled by the same record, bound to that return's content."""
     hc = _loader.load_hooks_config(modname="audit__config")
     state_dir = str(hc.state_dir(pathlib.Path(proj), cfg or {}))
     listing = _worktree_listing(proj)
@@ -12107,8 +12113,15 @@ def _human_settlement(proj, cfg, pid, filed, group=False, local=None,
                               for c in _settlement_checkouts(proj, listing)],
                              pid)
     reasons = record["reasons"]
-    asked = _fr.needs_human(filed)
-    waiting = _fr.needs_human(filed, bound=record["pairs"])
+    green = []
+    if phase is not None:
+        evidence = _evidence_io.evidence_dir(proj, cfg)
+        live = _config_rules.review_per_task_mode(cfg or {})[0]
+        green = _fr.green_first_waiting_at(evidence, phase, live, filed)
+    asked = _fr.needs_human(filed) + green
+    reviewed = _fr.needs_human(filed, bound=record["pairs"])
+    waiting = reviewed + [a for a in green
+                          if (a["key"], a["sha256"]) not in record["pairs"]]
     by_name = _fr.settled_by_name_only(waiting, record)
     if waiting:
         state, _problem = _fr.drive_state(state_dir, pid)
@@ -12135,16 +12148,21 @@ def _human_settlement(proj, cfg, pid, filed, group=False, local=None,
                   "honoured, so a settlement it holds counts for nothing here: "
                   "%s." % ("; ".join(record["problems"]),)
                   if record["problems"] else "")
+        # An answer read off an executor return sits in no phase return, so
+        # the sentence names the returns, and the tip-only remedy - which
+        # reads only the phase returns a branch tip commits - is not asked of it.
+        where = ("review holds" if len(waiting) == len(reviewed)
+                 else "returns hold")
         return [], (
-            "REFUSED: phase %s's filed review holds answer(s) only a human "
+            "REFUSED: phase %s's filed %s answer(s) only a human "
             "settles, and these are not settled. Nothing written:\n%s%s%s%s%s"
             "\n    Put each to a human, then run `drive-phase.py next %s`%s and "
             "answer its triage with --answer accept --reason \"<their word on "
             "each>\" - the settlement this verb reads - and %s."
-            % (pid, "\n".join("  %s: %s%s" % (
+            % (pid, where, "\n".join("  %s: %s%s" % (
                 a["who"], a["what"], " (%s)" % (a["note"],) if a["note"] else "")
                 for a in waiting), named, listed, broken,
-               _tip_only_remedy(proj, listing, waiting, local, branch),
+               _tip_only_remedy(proj, listing, reviewed, local, branch),
                pid, redispatch, then))
     if not asked:
         return [], None
@@ -12274,7 +12292,7 @@ def _carry_answers(project, mpath, config, phase, now, group=False):
                     "answers it carries are unknown: %s. Nothing written."
                     % (pid, "; ".join(unread))), None
     settled_lines, refusal = _human_settlement(proj, cfg, pid, read, group,
-                                               filed, phase.get("branch"))
+                                               filed, phase.get("branch"), phase)
     if refusal:
         return [], refusal, None
     tasks = [t for t in phase.get("tasks") or [] if isinstance(t, dict)]

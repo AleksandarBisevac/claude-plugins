@@ -118,7 +118,13 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    the same way, by a human through `--answer accept --reason` - because a proof the plan asked
    for that was never run is not weaker evidence than one that ran and failed: neither says the
    added tests pass on the base, and the one that never ran does not even say they were run. A
-   task owing none is computed nothing and stops nothing. **A reviewer's `matches`
+   task owing none is computed nothing and stops nothing. **The stop does not depend on the
+   review route**: a done task owing the proof that no phase entry speaks for - under
+   `review.perTask` `always` or `signals`, or a recorded fix task - is read off its own filed
+   executor return (`green_first_waiting_at`), its `not-green` or owed `not-attempted` put to a
+   human in the same triage and settled the same way, once, for that return's content; a task
+   the phase review answers or owes is asked there alone. `proved` and `could-not-prove` stop
+   nothing. **A reviewer's `matches`
    answer whose note quotes none of the task's own `description`** is refused as unsupported before
    it can file - `unsupported_match_basis` in `_filed_returns.py` - so a renamed scope cannot read
    back as matching on the strength of the executor's own restatement. **A planned test's

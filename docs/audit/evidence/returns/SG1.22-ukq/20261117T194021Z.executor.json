@@ -1,0 +1,114 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__filed_returns.py tests/test_drive_phase.py tests/test__refs.py tests/test_audit_task.py tests/test_audit_lookup.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test__filed_returns.py tests/test_drive_phase.py tests/test_audit_task.py tests/test__refs.py tests/test_audit_lookup.py tests/test__status_facts.py tests/test_audit_status.py --jobs 4": "pass",
+    "python3 tools/measure-context.py --gate": "pass",
+    "ruff check (the nine touched .py files)": "pass",
+    "vermin -t=3.8- --no-tips --violations (the nine touched .py files)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-17T20:08:40Z",
+    "basis": "`python3 tests/test__filed_returns.py --selftest` in a throwaway tree at HEAD exited 1 with 5 of 146 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - gsh1 (house FAIL), gsh2 (house FAIL), gsh3 (house FAIL), gsh5 (house FAIL), gsh7 (house FAIL): SELFTEST FAILED: 141/146 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "A green-first answer only a human settles is now asked of every done task owing the proof, whatever its review key. plugins/audit/scripts/manifest/_filed_returns.py: new green_first_waiting(phase, live, executors, returns, bound) - the one rule: for each done task recording a commit, its green_first_reading off its filed executor return; not-green or owed not-attempted (HUMAN_GREEN_FIRST) is an answer in needs_human's shape (key '<executor return rel>#<task>#green-first <word>', sha256 = return_signature of that return, note = the reading's basis), skipped when a phase-return entry answers that commit or the task is still owed one (owed_answer), so no task is asked twice; a (key, sha256) pair in bound settles it, so a return filed again with other content is asked again. green_first_waiting_at reads the executor returns from the evidence directory. Callers: drive-phase.py human_answers (triage, advance_applies, triage_refusal and the accept all read its list unchanged) and audit-task.py _human_settlement (new phase= keyword, passed by _carry_answers; the refusal names 'filed returns hold' when an executor-return answer is among them, and the tip-only remedy is asked of the phase-return answers alone). The settlement is the existing one: drive-phase.py next <phase> --answer accept --reason \"<their word on each>\" (through /audit:phase <phase>), which records key + signature via settlement_after. tools/lints/_refs.py green_first_vocabulary_drift: the HUMAN_GREEN_FIRST words are read inside the one escalation parenthesis (ESCALATION_ANCHOR 'unless escalating it ('), a reviewer file with zero or several such lists is a problem, and an absent or non-literal GREEN_WORDS / GREEN_FIRST_WORDS / HUMAN_GREEN_FIRST is a problem. agents/audit-reviewer.md escalation sentence names green-first `not-green`/`not-attempted` (reviewer entry at its ceiling, measured by tools/measure-context.py --gate, exit 0). tools/prove-gates.py: the gfv1 row now removes `not-attempted` from that sentence (the word still stands in a red-first sentence), plus a gfv6 row reading the whole file again. Documents: CHANGELOG.md (both entries), plugins/audit/README.md (the test-discipline row and the review.perTask row), reference/execute-task.md (first mention changed; the second, 'the phase sign-off stops on it ... as on not-green', was already true after the change), reference/phase-signoff.md, PLUGIN-BUILD-GUIDE.md (_filed_returns, the lint, the triage paragraph), the HUMAN_GREEN_FIRST comments in _filed_returns.py; GREEN_NOT_MEANS, green_lines and audit-lookup.py's executor-brief sentence were true as written once the code changed and were left. Tests: tests/test__filed_returns.py gsh1-gsh7, tests/test_drive_phase.py gfh1, gfh1s, gfh2, gfh2s, gfh3 (M.triage over a plan and evidence on disk, plus auto_answer on the triage's signal -> needs-model), tests/test__refs.py gfv6, gfv7 (fixtures updated so the allow tree names both words), tests/test_audit_task.py hdg1 (the verb by hand). Runs: own suites in the gate command green; the wider seven-suite sweep '7/7 files ok', exit 0; run-test-gate.py without --record GATE GREEN, exit 0; mutation probe in the session scratchpad (sg1.22/mutations.py) 20 rows ALL CAUGHT, exit 0. Red-first command narrowed to python3 tests/test__filed_returns.py --selftest (about two seconds): it leaves out gfh*, gfv6/gfv7 and hdg1, which the mutation probe shows red instead.",
+    "descriptive": "Sign-off now stops on a not-green or owed-and-unmeasured green-first answer under every review setting and for fix tasks, asked once and settled once for the return it was given for."
+  },
+  "testsAdded": [
+    "tests/test__filed_returns.py gsh1-gsh7: under always and signals a done task's not-green return and an owed return with no helper block are each one answer for a human, keyed and signed by the executor return; no return filed is owed not-attempted; a recorded fix task under phase is asked while its owed sibling is not; under phase a task with a computed phase entry is asked once; a settlement holds only for the content it was given for; proved, could-not-prove, a task owing no proof and a task not done ask nobody; the reading off the evidence directory",
+    "tests/test_drive_phase.py gfh1/gfh2 (+ gfh1s/gfh2s) and gfh3: the triage under review.perTask always names P1.1 for a not-green return and for an owed return with no block, refuses sign-off, auto ends on needs-model; the accept settles it and the next triage asks nothing; a proved return asks nothing",
+    "tests/test__refs.py gfv6, gfv7: the escalation words are read from the one escalation sentence (not-attempted dropped from it is reported although it stands elsewhere; a file with no such sentence is a problem), and a non-literal or absent HUMAN_GREEN_FIRST is a problem",
+    "tests/test_audit_task.py hdg1: audit-task.py signoff by hand under always refuses over a not-green executor return, writing nothing, and passes once the triage's accept record binds it"
+  ],
+  "casesAdded": [
+    [
+      "gsh1",
+      "gsh2",
+      "gsh3",
+      "gsh4",
+      "gsh5",
+      "gsh6",
+      "gsh7"
+    ],
+    [
+      "gfh1",
+      "gfh1s",
+      "gfh2",
+      "gfh2s",
+      "gfh3"
+    ],
+    [
+      "gfv6",
+      "gfv7"
+    ]
+  ],
+  "claims": "claims:\n1 _filed_returns.green_first_waiting is the rule the documents now state; drive-phase.py human_answers and audit-task.py _human_settlement both return it beside needs_human\n2 sg1.22/mutations.py: 20 rows each applied once, all caught (source removed, limited to phase-owed, no-block arm removed, double-ask guard removed, settlement not content-bound, lint whole-file, each green-first word removed) with allow twins (proved, could-not-prove, owing none, not done, lint over-fire) red under over-fire\n3 the class: every sentence E1 lists, read against the code - CHANGELOG both, README two rows, execute-task first mention, phase-signoff, PLUGIN-BUILD-GUIDE three paragraphs changed; GREEN_NOT_MEANS, green_lines, execute-task second mention, audit-lookup executor sentence left as already true. close-phase.py's landing reads phase returns only and was left (outside this task's files)\n4 the stop is enforced by drive-phase.py human_answers and audit-task.py signoff, named in the documents' own sentences; the reviewer escalation sentence is held by _refs.green_first_vocabulary_drift\n5 n/a - no property recorded\n6 n/a - no guard reading a command\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:a7f7b0b70e00b72f60a19f91b96eb0e5d495667efaf593a917684fb513ff56c2\",\"dirtyDigest\":\"sha256:810b7dbe0f542f04f90a1999efc51aafde289da0924057b8a4b6ae3791e0333f\",\"dirtyPaths\":{\"CHANGELOG.md\":\"67312d107a0cc095\",\"PLUGIN-BUILD-GUIDE.md\":\"0c207320a37a243d\",\"plugins/audit/README.md\":\"fb2ad9bb0012b935\",\"plugins/audit/agents/audit-reviewer.md\":\"830eaadc1d91d13e\",\"plugins/audit/reference/execute-task.md\":\"000c944ea541c6bb\",\"plugins/audit/reference/phase-signoff.md\":\"5a42febd314e3987\",\"plugins/audit/scripts/governance/drive-phase.py\":\"72aced64e9bc5d42\",\"plugins/audit/scripts/manifest/_filed_returns.py\":\"94b349c4dba52e6d\",\"plugins/audit/scripts/manifest/audit-task.py\":\"83e537b9e56653ae\",\"tests/test__filed_returns.py\":\"53d3ecb8e233938d\",\"tests/test__refs.py\":\"e6767ea5db92e304\",\"tests/test_audit_task.py\":\"de6c514f616c1e35\",\"tests/test_drive_phase.py\":\"de52cc93cc54fcae\",\"tools/lints/_refs.py\":\"cabe1a0b5b5c49c0\",\"tools/prove-gates.py\":\"36d7ccd792720869\"},\"head\":\"984ba235\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/README.md\",\"plugins/audit/agents/audit-reviewer.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/reference/phase-signoff.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/manifest/_filed_returns.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test__filed_returns.py\",\"tests/test__refs.py\",\"tests/test_audit_lookup.py\",\"tests/test_audit_task.py\",\"tests/test_drive_phase.py\",\"tools/lints/_refs.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:530a921916ba64a579bf4921ddc5bc9c9883c71f7097bb9e86e4ac51dddc6b4d\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 8 of the diff's 15 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 6 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md, plugins/audit/agents/audit-reviewer.md, plugins/audit/reference/execute-task.md, plugins/audit/reference/phase-signoff.md; 1 file(s) that could hold a move not compared: tests/test__refs.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/agents/audit-reviewer.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/reference/execute-task.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/reference/phase-signoff.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test__refs.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks changed (line 4263 of the base copy), and that code - a helper, a table a case reads, a fixture - is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "984ba23533198bfe938694a988af02e8f32d56f3"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-17T20:08:47Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": [
+    "tests/test_drive_phase.py: sign-off stops on a not-green executor return under review.perTask always and proceeds once it is settled - not checked: the submit's command did not run `tests/test_drive_phase.py`, so the ids bound to it were not compared with any printed label",
+    "tests/test__refs.py: the escalation sentence missing a green-first word is a problem even when the word stands elsewhere in the reviewer file - not checked: the submit's command did not run `tests/test__refs.py`, so the ids bound to it were not compared with any printed label"
+  ]
+}
