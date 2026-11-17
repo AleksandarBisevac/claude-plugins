@@ -22,54 +22,71 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P165-R1",
         "severity": "med",
         "file": "plugins/audit/scripts/ui/report/page-state.js:565-661",
         "issue": "Link validation is not at one seam: each FILTER_AXES entry's decode re-implements it by hand - five near-identical bodies `if (!offeredBy(<bar>, 'data-<x>').includes(h.<x>)) return false; <state> = h.<x>; return true;` plus bespoke area and date variants - and each re-spells the chip attribute its own `attrs` already declares (a third copy beside `attrs` and `paint`). The registry therefore holds the rule as an enumeration: a new axis whose decode omits the offeredBy call restores any value, and nothing in the code refuses it; only the browser gate's hr1 catches it, through a regex over the source spelling (finding 3). The task asked for the fix 'at the shared seam rather than per instance'.",
-        "resolution": "Declare what each axis's control offers once, in the entry (e.g. `offers: () => offeredBy(bar, entry.attrs[0], sel)`; search and the date pair declare their own acceptor), and have the one restore loop (exports.js `FILTER_AXES.forEach((axis) => { if (axis.decode(HASH)) ... })`) hand each decode only the HASH values its acceptor admits, so an unoffered value never reaches a decode by construction and the per-axis decodes shrink back to plain assignments. Keep hr1 as the browser-side proof."
+        "resolution": "fixed in P165.6-r5e (6e26bb8c35b0): Declare what each axis's control offers once, in the entry (e.g. `offers: () => offeredBy(bar, entry.attrs[0], sel)`; search and the date pair declare their own acceptor), and have the one restore loop (exports.js `FILTER_AXES.forEach((axis) => { if (axis.decode(HASH)) ... })`) hand each decode only the HASH values its acceptor admits, so an unoffered value never reaches a decode by construction and the per-axis decodes shrink back to plain assignments. Keep hr1 as the browser-side proof.",
+        "fixTask": "P165.6-r5e",
+        "commit": "6e26bb8c35b0",
+        "status": "fixed"
       },
       {
         "id": "P165-R2",
         "severity": "med",
         "file": "tools/check-report-interactive.mjs:4555-4580 (sn1 `short` carve-out); plugins/audit/scripts/ui/report/page-state.js:296-300 (end-of-document rule)",
         "issue": "contradicts task clause 'Add a browser-gate case that clicks each side-nav entry at more than one width and reads that the highlight names the clicked section': sn1 excuses any entry the document ends before reaching the line and prints it as a note instead of judging it. Re-run on the new acme render: `note side-nav jumps the document ends before: 1512px #bugs (document ends 161px short)` - clicking Bugs at 1512px lights Ready (the end-of-document rule lights the last section), so the highlight does not name the clicked section and sn1 is green over it. The executor flagged this as a design call; the behaviour predates the diff (same on eed7a78b), but the gate as written does not read what the clause asked.",
-        "resolution": "Recommended: at the end of the document, let the section the reader jumped to (location.hash's target, when its top is on screen) win over 'light the last section', then delete the `short` carve-out so sn1 judges every entry. If the owner prefers the end rule, record that as a decision/fault and keep the note - but then the clause is narrowed by decision, not by the gate."
+        "resolution": "fixed in P165.6-r5e (6e26bb8c35b0): Recommended: at the end of the document, let the section the reader jumped to (location.hash's target, when its top is on screen) win over 'light the last section', then delete the `short` carve-out so sn1 judges every entry. If the owner prefers the end rule, record that as a decision/fault and keep the note - but then the clause is narrowed by decision, not by the gate.",
+        "fixTask": "P165.6-r5e",
+        "commit": "6e26bb8c35b0",
+        "status": "fixed"
       },
       {
         "id": "P165-R3",
         "severity": "low",
         "file": "tools/check-report-interactive.mjs:4422-4425",
         "issue": "hr0 derives the link keys by spelling: `/\\bkeys: \\[([^\\]]*)\\]/` and `'([a-z]+)'` over the page source. An axis written `keys:['x']`, with a double-quoted key, or a key holding a digit or capital is silently not exercised, and hr0 only asserts HR_KEYS.length > 0, so a dropped key stays green.",
-        "resolution": "Cross-check the derivation against the registry's own shape: e.g. count the `decode:` members of FILTER_AXES in the source and require one keys match per entry (the empty `keys: []` of task-status included), or tolerate whitespace/quote variants in the regex and fail when an entry yields no match."
+        "resolution": "fixed in P165.6-r5e (6e26bb8c35b0): Cross-check the derivation against the registry's own shape: e.g. count the `decode:` members of FILTER_AXES in the source and require one keys match per entry (the empty `keys: []` of task-status included), or tolerate whitespace/quote variants in the regex and fail when an entry yields no match.",
+        "fixTask": "P165.6-r5e",
+        "commit": "6e26bb8c35b0",
+        "status": "fixed"
       },
       {
         "id": "P165-R4",
         "severity": "med",
         "file": "plugins/audit/scripts/ui/report-css/shell.css:37-39",
         "issue": "The room after the content is a fixed calc(100vh - var(--sticky-anchor)) on every report, whatever the last targets actually need, so scrolling to the end shows a viewport that is mostly blank: measured on the new renders (Playwright, file://, the gate's LAYOUT_SIZES), spacer / blank at bottom-of-scroll / room actually needed for the furthest nav target to reach the line = 390x844 784/896/282 px (93% of vh), 844x390 330/394/27 (85%), 834x1194 1012/1076/709 (85%), 1024x768 586/650/283 (76%), 1512x945 811/875/508 (86%), 1920x1080 946/1010/643 (88%) for acme; docs/demo-large.html gets the identical spacer and blank tail while its needed room is 0 px at every size (every target already reaches the line at HEAD). A reader pressing End on any report sees roughly a screenful of empty page below a few lines of content, and on demo-large it serves no purpose at all. Print is clean: under emulateMedia print the ::after computes content:none, and the A4 PDF page count equals HEAD's (acme 18/18, demo-large 148/148). sn0 pins the CSS string and sn1 only asserts the marker, so nothing bounds the tail.",
-        "resolution": "Size the room by what the last targets need, not by a viewport: page-state.js already measures the sticky stack and reads the line back (landingLine); publish one custom property, e.g. max(0, innerHeight - line - (content end - furthest nav target's top)), on load and resize and let the screen-only ::after read it (still keyed to --sticky-anchor through the line, so it tracks it). A CSS-only alternative, min-height on the last section, needs the renderer to wrap that section, since .content is flat (H2#ready then DL.ready). Then add a browser-gate bound beside sn1: at every LAYOUT_SIZES size the blank tail at bottom-of-scroll is at most the needed room plus the content's own bottom padding (64 px at HEAD), so demo-large reads ~64 px and acme reads needed+64, and prove it red against this render."
+        "resolution": "fixed in P165.5 (1d0e3673c9d7): Size the room by what the last targets need, not by a viewport: page-state.js already measures the sticky stack and reads the line back (landingLine); publish one custom property, e.g. max(0, innerHeight - line - (content end - furthest nav target's top)), on load and resize and let the screen-only ::after read it (still keyed to --sticky-anchor through the line, so it tracks it). A CSS-only alternative, min-height on the last section, needs the renderer to wrap that section, since .content is flat (H2#ready then DL.ready). Then add a browser-gate bound beside sn1: at every LAYOUT_SIZES size the blank tail at bottom-of-scroll is at most the needed room plus the content's own bottom padding (64 px at HEAD), so demo-large reads ~64 px and acme reads needed+64, and prove it red against this render.",
+        "fixTask": "P165.5",
+        "commit": "1d0e3673c9d7",
+        "status": "fixed"
       },
       {
         "id": "P165-R5",
         "severity": "med",
         "file": "tools/check-report-interactive.mjs:3493-3524; tools/capture-screenshots.mjs:356-375",
         "issue": "contradicts task clause \"a browser check ... that the summary's accessible name carries no arrow glyph, red-first on the current panel and report\": none of the browser cases the clause asks for (ax4, ax5, pa1) was ever seen red. Attempt 1's redFirst is could-not-prove (the helper refused a CSS file as an inline suite), and attempt 2's red-first covers only the sd5 pin. On the report side the unfixed tree already carried `content:\"\\25BE\" / \"\"` in report-css/controls.css, so ax4 passes on HEAD as it stands; its red can only come from a mutation, and none was recorded. pa1's red is the HEAD panel (usage-tab.css had `content:\"\\25BE\"` with no alternative), and no run against it was recorded either. As handed, ax4/pa1 are checks only ever seen green.",
-        "resolution": "Record a red for each in its own driven runtime, restoring in the same command: (a) panel — run `node tools/capture-screenshots.mjs --check` with shared/disclosure.css's `/ \"\"` alternatives removed (equivalent to HEAD's panel) and show `pa1 ... FAIL` plus a non-zero exit; (b) report — re-render acme with the same mutation and show `ax4` FAIL from check-report-interactive.mjs; (c) ax5 — drop the shared ::after rule and show ax5 FAIL. Assert that the anchor matched once before each mutation, check the file is cmp-equal afterwards, and put command, exit code and failing case id in redFirst.basis."
+        "resolution": "Record a red for each in its own driven runtime, restoring in the same command: (a) panel — run `node tools/capture-screenshots.mjs --check` with shared/disclosure.css's `/ \"\"` alternatives removed (equivalent to HEAD's panel) and show `pa1 ... FAIL` plus a non-zero exit; (b) report — re-render acme with the same mutation and show `ax4` FAIL from check-report-interactive.mjs; (c) ax5 — drop the shared ::after rule and show ax5 FAIL. Assert that the anchor matched once before each mutation, check the file is cmp-equal afterwards, and put command, exit code and failing case id in redFirst.basis.",
+        "status": "accepted-open",
+        "acceptedReason": "not a code defect: missing red-first evidence; the orchestrator proved ax4, ax5 and pa1 red by mutation and recorded the lines on P165.4 (note 5)"
       },
       {
         "id": "P165-R6",
         "severity": "low",
         "file": "plugins/audit/scripts/ui/shared/README.md:101",
         "issue": "The new `disclosure.css` row says \"The one stylesheet part here\" — a present-tense count claim about the directory's contents that goes false the moment a second shared .css part joins, and nothing re-derives it. Comment/doc-only.",
-        "resolution": "Delete the count: e.g. \"A stylesheet part: it joins `_ui_theme.REPORT_CSS_PARTS` and `_ui_theme.PANEL_CSS_PARTS` rather than the two script tuples, ...\"."
+        "resolution": "Delete the count: e.g. \"A stylesheet part: it joins `_ui_theme.REPORT_CSS_PARTS` and `_ui_theme.PANEL_CSS_PARTS` rather than the two script tuples, ...\".",
+        "status": "accepted-open",
+        "acceptedReason": "doc-only count claim; recorded in the internal register for the 3.10.0 low batch"
       }
     ],
-    "outcome": "[findings: 6 - 0 high, 4 med, 2 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 6 - 0 high, 4 med, 2 low; 4 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "P165 closes the quick lows of 3.9.0: link decode validated at the filter registry from each axis's attrs (hr1/hr2 red-first by mutation), side-nav jumps mark their section at every size with a derived end space bounded by sn3, chips and ids never split across lines in any table (lm5 widened, red on e5d659f5), demo-large pins a phase and the matrix refuses a missing Sort select, one shared decorative disclosure arrow (ax4/ax5/pa1 red-first), the drive's bound/doc/wait-wording lows, start's symlink spelling, a test marker. Phase review: 0 high, 0 med, 5 low (recorded for 3.10.0). Per-task reviewer answers continued over: P165.1 intent diverges: divergence is the two med findings; owner-approved fix task follows; P165.4 intent diverges, red-first not-proved: the divergence was missing red-first evidence for ax4/ax5/pa1; the orchestrator proved all three red by mutation and recorded it on the task",
   "tasks": [
     {
       "id": "P165.1",
@@ -432,7 +449,7 @@
     {
       "id": "P165.5",
       "title": "Chips and ids never break inside a word in any table, the Sort select is always in the matrix, and the stack-budget basis says only what it measured",
-      "status": "in_progress",
+      "status": "done",
       "description": "Three report layout lows, closed together because they share the layout matrix in tools/check-report-interactive.mjs.\n\n1. The bugs table's STATUS chip wraps inside the word at 1440x900 (\"Fixe / d\", \"Won' / t fix\") and the ID column breaks \"BUG- / 10\". Fix in report-css/tables.css: chips and ids do not break inside a word (white-space: nowrap on the chip and id cells, or a min width from the longest chip - whichever keeps the table inside the page at the phone size). Widen the matrix's \"no word split across lines\" assertion (lm5) from the chrome to EVERY table's chips and ids (phases, tasks, bugs, ready-now, usage), so a table added later is covered by default; red-first it on the current committed acme render and quote the failing lines.\n\n2. The Sort select in the phases table's head renders only when any phase is pinned (any_phase_pinned), and no committed fixture has a pinned phase, so the layout matrix never sees it. Add a pinned phase to the demo-large fixture's generator (tools/demo/gen-demo-manifest.py; re-render docs/demo-large.html via `python3 tools/check-rendered-artifacts.py --how`), and make the matrix FAIL by name on demo-large when no Sort select is present (a fixture that stops carrying it must not pass silently). Keep tests/test_gen_demo_manifest.py green and update its pins honestly.\n\n3. Two wording fixes beside STACK_BUDGET (change no share): (a) the sentence saying a phone whose filter bar wraps one more row fails lm4 - the cheapest row measured is 27.4px against 27px of headroom and lm4's stack is a whole-pixel scan that can sit up to 1.5px off, so only the 32px arm (a row holding the count) is shown to fail; say exactly that; (b) the rule's \"over the class's screen height\" must read \"over that size's height\" - a class holds sizes with different heights and lm4 applies the share per size.\n\nRefresh rendered followers (examples/report.sh, docs/demo-large.html, `node tools/capture-screenshots.mjs`) so tests/test__refs.py and check-rendered-artifacts stay green. Read writing-css, refactoring-the-assembled-ui, before-you-claim. No register ids in comments.",
       "files": [
         "plugins/audit/scripts/ui/report-css/tables.css",
@@ -476,14 +493,21 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1d0e3673c9d7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "1) shell.css: one rule over the column, `.content :is(.chip,.rchip,.bandpill,.dl,.heldby,.area-tag,.mono){white-space:nowrap}`, so a pill or id never breaks anywhere in the report. tables.css: the wrap-anywhere override now covers only the runs that may be sentences (.tevn,.tevf,.ptev); pills were removed from it. Comments in both files were rewritten to match. Gate: lm5 gains a second assertion per matrix cell. readAtoms() reads every ATOMS element in .content with a non-space token as the word, and a cell that read nothing is reported as such. The matrix opens every phase so task ids and chips are read, and shuts them again at the end. 2) gen-demo-manifest.py pins the in_progress phase at priority 1. That phase is already first among phases with ready work, so the ready list keeps its written order. The phase.priority SCHEMA_EXEMPTIONS row is removed and the docstring is updated. In the gate, SORT_REQUIRED={'docs/demo-large.html'} is keyed by documentKey, and an always-run `lm the Sort select ...` expect fails by name when that document draws no select. test_gen_demo_manifest gains pin1, pin2 and pin3 (the pin survives the sharded write onto the index stub). 3) Next to STACK_BUDGET the rule now reads \"over that size's height\" with the reason, and the phone sentence says only the 32px arm is shown to fail: 27.4 vs 27 is inside lm4's whole-pixel-scan error (up to 1.5px). No share changed. End room: the shell.css ::after height is var(--end-room,0px). page-state.js endRoom() computes, with the current room taken out, max(0, ceil(clientHeight - line - (body end - furthest drawn target's top))). placeEndRoom() writes the property only on change and removes it at 0. It runs synchronously at load, then once per frame from a ResizeObserver on the column, top bar, strip and filter bar and from window resize. sn3 computes the need independently: it hides the ::after with an injected style, measures, restores, scrolls to the end, and holds tail <= need + own tail + 1. It runs at every LAYOUT_SIZES size as loaded, again after resizing through all sizes without a reload (each resize also clicks the furthest entry into sn1's tally), and after expand-all and collapse-all. sn1 and sn3 both hold on acme, demo-large and the live render, so there is no conflict to report. Pins updated on purpose: test_render_report u14ktw and sn0. tools/ui-tests/table-fit.test.mjs (scope widened by the orchestrator): its coalescing case now asserts that a burst asks for no more frames than one event, because the page has two coalesced resize consumers. Followers: examples/report.sh (acme + docs/index.html byte copy), docs/demo-large.html via the --how recipe (40 ranked rows, one #audit-sort), and node tools/capture-screenshots.mjs (6 files changed; --check OK). Verification: full sweep `196/196 files ok, 18874 cases`; task gate sweep `5/5 files ok, 957 cases`; browser gate rc=0 over all three reports; npx vitest 853/853; check-rendered-artifacts --before-commit `OK: 3 committed artifact(s) match a fresh render`; ruff clean; vermin min 3.5. Dependants: _ui_theme.py and _ui_theme_lints.py: the new var has a fallback, and the sweep is green. disclosures.mjs: browser gate green. The rendered artifacts, index.html, screenshots, test__refs sc1/sc2 and check-rendered-artifacts were refreshed and are green. The demo generator's importers (test__demo_cast, test__manifest_vocab, test_audit_doctor, test_gen_demo_usage, bench-report, _deps) are green in the full sweep. The READMEs and PLUGIN-BUILD-GUIDE are updated. Left as is: the print-segments paper `overflow-wrap:anywhere` and the other prose containers. A pill or id inside them stays whole by nowrap, and the print checks passed.",
+        "descriptive": "No pill or id in any report table or list breaks inside a word, the scale demo pins a phase so the Sort select is always measured (and its absence fails by name), the STACK_BUDGET basis says only what was measured, and the room after the content is now only what the last nav target lacks."
       },
       "startedAt": "2026-11-17T12:27:42Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-17T14:11:22Z",
+      "verifiedBy": [
+        "lm5 (pill/id half): every pill and id in .content, at every matrix cell, both fonts, phases expanded",
+        "lm the Sort select is in the matrix on every page whose fixture is built to carry it",
+        "sn3 blank tail after the end is within need + own padding: every size as loaded, after resize, after expand/collapse; the resize pass also adds furthest-entry clicks to sn1",
+        "pin1/pin2/pin3 in tests/test_gen_demo_manifest.py",
+        "table-fit.test.mjs coalescing case rewritten to compare a burst against one event",
+        "The three tests.add hover-parity cases already existed in the browser gate under exactly these labels, from an earlier task. They were not added here and still pass on all three reports."
+      ],
       "notes": [
         {
           "at": "2026-11-17T05:25:02Z",
@@ -515,6 +539,17 @@
         "runId": "2026-11-17T14:11:19Z.da526b",
         "status": "passed",
         "at": "2026-11-17T14:11:19Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "1d0e3673c9d7",
+        "at": "2026-11-17T14:11:22Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "status": "proved",
+        "basis": "Watched by hand, not through the submit helper: three of the new checks live in the browser gate, whose tally the helper cannot read. The widened gate was run over the e5d659f5 renders as committed, before any re-render. (1) WORD-SPLIT, acme: 47 lm5 cells red (49 on demo-large), e.g. `FAIL lm5 1024x768 View=active at rest: no pill or id in any table or list of the report breaks inside a word (177 word(s) read; split: table.phases span.chip \"progress\", table.phases span.chip \"Blocked\", table.phases span.chip \"Pending\", table.data.bugs td.mono \"BUG-1\", table.data.bugs td.mono \"BUG-2\", table.data.bugs td.mono \"BUG-3\", table.data.bugs span.chip \"progress\", table.data.bugs td.mono \"BUG-4\" (+1 more)): got split, want none`. (2) SORT-SELECT REFUSAL on a fixture with no pinned phase, demo-large: `FAIL lm the Sort select is in the matrix on every page whose fixture is built to carry it (docs/demo-large.html is one; 0 row(s) carry an execution rank; the select was drawn in 0 of 60 cells): got no Sort select on docs/demo-large.html, whose fixture pins a phase, want none`. (3) TAIL BOUND, acme: `FAIL sn3 scrolled to the end, the blank tail after the report's last content is no more than the room its furthest nav target lacks plus the content's own bottom padding, at every layout size, as loaded and after a resize, an expand and a collapse (14 reading(s)): got 390x844 as loaded: tail 901px against 377px = need 259 (#ready, line 60) + own 117 + 1 · 844x390 as loaded: tail 400px against 97px = need 27 (#ready, line 60) + own 70 + 1 · 834x1194 as loaded: tail 1046px against 743px = need 673 (#ready, line 218) + own 70 + 1 · 1024x768 as loaded: tail 656px against 353px = need 283 ...`. On demo-large every reading needed 0 and drew roughly a screen anyway (`390x844 as loaded: tail 901px against 118px = need 0 (#ready, line 60) + own 117 + 1`). On those runs nothing else failed, and sn1 was green on both. (4) TABLE-FIT coalescing case, npx vitest run tools/ui-tests/table-fit.test.mjs: making the table-fit resize re-measure on every event (its `if (tableFitQueued) return;` guard removed) -> `AssertionError: expected 3 to be 2 // Object.is equality` (plus `expected 2 to be 1` in the sibling observer case; `Tests  2 failed | 3 passed (5)`). Removing endRoomQueued from the end-room guard -> `AssertionError: expected 3 to be 2 // Object.is equality` (`Tests  1 failed | 4 passed (5)`). Restored with cmp -> 5/5. With the fixes in place the browser gate is green: acme 920 checks, demo-large 926, the live render 879, both font passes. Also watched: in test_gen_demo_manifest, removing the pin -> `FAIL pin1 exactly one phase is pinned, at tier 1, and it is the phase in progress - so the report draws its Sort select ([])` (132/134), and pinning the last phase instead -> pin1 and `FAIL pin2 ...and the pin moves no phase with work left: their execution order is their written order ((['P12', 'P5', 'P6', 'P7'], ['P5', 'P6', 'P7', 'P8']))` (132/134). Both restored with cmp.",
+        "at": "2026-11-17 13:39-13:52 local (browser gate on committed renders); 13:41 (vitest and pin mutations)"
       }
     },
     {
@@ -606,10 +641,10 @@
     }
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "988f3478-fc74-4a1e-a62b-7522b404c792",
-    "branch": "audit/p165-quick-lows-before-3-9-0",
-    "at": "2026-11-17T05:25:05Z"
-  },
-  "startedAt": "2026-11-17T05:25:05Z"
+  "startedAt": "2026-11-17T05:25:05Z",
+  "testEvidence": {
+    "runId": "2026-11-17T14:53:10Z.08616c",
+    "status": "passed",
+    "at": "2026-11-17T14:53:10Z"
+  }
 }
