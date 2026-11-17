@@ -6980,6 +6980,8 @@ STAGES = (
     ("sg-green", "_green_first_cases"),
     ("sg-green-verdict", "_green_verdict_cases"),
     ("sg-green-new", "_green_new_cases"),
+    ("sg-green-loaded", "_green_loaded_cases"),
+    ("sg-green-own", "_green_own_cases"),
 )
 
 
@@ -9771,6 +9773,456 @@ _RECORDED = {
         "fix": (0, _RUN_SWN4_HEAD),
     },
 }
+
+
+# --- green: a module that did not load is no case; a rise proves only own cases ---
+# The unittest runs below are REAL `python -m unittest` runs over a scratch
+# project, so each verdict is asked of the runner's own transcript: the loader's
+# stand-in for a module it could not import is printed by unittest, not written
+# here. pytest is no dependency of this repository, so its shapes are the
+# captured transcript above (`_PYTEST_COLLECT`) and its summary lines.
+_U_OLD = ("import unittest\nimport mine\n\n\nclass T(unittest.TestCase):\n"
+          "    def test_old(self):\n        self.assertEqual(mine.v, 1)\n")
+_U_NEW = "tests/test_new.py"
+_U_OLD_REL = "tests/test_old.py"
+_U_SYNTAX = ("import unittest\nimport mine\n\n\nclass N(unittest.TestCase):\n"
+             "    def test_a(self):\n        self.assertEqual(mine.v, 1\n")
+_U_DISCOVER = ["discover", "-s", "tests", "-t", "."]
+_U_BOTH = ["tests.test_old", "tests.test_new"]
+
+
+def _unit_tree(files):
+    """A scratch project: `mine.py` holding `v = 1`, a `tests` package and
+    `files` (`{rel: text}`); its root."""
+    root = _harness.fixture_root("stamp-green-unit-")
+    os.makedirs(os.path.join(root, "tests"))
+    _write(os.path.join(root, "tests", "__init__.py"), "")
+    _write(os.path.join(root, "mine.py"), "v = 1\n")
+    for rel, text in files.items():
+        _write(os.path.join(root, *rel.split("/")), text)
+    return root
+
+
+def _unit_run(files, args):
+    """`(code, text, root)` of a real `python -m unittest ARGS` over
+    `_unit_tree(files)`."""
+    root = _unit_tree(files)
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+    env.pop("PYTHONPATH", None)
+    got = subprocess.run([sys.executable, "-B", "-m", "unittest"] + list(args),
+                         cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         universal_newlines=True, env=env)
+    return got.returncode, got.stdout, root
+
+
+def _defined_ctx(declared, head_files, task_files, new=()):
+    """`green`'s ctx for a task's run over `task_files` against HEAD's
+    `head_files`: the declared test files' texts and the definitions of every
+    test file HEAD holds - a new file's empty stub is not one of HEAD's."""
+    held = dict((rel, text) for rel, text in head_files.items() if rel not in new)
+    return {"tests": list(declared), "new": list(new), "cases": [], "dropped": [],
+            "wt": dict((rel, task_files.get(rel, "")) for rel in declared),
+            "head_defs": M.test_definitions(held),
+            "head_js": M.js_test_definitions({})}
+
+
+def _unit_verdict(head_files, task_files, args, declared=(_U_NEW,), new=(_U_NEW,)):
+    """`(exit, status, basis)` - `green_verdict` over two real unittest runs:
+    HEAD's own, each new declared file the empty stub `green` lays, then the
+    task's."""
+    head_files = dict(head_files, **dict((rel, "") for rel in new))
+    head_code, head_text, _r = _unit_run(head_files, args)
+    code, text, _r = _unit_run(task_files, args)
+    got, _verdict, block = M.green_verdict(
+        {"cmd": [sys.executable, "-m", "unittest"] + list(args), "code": code,
+         "text": text, "problem": None,
+         "head": {"code": head_code, "text": head_text, "problem": None}},
+        _defined_ctx(declared, head_files, task_files, new))
+    return got, block.get("status"), str(block.get("basis", ""))
+
+
+def _pytest_verdict(text, head_text, wt, head_files=None, code=0, head_code=5,
+                    tests=(_U_NEW,), new=(_U_NEW,)):
+    """`(exit, status, basis)` - `green_verdict` over pytest-shaped output, the
+    ctx carrying the declared files' texts `wt` and HEAD's `head_files`."""
+    ctx = _defined_ctx(list(tests), dict(head_files or {}, **dict((r, "") for r in new)),
+                       wt, new)
+    got, _verdict, block = M.green_verdict(
+        {"cmd": ["python3", "-m", "pytest"] + list(tests), "code": code,
+         "text": text, "problem": None,
+         "head": {"code": head_code, "text": head_text, "problem": None}}, ctx)
+    return got, block.get("status"), str(block.get("basis", ""))
+
+
+# The HEAD test file of the git fixtures below: one passing unittest case.
+_G_HEAD = ("import os, sys, unittest\n" + _PATH_LINE + "\nimport mine\n\n\n"
+           "class T(unittest.TestCase):\n    def test_old(self):\n"
+           "        self.assertEqual(mine.v, 1)\n")
+
+
+def _green_unit(prefix, new_text):
+    """`(exit, status, basis)` of the real `green` verb on a git fixture whose
+    task adds `tests/test_new.py` holding `new_text`, run under unittest
+    discovery."""
+    root, man = _red_repo(prefix, _G_HEAD, head_test=_G_HEAD,
+                          extra={_U_NEW: new_text},
+                          files=["src/mine.py", "tests/test_mine.py", _U_NEW])
+    code, got = _green(root, man, [sys.executable, "-m", "unittest", "discover",
+                                   "-s", "tests"])
+    block = _green_block(got)
+    return code, block.get("status"), str(
+        block.get("basis") or got.get("note") or got.get("unparsed") or "")
+
+
+def _not_failing_case(basis):
+    """Whether a basis names no failing case - neither the not-green sentence
+    nor the red verb's list of cases failing without an assertion."""
+    return ("collected case(s) failing" not in basis
+            and "describe the new code" not in basis
+            and "failing without an assertion" not in basis)
+
+
+def _green_loaded_cases(check):
+    beside = {_U_OLD_REL: _U_OLD}
+    compiled = [_unit_verdict({}, {_U_NEW: _U_SYNTAX}, _U_DISCOVER),
+                _unit_verdict(beside, dict(beside, **{_U_NEW: _U_SYNTAX}),
+                              _U_DISCOVER, declared=(_U_OLD_REL, _U_NEW))]
+    check("gl1 a new test module that does not COMPILE, under unittest discovery "
+          "alone and beside a passing case, is `could-not-prove` with the runner's "
+          "SyntaxError line in the basis, never `not-green` and never a failing "
+          "case named: %s" % (_folded(compiled),),
+          all(c == M.E_CANNOT_PROVE and s == "could-not-prove" and "SyntaxError" in b
+              and "test_new" in b and _not_failing_case(b) for c, s, b in compiled))
+    new_api = ("import unittest\nfrom mine import new_api  # noqa: F401\n\n\n"
+               "class N(unittest.TestCase):\n    def test_a(self):\n        pass\n")
+    boom = "import unittest\nraise RuntimeError('boom at import')\n"
+    imported = [
+        _unit_verdict({}, {_U_NEW: new_api}, ["tests.test_new"]),
+        _unit_verdict(beside, dict(beside, **{_U_NEW: boom}), _U_DISCOVER,
+                      declared=(_U_OLD_REL, _U_NEW)),
+        _unit_verdict({}, {_U_NEW: boom}, ["tests.test_new"])]
+    check("gl2 a new test module whose IMPORT fails - a name the change adds, a "
+          "plain RuntimeError at module level under discovery, and the same under a "
+          "named module, which unittest does not catch - is `could-not-prove` with "
+          "the runner's line saying why: %s" % (_folded(imported),),
+          [(c, s) for c, s, _b in imported]
+          == [(M.E_CANNOT_PROVE, "could-not-prove")] * 3
+          and "cannot import name 'new_api'" in imported[0][2]
+          and all("RuntimeError: boom at import" in b for _c, _s, b in imported[1:])
+          and all(_not_failing_case(b) for _c, _s, b in imported))
+    kept = ("==================================== ERRORS ===================================="
+            "\n_______________________ ERROR collecting tests/test_new.py ________"
+            "_______________\nImportError while importing test module "
+            "'/tmp/x/tests/test_new.py'.\nTraceback:\ntests/test_new.py:1: in <module>\n"
+            "    import newmod\nE   ModuleNotFoundError: No module named 'newmod'\n"
+            "=========================== short test summary info ==========================="
+            "=\nERROR tests/test_new.py\n========================= 1 passed, 1 error in "
+            "0.05s =========================\n")
+    collected = [
+        _pytest_verdict(_PYTEST_COLLECT, _PYTEST_NONE, {_U_NEW: ""}, code=2),
+        _pytest_verdict(kept, "===== 1 passed in 0.01s =====\n",
+                        {_U_NEW: "import newmod\n", _U_OLD_REL: "def test_old():\n    pass\n"},
+                        head_files={_U_OLD_REL: "def test_old():\n    pass\n"},
+                        code=1, head_code=0, tests=(_U_OLD_REL, _U_NEW))]
+    check("gl3 under pytest, a collection error - the run interrupted by it, and "
+          "the same beside a passing case under --continue-on-collection-errors - "
+          "is `could-not-prove` with the runner's line in the basis and the file "
+          "never named as a failing case: %s" % (_folded(collected),),
+          [(c, s) for c, s, _b in collected]
+          == [(M.E_CANNOT_PROVE, "could-not-prove")] * 2
+          and "helper_fn" in collected[0][2]
+          and "No module named 'newmod'" in collected[1][2]
+          and all(_not_failing_case(b) for _c, _s, b in collected))
+    # THE ALLOW CASES for gl1-gl3, and the case a reading widened to every
+    # errored case turns red: a case that was COLLECTED and raised in its body.
+    body = ("import unittest\nimport mine\n\n\nclass N(unittest.TestCase):\n"
+            "    def test_a(self):\n        self.assertEqual(mine.new_api(), 1)\n")
+    raised = [
+        _unit_verdict({}, {_U_NEW: body}, ["tests.test_new"]),
+        _unit_verdict(beside, dict(beside, **{_U_NEW: body}), _U_DISCOVER,
+                      declared=(_U_OLD_REL, _U_NEW)),
+        _pytest_verdict("ERROR tests/test_new.py::test_b - fixture 'newfix' not "
+                        "found\n===== 1 passed, 1 error in 0.02s =====\n",
+                        _PYTEST_NONE, {_U_NEW: ""}, code=1)]
+    check("gl4 THE ALLOW CASES for gl1-gl3: a collected case raising in its body - "
+          "an AttributeError under unittest, named and discovered, a fixture error "
+          "under pytest - stays `not-green`, naming the case: %s" % (_folded(raised),),
+          [(c, s) for c, s, _b in raised] == [(M.E_NOT_GREEN, "not-green")] * 3
+          and all("test_a" in b for _c, _s, b in raised[:2])
+          and "test_b" in raised[2][2])
+    reads = getattr(_runner_output, "did_not_load", None)
+    code, text, root = _unit_run(dict(beside, **{_U_NEW: _U_SYNTAX}), _U_DISCOVER)
+    head_code, head_text, _r = _unit_run(dict(beside, **{_U_NEW: ""}), _U_DISCOVER)
+    old_spelling = ("E.\n" + "=" * 70 + "\nERROR: tests.test_new (unittest.loader."
+                    "_FailedTest)\n" + _BAR + "\nImportError: Failed to import test "
+                    "module: tests.test_new\nSyntaxError: unexpected EOF while "
+                    "parsing\n\n" + _BAR + "\nRan 2 tests in 0.000s\n\nFAILED "
+                    "(errors=1)\n")
+    records = [(r["id"], reads(r) if reads else None)
+               for t, runner in ((text, "unittest"), (old_spelling, "unittest"),
+                                 (_PYTEST_COLLECT, "pytest"))
+               for r in _runner_output.failing_cases(t, runner)]
+    allowed = [reads(r) if reads else None
+               for t, runner in ((_unit_run({_U_NEW: body}, ["tests.test_new"])[1],
+                                  "unittest"),
+                                 ("ERROR tests/test_new.py::test_b - fixture 'newfix' "
+                                  "not found\n===== 1 error in 0.02s =====\n", "pytest"))
+               for r in _runner_output.failing_cases(t, runner)]
+    red = M.red_verdict(
+        {"cmd": [sys.executable, "-m", "unittest"] + _U_DISCOVER, "code": code,
+         "text": text, "problem": None, "second": None, "fix": None,
+         "withdrawn": None, "support": [],
+         "head": {"code": head_code, "text": head_text, "problem": None}},
+        {"root": root, "implementation": [], "tests": [_U_OLD_REL, _U_NEW],
+         "cases": [], "symbols": [], "dropped": [], "new": [_U_NEW], "absent": [],
+         "path": None, "stages": []})
+    check("gl5 ONE reading tells a module that did not load from a collected case: "
+          "`_runner_output.did_not_load` is True for unittest's stand-in in both "
+          "spellings and for pytest's collection error, False for a body that "
+          "raised and for a fixture error; the red verdict over the same transcript "
+          "keeps its answer (`could-not-prove`, collection-error) and names the "
+          "module as not loaded rather than as a case failing without an "
+          "assertion; both verdicts reach that one reading: records %s; allowed %s; "
+          "red %s; callers %s"
+          % (_folded(records), _folded(allowed), _folded((red[0], red[1], red[2])),
+             _folded(_load_readers())),
+          reads is not None and len(records) == 3
+          and all(flag is True for _i, flag in records)
+          and allowed == [False, False]
+          and red[0] == M.E_CANNOT_PROVE and red[1] == M.V_COLLECT
+          and (red[2] or {}).get("status") == "could-not-prove"
+          and "SyntaxError" in (red[2] or {}).get("basis", "")
+          and _not_failing_case((red[2] or {}).get("basis", ""))
+          and _load_readers() == {"red_verdict": True, "green_verdict": True})
+    verb = [_green_unit("stamp-green-syntax-", "import unittest\n\n\nclass N("
+                        "unittest.TestCase):\n    def test_a(self):\n"
+                        "        self.assertEqual(1, 1\n"),
+            _green_unit("stamp-green-boom-", "import unittest\nraise RuntimeError("
+                        "'boom at import')\n")]
+    twin = _green_unit("stamp-green-attr-", "import unittest\nfrom test_mine import "
+                       "mine\n\n\nclass N(unittest.TestCase):\n    def test_a(self):\n"
+                       "        self.assertEqual(mine.new_api(), 1)\n")
+    check("gl6 the real `green` verb on a git fixture, under unittest discovery: a "
+          "new test file that does not compile, and one whose module raises a "
+          "RuntimeError at import, are `could-not-prove`, exit 3, the runner's line "
+          "in the basis - while one whose own case raises an AttributeError on the "
+          "base is `not-green`, exit 1, naming the case: %s; twin %s"
+          % (_folded(verb), _folded(twin)),
+          [(c, s) for c, s, _b in verb] == [(M.E_CANNOT_PROVE, "could-not-prove")] * 2
+          and "SyntaxError" in verb[0][2] and "RuntimeError: boom at import" in verb[1][2]
+          and all(_not_failing_case(b) for _c, _s, b in verb)
+          and twin[:2] == (M.E_NOT_GREEN, "not-green") and "test_a" in twin[2])
+
+
+def _function_calls(source, name):
+    """The names a top-level function `name` of `source` calls, directly or as
+    an attribute (`_runner_output.did_not_load`), or None when it is absent."""
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            return _calls_of(node)
+    return None
+
+
+def _calls_of(node):
+    """The names the calls inside the def `node` spell: a bare name, or an
+    attribute's last part."""
+    out = set()
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Call):
+            fn = sub.func
+            out.add(fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", None))
+    return out
+
+
+def _module_source():
+    with open(M.__file__, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def _load_readers():
+    """For each verdict, whether it reaches `did_not_load` - itself, or through
+    the one helper of this module that calls it."""
+    tops = dict((node.name, _calls_of(node)) for node in ast.parse(_module_source()).body
+                if isinstance(node, ast.FunctionDef))
+    helpers = [name for name, calls in tops.items() if "did_not_load" in calls]
+    return dict((verdict, bool(tops.get(verdict, set()) & set(helpers + ["did_not_load"])))
+                for verdict in ("red_verdict", "green_verdict"))
+
+
+def _green_own_cases(check):
+    beside = {_U_OLD_REL: _U_OLD}
+    reexport = "from tests.test_old import T  # noqa: F401\n"
+    held = [_unit_verdict(beside, dict(beside, **{_U_NEW: reexport}), args,
+                          declared=(_U_OLD_REL, _U_NEW))
+            for args in (_U_BOTH, _U_DISCOVER)]
+    check("go1 a new test file defining no case of its own that imports HEAD's "
+          "TestCase - which unittest collects again, raising the passed count - is "
+          "`could-not-prove`, saying the rise is made of cases HEAD already holds, "
+          "named and discovered: %s" % (_folded(held),),
+          [(c, s) for c, s, _b in held] == [(M.E_CANNOT_PROVE, "could-not-prove")] * 2
+          and all("HEAD already holds" in b for _c, _s, b in held))
+    skipped_sub = ("import unittest\nimport mine\nfrom tests.test_old import T\n\n\n"
+                   "class N(T):\n    @unittest.skipUnless(hasattr(mine, 'new_api'), "
+                   "'needs new_api')\n    def test_new_api(self):\n"
+                   "        self.assertEqual(mine.new_api(), 1)\n")
+    sub_skip = [_unit_verdict(beside, dict(beside, **{_U_NEW: skipped_sub}), args,
+                              declared=(_U_OLD_REL, _U_NEW))
+                for args in (_U_BOTH, ["tests.test_new"])]
+    check("go2 a new file whose one own case is SKIPPED on the base and whose class "
+          "inherits HEAD's TestCase - the inherited cases making the rise - is "
+          "`could-not-prove`, saying the rise is made of cases that did not run, "
+          "beside HEAD's own run and alone: %s" % (_folded(sub_skip),),
+          [(c, s) for c, s, _b in sub_skip]
+          == [(M.E_CANNOT_PROVE, "could-not-prove")] * 2
+          and all("did not run" in b and "1 more skipped" in b
+                  for _c, _s, b in sub_skip))
+    own = ("import unittest\nimport mine\n\n\nclass N(unittest.TestCase):\n"
+           "    def test_a(self):\n        self.assertEqual(mine.v, 1)\n")
+    own_sub = ("import unittest\nimport mine\nfrom tests.test_old import T\n\n\n"
+               "class N(T):\n    def test_more(self):\n        self.assertTrue(mine.v)\n")
+    allowed = [
+        _unit_verdict({}, {_U_NEW: own}, ["tests.test_new"]),
+        _unit_verdict(beside, dict(beside, **{_U_NEW: own_sub}), _U_BOTH,
+                      declared=(_U_OLD_REL, _U_NEW)),
+        _unit_verdict(beside, {_U_OLD_REL: _U_OLD + "\n    def test_more(self):\n"
+                               "        self.assertEqual(mine.v, 1)\n"},
+                      ["tests.test_old"], declared=(_U_OLD_REL,), new=())]
+    check("go3 THE ALLOW CASES for go1 and go2: a new file with a passing case of "
+          "its own, a new file inheriting HEAD's TestCase beside a passing case of "
+          "its own, and a new case in an EXISTING test file are `proved`, the basis "
+          "stating the count of the task's own definitions: %s" % (_folded(allowed),),
+          [(c, s) for c, s, _b in allowed] == [(M.E_PROVED, "proved")] * 3
+          and all("1 defined > 0 more skipped" in b for _c, _s, b in allowed))
+    two = ("import unittest\nimport mine\n\n\nclass N(unittest.TestCase):\n"
+           "    def test_a(self):\n        self.assertEqual(mine.v, 1)\n\n"
+           "    @unittest.skip('later')\n    def test_b(self):\n        pass\n")
+    pair = _unit_verdict({}, {_U_NEW: two}, ["tests.test_new"])
+    check("go4 a new file with two own cases, one skipped and one passing, is "
+          "`proved` by the counting argument, the basis saying both figures: %s"
+          % (_folded(pair),),
+          pair[:2] == (M.E_PROVED, "proved") and "2 defined > 1 more skipped" in pair[2])
+    copied = _unit_verdict(beside, dict(beside, **{_U_NEW: _U_OLD}), _U_BOTH,
+                           declared=(_U_OLD_REL, _U_NEW))
+    check("go5 a new file that redefines, byte for byte, the case HEAD holds under "
+          "the same class and name is `could-not-prove`: its rise is made of a case "
+          "HEAD already holds: %s" % (_folded(copied),),
+          copied[:2] == (M.E_CANNOT_PROVE, "could-not-prove")
+          and "HEAD already holds" in copied[2])
+    head_fn = "def test_old():\n    pass\n"
+    py_held = _pytest_verdict("===== 2 passed in 0.02s =====\n",
+                              "===== 1 passed in 0.01s =====\n",
+                              {_U_OLD_REL: head_fn,
+                               _U_NEW: "from tests.test_old import test_old  # noqa\n"},
+                              head_files={_U_OLD_REL: head_fn}, head_code=0,
+                              tests=(_U_OLD_REL, _U_NEW))
+    py_own = _pytest_verdict("===== 1 passed in 0.02s =====\n", _PYTEST_NONE,
+                             {_U_NEW: "def test_a():\n    assert True\n"})
+    check("go6 under pytest-shaped output the same reading holds: a new file that "
+          "only imports HEAD's test function is `could-not-prove`, and one defining "
+          "a passing function of its own is `proved`: %s"
+          % (_folded((py_held, py_own)),),
+          py_held[:2] == (M.E_CANNOT_PROVE, "could-not-prove")
+          and "HEAD already holds" in py_held[2]
+          and py_own[:2] == (M.E_PROVED, "proved") and "1 defined" in py_own[2])
+    param = ("import pytest\n\n\n@pytest.mark.parametrize('n', [1, 2, 3])\n"
+             "def test_n(n):\n    assert n\n")
+    weaker = [
+        _pytest_verdict("===== 3 passed in 0.02s =====\n", _PYTEST_NONE, {_U_NEW: param}),
+        _pytest_verdict("===== 1 passed, 2 skipped in 0.02s =====\n", _PYTEST_NONE,
+                        {_U_NEW: param})]
+    unread = _gv(["python3", "-m", "pytest", _U_NEW], "===== 1 passed in 0.02s =====\n",
+                 _PYTEST_NONE, head_code=5, new=(_U_NEW,))
+    check("go7 where the definitions cannot COUNT the cases - a parametrised "
+          "function, all passing or beside skips of its own - or were not read at "
+          "all, the count route proves as it did and the basis labels the proof as "
+          "weaker; an honest task is never refused for it: %s; unread %s"
+          % (_folded(weaker), _folded(unread)),
+          [(c, s) for c, s, _b in weaker] == [(M.E_PROVED, "proved")] * 2
+          and all("cannot count" in b and "not shown to be" in b for _c, _s, b in weaker)
+          and unread[:2] == (M.E_PROVED, "proved") and "were not read" in unread[2])
+    house_text = _house_test("import mine", [("old1", "mine.v >= 1")])
+    swept = M.green_verdict(
+        {"cmd": ["python3", "tools/sweep-selftests.py", "tests/test_mine.py"],
+         "code": 0, "problem": None,
+         "text": _green_sweep([("tests/test_mine.py", 2)], 1, 1),
+         "head": {"code": 0, "problem": None,
+                  "text": _green_sweep([("tests/test_mine.py", 1)], 1, 1)}},
+        {"tests": ["tests/test_mine.py"], "new": [], "cases": [], "dropped": [],
+         "wt": {"tests/test_mine.py": house_text}, "head_defs": {},
+         "head_js": M.js_test_definitions({})})
+    housed = _gv(["python3", "tests/test_mine.py"],
+                 "PASS hm1 old\nPASS keeps the old shape\n"
+                 + _TALLY % ("ALL PASS", 2, 2) + "\n",
+                 "PASS hm1 old\n" + _TALLY % ("ALL PASS", 1, 1) + "\n",
+                 tests=["tests/test_mine.py"])
+    check("go8 the routes with an id of their own are untouched: the sweep's "
+          "per-file count rising over a house suite that defines no Python case, "
+          "and a house case printed with no id, prove with no definitions clause: "
+          "sweep %s; house %s" % (_folded(swept[2]), _folded(housed)),
+          swept[0] == M.E_PROVED and (swept[2] or {}).get("status") == "proved"
+          and not any(w in (swept[2] or {}).get("basis", "")
+                      for w in ("defined", "definition"))
+          and housed[:2] == (M.E_PROVED, "proved")
+          and not any(w in housed[2] for w in ("defined", "definition")))
+    own_text = ("import unittest\nfrom test_mine import mine\n\n\n"
+                "class N(unittest.TestCase):\n    def test_a(self):\n"
+                "        self.assertEqual(mine.v, 1)\n")
+    verb = {
+        "imports": _green_unit("stamp-green-imports-", "from test_mine import T"
+                               "  # noqa: F401\n"),
+        "skipped": _green_unit("stamp-green-subskip-", "import unittest\nfrom test_mine"
+                               " import T, mine\n\n\nclass N(T):\n    @unittest.skip"
+                               "Unless(hasattr(mine, 'new_api'), 'later')\n    def "
+                               "test_new_api(self):\n        self.assertTrue(mine.new_api())\n"),
+        "copied": _green_unit("stamp-green-copied-", _G_HEAD),
+        "own": _green_unit("stamp-green-own-", own_text),
+        "inherits": _green_unit("stamp-green-inherits-", "from test_mine import T, mine"
+                                "\n\n\nclass N(T):\n    def test_more(self):\n"
+                                "        self.assertTrue(mine.v)\n"),
+        "pair": _green_unit("stamp-green-pair-", own_text + "\n    @unittest.skip("
+                            "'later')\n    def test_b(self):\n        pass\n")}
+    want = {"imports": (M.E_CANNOT_PROVE, "could-not-prove"),
+            "skipped": (M.E_CANNOT_PROVE, "could-not-prove"),
+            "copied": (M.E_CANNOT_PROVE, "could-not-prove"),
+            "own": (M.E_PROVED, "proved"), "inherits": (M.E_PROVED, "proved"),
+            "pair": (M.E_PROVED, "proved")}
+    check("go9 the real `green` verb on a git fixture gathers the definitions "
+          "itself: a new file that only imports HEAD's TestCase, one inheriting it "
+          "beside an own case skipped on the base, and one redefining HEAD's case "
+          "byte for byte are `could-not-prove`; one with an own passing case, one "
+          "inheriting HEAD's TestCase beside an own passing case, and one with an own "
+          "case passing beside an own skipped one are `proved`, stating the counts: %s"
+          % (_folded(sorted(verb.items())),),
+          dict((k, v[:2]) for k, v in verb.items()) == want
+          and "1 defined > 0 more skipped" in verb["own"][2]
+          and "1 defined > 0 more skipped" in verb["inherits"][2]
+          and "2 defined > 1 more skipped" in verb["pair"][2]
+          and "HEAD already holds" in verb["imports"][2]
+          and "HEAD already holds" in verb["copied"][2]
+          and "did not run" in verb["skipped"][2])
+    shared = ("_definition_in", "_head_copy", "_js_head_copy")
+    reach = dict((name, sorted(n for n in _reached(_module_source(), name) if n in shared))
+                 for name in ("credit_problem", "own_definitions"))
+    check("go10 the definitions are read by ONE set of functions for both verbs: "
+          "the red verb's credit (`credit_problem`) and green's count "
+          "(`own_definitions`) each reach `_definition_in`, `_head_copy` and "
+          "`_js_head_copy` through the module's own functions: %r" % (reach,),
+          reach == {"credit_problem": sorted(shared), "own_definitions": sorted(shared)})
+
+
+def _reached(source, name):
+    """Every top-level function of `source` that the function `name` calls,
+    directly or through others of them."""
+    tops = dict((node.name, _calls_of(node)) for node in ast.parse(source).body
+                if isinstance(node, ast.FunctionDef))
+    seen, todo = set(), [name]
+    while todo:
+        fn = todo.pop()
+        for called in tops.get(fn, ()):
+            if called in tops and called not in seen:
+                seen.add(called)
+                todo.append(called)
+    return seen
 
 
 if __name__ == "__main__":

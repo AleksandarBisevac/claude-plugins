@@ -498,7 +498,7 @@ def _pytest_cases(text):
         out.append({"id": node.split("::")[-1], "label": node,
                     "assertion": kind == "FAILED"
                     and (why.startswith("assert") or why.startswith("AssertionError")),
-                    "why": why or kind})
+                    "why": why or kind, "kind": kind})
     return out
 
 
@@ -523,7 +523,91 @@ def _unittest_cases(text):
     for kind, name, where in _UNITTEST_CASE.findall(text):
         module, cls, qual = _unittest_site(name, where)
         out.append({"id": name, "label": name, "assertion": kind == "FAIL",
-                    "why": kind, "module": module, "cls": cls, "qual": qual})
+                    "why": kind, "module": module, "cls": cls, "qual": qual,
+                    "where": where})
+    return out
+
+
+# --- a test module the runner could not load ---
+# A MODULE THAT DID NOT LOAD IS NOT A CASE, though both runners report it in a
+# case's shape: unittest's loader hands back a stand-in test of its own
+# `_FailedTest` class named after the module (`ERROR: test_new
+# (unittest.loader._FailedTest)`, the case's name appended from 3.11), counted
+# in `Ran N` and in `errors=`; pytest prints `ERROR <file>`, a node with no case
+# in it, under a section headed `ERROR collecting <file>`. Read as a case, a
+# compile error in a new test file - or an import that fails in the run's
+# environment - is a collected case failing, which it is not: nothing in that
+# module was collected. `did_not_load` is the one test of which a failure is;
+# a collected case that raised in its body, or whose fixture did, is not one.
+_UNITTEST_STAND_IN = "unittest.loader._FailedTest"
+_PYTEST_COLLECTING = re.compile(r"^_+ ERROR collecting (\S+) _+[ \t]*$", re.M)
+_SECTION_END = re.compile(r"^(?:={3,}|-{20,}|_{3,})(?:[ \t].*)?$")
+# An exception line as a traceback ends on it: a dotted name, a colon, the rest.
+_EXCEPTION_LINE = re.compile(r"^([A-Za-z_][\w.]*): (.*)$")
+
+
+def did_not_load(failure):
+    """Whether one record of `failing_cases` is a test module the runner could
+    not load - unittest's loader stand-in, or a pytest `ERROR` naming a file
+    with no case in it - rather than a collected case that failed."""
+    where = failure.get("where") or ""
+    if where == _UNITTEST_STAND_IN or where.startswith(_UNITTEST_STAND_IN + "."):
+        return True
+    return failure.get("kind") == "ERROR" and "::" not in (failure.get("label") or "")
+
+
+def _section(lines, start):
+    """The lines after `lines[start]` up to the next separator or section
+    header - a unittest error block's own dash rule skipped first."""
+    rest = lines[start + 1:]
+    if rest and set(rest[0].strip()) == set("-"):
+        rest = rest[1:]
+    out = []
+    for line in rest:
+        if _SECTION_END.match(line):
+            break
+        out.append(line)
+    return out
+
+
+def _why_not_loaded(lines):
+    """The runner's own words for why a module did not load, off its section:
+    the first exception line (unittest's `Failed to import test module`) and the
+    last (the cause), joined when they differ. A pytest section is read off its
+    `E` gutter alone - its `Hint:` line is advice, not the error - and a
+    unittest one off its unindented lines, a traceback's frames being indented."""
+    gutter = [ln[1:].strip() for ln in lines if ln.startswith("E ")]
+    plain = gutter or [ln.strip() for ln in lines if ln and not ln[0].isspace()]
+    said = [ln for ln in plain if _EXCEPTION_LINE.match(ln)]
+    if not said:
+        return None
+    return said[0] if said[0] == said[-1] else "%s; %s" % (said[0], said[-1])
+
+
+def load_failures(text, runner=None):
+    """`[{"module", "line"}]` - every test module the run's runner reported it
+    could not load (`did_not_load`), in printed order, each with the runner's own
+    line saying which and why; `runner` defaults to the one `read_tally()`
+    selects. `[]` when none was reported."""
+    text = plain_text(text)
+    lines = text.splitlines()
+    out = []
+    for failure in failing_cases(text, runner):
+        if not did_not_load(failure):
+            continue
+        name = failure["label"]
+        heads = [i for i, ln in enumerate(lines)
+                 if ln.startswith("ERROR: %s (" % (name,))
+                 or (_PYTEST_COLLECTING.match(ln)
+                     and _PYTEST_COLLECTING.match(ln).group(1) == name)]
+        why = _why_not_loaded(_section(lines, heads[0])) if heads else None
+        # A pytest summary line may carry the reason after ` - `; unittest's
+        # `why` is only the word ERROR.
+        if why is None and failure.get("kind") and failure["why"] != failure["kind"]:
+            why = failure["why"]
+        entry = {"module": name, "line": why or "the runner printed no reason"}
+        if entry not in out:
+            out.append(entry)
     return out
 
 

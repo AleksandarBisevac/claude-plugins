@@ -1,0 +1,116 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test__runner_output.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test__runner_output.py tests/test_drive_phase.py tests/test__filed_returns.py tests/test__refs.py tests/test__output_lints.py tests/test__deps.py --jobs 4": "pass",
+    "run-test-gate.py docs/audit/audit-plan.json SG1 --task SG1.27-ukq (unrecorded)": "pass",
+    "python3 tools/measure-context.py --gate": "pass",
+    "python3 tools/prove-gates.py --list": "pass",
+    "ruff check (the four touched .py files)": "pass",
+    "vermin -t=3.8- (the four touched .py files)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-17T23:24:22Z",
+    "basis": "`python3 tests/test_stamp_verification.py --selftest --stage sg-green-loaded --stage sg-green-own` in a throwaway tree at HEAD exited 1 with 14 of 16 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `sg-green-loaded`, `sg-green-own`, which the task's test files add - the stage is new at HEAD: its cases did not exist at HEAD, which is red for them), each passing with the working tree's implementation - gl1 (house FAIL), gl2 (house FAIL), gl3 (house FAIL), gl5 (house FAIL), gl6 (house FAIL), go1 (house FAIL), go2 (house FAIL), go3 (house FAIL), go4 (house FAIL) and 5 more: SELFTEST FAILED: 2/16 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "RULE 1 (a module that did not load is no case). _runner_output.py: unittest case records keep their printed location as `where`, pytest records their `kind`; new `did_not_load(failure)` is the one test of which a failure is (unittest's `unittest.loader._FailedTest` stand-in, in the 3.8-3.10 and 3.11+ spellings, and a pytest `ERROR <file>` node with no `::`); new public reader `load_failures(text, runner=None)` names each such module with the runner's own line (unittest's `Failed to import test module` line joined with the cause its traceback ends on; pytest's `E` gutter line, never its `Hint:`). stamp-verification.py: `_loaded_split` (the one caller of did_not_load) is read by BOTH verdicts. green_verdict asks it after the baseline and inline checks and BEFORE `_not_green_failure`: any load failure is `could-not-prove` (verdict collection-error) with the runner's line, whether or not other cases ran. red_verdict removes load failures from its failing list and names them apart in every basis after that point (prefixed onto env_clause); its verdicts and statuses are unchanged, since a load failure never failed an assertion and was never credited. Where red and green read the same output differently: a run holding one module that did not load beside an own case failing an assertion is still `proved` by red (a located own assertion failed) and `could-not-prove` by green (it cannot say the task's tests pass on the base); an ImportError of a name the task introduces is proved by red through its --introduces second run and is could-not-prove for green. A module-level RuntimeError under a NAMED unittest module crashes with no tally (unittest does not catch it) and was already could-not-prove (no-tally), the RuntimeError line in the basis. RULE 2 (a rising count proves only what the task defines). The red verb's definition reading is factored so both verbs share it: `_definition_in(tree, classes, name)` (what `_definition` now calls), `_head_copy(classes, name, node, defs)` (credit_problem's HEAD-identical test) and `_js_head_copy(chain, bodies, head)` (_js_credit_problem's); red's messages are byte-identical. New `own_definitions(texts, runner, head_defs, head_js)` (with `_case_defs`, `_py_own`, `_js_own`, `_one_case`) counts the cases the declared test files define - the def that runs, `test`-prefixed, a top-level class's method for unittest, also module-level and nested for pytest; jest/vitest/playwright title chains - that HEAD's test files do not hold identically, and lists what it cannot count (a decorator that may generate cases such as parametrize - unittest skip family, expectedFailure, mock.patch and pytest.mark.* other than parametrize count as one case; load_tests / pytest_generate_tests; a JS title built at run time; an unparsed file; HEAD unread). `_count_proof` replaces the bare count route of `_own_passing`: N own definitions, M = cases skipped or expected to fail beyond HEAD's own run; proved only when N > M (basis: `N defined > M more skipped, so at least one of the task's own ran and passed`); otherwise could-not-prove, `(0 defined)` -> `the rise is made of cases HEAD already holds`, `(N defined, M more skipped)` -> `... or of cases that did not run`. RULE 3: with no texts in ctx, or a runner the reading does not know, the count proves as before with `(the declared test files' definitions were not read, so the rise is not shown to be cases the task defines)`; with uncounted definitions and N <= M it proves as `a weaker proof than a count of them`, never a refusal. House runs and sweep-shaped commands are untouched (their own id and per-file routes; go8 guards it). run_green gathers `head_tree` (the same reader red uses) and the declared files' texts less the support modules run at HEAD's copy, into ctx keys `wt`, `head_defs`, `head_js`. What it answers for: an inherited-class file with one own passing case -> proved (go3, go9 `inherits`); a parametrised or generated case -> weaker proof, labelled (go7); a new case in an existing file -> proved (go3); house and sweep -> unchanged (go8, existing gf1/gf5/gf8/gf13 green). Known limits, stated in the docstrings: N counts every declared file's own definitions whether or not the command reached that file, and a case built by setattr or type() has no def and is not seen (a file holding only such cases is refused with `0 defined`). An un-skipped HEAD case counts as own (its decorator list changed, so its ast differs), so the reviewer's low U11 still reads proved. DOCS: the comment above GREEN_WORDS, green_verdict's docstring, PLUGIN-BUILD-GUIDE.md (both sections), CHANGELOG.md (the green-first entry) and reference/execute-task.md updated to what the code does. TESTS: tests/test_stamp_verification.py gains two blocks appended at the end of STAGES and of the file, `sg-green-loaded` (gl1-gl6) and `sg-green-own` (go1-go10), over REAL `python -m unittest` runs in scratch projects, pytest's captured collection-error transcript and pytest-shaped summaries, and the real `green` verb on git fixtures; tests/test__runner_output.py gains ru19 and one fixture appended to `_LINE_END_EXTRA` (ru17 derives every public text reader and requires one it answers from). No existing case was edited: none pinned a load failure as not-green or a definition-less rise as proved (grep `failing without an assertion|_FailedTest|Failed to import` over the suites found no such pin); the pure-function cases gf9/gf10 hand a ctx with no texts and keep their status, now carrying the not-read label. One literal `timeout=120` in my helper tripped sk1 and was removed. EVIDENCE: before the fix the two blocks printed SELFTEST FAILED 2/16 (gl4 and go8, the allow cases, passed both sides); after, ALL PASS 16/16 (4.4 s wall, one run). test__runner_output 27/27. Task gate `sweep-selftests.py tests/test_stamp_verification.py tests/test__runner_output.py` green; the orchestrator's seven-suite sweep exit 0 `7/7 files ok, 2370 cases`; run-test-gate SG1 --task SG1.27-ukq unrecorded `GATE GREEN` exit 0; measure-context --gate OK; prove-gates --list exit 0; ruff and vermin clean. MUTATION PROBE scratchpad/sg1.27/mutations.py (output mutations.out), exit 0: baseline printed PASS for every case id a row names, all twelve rows applied (anchor exactly once, file differs), pycache purged, restore verified, every row CAUGHT: green load check removed -> gl1 gl2 gl3 gl6; did_not_load always False -> gl1 gl2 gl3 gl5 gl6 ru19; ALLOW widened to every errored case -> gl4 ru19 (gl5 gl6 too); red naming apart removed -> gl5; definition count removed -> go1 go2 go5 go6 go9; skip subtraction removed -> go2 go4; shared reading replaced by everything in the file -> go5 go9 (and go1 go2 go3 go6 go10); run_green gathers no texts -> go9; uncounted refused -> go7; parametrize read as one case -> go7; not-read label dropped -> go7; ALLOW sweep and house sent through the definitions route -> go8. REVIEWER PROBES (review2/y, run before and after, outputs scratchpad/sg1.27/before and /after; every line that differs): probe_green_cli G1 import-only proved -> could-not-prove `(0 defined) ... HEAD already holds` (the fix); G2 SyntaxError not-green -> could-not-prove naming the SyntaxError (the fix); G3 proved -> proved, basis now `1 defined > 0 more skipped`. probe_verdict U7 (`from mine import new_api`) not-green -> could-not-prove with `cannot import name 'new_api'`: a DELIBERATE change of an answer the reviewer called defensible, rule 1 of this task (an import that fails cannot be told from the environment's). probe_verdict2 R2 (discover SyntaxError) not-green -> could-not-prove (the fix). U1, U11, U12, U13, R1, R1d, P1, P3, P5 and probe_verdict3 S1/S2: status unchanged, basis gains the not-read label - these probes call green_verdict with a ctx carrying no test file texts and no tree, so the definitions reading cannot run there and rule 3 applies; S1/S2 and R1 therefore stay `proved` in those probes (labelled weaker) and are NOT the could-not-prove the brief expected - the same shapes through the real verb (which gathers the texts) are could-not-prove: go9 `skipped` and `imports`, go1 and go2 over real unittest output with the texts handed in, and G1 above. Making a texts-less ctx refuse would flip U1/U12/gf10 and every row of the reviewer's came-out-right table. probe_red_regress: 10 SAME before and 10 SAME after, 0 DIFFERENT (its only text diffs are temp-dir names its fold regex does not cover). probe_sweep, probe_waiting: identical. Every row of the reviewer's came-out-right table keeps its verdict. RED-FIRST COMMAND: narrowed to the two new blocks (the full suite's recorded cost does not fit three runs in the 480 s deadline); it leaves out ru19 in tests/test__runner_output.py and every pre-existing block, which the gate runs above cover. DEPENDANTS: stamp-verification.py - tests/test__claude_home.py, test__proc_group.py, test_audit_lookup.py, test_audit_task.py import it and use no name whose behaviour changed outside the green count and the load clause (still correct); tests/test__filed_returns.py (in the sweep, green) uses _green_block/_green_first_cases/_crlf_cases, unchanged; tools/affected.py reads paths only; PLUGIN-BUILD-GUIDE.md updated; _filed_returns.py names the file in prose only; _arm, _binds, _build_throwaway, _decisive_line unchanged. _runner_output.py - records gain one key each (`where` on unittest, `kind` on pytest); run-test-gate.py reads none of these readers (its own failing readers), stamp-verification reads them by key; tests/_harness.py, test__output_lints.py, test__refs.py (sweep green), test_build_shop.py import the module and compare no whole record; test__runner_output.py updated. execute-task.md - only the green-first paragraph changed; tests/test_run_test_gate.py quotes it at another line (unchanged text); the agent-file ceilings hold (measure-context --gate). CHANGELOG.md and PLUGIN-BUILD-GUIDE.md are also declared by pending SG1.30/SG1.29: my edits are confined to the green-first entry and the two file sections. OUTSIDE SCOPE, NOT EDITED: plugins/audit/schema/audit-plan.schema.json's greenFirst description says proved is a label or `its file's case count rising` - still true but silent on the definitions requirement and on a module that did not load; a reader may want it widened.",
+    "descriptive": "Green-first now answers could-not-prove for a test module that did not load (unittest's loader stand-in, pytest's collection error) and proves a rising passed count only by cases the task's own files define beyond the extra skips, through the red verb's own definition reading."
+  },
+  "testsAdded": [
+    "gl1 a new test module that does not compile, under unittest discovery alone and beside a passing case, is could-not-prove with the SyntaxError line and no failing case named (real unittest runs)",
+    "gl2 an import failure - a new name, a module-level RuntimeError under discovery, the same under a named module - is could-not-prove with the runner's line",
+    "gl3 a pytest collection error, interrupted and under --continue-on-collection-errors, is could-not-prove with the runner's line",
+    "gl4 allow twin: a collected case raising in its body (unittest named and discovered) and a pytest fixture error stay not-green, naming the case",
+    "gl5 did_not_load reads both unittest spellings and pytest's collection error, rejects a body raise and a fixture error; red keeps its answer and names the module apart; both verdicts reach the one reading",
+    "gl6 the real green verb on a git fixture: a non-compiling new file and a module raising at import are could-not-prove; an own case raising AttributeError is not-green",
+    "go1 a new file that only imports HEAD's TestCase is could-not-prove (HEAD already holds), named and discovered",
+    "go2 a new file subclassing HEAD's TestCase whose one own case is skipped is could-not-prove (did not run, 1 more skipped)",
+    "go3 allow: an own passing case in a new file, beside an inherited HEAD class, and in an existing file are proved with `1 defined > 0 more skipped`",
+    "go4 two own cases, one skipped and one passing, prove with `2 defined > 1 more skipped`",
+    "go5 a byte-for-byte redefinition of HEAD's case is could-not-prove",
+    "go6 pytest-shaped output: import-only could-not-prove, an own function proved",
+    "go7 rule 3: a parametrised function, all passing or beside skips, and a ctx with no texts prove with the weaker-proof label",
+    "go8 the sweep's per-file rows and a house case with no id are untouched by the definitions route",
+    "go9 the real green verb on git fixtures: import-only, inherited-with-own-skip and byte-for-byte copy are could-not-prove; own, inherits-plus-own and own-pass-plus-own-skip are proved with their counts",
+    "go10 credit_problem and own_definitions both reach _definition_in, _head_copy and _js_head_copy",
+    "ru19 (tests/test__runner_output.py) load_failures and did_not_load over unittest's two spellings, pytest's collection error, a body raise and a fixture error"
+  ],
+  "casesAdded": [
+    [
+      "gl1",
+      "gl2",
+      "gl3",
+      "gl4",
+      "gl5"
+    ],
+    [
+      "go1",
+      "go2",
+      "go3",
+      "go4",
+      "go5",
+      "go6",
+      "go7",
+      "go8",
+      "go10"
+    ],
+    [
+      "gl6",
+      "go9"
+    ]
+  ],
+  "claims": "claims:\n1 the GREEN_WORDS comment and green_verdict docstring match stamp-verification.py's green_verdict load check (`if loads: return cannot(V_COLLECT,`), _count_proof and run_green's ctx keys wt/head_defs/head_js; the guide, changelog and execute-task.md sentences were written from those lines\n2 twelve mutation rows in scratchpad/sg1.27/mutations.py, all CAUGHT with baseline PASS for every named id and restores verified; the allow twins gl4 (load reading widened to every errored case) and go8 (sweep/house sent through the definitions route) went red under over-fire\n3 the class is a failure read as a case and a count read as own: grep `_not_green_failure|failing_without|_ids(failing)` - both verdicts now go through _loaded_split (red's env_clause names loads apart, green refuses on them); the count route had one site (_own_passing's `if risen`), now _count_proof; the label route (_own_by_id) and the sweep rows left as they were because they key on case ids or per-file rows, not on a bare total\n4 n/a - no rule addressed to an agent\n5 n/a - no property recorded beyond pass/fail; the 4.4 s wall time of the red-first command was measured once\n6 the load decision reads what the runner reported for the record (its stand-in class or a node with no case), not the command's spelling; allow case gl4 shown green before and after\n7 no number written into prose; `3.11` is a Python version",
+  "stamp": "audit-stamp: {\"content\":\"sha256:0c1233fda8566bb2e98e3181a2f40769b1b7d1a84aee30c19dc31049237a0925\",\"dirtyDigest\":\"sha256:73df6f86df1ada33130f64f1aca01564ebc547376dbaf1f2782fc2fc7165d0f5\",\"dirtyPaths\":{\"CHANGELOG.md\":\"5ec550ed5ed57668\",\"PLUGIN-BUILD-GUIDE.md\":\"8c84a0b31f081f45\",\"plugins/audit/reference/execute-task.md\":\"6a961d37156af69a\",\"plugins/audit/scripts/governance/_runner_output.py\":\"0e9eec8149f0b664\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"512cf9cc157d73a9\",\"tests/test__runner_output.py\":\"d869886dd1b9ba30\",\"tests/test_stamp_verification.py\":\"7ad7ff647a84e8c2\"},\"head\":\"efc2c59f\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/scripts/governance/_runner_output.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"tests/test__runner_output.py\",\"tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:6c92026f4c1b14bcb57768a53427eeb9a28396f5c1fc50bfe57f6982548aa7b8\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 2 of the diff's 7 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 3 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/reference/execute-task.md; 2 file(s) that could hold a move not compared: tests/test__runner_output.py, tests/test_stamp_verification.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/reference/execute-task.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test__runner_output.py",
+        "move": "definition-changed",
+        "reason": "a changed line lies outside its labelled checks and outside every inert addition (first at base line 421 and tree line 421), and the code there - a helper, a table a case reads, a fixture, a statement before or around a case - is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test_stamp_verification.py",
+        "move": "definition-changed",
+        "reason": "a changed line lies outside its labelled checks and outside every inert addition (first at base line 6938 and tree line 6938), and the code there - a helper, a table a case reads, a fixture, a statement before or around a case - is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "efc2c59faa3c30fcecd23ada36eb5f81e1fe775d"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-17T23:24:27Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

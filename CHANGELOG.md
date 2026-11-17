@@ -48,7 +48,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   dropped by `submit`. `proved` needs exit 0 and a case of the task's own seen to run and pass:
   a case id HEAD's own run printed for no case, or the runner's passed count rising - never a
   whole label, which differs between the two runs when it quotes a temp path, and never a
-  skipped case. A new jest or vitest file and a new `--stage` block are proved through the
+  skipped case. A rising count proves only cases the task defines: under unittest, pytest,
+  jest, vitest and playwright the declared test files must define more cases HEAD's test files
+  do not hold identically - read the way `red` credits a case - than the run skipped or expected
+  to fail beyond HEAD's own, and the basis states both figures, so a new file that only imports
+  or subclasses HEAD's TestCase is `could-not-prove`; where the definitions were not read or
+  cannot be counted (a `parametrize`, a generated case) the count alone proves, and the basis
+  says it is that weaker proof. A test module the runner could not load - unittest's loader
+  stand-in, pytest's collection error - is no case: `could-not-prove` with the runner's line,
+  whether or not other cases ran, and named apart from the failing cases in `red`'s basis too. A new jest or vitest file and a new `--stage` block are proved through the
   baseline step `red` takes, which the two verbs now share with their set-up and teardown.
   `not-green` - a collected test failing on the base by an assertion or by raising, or an
   expected failure, so written to the new code - is an answer only a human settles, which the

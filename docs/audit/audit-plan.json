@@ -1397,7 +1397,11 @@
       "SG1.23-ukq",
       "SG1.24-ukq",
       "SG1.25-ukq",
-      "SG1.26-ukq"
+      "SG1.26-ukq",
+      "SG1.27-ukq",
+      "SG1.28-ukq",
+      "SG1.29-ukq",
+      "SG1.30-ukq"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -2058,7 +2062,9 @@
       "SG1.23-ukq",
       "SG1.24-ukq",
       "SG1.25-ukq",
-      "SG1.26-ukq"
+      "SG1.26-ukq",
+      "SG1.27-ukq",
+      "SG1.29-ukq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2166,7 +2172,8 @@
       "SG1.3",
       "SG1.7",
       "SG1.23-ukq",
-      "SG1.25-ukq"
+      "SG1.25-ukq",
+      "SG1.30-ukq"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -2559,7 +2566,8 @@
       "SG1.19-ukq",
       "SG1.22-ukq",
       "SG1.25-ukq",
-      "SG1.26-ukq"
+      "SG1.26-ukq",
+      "SG1.30-ukq"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -2759,7 +2767,8 @@
       "SG1.7",
       "SG1.8",
       "SG1.18-ukq",
-      "SG1.24-ukq"
+      "SG1.24-ukq",
+      "SG1.29-ukq"
     ],
     "plugins/audit/commands/layout.md": [
       "P57.1",
@@ -3266,7 +3275,8 @@
       "P131.2",
       "SG1.7",
       "SG1.23-ukq",
-      "SG1.25-ukq"
+      "SG1.25-ukq",
+      "SG1.30-ukq"
     ],
     "plugins/audit/hooks/guard-history-rewrite.py": [
       "P29.2",
@@ -3583,7 +3593,8 @@
       "SG1.19-ukq",
       "SG1.20-ukq",
       "SG1.22-ukq",
-      "SG1.26-ukq"
+      "SG1.26-ukq",
+      "SG1.27-ukq"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -3624,7 +3635,8 @@
       "P142.1",
       "SG1.6",
       "SG1.15-ukq",
-      "SG1.24-ukq"
+      "SG1.24-ukq",
+      "SG1.29-ukq"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -5014,7 +5026,8 @@
       "P156.7",
       "P156.8-3st",
       "SG1.6",
-      "SG1.20-ukq"
+      "SG1.20-ukq",
+      "SG1.27-ukq"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -10428,7 +10441,8 @@
       "SG1.16-ukq",
       "SG1.17-ukq",
       "SG1.18-ukq",
-      "SG1.21-ukq"
+      "SG1.21-ukq",
+      "SG1.28-ukq"
     ],
     "plugins/audit/scripts/ui/panel-css/tokens-and-reset.css": [
       "P109.1"
@@ -10502,7 +10516,8 @@
       "P148.12-xpz",
       "P157.2",
       "P157.10-mwz",
-      "SG1.20-ukq"
+      "SG1.20-ukq",
+      "SG1.27-ukq"
     ],
     "plugins/audit/tests/test__runner_output.py": [
       "P102.3",
@@ -12876,7 +12891,8 @@
       "P148.12-xpz",
       "P157.2",
       "P157.10-mwz",
-      "SG1.20-ukq"
+      "SG1.20-ukq",
+      "SG1.27-ukq"
     ],
     "tests/test__scope_companions.py": [
       "P131.1"
@@ -13342,7 +13358,8 @@
       "SG1.7",
       "SG1.18-ukq",
       "SG1.23-ukq",
-      "SG1.25-ukq"
+      "SG1.25-ukq",
+      "SG1.30-ukq"
     ],
     "tests/test_guard_history_rewrite.py": [
       "P131.1",
@@ -13558,7 +13575,8 @@
       "P156.7",
       "P156.8-3st",
       "SG1.6",
-      "SG1.20-ukq"
+      "SG1.20-ukq",
+      "SG1.27-ukq"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",
@@ -13658,12 +13676,14 @@
       "P131.7",
       "P148.5",
       "SG1.15-ukq",
-      "SG1.24-ukq"
+      "SG1.24-ukq",
+      "SG1.29-ukq"
     ],
     "tests/test__clause_coverage.py": [
       "P131.7",
       "SG1.15-ukq",
-      "SG1.24-ukq"
+      "SG1.24-ukq",
+      "SG1.29-ukq"
     ],
     "tests/test__config_rules_lints.py": [
       "P131.2"
@@ -13856,7 +13876,8 @@
       "SG1.17-ukq",
       "SG1.18-ukq",
       "SG1.21-ukq",
-      "SG1.25-ukq"
+      "SG1.25-ukq",
+      "SG1.28-ukq"
     ],
     "tests/test_sweep_selftests.py": [
       "SG1.23-ukq"

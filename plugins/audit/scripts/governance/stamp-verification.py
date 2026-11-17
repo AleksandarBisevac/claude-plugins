@@ -2229,7 +2229,13 @@ def _definition(text, classes, name):
     not it either. A binding inside the block of a compound statement is not
     read, and neither is a decorator that returns another function or a
     `setattr` whose name is computed."""
-    tree = _parse(text)
+    return _definition_in(_parse(text), classes, name)
+
+
+def _definition_in(tree, classes, name):
+    """`_definition` over a module ast already parsed (None for one that did
+    not parse): the one reading of which def runs, for `red`'s credit and for
+    `green`'s count of a file's own cases alike."""
     if tree is None:
         return None
     body, trail = tree.body, []
@@ -2671,15 +2677,31 @@ def _js_credit_problem(site, scope):
     head = scope.get("head_js")
     if head is None:
         return "HEAD's test files could not be read to tell an edit from HEAD's case"
-    same = [head["defs"][(chain, b)] for b in bodies if (chain, b) in head["defs"]]
+    same, held = _js_head_copy(chain, bodies, head)
     if same:
         return ("its test body in %s is unchanged from HEAD's %s (the same title "
                 "chain and tokens) - HEAD's case" % (where, same[0]))
-    held = _js_unread_holding(head["unread"], name)
     if held:
         return ("HEAD's %s could not be read as JS/TS source and may hold this "
                 "case, so it is not credited" % (", ".join(held),))
     return None
+
+
+def _js_head_copy(chain, bodies, head):
+    """`(same, held)` for a jest or vitest case with title chain `chain` and
+    any of `bodies`: HEAD's test files holding that chain with a body the same
+    token for token, and HEAD's test files the tokenizer could not read that
+    may hold its title. Both empty is a case HEAD does not hold."""
+    same = [head["defs"][(chain, b)] for b in bodies if (chain, b) in head["defs"]]
+    return same, _js_unread_holding(head["unread"], chain[-1])
+
+
+def _head_copy(classes, name, node, defs):
+    """HEAD's test file holding an ast-identical def of `name` under the class
+    chain `classes` (`test_definitions`' key), or None - wherever it sits, so a
+    HEAD case a new file repeats, a moved file carries or a copy holds is
+    found."""
+    return defs.get((tuple(classes), name, ast.dump(node)))
 
 
 def credit_problem(failure, runner, scope):
@@ -2727,11 +2749,122 @@ def credit_problem(failure, runner, scope):
     defs = scope.get("head_defs")
     if defs is None:
         return "HEAD's test files could not be read to tell an edit from HEAD's case"
-    same = defs.get((tuple(classes), name, ast.dump(node)))
+    same = _head_copy(classes, name, node, defs)
     if same is not None:
         return ("its definition in %s is unchanged from HEAD's %s (the same class "
                 "chain, name and ast) - HEAD's case" % (where, same))
     return None
+
+
+# --- the cases a task's declared test files define, counted for `green` ---
+# A runner that prints no label for a passing case shows a case of the task's
+# own only as its passed count rising, and a rise is made as readily of HEAD's
+# cases collected again: a new file importing HEAD's TestCase, or subclassing it,
+# runs HEAD's cases a second time. So `green` counts what the declared files
+# define, through the reading `red`'s credit uses - the def that runs
+# (`_definition_in`), with no identical one under the same class chain and name
+# in HEAD's test files (`_head_copy`; `_js_head_copy` for a title chain and
+# body) - and `_count_proof` weighs that count against the skips.
+_ONE_CASE_DECORATORS = ("skip", "skipIf", "skipUnless", "expectedFailure")
+# A module-level def of one of these names builds cases at run time.
+_CASE_GENERATORS = ("load_tests", "pytest_generate_tests")
+
+
+def _one_case(decorator):
+    """Whether `decorator` leaves its def ONE case: unittest's skip family and
+    `expectedFailure`, a `mock.patch` of any form, and any `pytest.mark.<x>`
+    but `parametrize`. Any other may generate cases, so its count is unknown."""
+    target = decorator.func if isinstance(decorator, ast.Call) else decorator
+    path = _dotted(target) or []
+    if not path:
+        return False
+    if path[-1] in _ONE_CASE_DECORATORS or "patch" in path:
+        return True
+    return "mark" in path[:-1] and path[-1] != "parametrize"
+
+
+def _case_defs(tree, runner):
+    """`(found, unknown)` - the case-shaped defs of a module as `(classes,
+    def, counted)`: a `test`-prefixed method of a top-level class (what
+    unittest's loader collects), and for pytest also a `test`-prefixed function
+    at module level and a method in a nested class. `counted` is False under a
+    class decorator that may generate cases; `unknown` names a module-level
+    generator of cases, which no def stands for."""
+    found = []
+    unknown = ["defines %s, which builds cases at run time" % (stmt.name,)
+               for stmt in tree.body
+               if isinstance(stmt, _DEFS) and stmt.name in _CASE_GENERATORS]
+    stack = [((), tree.body, True)]
+    while stack:
+        chain, body, counted = stack.pop()
+        for stmt in body:
+            if isinstance(stmt, _DEFS) and stmt.name.startswith("test") \
+                    and (chain or runner == "pytest"):
+                found.append((chain, stmt, counted))
+            elif isinstance(stmt, ast.ClassDef) and (not chain or runner == "pytest"):
+                stack.append((chain + (stmt.name,), stmt.body,
+                              counted and all(_one_case(d) for d in stmt.decorator_list)))
+    return found, unknown
+
+
+def _py_own(rel, text, runner, head_defs):
+    """`(own, uncounted)` of one Python test file - see `own_definitions`."""
+    tree = _parse(text)
+    if tree is None:
+        return [], ["%s does not parse" % (rel,)]
+    found, unknown = _case_defs(tree, runner)
+    own, uncounted = [], ["%s %s" % (rel, why) for why in unknown]
+    for classes, stmt, counted in found:
+        if _definition_in(tree, list(classes), stmt.name) is not stmt:
+            continue
+        where = "%s %s" % (rel, ".".join(classes + (stmt.name,)))
+        if head_defs is None:
+            return own, uncounted + ["HEAD's test files could not be read"]
+        if _head_copy(classes, stmt.name, stmt, head_defs) is not None:
+            continue
+        if counted and all(_one_case(d) for d in stmt.decorator_list):
+            own.append(where)
+        else:
+            uncounted.append("%s, decorated by what may generate cases" % (where,))
+    return own, uncounted
+
+
+def _js_own(rel, text, head_js):
+    """`(own, uncounted)` of one jest or vitest test file - see
+    `own_definitions`."""
+    cases = js_test_cases(text)
+    if cases is None:
+        return [], ["%s could not be read as JS/TS source" % (rel,)]
+    uncounted = (["%s builds test titles at run time" % (rel,)]
+                 if cases["dynamic"] else [])
+    if head_js is None:
+        return [], uncounted + ["HEAD's test files could not be read"]
+    own = ["%s (%s)" % (rel, " > ".join(chain)) for chain, body in cases["tests"]
+           if _js_head_copy(chain, [body], head_js) == ([], [])]
+    return own, uncounted
+
+
+def own_definitions(texts, runner, head_defs, head_js):
+    """`{"own": [...], "uncounted": [...]}` - the cases the declared test files
+    `texts` (`{rel: text}`) define that HEAD's test files do not hold
+    identically, each named where it sits, and what in them the reading cannot
+    count: a def under a decorator that may generate cases, a module-level
+    generator, a title built at run time, a file that does not parse, HEAD's
+    test files unread. `head_defs` and `head_js` are `head_tree`'s. Read per
+    runner: a `.py` file for unittest and pytest, a JS/TS one for jest, vitest
+    and playwright. A case a file builds by `setattr` or `type()` at run time
+    has no def here and is neither counted nor named."""
+    own, uncounted = [], []
+    for rel in sorted(texts):
+        if runner in JS_RUNNERS and _JS_SOURCE.search(rel):
+            got = _js_own(rel, texts[rel], head_js)
+        elif runner not in JS_RUNNERS and rel.endswith(".py"):
+            got = _py_own(rel, texts[rel], runner, head_defs)
+        else:
+            continue
+        own.extend(got[0])
+        uncounted.extend(got[1])
+    return {"own": own, "uncounted": uncounted}
 
 
 def _cat_blobs(root, rels, deadline):
@@ -3520,8 +3653,15 @@ def red_verdict(run, ctx):
             "record for this%s%s" % (where, line, ", ".join(ctx["dropped"]) or "nothing",
                                      support_clause(run.get("support")),
                                      deps_clause(ctx.get("deps"))))
-    failing = (_failing_cases(text, tally["runner"], run["cmd"])
-               if tally is not None and tally["runner"] is not None else [])
+    failing, loads = (_loaded_split(text, tally["runner"], _failing_cases(
+        text, tally["runner"], run["cmd"]))
+        if tally is not None and tally["runner"] is not None else ([], []))
+    # A module that did not load is never a failing case here either: it never
+    # failed an assertion, so it was never credited, and it is named apart in
+    # every basis below.
+    if loads:
+        env_clause = ("; the runner could not load %s, which is no case"
+                      % (_loads_clause(loads),)) + env_clause
     absent = ctx.get("absent") or []
     stubbed = [rel for rel in ctx.get("new") or [] if rel not in absent]
     fresh = new_stage_baseline(run.get("head"), run["cmd"], ctx.get("stages"))
@@ -3695,9 +3835,20 @@ def red_verdict(run, ctx):
 # house run), else by the tally's PASSED count rising over the baseline's (the
 # sweep's row per file, or the run's tally). A whole label is never compared:
 # the two runs are handed different temp and home directories, so a label
-# quoting either differs between them for the same case. A skipped case did not
-# run and an expected failure failed, so neither is a pass. A collected case
-# that failed on the base - an assertion or any exception, an expected failure
+# quoting either differs between them for the same case. A rising tally proves
+# only what the task defines, since HEAD's cases collected again - a new file
+# importing or subclassing HEAD's TestCase - raise it too: under unittest,
+# pytest, jest, vitest and playwright the declared test files must define more
+# cases HEAD's test files do not hold identically than the run skipped or
+# expected to fail beyond HEAD's own (`_count_proof`, `own_definitions`, the
+# reading `red`'s credit uses); where those definitions were not read or cannot
+# be counted, the rise proves as a count alone and the basis names it weaker.
+# A skipped case did not run and an expected failure failed, so neither is a
+# pass. A test module the runner could not load - unittest's loader stand-in,
+# pytest's collection error, whatever the cause - is no case, whether or not
+# other cases ran, and is `could-not-prove` with the runner's line
+# (`_runner_output.did_not_load`, which `red` reads too). A collected case that
+# failed on the base - an assertion or any exception, an expected failure
 # included - is `not-green`: against a green baseline every failure is the
 # task's change to the tests. Zero collected, a compile or import error, a run
 # that could not start, output no reader reads, two runners' tallies and a
@@ -3837,13 +3988,89 @@ def _own_passing(run, ctx):
             problem += _skipped_clause(head_text, run["text"], cmd)
         return own, how, problem
     if risen:
-        unnamed = ("; --case %s not checked by name: the run prints no label for "
-                   "a passing case" % (", ".join(cases),) if cases else "")
-        return risen, "seen by the passed count" + unnamed, None
+        return _count_proof(run, ctx, risen)
     return [], None, ("the run prints no label for a passing case, and no test "
                       "file's passed count rose over HEAD's own run, so no case "
                       "of the task's own was seen passing"
                       + _skipped_clause(head_text, run["text"], cmd))
+
+
+# The runners whose cases `own_definitions` reads as definitions. A house run is
+# read by its case ids and the sweep by its per-file rows, and neither is here.
+_DEFINED_RUNNERS = ("unittest", "pytest") + JS_RUNNERS
+
+
+def _count_proof(run, ctx, risen):
+    """`(own, how, problem)` for a passed count that rose on a runner printing
+    no label for a passing case. A rise proves only what the task defines: the
+    declared test files must define N cases HEAD's test files do not hold
+    identically (`own_definitions`, from `ctx["wt"]`, `ctx["head_defs"]` and
+    `ctx["head_js"]`), and N must exceed M, the cases the task's run skipped or
+    expected to fail beyond HEAD's own run - then at least one of the task's
+    own ran and passed. Where the definitions were not read (no texts, or a
+    runner the reading does not know) or some cannot be counted, the rise
+    proves as a count alone and the basis says it is that weaker proof. A
+    sweep-shaped run and a house run are read as before: their cases are not
+    definitions this reads."""
+    cmd, cases = run["cmd"], ctx.get("cases") or []
+    head_text = (run.get("head") or {}).get("text") or ""
+    seen = "seen by the passed count" + (
+        "; --case %s not checked by name: the run prints no label for a passing "
+        "case" % (", ".join(cases),) if cases else "")
+    runner = (_runner_output.read_run_tally(run["text"], cmd) or {}).get("runner")
+    if sweep_suites(cmd) is not None or runner in (_runner_output.HOUSE_RUNNER,
+                                                    _runner_output.SWEEP_RUNNER):
+        return risen, seen, None
+    if runner not in _DEFINED_RUNNERS or ctx.get("wt") is None:
+        return risen, seen + (
+            " (the declared test files' definitions were not read, so the rise is "
+            "not shown to be cases the task defines)"), None
+    defined = own_definitions(ctx["wt"], runner, ctx.get("head_defs"),
+                              ctx.get("head_js"))
+    n = len(defined["own"])
+    more = max(0, sum(_tally_figure(run["text"], cmd, key)
+                      - _tally_figure(head_text, cmd, key)
+                      for key in ("skipped", "xfailed")))
+    named = " (%s)" % (_output.some_of(defined["own"]),) if n else ""
+    counts = ("the declared test files define %d case(s) HEAD's tree does not hold "
+              "identically%s and the run skipped or expected to fail %d more than "
+              "HEAD's own run" % (n, named, more))
+    if n > more:
+        return risen, ("%s, as %s - %d defined > %d more skipped, so at least one "
+                       "of the task's own ran and passed" % (seen, counts, n, more)), None
+    if defined["uncounted"]:
+        return risen, ("%s, as %s, and the definitions reading cannot count %s - so "
+                       "the rise is not shown to be the task's own cases, a weaker "
+                       "proof than a count of them"
+                       % (seen, counts, _output.some_of(defined["uncounted"]))), None
+    rise = "; ".join(risen)
+    if not n:
+        return [], None, ("the passed count rose (%s) while %s (0 defined), so the "
+                          "rise is made of cases HEAD already holds - a HEAD test "
+                          "class a new file imports or inherits is collected again"
+                          % (rise, counts))
+    return [], None, ("the passed count rose (%s) while %s (%d defined, %d more "
+                      "skipped), so none of them is shown to have run: the rise is "
+                      "made of cases HEAD already holds or of cases that did not run"
+                      % (rise, counts, n, more))
+
+
+def _loaded_split(text, runner, failing):
+    """`(cases, loads)` - the failing cases a run named, less every test module
+    the runner could not load (`_runner_output.did_not_load`, the one reading of
+    which a failure is); and those modules, each with the runner's own line
+    saying why (`load_failures`). Both verdicts read a failure through this."""
+    cases = [f for f in failing if not _runner_output.did_not_load(f)]
+    if len(cases) == len(failing):
+        return cases, []
+    return cases, _runner_output.load_failures(text, runner)
+
+
+def _loads_clause(loads):
+    """`test_new (SyntaxError: ...), ...` - the modules a run could not load,
+    each with the runner's own line."""
+    return _output.some_of(["%s (%s)" % (load["module"], load["line"])
+                            for load in loads])
 
 
 def _not_green_failure(run, tally):
@@ -3865,7 +4092,10 @@ def green_verdict(run, ctx):
     file, left absent and named in `head["absent"]`. `ctx` is `{"tests", "new",
     "cases", "dropped"}` with the optional `"stages"` (the `--stage` labels the
     task's files introduce), `"naming"`, `"deps"`, `"sized"`, `"support"` and
-    `"inline"` `red_verdict` reads too."""
+    `"inline"` `red_verdict` reads too, and `"wt"` (`{rel: text}` of the
+    declared test files the task's run laid over), `"head_defs"` and
+    `"head_js"` (`head_tree`'s), which a passed count's rise is weighed
+    against (`_count_proof`) - absent, that rise is read as a count alone."""
     at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     cmd = run["cmd"]
     shown = " ".join(cmd)
@@ -3901,6 +4131,16 @@ def green_verdict(run, ctx):
                       "its implementation only by the definitions they lie in, so "
                       "a run of them on HEAD cannot be told from a misread split - "
                       "%s" % (where, line))
+    runner = tally["runner"] if tally is not None else None
+    loads = (_loaded_split(run["text"], runner,
+                           _failing_cases(run["text"], runner, cmd))[1]
+             if runner is not None else [])
+    if loads:
+        return cannot(V_COLLECT, "%s, but the runner could not load %s - a test "
+                      "module that did not load is no case, and an import that "
+                      "fails cannot be told from the throwaway's environment by "
+                      "the run, so its line says what failed - %s"
+                      % (where, _loads_clause(loads), line))
     if _not_green_failure(run, tally):
         failing = _failing_cases(run["text"], tally["runner"], cmd)
         return not_green(V_RED, "%s with %d of %d collected case(s) failing%s"
@@ -4956,6 +5196,7 @@ def run_green(args, cmd, out):
     run = {"cmd": cmd, "code": None, "text": "", "problem": None, "head": None}
     files = {"new": [], "absent": [], "stubs": [], "stages": []}
     support, copied = [], []
+    head_defs = head_js = None
     try:
         try:
             present, run["problem"] = _proof_preflight(setup)
@@ -4964,6 +5205,11 @@ def run_green(args, cmd, out):
                 # A test-support module HEAD has may carry the change itself, and
                 # a pass leaning on it would be no pass on the base: HEAD's copy.
                 support = support_at_head(root, scope["tests"], present, deadline)
+                # What HEAD's test files define, read as `red` reads it, so a
+                # passed count that rises is weighed against the cases the
+                # task's files define (`_count_proof`).
+                _f, head_defs, _m, head_js = head_tree(root, set(scope["tests"]),
+                                                       deadline)
                 # `green` makes no fix run, so its two runs have the whole
                 # deadline, the time `red` holds back for one included.
                 run["head"], run["problem"] = _baseline_run(
@@ -4987,7 +5233,12 @@ def run_green(args, cmd, out):
             "tests": scope["tests"], "new": files["stubs"], "cases": args.case,
             "stages": files["stages"], "dropped": dropped, "naming": naming,
             "deps": deps, "sized": sized, "support": support,
-            "inline": setup["inline"]})
+            "inline": setup["inline"],
+            # A support module ran at HEAD's copy, so what the task's copy
+            # defines did not run and is not counted.
+            "wt": _test_texts(root, [rel for rel in scope["tests"]
+                                     if rel not in support]),
+            "head_defs": head_defs, "head_js": head_js})
     finally:
         removed, unremoved = _proof_teardown(setup)
     leftovers = setup["leftovers"]

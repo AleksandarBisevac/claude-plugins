@@ -422,6 +422,13 @@ _LINE_END_EXTRA = (
     "FAILED tests/test_x.py::test_a - assert 1 == 2\n=== 1 failed in 0.01s ===\n",
     "FAIL: test_a (mod.Cls)\n----\nAssertionError\n\nRan 1 test in 0.001s\n\n"
     "FAILED (failures=1)\n",
+    # unittest's loader stand-in for a module it could not import, as 3.11 and
+    # later print it: the one fixture `load_failures` reads something from.
+    "E.\n" + "=" * 70 + "\nERROR: test_new (unittest.loader._FailedTest.test_new)\n"
+    + "-" * 70 + "\nImportError: Failed to import test module: test_new\nTraceback "
+    "(most recent call last):\n  File \"tests/test_new.py\", line 2\nSyntaxError: "
+    "'(' was never closed\n\n\n" + "-" * 70 + "\nRan 2 tests in 0.000s\n\nFAILED "
+    "(errors=1)\n",
 )
 # The readers the line-end case must find, written out: a derivation that read
 # nothing would otherwise compare nothing and pass.
@@ -593,6 +600,40 @@ def _cases(check):
     _playwright_line_cases(check)
     _sweep_cases(check)
     _layer_cases(check)
+    _load_cases(check)
+
+
+def _load_cases(check):
+    """A test module the runner could not load, told from a collected case that
+    failed, and the runner's own line for it."""
+    stand_in = _LINE_END_EXTRA[-1]
+    older = stand_in.replace("_FailedTest.test_new)", "_FailedTest)")
+    pytest = ("_____ ERROR collecting tests/test_b.py _____\nImportError while "
+              "importing test module 'tests/test_b.py'.\nHint: make sure your test "
+              "modules/packages have valid Python names.\nE   ModuleNotFoundError: "
+              "No module named 'newmod'\n=== short test summary info ===\nERROR "
+              "tests/test_b.py\n=== 1 passed, 1 error in 0.05s ===\n")
+    loads = [M.load_failures(text) for text in (stand_in, older, pytest)]
+    cases = ("E\n" + "=" * 70 + "\nERROR: test_a (tests.test_new.N.test_a)\n"
+             + "-" * 70 + "\nAttributeError: module 'mine' has no attribute 'x'\n\n"
+             + "-" * 70 + "\nRan 1 test in 0.000s\n\nFAILED (errors=1)\n",
+             "ERROR tests/test_b.py::test_b - fixture 'newfix' not found\n"
+             "=== 1 passed, 1 error in 0.05s ===\n")
+    allowed = [([M.did_not_load(f) for f in M.failing_cases(text)], M.load_failures(text))
+               for text in cases]
+    check("ru19 a module the runner could not load - unittest's loader stand-in "
+          "as 3.11 and later print it and as earlier versions do, pytest's "
+          "collection error - is read by "
+          "`load_failures` with the runner's own line saying which and why (never "
+          "pytest's Hint); a collected case raising in its body and a fixture error "
+          "are failing cases `did_not_load` rejects, with no load failure: %r; "
+          "allowed %r" % (loads, allowed),
+          loads == [[{"module": "test_new",
+                      "line": "ImportError: Failed to import test module: test_new; "
+                              "SyntaxError: '(' was never closed"}]] * 2
+          + [[{"module": "tests/test_b.py",
+               "line": "ModuleNotFoundError: No module named 'newmod'"}]]
+          and allowed == [([False], [])] * 2)
 
 
 def _selftest():

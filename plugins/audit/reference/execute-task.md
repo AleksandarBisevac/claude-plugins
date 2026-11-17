@@ -119,7 +119,12 @@ verb writes and refuses, and what the run commands leave behind, is
        agent's return typed is dropped by `submit`. `proved` is exit 0 with a case of the
        task's own seen to run and pass - by a case id HEAD's own run printed for no case, or
        by the runner's passed count rising over HEAD's own run; a skipped case is no pass.
-       A new jest or vitest file is left absent from HEAD's run and a new `--stage` block
+       A rise proves only cases the declared test files define and HEAD's do not hold
+       identically, more of them than the extra skips (`_count_proof`): a file that only
+       imports or subclasses HEAD's TestCase is `could-not-prove`; a count the definitions
+       cannot read or count (`parametrize`) proves as the weaker proof its basis names.
+       A test module the runner could not load is no case: `could-not-prove`, the runner's
+       line quoted (`_runner_output.did_not_load`). A new jest or vitest file is left absent from HEAD's run and a new `--stage` block
        read as new, as `red` does (`_baseline_files`). `not-green` is a collected test
        failing on the base - by an assertion or by raising, an expected failure included -
        written to the new code, and only a human settles it at sign-off under every
