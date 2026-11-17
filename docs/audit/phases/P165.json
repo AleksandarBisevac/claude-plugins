@@ -1,7 +1,7 @@
 {
   "id": "P165",
   "title": "Quick lows before 3.9.0",
-  "status": "in_progress",
+  "status": "done",
   "description": "The last phase of 3.9.0: lows whose fix is small and needs no design decision. Each fix closes its class at a shared seam.",
   "desiredOutcome": "The quick, decision-free lows left after P163 and P164 are closed: report link decode, side-nav highlight, bugs-table chip wrap, Sort-select coverage, panel arrow a11y, STACK_BUDGET wording, three drive lows, a symlink spelling in start, a test marker.",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "eed7a78b63b36b1880edc94c54e1a617f078a714",
   "branch": "audit/p165-quick-lows-before-3-9-0",
-  "mergedAt": null,
+  "mergedAt": "2026-11-17T14:54:34Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -646,5 +646,6 @@
     "runId": "2026-11-17T14:53:10Z.08616c",
     "status": "passed",
     "at": "2026-11-17T14:53:10Z"
-  }
+  },
+  "mergedHead": "5290b7e3824724bea25f9b5b68f00a966a4ca5c5"
 }
