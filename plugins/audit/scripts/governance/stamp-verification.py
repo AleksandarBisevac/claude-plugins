@@ -1651,6 +1651,18 @@ def support_at_head(root, tests, present, deadline=None):
             and changed_source(root, rel, deadline)[0]]
 
 
+def support_held_clause(support):
+    """`green`'s sentence for the test-support modules its one task run held at
+    HEAD's copy, or "" when it held none. `green` lays the task's copy over in
+    no run, so `support_clause`'s two runs are not this one's."""
+    if not support:
+        return ""
+    return ("; test-support module%s %s held at HEAD's copy in the task's run, "
+            "since %s may carry the change" % (
+                "" if len(support) == 1 else "s", ", ".join(support),
+                "it" if len(support) == 1 else "they"))
+
+
 def support_clause(support):
     """The sentence for a run made again with test-support modules at HEAD's
     copy, or "" when none was."""
@@ -3674,16 +3686,22 @@ def red_verdict(run, ctx):
 # A behaviour-preserving refactor adds characterization tests, and they must PASS
 # on the code before the change - written after the new code, they may describe
 # it instead of the old behaviour, and then the refactor proves nothing kept. So
-# `green` builds `red`'s throwaway the same way (`_build_throwaway`, then
-# `_isolated_run` per run: HEAD, the task's declared test files laid over it)
-# and makes two runs: HEAD's own tests first, the baseline `red` makes, then the
-# task's. Proved is exit 0 with a case of the task's own seen collected AND
-# passing: by its label where the runner prints one for a passing case and the
-# baseline did not print it (a house run), else by a test file's case count
-# rising over the baseline's (the sweep's row per file, or the run's tally). A
-# red there is `not-green` - against a green baseline every failure is the task's
-# change to the tests. Zero collected, a compile or import error, a run that
-# could not start and a refusal are `could-not-prove` with the reason verbatim.
+# `green` shares `red`'s set-up, baseline step and teardown (`_proof_setup`,
+# `_baseline_files`, `_baseline_run`, `_proof_teardown`) and makes two runs:
+# HEAD's own tests first, the baseline `red` makes - a new jest or vitest file
+# left absent, a new stage block read as new - then the task's. Proved is exit 0
+# with a case of the task's own seen to RUN AND PASS: by its case id where the
+# runner prints a label carrying one and HEAD's own run printed no such id (a
+# house run), else by the tally's PASSED count rising over the baseline's (the
+# sweep's row per file, or the run's tally). A whole label is never compared:
+# the two runs are handed different temp and home directories, so a label
+# quoting either differs between them for the same case. A skipped case did not
+# run and an expected failure failed, so neither is a pass. A collected case
+# that failed on the base - an assertion or any exception, an expected failure
+# included - is `not-green`: against a green baseline every failure is the
+# task's change to the tests. Zero collected, a compile or import error, a run
+# that could not start, output no reader reads, two runners' tallies and a
+# refusal are `could-not-prove` with the reason verbatim.
 # The words are the schema's `greenFirst.status` enum less the one no run gives
 # (`not-attempted`); `_refs.green_first_vocabulary_drift` holds the three equal.
 GREEN_WORDS = ("proved", "not-green", "could-not-prove")
@@ -3703,9 +3721,27 @@ def _passing_labels(text, cmd):
     return [label for label in labels if label not in failing]
 
 
+def _baseline_labels(head_text, task_text, cmd):
+    """The labels HEAD's own run passed, read for a comparison with the task's:
+    `_passing_labels`, or an EMPTY list when HEAD's run printed no tally at all
+    and the task's run is a house one - a new house file laid over as an empty
+    stub runs and prints nothing, which is HEAD holding none of its cases, not
+    a runner whose labels cannot be read."""
+    labels = _passing_labels(head_text, cmd)
+    if labels is not None:
+        return labels
+    if _runner_output.read_run_tally(head_text, cmd) is None \
+            and _passing_labels(task_text, cmd) is not None:
+        return []
+    return None
+
+
 def _case_counts(text, cmd):
-    """`{file: cases}` a run counted, per file where the sweep printed a row for
-    it, else `{None: total}` off its one tally; `{}` when it counted nothing."""
+    """`{file: cases}` a run PASSED, per file where the sweep printed a row for
+    it (a row is printed for a file every case of which passed), else
+    `{None: passed}` off its one tally - never its collected figure, which
+    holds the skipped and expected-failure cases; `{}` when it counted
+    nothing."""
     rows = sweep_ok_counts(text)
     if rows:
         return dict((posixpath.normpath(p.replace("\\", "/")), n)
@@ -3716,49 +3752,108 @@ def _case_counts(text, cmd):
     tally = _runner_output.read_run_tally(text, cmd)
     if tally is None or tally["runner"] is None:
         return {}
-    return {None: tally["collected"]}
+    return {None: tally["passed"]}
 
 
 def _risen(head, task, tests):
-    """`["<file> ran N case(s) at HEAD's own run and M with the task's", ...]` -
-    each count of the task's run above the baseline's, read per declared test
-    file when the sweep printed a row for it, else as the run's total."""
+    """`["<file> passed N case(s) at HEAD's own run and M with the task's",
+    ...]` - each passed count of the task's run above the baseline's, read per
+    declared test file when the sweep printed a row for it, else as the run's
+    total."""
     rels = set(posixpath.normpath(t) for t in tests)
     keys = [k for k in task if k is None or k in rels]
-    return ["%s ran %d case(s) at HEAD's own run and %d with the task's"
+    return ["%s passed %d case(s) at HEAD's own run and %d with the task's"
             % ("the run" if k is None else k, head.get(k, 0), task[k])
             for k in sorted(keys, key=lambda k: k or "")
             if task[k] > head.get(k, 0)]
+
+
+def _tally_figure(text, cmd, key):
+    """One figure of a run's tally - `skipped`, `xfailed` - or 0 when the run
+    printed no tally or its runner prints no such figure."""
+    tally = _runner_output.read_run_tally(text, cmd)
+    return (tally or {}).get(key) or 0
+
+
+def _skipped_clause(head_text, text, cmd):
+    """`; N case(s) more were skipped ...` when the task's run skipped more
+    cases than HEAD's own, else ''. A skipped case never ran, so a rise made
+    only of skips is no case of the task's own seen passing."""
+    more = _tally_figure(text, cmd, "skipped") - _tally_figure(head_text, cmd, "skipped")
+    if more <= 0:
+        return ""
+    return ("; %d case(s) more were skipped than at HEAD's own run, and a skipped "
+            "case never ran" % (more,))
+
+
+def _named_by_case(label, cases):
+    return any(_is_named({"id": house_case_id(label), "label": label}, c)
+               for c in cases)
+
+
+def _own_by_id(passed, before, cases, risen):
+    """`(own, how, problem)` for a run whose labels both runs printed. A case is
+    the task's own when its label carries an id HEAD's own run printed for no
+    case; a label with no id is seen only by the passed count rising
+    (`risen`)."""
+    ids_before = set(i for i in (house_case_id(label) for label in before) if i)
+    new = [label for label in passed
+           if house_case_id(label) and house_case_id(label) not in ids_before]
+    unnumbered = [label for label in passed if house_case_id(label) is None]
+    if cases:
+        named = [label for label in new if _named_by_case(label, cases)]
+        if named:
+            return named, "passing, their id not printed by HEAD's own run", None
+        named = [label for label in unnumbered if _named_by_case(label, cases)]
+        if named and risen:
+            return named, ("passing with no id, seen by the passed count rising: "
+                           "%s" % ("; ".join(risen),)), None
+        return [], None, (
+            "--case %s names no passing case whose id HEAD's own run did not "
+            "print, nor a passing case with no id beside a passed count that "
+            "rose" % (", ".join(cases),))
+    if new:
+        return new, "passing, their id not printed by HEAD's own run", None
+    if risen:
+        return risen, "seen by the passed count", None
+    return [], None, ("no passing case carries an id HEAD's own run did not "
+                      "print, and the passed count did not rise over HEAD's own "
+                      "run, so no case of the task's own was seen passing")
 
 
 def _own_passing(run, ctx):
     """`(own, how, problem)`: the task's own cases seen passing and how they
     were seen, or the reason none was."""
     cmd, head = run["cmd"], run.get("head") or {}
-    passed = _passing_labels(run["text"], cmd)
-    before = _passing_labels(head.get("text") or "", cmd)
+    head_text = head.get("text") or ""
     cases = ctx.get("cases") or []
+    risen = _risen(_case_counts(head_text, cmd), _case_counts(run["text"], cmd),
+                   ctx.get("tests") or [])
+    passed = _passing_labels(run["text"], cmd)
+    before = _baseline_labels(head_text, run["text"], cmd)
     if passed is not None and before is not None:
-        new = [label for label in passed if label not in before]
-        named = [label for label in new if not cases or any(
-            _is_named({"id": house_case_id(label), "label": label}, c)
-            for c in cases)]
-        if named:
-            return named, "passing, not printed by HEAD's own run", None
-        return [], None, (
-            "--case %s names no case that passed and that HEAD's own run did not "
-            "print" % (", ".join(cases),) if cases else
-            "no case passed that HEAD's own run did not print, so no case of the "
-            "task's own was seen passing")
-    risen = _risen(_case_counts(head.get("text") or "", cmd),
-                   _case_counts(run["text"], cmd), ctx.get("tests") or [])
+        own, how, problem = _own_by_id(passed, before, cases, risen)
+        if problem is not None:
+            problem += _skipped_clause(head_text, run["text"], cmd)
+        return own, how, problem
     if risen:
         unnamed = ("; --case %s not checked by name: the run prints no label for "
                    "a passing case" % (", ".join(cases),) if cases else "")
-        return risen, "seen by count" + unnamed, None
+        return risen, "seen by the passed count" + unnamed, None
     return [], None, ("the run prints no label for a passing case, and no test "
-                      "file's case count rose over HEAD's own run, so no case of "
-                      "the task's own was seen collected")
+                      "file's passed count rose over HEAD's own run, so no case "
+                      "of the task's own was seen passing"
+                      + _skipped_clause(head_text, run["text"], cmd))
+
+
+def _not_green_failure(run, tally):
+    """Whether the task's run FAILED a case it collected on the base: a
+    non-zero exit, one runner's tally, at least one case collected and at least
+    one failed or errored. Not an assertion count - a test written to the new
+    code fails on the base as often by raising (a name, a key, an attribute the
+    change adds) as by asserting, and either is the finding."""
+    return (run["code"] != 0 and tally is not None and tally["runner"] is not None
+            and tally["collected"] > 0 and tally["failed"] > 0)
 
 
 def green_verdict(run, ctx):
@@ -3766,26 +3861,36 @@ def green_verdict(run, ctx):
 
     `run` is `{"cmd", "code", "text", "problem", "head"}`: the task's run in the
     throwaway and `head`, HEAD's own tests run first on the same tree, the new
-    declared test files laid over as empty files. `ctx` is `{"tests", "new",
-    "cases", "dropped"}` with the optional `"naming"`, `"deps"`, `"sized"`,
-    `"support"` and `"inline"` `red_verdict` reads too."""
+    declared test files laid over as empty files - or, for a jest or vitest
+    file, left absent and named in `head["absent"]`. `ctx` is `{"tests", "new",
+    "cases", "dropped"}` with the optional `"stages"` (the `--stage` labels the
+    task's files introduce), `"naming"`, `"deps"`, `"sized"`, `"support"` and
+    `"inline"` `red_verdict` reads too."""
     at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     cmd = run["cmd"]
     shown = " ".join(cmd)
     env = "; run without %s" % (", ".join(ctx.get("dropped") or []) or "nothing",)
     if ctx.get("naming"):
         env += "; kept, naming the shared root: %s" % (", ".join(ctx["naming"]),)
-    env += (support_clause(ctx.get("support")) + deps_clause(ctx.get("deps"))
+    env += (support_held_clause(ctx.get("support")) + deps_clause(ctx.get("deps"))
             + deadline_clause(ctx.get("sized")))
 
     def cannot(verdict, why):
         return E_CANNOT_PROVE, verdict, {"status": GREEN_CANNOT, "at": at,
                                          "basis": why + env}
 
+    def not_green(verdict, why):
+        return E_NOT_GREEN, verdict, {
+            "status": GREEN_NOT, "at": at,
+            "basis": "%s, against HEAD's own tests green on HEAD's code: the "
+                     "task's tests fail on the code before the change, so they "
+                     "describe the new code, not the base - %s%s" % (why, line, env)}
+
     if run["problem"] is not None:
         return cannot(V_NOT_RUN, "`%s` in a throwaway tree at HEAD: %s"
                       % (shown, run["problem"]))
-    baseline = baseline_problem(run.get("head"), cmd, (), ctx.get("new") or [])
+    stages = ctx.get("stages") or ()
+    baseline = baseline_problem(run.get("head"), cmd, stages, ctx.get("new") or [])
     where = "`%s` in a throwaway tree at HEAD exited %d" % (shown, run["code"])
     verdict, tally = classify_run(run["code"], run["text"], cmd)
     line = _decisive_line(run["text"], tally)
@@ -3796,18 +3901,23 @@ def green_verdict(run, ctx):
                       "its implementation only by the definitions they lie in, so "
                       "a run of them on HEAD cannot be told from a misread split - "
                       "%s" % (where, line))
-    if verdict == V_RED:
+    if _not_green_failure(run, tally):
         failing = _failing_cases(run["text"], tally["runner"], cmd)
-        return E_NOT_GREEN, verdict, {
-            "status": GREEN_NOT, "at": at,
-            "basis": "%s with failing cases %s against HEAD's own tests green on "
-                     "HEAD's code: the task's tests fail on the code before the "
-                     "change, so they describe the new code, not the base - %s%s"
-                     % (where, _ids(failing), line, env)}
+        return not_green(V_RED, "%s with %d of %d collected case(s) failing%s"
+                         % (where, tally["failed"], tally["collected"],
+                            ": %s" % (_ids(failing),) if failing else ""))
     if verdict != V_GREEN:
         return cannot(verdict, "%s, but it reached no verdict (%s): %s"
                       % (where, verdict, line))
-    if tally is not None and tally["runner"] is not None and not tally["collected"]:
+    head_text = (run.get("head") or {}).get("text") or ""
+    expected = (_tally_figure(run["text"], cmd, "xfailed")
+                - _tally_figure(head_text, cmd, "xfailed"))
+    if expected > 0:
+        return not_green(V_RED, "%s with %d expected failure(s) more than HEAD's "
+                         "own run (an expected failure is a test that failed on "
+                         "the base)" % (where, expected))
+    if tally is not None and tally["runner"] is not None and not tally["collected"] \
+            and not tally.get("skipped"):
         return cannot(verdict, "%s, but it collected no test (zero collected): %s"
                       % (where, line))
     own, how, problem = _own_passing(run, ctx)
@@ -3815,8 +3925,29 @@ def green_verdict(run, ctx):
         return cannot(verdict, "%s, but %s - %s" % (where, problem, line))
     return E_PROVED, verdict, {
         "status": GREEN_PROVED, "at": at,
-        "basis": "%s with HEAD's own tests green on HEAD's code and the task's "
-                 "own cases %s: %s - %s%s" % (where, how, "; ".join(own), line, env)}
+        "basis": "%s with %s and the task's own cases %s: %s - %s%s"
+                 % (where, _green_baseline_clause(run.get("head"), cmd, ctx), how,
+                    "; ".join(own), line, env)}
+
+
+def _green_baseline_clause(head, cmd, ctx):
+    """What made HEAD's own run a green baseline, for a proved basis: green on
+    HEAD's code, or failing only the unknown-stage check of a stage the task's
+    files add; and which new test files it ran as empty stubs or without."""
+    absent = (head or {}).get("absent") or []
+    stubbed = [rel for rel in ctx.get("new") or [] if rel not in absent]
+    fresh = new_stage_baseline(head, cmd, ctx.get("stages") or ())
+    said = ("HEAD's own tests on HEAD's code failing only the unknown-stage check "
+            "for %s, which the task's test files add - the stage is new at HEAD"
+            % (", ".join("`%s`" % (s,) for s in fresh),) if fresh else
+            "HEAD's own tests green on HEAD's code")
+    if stubbed:
+        said += (", its declared test files new at HEAD (%s) laid over as empty "
+                 "files" % (", ".join(stubbed),))
+    if absent:
+        said += (", its declared jest or vitest test files new at HEAD (%s) left "
+                 "absent" % (", ".join(absent),))
+    return said
 
 
 def _at_head(root, rels, deadline):
@@ -4472,8 +4603,20 @@ def _arm():
         return None
 
 
-def run_red(args, cmd, out):
-    """`red`: prove a red in a throwaway tree and print the `redFirst` block."""
+# --- one set-up, one baseline step and one teardown for `red` and `green` ---
+# The two verbs make different runs over the same throwaway, and every step
+# around those runs - the scope, the sized deadline, the environment, the holder
+# and its owner file, the baseline HEAD's own tests give, the teardown and what
+# it says when a throwaway is left behind - is one function here, called by
+# both. A copy per verb drifted within a release: the baseline lost the
+# allowance for a new jest or vitest file and for a new stage block, and the
+# teardown lost the junction it skipped a removal for.
+def _proof_setup(args, cmd, runs):
+    """`(setup, exit)` - everything a proof needs before its first run, or the
+    exit it stops on (a refused scope, a temp directory only inside the shared
+    tree). `runs` is what `sized_deadline` sizes the deadline for. The setup
+    holds the throwaway's holder, its owner file written, and the interrupt
+    handlers armed, so every caller tears it down with `_proof_teardown`."""
     start = time.time()
     # Reading the plan and the dependency plan needs a deadline before the cost
     # table can be read, so they run under the default; the sized one replaces it
@@ -4484,30 +4627,18 @@ def run_red(args, cmd, out):
     scope, problem = _red_scope(args, cmd, deadline)
     if problem is not None:
         sys.stderr.write("ERROR: %s\n" % (problem,))
-        return E_USAGE
+        return None, E_USAGE
     root = scope["root"]
     costs, blocks, cost_problem = (load_sweep_table(root) if sweep_suites(cmd)
                                    else ({}, {}, None))
     jobs = sweep_jobs(cmd)
     sized = sized_deadline(cmd, costs, cost_problem, explicit, DEFAULT_TIMEOUT,
-                           blocks=blocks, jobs=jobs)
+                           blocks=blocks, jobs=jobs, runs=runs)
     args.timeout = sized["seconds"]
     deadline = start + args.timeout
     budget = sweep_budget(cmd, costs, cost_problem, args.timeout, blocks=blocks,
                           jobs=jobs)
-    # The runs before the fix run end where the fix run's held-back time begins.
-    early = deadline - (budget["reserve"] if budget else 0)
     overlays, inline, inline_problem = inline_overlays(root, scope["tests"], deadline)
-    # An inline suite is a source too: the symbols it adds are read off it, and
-    # a missing module may be it. So is a test-support module: a run made with
-    # HEAD's copy of it (`support_at_head`) may stop on a helper the task adds.
-    sources = scope["implementation"] + [rel for rel in scope["tests"]
-                                         if is_inline_suite(rel)
-                                         or _filed_returns.is_test_support_path(rel)]
-    if args.derive_introduces:
-        args.introduces = list(args.introduces) + [
-            n for n in derive_introduced(root, sources, deadline)
-            if n not in args.introduces]
     leftovers = leftover_throwaways(root, timeout=max(1, _left(deadline)))
     env, dropped, naming = child_env(root)
     # The runs swap files in place, and a copy of the same size written in the
@@ -4520,7 +4651,6 @@ def run_red(args, cmd, out):
     for key in sorted(k for k in env if k.lower() == "npm_config_userconfig"):
         del env[key]
         dropped.append(key)
-    deps = scope["deps"]
     # The bytes the proof is made over, read before the throwaway copies them:
     # a caller locks this and re-proves when a test file moves after it.
     digest = test_digest(root, scope["declared"])
@@ -4531,7 +4661,7 @@ def run_red(args, cmd, out):
         sys.stderr.write("ERROR: every temp directory this machine offers is inside "
                          "the shared tree %s, and a throwaway there would be a "
                          "worktree siblings see; set TMPDIR outside it\n" % (root,))
-        return E_USAGE
+        return None, E_USAGE
     holder = tempfile.mkdtemp(prefix=THROWAWAY_PREFIX, dir=base)
     path = os.path.join(holder, "tree")
     try:
@@ -4540,6 +4670,105 @@ def run_red(args, cmd, out):
             json.dump({"pid": os.getpid()}, fh)
     except OSError:
         pass
+    return {"scope": scope, "root": root, "sized": sized, "deadline": deadline,
+            "budget": budget, "overlays": overlays, "inline": inline,
+            "inline_problem": inline_problem, "leftovers": leftovers, "env": env,
+            "dropped": dropped, "naming": naming, "deps": scope["deps"],
+            "digest": digest, "implementation_digest": implementation_digest,
+            "head": head, "holder": holder, "path": path,
+            "previous": _arm()}, None
+
+
+def _proof_preflight(setup):
+    """`(present, problem)` - which declared test files HEAD holds, or why no
+    run is started: a proof whose runs cannot fit the deadline starts none of
+    them, said before anything is built."""
+    problem = fit_problem(setup["sized"])
+    present = set()
+    if problem is None:
+        present, problem = _at_head(setup["root"], setup["scope"]["declared"],
+                                    setup["deadline"])
+    if problem is None:
+        problem = setup["inline_problem"]
+    return present, problem
+
+
+def _baseline_files(setup, cmd, present):
+    """`{"new", "absent", "stubs", "stages"}` - how HEAD's own run is handed the
+    task's test files: a file new at HEAD laid over as an empty stub, or, for a
+    jest or vitest file, left absent - the reset already removes it, and both
+    runners fail an empty suite - and the `--stage` labels the task's files
+    introduce (`new_stages`), which HEAD's run fails as unknown."""
+    root, tests = setup["root"], setup["scope"]["tests"]
+    new = sorted(set(tests) - present)
+    absent = [rel for rel in new if _is_js_test_path(rel, set(tests))]
+    head_texts, unread = _cat_blobs(root, tests, setup["deadline"])
+    stages = new_stages(cmd, None if unread else head_texts, _test_texts(root, tests))
+    return {"new": new, "absent": absent,
+            "stubs": [rel for rel in new if rel not in absent], "stages": stages}
+
+
+def _baseline_run(setup, cmd, files, owed, until):
+    """`(head, problem)` - the throwaway built at HEAD and HEAD's own tests run
+    in it, the stubs of `files` laid over and its absent files named on the
+    record (`head["absent"]`, which `baseline_problem` reads); or None and the
+    reason no run was started. `owed` are the runs the proof still has to make
+    before `until`: each is started only with the wall time it needs left, since
+    one started short would time out for want of time and that timeout would
+    read as the run's own."""
+    root, path = setup["root"], setup["path"]
+    _copied, problem = _build_throwaway(root, path, [],
+                                        timeout=max(1, _left(setup["deadline"])))
+    if problem is None and _left(setup["deadline"]) < 1:
+        problem = ("the run timed out: building the throwaway spent the "
+                   "%s-second deadline" % (setup["sized"]["seconds"],))
+    if problem is None:
+        problem = start_problem(list(owed), setup["budget"], _left(until))
+    if problem is not None:
+        return None, problem
+    head, _c = _isolated_run(root, path, [], cmd, until, setup["sized"]["seconds"],
+                             setup["env"], setup["holder"], "baseline",
+                             stubs=files["stubs"], deps=setup["deps"])
+    head["absent"] = files["absent"]
+    return head, None
+
+
+def _proof_teardown(setup):
+    """`(removed, unremoved)` - the throwaway removed and the interrupt handlers
+    disarmed. A junction left in the throwaway is one git's removal may descend
+    through into the shared tree's dependencies: the removal is skipped and the
+    junction named (`unremoved`), rather than trusted to tell the two apart."""
+    unremoved = unlink_junctions(setup["path"], setup["deps"])
+    removed = (False if unremoved is not None
+               else _remove_throwaway(setup["root"], setup["holder"], setup["path"]))
+    if setup["previous"] is not None:
+        _proc_group.disarm_interrupt(setup["previous"])
+    return removed, unremoved
+
+
+def _left_behind(path, unremoved):
+    """Say a throwaway could not be removed, and the junction a skipped removal
+    left in it; the exit for it."""
+    sys.stderr.write("ERROR: the throwaway tree at %s could not be removed; "
+                     "`git worktree list` names what is left\n%s"
+                     % (path, "" if unremoved is None else
+                        "  removal skipped, a junction still in it: %s\n"
+                        % (unremoved,)))
+    return E_LEFT_BEHIND
+
+
+def run_red(args, cmd, out):
+    """`red`: prove a red in a throwaway tree and print the `redFirst` block."""
+    setup, refused = _proof_setup(args, cmd, PROOF_RUNS)
+    if refused is not None:
+        return refused
+    scope, root, deadline = setup["scope"], setup["root"], setup["deadline"]
+    sized, budget, deps = setup["sized"], setup["budget"], setup["deps"]
+    overlays, inline = setup["overlays"], setup["inline"]
+    env, dropped, naming = setup["env"], setup["dropped"], setup["naming"]
+    holder, path, head = setup["holder"], setup["path"], setup["head"]
+    # The runs before the fix run end where the fix run's held-back time begins.
+    early = deadline - (budget["reserve"] if budget else 0)
     run = {"cmd": cmd, "code": None, "text": "", "problem": None, "second": None,
            "head": None, "fix": None, "withdrawn": None, "tag": "task",
            "support": []}
@@ -4547,47 +4776,26 @@ def run_red(args, cmd, out):
     state = {"new": [], "absent": [], "stages": [], "head_files": None, "head_defs": None,
              "head_modules": None, "head_js": None}
     copied = []
-    previous = _arm()
+    # An inline suite is a source too: the symbols it adds are read off it, and
+    # a missing module may be it. So is a test-support module: a run made with
+    # HEAD's copy of it (`support_at_head`) may stop on a helper the task adds.
+    sources = scope["implementation"] + [rel for rel in scope["tests"]
+                                         if is_inline_suite(rel)
+                                         or _filed_returns.is_test_support_path(rel)]
     try:
         try:
-            # Said before anything is built: a proof whose runs cannot fit the
-            # deadline starts none of them.
-            run["problem"] = fit_problem(sized)
+            if args.derive_introduces:
+                args.introduces = list(args.introduces) + [
+                    n for n in derive_introduced(root, sources, deadline)
+                    if n not in args.introduces]
+            present, run["problem"] = _proof_preflight(setup)
             if run["problem"] is None:
-                present, run["problem"] = _at_head(root, scope["declared"], deadline)
-            if run["problem"] is None:
-                run["problem"] = inline_problem
-            if run["problem"] is None:
-                state["new"] = sorted(set(scope["tests"]) - present)
-                # jest and vitest fail an empty suite, so a new file of theirs
-                # is left absent - the reset already removes it - and the
-                # stub stays the rule for every other runner.
-                state["absent"] = [rel for rel in state["new"]
-                                   if _is_js_test_path(rel, set(scope["tests"]))]
+                state.update(_baseline_files(setup, cmd, present))
                 (state["head_files"], state["head_defs"], state["head_modules"],
                  state["head_js"]) = head_tree(
                     root, set(scope["tests"]), deadline)
-                head_texts, unread = _cat_blobs(root, scope["tests"], deadline)
-                state["stages"] = new_stages(
-                    cmd, None if unread else head_texts,
-                    _test_texts(root, scope["tests"]))
-                _copied, run["problem"] = _build_throwaway(
-                    root, path, [], timeout=max(1, _left(deadline)))
-            if run["problem"] is None and _left(deadline) < 1:
-                run["problem"] = ("the run timed out: building the throwaway spent "
-                                  "the %s-second deadline" % (args.timeout,))
-            # Each run is started only with the wall time it needs left: one
-            # started short would time out for want of time, and that timeout
-            # would read as the run's own.
-            if run["problem"] is None:
-                run["problem"] = start_problem(["baseline", "task"], budget,
-                                               _left(early))
-            if run["problem"] is None:
-                run["head"], _c = _isolated_run(
-                    root, path, [], cmd, early, args.timeout, env, holder,
-                    "baseline", stubs=[rel for rel in state["new"]
-                                       if rel not in state["absent"]], deps=deps)
-                run["head"]["absent"] = state["absent"]
+                run["head"], run["problem"] = _baseline_run(
+                    setup, cmd, state, ["baseline", "task"], early)
             if run["problem"] is None:
                 run["problem"] = start_problem(["task"], budget, _left(early))
             if run["problem"] is None:
@@ -4669,14 +4877,8 @@ def run_red(args, cmd, out):
             "deadline": deadline, "deps": deps, "sources": sources,
             "inline": inline, "budget": budget, "sized": sized})
     finally:
-        # A junction left in the throwaway is one git's removal may descend
-        # through into the shared tree's dependencies: the removal is skipped
-        # and the junction named, rather than trusted to tell the two apart.
-        unremoved = unlink_junctions(path, deps)
-        removed = (False if unremoved is not None
-                   else _remove_throwaway(root, holder, path))
-        if previous is not None:
-            _proc_group.disarm_interrupt(previous)
+        removed, unremoved = _proof_teardown(setup)
+    leftovers = setup["leftovers"]
     # The labels the suite printed, from the run that shows the work whole
     # (`printed_run`), named in the payload beside them. None when the runner
     # prints none this reads - `drive-phase.py submit` grades a case id against it.
@@ -4685,8 +4887,8 @@ def run_red(args, cmd, out):
                "printed": _runner_output.printed_labels(shown, cmd),
                "printedFrom": printed_from,
                "supportAtHead": run["support"],
-               "testDigest": digest,
-               "implementationDigest": implementation_digest,
+               "testDigest": setup["digest"],
+               "implementationDigest": setup["implementation_digest"],
                "atHead": scope["implementation"], "copied": copied,
                "leftovers": leftovers,
                "dependencies": {"source": deps["source"], "linked": deps["linked"],
@@ -4734,90 +4936,39 @@ def run_red(args, cmd, out):
             out("  %s: %s" % (leftover_line(left), left["path"]))
         out(note if block is None else "redFirst: %s" % (json.dumps(block),))
     if not removed:
-        sys.stderr.write("ERROR: the throwaway tree at %s could not be removed; "
-                         "`git worktree list` names what is left\n%s"
-                         % (path, "" if unremoved is None else
-                            "  removal skipped, a junction still in it: %s\n"
-                            % (unremoved,)))
-        return E_LEFT_BEHIND
+        return _left_behind(path, unremoved)
     return exit_code
 
 
 def run_green(args, cmd, out):
     """`green`: run the task's test files on HEAD's code in `red`'s throwaway and
-    print the `greenFirst` block. The scope, the deadline, the environment and
-    the throwaway are `red`'s own, built by the same functions; what differs is
-    the two runs it makes and the verdict (`green_verdict`)."""
-    start = time.time()
-    explicit = args.timeout
-    args.timeout = DEFAULT_TIMEOUT if explicit is None else explicit
-    deadline = start + args.timeout
-    scope, problem = _red_scope(args, cmd, deadline)
-    if problem is not None:
-        sys.stderr.write("ERROR: %s\n" % (problem,))
-        return E_USAGE
-    root = scope["root"]
-    costs, blocks, cost_problem = (load_sweep_table(root) if sweep_suites(cmd)
-                                   else ({}, {}, None))
-    jobs = sweep_jobs(cmd)
-    sized = sized_deadline(cmd, costs, cost_problem, explicit, DEFAULT_TIMEOUT,
-                           blocks=blocks, jobs=jobs, runs=GREEN_RUNS)
-    args.timeout = sized["seconds"]
-    deadline = start + args.timeout
-    # A budget with nothing held back: `green` makes no fix run.
-    budget = sweep_budget(cmd, costs, cost_problem, args.timeout, blocks=blocks,
-                          jobs=jobs)
-    overlays, inline, inline_problem = inline_overlays(root, scope["tests"], deadline)
-    leftovers = leftover_throwaways(root, timeout=max(1, _left(deadline)))
-    env, dropped, naming = child_env(root)
-    env = dict(env, PYTHONDONTWRITEBYTECODE="1")
-    for key in sorted(k for k in env if k.lower() == "npm_config_userconfig"):
-        del env[key]
-        dropped.append(key)
-    deps = scope["deps"]
-    digest = test_digest(root, scope["declared"])
-    _c, head = _git(root, ["rev-parse", "HEAD"], timeout=max(1, _left(deadline)))
-    base = holder_base(root)
-    if base is None:
-        sys.stderr.write("ERROR: every temp directory this machine offers is inside "
-                         "the shared tree %s, and a throwaway there would be a "
-                         "worktree siblings see; set TMPDIR outside it\n" % (root,))
-        return E_USAGE
-    holder = tempfile.mkdtemp(prefix=THROWAWAY_PREFIX, dir=base)
-    path = os.path.join(holder, "tree")
-    try:
-        with open(os.path.join(holder, OWNER_FILE), "w", encoding="utf-8",
-                  newline="\n") as fh:
-            json.dump({"pid": os.getpid()}, fh)
-    except OSError:
-        pass
+    print the `greenFirst` block. The set-up, the baseline step and the teardown
+    are `red`'s own functions (`_proof_setup`, `_baseline_files`,
+    `_baseline_run`, `_proof_teardown`); what differs is the two runs it makes
+    and the verdict (`green_verdict`)."""
+    setup, refused = _proof_setup(args, cmd, GREEN_RUNS)
+    if refused is not None:
+        return refused
+    scope, root, deadline = setup["scope"], setup["root"], setup["deadline"]
+    sized, deps, overlays = setup["sized"], setup["deps"], setup["overlays"]
+    env, dropped, naming = setup["env"], setup["dropped"], setup["naming"]
+    holder, path, head = setup["holder"], setup["path"], setup["head"]
     run = {"cmd": cmd, "code": None, "text": "", "problem": None, "head": None}
-    new, stubs, support, copied = [], [], [], []
-    previous = _arm()
+    files = {"new": [], "absent": [], "stubs": [], "stages": []}
+    support, copied = [], []
     try:
         try:
-            run["problem"] = fit_problem(sized) or inline_problem
-            present = set()
+            present, run["problem"] = _proof_preflight(setup)
             if run["problem"] is None:
-                present, run["problem"] = _at_head(root, scope["declared"], deadline)
-            if run["problem"] is None:
-                new = sorted(set(scope["tests"]) - present)
-                # jest and vitest fail an empty suite, so their new files are left
-                # absent in HEAD's run, as `red` leaves them.
-                stubs = [rel for rel in new
-                         if not _is_js_test_path(rel, set(scope["tests"]))]
+                files = _baseline_files(setup, cmd, present)
                 # A test-support module HEAD has may carry the change itself, and
                 # a pass leaning on it would be no pass on the base: HEAD's copy.
                 support = support_at_head(root, scope["tests"], present, deadline)
-                _copied, run["problem"] = _build_throwaway(
-                    root, path, [], timeout=max(1, _left(deadline)))
+                # `green` makes no fix run, so its two runs have the whole
+                # deadline, the time `red` holds back for one included.
+                run["head"], run["problem"] = _baseline_run(
+                    setup, cmd, files, GREEN_RUNS, deadline)
             if run["problem"] is None:
-                run["problem"] = start_problem(list(GREEN_RUNS), budget,
-                                               _left(deadline))
-            if run["problem"] is None:
-                run["head"], _c = _isolated_run(root, path, [], cmd, deadline,
-                                                args.timeout, env, holder,
-                                                "baseline", stubs=stubs, deps=deps)
                 if run["head"]["problem"] is not None:
                     run["problem"] = ("HEAD's own run could not be made: %s"
                                       % (run["head"]["problem"],))
@@ -4833,19 +4984,19 @@ def run_green(args, cmd, out):
                               "run's process group was torn down"
                               % (exc or "an interrupt",))
         exit_code, verdict, block = green_verdict(run, {
-            "tests": scope["tests"], "new": stubs, "cases": args.case,
-            "dropped": dropped, "naming": naming, "deps": deps, "sized": sized,
-            "support": support, "inline": inline})
+            "tests": scope["tests"], "new": files["stubs"], "cases": args.case,
+            "stages": files["stages"], "dropped": dropped, "naming": naming,
+            "deps": deps, "sized": sized, "support": support,
+            "inline": setup["inline"]})
     finally:
-        unremoved = unlink_junctions(path, deps)
-        removed = (False if unremoved is not None
-                   else _remove_throwaway(root, holder, path))
-        if previous is not None:
-            _proc_group.disarm_interrupt(previous)
+        removed, unremoved = _proof_teardown(setup)
+    leftovers = setup["leftovers"]
     payload = {"verdict": verdict, "greenFirst": block,
                "printed": _runner_output.printed_labels(run["text"], cmd),
-               "testDigest": digest, "atHead": scope["implementation"],
+               "testDigest": setup["digest"], "atHead": scope["implementation"],
                "copied": copied, "supportAtHead": support, "leftovers": leftovers,
+               "baseline": {"stubbed": files["stubs"], "absent": files["absent"],
+                            "newStages": files["stages"]},
                "throwaway": {"path": path, "head": head, "removed": removed,
                              "problem": unremoved},
                "run": {"argv": cmd, "exit": run["code"],
@@ -4862,9 +5013,7 @@ def run_green(args, cmd, out):
             out("  %s: %s" % (leftover_line(left), left["path"]))
         out("greenFirst: %s" % (json.dumps(block),))
     if not removed:
-        sys.stderr.write("ERROR: the throwaway tree at %s could not be removed; "
-                         "`git worktree list` names what is left\n" % (path,))
-        return E_LEFT_BEHIND
+        return _left_behind(path, unremoved)
     return exit_code
 
 

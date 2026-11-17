@@ -5841,23 +5841,33 @@ sets it. `read_tally`, `failing_cases` and `jest_failures` strip every terminal 
 entry (`plain_text`), so a run forced into colour (`FORCE_COLOR`) reads as it does without. A suite that failed to run
 counts as a failure no case ran, so a run whose only failure is one is a collection error, never a
 red. Mocha and playwright have no row: what they print under a failure has not been recorded.
-The names `stamp-verification.py` keeps for them are this module's objects.
+The names `stamp-verification.py` keeps for them are this module's objects. Every tally carries
+`passed` beside `collected` - the cases that ran and passed, never a figure that holds skipped or
+expected-failure cases: unittest's `Ran N` less every other figure its `OK (...)` or
+`FAILED (...)` line counts, pytest's `passed` word alone. unittest and pytest also carry
+`skipped` and `xfailed`, which `green` reads (`ru18`).
 
 ### `plugins/audit/scripts/governance/stamp-verification.py`
 The CLI over it: `take` a stamp, or `compare` one against the tree now — and `red`, which
 proves a red-first without touching the tree it is pointed at.
 
 **`green` is `red`'s mirror, for a refactor whose added tests must pass on the base**
-(`tests.expectGreenFirst`). It takes the scope, the deadline, the environment and the throwaway
-through `red`'s own functions (`_red_scope`, `sized_deadline` over `GREEN_RUNS`,
-`_build_throwaway`, `_isolated_run`) and makes two runs, HEAD's own and then the task's test
-files over HEAD's code; `green_verdict` reads them. `proved` (exit 0) needs a green run, at least
-one case collected and a case of the task's own seen passing - a label HEAD's own run did not
-print, or under the sweep, which prints no label for a green file, its row's count rising over
-HEAD's run. `not-green` (exit 1) is a red on the base with HEAD's own tests green; zero
-collected, a run that reached no verdict, a red baseline and a refusal are `could-not-prove`
-(exit 3) with the reason verbatim. Its words are `GREEN_WORDS`, held to the schema by
-`_refs.green_first_vocabulary_drift()`.
+(`tests.expectGreenFirst`). Both verbs call one set-up (`_proof_setup`: the scope, the sized
+deadline, the environment, the holder and its owner file), one baseline step (`_baseline_files`,
+`_baseline_run`: a new jest or vitest file left absent, a new `--stage` block read as new) and one
+teardown (`_proof_teardown`, `_left_behind`), so the two cannot drift; `gf17` fails a verb that
+makes one of those steps itself. `green` makes two runs, HEAD's own and then the task's test
+files over HEAD's code; `green_verdict` reads them. `proved` (exit 0) needs a green run and a
+case of the task's own seen to run and pass - a passing case whose id HEAD's own run printed for
+no case (`house_case_id`; a whole label is never compared, since the two runs are handed
+different temp and home directories), or the runner's PASSED count rising over HEAD's run (the
+sweep's row per file, else the tally's `passed`). A rise made only of skips is no pass.
+`not-green` (exit 1) is a collected case failing on the base with HEAD's own tests green - by an
+assertion or by raising, read off one runner's tally - or an expected failure HEAD's run did not
+have; zero collected, no tally, two runners' tallies, a red baseline and a refusal are
+`could-not-prove` (exit 3) with the reason verbatim. A test-support module held at HEAD's copy
+is named by `support_held_clause`, not by `red`'s two-run sentence. Its words are `GREEN_WORDS`,
+held to the schema by `_refs.green_first_vocabulary_drift()`.
 
 **Why a command and not a helper** — the caller is orchestrator and agent *prose*, which reaches
 Python only through Bash, the same reason `verify-invariants.py` and `check-ado-item.py` are

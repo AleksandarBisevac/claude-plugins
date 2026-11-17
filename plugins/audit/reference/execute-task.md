@@ -117,9 +117,14 @@ verb writes and refuses, and what the run commands leave behind, is
        task's test files over it - and files the helper's `greenFirst` block marked
        `source: green-first-helper`, with red-first `not-attempted`; a `greenFirst` block the
        agent's return typed is dropped by `submit`. `proved` is exit 0 with a case of the
-       task's own seen passing; `not-green` is a test failing on the base - written to the
-       new code - and only a human settles it (`_filed_returns.needs_human`); zero collected,
-       a compile or import error, or a refusal is `could-not-prove` with the reason verbatim.
+       task's own seen to run and pass - by a case id HEAD's own run printed for no case, or
+       by the runner's passed count rising over HEAD's own run; a skipped case is no pass.
+       A new jest or vitest file is left absent from HEAD's run and a new `--stage` block
+       read as new, as `red` does (`_baseline_files`). `not-green` is a collected test
+       failing on the base - by an assertion or by raising, an expected failure included -
+       written to the new code, and only a human settles it (`_filed_returns.needs_human`);
+       zero collected, only skips, a compile or import error, output no reader reads, or a
+       refusal is `could-not-prove` with the reason verbatim.
        The headless drive's own filing of a writer session runs the same call
        (`drive-phase.py` `green_block`, through `writer_green`) over the command it derives
        for the task, and files the block under the same mark; where no gate entry names the

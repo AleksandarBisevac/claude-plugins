@@ -341,7 +341,7 @@ def sweep_tally(text):
             or summary["ok"] != summary["files"]:
         return None
     return {"runner": SWEEP_RUNNER, "collected": summary["cases"], "failed": 0,
-            "assertions": 0, "files": summary["files"]}
+            "assertions": 0, "files": summary["files"], "passed": summary["cases"]}
 
 
 # A red file's output is printed whole under `--- <path>: <why> ---`; which file a
@@ -438,6 +438,9 @@ _PYTEST_COUNT = re.compile(r"(\d+) (failed|passed|errors?|skipped|xfailed|xpasse
 _PYTEST_FAILED = re.compile(r"^(FAILED|ERROR) (\S+)(?: - (.*))?$", re.M)
 _UNITTEST_RAN = re.compile(r"^Ran (\d+) tests? in ", re.M)
 _UNITTEST_FAILED = re.compile(r"^FAILED \(([^)]*)\)", re.M)
+# A green run's verdict line carries the same figures when any case was skipped or
+# expected to fail: `OK (skipped=1, expected failures=1)`.
+_UNITTEST_OK = re.compile(r"^OK \(([^)]*)\)", re.M)
 # The location is read off the SAME line as the case: two cases of one name in
 # two modules - HEAD's imported class and a subclass inheriting from it - each
 # keep their own.
@@ -640,7 +643,7 @@ def _house_tally(text):
     passed, total = int(hits[-1][0]), int(hits[-1][1])
     asserting = _house_cases(text)
     return {"runner": "house", "collected": total, "failed": total - passed,
-            "assertions": len(asserting)}
+            "assertions": len(asserting), "passed": passed}
 
 
 def _pytest_tally(text):
@@ -658,9 +661,12 @@ def _pytest_tally(text):
             counts[key] = counts.get(key, 0) + int(n)
     ran = sum(counts.get(k, 0) for k in ("failed", "passed", "xfailed", "xpassed"))
     asserting = [c for c in _pytest_cases(text) if c["assertion"]]
+    # `passed` is pytest's own word alone: an xpassed case was expected to fail,
+    # and `collected` sums both expected-failure words in with it.
     return {"runner": "pytest", "collected": ran,
             "failed": counts.get("failed", 0) + counts.get("error", 0),
-            "assertions": len(asserting)}
+            "assertions": len(asserting), "passed": counts.get("passed", 0),
+            "skipped": counts.get("skipped", 0), "xfailed": counts.get("xfailed", 0)}
 
 
 def _unittest_tally(text):
@@ -669,7 +675,7 @@ def _unittest_tally(text):
     if not ran:
         return None
     counts = {}
-    for hit in _UNITTEST_FAILED.findall(text):
+    for hit in _UNITTEST_FAILED.findall(text) + _UNITTEST_OK.findall(text):
         for part in hit.split(","):
             key, _sep, val = part.strip().partition("=")
             if val.isdigit():
@@ -678,8 +684,17 @@ def _unittest_tally(text):
     # Every `Ran N` line is counted, as every FAILED line is: a command running
     # two suites prints two, and reading only the last would pair one run's
     # count with both runs' failures.
-    return {"runner": "unittest", "collected": sum(int(n) for n in ran),
-            "failed": failures + counts.get("errors", 0), "assertions": failures}
+    collected = sum(int(n) for n in ran)
+    # `Ran N` counts every case the loader handed over, skipped and expected-to-
+    # fail ones included; what passed is what is left once each verdict line's
+    # other figures are taken out of it.
+    not_passed = sum(counts.get(k, 0) for k in (
+        "failures", "errors", "skipped", "expected failures", "unexpected successes"))
+    return {"runner": "unittest", "collected": collected,
+            "failed": failures + counts.get("errors", 0), "assertions": failures,
+            "passed": max(0, collected - not_passed),
+            "skipped": counts.get("skipped", 0),
+            "xfailed": counts.get("expected failures", 0)}
 
 
 def _summary_tally(text, runner, cases):
@@ -698,7 +713,8 @@ def _summary_tally(text, runner, cases):
     crashed = len([c for c in cases if not c["chain"]])
     return {"runner": runner, "collected": sum(counts.get(w, 0) for w in words),
             "failed": counts.get("failed", 0) + crashed,
-            "assertions": len([c for c in cases if c["assertion"]])}
+            "assertions": len([c for c in cases if c["assertion"]]),
+            "passed": counts.get("passed", 0), "skipped": counts.get("skipped", 0)}
 
 
 def _jest_tally(text):
@@ -759,7 +775,7 @@ def read_tally(text, cmd=None):
     if named:
         return named[0]
     return {"runner": None, "mixed": [t["runner"] for t in tallies],
-            "collected": 0, "failed": 0, "assertions": 0}
+            "collected": 0, "failed": 0, "assertions": 0, "passed": 0}
 
 
 # --- playwright's JSON and line reporters, vitest's JSON reporter -----------
@@ -855,7 +871,9 @@ def playwright_json_tally(obj):
     collected = sum(int(stats.get(k) or 0) for k in ("expected", "unexpected", "flaky"))
     failed = int(stats.get("unexpected") or 0)
     return {"runner": "playwright", "collected": collected, "failed": failed,
-            "assertions": len([c for c in cases if c["assertion"]])}
+            "assertions": len([c for c in cases if c["assertion"]]),
+            "passed": int(stats.get("expected") or 0),
+            "skipped": int(stats.get("skipped") or 0)}
 
 
 def playwright_line_cases(text):
@@ -902,7 +920,8 @@ def playwright_line_tally(text):
     return {"runner": "playwright",
             "collected": sum(counts.get(w, 0) for w in words),
             "failed": counts.get("failed", 0) + counts.get("flaky", 0),
-            "assertions": len([c for c in cases if c["assertion"]])}
+            "assertions": len([c for c in cases if c["assertion"]]),
+            "passed": counts.get("passed", 0), "skipped": counts.get("skipped", 0)}
 
 
 def playwright_cases(text):
@@ -958,7 +977,9 @@ def vitest_json_tally(obj):
     return {"runner": "vitest",
             "collected": int(obj.get("numTotalTests") or 0) + crashed,
             "failed": int(obj.get("numFailedTests") or 0) + crashed,
-            "assertions": len([c for c in cases if c["assertion"]])}
+            "assertions": len([c for c in cases if c["assertion"]]),
+            "passed": int(obj.get("numPassedTests") or 0),
+            "skipped": int(obj.get("numPendingTests") or 0)}
 
 
 def read_run_tally(text, cmd=None):

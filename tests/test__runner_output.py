@@ -375,7 +375,7 @@ def _sweep_cases(check):
           "no case have none, and `read_run_tally` reads the clean one last, "
           "behind any runner's own: %r" % (clean,),
           clean == {"runner": M.SWEEP_RUNNER, "collected": 9, "failed": 0,
-                    "assertions": 0, "files": 2}
+                    "assertions": 0, "files": 2, "passed": 9}
           and M.sweep_tally(_plain_line(1, 2, 9)) is None
           and M.sweep_tally(_plain_line(0, 0, 0)) is None
           and M.sweep_tally(_plain_line(2, 2, 0)) is None
@@ -536,7 +536,51 @@ def _private_line_end_cases(check):
           readers and not differ and answered == every)
 
 
+# Runs holding skipped and expected-failure cases beside passing and failing
+# ones, one per tally the module reads: `(runner, text, passed, skipped,
+# xfailed)`, the last two None where the runner prints no such figure. Each
+# fixture's collected figure differs from its passed one, so a reader handing
+# back `collected` - or `collected` less the failures - answers wrong here.
+_PASSED_FIXTURES = (
+    ("unittest", "sx.F\n" + "-" * 70 + "\nRan 4 tests in 0.001s\n\n"
+     "FAILED (failures=1, skipped=1, expected failures=1)\n", 1, 1, 1),
+    ("unittest", "s..\n" + "-" * 70 + "\nRan 3 tests in 0.001s\n\n"
+     "OK (skipped=1)\n", 2, 1, 0),
+    ("pytest", "=== 1 failed, 2 passed, 1 skipped, 1 xfailed, 1 xpassed, "
+     "2 warnings in 0.10s ===\n", 2, 1, 1),
+    ("jest", "Tests:  1 failed, 2 skipped, 3 passed, 6 total\n", 3, None, None),
+    ("vitest", "      Tests  1 failed | 4 passed | 1 skipped (6)\n", 4, None, None),
+    ("house", _HOUSE_PRINTED, 1, None, None),
+    ("playwright", _PLAYWRIGHT_LINE, 2, None, None),
+)
+
+
+def _passed_cases(check):
+    seen = [(want_runner, M.read_run_tally(text) or {}, passed, skipped, xfailed)
+            for want_runner, text, passed, skipped, xfailed in _PASSED_FIXTURES]
+    wrong = [(runner, dict((k, tally.get(k)) for k in ("runner", "collected",
+                                                       "passed", "skipped",
+                                                       "xfailed")))
+             for runner, tally, passed, skipped, xfailed in seen
+             if tally.get("runner") != runner or tally.get("passed") != passed
+             or (skipped is not None and tally.get("skipped") != skipped)
+             or (xfailed is not None and tally.get("xfailed") != xfailed)]
+    sweep = M.sweep_tally(_plain_line(2, 2, 9)) or {}
+    covered = set(runner for runner, _t, _p, _s, _x in _PASSED_FIXTURES)
+    readers = set(name for name, _fn in M.TALLY_READERS)
+    check("ru18 each tally reader gives `passed`, the cases that ran and passed - "
+          "never the collected figure that holds skipped and expected-failure "
+          "cases - and unittest's and pytest's give the skipped and "
+          "expected-failure figures beside it; the sweep's clean tally passed "
+          "every case it counted; every reader in TALLY_READERS has a fixture "
+          "here: wrong %r; sweep %r; readers with no fixture %r"
+          % (wrong, sweep, sorted(readers - covered)),
+          not wrong and len(seen) == len(_PASSED_FIXTURES)
+          and sweep.get("passed") == 9 and readers <= covered)
+
+
 def _cases(check):
+    _passed_cases(check)
     _line_end_cases(check)
     _private_line_end_cases(check)
     _printed_cases(check)

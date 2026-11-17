@@ -3456,12 +3456,13 @@ def _every_run_cases(check):
           % (code_o, got_o.get("baseline"), _stubs_handed(got_o), basis_o[:300]),
           _new_only_proved(code_o, got_o))
     # The judged path is `red`'s own code, not a copy of it: each of these
-    # rewrites one line of `run_red` in a fresh copy of the module, and the
-    # judged case must see it - a copy of those lines in `_judged` would not.
+    # rewrites one line of what `run_red` runs - the baseline step it shares
+    # with `green`, and its own fix-run predicate - in a fresh copy of the
+    # module, and the judged case must see it - a copy of those lines in
+    # `_judged` would not.
     emptied = _mutated_module(
-        '"baseline", stubs=[rel for rel in state["new"]\n'
-        '                                       if rel not in state["absent"]], '
-        'deps=deps)', '"baseline", stubs=[], deps=deps)', "sv_jd1")
+        '"baseline",\n                             stubs=files["stubs"], ',
+        '"baseline",\n                             stubs=[], ', "sv_jd1")
     code_m, got_m = _judged(root_o, man_o, cmd_o, "sr138", module=emptied)
     check("jd1 with `run_red`'s stub list for HEAD's run emptied, sr138's judged "
           "run sees it: HEAD's run is handed no stub, and sr138's own check "
@@ -6977,6 +6978,8 @@ STAGES = (
     ("su-sweep-table", "_su_sweep_table_cases"),
     ("swn-block", "_sweep_new_suite_cases"),
     ("sg-green", "_green_first_cases"),
+    ("sg-green-verdict", "_green_verdict_cases"),
+    ("sg-green-new", "_green_new_cases"),
 )
 
 
@@ -7065,7 +7068,8 @@ def _green_first_cases(check):
     code_n, got_n = _green(root, man, [py, "tests/test_mine.py"], "--case", "zz9")
     named = _green_block(got_n)
     check("gf4 THE TWINS of gf1: a pass in which no case of the task's own ran - "
-          "HEAD's one case reworded - and a pass whose --case names a case that "
+          "HEAD's one case, its label kept and its condition rewritten (gf7 asks a "
+          "label that differs) - and a pass whose --case names a case that "
           "did not pass are `could-not-prove`, never `proved`: %r"
           % ((code_s, same, code_n, named),),
           code_s == 3 and same.get("status") == "could-not-prove"
@@ -7097,6 +7101,254 @@ def _green_first_cases(check):
     check("gf6 green with no command after `--` is a usage error, exit 2, saying "
           "the command is what it lacks: %r" % ((code_u, said_u[-200:]),),
           code_u == 2 and "green needs the test command after `--`" in said_u)
+
+
+# --- green's verdict, asked of one pure function --------------------------------
+# Each case hands `green_verdict` the two runs `green` makes - HEAD's own and the
+# task's, both on HEAD's code - and reads the word it answers. Every detail a
+# label quotes goes through `_folded`: a basis quotes the runner's own summary,
+# and a quoted line opening a line of THIS suite's output reads as a second
+# runner's tally to the red-first reader.
+_BAR = "-" * 70
+_UNIT_NONE = "\n%s\nRan 0 tests in 0.000s\n\nNO TESTS RAN\n" % (_BAR,)
+_PYTEST_NONE = "===== no tests ran in 0.01s =====\n"
+
+
+def _folded(value):
+    """`value`'s repr with every line of it joined onto one."""
+    return " | ".join(ln.strip() for ln in repr(value).splitlines() if ln.strip())
+
+
+def _house_out(rows):
+    """A house run's output: a PASS line per label, and the green tally."""
+    return "".join("PASS %s\n" % (label,) for label in rows) + (
+        _TALLY % ("ALL PASS", len(rows), len(rows)) + "\n")
+
+
+def _gv(cmd, text, head_text, code=0, head_code=0, new=(), cases=(),
+        tests=("tests/test_new.py",), support=None):
+    """`(exit, status, basis)` - `green_verdict` over a task's run printing
+    `text` and HEAD's own printing `head_text`."""
+    ctx = {"tests": list(tests), "new": list(new), "cases": list(cases),
+           "dropped": []}
+    if support:
+        ctx["support"] = list(support)
+    got, _verdict, block = M.green_verdict(
+        {"cmd": list(cmd), "code": code, "text": text, "problem": None,
+         "head": {"code": head_code, "text": head_text, "problem": None}}, ctx)
+    return got, block.get("status"), str(block.get("basis", ""))
+
+
+def _green_verdict_cases(check):
+    house = ["python3", "tests/test_mine.py"]
+    head = _house_out(["gv1 the throwaway is removed: (0, '/tmp/audit-red-a81k/tree')",
+                       "gv2 a plain case"])
+    task = _house_out(["gv1 the throwaway is removed: (0, '/tmp/audit-red-q9zz/tree')",
+                       "gv2 a plain case"])
+    varying = [_gv(house, task, head, tests=["tests/test_mine.py"], cases=cases)
+               for cases in ((), ("gv1",))]
+    check("gf7 a task that adds NO case, whose suite's label quotes run-varying "
+          "text - a temp path the two runs are handed apart - is "
+          "`could-not-prove`, with and without --case naming that case: %s"
+          % (_folded(varying),),
+          [(c, s) for c, s, _b in varying]
+          == [(M.E_CANNOT_PROVE, "could-not-prove")] * 2)
+    added = _house_out(["gv1 the throwaway is removed: (0, '/tmp/audit-red-q9zz/tree')",
+                        "gv2 a plain case", "gv3 the task's own case"])
+    plain, named, theirs = [
+        _gv(house, added, head, tests=["tests/test_mine.py"], cases=cases)
+        for cases in ((), ("gv3",), ("gv1",))]
+    check("gf8 THE ALLOW CASE for gf7: the same suite with one case of the task's "
+          "own added proves, naming that case and not HEAD's relabelled one, with "
+          "no --case and with --case naming it; --case naming HEAD's case is "
+          "`could-not-prove`: %s" % (_folded((plain, named, theirs)),),
+          plain[:2] == (M.E_PROVED, "proved") and "gv3" in plain[2]
+          and "gv1" not in plain[2]
+          and named[:2] == (M.E_PROVED, "proved")
+          and theirs[:2] == (M.E_CANNOT_PROVE, "could-not-prove")
+          and "gv1" in theirs[2])
+
+    unit = ["python3", "-m", "unittest", "tests.test_new"]
+    pytest = ["python3", "-m", "pytest", "tests/test_new.py"]
+    new = ("tests/test_new.py",)
+    skipped = [
+        _gv(unit, "sss\n%s\nRan 3 tests in 0.000s\n\nOK (skipped=3)\n" % (_BAR,),
+            _UNIT_NONE, head_code=5, new=new),
+        _gv(pytest, "===== 2 skipped in 0.02s =====\n", _PYTEST_NONE, head_code=5,
+            new=new)]
+    expected = [
+        _gv(unit, "x\n%s\nRan 1 test in 0.000s\n\nOK (expected failures=1)\n"
+            % (_BAR,), _UNIT_NONE, head_code=5, new=new),
+        _gv(pytest, "===== 1 passed, 1 xfailed in 0.02s =====\n", _PYTEST_NONE,
+            head_code=5, new=new)]
+    check("gf9 new tests that are all SKIPPED on the base are `could-not-prove` "
+          "saying they were skipped, and a new test marked as an expected failure "
+          "is `not-green` naming the expected failure - under unittest and under "
+          "pytest: skipped %s; expected %s" % (_folded(skipped), _folded(expected)),
+          all(c == M.E_CANNOT_PROVE and s == "could-not-prove" and "skipped" in b
+              for c, s, b in skipped)
+          and all(c == M.E_NOT_GREEN and s == "not-green"
+                  and "expected failure" in b for c, s, b in expected))
+    allowed = [
+        _gv(pytest, "===== 2 passed, 3 warnings in 0.02s =====\n", _PYTEST_NONE,
+            head_code=5, new=new),
+        _gv(pytest, "===== 1 passed, 2 skipped in 0.02s =====\n", _PYTEST_NONE,
+            head_code=5, new=new),
+        _gv(unit, "s.\n%s\nRan 2 tests in 0.000s\n\nOK (skipped=1)\n" % (_BAR,),
+            _UNIT_NONE, head_code=5, new=new)]
+    wide = _gv(["python3", "-m", "pytest"], "===== 40 passed in 0.02s =====\n",
+               "===== 40 passed in 0.02s =====\n")
+    unread = _gv(["node", "--test"], "# tests 2\n# pass 2\n# fail 0\n",
+                 "# tests 0\n# pass 0\n")
+    check("gf10 THE ALLOW CASES for gf9: a new suite green with warnings, and one "
+          "pass beside skips, prove under pytest and unittest; a wide command whose "
+          "passed count does not rise, and a runner with no tally reader, stay "
+          "`could-not-prove`: allowed %s; wide %s; unread %s"
+          % (_folded(allowed), _folded(wide), _folded(unread)),
+          [s for _c, s, _b in allowed] == ["proved"] * 3
+          and wide[:2] == (M.E_CANNOT_PROVE, "could-not-prove")
+          and unread[:2] == (M.E_CANNOT_PROVE, "could-not-prove"))
+
+    raised = [
+        _gv(pytest, "FAILED tests/test_new.py::test_a - KeyError: 'x'\n"
+            "===== 1 failed, 1 passed in 0.02s =====\n", _PYTEST_NONE, code=1,
+            head_code=5, new=new),
+        _gv(unit, "E.\n" + "=" * 70 + "\nERROR: test_a (tests.test_new.T)\n"
+            + _BAR + "\nTraceback (most recent call last):\nAttributeError: "
+            "module 'mine' has no attribute 'new_api'\n\n%s\nRan 2 tests in 0.000s"
+            "\n\nFAILED (errors=1)\n" % (_BAR,), _UNIT_NONE, code=1, head_code=5,
+            new=new)]
+    check("gf11 a new test the runner counts as FAILED on the base by RAISING - a "
+          "KeyError under pytest, an AttributeError under unittest - is "
+          "`not-green` naming it, and its basis never says the run reached no "
+          "verdict: %s" % (_folded(raised),),
+          all(c == M.E_NOT_GREEN and s == "not-green" and "test_a" in b
+              and "no verdict" not in b for c, s, b in raised))
+    mixed = ("FAILED tests/test_new.py::test_a - KeyError: 'x'\n"
+             "===== 1 failed, 1 passed in 0.02s =====\n"
+             "E\n%s\nRan 1 test in 0.000s\n\nFAILED (errors=1)\n" % (_BAR,))
+    still = [
+        _gv(pytest, "Traceback (most recent call last):\nKeyError: 'x'\n",
+            _PYTEST_NONE, code=1, head_code=5, new=new),
+        # A command naming no runner, so neither tally is the one that ran.
+        _gv(["make", "check"], mixed, _PYTEST_NONE, code=1, head_code=5, new=new),
+        _gv(pytest, "===== 1 error in 0.02s =====\n", _PYTEST_NONE, code=1,
+            head_code=5, new=new)]
+    check("gf12 THE ALLOW CASES for gf11: a non-zero exit with no tally, with two "
+          "runners' tallies, or with nothing collected stays `could-not-prove`, "
+          "never `not-green`: %s" % (_folded(still),),
+          [(c, s) for c, s, _b in still]
+          == [(M.E_CANNOT_PROVE, "could-not-prove")] * 3)
+
+    rows = ["c1 keeps the old answer", "c2 keeps the other"]
+    fresh = [_gv(house[:1] + ["tests/test_new.py"], _house_out(rows), "", new=new,
+                 cases=cases) for cases in (("zz9",), ("c1",), ())]
+    check("gf13 for a NEW house test file, whose baseline ran an empty stub and "
+          "printed nothing, --case naming no case it printed is "
+          "`could-not-prove` naming it, while --case naming one of its cases, "
+          "and no --case, prove: %s" % (_folded(fresh),),
+          fresh[0][:2] == (M.E_CANNOT_PROVE, "could-not-prove")
+          and "zz9" in fresh[0][2]
+          and "prints no label" not in fresh[0][2]
+          and [s for _c, s, _b in fresh[1:]] == ["proved", "proved"])
+    held = _gv(unit, "..\n%s\nRan 2 tests in 0.000s\n\nOK\n" % (_BAR,), _UNIT_NONE,
+               head_code=5, new=new, tests=["tests/test_new.py", "tests/conftest.py"],
+               support=["tests/conftest.py"])
+    check("gf14 a changed test-support module is named in green's basis as held at "
+          "HEAD's copy in the task's run, and the basis says nothing of a run with "
+          "the task's copy or a run with the fix, which green never makes: %s"
+          % (_folded(held),),
+          held[1] == "proved" and "tests/conftest.py" in held[2]
+          and "held at HEAD's copy" in held[2]
+          and "laid over passed" not in held[2] and "with the fix" not in held[2])
+
+
+def _green_new_cases(check):
+    """`green` over what is ABSENT at HEAD - a new JS-runner test file, a new
+    stage block - proved through the same baseline step `red` takes."""
+    py = sys.executable
+    jest = _fake_runner("stamp-fake-jest-", "jest.py", _FAKE_JEST)
+    new_js = "tests/new.test.js"
+    old_green = {"tests/old.test.js": _js_test("old", [("old holds", "1", "1")])}
+    keeps = {new_js: _js_test("mine", [("v is one on the base", "v()", "1")])}
+    got = {}
+    for how, cmd in (("naming only the new file", [py, jest, new_js]),
+                     ("naming HEAD's green file and the new one",
+                      [py, jest, "tests/old.test.js", new_js])):
+        root, man = _new_file_repo("stamp-green-newjs-", old_green, keeps, new_js)
+        code, payload = _green(root, man, cmd)
+        got[how] = (code, _green_block(payload).get("status"),
+                    (payload.get("baseline") or {}).get("absent"),
+                    _green_block(payload).get("basis") or payload.get("note"))
+    check("gf15 a NEW jest-shaped test file whose cases pass on HEAD's code is "
+          "proved, HEAD's run made with the file left ABSENT the way `red` makes "
+          "it: %s" % (_folded(got),),
+          len(got) == 2 and all(code == M.E_PROVED and status == "proved"
+                                and absent == [new_js]
+                                for code, status, absent, _b in got.values()))
+    old = ("aa", [("old1", "mine.v >= 1")])
+    root_s, man_s = _red_repo("stamp-green-newstage-", _staged_test(
+        [old, ("zz", [("new1", "mine.v >= 1")])]), head_test=_staged_test([old]))
+    code_s, got_s = _green(root_s, man_s, [py, "tests/test_mine.py", "--stage", "zz"])
+    block_s = _green_block(got_s)
+    code_t, got_t = _green(root_s, man_s, [py, "tests/test_mine.py", "--stage", "qq"])
+    block_t = _green_block(got_t)
+    check("gf16 a NEW stage block whose case passes on HEAD's code is proved, the "
+          "basis saying the stage is new at HEAD - and a label the task's files "
+          "do not introduce is not read as one: %s"
+          % (_folded(((code_s, block_s or got_s), (code_t, block_t or got_t))),),
+          code_s == M.E_PROVED and block_s.get("status") == "proved"
+          and "new1" in block_s.get("basis", "")
+          and "new at HEAD" in block_s.get("basis", "")
+          and code_t == M.E_CANNOT_PROVE
+          and block_t.get("status") == "could-not-prove")
+    shared = _proof_steps()
+    check("gf17 `run_red` and `run_green` reach their set-up and their teardown "
+          "through one function each, and neither builds the scope, the deadline, "
+          "the environment or the holder itself: %r" % (shared,),
+          shared["red"]["setup"] and shared["green"]["setup"]
+          and shared["red"]["setup"] == shared["green"]["setup"]
+          and shared["red"]["teardown"] == shared["green"]["teardown"]
+          and shared["red"]["teardown"]
+          and not shared["red"]["own"] and not shared["green"]["own"])
+
+
+# The calls only the shared set-up, baseline step and teardown may make: a verb
+# making one of them itself is a copy that can drift from the other verb's.
+_BASELINE_CALL = "_isolated_run(..., 'baseline', ...)"
+_SETUP_LEAVES = ("_red_scope", "sized_deadline", "child_env", "holder_base",
+                 "mkdtemp", "_arm", "_at_head", "_build_throwaway", "new_stages",
+                 "unlink_junctions", "_remove_throwaway", "disarm_interrupt",
+                 _BASELINE_CALL)
+_SHARED_STEPS = ("_proof_setup", "_proof_teardown")
+
+
+def _proof_steps():
+    """For each verb, the shared steps it calls and the leaves it calls itself -
+    an `_isolated_run` of HEAD's own `"baseline"` run among them."""
+    with open(M.__file__, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    out = {}
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef) \
+                or node.name not in ("run_red", "run_green"):
+            continue
+        called = set()
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Call):
+                fn = sub.func
+                name = fn.id if isinstance(fn, ast.Name) else getattr(fn, "attr", None)
+                called.add(name)
+                if name == "_isolated_run" and any(
+                        isinstance(a, ast.Constant) and a.value == "baseline"
+                        for a in sub.args):
+                    called.add(_BASELINE_CALL)
+        setup, teardown = _SHARED_STEPS
+        out[node.name[4:]] = {
+            "setup": setup in called,
+            "teardown": teardown in called,
+            "own": sorted(called & set(_SETUP_LEAVES))}
+    return out
 
 
 # The subject blocks: groups of cases that each took less than a block process
@@ -7397,7 +7649,7 @@ def _sweep_cases(check):
           "and `read_run_tally` falls back to it only when no runner printed one: %r"
           % (green,),
           green == {"runner": _runner_output.SWEEP_RUNNER, "collected": 67,
-                    "failed": 0, "assertions": 0, "files": 2}
+                    "failed": 0, "assertions": 0, "files": 2, "passed": 67}
           and _runner_output.sweep_tally(_SWEEP_RED) is None
           and _runner_output.sweep_tally(_sweep_total(0, 0, 0)) is None
           and _runner_output.read_run_tally(_SWEEP_GREEN, cmd) == green

@@ -1,0 +1,85 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test__runner_output.py tests/test_drive_phase.py --jobs 4": "pass",
+    "run-test-gate.py SG1 --task SG1.20-ukq (affected, not recorded)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-17T15:53:47Z",
+    "basis": "`python3 tests/test_stamp_verification.py --selftest --stage sg-green-verdict --stage sg-green-new` in a throwaway tree at HEAD exited 1 with 9 of 11 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `sg-green-new`, `sg-green-verdict`, which the task's test files add - the stage is new at HEAD: its cases did not exist at HEAD, which is red for them), each passing with the working tree's implementation - gf7 (house FAIL), gf8 (house FAIL), gf9 (house FAIL), gf11 (house FAIL), gf13 (house FAIL), gf14 (house FAIL), gf15 (house FAIL), gf16 (house FAIL) and 1 more: SELFTEST FAILED: 2/11 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "WHAT CHANGED. (1) _runner_output.py: every tally now carries `passed`. house: N of `N/M`. pytest: its `passed` word alone, plus `skipped` and `xfailed`. unittest: `Ran N` minus failures, errors, skipped, expected failures and unexpected successes, read off both the FAILED (...) and the new OK (...) line (`_UNITTEST_OK`), plus `skipped` and `xfailed`. jest and vitest summaries, playwright line and JSON, vitest JSON: the runner's own passed figure. sweep_tally: its cases. The mixed tally: 0. No existing key changed value, so red reads the same collected/failed/assertions it read before. (2) stamp-verification.py green. Newness is read by house_case_id: a passing label whose id HEAD's own run printed for no case. A label with no id counts only through the PASSED count rising (_own_by_id). Whole labels are never compared. The count reading (_case_counts) takes tally['passed']. A rise made only of skips is could-not-prove, and _skipped_clause says skips never ran. An expected-failure count above HEAD's own run is not-green. _not_green_failure: a non-zero exit with one runner's tally showing collected > 0 and failed > 0 is not-green, whatever the assertion count. The basis names the failing cases and no longer says 'reached no verdict'. That wording is kept only for no tally, a mixed tally and zero collected. Zero collected now also requires no skips. _baseline_labels: a HEAD run that printed no tally, beside a house task run, is an empty list of labels, so --case applies to a new house file. support_held_clause is green's own support sentence; red keeps support_clause. _green_baseline_clause says what made the baseline green: stubs, absent JS files, a new stage. The section comment above GREEN_WORDS is rewritten to the new rule. (3) One set-up, one baseline step and one teardown, called by both verbs: _proof_setup (scope, sized deadline, budget, overlays, leftovers, env, digests, holder plus owner file, interrupts armed), _proof_preflight (fit, HEAD's files, inline problem), _baseline_files (new/absent/stubs/stages), _baseline_run (build, the 'building the throwaway spent the deadline' sentence, start_problem, the baseline run with head['absent'] set), _proof_teardown and _left_behind (the junction clause). run_green now passes `stages` to green_verdict and reports `baseline` in its payload as red does. RED HELD UNCHANGED, AND HOW: HEAD's whole suite was run from a `git archive HEAD` export before any edit: ALL PASS 370/370, exit 0. The edited suite run whole: ALL PASS 381/381, exit 0. Comparing PASS/FAIL ids between the two outputs: none lost, none changed state, 11 new (gf7-gf17). That covers every red-first case: sr*, ns1-5, nu1-4, sb1-5, jd1-2, swc*, swd*, swn*, sd*, sw*, sm*, sj*, sh*, si*, sl*, sdr*, ct-block and the rest. The red-first cases I EDITED: jd1's anchor, because the stub list it rewrites now lives in _baseline_run (`stubs=files[\"stubs\"]`). It still asserts that a rewrite of red's stub list reaches the judged run. swc4's expected sweep-tally literal gained `\"passed\": 67`, and the same in rs4 in test__runner_output.py. They still assert exact equality, now of the wider shape. gf4's label wording now says its fixture keeps the label; the assertion is unchanged. RED BEHAVIOUR DELIBERATELY LEFT AS IT IS: classify_run still needs an assertion for V_RED; red's verdict, its basis wording, support_clause and its runs; and _spied_red's positional _isolated_run arguments. Within red only the order of the read-only steps moved: derive_introduced now runs inside the try after the holder exists, so a raise there tears the holder down, and head_tree runs after cat_blobs. PROBES, from the worktree root with PYTHONDONTWRITEBYTECODE=1, all exit 0; before and after are in scratchpad sg1.20/before-*.out and after-*.out. probe_verdict BEFORE -> AFTER: A (new house file, --case zz9) proved -> could-not-prove naming zz9. A' proved -> proved by id. B (unittest all skipped) proved -> could-not-prove, '3 case(s) more were skipped'. B' (unittest expectedFailure) proved -> not-green. C (pytest 1 xfailed) proved -> not-green. C' (2 skipped) could-not-prove -> could-not-prove, now saying skipped rather than zero collected. E (relabelled, none added) proved -> could-not-prove. G (raises KeyError) could-not-prove 'reached no verdict' -> not-green naming test_a. ALLOW rows unchanged: C'' proved, C''' proved, F could-not-prove, H could-not-prove; I stays proved (3 -> 4 passed). D stays could-not-prove and D' proved. D is not a wrong row once run_green sets the key: the probe hands green_verdict a head record it built itself without `absent`. The real path through run_green is gf15, a new jest-shaped file proved with baseline.absent == [file]. probe_dynamic_label: proved/proved -> could-not-prove/could-not-prove (no --case, --case gf1). probe_real_unittest: proved -> not-green (expected failure), and the support basis now ends '; test-support module tests/conftest.py held at HEAD's copy in the task's run, since it may carry the change', with no two-run clause. GATES RUN: `python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test__runner_output.py tests/test_drive_phase.py --jobs 4` exit 0, '3/3 files ok, 1405 cases'. `python3 tests/test__filed_returns.py --selftest` ALL PASS 135/135. The orchestrator's affected gate, unrecorded (`run-test-gate.py docs/audit/audit-plan.json SG1 --task SG1.20-ukq --project-dir <worktree>`, no --record): exit 0, GATE GREEN. ruff check on the four .py files: All checks passed. vermin -t=3.8- on them: exit 0, minimum 3.8. Mutation probe scratchpad sg1.20/mutations.py, output sg1.20/mutations.out: exit 0, MUTATIONS ALL CAUGHT, 17 rows, each anchor matched once and was restored byte for byte. Deny rows: gf7, gf9 (x2), ru18 (x2), gf11, gf15, gf16, gf13, gf14, gf17, gf2. Allow twins: gf8 (no id new), gf7+gf10 (count need not rise), gf10 (every run an expected failure), gf12 (nothing collected read as failure), gf8+gf13 (--case refuses all). RED-FIRST COMMAND GIVEN TO SUBMIT: `python3 tests/test_stamp_verification.py --selftest --stage sg-green-verdict --stage sg-green-new`. Measured once at 2.5 s real. At HEAD both stages are unknown, which red reads as new stages. It leaves out ru18 (tests/test__runner_output.py), whose red is the 25/26 run above. DEPENDANTS: drive-phase.py green_block/writer_green: unchanged and still correct. They read the block's status word, which is still one of GREEN_WORDS, and the basis opening, which still starts '`<cmd>` in a throwaway tree at HEAD exited N' as _filed_returns._HELPER_BASIS requires. _filed_returns.helper_green_first/green_first_reading: same reason; test__filed_returns passes. tests/test_drive_phase.py green-first cases: pass in the sweep above. _runner_output tally readers: one key added; red reads collected/failed/assertions, which are unchanged. tests/_harness.py, run-test-gate.py, test_build_shop.py import the module and read no exact tally dict. reference/execute-task.md: the proved/not-green sentence rewritten to the new rule; the sign-off sentence (another task) untouched. PLUGIN-BUILD-GUIDE.md: both modules' sections updated. CHANGELOG.md: the unreleased green-first entry corrected in place, since the feature has not shipped. tests/test__claude_home, test__proc_group, test_audit_lookup, test_audit_task and tools/affected.py import or name stamp-verification.py. None reads the functions I moved, and the affected-gate run above was green over them. DESCRIPTION CHECK: everything the description says held against the code, except that probe row D's verdict cannot change through green_verdict alone (explained above).",
+    "descriptive": "Green-first now proves only cases of the task's own that ran and passed on the base: by case id or a passed count, never by whole label, skips or expected failures. A test that raises on the base is not-green. A new JS file or stage block proves through the baseline step red and green now share with their set-up and teardown."
+  },
+  "testsAdded": [
+    "test_stamp_verification.py sg-green-verdict: a label that differs only in a temp path proves nothing with or without --case, and a case added beside it proves by its id. Skipped-only new tests are could-not-prove and an expected failure is not-green, under unittest and pytest. Allow twins: warnings, a pass beside skips, a flat wide command, a runner with no reader. A test that raises on the base is not-green without 'no verdict'. Allow twins: no tally, two runners' tallies, nothing collected. --case on a new house file names the missing case. Green's own support sentence. sg-green-new: a new jest-shaped file and a new stage block proved through the shared baseline step, and an AST case that run_red and run_green share one set-up and teardown and make none of its steps themselves.",
+    "test__runner_output.py ru18: every tally reader gives passed apart from skipped and expected-failure cases, unittest and pytest give skipped and xfailed beside it, and every reader in TALLY_READERS has a fixture."
+  ],
+  "casesAdded": [
+    [
+      "gf7",
+      "gf8",
+      "gf9",
+      "gf10",
+      "gf11",
+      "gf12",
+      "gf13",
+      "gf14",
+      "gf15",
+      "gf16",
+      "gf17"
+    ],
+    "ru18"
+  ],
+  "claims": "claims:\n1 the green section comment above GREEN_WORDS: id newness = _own_by_id; passed count = _case_counts returning tally['passed']; skips never a pass = _skipped_clause, plus the zero-collected guard requiring no skips; expected failure not-green = the `expected > 0` branch of green_verdict; raise not-green = _not_green_failure; shared steps = _proof_setup/_proof_preflight/_baseline_files/_baseline_run/_proof_teardown/_left_behind, each called by run_red and run_green. PLUGIN-BUILD-GUIDE and execute-task.md sentences say only those\n2 mutations.py: 17 rows, each anchor matched once and went red with the expected ids, restored byte for byte, MUTATIONS ALL CAUGHT. The over-fire twins went red too: gf8, gf10, gf12, gf13\n3 class = a green rule copied from red. grep 'support_clause\\|classify_run\\|baseline_problem(' in green_verdict/run_green: all three replaced or given green's reading (support_held_clause, _not_green_failure, stages passed to baseline_problem). Left: classify_run is still called for the zero/no-tally verdict word, because that is red's rule read for 'reached no verdict' only. The set-up copies (finding 11) are gone: gf17 fails a verb that calls sized_deadline, child_env, holder_base, mkdtemp, _build_throwaway, new_stages, unlink_junctions, _remove_throwaway, disarm_interrupt or a 'baseline' _isolated_run itself\n4 n/a - no rule addressed to an agent added; execute-task.md's sentence describes the helper and names _baseline_files\n5 the red-first command's time: measured once (2.5 s real), said as such here, not written into any document\n6 n/a - no guard over a command's text\n7 no number written into a document; the counts here come from the runs named beside them",
+  "stamp": "audit-stamp: {\"content\":\"sha256:452ba6add94e9b33713d42d7a9599f03dc4a379f5cf3043f94b56cebaced5a7a\",\"dirtyDigest\":\"sha256:73df6f86df1ada33130f64f1aca01564ebc547376dbaf1f2782fc2fc7165d0f5\",\"dirtyPaths\":{\"CHANGELOG.md\":\"562d9715fad3bf11\",\"PLUGIN-BUILD-GUIDE.md\":\"d1e5f78101015b1c\",\"plugins/audit/reference/execute-task.md\":\"d71facaa9c3c3712\",\"plugins/audit/scripts/governance/_runner_output.py\":\"58f5d6424cccc017\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"80e1e6c74a2e54ea\",\"tests/test__runner_output.py\":\"8dc76ed1e80c88d8\",\"tests/test_stamp_verification.py\":\"6c862ee97dd54a47\"},\"head\":\"c6c9972d\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/scripts/governance/_runner_output.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"tests/test__runner_output.py\",\"tests/test_drive_phase.py\",\"tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:aeaf4a4e97d909584a428980af7d61534389533f9e1ff702f66f1b1483c7d963\",\"v\":2}",
+  "floorGuard": {
+    "answer": "clean",
+    "basis": "read 4 of the diff's 7 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 3 file(s) not read, having no syntax known here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/reference/execute-task.md; 2 test file(s) not compared for definition-changed, defining no test* function: tests/test__runner_output.py, tests/test_stamp_verification.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/reference/execute-task.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "tests/test__runner_output.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test_stamp_verification.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      }
+    ],
+    "base": {
+      "commit": "c6c9972d77c494c6a3fff76f47e62a650ef6d015"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-17T15:53:51Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": [
+    "tests/test__runner_output.py: each tally reader gives the count of cases that passed apart from skipped and expected-failure ones - not checked: the submit's command did not run `tests/test__runner_output.py`, so the ids bound to it were not compared with any printed label"
+  ]
+}

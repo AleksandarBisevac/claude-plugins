@@ -44,10 +44,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   (HEAD's own run first, then the task's test files over it), refuses such a return given no
   test command after `--`, and files the helper's `greenFirst` block marked
   `green-first-helper`, with red-first `not-attempted`; a `greenFirst` block the agent typed is
-  dropped by `submit`. `proved` needs exit 0 and a case of the task's own seen passing;
-  `not-green` - a test failing on the base, so written to the new code - is an answer only a
-  human settles, which the reviewer's brief explains and sign-off waits on; zero collected, a
-  compile or import error and a refusal are `could-not-prove` with the reason verbatim. The
+  dropped by `submit`. `proved` needs exit 0 and a case of the task's own seen to run and pass:
+  a case id HEAD's own run printed for no case, or the runner's passed count rising - never a
+  whole label, which differs between the two runs when it quotes a temp path, and never a
+  skipped case. A new jest or vitest file and a new `--stage` block are proved through the
+  baseline step `red` takes, which the two verbs now share with their set-up and teardown.
+  `not-green` - a collected test failing on the base by an assertion or by raising, or an
+  expected failure, so written to the new code - is an answer only a human settles, which the
+  reviewer's brief explains and sign-off waits on; zero collected, only skips, a compile or
+  import error, no tally and a refusal are `could-not-prove` with the reason verbatim. The
   validator refuses the field beside `expectRedFirst` true and beside an empty `tests.add`,
   and `green_first_vocabulary_drift()` holds the status words to the schema. The headless
   drive's own filing runs the same helper (entry below); a return filed straight through
