@@ -254,9 +254,33 @@ def plan_default_skills(manifest):
     return _skill_names(src.get("defaultSkills"))
 
 
+def _default_level(manifest, phase, task):
+    return plan_default_skills(manifest)
+
+
+def _area_level(manifest, phase, task):
+    """Every tag's area skills, in the order the phase writes its tags."""
+    return [skill for tag in areas_of((phase or {}).get("area"))
+            for skill in _skill_names(entry_of(manifest, tag).get("skills"))]
+
+
+def _task_level(manifest, phase, task):
+    return _skill_names((task or {}).get("skills"))
+
+
+# The levels `resolve_skills` reads, in the order it reads them, each under the
+# manifest key it comes from. `SKILLS_RULE` is composed from these names, so the
+# sentence the documents carry is this table's order and not a second copy of it.
+SKILL_LEVELS = (
+    ("meta.defaultSkills", _default_level),
+    ("meta.areas[tag].skills", _area_level),
+    ("task.skills", _task_level),
+)
+
+
 def resolve_skills(manifest, phase, task):
     """The skills an executor subagent loads: the plan default, then the area
-    defaults, then the task's.
+    defaults, then the task's - `SKILL_LEVELS`, read in order.
 
     Widest first, because each level narrows the one before it: the plan's
     default is the house style for every phase ("this repository is Python,
@@ -278,13 +302,9 @@ def resolve_skills(manifest, phase, task):
     """
     if skills_opted_out(task):
         return []
-    levels = [plan_default_skills(manifest)]
-    levels.extend(_skill_names(entry_of(manifest, tag).get("skills"))
-                  for tag in areas_of((phase or {}).get("area")))
-    levels.append(_skill_names((task or {}).get("skills")))
     out = []
-    for level in levels:
-        for skill in level:
+    for _, read in SKILL_LEVELS:
+        for skill in read(manifest, phase, task):
             if skill not in out:
                 out.append(skill)
     return out
@@ -559,7 +579,10 @@ def missing_roots(manifest, project):
 # the four files that quote it owe it to whoever edits them.
 REVIEW_RULE = ("phase.reviewSkill ?? meta.areas[tag].reviewSkill "
                "?? meta.reviewSkill")
-SKILLS_RULE = "then task.skills, deduped, area first"
+# Composed from `SKILL_LEVELS`, the table `resolve_skills` iterates, so a level
+# reordered there moves this sentence with it; only the dedup clause is written.
+SKILLS_RULE = "%s, deduped, first mention wins" % ", then ".join(
+    name for name, _ in SKILL_LEVELS)
 
 
 def _plain(text):

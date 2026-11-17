@@ -1496,8 +1496,10 @@ The `meta.areas` registry and everything that resolves against it. A phase's `ar
 text, since v0.16) is only a grouping label; this module is where a tag becomes a thing with
 properties — a `root`, a `description`, a `reviewSkill`, `skills` — and it implements, once, the
 two precedence rules every surface quotes identically: `phase.reviewSkill ?? areas[tag]
-.reviewSkill ?? meta.reviewSkill` for the review skill, and `meta.defaultSkills`, then
-`meta.areas[tag].skills`, then `task.skills` (deduped, widest first) for the executor. Registration stays optional in both directions;
+.reviewSkill ?? meta.reviewSkill` for the review skill, and `SKILLS_RULE` for the executor —
+`meta.defaultSkills`, then `meta.areas[tag].skills`, then `task.skills`, deduped, first mention
+wins. That sentence is composed from `SKILL_LEVELS`, the table `resolve_skills()` iterates, so
+reordering a level moves the sentence with it. Registration stays optional in both directions;
 `review_skill_conflicts()` finds the case where a multi-tag phase's areas disagree, so a
 tie-break decided by write order stays visible instead of silent.
 

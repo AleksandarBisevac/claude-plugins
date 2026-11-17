@@ -1,0 +1,69 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__areas.py tests/test__help.py tests/test__refs.py": "pass",
+    "run-test-gate.py docs/audit/audit-plan.json SG1 --task SG1.11-ukq (not recorded; adds the affected/related suites)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-17T12:48:01Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__areas.py tests/test__help.py tests/test__refs.py` in a throwaway tree at HEAD exited 1 with 3 of 80 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - so1 (house FAIL), so2 (house FAIL), t3b (house FAIL): SELFTEST FAILED: 79/80 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "WHAT resolve_skills DOES (read before the phrase was written, plugins/audit/scripts/manifest/_areas.py): task.skills: null (skills_opted_out) returns [] before any level is read - it stops the plan default AND the area, an answer not a miss; [] or an absent key is 'unconsidered' and the defaults apply. Otherwise it reads three levels in order: meta.defaultSkills (plan_default_skills), then each of the phase's area tags' meta.areas[tag].skills in the order the tags are written, then task.skills; every level goes through _skill_names (a non-list container contributes nothing, non-string or blank entries dropped, names trimmed); de-duplication is over the whole sequence, first mention wins, so a name at two levels keeps the earlier position. CHANGE: the three levels are now a table, SKILL_LEVELS = ((key, reader) ...) in _areas.py, which resolve_skills iterates (behaviour unchanged: s1-s5, e1-e5, ds1-ds11 green), and SKILLS_RULE is composed from that table's key names plus the one written clause: 'meta.defaultSkills, then meta.areas[tag].skills, then task.skills, deduped, first mention wins'. The null opt-out is not in the phrase (it is an order phrase; the opt-out stays stated in resolve_skills' docstring and the reference's own bullets). _help.py's areas topic sentence no longer prefixes 'the area's,'; rendered (printed via _help.topics()): \"The executor's skills are `meta.defaultSkills, then meta.areas[tag].skills, then task.skills, deduped, first mention wins` \u2014 widest first, so the plan's house conventions load before an area's, and an area's before the task's own.\" reference/execute-task.md 'Execute the task' carries the phrase in bold (backticked keys; _plain strips them) followed by ', the tags in written order', with no 'area first' and no 'under the plan default' patch; line count unchanged at 961, bytes 79141 -> 79131. PLUGIN-BUILD-GUIDE.md's _areas.py section names SKILLS_RULE and that it is composed from SKILL_LEVELS (the run-agent-session section was not touched; SKILLS_PREAMBLE in run-agent-session.py was not touched). TESTS: so1 (test__areas.py) builds a plan setting all three levels with distinct names (plan-only, area-only, task-only) and 'twice' in both the plan default and the area, derives the level order from what resolve_skills returns, and compares it with the order the three key tokens occur in SKILLS_RULE (each exactly once), plus a once/dedup word; so2 holds the constant and execute-task.md free of the old 'area first' (whitespace-tolerant, the document wraps); t3b (test__help.py) holds the words before the rule in its own sentence to naming no level, and the areas topic free of 'area first'. Red on current code before the fix: so1, so2 (130/132) and t3b (79/80). After: test__areas 132/132, test__help 80/80, sweep over the brief's three files 3/3 files ok, exit 0 (test__refs incl. sko1-sko6 green). CLAIM-DRIFT: python3 plugins/audit/scripts/manifest/_areas.py --coverage exit 0, prints '[anchored] Execute the task: skills-rule' and no finding; with the document's sentence broken in a throwaway copy it exits 1 printing the finding '  skills-rule' and oa1/oa5/so2 go red (probe row 8; the unmodified copy is its twin). tools/measure-context.py --gate: GATE OK before and after; it prints no row for reference/execute-task.md (no entry loads it and DOC_CEILINGS names only orchestrator.md), so the brief's 'held to a ceiling' is not what the tool does today - reported, no ceiling touched. Its SECTION_CLASSES row for execute-task.md records 714 lines against 961 on disk - stale before this task, not changed. tools/gate-parity.py exit 0; ruff and vermin on the four .py files clean. MUTATION PROBE (throwaway copy; scratch sg1.11/mutations.py, output mutations.out, exit 0, MUTATIONS ALL CAUGHT): constant swapped plan-after-area -> so1 red; constant back on the old phrase -> so1, so2 red; resolver stops de-duplicating -> so1 (and s3, ds2) red; ALLOW: SKILL_LEVELS reordered -> so1 stays green (the sentence follows the table) while ds2 and oa1 go red; help sentence on the old 'the area's,' wording -> t3b red; 'area first' left in the help topic -> t3b red; 'area first' left in the reference -> so2 red; reference's pinned sentence broken -> oa1, so2 and --coverage exit 1. DEPENDANTS: the claim-drift table in _areas.py - the skills-rule row unchanged, its needle is the new constant, green; tests/test__areas.py - changed (so1, so2 added), green; tools/gate-parity.py - reads the exemption tables, not the constant, exit 0; tests/test__help.py - t3 still finds SKILLS_RULE in the topic, t3b added, t5's title reworded off 'area-first' (assertion unchanged), green; help topics served to the panel drawer - the areas paragraph changed as quoted, the worked-example rows unchanged (the example sets no defaultSkills); reference/execute-task.md - changed as above; tests/test__refs.py sko1-sko6 - green, file untouched; _areas.py importers (_output.py, drive-phase.py, _manifest_phases.py, _manifest_typos.py, audit-task.py, _panel_composition.py, _panel_policy.py, _help.py) - resolve_skills' return is unchanged for every input (the area level flattens per-tag lists that were then de-duplicated over the same sequence), and the cases that pin it are green; PLUGIN-BUILD-GUIDE.md - changed in the _areas.py section only. LEFT, each on purpose: docs/research/pipeline-cost-design.md:1008 'resolved area first' is a dated design record; CHANGELOG.md:6510 is history; plugins/audit/schema/audit-plan.schema.json:1020 (area skills description: 'Merged with task.skills and deduped, area first') is outside this task's files - true of area vs task but silent on the plan default, worth a follow-up; _report_html.py:1372 'Area first' is about filter order, unrelated; tools/demo/gen-demo-manifest.py:409 and tests/test__areas.py s3 title say area before task, which still holds; tests/test__refs.py:3580 and tests/test_audit_lookup.py:3674 are comments/assertions about the old phrase's absence.",
+    "descriptive": "The skills rule the reference document and the help drawer carry is now composed from the resolver's own level table and reads plan default, then area, then task."
+  },
+  "testsAdded": [
+    "so1: SKILLS_RULE's level tokens occur once each and in the order resolve_skills returns for a plan setting all three levels with distinct names and one name repeated across two levels, and the rule says deduped",
+    "so2: neither SKILLS_RULE nor reference/execute-task.md carries the old 'area first'",
+    "t3b: the help areas topic's skills sentence names no level ahead of the rule and carries no 'area first'"
+  ],
+  "casesAdded": [
+    [
+      "so1",
+      "so2"
+    ]
+  ],
+  "claims": "claims:\n1 _areas.py SKILL_LEVELS is what resolve_skills iterates and SKILLS_RULE joins; the help sentence and the reference sentence quote the constant (help via %s; reference via the skills-rule claim-drift row, --coverage exit 0)\n2 eight probe rows in a throwaway copy, all caught (sg1.11/mutations.out); ALLOW row: the table reordered keeps so1 green while ds2/oa1 go red; claim-drift: document sentence broken -> --coverage exit 1, unmodified copy exit 0\n3 git grep -n -i -E 'area[- ]first' over the tree minus docs/audit evidence: 10 hits, each accounted for in the outcome (3 shipped texts fixed; pipeline-cost-design.md and CHANGELOG left as records; schema:1020 left, out of scope, reported; report/demo/test titles left as true or unrelated)\n4 n/a - no rule addressed to an agent added; the reference sentence is held by the existing skills-rule claim-drift row, named in _areas.py\n5 n/a - no property recorded; measure-context bytes are file sizes read once (79141 -> 79131), deterministic\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:c6d40199e7fe9367ddc59f63de40c7cd9b686ecd58b1ddc5c47064891b960ec0\",\"dirtyDigest\":\"sha256:51da2925f4d124b30ca8752ccbc97dee59e16c34cd8a02b59d1b3382636c3a9a\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"c15b9cdcb698103f\",\"plugins/audit/reference/execute-task.md\":\"8c26b8c4d037af3a\",\"plugins/audit/scripts/config/_help.py\":\"e6805ce29ea035bc\",\"plugins/audit/scripts/manifest/_areas.py\":\"f76731b8399a06c8\",\"tests/test__areas.py\":\"3e8f1637dbe442be\",\"tests/test__help.py\":\"61fff0ab820ae2a6\"},\"head\":\"22cf94c7\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/scripts/config/_help.py\",\"plugins/audit/scripts/manifest/_areas.py\",\"tests/test__areas.py\",\"tests/test__help.py\",\"tests/test__refs.py\"],\"scopeDigest\":\"sha256:2fed7f178b12573278bf74bd930a988915696d59f795c81b43fd71d2bd1a8969\",\"v\":2}",
+  "floorGuard": {
+    "answer": "clean",
+    "basis": "read 4 of the diff's 6 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 2 file(s) not read, having no syntax known here: PLUGIN-BUILD-GUIDE.md, plugins/audit/reference/execute-task.md; 2 test file(s) not compared for definition-changed, defining no test* function: tests/test__areas.py, tests/test__help.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/reference/execute-task.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "tests/test__areas.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test__help.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      }
+    ],
+    "base": {
+      "commit": "22cf94c7669e625d12d19a1120d71a2e510754bd"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-17T12:48:02Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -1077,7 +1077,7 @@
     {
       "id": "SG1.10-ukq",
       "title": "The skill disclosure a headless session is handed says the task prompt outranks it",
-      "status": "in_progress",
+      "status": "done",
       "description": "SG1.1 put the precedence rule into the two SUBAGENT briefs. A headless writer or reviewer session (executor.writerModel set) reads neither: its prompt is composed as plain's own text with no rules (plugins/audit/scripts/status/audit-lookup.py, the comment above WRITER_COMMIT_LINE and compose_writer_prompt), and a task's skills reach it only through the text plugins/audit/scripts/governance/run-agent-session.py appends to the system prompt - SKILLS_PREAMBLE, then each skill's description and its '## Checklist' section (skill_disclosure, skills_prompt). So when a named skill's checklist or body contradicts the prompt (a skill that says to commit, to run the whole suite after each change where the prompt leaves it to the phase gate, to stop and ask), nothing the session reads says which wins. Add the rule to SKILLS_PREAMBLE and nowhere else: the skills are guidance for how to do the task; where one conflicts with the prompt the session follows the prompt and says so in its closing answer. The prompt of a task that names NO skill must not change by one byte - that text is the measured baseline - so the sentence lives only in the appended file, which is written only when a skill is named. Dependants: tests pinning SKILLS_PREAMBLE or the appended text (grep tests/ for SKILLS_PREAMBLE and skills_prompt), PLUGIN-BUILD-GUIDE.md's run-agent-session section, and the reviewer session, which is started with the same appended text.\n\nAcceptance:\n(1) The text appended for a session that names a skill states that the prompt wins over a skill and that the conflict is named in the closing answer, once.\n(2) A session started with no skill is handed no appended file and a prompt byte-identical to before.\n(3) A case fails when the sentence is removed from the preamble.\n\nADDED BEFORE START (the tree at 61e04e05):\n- tests/test__refs.py quotes a sentence of PLUGIN-BUILD-GUIDE.md about the executor's brief carrying the resolved skills; it is added to your scope because the section you edit is about how a skill reaches a session. Find that pin (grep the quoted words), keep it green, and say in your outcome whether your edit touched the sentence it reads.\n- The headless writer path now also runs the green-first helper (SG1.14) and the floor guard (SG1.5) at submit; neither changes what the session is handed. The prompt of a session that names no skill is the measured baseline: prove byte identity by comparing the composed prompt and the absence of the appended file before and after your change, not by reading the code.",
       "files": [
         "plugins/audit/scripts/governance/run-agent-session.py",
@@ -1103,14 +1103,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "22cf94c7669e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/scripts/governance/run-agent-session.py: SKILLS_PREAMBLE gains one closing sentence - 'The skills are guidance for how to do the task, and the task prompt outranks them: where a skill conflicts with the prompt, follow the prompt and name the conflict in your closing answer.' - with a comment above it saying why it lives there (the headless writer is handed no agent body and a prompt with no rules, compose_writer_prompt in audit-lookup.py; the reviewer is handed the same appended text beside its agent body) and why only there (the file is written only when a skill is named); the module docstring's --skill bullet names the preamble. No code path changed: skills_prompt, the `if loaded:` guard on the skills-file write and session_argv are untouched. tests/test_run_agent_session.py: new _precedence_cases (called from _skill_cases) with ras69 (writer naming a skill: the anchor 'follow the prompt' and 'closing answer' each once in the appended text, the sentence holding them also holds 'conflict', sits ahead of the first <skill> element and is SKILLS_PREAMBLE's own, stdin == the given prompt), ras69b (the same for the reviewer), ras70 (writer naming no skill: no --append-system-prompt-file, no skills_path, no skills_file, stdin bytes equal to the given prompt's, the anchor in neither argv nor stdin). PLUGIN-BUILD-GUIDE.md run-agent-session section: the preamble now says the prompt wins with the conflict named in the closing answer, why, that the sentence reaches a session through the appended file alone (ras69/ras69b), and that a session naming no skill is handed its measured prompt byte for byte and no file (ras70). RED FIRST (tdd, before reading the implementation): `python3 tests/test_run_agent_session.py --selftest` on unchanged code printed FAIL ras69, FAIL ras69b, PASS ras70, 'SELFTEST FAILED: 81/83 cases passed'; after the change 'ALL PASS: 83/83 cases passed', exit 0. GATE: `python3 tools/sweep-selftests.py --jobs 4 tests/test_run_agent_session.py tests/test__refs.py` exit 0, '2/2 files ok, 401 cases' (test__refs 318, test_run_agent_session 83). BYTE IDENTITY, measured before and after the change, not read from code: scratch probe sg1.10/baseline.py composes compose_writer_prompt for every task of the live plan (1545 prompts, sha256 each) and runs the script with the stub and no --skill (stdin digest, skills_path, skills_file, argv with paths elided, scratch files); output before the edit and after it compared with cmp: exit 0, identical (no-skill: skills_path None, skills_file None, stdin equal to the given prompt). MUTATION PROBE sg1.10/mutations.py (in a throwaway copy, anchors asserted once, restored byte for byte, __pycache__ purged), exit 0: sentence removed -> ras69, ras69b red (81/83); sentence duplicated -> ras69, ras69b red (81/83); sentence moved from the preamble into the stdin prompt of a no-skill session -> ras69, ras69b, ras70 red (plus ras5, ras13, 78/83); skills file written with no skill named -> ras70, ras38 red (plus ras17, ras58, 79/83); ALLOW twins quiet at 83/83: the unmodified tree, and the neighbouring 'The Skill tool loads...' sentence reworded with the rule kept. FAILURE OUTPUT of the helper's command with the sentence removed (sweep over the copy) carries only the house tallies: 'SELFTEST FAILED: 81/83 cases passed' and the sweep's '1/2 files ok, 318 cases'. ruff check on both .py files: exit 0. WIDE GATE, unrecorded: run-test-gate.py docs/audit/audit-plan.json SG1 --task SG1.10-ukq (no --record) exit 0, '[run-test-gate] GATE GREEN: python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test__refs.py, affected/related: ...'. DEPENDANTS: run-agent-session.py <- tests/test__config_rules.py, tests/test__doctor_policy.py, tests/test_drive_phase.py (import): still correct, no name they use changed and no argv/exit/config behaviour changed; tests/test_run_agent_session.py: changed, the cases above; tools/affected.py (path): still correct, the path is unchanged; PLUGIN-BUILD-GUIDE.md: changed, the section above; plugins/audit/schema/audit-config.schema.json and plugins/audit/scripts/config/_config_rules.py (basename / prose at :96): still correct, they name the script for executor.writerModel and nothing about the appended text; the reviewer session: gets the same sentence through the same file, pinned by ras69b; its agent body (agents/audit-reviewer.md, not edited) already says its rules win over a skill and to name the conflict in intent.note, which this sentence does not contradict (the prompt and the rules both outrank a skill). PLUGIN-BUILD-GUIDE.md <- the eight files reading it by basename and _doctor_hygiene.py's prose mention: no tree line, section heading or enumerated name changed, only prose inside the run-agent-session section; the test__refs pin (sko6, `_between(guide, \"The executor's carries the resolved skills\", \"the description verbatim\")`) reads the audit-lookup.py brief passage, which this edit did NOT touch, and test__refs stays 318/318. tests/test__refs.py: not edited; its dependants unaffected. tests/test_run_agent_session.py <- .github/sweep-costs.json: the new cases add three stub runs; the cost figure was not re-recorded.",
+        "descriptive": "A headless writer or reviewer session handed a skill now reads, once, that the task prompt outranks the skill and that a conflict is named in its closing answer; a session naming no skill is handed exactly what it was before."
       },
       "startedAt": "2026-11-17T12:09:17Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-17T12:34:52Z",
+      "verifiedBy": [
+        "ras69/ras69b: the text appended for a writer and for a reviewer naming a skill carries the precedence sentence exactly once, ahead of the first skill, as SKILLS_PREAMBLE's own; ras70: a writer naming no skill gets no appended file and the given prompt byte for byte"
+      ],
       "notes": [
         {
           "at": "2026-11-17T12:09:15Z",
@@ -1149,20 +1151,33 @@
         "runId": "2026-11-17T12:34:49Z.c6477d",
         "status": "passed",
         "at": "2026-11-17T12:34:49Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "22cf94c7669e",
+        "at": "2026-11-17T12:34:52Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-17T12:23:21Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test__refs.py` in a throwaway tree at HEAD exited 1 with 2 of 83 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ras69 (house FAIL), ras69b (house FAIL): SELFTEST FAILED: 81/83 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "SG1.11-ukq",
       "title": "The pinned skills rule and the help text name the plan default before the area",
-      "status": "pending",
-      "description": "SG1.3 corrected the executor's skill order in the reference files, the guide and the README to what _areas.resolve_skills builds: meta.defaultSkills, then each tag's meta.areas[tag].skills, then task.skills. Two statements of the same rule were outside its files and are still stale on the commit that closes it. (1) plugins/audit/scripts/manifest/_areas.py SKILLS_RULE is the string 'then task.skills, deduped, area first' and is pinned into reference/execute-task.md's 'Execute the task' section by the claim-drift row beside it; SG1.3 had to keep that phrase in the corrected sentence ('..., deduped, area first under the plan default') only because the constant could not change. (2) plugins/audit/scripts/config/_help.py renders 'The executor's skills are the area's, <SKILLS_RULE>' into the help endpoint's areas topic, which leaves out the plan level altogether. Make the constant state the whole order the resolver applies, in one phrase a reader can check against resolve_skills, and make the help sentence and the reference sentence carry it without the patch SG1.3 needed. Derive, do not restate: if the phrase can be composed from what the resolver itself defines, do that. Dependants you answer for: the claim-drift table in _areas.py and every reader of it (tests/test__areas.py, tools/gate-parity.py), tests/test__help.py (its areas-topic case reads SKILLS_RULE), the help topics served to the panel drawer, reference/execute-task.md (the pinned sentence; tools/measure-context.py ceilings), and tests/test__refs.py sko1-sko6, which pin the order in the documents and must stay green. docs/research/pipeline-cost-design.md also says 'resolved area first': it is a dated design record - leave it and say so.\n\nAcceptance:\n(1) SKILLS_RULE names the plan default, then the area, then the task, and a case holds it to the order _areas.resolve_skills returns for a plan that sets all three.\n(2) The help endpoint's areas topic states that order.\n(3) reference/execute-task.md carries the new pinned phrase and no leftover of the old one.\n(4) The claim-drift lint, tests/test__help.py and sko1-sko6 are green.",
+      "status": "in_progress",
+      "description": "SG1.3 corrected the executor's skill order in the reference files, the guide and the README to what _areas.resolve_skills builds: meta.defaultSkills, then each tag's meta.areas[tag].skills, then task.skills. Two statements of the same rule were outside its files and are still stale on the commit that closes it. (1) plugins/audit/scripts/manifest/_areas.py SKILLS_RULE is the string 'then task.skills, deduped, area first' and is pinned into reference/execute-task.md's 'Execute the task' section by the claim-drift row beside it; SG1.3 had to keep that phrase in the corrected sentence ('..., deduped, area first under the plan default') only because the constant could not change. (2) plugins/audit/scripts/config/_help.py renders 'The executor's skills are the area's, <SKILLS_RULE>' into the help endpoint's areas topic, which leaves out the plan level altogether. Make the constant state the whole order the resolver applies, in one phrase a reader can check against resolve_skills, and make the help sentence and the reference sentence carry it without the patch SG1.3 needed. Derive, do not restate: if the phrase can be composed from what the resolver itself defines, do that. Dependants you answer for: the claim-drift table in _areas.py and every reader of it (tests/test__areas.py, tools/gate-parity.py), tests/test__help.py (its areas-topic case reads SKILLS_RULE), the help topics served to the panel drawer, reference/execute-task.md (the pinned sentence; tools/measure-context.py ceilings), and tests/test__refs.py sko1-sko6, which pin the order in the documents and must stay green. docs/research/pipeline-cost-design.md also says 'resolved area first': it is a dated design record - leave it and say so.\n\nAcceptance:\n(1) SKILLS_RULE names the plan default, then the area, then the task, and a case holds it to the order _areas.resolve_skills returns for a plan that sets all three.\n(2) The help endpoint's areas topic states that order.\n(3) reference/execute-task.md carries the new pinned phrase and no leftover of the old one.\n(4) The claim-drift lint, tests/test__help.py and sko1-sko6 are green.\n\nADDED BEFORE START (the tree at 22cf94c7):\n- PLUGIN-BUILD-GUIDE.md has a section headed by _areas.py's path; it is added to your scope. Update it only where it states the skills rule or the constant; SG1.10 edited the run-agent-session section of the same file today - leave that section as it is.\n- SG1.10 added one sentence to SKILLS_PREAMBLE in run-agent-session.py (the task prompt outranks a skill). It is a different rule from the ORDER this task is about; do not merge the two.\n- reference/execute-task.md is read by a pipeline entry that tools/measure-context.py --gate holds to a ceiling: print its figure before and after your edit and report both. Do not raise a ceiling.\n- Before filing, look at what your new case prints when it FAILS: the output must carry only the house runner's tally. If submit reports the red-first as anything but proved, report its words and stop.",
       "files": [
         "plugins/audit/scripts/manifest/_areas.py",
         "plugins/audit/scripts/config/_help.py",
         "plugins/audit/reference/execute-task.md",
         "tests/test__areas.py",
         "tests/test__help.py",
-        "tests/test__refs.py"
+        "tests/test__refs.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1180,16 +1195,55 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-17T12:35:31Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-17T12:35:18Z",
+          "text": "it quotes a phrase of reference/execute-task.md about the gates field of a return; this task changes only the sentence carrying the skills rule in that file's Execute the task section, and the executor confirms the quoted phrase is untouched",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-17T12:35:18Z",
+          "reader": "PLUGIN-BUILD-GUIDE.md",
+          "reads": "plugins/audit/scripts/manifest/_areas.py",
+          "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/manifest/_areas.py - a section headed by its path"
+        },
+        {
+          "at": "2026-11-17T12:35:29Z",
+          "text": "it quotes a phrase of the build guide's section on the affected-test derivation; this task edits only the section about the file it changes",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-17T12:35:29Z",
+          "text": "it quotes a sentence of the build guide's section on the doctor's trail check; this task edits only the section about the file it changes",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-17T12:35:29Z",
+          "text": "it quotes a section marker the build guide cites for the drive; this task edits only the section about the file it changes",
+          "waives": "tests/test_drive_phase.py"
+        },
+        {
+          "at": "2026-11-17T12:35:29Z",
+          "text": "it reads the heading of the build guide's generated module map; this task adds no module under scripts or hooks, so the map and its heading stay as they are",
+          "waives": "tools/lints/_deps.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T13:00:17Z.a8a113",
+        "status": "passed",
+        "at": "2026-11-17T13:00:17Z"
+      }
     },
     {
       "id": "SG1.12-ukq",

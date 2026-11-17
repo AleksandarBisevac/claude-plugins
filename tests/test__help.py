@@ -333,13 +333,28 @@ def _cases(check):
           "state a different one from the four docs",
           any(_areas.REVIEW_RULE in p for p in tps["areas"]["paragraphs"])
           and any(_areas.SKILLS_RULE in p for p in tps["areas"]["paragraphs"]))
+    # The rule names the levels in the resolver's order, so a sentence that puts
+    # one level ahead of it ("the area's, <rule>") reorders it for the reader:
+    # the words before the rule, within its own sentence, name no level.
+    skills_pars = [p for p in tps["areas"]["paragraphs"] if _areas.SKILLS_RULE in p]
+    lead = (skills_pars[0].split(_areas.SKILLS_RULE)[0].rsplit(". ", 1)[-1]
+            if len(skills_pars) == 1 else None)
+    check("t3b ...and the sentence carrying the skills rule names no level ahead "
+          "of it, so the drawer reads the plan default first as the resolver "
+          "loads it",
+          lead is not None
+          and not re.search(r"area|default|task|plan", lead, re.I)
+          and not re.search(r"\barea[-\s]+first\b", " ".join(
+              tps["areas"]["paragraphs"]), re.I),
+          "lead %r over %d paragraph(s)" % (lead, len(skills_pars)))
     arows = tps["areas"]["table"]["rows"]
     check("t4 ...and the worked example is resolved, so a precedence change moves "
           "the page: the area answers P1, meta answers P2, and an explicit null "
           "on P3 is an answer",
           [r[1] for r in arows] == ["backend-review", "house-review", "— none —"]
           and [r[2] for r in arows] == ["area api", "meta", "phase"], repr(arows))
-    check("t5 the executor skills in that example are area-first, deduped",
+    check("t5 the executor skills in that example are the area's then the "
+          "task's, deduped",
           arows[0][3] == "python-conventions, sql-review", repr(arows[0]))
     prows = tps["policy"]["table"]["rows"]
     check("t6 the policy example is resolved by the GUARD's resolver, in the "

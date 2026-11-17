@@ -541,8 +541,9 @@ def _areas_topic():
             "phase uses is legal too. Write nothing and you get the v0.16 "
             "behaviour, so no existing manifest changes meaning by upgrading.",
             "The reviewer for a phase is `%s`." % _areas.REVIEW_RULE,
-            "The executor's skills are the area's, %s — so a project convention "
-            "loads before a task-specific one." % _areas.SKILLS_RULE,
+            "The executor's skills are `%s` — widest first, so the plan's house "
+            "conventions load before an area's, and an area's before the "
+            "task's own." % _areas.SKILLS_RULE,
             "Several tags on one phase are tried in WRITTEN ORDER. Any tie-break "
             "is arbitrary; what matters is that it is stated and visible, which is "
             "why the validator warns when two areas both declare a reviewer.",

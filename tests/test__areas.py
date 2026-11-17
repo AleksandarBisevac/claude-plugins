@@ -228,6 +228,42 @@ def _cases(check):
           % (f,),
           len(f) == 1 and "3 bad" in f[0])
 
+    # --- (so) SKILLS_RULE held to the resolver's order ---------------------------
+    # The constant is the sentence the reference document and the help drawer
+    # carry, so it is checked against what `resolve_skills` RETURNS, not against
+    # a wording. Each level gets a name no other level holds, so the resolved
+    # list's order is the level order; `twice` sits in the plan default AND the
+    # area, so a resolver that stopped de-duplicating is seen too.
+    SMAN = {"meta": {"defaultSkills": ["plan-only", "twice"],
+                     "areas": {"api": {"skills": ["area-only", "twice"]}}},
+            "phases": [{"id": "P1", "area": "api"}]}
+    got = M.resolve_skills(SMAN, SMAN["phases"][0], {"skills": ["task-only"]})
+    level_of = {"plan-only": "meta.defaultSkills", "area-only": "meta.areas",
+                "task-only": "task.skills"}
+    resolved_levels = [level_of[s] for s in got if s in level_of]
+    token_counts = sorted((t, M.SKILLS_RULE.count(t)) for t in level_of.values())
+    rule_levels = sorted(level_of.values(), key=M.SKILLS_RULE.find)
+    check("so1 SKILLS_RULE names the plan default, the area and the task in the "
+          "order resolve_skills returns for a plan setting all three, each level "
+          "once, and says a skill named twice loads once",
+          sorted(resolved_levels) == sorted(level_of.values())
+          and got.count("twice") == 1
+          and all(n == 1 for _, n in token_counts)
+          and rule_levels == resolved_levels
+          and re.search(r"\bonce\b|dedup", M.SKILLS_RULE) is not None,
+          "rule %r names %r in order %r; the resolver returned %r"
+          % (M.SKILLS_RULE, token_counts, rule_levels, got))
+    old_order = re.compile(r"\barea[-\s]+first\b", re.I)    # a document wraps
+    ref_path = os.path.join(_harness.SCRIPTS_DIR, os.pardir, "reference",
+                            "execute-task.md")
+    with open(ref_path, encoding="utf-8") as fh:
+        ref_text = fh.read()
+    check("so2 the old 'area first' order is gone from the constant and from the "
+          "reference document that carries it",
+          not old_order.findall(M.SKILLS_RULE) and not old_order.findall(ref_text),
+          "constant %r; reference %r"
+          % (old_order.findall(M.SKILLS_RULE), old_order.findall(ref_text)))
+
     # --- conflicts + unregistered tags -------------------------------------------
     check("c1 two areas declaring DIFFERENT reviewers is a conflict worth naming",
           M.review_skill_conflicts(MAN, {"area": ["api", "sec"]})
