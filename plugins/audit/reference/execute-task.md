@@ -276,12 +276,15 @@ verb writes and refuses, and what the run commands leave behind, is
      helper's throwaway is built at (`task_root` and `tree_head` in `drive-phase.py`, the one
      base), handed the `tests.add` paths with their `casesAdded` ids and
      `floorGuard.acceptedSuppressions`. A `tests.add` path with a case id bound to it makes a
-     change to that existing test the task's own (`declared`); a path with none covers only
+     change to that existing test the task's own (`declared`) when exactly one existing test
+     or check of the file answers to the id - one several answer to covers none, and the
+     finding says so; a path with none covers only
      the tests new to that file, so an existing test changed there is still a finding. It
      holds `answer` (`clean`, `findings`, `could-not-tell`, or `partly-read` - nothing found
      but a file that could hold a move was not compared), `findings`, `declared`, `notRead`
      and `couldNotTell` apart; each `notRead` entry says whether the file `could-hold-one` (a
-     binary file, a test file whose helpers changed) or `cannot-hold-a-move` (prose, data),
+     binary file, a test file with a changed line outside every compared test and every
+     inert addition, named) or `cannot-hold-a-move` (prose, data),
      and only the first kind makes the reading partly read. The reviewer's brief shows it as
      an input to judge, opening with *NOT clean overall* while a could-hold file stands. **It refuses nothing**: no gate, commit or sign-off reads it,
      a reading that raises is filed as `could-not-tell` naming the exception's type, and under

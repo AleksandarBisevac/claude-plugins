@@ -1396,7 +1396,8 @@
       "SG1.22-ukq",
       "SG1.23-ukq",
       "SG1.24-ukq",
-      "SG1.25-ukq"
+      "SG1.25-ukq",
+      "SG1.26-ukq"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -2056,7 +2057,8 @@
       "SG1.22-ukq",
       "SG1.23-ukq",
       "SG1.24-ukq",
-      "SG1.25-ukq"
+      "SG1.25-ukq",
+      "SG1.26-ukq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2556,7 +2558,8 @@
       "SG1.18-ukq",
       "SG1.19-ukq",
       "SG1.22-ukq",
-      "SG1.25-ukq"
+      "SG1.25-ukq",
+      "SG1.26-ukq"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -3579,7 +3582,8 @@
       "SG1.18-ukq",
       "SG1.19-ukq",
       "SG1.20-ukq",
-      "SG1.22-ukq"
+      "SG1.22-ukq",
+      "SG1.26-ukq"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -13820,13 +13824,15 @@
       "SG1.4",
       "SG1.12-ukq",
       "SG1.18-ukq",
-      "SG1.19-ukq"
+      "SG1.19-ukq",
+      "SG1.26-ukq"
     ],
     "tests/test__floor_guard.py": [
       "SG1.4",
       "SG1.12-ukq",
       "SG1.18-ukq",
-      "SG1.19-ukq"
+      "SG1.19-ukq",
+      "SG1.26-ukq"
     ],
     "plugins/audit/evals/bugfix/scaffold.sh": [
       "SG1.9",

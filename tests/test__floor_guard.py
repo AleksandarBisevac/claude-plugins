@@ -19,10 +19,11 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 import ast
 import difflib
+import re
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
-from _output import safe_stdio                     # noqa: E402
+from _output import safe_stdio, some_of           # noqa: E402
 import _filed_returns                              # noqa: E402
 import _floor_guard as M                           # noqa: E402
 
@@ -1184,6 +1185,641 @@ def _kinds(check):
           and [n["path"] for n in docs["notRead"]] == ["docs/notes.md"])
 
 
+# --- compared means every changed line is accounted for --------------------------
+# A test file reads as compared only when each changed line of either copy lies in
+# a compared unit (a test definition or a labelled check, compared with the chain
+# of statements enclosing it) or in an inert addition. Each input below lowers the
+# bar while every unit's own text stays the same, so a reading that compares the
+# units alone calls it clean.
+
+ROWS_MAIN = '''import sys
+
+
+def check(label, ok):
+    if not ok:
+        print("FAIL", label)
+        sys.exit(1)
+
+
+def main():
+    x = 1 + 1
+    check("r1 two is two", x == 2)
+    check("r2 three is not two", x != 3)
+    check("r3 list empty", [] == [])
+    print("3/3 cases passed")
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+ROWS_ARG = '''def main(check):
+    x = 2
+    check("c1 two", x == 2)
+    check("c2 not three", x != 3)
+    for n in (1, 2):
+        check("c4 row %d" % n, n > 0)
+'''
+
+ROWS_CALLED = '''import sys
+
+FAILED = []
+
+
+def check(label, ok):
+    if not ok:
+        FAILED.append(label)
+
+
+def main():
+    check("c1 two", 1 + 1 == 2)
+    check("c2 three", 1 + 2 == 3)
+    check("c3 four", 2 + 2 == 4)
+    sys.exit(1 if FAILED else 0)
+
+
+main()
+'''
+
+MOVED_TEST = '''def test_one():
+    assert 1 + 1 == 2
+
+
+def test_two():
+    assert [1, 2] == sorted([2, 1])
+'''
+
+SHARED_WORD = '''def main(check):
+    check("empty list gives zero", len([]) == 0)
+    check("empty string gives zero", len("") == 0)
+'''
+
+SHARED_METHOD = '''class TestA:
+    def test_empty(self):
+        assert len([]) == 0
+
+
+class TestB:
+    def test_empty(self):
+        assert len("") == 0
+'''
+
+
+def _named_lines(result, path):
+    """The could-hold not-compared entries for `path` whose reason names a line."""
+    return [n for n in result["notRead"] if n["path"] == path
+            and n.get("kind") == COULD_HOLD and re.search(r"\bline \d+", n.get("reason") or "")]
+
+
+def _names_line(result, path, lines):
+    return any(re.search(r"\bline %d\b" % ln, n["reason"])
+               for n in _named_lines(result, path) for ln in lines)
+
+
+def _labels_found(result, words, side=None):
+    """For each word, how many definition-changed findings name it."""
+    hits = _moves(result, M.DEFINITION_CHANGED)
+    return [len([f for f in hits if w in f["what"] and (side is None or f["side"] == side)])
+            for w in words]
+
+
+def _wrapped(check):
+    path = "tests/test_rows.py"
+    checks = ('    check("r1 two is two", x == 2)\n'
+              '    check("r2 three is not two", x != 3)\n'
+              '    check("r3 list empty", [] == [])\n')
+    nested = "".join("    " + ln + "\n" for ln in checks.splitlines())
+    seen = []
+    for head in ("    if False:\n", "    def _later():\n"):
+        got = _run([(path, ROWS_MAIN, ROWS_MAIN.replace(checks, head + nested))])
+        seen.append((head.strip(), _labels_found(got, ("r1", "r2", "r3")),
+                     all("enclos" in f["what"] for f in got["findings"]),
+                     _names_line(got, path, (12,)), _show(got)))
+    check("fm51 (a) a row suite's labelled checks wrapped in `if False:`, and (b) "
+          "moved into a function nothing calls, are each a definition change saying "
+          "the enclosing statement changed, and the file is not compared at the "
+          "added head line: %r" % (seen,),
+          [s[1:4] for s in seen] == [([1, 1, 1], True, True)] * 2)
+
+    one = '    check("r2 three is not two", x != 3)\n'
+    seen = []
+    for label, wrap, lines in (
+            ("for over ()", "    for _row in ():\n    " + one, (13,)),
+            ("try/except pass", "    try:\n    " + one + "    except Exception:\n"
+             "        pass\n", (13, 15, 16))):
+        got = _run([(path, ROWS_MAIN, ROWS_MAIN.replace(one, wrap))])
+        seen.append((label, _labels_found(got, ("r1", "r2", "r3")),
+                     _names_line(got, path, lines), _show(got)))
+    check("fm52 (c) a check put under a for over an empty tuple, and (d) wrapped in a "
+          "try whose except passes, is a definition change of that check alone, and "
+          "the file is not compared at the added line: %r" % (seen,),
+          [s[1:3] for s in seen] == [([0, 1, 0], True)] * 2)
+
+    got = _run([(path, ROWS_ARG, ROWS_ARG.replace("(1, 2)", "(1,)"))])
+    check("fm53 (e) the literal table a loop of checks iterates, cut from two entries "
+          "to one, is a definition change of the check under it, and the file is not "
+          "compared at the loop's line: %s %r" % (_show(got), got["notRead"]),
+          _labels_found(got, ("c1", "c2", "c4")) == [0, 0, 1]
+          and _names_line(got, path, (5,)))
+
+    tree = ROWS_CALLED.replace("def main():", "def note(label, ok):\n    pass\n\n\n"
+                               "def main():").replace('    check("', '    note("')
+    got = _run([(path, ROWS_CALLED, tree)])
+    check("fm54 (f) every call of the check function pointed at a new function "
+          "that does nothing: each base check is gone, a finding on its base line: %s"
+          % _show(got),
+          _labels_found(got, ("c1", "c2", "c3"), side="base") == [1, 1, 1]
+          and got["answer"] == M.FINDINGS)
+
+    tree = ROWS_MAIN.replace("    x = 1 + 1\n", "    x = 1 + 1\n    sys.exit(0)\n")
+    got = _run([(path, ROWS_MAIN, tree)])
+    check("fm55 (g) a call of sys.exit added above the checks is no inert addition: "
+          "the file is not compared at that line, and the answer is not clean: %s %r"
+          % (_show(got), got["notRead"]),
+          got["answer"] == PARTLY_READ and _names_line(got, path, (12,)))
+
+    base = ("import pytest\n\n\ndef test_plain():\n    assert 1 + 1 == 2\n\n\n"
+            "for _n in (1, 2):\n    def test_looped(n=_n):\n"
+            "        assert n * 2 == n + n and n < 5\n")
+    got = _run([("tests/test_d.py", base,
+                 base.replace("assert n * 2 == n + n and n < 5", "assert True"))])
+    check("fm56 (h) a test defined inside a module-level for loop, its assertion "
+          "removed, is a definition change: %s" % _show(got),
+          _labels_found(got, ("test_looped",)) == [1] and got["answer"] == M.FINDINGS)
+
+
+def _skip_spellings(check):
+    base = ("import unittest\n\n\nclass TestA(unittest.TestCase):\n"
+            "    def test_one(self):\n        self.assertEqual(1 + 1, 2)\n")
+    tree = base.replace("class TestA(unittest.TestCase):\n",
+                        "class TestA(unittest.TestCase):\n    @classmethod\n"
+                        "    def setUpClass(cls):\n        raise unittest.SkipTest('later')\n\n")
+    raised = _run([("tests/test_u.py", base, tree)])
+    plain = "import pytest\n\n\ndef test_one():\n    assert 1 + 1 == 2\n"
+    imported = _run([("tests/test_p.py", plain, plain.replace(
+        "import pytest\n", "import pytest\n\npytest.importorskip('no_such_module')\n"))])
+    check("fm57 (i) a raised unittest.SkipTest in a new setUpClass, and a module-level "
+          "pytest.importorskip, are skip findings on their lines: %s / %s"
+          % (_show(raised), _show(imported)),
+          [f["line"] for f in _moves(raised, M.SKIP_ADDED)] == [7]
+          and [f["line"] for f in _moves(imported, M.SKIP_ADDED)] == [3])
+
+
+def _moved_out(check):
+    weak = MOVED_TEST.replace("assert [1, 2] == sorted([2, 1])", "assert True")
+    shapes = (
+        ("renamed out of the test tree", [("tools/a_checks.py", MOVED_TEST, MOVED_TEST,
+                                           "tests/test_a.py")]),
+        ("deleted, its text added untracked outside it",
+         [("tests/test_a.py", MOVED_TEST, None), ("tools/a_checks.py", None, MOVED_TEST)]),
+        ("renamed out and weakened", [("tools/a_checks.py", MOVED_TEST, weak,
+                                       "tests/test_a.py")]),
+        ("renamed to a dot-disabled suffix", [("tests/test_a.py.disabled", MOVED_TEST,
+                                               MOVED_TEST, "tests/test_a.py")]))
+    seen = [(label, [(f["move"], f["path"]) for f in _moves(_run(rows), M.TEST_DELETED)])
+            for label, rows in shapes]
+    check("fm58 (j) a test file moved to a path that is not a test path - renamed, "
+          "deleted and re-added untracked, renamed and weakened, renamed to a "
+          "disabled suffix - is a test-deleted finding on the old path: %r" % (seen,),
+          [s[1] for s in seen] == [[(M.TEST_DELETED, "tests/test_a.py")]] * 4)
+
+
+def _ambiguous(check):
+    path = "tests/test_r.py"
+    weak = SHARED_WORD.replace('len("") == 0', "True")
+    got = _run([(path, SHARED_WORD, weak)], declared=(path + "::empty",))
+    hits = _moves(got, M.DEFINITION_CHANGED)
+    check("fm59 (k) a declaration naming the first word two base checks share covers "
+          "neither: the weakened check is a finding saying the declaration is "
+          "ambiguous, never filed as declared: %s" % _show(got),
+          len(hits) == 1 and "empty string" in hits[0]["what"]
+          and "ambiguous" in hits[0]["what"] and got["declared"] == []
+          and got["answer"] == M.FINDINGS)
+
+    upath = "tests/test_c.py"
+    weak = SHARED_METHOD.replace('assert len("") == 0', "assert True")
+    bare = _run([(upath, SHARED_METHOD, weak)], declared=(upath + "::test_empty",))
+    hits = _moves(bare, M.DEFINITION_CHANGED)
+    check("fm60 a declaration naming a method two classes share covers neither, and "
+          "the finding says it is ambiguous and that class and method would make it "
+          "single: %s" % _show(bare),
+          len(hits) == 1 and "TestB.test_empty" in hits[0]["what"]
+          and "ambiguous" in hits[0]["what"] and bare["declared"] == [])
+
+    gone = _run([("tests/test_a.py", MOVED_TEST, None),
+                 ("docs/a_checks.py", None, MOVED_TEST)])
+    kept = _run([("tests/test_a.py", MOVED_TEST, None),
+                 ("tests/unit/test_a.py", None, MOVED_TEST)])
+    check("fm61 a deleted test path is paired only with an added test path: beside a "
+          "non-test path holding its text it is a deletion, beside a test path it is "
+          "a move: %s / %s" % (_show(gone), _show(kept)),
+          [(f["move"], f["path"]) for f in gone["findings"]]
+          == [(M.TEST_DELETED, "tests/test_a.py")]
+          and kept["findings"] == [] and kept["answer"] == M.CLEAN)
+
+
+def _honest(check):
+    path = "tests/test_rows.py"
+    house = HOUSE_SUITE.replace(
+        '    check("h2 zero doubled is zero", _double(0) == 0)\n',
+        '    check("h2 zero doubled is zero", _double(0) == 0)\n'
+        '    a = _double(3)\n    b = a + 1\n    c = b - 1\n'
+        '    check("h3 three doubled is six", c == 6)\n')
+    tail = ROWS_MAIN.replace(
+        '    check("r3 list empty", [] == [])\n',
+        '    check("r3 list empty", [] == [])\n    y = x * 2\n    z = y + 1\n'
+        '    w = z - 1\n    check("r4 four", w == 4)\n')
+    got = [_run([(path, b, t)]) for b, t in ((HOUSE_SUITE, house), (ROWS_MAIN, tail))]
+    check("fa33 THE TWIN of fm55: a check appended after the last existing one with "
+          "three set-up lines of its own - at the end of the body, and before a "
+          "trailing print - is compared and clean: %s / %s"
+          % (_show(got[0]), _show(got[1])),
+          [(g["answer"], g["findings"], g["notRead"]) for g in got]
+          == [(M.CLEAN, [], [])] * 2)
+
+    tree = ROWS_MAIN.replace("def main():", "def triple(n):\n    return n * 3\n\n\n"
+                             "def main():")
+    got = _run([(path, ROWS_MAIN, tree)])
+    check("fa34 THE TWIN of fm54: a new helper function under a fresh name is an "
+          "inert addition: %s %r" % (_show(got), got["notRead"]),
+          (got["answer"], got["findings"], got["notRead"]) == (M.CLEAN, [], []))
+
+    tree = SKIPPED_CLASS.replace("    def test_two(self):",
+                                 "    def test_one_half(self):\n"
+                                 "        self.assertEqual(3, 3)\n\n"
+                                 "    def test_two(self):")
+    got = _run([("tests/test_cart.py", SKIPPED_CLASS, tree)])
+    check("fa35 THE TWIN of fm57: a new test method between two existing ones is a "
+          "new unit and reads clean: %s %r" % (_show(got), got["notRead"]),
+          (got["answer"], got["findings"], got["notRead"]) == (M.CLEAN, [], []))
+
+    reflowed = ROWS_ARG.replace('    check("c2 not three", x != 3)\n',
+                                '    check(\n        "c2 not three",\n'
+                                '        x != 3,\n    )\n')
+    test = CART_TEST.replace("    assert total([1, 2]) == 3\n",
+                             "    assert (\n        total([1, 2])\n        == 3\n    )\n")
+    got = [_run([(path, ROWS_ARG, reflowed)]), _run([("tests/test_cart.py", CART_TEST, test)])]
+    check("fa36 THE TWIN of fm51: a pure reformat - a check's arguments split over "
+          "lines, a test's assertion reflowed - reads clean: %s / %s"
+          % (_show(got[0]), _show(got[1])),
+          [(g["answer"], g["findings"], g["notRead"]) for g in got]
+          == [(M.CLEAN, [], [])] * 2)
+
+    tree = ROWS_ARG.replace('"c4 row %d"', '"c4 table row %d"')
+    got = _run([(path, ROWS_ARG, tree)])
+    check("fa37 THE TWIN of fm53: a label reworded under its loop, the condition and "
+          "the loop untouched, reads clean: %s %r" % (_show(got), got["notRead"]),
+          (got["answer"], got["findings"], got["notRead"]) == (M.CLEAN, [], []))
+
+    got = [_run([("tests/unit/test_rows.py", ROWS_MAIN, ROWS_MAIN, path)]),
+           _run([(path, ROWS_MAIN, None), ("tests/unit/test_rows.py", None, ROWS_MAIN)])]
+    check("fa38 THE TWIN of fm58: a test file moved to another test path unchanged - "
+          "renamed, or deleted and re-added - reads clean: %s / %s"
+          % (_show(got[0]), _show(got[1])),
+          [(g["answer"], g["findings"]) for g in got] == [(M.CLEAN, [])] * 2)
+
+    weak = SHARED_WORD.replace('len("") == 0', "True")
+    whole = _run([("tests/test_r.py", SHARED_WORD, weak)],
+                 declared=("tests/test_r.py::empty string gives zero",))
+    uweak = SHARED_METHOD.replace('assert len("") == 0', "assert True")
+    qualified = _run([("tests/test_c.py", SHARED_METHOD, uweak)],
+                     declared=("tests/test_c.py::TestB::test_empty",))
+    check("fa39 THE TWIN of fm59 and fm60: a declaration answering to one base unit - "
+          "the whole label, or class and method - covers it: %s / %s"
+          % (_show(whole), _show(qualified)),
+          [(g["answer"], g["findings"], len(g["declared"])) for g in (whole, qualified)]
+          == [(M.CLEAN, [], 1)] * 2)
+
+
+UNIT_SUITE = '''import unittest
+
+
+class TestA(unittest.TestCase):
+    def test_two(self):
+        self.assertEqual(sorted([2, 1]), [1, 2])
+
+
+if __name__ == "__main__":
+    unittest.main()
+'''
+
+
+def _not_inert(check):
+    path = "tests/test_unit.py"
+    hook = UNIT_SUITE.replace('\n\nif __name__', '\n\ndef load_tests(loader, tests, pattern):\n'
+                              '    return unittest.TestSuite()\n\n\nif __name__')
+    decorated = UNIT_SUITE.replace('\n\nif __name__', '\n\n@unittest.skip("x")\ndef helper():\n'
+                                   '    return 1\n\n\nif __name__')
+    shadow = UNIT_SUITE.replace('\n\nif __name__', '\n\ndef sorted(xs):\n    return [1, 2]\n'
+                                '\n\nif __name__')
+    attribute = UNIT_SUITE.replace("class TestA(unittest.TestCase):\n",
+                                   "class TestA(unittest.TestCase):\n"
+                                   "    __unittest_skip__ = True\n")
+    seen = []
+    for label, tree, line in (("a load_tests hook", hook, 9), ("a decorated helper", decorated, 9),
+                              ("a def shadowing a name the base reads", shadow, 9),
+                              ("a class-level assignment", attribute, 5)):
+        got = _run([(path, UNIT_SUITE, tree)])
+        seen.append((label, got["answer"] != M.CLEAN, _names_line(got, path, (line,)), _show(got)))
+    conftest = _run([(path, UNIT_SUITE, UNIT_SUITE),
+                     ("tests/conftest.py", None, "def pytest_collection_modifyitems(config, items):"
+                                                 "\n    items[:] = []\n")])
+    seen.append(("a new conftest.py defining a pytest hook", conftest["answer"] != M.CLEAN,
+                 _names_line(conftest, "tests/conftest.py", (1,)), _show(conftest)))
+    plain = "import os\n\n\ndef test_one():\n    assert os.sep\n"
+    hidden = _run([("tests/test_plain.py", plain, plain.replace(
+        "def test_one():\n    assert os.sep\n",
+        "def _hidden():\n    def test_one():\n        assert os.sep\n"))])
+    seen.append(("a new fresh function holding an existing test", hidden["answer"] != M.CLEAN,
+                 _names_line(hidden, "tests/test_plain.py", (4,)), _show(hidden)))
+    check("fm62 an addition is not inert when it is a hook-named definition, a decorated "
+          "one, one under a name the base copy reads, a class-level assignment, or one "
+          "holding a test the base had - in an existing test file - or a hook in a test "
+          "file new to the diff: the file is not compared at its line: %r" % (seen,),
+          [s[1:3] for s in seen] == [(True, True)] * 6)
+
+
+def _inert_twins(check):
+    fresh = ("import sys\n\nimport unittest\n\n\ndef _setup_paths():\n    sys.path.insert(0, '.')\n"
+             "\n\nclass TestNew(unittest.TestCase):\n    def test_new(self):\n"
+             "        self.assertEqual(1 + 1, 2)\n\n\nif __name__ == '__main__':\n"
+             "    unittest.main()\n")
+    new_file = _run([("tests/test_new.py", None, fresh)])
+    catches = UNIT_SUITE.replace('\n\nif __name__', '\n    def test_three(self):\n        try:\n'
+                                 '            self.assertTrue(True)\n'
+                                 '        except unittest.SkipTest:\n            raise\n'
+                                 '\n\nif __name__')
+    caught = _run([("tests/test_unit.py", UNIT_SUITE, catches)])
+    caller = ROWS_ARG + "\n\ndef _all(check):\n    main(check)\n"
+    table = caller.replace("def _all(check):", "def more(check):\n    check(\"m1 eight\", "
+                           "2 * 4 == 8)\n\n\ndef _all(check):") + "    more(check)\n"
+    grouped = _run([("tests/test_rows.py", caller, table)])
+    check("fa40 THE TWIN of fm62: a new test file with module code of its own, a new "
+          "test that catches SkipTest without raising one, and a new group of checks "
+          "called after every statement its caller had are inert and read clean: "
+          "%s / %s / %s" % (_show(new_file), _show(caught), _show(grouped)),
+          [(g["answer"], g["findings"], g["notRead"]) for g in (new_file, caught, grouped)]
+          == [(M.CLEAN, [], [])] * 3)
+
+
+# --- the invariant, computed by the case itself ----------------------------------
+# The expected reading of each generated edit is derived here from line spans -
+# ast lineno/end_lineno over this file's own fixtures and difflib's changed lines
+# - and never from the module's helpers, so the case cannot agree with the guard
+# by construction. A fixed table of edit operators is applied at every statement
+# position of two small fixtures, so the edits and their count are reproducible.
+
+INV_ROWS = '''import sys
+
+LIMIT = 3
+
+
+def _cases(check):
+    x = 2
+    check("alpha two", x == 2)
+    for n in (1, 2):
+        check("beta row %d" % n, n < 3)
+    check("gamma limit", LIMIT == 3)
+    print("done", 4)
+
+
+def main():
+    return _cases(print)
+'''
+
+INV_UNIT = '''import unittest
+
+BASE = 2
+
+
+class TestA(unittest.TestCase):
+    def setUp(self):
+        self.x = 2
+
+    def test_one(self):
+        self.assertEqual(self.x, 2)
+
+    def test_two(self):
+        self.assertTrue(BASE < 3)
+
+
+def _helper(v):
+    return v * 2
+'''
+
+INV_INSERTS = ("_probe = 0", "sys.exit(0)")
+INV_HOOK = re.compile(r"^(setUp|tearDown|setUpClass|tearDownClass|setUpModule|"
+                      r"tearDownModule|pytest_\w+|load_tests)$")
+
+
+def _inv_places(tree):
+    """(node, where, function, class) for every statement, outermost first: `where`
+    is module, class, function (a direct child of a def body) or block."""
+    out = []
+
+    def visit(body, where, func, cls):
+        for node in body:
+            out.append((node, where, func, cls))
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                visit(node.body, "function", node, cls)
+            elif isinstance(node, ast.ClassDef):
+                visit(node.body, "class", None, node.name)
+            else:
+                for name in ("body", "orelse", "finalbody"):
+                    visit(getattr(node, name, None) or [], "block", func, cls)
+                for handler in getattr(node, "handlers", None) or []:
+                    visit(handler.body, "block", func, cls)
+    visit(tree.body, "module", None, None)
+    return out
+
+
+def _inv_first(node):
+    return min([d.lineno for d in getattr(node, "decorator_list", ())] + [node.lineno])
+
+
+def _inv_key(node, func, cls):
+    """A unit's identity, or None: a test definition outside any function, or a
+    `check(...)` statement whose first argument opens with a string."""
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if func is None and node.name.startswith("test") and (cls or "Test").startswith("Test"):
+            return ("def", cls, node.name)
+        return None
+    call = node.value if isinstance(node, ast.Expr) else None
+    if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+            and call.func.id == "check" and call.args):
+        return None
+    label = call.args[0]
+    label = label.left if isinstance(label, ast.BinOp) else label
+    if isinstance(label, ast.Constant) and isinstance(label.value, str):
+        return ("check", label.value)
+    return None
+
+
+def _inv_units(places):
+    return dict(((_inv_key(n, f, c), (_inv_first(n), n.end_lineno, f))
+                 for n, _w, f, c in places if _inv_key(n, f, c) is not None))
+
+
+def _inv_bound(tree):
+    names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            names.add(node.id)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            names.update((a.asname or a.name).split(".")[0] for a in node.names)
+    return names
+
+
+def _inv_inert(node, where, func, base_tree, base_units, tree_units, base_places):
+    """The inert-addition rule read independently: is this added tree statement
+    harmless to what exists?"""
+    bound = _inv_bound(base_tree)
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return (where in ("module", "class") and node.name not in bound
+                and not node.decorator_list and not INV_HOOK.match(node.name))
+    if where == "module":
+        if isinstance(node, ast.Assign):
+            return all(isinstance(t, ast.Name) and t.id not in bound for t in node.targets)
+        return False
+    if where != "function" or INV_HOOK.match(func.name):
+        return False
+    ends = [end for key, (_s, end, f) in tree_units.items()
+            if f is func and key in base_units]
+    if ends:
+        return node.lineno > max(ends)
+    # A body holding no unit: inert only after every statement it already had.
+    base_func = [n for n, _w, _f, _c in base_places
+                 if isinstance(n, type(func)) and n.name == func.name]
+    if len(base_func) != 1:
+        return False
+    tree_lines = [n.lineno for n in func.body if n is not node]
+    return not tree_lines or node.lineno > max(tree_lines)
+
+
+def _inv_expect(base, tree):
+    """(leftover lines, lines in existing units, all accounted by inert additions)."""
+    blines, tlines = base.splitlines(), tree.splitlines()
+    bchanged, tchanged = set(), set()
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, blines, tlines).get_opcodes():
+        if tag != "equal":
+            bchanged.update(i for i in range(i1 + 1, i2 + 1) if blines[i - 1].strip())
+            tchanged.update(j for j in range(j1 + 1, j2 + 1) if tlines[j - 1].strip())
+    btree, ttree = ast.parse(base), ast.parse(tree)
+    bplaces, tplaces = _inv_places(btree), _inv_places(ttree)
+    bunits, tunits = _inv_units(bplaces), _inv_units(tplaces)
+
+    def spans(units):
+        return set(ln for s, e, _f in units.values() for ln in range(s, e + 1))
+    in_units = (set(("base", ln) for ln in bchanged & spans(bunits))
+                | set(("tree", ln) for ln in tchanged & spans(
+                    dict((k, v) for k, v in tunits.items() if k in bunits))))
+    inert = set()
+    for node, where, func, cls in tplaces:
+        lines = set(range(_inv_first(node), node.end_lineno + 1))
+        code = set(ln for ln in lines if tlines[ln - 1].strip())
+        if not code or not code <= tchanged:
+            continue
+        key = _inv_key(node, func, cls)
+        if (key is not None and key not in bunits) or (
+                key is None and _inv_inert(node, where, func, btree, bunits, tunits, bplaces)):
+            inert |= lines
+    left = (set(("base", ln) for ln in bchanged - spans(bunits))
+            | set(("tree", ln) for ln in tchanged - spans(tunits) - inert))
+    return left, in_units
+
+
+def _inv_edits(text):
+    """Every edit the operator table makes at every statement position of `text`,
+    each once: insert a statement before or after, delete, change the last number
+    on the head line, wrap in an `if`."""
+    lines = text.splitlines(True)
+    edits = []
+    for node, _w, _f, _c in _inv_places(ast.parse(text)):
+        first, last = _inv_first(node), node.end_lineno
+        pad = " " * node.col_offset
+        for stmt in INV_INSERTS:
+            edits.append(lines[:first - 1] + [pad + stmt + "\n"] + lines[first - 1:])
+            edits.append(lines[:last] + [pad + stmt + "\n"] + lines[last:])
+        edits.append(lines[:first - 1] + lines[last:])
+        head = lines[node.lineno - 1]
+        nums = list(re.finditer(r"\d+", head))
+        if nums:
+            cut = nums[-1]
+            edits.append(lines[:node.lineno - 1]
+                         + [head[:cut.start()] + "97" + head[cut.end():]] + lines[node.lineno:])
+        edits.append(lines[:first - 1] + [pad + "if True:\n"]
+                     + ["    " + ln if ln.strip() else ln for ln in lines[first - 1:last]]
+                     + lines[last:])
+    out = []
+    for edit in edits:
+        joined = "".join(edit)
+        if joined != text and joined not in out:
+            out.append(joined)
+    return out
+
+
+def _invariant(check):
+    tally = {"made": 0, "unparsed": 0, "leftover": 0, "units": 0, "inert": 0}
+    wrong = []
+    for path, base in (("tests/test_inv_rows.py", INV_ROWS),
+                       ("tests/test_inv_unit.py", INV_UNIT)):
+        for tree in _inv_edits(base):
+            tally["made"] += 1
+            try:
+                left, in_units = _inv_expect(base, tree)
+            except SyntaxError:
+                tally["unparsed"] += 1
+                continue
+            got = _run([(path, base, tree)])
+            if left:
+                tally["leftover"] += 1
+                named = any(re.search(r"\b%s line %d\b" % (side, ln), n["reason"])
+                            for n in _named_lines(got, path) for side, ln in left)
+                ok = got["answer"] != M.CLEAN and named
+            elif in_units:
+                tally["units"] += 1
+                ok = got["answer"] == M.FINDINGS and _named_lines(got, path) == []
+            else:
+                tally["inert"] += 1
+                ok = (got["answer"], got["findings"], got["notRead"]) == (M.CLEAN, [], [])
+            if not ok:
+                wrong.append((path, sorted(left)[:3], sorted(in_units)[:2],
+                              [ln for ln in difflib.unified_diff(
+                                  base.splitlines(), tree.splitlines(), n=0, lineterm="")
+                               if ln[:1] in "+-" and ln[:3] not in ("+++", "---")],
+                              _show(got), [n.get("reason") for n in got["notRead"]]))
+    check("fx4 over %(made)d generated edits (%(unparsed)d not parsing, skipped): each "
+          "of the %(leftover)d leaving a changed line outside every unit and inert "
+          "addition is not clean and names such a line; each of the %(units)d touching "
+          "only units is a finding; each of the %(inert)d made only of inert additions "
+          "is clean: wrong %(n)d: %(w)s"
+          % dict(tally, n=len(wrong), w=some_of(wrong, render=repr)),
+          wrong == [] and tally["leftover"] > 0 and tally["units"] > 0
+          and tally["inert"] > 0)
+
+
+def _nested_helper(check):
+    # A function nested in another body is not one the runner collects, whatever
+    # its name, so a helper named with the test prefix inside a row suite's
+    # cases function must not turn the file into a file of test definitions -
+    # which would leave every labelled check of it uncompared.
+    helper = ROWS_MAIN.replace("def main():\n    x = 1 + 1\n",
+                               "def main():\n    def tests_of(n):\n        return [n]\n\n"
+                               "    x = 1 + 1\n")
+    weak = helper.replace("x != 3)", "True)")
+    both = _run([("tests/test_rows.py", helper, weak)])
+    grown = _run([("tests/test_rows.py", ROWS_MAIN, weak)])
+    seen = [[(f["side"], "r2" in f["what"]) for f in _moves(g, M.DEFINITION_CHANGED)]
+            for g in (both, grown)]
+    check("fm63 a row suite holding a helper named with the test prefix inside a "
+          "function is still read by its labelled checks: a weakened check is a "
+          "definition change naming it, with the helper in both copies and with "
+          "it new to the tree: %s / %s" % (_show(both), _show(grown)),
+          seen == [[("tree", True)], [("tree", True)]])
+
+
 # --- what cannot be read ---------------------------------------------------------
 
 def _unreadable(path):
@@ -1289,6 +1925,15 @@ def _cases(check):
     _other_languages(check)
     _moved(check)
     _kinds(check)
+    _wrapped(check)
+    _skip_spellings(check)
+    _moved_out(check)
+    _ambiguous(check)
+    _honest(check)
+    _not_inert(check)
+    _inert_twins(check)
+    _invariant(check)
+    _nested_helper(check)
     _untold(check)
     _shape(check)
 

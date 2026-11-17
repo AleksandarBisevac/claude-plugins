@@ -5792,24 +5792,42 @@ cases judge Windows spellings under `ntpath` on every host.
 ### `plugins/audit/scripts/governance/_floor_guard.py`
 `find_moves(diff, read_base, read_tree, declared=(), accepted=())` reads a task's unified diff
 against its base for the moves that lower the bar, named in `MOVES`: a test file deleted, an
-existing test definition changed, a skip added to a test file (`SKIPS`), a suppression whose code is
+existing test definition changed, a skip added to a test file (`SKIPS`, a raised `SkipTest` and an
+`importorskip` call among them), a suppression whose code is
 new to the file (`SUPPRESSIONS`), and a stub added to non-test code. Each finding carries its move,
 path, line and the side the line counts in.
 
-A Python definition is compared only when it is a test by the runner's convention - a function or
-method whose name starts with `TEST_PREFIX`, the prefix unittest and pytest agree on - by `ast.dump`
-per function and `Class.method`, decorators included, skip reasons blanked, line numbers and a
-leading docstring not, together with what decides whether it runs: its class head and decorators,
-a `pytestmark`, and the `if`/`with`/`try` heads it sits under. A Python test file that defines no
-test but calls checks by label - one callable whose first argument is a constant string - is
-compared by label: a label gone or its arguments changed is a finding. Code outside the compared
-definitions or checks that was only added counts as compared; a base statement there removed or
-changed, or a `return`/`raise`/`break`/`continue` added into a function the base held, lists the
-file under `notRead` as one that could hold a move. Other languages are read by the `ASSERTIONS`
-lines a test file lost, and a test file whose copies match no assertion row is listed the same way.
+In Python a unit is what the runner runs as one case: a test definition - a function or method
+whose name starts with `TEST_PREFIX`, the prefix unittest and pytest agree on - or, in a test file
+that defines none outside a function (`_collected_tests`; a helper of that name nested in a cases
+function is collected by no runner), a labelled check, a call of the one callable the base copy's
+labelled calls go to most. A unit is found wherever it stands, inside a loop, a conditional, a `with`, a `try` or
+another function, and compared by `ast.dump` (decorators included, skip reasons blanked, line
+numbers and a leading docstring not) together with its chain: each statement enclosing it from the
+module down, read by its head (`_head`, built from the node's own fields, so no statement kind is
+listed), and every `pytestmark` on the way. A unit whose own text is the same and whose chain
+differs is a finding saying a statement enclosing it changed; a check the tree calls through
+another name is gone. Other languages are read by the `ASSERTIONS` lines a test file lost, and a
+test file whose copies match no assertion row is listed under `notRead`.
+
+Compared means every changed line is accounted for: in a Python test file, the changed lines of
+each copy, minus the lines of its units, minus the lines of the tree's inert additions, must come
+out empty, or the file is listed under `notRead` as one that could hold a move, at the first line
+left over (`_unaccounted`). The changed lines come from an ordered diff of the two copies'
+statements, each read by its depth and dump, so a comment, a layout change, a docstring or a skip
+reason is no change. An addition is inert only when it is a new unit; a new definition at module or
+class level whose name the base copy mentions nowhere, undecorated and not a name a framework calls
+by convention (`_HOOK`); a module-level import or assignment binding only such names; or a
+statement in a function body after the last unit the base had there - in a function holding none,
+after every statement it had. In a test file new to the diff everything but a hook-named
+definition or a decorated one that is not a test is inert. Everything else added - a statement
+before or between existing units, a module-level expression, a statement in a loop or a try, a
+hook, a decorator - runs before or around an existing case and is not inert. What one file cannot
+show is not read: data flow, so a statement after the last unit of a function that is itself
+called before other units counts as inert.
 
 A FILE IS COMPARED ONLY WHOLE. Each `notRead` entry carries a `kind`: `could-hold-one` - a binary
-file, a test file with uncompared code changed, a test file with no assertion row known - or
+file, a test file with a changed line nothing accounts for, a test file with no assertion row known - or
 `cannot-hold-a-move`, a file with no syntax known here or a data file (`DATA_EXTENSIONS`). The
 answer has four values: `FINDINGS`, `COULD_NOT_TELL` with its reason, `PARTLY_READ` when nothing
 was found but a could-hold file was not compared, and `CLEAN` only when everything that could hold a
@@ -5820,12 +5838,16 @@ before `kind` existed (`move` None is cannot-hold).
 
 A declaration covers what is new: a bare `declared` path covers definitions new to that file, and
 only `path::case` makes a change to a test the base held the task's own, returned under `declared`
-rather than as a finding; a non-Python test line is never declared. A test renamed unchanged, a test
+rather than as a finding - and only when exactly one unit of the base copy answers to the case; one
+several units answer to covers none, and the finding says it is ambiguous and what would name the
+unit alone. A non-Python test line is never declared. A test renamed unchanged, a test
 moved unchanged into another file of the diff, a reworded skip reason, a comment or docstring edit
-and a suppression inside a fixture string are no finding. A deleted file and an added file of the
-same family whose texts git's default would call a rename (`RENAME_SIMILARITY`) are read as one
-renamed file, so a file moved with its new path untracked carries its old marks; `drive-phase.py`'s
-`floor_diff` detects renames in the tracked diff for the move git sees itself. A tree skip or stub
+and a suppression inside a fixture string are no finding. A deleted file and an added file whose
+texts git's default would call a rename (`RENAME_SIMILARITY`) are read as one renamed file, so a
+file moved with its new path untracked carries its old marks; `drive-phase.py`'s `floor_diff`
+detects renames in the tracked diff for the move git sees itself. Either way a test file is moved
+only to a path of its comment family that every reading making the old path a test - its name, its
+directory - also makes a test (`_still_a_test`); anywhere else it is a test deleted. A tree skip or stub
 pairs away against a base mark of the same kind only on the two sides of one changed line or inside
 the same enclosing definition.
 

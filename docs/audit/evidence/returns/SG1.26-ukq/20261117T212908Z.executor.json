@@ -1,0 +1,108 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__floor_guard.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-17T22:38:28Z",
+    "basis": "`python3 tests/test__floor_guard.py --selftest` in a throwaway tree at HEAD exited 1 with 14 of 120 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fm51 (house FAIL), fm52 (house FAIL), fm53 (house FAIL), fm54 (house FAIL), fm55 (house FAIL), fm56 (house FAIL), fm57 (house FAIL), fm58 (house FAIL) and 6 more: SELFTEST FAILED: 106/120 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "_floor_guard.py: a Python test file counts as compared only when (changed lines of each copy) minus (lines of its units) minus (lines of the tree's inert additions) is empty; otherwise it is listed under notRead as could-hold-one, with the first leftover line named (`_unaccounted`). Changed lines come from an ordered SequenceMatcher diff of the two copies' statement pieces (depth + ast.dump, a compound statement by its head), so comments, layout, docstrings and skip reasons are no change. `_statements` walks every statement once, giving each a chain: the generic `_head` of every enclosing statement (built from the node's own fields, no statement-kind list) plus each body's pytestmark. Units (test defs, or labelled checks in a file with no collected test) are found wherever they stand and compared with their chain: same text plus a different chain is the finding 'is unchanged, but a statement enclosing it is not'. Checks pair exact, then label+args, then label, then args+chain (a rename); a check called through another callee is gone. Inert means: a new unit; a new module/class-level def or class whose name the base mentions nowhere, undecorated, not hook-named (`_HOOK`); a module-level import/assignment binding only unmentioned names; a statement after the last base unit of its function, or after every statement of a function holding none (non-hook functions only); in an added file, everything except hook-named or decorated non-test defs. An addition that holds an existing unit is never inert. Rule 4: `_still_a_test` - a move pairs only to a path of the same family that every test reading of the old path (name, directory) also makes a test, otherwise TEST_DELETED. Rule 5: `_declaration` - path::case covers only when exactly one base unit answers, otherwise a note in the finding says the case is ambiguous. Rule 6: SKIPS gains `raise SkipTest` and `importorskip`. After the first measurement, one fix: which reading a file gets (definitions vs labelled checks) is decided only by tests the runner collects, i.e. none enclosed by a function (`_collected_tests`). Nested helpers named `tests_of`/`tests_edit` in test_audit_task.py had flipped that file to definition mode, losing every check comparison in 16 commits; fm63 was red on this before the fix. Tests: 21 new cases in tests/test__floor_guard.py; no existing case edited. `python3 -B tests/test__floor_guard.py --selftest` -> ALL PASS 120/120; red on the pre-change guard was 104/117. The fx4 line prints 136 generated edits (6 not parsing): 87 leftover, 19 units-only, 24 inert, wrong 0. MEASUREMENT (sg1.19 measure.py over the history, before -> after): clean 462 -> 293, findings 292 -> 302, partly-read 271 -> 430, declared 1 -> 1. Transitions: clean->partly-read 169, partly-read->findings 10, findings->findings 292 (no commit lost a finding; in one commit the finding lines inside a still-reported file differ). Could-hold notRead entries 751 -> 1332. Before, by kind: checks/base 643, defs/base 102, checks/tree 6. After: checks base+tree 600, checks/tree 572, defs base+tree 101, checks/base 43, defs/tree 15, defs/base 1. Why the 169 moved (237 could-hold entries, each read at the statement holding the named line): 153 a statement inserted before an existing unit, mostly setup assignments or CLI calls for a new case placed between existing ones; 43 a group or stage call inserted among existing calls of a unit-free caller (`_harness.stage(...)`, `_x_cases(check)`); 28 a new def nested in a body, or decorated, hook-named or under a mentioned name; 13 an import inside a body or binding a mentioned name. All follow the rule as written: a statement that runs before an existing unit is not inert, because data flow is not read. Sampled 827005e85e (tests/test_audit_lookup.py tree 2396: `twice = _wp_manifest(...)` inserted before existing check wp11; tests/test_audit_task.py tree 23546: two `_cli_here(add ...)` calls inserted before existing check ar7). Full list: scratchpad sg1.26/moved-clean.out. PROBES (copied reviewer probes): probe1 1/8 -> 9 OK, probe2 6/4 -> 10, probe3 16/1 -> 17, probe4 13/1 -> 14, probe5 0/1 -> 1, each 0 WRONG after. mine.py 16 OK/6 WRONG -> 22 OK, exit 0. D1 findings; D2, D5, D8, D9 partly-read; D13 partly-read: tests/conftest.py is a test path, and a hook-named def (`pytest_collection_modifyitems`) in an added file is never inert, so the hook is read as a changed line nothing accounts for. D3/4/6/7/10/11/12/14 stay not clean; A1-A8 clean. A2 is clean because `main` holds no unit and the appended call follows every statement it had. live_mine FAILS: 0. Its output differs from sg1.19's in the reason text, and 'a class decorator skip widened' now also lists tests/test_take.py under notRead (the class head is a changed line outside every unit); the findings on both methods stand. relabel_mine gives the same five readings. MUTATIONS: sg1.26/mutations.py 31 rows, 0 not killed. sg1.26/mutations-sg1.19.py (copy) 36 rows, 0 not killed: m3cd, m3pd, m4d, m4id, m4fd, m4a, m5d, m5a, mia, miid and miia were re-anchored to the code now holding each rule, with the original case ids kept. GATES: `python3 tools/sweep-selftests.py tests/test__floor_guard.py` exit 0, 120 cases. Orchestrator final sweep (8 files, --jobs 4) exit 1, 7/8 files ok, 2365 cases: the single red is tests/test__refs.py q1. q1 names docs/audit/audit-plan.json fileIndex and docs/audit/phases/SG2.json task SG2.1-ukq pointing at the moved _clause_coverage.py; neither file is mine and I did not touch them. An earlier run also showed te11/ln1 red on a count beside a slice in my test file; fixed with `some_of` and green since. The orchestrator's run-test-gate (no --record), rerun after the final code change, exits 1 with 'the 1 check(s) the sweep named as failing' = the same tests/test__refs.py q1, which is not mine. measure-context.py --gate exit 0 (GATE OK). prove-gates.py --list exit 0. ruff and vermin clean on both .py files. Docs: module docstring, PLUGIN-BUILD-GUIDE.md _floor_guard section, CHANGELOG.md, plugins/audit/README.md floorGuard.mode row and plugins/audit/reference/execute-task.md all now say what compared means, and none says an addition cannot weaken what exists. DEPENDANTS: drive-phase.py, _filed_returns, _status_facts, _config and execute-task.md call find_moves or import constants; the API and block shape are unchanged. The `_definitions`/`_labelled` names in the test file are local group names, not module attributes. EXISTING CASES CHANGED: none; fa12, fa25, fa26 and fm50 pass unchanged under the new rule. KNOWN RESIDUALS (stated in the docstring): no data flow, so a statement after the last unit of a function that is itself called before other units counts as inert; a new file's module code changing state; getattr-by-string calls.",
+    "descriptive": "The floor guard now calls a Python test file compared only when every changed line is inside a compared test or check (read with everything enclosing it) or an inert addition, and names the first line that is not."
+  },
+  "testsAdded": [
+    "fm51-fm56: a check or test wrapped in if False, moved into an uncalled function, run under a cut loop table, swallowed by a try, or called through another callee is a finding or not compared, with the line named (cases a-h)",
+    "fm57: a raised SkipTest and an importorskip call are skip findings (case i)",
+    "fm58: a test file moved to a non-test path is a deleted test (case j)",
+    "fm59, fm60, fm61: a case id that several base units answer to covers none and the finding says it is ambiguous; pairing follows rule 4 (case k)",
+    "fa33-fa39: allow twins of fm51-fm60 - a check appended after the last with its own setup, a fresh helper, a new test method between existing ones, a pure reformat, a reworded label under its loop, a test file moved to another test path, and a declaration answering to one unit each stay clean",
+    "fm62: hook-named, decorated, mentioned-name, class-level and existing-unit-holding additions, and a hook in a new conftest.py, are not inert (extra to tests.add, unbound)",
+    "fa40: a new test file with its own module code, a new test catching SkipTest, and a new group of checks called after every statement of a unit-free caller stay clean (twin of fm62; extra to tests.add, unbound)",
+    "fx4: the invariant checked directly over deterministic generated edits, against an oracle written independently of the guard, with the count printed",
+    "fm63: a row suite holding a nested helper named with the test prefix is still read by its labelled checks (regression found by the measurement; extra to tests.add, unbound)"
+  ],
+  "casesAdded": [
+    [
+      "fm51",
+      "fm52",
+      "fm53",
+      "fm54",
+      "fm55",
+      "fm56",
+      "fm57",
+      "fm58",
+      "fm59"
+    ],
+    [
+      "fa33",
+      "fa34",
+      "fa35",
+      "fa36",
+      "fa37",
+      "fa38",
+      "fa39"
+    ],
+    [
+      "fx4"
+    ],
+    [
+      "fm59",
+      "fm60",
+      "fm61"
+    ]
+  ],
+  "claims": "claims:\n1 _floor_guard.py `_unaccounted` returns the first leftover line that the docstring's COMPARED MEANS section describes; `_inert` implements the inert list in the build guide and the README row; `_collected_tests` decides check vs definition mode; `_still_a_test`, `_declaration` and the SKIPS rows implement rules 4-6\n2 mutations.py: 31 rows killed, deny and allow twins included (t1d/t1a for the mode rule); mutations-sg1.19.py copy: 36 rows killed; fm63 red on the pre-fix mode rule (119/120), green after\n3 n/a for a register fault; the class this task targets (an addition read as harmless) was swept: no doc keeps 'an addition cannot weaken'. The grep for 'only added|cannot weaken|counts as compared' over the five docs and both .py files found only test case labels fa25/fa26 and line 543 (an existing case, not edited)\n4 n/a - no rule addressed to an agent; the guard reports and refuses nothing, as the README row says\n5 the measurement was taken twice, before and after the mode fix (after v1: clean 292 / findings 285 / partly-read 448; after: 293 / 302 / 430), each over the same set of history commits\n6 the decision reads the AST of both copies (statement records, chains, mentioned names), not text patterns; the allow twins fa33-fa40 were green before every deny row\n7 the numbers in this outcome come from scratch commands (measure.py, reasons.py, the selftest's own fx4 line); no number was written into committed prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:fe573c215e6efc21573c888e946a5b75938020ba2b7a2dcfb5968e36b252bbc8\",\"dirtyDigest\":\"sha256:d3ec518312208e0b515b4398ffcb94e50845c8dfb23c203ab86c0346ac37c132\",\"dirtyPaths\":{\"CHANGELOG.md\":\"256181690d7f4bf3\",\"PLUGIN-BUILD-GUIDE.md\":\"0e0681421210c9d5\",\"plugins/audit/README.md\":\"812f88c7a9d428cd\",\"plugins/audit/reference/execute-task.md\":\"75293d75bb0f6c53\",\"plugins/audit/scripts/governance/_floor_guard.py\":\"5473f47d40a4d411\",\"tests/test__floor_guard.py\":\"329a237bab6f60eb\"},\"head\":\"50099fa5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/README.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/scripts/governance/_floor_guard.py\",\"tests/test__floor_guard.py\"],\"scopeDigest\":\"sha256:5aeda4677fc572a4c62bea599230883f163de6f063f145ac9a0d2762f25572ac\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 1 of the diff's 6 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 4 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md, plugins/audit/reference/execute-task.md; 1 file(s) that could hold a move not compared: tests/test__floor_guard.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/reference/execute-task.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test__floor_guard.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks changed (line 25 of the base copy), and that code - a helper, a table a case reads, a fixture - is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "50099fa5e912993024cc552ef73031a243af337f"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-17T22:38:30Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

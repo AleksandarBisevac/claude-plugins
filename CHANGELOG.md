@@ -140,10 +140,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   longer a deleted test and its old skips are no longer new; a test moved unchanged into another
   file is not gone. A skip put on a test's class or module now changes that test, while a reworded
   skip reason does not, and a skip that replaced a different one elsewhere in the file is no longer
-  paired away. A suite written as labelled check rows is compared row by row. A `tests.add` path
+  paired away. A suite written as labelled check rows is compared row by row. A test or a check
+  is compared with every statement enclosing it, wherever it stands, so one wrapped in
+  `if False:`, moved into a function nothing calls, put under a loop over a cut table or a `try`
+  that swallows it, or called through another function is a finding. A Python test file counts
+  as compared only when every changed line of either copy lies in a compared test or check or in
+  an inert addition - a new test or check, a new helper or import under a fresh name, or a
+  statement after the last existing check of its function; anything else added, such as a
+  `sys.exit(0)` above the checks, a hook such as `load_tests`, a decorator or a class-level
+  attribute, lists the file as not compared at that line. A comment, a reformat, a docstring or a
+  reworded label stays clean. A test file moved to a path that is not a test path is a deleted
+  test, and a raised `SkipTest` or an `importorskip` is a skip. A `tests.add` path
   with no case id bound to it covers only tests new to that file: an existing test changed there,
   on the headless writer's route always, is now a finding; a case-bound change reads *clean apart
-  from declared changes*. Suppression markers are read where each checker reads them, so prose
+  from declared changes*, and a case id several existing tests or checks answer to covers none of
+  them and says so. Suppression markers are read where each checker reads them, so prose
   that names one is no finding. `/audit:status` no longer cuts its floor id list mid-id; a list too
   long for the line ends *and N more*.
 - **An Acceptance list the clause reader could not number is now read, never silently dropped.**
