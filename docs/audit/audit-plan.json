@@ -2025,7 +2025,8 @@
       "P163.3",
       "P164.1",
       "P165.2",
-      "P165.4"
+      "P165.4",
+      "P165.5"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -11970,7 +11971,8 @@
     "tools/ui-tests/table-fit.test.mjs": [
       "P125.81-0h5",
       "P125.130-0h5",
-      "P125.140-0h5"
+      "P125.140-0h5",
+      "P165.5"
     ],
     "plugins/audit/scripts/ui/panel-css/appearance-table.css": [
       "P125.99-0h5"

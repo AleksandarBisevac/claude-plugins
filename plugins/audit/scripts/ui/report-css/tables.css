@@ -80,28 +80,29 @@ td.when,td.mono{font-variant-numeric:tabular-nums}
    mid-letter, which is the one thing `break-word` on tables exists to keep. */
 table.bugs td.tevcell,table.bugs td.tevcell *{white-space:normal}
 /* The rule above fixed one column by naming it; this is the invariant it was
-   standing in for. Any value atom a table may carry outside a title - a
-   status, a risk word, a cost band, a delta, the name of what holds a phase
-   shut - is still `nowrap` by default (`.chip` declares it, and the rest
-   inherit a container that never overrides it), so each one alone can set its
-   column's narrowest width to the atom's own length. A column's floor must
-   not depend on which words a plan happens to contain, or on how wide a
-   reader's fallback font draws them - so every one of these may wrap at its
-   own spaces and hyphens, and break even where it has neither. A title is
-   deliberately NOT in this list: its long tokens already get a renderer-placed
-   <wbr>, and breaking anywhere in an ordinary word is the regression the
-   comment above this one exists to keep out.
-   This has to OUTRANK the atom's own component rule (`.bandpill` and the rest
-   each declare their own `white-space:nowrap` where they are defined), not
-   merely coexist with it - a `:where()` around the table ancestor used to
-   leave this at the exact specificity of that base rule, so whichever file
-   happened to load later decided the column's floor by accident (`usage.css`,
-   loaded after this one, was winning). A real `table.phases`/`table.data`
-   ancestor is deliberately not zero-specificity here, so the override wins on
-   its own terms regardless of where a sibling rule for the same atom is
-   declared. */
-table.phases :is(.chip,.rchip,.bandpill,.dl,.heldby,.tevn,.tevf,.ptev),
-table.data :is(.chip,.rchip,.bandpill,.dl,.heldby,.tevn,.tevf,.ptev){
+   standing in for. A run of text a table carries outside a title - an
+   evidence count, an observation, a mark that may be a whole sentence - is
+   `nowrap` where it is defined, so one long run alone can set its column's
+   narrowest width to the run's own length. A column's floor must not depend
+   on which words a plan happens to contain, or on how wide a reader's
+   fallback font draws them - so every one of these may wrap at its own spaces
+   and hyphens, and break even where it has neither. A title is deliberately
+   NOT in this list: its long tokens already get a renderer-placed <wbr>, and
+   breaking anywhere in an ordinary word is the regression the comment above
+   this one exists to keep out.
+   A pill and an id are not in it either, and they used to be: broken inside a
+   word they read as two values, so they never break (shell.css says why, in
+   the rule that keeps them whole).
+   This has to OUTRANK each run's own component rule (`.ptev` and the rest
+   declare their own `white-space:nowrap` where they are defined), not merely
+   coexist with it - a `:where()` around the table ancestor used to leave this
+   at the exact specificity of that base rule, so whichever file happened to
+   load later decided the column's floor by accident. A real
+   `table.phases`/`table.data` ancestor is deliberately not zero-specificity
+   here, so the override wins on its own terms regardless of where a sibling
+   rule for the same run is declared. */
+table.phases :is(.tevn,.tevf,.ptev),
+table.data :is(.tevn,.tevf,.ptev){
   white-space:normal;overflow-wrap:anywhere}
 /* vw: the label and its select are one control and wrap as one — the toolbar
    is a flex row, and letting the words break away from the box they name is

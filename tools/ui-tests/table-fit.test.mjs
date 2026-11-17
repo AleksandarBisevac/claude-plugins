@@ -142,10 +142,17 @@ describe('the measured fit of a report table', () => {
     f.wrap.clientWidth = 1200;
     resize();
     expect(f.wrap.hasAttribute(TABLE_FIT_ATTR)).toBe(true);
-    // Coalesced: a burst of resize events asks for ONE frame, not one each.
+    // Coalesced: a burst of resize events asks for no more frames than one
+    // event does - one per listener that re-measures, not one per event. The
+    // count is taken from a single event rather than written here, because
+    // more than one feature listens for a resize (the room after the content
+    // re-measures on one too) and each coalesces on its own.
+    onResize.forEach((fn) => fn({ type: 'resize' }));
+    const once = flushFrames(ctx);
+    expect(once).toBeGreaterThan(0);
     onResize.forEach((fn) => fn({ type: 'resize' }));
     onResize.forEach((fn) => fn({ type: 'resize' }));
-    expect(flushFrames(ctx)).toBe(1);
+    expect(flushFrames(ctx)).toBe(once);
   });
 
   it(OBSERVED_CLAUSE + ' (every frame and its table are observed, and an observer '

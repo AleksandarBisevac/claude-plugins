@@ -2242,8 +2242,9 @@ screenshots, on demand instead of committing it — the same flags always produc
 bytes, so CI builds it, captures from it, and discards it, and nothing drifts the way the
 uncommitted original did. `gen-demo-manifest.py <out-dir> [--phases 50] [--tasks 20] [--seed
 11] [--single-file]` deliberately carries every state a reader can filter on (all phase/task
-statuses, `blockedBy`, `dependsOn`, budgets over/under, `area` tags, a full bug lifecycle),
-deterministically (fixed seed, no wall-clock) and validator-legal by construction (a `done`
+statuses, `blockedBy`, `dependsOn`, budgets over/under, `area` tags, a full bug lifecycle,
+and a `priority` pin on the running phase so the report draws its Sort select without the pin
+reordering any ready work), deterministically (fixed seed, no wall-clock) and validator-legal by construction (a `done`
 phase never contains an unfinished task). `--selftest`.
 
 It also writes the **evidence ledger** beside the manifest and points the plan at it:

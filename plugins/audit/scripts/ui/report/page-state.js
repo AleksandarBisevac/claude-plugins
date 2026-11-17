@@ -292,16 +292,88 @@
       if (el && el.getBoundingClientRect().top <= landingLine(el)) best = i;
     });
     if (best < 0) best = 0;   // above the first heading, the first link still answers
-    // No end-of-document rule: the stylesheet leaves room after the content
-    // (shell.css, `--sticky-anchor`), so every target, the last included, can
-    // scroll to its line. A rule lighting the last entry at the bottom used to
-    // stand in for that room, and it lit the last entry for a jump to an
-    // earlier one the document had ended before.
+    // No end-of-document rule: endRoom below leaves room after the content, so
+    // every target, the last included, can scroll to its line. A rule lighting
+    // the last entry at the bottom used to stand in for that room, and it lit
+    // the last entry for a jump to an earlier one the document had ended
+    // before.
     navLinks.forEach((a, i) => {
       if (i === best) a.setAttribute('aria-current', 'true');
       else a.removeAttribute('aria-current');
     });
   };
+
+  // --- the room after the content ----------------------------------------------
+
+  // The column whose `::after` is the room (shell.css). Absent with no side nav,
+  // and then there is no marker for a room to serve.
+  const spyColumn = document.querySelector('.snav ~ .content');
+
+  /**
+   * The room the furthest nav target lacks to reach its landing line, in whole
+   * pixels; 0 when it lacks nothing. Measured with the room the page carries
+   * now taken back out, so the answer does not feed on itself: the document's
+   * end is the body's bottom less that room, and the target's top is its
+   * distance from the top of the document. A jump puts that top on the line
+   * when the document still runs a screen's height past the line from there;
+   * whatever it falls short by is the room.
+   * @returns {number}
+   */
+  const endRoom = () => {
+    const drawn = spyTargets.filter((el) => el && el.getClientRects().length);
+    if (!spyColumn || !drawn.length) return 0;
+    const y = window.scrollY || 0;
+    const last = drawn.reduce((a, b) =>
+      (b.getBoundingClientRect().top > a.getBoundingClientRect().top ? b : a));
+    const held = parseFloat(getComputedStyle(spyColumn, '::after').height) || 0;
+    const end = document.body.getBoundingClientRect().bottom + y - held;
+    const top = last.getBoundingClientRect().top + y;
+    const line = landingLine(last) - 1;
+    const lacks = document.documentElement.clientHeight - line - (end - top);
+    return lacks > 0 ? Math.ceil(lacks) : 0;
+  };
+
+  // Re-measured on the next frame after anything it reads changes: the
+  // window's height, the sticky stack (which moves the line), and the column's
+  // own height, which every expand, collapse, filter and view switch changes.
+  // Writing the room changes the column's height too, and the next pass then
+  // finds the same answer and writes nothing, so the observer settles.
+  let endRoomQueued = false;
+
+  /**
+   * Publish the room, writing only when it changed; at 0 the property is
+   * removed, and the stylesheet's room is then nothing at all.
+   * @returns {void}
+   */
+  const placeEndRoom = () => {
+    const room = endRoom();
+    const now = root.style.getPropertyValue('--end-room');
+    if (room === 0 && now) root.style.removeProperty('--end-room');
+    else if (room > 0 && now !== room + 'px') root.style.setProperty('--end-room', room + 'px');
+  };
+
+  /**
+   * Ask for one re-measurement of the room on the next frame.
+   * @returns {void}
+   */
+  const queueEndRoom = () => {
+    if (endRoomQueued || !spyColumn) return;
+    endRoomQueued = true;
+    requestAnimationFrame(() => {
+      endRoomQueued = false;
+      placeEndRoom();
+    });
+  };
+  if (window.ResizeObserver && spyColumn) {
+    const roomRo = new ResizeObserver(queueEndRoom);
+    for (const el of [spyColumn, toolbar, snav, document.querySelector('.sectools')]) {
+      if (el) roomRo.observe(el);
+    }
+  }
+  window.addEventListener('resize', queueEndRoom, { passive: true });
+  // Once now rather than on a frame: a link opened at a fragment is scrolled
+  // there as the page loads, and the room has to exist by then.
+  if (spyColumn) placeEndRoom();
 
   // One scroll listener drives the marker and BOTH bars' elevation, coalesced to
   // a frame: scroll fires far faster than the screen repaints.

@@ -32,6 +32,8 @@ from _output import REPO_ROOT, safe_stdio          # noqa: E402
 import _evidence_view                              # noqa: E402
 import _loader                                     # noqa: E402
 import _manifest_vocab                             # noqa: E402
+import _priority                                   # noqa: E402
+import _report_html                                # noqa: E402
 
 M = _loader.load_script("gen-demo-manifest.py", root=_harness.DEMO_DIR, modname="gen_demo_manifest")
 
@@ -284,6 +286,21 @@ def _cases(check):
           tst == {"done", "in_progress", "blocked", "pending"}, sorted(tst))
     check("exactly one in_progress phase",
           sum(1 for p in m["phases"] if p["status"] == "in_progress") == 1)
+
+    # THE PIN. A plan pinning no phase renders no Sort select, so a fixture with
+    # none left that control out of every committed page the browser gate
+    # measures. It sits on the running phase so the pin reorders no ready work:
+    # among the phases with anything left to do, execution order is the order
+    # they were written in.
+    pinned = [(p["id"], p["status"], p["priority"]) for p in m["phases"] if "priority" in p]
+    check("pin1 exactly one phase is pinned, at tier 1, and it is the phase in "
+          "progress - so the report draws its Sort select",
+          [(s, t) for _i, s, t in pinned] == [("in_progress", 1)]
+          and _report_html.any_phase_pinned(m), repr(pinned))
+    _live = [p["id"] for p in m["phases"] if p["status"] != "done"]
+    _ran = [p["id"] for p in _priority.order(m["phases"]) if p["status"] != "done"]
+    check("pin2 ...and the pin moves no phase with work left: their execution order "
+          "is their written order", _ran == _live, repr((_ran[:4], _live[:4])))
 
     # the constraint naive randomisation gets wrong
     bad = [p["id"] for p in m["phases"] if p["status"] == "done"
@@ -930,6 +947,17 @@ def _cases(check):
         check("round-trip preserves phase status (shards carry it, stubs do not)",
               [p["status"] for p in back["phases"]]
               == [p["status"] for p in m["phases"]])
+        # `priority` is index-only: written anywhere but the stub it is read from
+        # nowhere, so the pin has to survive the split onto the stub.
+        _idx = json.load(open(os.path.join(tmp, "audit-plan.json"), encoding="utf-8"))
+        check("pin3 the sharded write keeps the pin on the index stub, and no shard "
+              "body carries it",
+              [(p["id"], p.get("priority")) for p in _idx["phases"] if "priority" in p]
+              == [(p["id"], p["priority"]) for p in m["phases"] if "priority" in p]
+              and [(p["id"], p.get("priority")) for p in back["phases"] if "priority" in p]
+              == [(p["id"], p["priority"]) for p in m["phases"] if "priority" in p]
+              and not mio.index_only_in_bodies(os.path.join(tmp, "audit-plan.json")),
+              repr([p.get("priority") for p in _idx["phases"]]))
 
         # --- the evidence ledger, end to end (the five retired exemptions) ---
         # THE FAILURE THOSE EXEMPTIONS WERE HOLDING SHUT was a pointer naming a

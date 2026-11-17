@@ -32,11 +32,17 @@ html{background:var(--bg);scrollbar-gutter:stable}
 [id]{scroll-margin-top:var(--sticky-anchor)}
 /* Room after the content for the last target to reach that line. Without it
    the document ended before a short final section - or the one above it - got
-   there, so a jump stopped short and the marker lit a different entry. Sized
-   from the same line, so it tracks the sticky stack as that is measured; on
-   screen only, since a printed page has no line to reach. */
+   there, so a jump stopped short and the marker lit a different entry. HOW
+   MUCH is a measurement no stylesheet can make: it is what the last nav
+   target lacks, which depends on the screen's height, the sticky stack and
+   how tall everything from that target down has been drawn (endRoom in
+   page-state.js publishes it, re-measured on every change of those). A fixed
+   screen's worth left most of a screen of blank page after a long last
+   section that needed none. With no script it is nothing, which costs
+   nothing: the marker it serves is the script's. On screen only, since a
+   printed page has no line to reach. */
 @media screen{.snav ~ .content::after{content:"";display:block;
-  height:calc(100vh - var(--sticky-anchor))}}
+  height:var(--end-room,0px)}}
 body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
      margin:0;padding:0;-webkit-font-smoothing:antialiased}
 
@@ -134,10 +140,27 @@ body{font:15px/1.6 var(--sans);color:var(--text);background:var(--bg);
 /* `anywhere` lowers a table cell's min-content width to one letter, so the columns would
    collapse and split titles mid-word; `break-word` wraps the same tokens without that, and the
    table keeps its natural column sizing inside its scrolling wrapper. tables.css carves a
-   narrower exception back OUT of this for the value atoms a title is not - a status chip, a
-   risk word, a cost band - because a title's long tokens get a renderer-placed break point and
-   theirs do not, so their column needs the size reduction this rule declines to give titles. */
+   narrower exception back OUT of this for the runs a title is not - an evidence count, an
+   observation, a sentence-long mark - because a title's long tokens get a renderer-placed
+   break point and theirs do not, so their column needs the size reduction this rule declines
+   to give titles. A pill and an id get neither: the rule below keeps them whole. */
 .content :where(table){overflow-wrap:break-word}
+/* A pill or an id never breaks, wherever in the column it sits. A pill says one
+   value of a short, closed vocabulary (a status, a risk word, a cost band, a
+   delta, an area, what holds a phase shut) and an id names one thing (a task,
+   phase or bug id, a short commit, a month); broken inside a word either reads
+   as two - "Fixe" over "d", "BUG-" over "10" - which is what a crowded bugs
+   table drew at a laptop width. `.chip` already said nowrap where it is
+   defined, but the column's `anywhere` above reaches every run in it, and most
+   of these never declared a `white-space` of their own, so a hyphen inside an
+   id or a space inside a chip was a place to cut. In a table this makes the
+   widest of them a column's floor, which the vocabulary bounds and the plan's
+   prose does not; a table wider than its frame for it scrolls inside the frame,
+   so the page stays the screen's width at a phone's size as at every other.
+   One rule over the column, not one per table, so a table or a list added
+   later is held to it without being named. The gate's lm5 reads every one of
+   these by the same list (ATOMS in tools/check-report-interactive.mjs). */
+.content :is(.chip,.rchip,.bandpill,.dl,.heldby,.area-tag,.mono){white-space:nowrap}
 /* Prose keeps a measure even when the shell is wide. A 1400px-wide sentence is
    not "using the space", it is unreadable. Tables and charts take the full
    column; text does not. */

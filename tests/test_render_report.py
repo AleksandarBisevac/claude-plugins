@@ -625,25 +625,29 @@ def _cases(check):
           and ".tablewrap{overflow-x:clip}" not in M._CSS)
     # u14kt was one column named by hand; this is the rule it was standing in
     # for. `overflow-wrap:anywhere` (not `break-word`) is what actually shrinks
-    # a cell's min-content width, so every value atom that is not a title gets
-    # it - a status chip, a risk word, a cost band, a delta, the name of what
-    # holds a phase shut, and both evidence-mark classes - regardless of
-    # whether the word it happens to carry has a hyphen to break at.
-    # The ancestor is deliberately not wrapped in `:where()`: each atom also
-    # carries its own component rule elsewhere (e.g. `.bandpill{white-space:
-    # nowrap}` in usage.css), declared at the same zero-added specificity a
+    # a cell's min-content width, so every run of text a table carries outside
+    # a title gets it - the evidence count, the observation, a mark that may be
+    # a sentence - regardless of whether it happens to have a hyphen to break at.
+    # The ancestor is deliberately not wrapped in `:where()`: each run also
+    # carries its own component rule elsewhere (e.g. `.ptev{white-space:nowrap}`
+    # in badges.css), declared at the same zero-added specificity a
     # `:where()`-wrapped ancestor would leave this at - so whichever file
     # happened to load later decided the column's floor by source order
     # alone, in a real engine, regardless of what either rule said. A real
     # `table.phases`/`table.data` ancestor outranks that base rule on its own
     # terms, by construction, at any load order.
-    check("u14ktw every status/value atom a table carries - not just the bugs "
-          "table's test-gate cell - may wrap and break anywhere, so no single "
-          "atom's length alone can set its column's floor",
-          "table.phases :is(.chip,.rchip,.bandpill,.dl,.heldby,"
-          ".tevn,.tevf,.ptev),\ntable.data :is(.chip,.rchip,.bandpill,.dl,"
-          ".heldby,.tevn,.tevf,.ptev){" in M._CSS
-          and "white-space:normal;overflow-wrap:anywhere}" in M._CSS)
+    # A pill and an id were in this list and are not: broken anywhere, a bugs
+    # table drew "Fixe" over "d" and "BUG-" over "10". They are kept whole by
+    # one rule over the column instead. Both clauses are construct pins - that
+    # no pill or id is drawn split, in every table and list at every size, is
+    # the browser gate's lm5.
+    check("u14ktw every run of text a table carries outside a title may wrap and "
+          "break anywhere, so no single run's length alone can set its column's "
+          "floor - and every pill and id in the column is kept whole instead",
+          "table.phases :is(.tevn,.tevf,.ptev),\ntable.data :is(.tevn,.tevf,"
+          ".ptev){\n  white-space:normal;overflow-wrap:anywhere}" in M._CSS
+          and M._CSS.count(".content :is(.chip,.rchip,.bandpill,.dl,.heldby,"
+                           ".area-tag,.mono){white-space:nowrap}") == 1)
     # A missing `;` after a custom property annexes the comment and declarations
     # that follow it. Silent, and it killed every animation in this stylesheet once.
     _unterm = _ui_theme_lints.unterminated_css_decls(M._CSS)
@@ -785,20 +789,25 @@ def _cases(check):
     # sn1's, in the browser gate. What this holds is that the marker has ONE
     # rule - the line - and no end-of-document rule lighting the last entry
     # for a jump the document ended before, and that the room after the
-    # content that makes the line reachable is sized from the line itself.
+    # content that makes the line reachable is the script's measurement - none
+    # with no script - rather than a screen's height whatever the page needs.
+    # That the room is enough is sn1's; that it is no more than the furthest
+    # target lacks is sn3's.
     _spy_at = M._SCRIPT.find("const markSpy = () => {")
     _spy = (M._SCRIPT[_spy_at:M._SCRIPT.find("\n  };\n", _spy_at)]
             if _spy_at >= 0 else "")
     check("sn0 the scroll-spy keeps no end-of-document rule, and the room after "
-          "the content that replaces it is sized from the one anchor line "
-          "every id lands on, on screen only",
+          "the content that replaces it is the script's measured --end-room, "
+          "nothing without it, on screen only",
           bool(_spy) and "scrollHeight" not in _spy
           and "findLastIndex" not in _spy
           and ":root{--sticky-anchor:calc(var(--sticky-2) + var(--sp-2))}" in M._CSS
           and "[id]{scroll-margin-top:var(--sticky-anchor)}" in M._CSS
           and "@media screen{.snav ~ .content::after{content:\"\";display:block;\n"
-              "  height:calc(100vh - var(--sticky-anchor))}}" in M._CSS
-          and M._CSS.count("var(--sticky-anchor)") == 2,
+              "  height:var(--end-room,0px)}}" in M._CSS
+          and "100vh - var(--sticky-anchor)" not in M._CSS
+          and M._SCRIPT.count("root.style.setProperty('--end-room'") == 1
+          and M._SCRIPT.count("root.style.removeProperty('--end-room')") == 1,
           "markSpy %d chars" % len(_spy))
 
     # --- the sticky stack ------------------------------------------------------

@@ -25,7 +25,8 @@ fixture, capture from it, and throw it away.
 WHAT IT DELIBERATELY CONTAINS. A fixture that only holds healthy rows exercises
 none of the surfaces that matter, so this one carries every state a reader can
 filter on: all four phase statuses and all four task statuses, a phase gated behind
-another (`blockedBy`) and a task gated behind a phase, cross-task `dependsOn`,
+another (`blockedBy`) and a task gated behind a phase, a pinned phase (`priority`, so
+the report draws its Sort select), cross-task `dependsOn`,
 budgets both under and over, `area` tags so the monorepo grouping has something to
 group, tasks with and without `skills` so the panel's "needs skills" filter has
 both sides, all three levels of the review-skill chain plus the explicit null that
@@ -768,6 +769,20 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
         "lastSyncedAt": "2026-08-06T12:05:00Z",
         "origin": "created"}
 
+    # A PIN, ON THE PHASE THE RUN IS ALREADY ON. A plan that pins any phase is
+    # what makes the report draw its Sort select and rank every phase row, and a
+    # fixture with no pin left that control out of every committed page and
+    # every layout measurement taken of one. Which phase carries it is chosen so
+    # the pin demonstrates the control and reorders nothing else: the
+    # in-progress phase is already first among the phases with work ready, so
+    # the ready list keeps its written order, while sorting the table by
+    # execution order still visibly lifts that phase above the finished ones.
+    # Nothing here draws on `rng`.
+    for phase in phases:
+        if phase["status"] == "in_progress":
+            phase["priority"] = 1
+            break
+
     # The merges' real commits, now that every merge exists. Nothing here draws
     # on `rng`, so no byte generated above moves because this runs.
     _stamp_history(phases)
@@ -1056,8 +1071,10 @@ SCHEMA_EXEMPTIONS = {
     # `task.redFirst` AND ITS THREE FIELDS. The block records what happened to a
     # task's red-first proof - `proved`, `could-not-prove` with the refusal
     # verbatim, or `not-attempted`. No exemption here carries a REVISIT trigger,
-    # deliberately: this follows `phase.priority` above, whose row was re-armed
-    # once and then dropped because the reason never depended on the trigger.
+    # deliberately: `phase.priority`'s row was re-armed once and then dropped
+    # because the reason never depended on the trigger - and later the field
+    # itself went into the fixture, so the report's Sort select is drawn on a
+    # committed page.
     "task.redFirst":
         "what happened to the task's RED-FIRST PROOF, which no rendered surface "
         "reads: not the report, not the panel, not /audit:status. The fixture is "
@@ -1207,20 +1224,6 @@ SCHEMA_EXEMPTIONS = {
         "ABOUT WHAT IS PUBLISHED, NOT A GAP IN THE GENERATOR: "
         "generate(with_claim=True) stamps one for a suite that throws its fixture "
         "away, and no CLI flag reaches it. See the section above _claim_for.",
-    "phase.priority":
-        "which phase the pipeline reaches for first among the work that is "
-        "ALREADY ready. Absent is not a gap here, it is the demonstrated state: "
-        "the fixture's whole point is a plan running in written order, and a pin "
-        "in it would reorder the ready list under a report and a panel whose "
-        "committed screenshots show that order. The field is index-only, so in "
-        "the sharded form it would also have to be stamped on a stub this "
-        "generator does not build. Coverage lives in tests/test__priority.py "
-        "(the comparator) and tests/test_set_priority.py (the write). This row "
-        "carried a REVISIT trigger naming the panel's phase row; the panel has "
-        "edited priority for some time and the trigger had fired unread. "
-        "It is dropped rather than re-armed, because the reason above never "
-        "depended on it: carrying a pin would reorder the ready list under "
-        "committed screenshots whatever the panel renders.",
     "phase.adoParent":
         "which EXISTING Azure DevOps work item this phase hangs under. The "
         "fixture carries no `meta.ado` at all - the demo is a plan, not a "

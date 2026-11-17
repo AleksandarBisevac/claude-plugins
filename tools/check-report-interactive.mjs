@@ -2784,7 +2784,8 @@ if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
 //   lm2  ...and leaves the table its share of the screen, whatever those are
 //   lm3  the count's drawn text lies inside its bar
 //   lm4  the pinned stack is within the budget of the size's viewport class
-//   lm5  no control, chip or label of the chrome breaks inside a word
+//   lm5  no control, chip or label of the chrome breaks inside a word, and no
+//        pill or id in any table or list of the report does either
 //   lm6  More filters, opened over the table, is on the screen and painted
 //   lm7  ...and where it opens in the bar's flow, the bar holding it does not pin
 //   lm8  nothing runs past its box, no control's text is cut off, and the page
@@ -2855,6 +2856,7 @@ if (await page.$('.fdetails > summary') && !(await page.$('.filterpanel'))) {
 // lm5 reads each word's own rects: a word drawn on two lines was split inside
 // itself, which no font makes legible. A word is a run of letters and digits, so
 // a break at a space, a hyphen or a slash is a row break and not a split word.
+// The pill-and-id half reads a token rather than a word (ATOMS says why).
 // lm8 holds every in-flow child of the bar, the header's filter row, the top
 // bar's actions and the table's head to its container's content box; every
 // field to the width of what it shows - a select to the width it takes holding
@@ -2865,8 +2867,9 @@ const STACK_SLACK_PX = 2;
 const STACK_CEILING_SHARE = 0.5;
 const STACK_TABLE_SHARE = +(1 - STACK_CEILING_SHARE).toFixed(2);
 // The share of the screen the pinned stack may take, per viewport class.
-// The rule the shares aim at: the largest stack the class's cells draw in
-// either font, plus one row of headroom, over the class's screen height. They
+// The rule the shares aim at: the largest stack a size's cells draw in either
+// font, plus one row of headroom, over that size's height - a class holds
+// sizes of different heights, and lm4 applies the share to each size. They
 // were set before that was measured and are not computed from it, so meeting
 // the rule is not assumed: the measurement below says which classes do, and
 // the phone does not. A share is a fraction of the HEIGHT while
@@ -2899,10 +2902,15 @@ const STACK_TABLE_SHARE = +(1 - STACK_CEILING_SHARE).toFixed(2);
 // none of that; it was read off the bar's own boxes, twice with a gap, by
 //   [...document.querySelectorAll('.sectools > *')].map((e) => e.getBoundingClientRect())
 // in a page sized 844x390 with the wide-font pass's override applied.
-// So the phone has LESS than a row of headroom: its 27px is under the
-// cheapest row the bar can add there, and a phone whose filter bar wraps one
-// more row fails lm4. That is a fact of the phone's budget at 0.45, stated
-// here rather than met; the laptop, tablet and desktop each clear 32px.
+// So the phone has LESS than a row of headroom, but by how much is not a
+// thing these readings settle. Its 27px is under the cheapest row the bar can
+// add there (27.4px) by less than lm4's own error: the stack lm4 judges is a
+// whole-pixel scan (stackInTable), which can sit up to a pixel and a half off
+// the layers' exact sum (STACK_SLACK_PX above says why). So a further row
+// holding the count, at 32px, is shown to fail lm4 at the phone, and the
+// cheapest row is not shown either way. That is a fact of the phone's budget
+// at 0.45, stated here rather than met; the laptop, tablet and desktop each
+// clear 32px.
 // Changing a share means re-measuring this, not editing a figure above.
 const STACK_BUDGET = { phone: 0.45, tablet: 0.3, laptop: 0.4, desktop: 0.25 };
 // A phone is where the top bar scrolls (TOPBAR_SCROLLS, read by the page's own
@@ -2929,6 +2937,10 @@ const STACK_LAYERS = [['top bar', '.topbar'], ['strip', '.snav'], ['filter bar',
 // off the stylesheet, because the fault it is held against is that rule going
 // missing, and a query read off a missing rule asks nothing.
 const TOPBAR_SCROLLS = ['top bar', '(max-width:52rem),(max-height:32rem)'];
+// The committed pages whose fixture pins a phase, so the matrix measures the
+// phases table's head with its Sort select in it: on one of these, a matrix
+// that drew no select fails by name instead of noting the coverage as absent.
+const SORT_REQUIRED = new Set(['docs/demo-large.html']);
 // The chrome lm5 and lm8 read: the pinned layers, the header's own rows and the
 // table's head. `open` adds the More-filters panel.
 const CHROME = ['.topbar', '.snav', '.sectools', '.tablehead'];
@@ -3058,6 +3070,46 @@ const readChrome = (open) => page.evaluate(([roots, withPanel]) => {
     topPx: Math.round(top.getBoundingClientRect().height),
   };
 }, [CHROME, !!open]);
+// lm5 over the report's column, beside lm5 over the chrome: every pill and
+// every id the column draws, in every table and list it holds - the phases and
+// their tasks, the bugs, the ready-now list, the usage tables - found by what
+// it IS rather than by which table it sits in, so a table added later is read
+// without a line here. The list is the stylesheet's (shell.css keeps exactly
+// these whole), and the word is a run of non-space characters, not of letters:
+// an id or a chip value is one token, and its hyphen or apostrophe joins it -
+// "BUG-" over "10" and "Won'" over "t fix" are both one token cut in two, and
+// a letters-only word sees neither. A break at a space is a row break. A page
+// that drew none of them read nothing, and says so rather than passing.
+const ATOMS = ['.chip', '.rchip', '.bandpill', '.dl', '.heldby', '.area-tag', '.mono'];
+const readAtoms = () => page.evaluate((atoms) => {
+  const where = (el) => {
+    const t = el.closest('table');
+    if (t) return `table.${[...t.classList].join('.') || '(no class)'}`;
+    const box = el.closest('dl, ul, ol, section, [id]');
+    return box ? `${box.tagName.toLowerCase()}${box.id ? `#${box.id}`
+      : [...box.classList].map((c) => `.${c}`).join('')}` : 'the column';
+  };
+  const split = new Set();
+  let read = 0;
+  for (const el of document.querySelectorAll(atoms.map((a) => `.content ${a}`).join(', '))) {
+    if (!el.getClientRects().length || (el.checkVisibility && !el.checkVisibility())) continue;
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      for (const m of n.data.matchAll(/\S+/g)) {
+        const r = document.createRange();
+        r.setStart(n, m.index);
+        r.setEnd(n, m.index + m[0].length);
+        const rects = [...r.getClientRects()].filter((x) => x.width > 0);
+        if (!rects.length) continue;
+        read += 1;
+        if (new Set(rects.map((x) => Math.round(x.top))).size > 1) {
+          split.add(`${where(el)} ${el.tagName.toLowerCase()}.${[...el.classList].join('.')} "${m[0]}"`);
+        }
+      }
+    }
+  }
+  return { split: [...split], read };
+}, ATOMS);
 // Scrolled into the table, the hit-test and the layers it is held to, read in
 // one pass so the bound and the measurement come from one layout.
 const stackInTable = () => page.evaluate(() => {
@@ -3168,6 +3220,13 @@ const FONT_PASSES = [];
     tr.innerHTML = '<td colspan="99" style="height:200vh"></td>';
     body.append(tr);
   });
+  // Every phase opened for the matrix, because the pill-and-id half of lm5
+  // reads only what is drawn, and a resting page draws no task row: the task
+  // ids and their chips would be the one table nobody read. The chrome the
+  // other questions measure does not move with it. Shut again at the end.
+  const matrixShut = await page.evaluate(() =>
+    [...document.querySelectorAll('tr.task')].every((r) => r.offsetParent === null));
+  if (matrixShut) { await page.click('#audit-expand'); await page.waitForTimeout(250); }
   await page.selectOption('#audit-view', seg0.defaultView);
   await page.waitForTimeout(200);
   const probe = await page.evaluate(() => {
@@ -3206,6 +3265,11 @@ const FONT_PASSES = [];
           + `outside a ${at.room}px bar; bar ${at.barPx}px)`, at.countOut, 0);
         expect(`lm5 ${cell}: no control, chip or label of the chrome breaks inside a word `
           + `(split: ${at.split.join(', ') || 'nothing'})`, at.split.length, 0);
+        const atoms = await readAtoms();
+        expect(`lm5 ${cell}: no pill or id in any table or list of the report breaks inside `
+          + `a word (${atoms.read} word(s) read; split: ${atoms.split.slice(0, 8).join(', ')
+            + (atoms.split.length > 8 ? ` (+${atoms.split.length - 8} more)` : '') || 'nothing'})`,
+          atoms.read ? (atoms.split.length ? 'split' : 'none') : 'read no pill or id', 'none');
         expect(`lm8 ${cell}: nothing runs past its box, no control's text is cut off, and the `
           + `page is no wider than the screen (outside: ${at.spill.join(', ') || 'nothing'}; `
           + `cut off: ${at.cut.join(', ') || 'nothing'}; page ${at.pageWide}px on a `
@@ -3328,10 +3392,23 @@ const FONT_PASSES = [];
     notes.push('ok   (this plan pins no phase, so the Sort select is not drawn and no cell '
       + 'measured the table\'s head with it - that coverage is absent from this run)');
   }
+  // ...and where it is absent is a property of the fixture, so a fixture BUILT
+  // to carry the select owes it: gen-demo-manifest.py pins a phase so the scale
+  // demo draws one, and a demo that stopped pinning would otherwise land in the
+  // branch above as an honest note and pass. Keyed by the committed document,
+  // as FULLRUN_REQUIRED is.
+  const sortKey = documentKey(path);
+  const sortOwed = SORT_REQUIRED.has(sortKey);
+  expect(`lm the Sort select is in the matrix on every page whose fixture is built to carry `
+    + `it (${sortKey || file} ${sortOwed ? 'is' : 'is not'} one; ${ranked} row(s) carry an `
+    + `execution rank; the select was drawn in ${sortCells} of ${cells} cells)`,
+    sortOwed && !(ranked > 0 && sortCells === cells)
+      ? `no Sort select on ${sortKey}, whose fixture pins a phase` : 'none', 'none');
   await page.evaluate(() => {
     for (const n of document.querySelectorAll('[data-lm-spacer]')) n.remove();
     for (const n of document.querySelectorAll('[data-lm-chip]')) n.removeAttribute('data-lm-chip');
   });
+  if (matrixShut) { await page.click('#audit-expand'); await page.waitForTimeout(250); }
   await page.selectOption('#audit-view', viewWas);
   await page.setViewportSize(PHONE_VIEWPORT);
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -4600,8 +4677,9 @@ if (!STRESS) {
 // document ended before a target reached the line, the jump stopped short of
 // it and a different entry was lit. Each visible entry is clicked at every
 // size of the layout matrix, and the marker has to name it - with no
-// exemption for the end of the document, which the stylesheet's room after
-// the content is there to remove.
+// exemption for the end of the document, which the room after the content
+// (endRoom in page-state.js) is there to remove. sn3 holds that room from
+// the other side, so it is only what the furthest target lacks.
 {
   const sctx = await browser.newContext({ viewport: { width: 1512, height: 945 } });
   const snp = await sctx.newPage();
@@ -4609,11 +4687,65 @@ if (!STRESS) {
   snp.on('pageerror', (e) => snErrors.push(e.message));
   const wrong = [];
   let clicked = 0;
+  // The other side of that room: it may not be more than the furthest target
+  // needs. The need is computed HERE, from the page with the room taken out by
+  // a style this gate adds, never read off the value the page published - a
+  // bound read off the thing it bounds compares a number with itself. With the
+  // room out: the target that sits furthest down, its landing line, the
+  // document's end, and the blank tail the content leaves on its own (the last
+  // drawn child's bottom to the end - margins and the shell's padding). The
+  // need is the screen's height less the line less the run from that target's
+  // top to the end, never below 0. Then, with the room back and the page at its
+  // end, the tail is held to need + own tail, one pixel of rounding over. A
+  // page that adds a screen of blank whatever its last section's height fails
+  // here; a page that adds too little fails sn1, which is the side that keeps
+  // this bound from being met by adding nothing.
+  const tails = [];
+  const tailAt = async (when) => {
+    const geometry = () => snp.evaluate(() => {
+      const de = document.documentElement;
+      const col = document.querySelector('.snav ~ .content');
+      const drawn = [...document.querySelectorAll('.snav a')].map((a) => {
+        try { return document.getElementById(decodeURIComponent(a.getAttribute('href').slice(1))); }
+        catch (e) { return null; }
+      }).filter((t) => t && t.getClientRects().length);
+      const y = window.scrollY;
+      const last = drawn.reduce((a, b) => (b.getBoundingClientRect().top
+        > a.getBoundingClientRect().top ? b : a), drawn[0]);
+      const kids = col ? [...col.children].filter((k) => k.getClientRects().length) : [];
+      const lastKid = kids[kids.length - 1];
+      return {
+        end: de.scrollHeight, view: de.clientHeight, y,
+        targetTop: last ? last.getBoundingClientRect().top + y : NaN,
+        target: last ? `#${last.id}` : '(none)',
+        line: last ? parseFloat(getComputedStyle(last).scrollMarginTop) || 0 : NaN,
+        contentEnd: lastKid ? lastKid.getBoundingClientRect().bottom + y : NaN,
+      };
+    });
+    const out = await snp.addStyleTag({ content: '.snav ~ .content::after{display:none!important}' });
+    await snp.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
+    const bare = await geometry();
+    await out.evaluate((n) => n.remove());
+    await snp.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
+    await snp.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }));
+    await snp.waitForTimeout(120);
+    const full = await geometry();
+    const need = Math.max(0, bare.view - bare.line - (bare.end - bare.targetTop));
+    const own = bare.end - bare.contentEnd;
+    const tail = full.y + full.view - full.contentEnd;
+    const bound = need + own + 1;
+    const at = full.y + full.view >= full.end - 1;
+    tails.push({ over: !at || !(tail <= bound) || Number.isNaN(tail),
+      said: `${when}: tail ${Math.round(tail)}px against ${Math.round(bound)}px = need `
+        + `${Math.round(need)} (${bare.target}, line ${Math.round(bare.line)}) + own `
+        + `${Math.round(own)} + 1${at ? '' : ', and the page never reached its end'}` });
+  };
   for (const { width: w, height: h } of LAYOUT_SIZES) {
     await snp.setViewportSize({ width: w, height: h });
     await snp.goto('about:blank');
     await snp.goto('file://' + path);
     await snp.waitForTimeout(150);
+    await tailAt(`${w}x${h} as loaded`);
     const hrefs = await snp.evaluate(() => [...document.querySelectorAll('.snav a')]
       .filter((a) => a.getClientRects().length && getComputedStyle(a).visibility !== 'hidden')
       .map((a) => a.getAttribute('href')));
@@ -4635,10 +4767,56 @@ if (!STRESS) {
         + `${r.atEnd ? ', the document ended first' : ''})`);
     }
   }
+  // The room is re-measured when what it reads changes, not only at load: each
+  // size again WITHOUT a reload, then the rows opened and shut. After a resize
+  // the furthest visible entry is clicked too, because that is the one a room
+  // measured for the previous screen would leave short.
+  const lastEntry = () => snp.evaluate(() => {
+    const vis = [...document.querySelectorAll('.snav a')]
+      .filter((a) => a.getClientRects().length && getComputedStyle(a).visibility !== 'hidden');
+    const top = (a) => {
+      const t = document.getElementById(decodeURIComponent(a.getAttribute('href').slice(1)));
+      return t ? t.getBoundingClientRect().top : -Infinity;
+    };
+    const far = vis.reduce((a, b) => (top(b) > top(a) ? b : a), vis[0]);
+    return far ? far.getAttribute('href') : null;
+  });
+  for (const { width: w, height: h } of LAYOUT_SIZES) {
+    await snp.setViewportSize({ width: w, height: h });
+    await snp.waitForTimeout(250);
+    await tailAt(`resized to ${w}x${h}`);
+    const href = await lastEntry();
+    if (!href) continue;
+    await snp.locator(`.snav a[href="${href}"]`).first().click();
+    await snp.waitForTimeout(200);
+    const cur = await snp.evaluate(() => {
+      const c = document.querySelector('.snav a[aria-current="true"]');
+      return c ? c.getAttribute('href') : '';
+    });
+    clicked++;
+    if (cur !== href) wrong.push(`resized to ${w}x${h} ${href} lit ${cur || 'nothing'}`);
+  }
+  if (await snp.$('#audit-expand')) {
+    for (const when of ['every phase opened', 'every phase shut again']) {
+      await snp.click('#audit-expand');
+      await snp.waitForTimeout(250);
+      await tailAt(`${when}, ${LAYOUT_SIZES[LAYOUT_SIZES.length - 1].width}x`
+        + `${LAYOUT_SIZES[LAYOUT_SIZES.length - 1].height}`);
+    }
+  } else {
+    tails.push({ over: true, said: 'no #audit-expand on the page, so no reading was taken '
+      + 'with the rows opened' });
+  }
   await sctx.close();
   expect(`sn1 clicking a side-nav entry lights that entry, at every layout size `
     + `(${LAYOUT_SIZES.map((s) => s.width + 'x' + s.height).join(', ')}; ${clicked} clicks)`,
     clicked > 0 ? (wrong.join(' · ') || 'none') : 'no entry clicked', 'none');
+  expect(`sn3 scrolled to the end, the blank tail after the report's last content is no `
+    + `more than the room its furthest nav target lacks plus the content's own bottom `
+    + `padding, at every layout size, as loaded and after a resize, an expand and a `
+    + `collapse (${tails.length} reading(s))`,
+    tails.length ? (tails.filter((t) => t.over).map((t) => t.said).join(' · ') || 'none')
+      : 'nothing read', 'none');
   expect('sn2 the page raised no error while the side nav was driven',
     snErrors.slice(0, 2).join(' | ') || 'none', 'none');
 }

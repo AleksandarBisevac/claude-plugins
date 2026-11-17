@@ -308,7 +308,7 @@
     {
       "id": "P165.4",
       "title": "The More-filters disclosure arrow is one shared rule, decorative on both surfaces",
-      "status": "in_progress",
+      "status": "done",
       "description": "The panel's More-filters disclosure arrow is drawn as text content that screen readers announce (plugins/audit/scripts/ui/panel-css/usage-tab.css). The report's equivalent was fixed earlier (report-css/controls.css, .fdetails>summary). Fix it with ONE shared rule both surfaces use, not a second copy: put the disclosure-arrow rule in the shared layer the two surfaces already concatenate (see plugins/audit/scripts/ui/shared/ and the refactoring-the-assembled-ui skill on shared partials) and have both summaries use it; the glyph must not be exposed to assistive tech (e.g. a decorative pseudo-element with an empty alt in `content: \"x\" / \"\"`, or a background/border-drawn arrow - choose one that works in forced-colors, and say which and why). Remove the per-surface copies. Prove it: a browser check (panel via `node tools/capture-screenshots.mjs --check` is preconditions only, so add an assertion where the panel/report runtime is driven - e.g. in tools/check-report-interactive.mjs for the report and the panel's equivalent gate if one exists, else a computed-accessible-name check through Playwright's accessibility snapshot) that the summary's accessible name carries no arrow glyph, red-first on the current panel and report. Refresh followers (examples/report.sh, docs/demo-large.html via `python3 tools/check-rendered-artifacts.py --how`, `node tools/capture-screenshots.mjs`). Read writing-css and refactoring-the-assembled-ui. No register ids in comments.",
       "files": [
         "plugins/audit/scripts/ui/panel-css/usage-tab.css",
@@ -372,14 +372,17 @@
       ],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e5d659f551f1",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "RETRY (attempt 2): only tests/test__surface_digest.py changed. sd5 pinned the literal \"shell.css\" in the child's error when ui/ is hidden, i.e. whichever part the assembly happened to read first; with shared/disclosure.css now read first the error names that file (probed: FileNotFoundError ... plugin/scripts/ui/shared/disclosure.css). New helper _missing_ui_parts(error, sources) returns the ui/-relative tails of paths in the error that are parts ui_surface_sources() lists, and only when the error is a FileNotFoundError; it reads only the tail after a `ui` segment (the error is a 300-char traceback tail, a deep TMPDIR can cut the head) and treats any run of / or \\ as one separator (the text is a repr of a repr, which multiplies Windows backslashes). sd5 now requires len(named) > 0 and prints the named parts; it currently names ['shared/disclosure.css']. Part order was not touched. Red-first by mutation (see redFirst.basis): both mutations red, restored byte-equal. Class sweep: grep -rn 'shell\\.css|disclosure\\.css|tokens-and-reset\\.css' tests tools --include='*.py' (excluding the lints file that declares UI_ASSETS) -> test__output.py:535,538,557,559 (surface classification by name - left, not order-dependent); test__ui_theme.py:437,442 (read_asset of a named file - left); test__ui_theme.py:453,464,490 (cs1/cs4/cs9 pin the cascade order, which IS the contract - left); test__ui_theme_lints.py:211 (unreadable-asset fixture - left); test__config.py:133-134 (fs4 recursion by basename - left). No other pin depends on the first-read part. Gates, from the project dir: sweep of the gate's five suites plus test__surface_digest.py exit 0, 6/6 files ok, 768 cases (surface_digest 8/8); capture-screenshots --check exit 0 (pa1, ph1-ph5 printed); gate 3 exit 0: 858 checks acme, 864 demo-large, 817 the windowed live plan. Attempt 1's work (shared/disclosure.css, both surfaces wired, per-surface copies removed, ax4/ax5, da1, cs8/cs9, uf7, pa1, ph1-ph5, docs, followers) stands as filed in its outcome and was not redone. Its dependants answers stand; test__surface_digest.py is the one dependant that changed, as above.",
+        "descriptive": "sd5 now asserts the class it means - the error names a missing part of the removed ui/ tree - instead of whichever part the assembly reads first."
       },
       "startedAt": "2026-11-17T11:07:15Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-17T12:16:28Z",
+      "verifiedBy": [
+        "sd5 (rewritten pin): the child's error names a missing part of the removed ui/ tree, via _missing_ui_parts",
+        "attempt 1: ph1-ph5 panel hover parity and pa1 accessible-name cases in tools/capture-screenshots.mjs; ax4/ax5 in check-report-interactive.mjs; da1, cs8, cs9, uf7"
+      ],
       "notes": [
         {
           "at": "2026-11-17T05:25:00Z",
@@ -402,6 +405,10 @@
           "reader": "tests/test__report_page.py",
           "reads": "plugins/audit/scripts/report/_report_page.py",
           "text": "declared to answer a reading: tests/test__report_page.py reads plugins/audit/scripts/report/_report_page.py - its own suite"
+        },
+        {
+          "at": "2026-11-17T12:27:21Z",
+          "text": "Red-first of the browser cases, proved by the orchestrator after the review (mutations on scratch copies, never the shared tree): report acme render with the empty alt dropped -> 'FAIL ax4 the More-filters summary's accessible name carries no arrow glyph, shut or open (shut \"More filters ▾\", open \"More filters\")' rc=1; arrow content:none -> 'FAIL ax5 under forced colours the arrow is still generated, in a colour that paints (content none ...)' rc=1; panel, scratch worktree at e5d659f5 with shared/disclosure.css's empty alt dropped -> 'FAIL pa1 usage: the Filters summary is announced as shut \"Filters ▾\"' rc=1. The unmutated tree is green on all three (the task gate)."
         }
       ],
       "reviewPerTask": "signals",
@@ -409,12 +416,23 @@
         "runId": "2026-11-17T12:13:44Z.c864ff",
         "status": "passed",
         "at": "2026-11-17T12:13:44Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "e5d659f551f1",
+        "at": "2026-11-17T12:16:28Z",
+        "return": "docs/audit/evidence/returns/P165.4/20261117T110715Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task with tests.expectRedFirst false. The retry's one change is a test pin (sd5), not code: at HEAD the first part read is report-css/shell.css, which the new pin also accepts, so a HEAD-tree helper run could not turn it red. Its red was shown instead by mutating the error text sd5 reads, in place and restored in the same command, __pycache__ purged: (a) the ui path segment rewritten to /elsewhere/ -> sd5 FAIL, named parts [], suite exit 1; (b) disclosure.css renamed to notapart.css in the error -> sd5 FAIL, named parts [], suite exit 1; anchor count asserted == 1 before each mutation, file cmp-equal to the original after.",
+        "at": "2026-11-17"
       }
     },
     {
       "id": "P165.5",
       "title": "Chips and ids never break inside a word in any table, the Sort select is always in the matrix, and the stack-budget basis says only what it measured",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Three report layout lows, closed together because they share the layout matrix in tools/check-report-interactive.mjs.\n\n1. The bugs table's STATUS chip wraps inside the word at 1440x900 (\"Fixe / d\", \"Won' / t fix\") and the ID column breaks \"BUG- / 10\". Fix in report-css/tables.css: chips and ids do not break inside a word (white-space: nowrap on the chip and id cells, or a min width from the longest chip - whichever keeps the table inside the page at the phone size). Widen the matrix's \"no word split across lines\" assertion (lm5) from the chrome to EVERY table's chips and ids (phases, tasks, bugs, ready-now, usage), so a table added later is covered by default; red-first it on the current committed acme render and quote the failing lines.\n\n2. The Sort select in the phases table's head renders only when any phase is pinned (any_phase_pinned), and no committed fixture has a pinned phase, so the layout matrix never sees it. Add a pinned phase to the demo-large fixture's generator (tools/demo/gen-demo-manifest.py; re-render docs/demo-large.html via `python3 tools/check-rendered-artifacts.py --how`), and make the matrix FAIL by name on demo-large when no Sort select is present (a fixture that stops carrying it must not pass silently). Keep tests/test_gen_demo_manifest.py green and update its pins honestly.\n\n3. Two wording fixes beside STACK_BUDGET (change no share): (a) the sentence saying a phone whose filter bar wraps one more row fails lm4 - the cheapest row measured is 27.4px against 27px of headroom and lm4's stack is a whole-pixel scan that can sit up to 1.5px off, so only the 32px arm (a row holding the count) is shown to fail; say exactly that; (b) the rule's \"over the class's screen height\" must read \"over that size's height\" - a class holds sizes with different heights and lm4 applies the share per size.\n\nRefresh rendered followers (examples/report.sh, docs/demo-large.html, `node tools/capture-screenshots.mjs`) so tests/test__refs.py and check-rendered-artifacts stay green. Read writing-css, refactoring-the-assembled-ui, before-you-claim. No register ids in comments.",
       "files": [
         "plugins/audit/scripts/ui/report-css/tables.css",
@@ -431,7 +449,9 @@
         "plugins/audit/scripts/ui/report-css/shell.css",
         "plugins/audit/scripts/ui/report/page-state.js",
         "plugins/audit/scripts/ui/report/README.md",
-        "tests/test__report_page.py"
+        "tests/test__report_page.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/ui-tests/table-fit.test.mjs"
       ],
       "tests": {
         "mode": "gate-only",
@@ -454,14 +474,14 @@
       "dependsOn": [
         "P165.4"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-17T12:27:42Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -478,8 +498,24 @@
         {
           "at": "2026-11-17T08:50:16Z",
           "text": "Coordinator refinement of the end-space fix: derive it per page from what it needs, never a constant - the room is only what the furthest/last nav target lacks to reach the highlight line (viewport height minus the sticky stack minus the height from that target's top to the content end, floored at 0). Recompute on resize AND on phase expand/collapse (any change in content height). When it is 0, add nothing (no pseudo-element height, no padding). The browser check asserts both sides at every LAYOUT_SIZES size: sn1 still marks the clicked section, and the blank tail after End stays within the bound (needed room + the content's own bottom padding). If the bound and sn1 cannot both hold on some fixture, STOP and say so in the return - do not loosen either."
+        },
+        {
+          "at": "2026-11-17T12:27:40Z",
+          "reader": "PLUGIN-BUILD-GUIDE.md",
+          "reads": "tools/demo/gen-demo-manifest.py",
+          "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads tools/demo/gen-demo-manifest.py - a section headed by its path"
+        },
+        {
+          "at": "2026-11-17T13:15:12Z",
+          "text": "tools/ui-tests/table-fit.test.mjs added to scope: the end-space fix adds a second frame-batched resize listener, so the old case counting every frame per burst read 2; the case now asserts a burst requests no more frames than one resize, red-first both ways (executor's account)."
         }
-      ]
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T14:11:19Z.da526b",
+        "status": "passed",
+        "at": "2026-11-17T14:11:19Z"
+      }
     },
     {
       "id": "P165.6-r5e",

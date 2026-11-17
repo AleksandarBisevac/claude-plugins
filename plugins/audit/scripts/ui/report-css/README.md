@@ -15,7 +15,7 @@ lint over a differently-ordered join would clear a palette nobody serves.
 
 | part | responsibility |
 |---|---|
-| `shell.css` | Reset, scroll behaviour (the one line every anchor lands on, `--sticky-anchor`, and the room after the content that lets the last section reach it), the app shell, the header filter row and the scope beside each of its labels, and how its cards compose as the screen grows. |
+| `shell.css` | Reset, scroll behaviour (the one line every anchor lands on, `--sticky-anchor`, and the room after the content that lets the last section reach it - a length the script measures, nothing without it), the rule that keeps every pill and id in the column whole, the app shell, the header filter row and the scope beside each of its labels, and how its cards compose as the screen grows. |
 | `summary.css` | The verdict hero, the summary card and the animated progress bar. |
 | `controls.css` | Toolbar, buttons, filter chips, the More-filters disclosure, and the one focus rule every filter field shares. |
 | `badges.css` | Status and severity badges, and the test gate's verdict — which reuses the same pill and adds only a hue, while the observations beside it are deliberately not pills. |

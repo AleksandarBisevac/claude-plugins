@@ -2,22 +2,22 @@
   "note": "Written by tools/capture-screenshots.mjs. Each entry is the plugin version that was in the picture when that file was written, the hash of the bytes it was written as, the surface it is a picture of, and the digest of the page that surface sends at the moment of the shutter (_surface_digest.py). _refs.screenshot_capture_drift() compares all of them; an entry missing the digest is a finding, not silence.",
   "images": {
     "areas.png": {
-      "sha256": "83c6ebe8733d78a84586e21c28c446be0d3f786a18e5a8f4b4ff4798908924b3",
+      "sha256": "a66e23a50e3d9f4025a837b09d911eaa57d0b196e91f6d762eb31109db1d5871",
       "version": "3.8.0",
       "surface": "report",
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "68b2058d94451d9b69d0b68dc5308391c24174f02c57c8c5bceeb5538c57c0cb"
+      "uiDigest": "3ee97b3fad7fac777d044f4a7c5956eab00de65f3c2ca8ffe783409c737887b7"
     },
     "authors.png": {
-      "sha256": "ad03a191d9ebd82020aa1f67a28c4ad793fc6899cf4769cf0932c48af3e39e64",
+      "sha256": "8b2a000cb8115c7bd4fa8bbc3fbe784d081f28effdb6652121dc12bbeea80968",
       "version": "3.8.0",
       "surface": "report",
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "68b2058d94451d9b69d0b68dc5308391c24174f02c57c8c5bceeb5538c57c0cb"
+      "uiDigest": "3ee97b3fad7fac777d044f4a7c5956eab00de65f3c2ca8ffe783409c737887b7"
     },
     "dark.png": {
       "sha256": "8aceb6cc52db7ccf34fccfcb5396e61a556d53911ec15c11c6bf369cd9a63a7b",
@@ -26,7 +26,7 @@
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "68b2058d94451d9b69d0b68dc5308391c24174f02c57c8c5bceeb5538c57c0cb"
+      "uiDigest": "3ee97b3fad7fac777d044f4a7c5956eab00de65f3c2ca8ffe783409c737887b7"
     },
     "expanded.png": {
       "sha256": "85e84d5a8ec8537912cb1b74ada0f1a6aedb2f071494c9c3eda2b9076aa9e3d1",
@@ -35,7 +35,7 @@
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "68b2058d94451d9b69d0b68dc5308391c24174f02c57c8c5bceeb5538c57c0cb"
+      "uiDigest": "3ee97b3fad7fac777d044f4a7c5956eab00de65f3c2ca8ffe783409c737887b7"
     },
     "filtered.png": {
       "sha256": "8509bcaf48d165d6bd5b88c11d9b33773d3ca29564b5a7a05ec17993fed16c71",
@@ -44,34 +44,34 @@
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "68b2058d94451d9b69d0b68dc5308391c24174f02c57c8c5bceeb5538c57c0cb"
+      "uiDigest": "3ee97b3fad7fac777d044f4a7c5956eab00de65f3c2ca8ffe783409c737887b7"
     },
     "filters.png": {
-      "sha256": "c4ebb3587021b5ebede02c98d37c9baa1de9ab41386f3b158fcb7205c6a5e84f",
+      "sha256": "1eedca19c75f5a529e8b896f0a1e0238e7314b9f550c1b60144d285f33967caf",
       "version": "3.8.0",
       "surface": "report",
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "68b2058d94451d9b69d0b68dc5308391c24174f02c57c8c5bceeb5538c57c0cb"
+      "uiDigest": "3ee97b3fad7fac777d044f4a7c5956eab00de65f3c2ca8ffe783409c737887b7"
     },
     "mobile.png": {
-      "sha256": "b37d072bb6e376c117408a84347c4774be115ec6327b39594006425f276531da",
+      "sha256": "f6ebcd5071af996d17383c632903b13d80a53476de977c3ad7fea9023218e8f0",
       "version": "3.8.0",
       "surface": "report",
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "68b2058d94451d9b69d0b68dc5308391c24174f02c57c8c5bceeb5538c57c0cb"
+      "uiDigest": "3ee97b3fad7fac777d044f4a7c5956eab00de65f3c2ca8ffe783409c737887b7"
     },
     "overview.png": {
-      "sha256": "106f26b514ccc3aba12494531c7fce45cfafc0fa8f9f20bfedbf89a1c3357a9a",
+      "sha256": "12f8803d5d5a460f3be7c50541cdb245242bbfc43a80304cdca161785d29604d",
       "version": "3.8.0",
       "surface": "report",
       "nativeDateInput": {
         "regionalFormat": "en_US"
       },
-      "uiDigest": "68b2058d94451d9b69d0b68dc5308391c24174f02c57c8c5bceeb5538c57c0cb"
+      "uiDigest": "3ee97b3fad7fac777d044f4a7c5956eab00de65f3c2ca8ffe783409c737887b7"
     },
     "panel-appearance.png": {
       "sha256": "2f9a033fe30681c7aa2aed6fe9cde4fe38605b0f811f522fd56d00788ecaabc6",
@@ -86,13 +86,13 @@
       "uiDigest": "8378f2e130b1c7b138949dbbb50dcd036b47b361265ccb2f5980d0dc061864b9"
     },
     "panel-composition-expanded.png": {
-      "sha256": "3da1332c6d6776d6ed71ce3292cb75747b658d22a0e019f481a88311d71118c6",
+      "sha256": "1d96e9e0891df2e7509cc7b5b7bf53359962cbae4e33dd0fcd29b3f335990f60",
       "version": "3.8.0",
       "surface": "panel",
       "uiDigest": "8378f2e130b1c7b138949dbbb50dcd036b47b361265ccb2f5980d0dc061864b9"
     },
     "panel-composition.png": {
-      "sha256": "b045fb0774ff3d487744ac0cd9e9cf2a471fad335802951f62eb256c048a1be7",
+      "sha256": "d3bf508ae8f75f0eda8215fea546200f7fd4d2ca56442df8373be9a11da23e8a",
       "version": "3.8.0",
       "surface": "panel",
       "uiDigest": "8378f2e130b1c7b138949dbbb50dcd036b47b361265ccb2f5980d0dc061864b9"
@@ -128,7 +128,7 @@
       "uiDigest": "8378f2e130b1c7b138949dbbb50dcd036b47b361265ccb2f5980d0dc061864b9"
     },
     "panel-mobile.png": {
-      "sha256": "86dd0ef29dd5b382d3b9ab2c4b8dd970415f3d4a3ca909181e72168bfb301ba8",
+      "sha256": "1658ae43dd2cc789ccb18730b2c89cc5f96c3c145f1c5094840864185b35f875",
       "version": "3.8.0",
       "surface": "panel",
       "uiDigest": "8378f2e130b1c7b138949dbbb50dcd036b47b361265ccb2f5980d0dc061864b9"
@@ -140,7 +140,7 @@
       "uiDigest": "8378f2e130b1c7b138949dbbb50dcd036b47b361265ccb2f5980d0dc061864b9"
     },
     "panel-overview.png": {
-      "sha256": "ec7e5fb2ebd602b156f59da1a737926055dc0a81aa038f9b5b61b823179448a5",
+      "sha256": "5ef70b95806ceaec11a4e5852a53ea5882a8066d29f6290fb721f9c36c71dae6",
       "version": "3.8.0",
       "surface": "panel",
       "uiDigest": "8378f2e130b1c7b138949dbbb50dcd036b47b361265ccb2f5980d0dc061864b9"
