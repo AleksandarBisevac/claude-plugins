@@ -1,0 +1,139 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__floor_guard.py tests/test__output_lints.py tests/test__refs.py tests/test_build_shop.py tests/test__areas.py tests/test_audit_lookup.py tests/test_guard_edits.py tests/test__deps.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-17T14:46:40Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__floor_guard.py tests/test__output_lints.py tests/test_build_shop.py` in a throwaway tree at HEAD exited 1 with 9 of 47 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fm33 (house FAIL), fm34 (house FAIL), fa21 (house FAIL), sc14 (house FAIL), esc29 (house FAIL), esc30 (house FAIL), esc38 (house FAIL), esc39 (house FAIL) and 1 more: SELFTEST FAILED: 42/47 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "ACCEPTANCE. A1 delivered: _floor_guard.py _IN_COMMENT/_OWN_LINE, cases fm33 fm34 fa21 fa22. A2 delivered: _output_lints.py ALLOWED_DIRS_UNREAD + sc14; sc13 asks about resolved paths. A3 delivered: init.md 4.5 (both sentences), CHANGELOG [Unreleased] init entry, README /audit:init row. A4 delivered: test__refs.py _ia_read gate text cut at the first sub-heading or fence + ia9 move row. A5 delivered: README floorGuard.mode row and execute-task.md submit paragraph. A6 delivered: schema $defs.area.properties.skills description + so3. A7 delivered: audit-lookup.py _acceptance_named + wp17; _deps.py comment carries no count. A8 delivered: cf19, guard-edits.py unchanged. A9 delivered: guard-stop input_match + esc29/esc30 lists; CONTRIBUTING.md passage. A10 delivered: bugfix after side + esc38/esc39/esc40; guard-stop macOS note. PER ITEM. (1) DONE. Ruff 0.16.2 was run on two-line files in scratch before the pattern was written. Obeyed (import no longer reported): `# noqa`, `# NOQA`, `# NoQa: F401`, `#noqa:F401`, `#   noqa`, `# noqa trailing` (ONE space is enough - the description's 'two spaces' is wider than ruff needs), a tab after the word, `# noqa: F401 because reasons`, `# todo  # noqa` and `# type: ignore  # noqa` (a later hash in one comment opens another directive), file-level `# ruff: noqa`, `# flake8: NOQA`, `#ruff:noqa`, `# ruff: noqa: F401` on a line of their own. Not obeyed: `# the word noqa here`, `# see: noqa`, `# xnoqa`, the word inside a string or docstring, a marker on a line of its own after code (`# noqa` alone on the next line), `# ruff: noqa` written after code (ruff warns 'must appear on their own line'), `# RUFF: noqa` and `# Flake8: noqa` (the linter name is case-sensitive). Warned as invalid and not obeyed: `# noqaX`, `# noqa-like`, `# noqa.`, `# noqa,`, `# noqa:` with no code, `# noqa: f401` (a lower-case code). _floor_guard.py: new `_IN_COMMENT` (hash, optional blanks, the word in any case, then end/blank/colon) and `_OWN_LINE` (file-level form, linter name lower case, on a line holding only the comment); `_in_comment()` reads a kind through them where they apply, anywhere in the comment otherwise; `_line_marks` passes `alone`. The accepted-entry reading (`anchored=True`) is unchanged, so fc13 (`NOQA: E402` as an entry is could-not-tell) stays green, while a tree marker `# NOQA: E402` keys as (noqa, E402) and matches an accepted `noqa: E402`. Every existing case of tests/test__floor_guard.py green unchanged (70/70 incl. the new four; it was 66 before). Module docstring and the PLUGIN-BUILD-GUIDE section say where the marker is read. (2) DONE. _output_lints.py: `ALLOWED_DIRS_UNREAD = (\"results\",)`; `_coverable_test_names(directory, unread=())` does not enter a top-level directory named there; only allowed dirs pass it. Case sc14. (3) DONE. sc13 resolves each classified kind-prefixed name to its file through the directories the classifier walked and asks that none sits under plugins/audit/evals/ (and that every resolved path is a file). It is green at HEAD and after; the mutation probe shows the difference: with a module named `_retrievals.py` (the letters, not the place), the old letter test goes red on sc13 and the new one stays green. (4) DONE. init.md step 4.5, the CHANGELOG entry and the README row now say: a correction is typed as the answer to step 6's gate question, the synthesis it touches is redone and the plan presented again, and approval is the option chosen on that next presentation. (5) DONE. Settled = said in $ARGUMENTS or in any answer given in steps 2 to 3.5. (6) DONE. tests/test__refs.py `_ia_read`: the gate text is step 6 up to its first `### ` sub-heading or code fence; ia7's label says so; ia9 gained a move row (the sentence moved to the start of sub-step 6.1). Red observed BEFORE the restriction was written: `FAIL ia9 ... [('ia7', \"the gate's sentence printing the list moved into sub-step 6.1\")]`, `SELFTEST FAILED: 317/318`; after: 318/318. This item is test-only, so the red-first helper (HEAD code) cannot show it. (7) DONE. README floorGuard.mode row and reference/execute-task.md say the agent's own block is dropped by submit and that the `source: floor-guard` mark is a convention and not a proof: a return filed straight through `audit-task.py file-return` with a typed, marked block is read back as the script's reading (code basis: `_filed_returns.floor_block` trusts the mark only). The CHANGELOG floorGuard entry carried the same unqualified sentence and got the same qualifier. No code changed. (8) DONE. Schema `$defs.area.properties.skills.description` now states the resolver's order in SKILLS_RULE's words; pin so3 in tests/test__areas.py reads the description out of the schema JSON and requires SKILLS_RULE once and no 'area first'. Red before the schema edit: `FAIL so3 ... Merged with task.skills and deduped, area first. ...`, 132/133. (9a) DONE. audit-lookup.py `_acceptance_named`: by `_clause_coverage.acceptance_reading`'s shape - parenthesised unchanged; line-numbered names 'the Acceptance items ... numbered 1 to N at line starts'; unnumbered names 'the whole unnumbered text after the task description's Acceptance marker, read as one item'. Case wp17 (tests/test_audit_lookup.py), red before the fix: `clause 1 is the Acceptance items (1) of the task description`, 204/205. (9b) DONE. tools/lints/_deps.py layer comment over _clause_coverage names its consumers as 'entry points that may not load each other - among them audit-lookup and drive-phase' with no count. (10) DONE, hooks/guard-edits.py unchanged (git diff --stat on it empty). cf19 in tests/test_guard_edits.py: writes the config, derives whether the scratch directory folds case from a probe file and its upper-cased name, and for the three spellings (file name upper, mixed, directory upper) expects subagent block / main session ask where it folds, allow where it does not. This machine folds (folds=True printed), so the fold branch is what ran: 75/75. FACT FOR THE ORCHESTRATOR: on a case-SENSITIVE filesystem the hook's answer is that a differently-cased path is NOT the config (guard-edits.py:324-327: realpath equality, then samefile only when both paths exist; a differently-cased file there is another, absent file), so the write is allowed - read from the code, not exercised here. (11) DONE. guard-stop no-destructive-git input_match rewritten: git (also by full path, also behind any number of `-C <dir>`) followed by a checkout whose arguments include `--` and a path, `.`, `./...`, a token with a dot-letter extension, `shop`/`tests` paths, `-f` or `--force`; a forced checkout-index; a restore unless it is --staged/-S without --worktree/-W; a hard or merge reset; a clean that is not -n/--dry-run; the stash rule as before. Header rewritten to say what it takes and leaves, including the cost (a branch spelled like `fix.py` reads as a path). Suite lists extended (GIT_DESTRUCTIVE / GIT_HARMLESS, esc29/esc30); a branch checkout, `checkout -b`, `checkout feature/sync`, `-C . checkout main` stay no attempt. Checked: Python re and node RegExp agree on every listed input (scratch engines.py: 'python == wanted: True; node == python: True'); the orchestrator's live.py now prints no `note` line and ends ALL LIVE CHECKS PASS (all seven BEYOND matched, both OVER not); the second guard-stop trace: 8 Bash calls, 0 the pattern takes; the first: 2 calls, 0. The outcome grader is untouched. CONTRIBUTING.md (item 12) DONE: the decision-record passage now says the schema was not public then and that the plugin-evals documentation now describes it ('case.yaml fields', 'Grader types'), nothing around it changed. (13) DONE. bugfix tests-ran-before-edit `after: {tool: Edit, input_match: \"\\\"file_path\\\":\\\\s*\\\"[^\\\"]*/shop/[^\\\"/]+\\\"\"}`, relying on the doc line 592: '| `tool_order` | `before`, `after` | Both tools were called and the first matching `before` call precedes the first matching `after` call. Each is a tool name or `{ tool, input_match }` |'. Header states what it reads and that a backslash path is not read. tests/test_build_shop.py: esc38 (shape read out of case.yaml), esc39 (source paths taken, tests/README left), esc40 (test-first session passes, fix-first fails), all reading the pattern out of the case file. Against the second bugfix trace: first unittest Bash is call #5, first source Edit #6 (first Edit of any file #4): new grader PASS, old FAIL; the first run's trace still FAILs (it edited the source before any unittest run). guard-stop carries no tool_order grader, so no change there. (14) DONE. guard-stop macOS note: both paid runs (Claude Code 2.1.325, read from both traces' version field) saw the shim fail inside the sandbox; the first ran no git after it, the second found a git under a package manager's prefix and ran it by full path (confirmed from the second trace: an xcrun/xcode-select error result, later calls naming a git under /opt); whether the session finds another git is not something the case controls. esc37's words kept. GATES. The brief's gate command (sweep over the eight suites, --jobs 4): exit 0, '8/8 files ok, 1320 cases'. Orchestrator's wider gate (run-test-gate.py ... --task SG1.18-ukq, no --record): exit 0, 'GATE GREEN'. Also run: tests/test__filed_returns.py 135/135 (imports _floor_guard), tests/test__deps.py 284/284, ruff on every changed .py exit 0, vermin -t=3.8- exit 0. tools/measure-context.py --gate: identical figures before and after the README/execute-task.md edits (executor 8982/9000, reviewer 6985/7000, orchestrator.md 61964/62000; GATE OK); init.md is no gated entry; no ceiling raised. The floor guard run over this diff (scratch floor_self.py, accepted noqa: E402): answer clean, 13 files read, 10 not read (docs/json with no syntax known). RED-FIRST COMMAND given to submit: `python3 tools/sweep-selftests.py tests/test__floor_guard.py tests/test__output_lints.py tests/test_build_shop.py` - measured on a git-archive HEAD export with the task's test files over it: exit 1 in 83 s, house tallies only (`SELFTEST FAILED: 67/70`, `187/188`, `42/47`), no line opening with a second runner's words; fm33 fm34 fa21 sc14 esc29 esc30 esc38 esc39 esc40 FAIL. Left out of it: tests/test__refs.py (ia9 - test-only change, red shown above), tests/test__areas.py (so3), tests/test_audit_lookup.py (wp17), tests/test_guard_edits.py (cf19, green at base by design). MUTATION PROBE: sg1.18/mutations.py, output beside it in mutations.out - throwaway copy, every suite green at BASELINE (the twin of every row), 18 rows, MUTATIONS ALL CAUGHT, exit 0. DEPENDANTS. _floor_guard.py: drive-phase.py (find_moves signature and _mark unchanged - still correct), tests/test__filed_returns.py (135/135), tests/test__floor_guard.py (changed), PLUGIN-BUILD-GUIDE.md (section updated). tests/test__floor_guard.py: path readers unchanged. tools/lints/_output_lints.py: importers unchanged - one new constant and a defaulted parameter; tools/lints/_refs.py names _coverable_test_names in a docstring only (still correct); tools/prove-gates.py coverage rows anchor on `if expected in test_files:` and `elif named in exempt:`, both unchanged; prove-gates has no row for _floor_guard. tests/test__output_lints.py: _cases/_selftest names unchanged for affected.py and prove-gates.py. init.md, README, execute-task.md: every suite reading them by quoted sentence green (test__refs 318/318, test__deps 284/284, test_audit_lookup 205/205, test__areas 133/133); headings unchanged. Schema: description text only; json parses. test__areas.py: _cases/_selftest unchanged. audit-lookup.py: one new private helper, its importers' suites green. _deps.py, test_guard_edits.py, case files, test_build_shop.py, CONTRIBUTING.md, CHANGELOG.md: wider gate green. Not touched: tests/test__deps.py (declared, no change needed).",
+    "descriptive": "The floor guard now reports a noqa only where ruff reads one, in any case; the eval results directory no longer moves the coverage answer; the eval graders take the destructive spellings and order a test-first fix correctly; and the init, floor-block, schema and closing-line wording says what the code does."
+  },
+  "testsAdded": [
+    "tests/test__floor_guard.py fm33/fm34/fa21/fa22: each spelling ruff obeys is a finding (any case, codes or text after it, a second hash, file-level on its own line), each it ignores is not (prose, glued, after code, inside a string or docstring), and an upper-case marker is the same code as the base's and as an accepted entry",
+    "tests/test__output_lints.py sc14: a file under an allowed directory's results/ leaves a same-named suite an orphan, while a case file beside it still covers its suite; sc13 now asks where classified modules sit",
+    "tests/test__refs.py ia9 row: the gate sentence moved into sub-step 6.1 turns ia7 red; ia7 reads step 6's opening text only",
+    "tests/test_build_shop.py esc38/esc39/esc40: the order grader's after side, read out of case.yaml, takes an Edit under shop/ and leaves one under tests/ alone, and a test-first session passes while a fix-first one fails; esc29/esc30 lists extended for the destructive pattern",
+    "tests/test__areas.py so3: the schema's area skills description carries SKILLS_RULE",
+    "tests/test_audit_lookup.py wp17: the closing line names an unnumbered or line-numbered Acceptance list as the reader numbered it",
+    "tests/test_guard_edits.py cf19 (regression): the config spelled in other letter cases is held as the config where the filesystem folds case, and is another file where it does not"
+  ],
+  "casesAdded": [
+    [
+      "fm33",
+      "fm34",
+      "fa21",
+      "fa22"
+    ],
+    "sc14",
+    "ia9",
+    [
+      "esc38",
+      "esc39",
+      "esc40"
+    ]
+  ],
+  "claims": "claims:\n1 _floor_guard.py `_IN_COMMENT`/`_OWN_LINE`/`_in_comment` do what the docstring and guide say; _output_lints.py `_coverable_test_names` unread arg; audit-lookup.py `_acceptance_named`; README/execute-task floor-block sentence matches _filed_returns.floor_block (mark-only trust); case.yaml headers match the patterns (checked by engines.py over every listed spelling)\n2 mutations.py: 18 rows, each red as named, BASELINE green as twin; allow rows (marker anywhere, whole dir skipped, unstaging restore, dry-run clean, branch checkout, after side taking tests/) red on fa21, sc10+sc14, esc30, esc39+esc40\n3 grep for noqa readers: _floor_guard.py (fixed), tools/lints/_deps.py:3560 _NOQA_RE (left: it exempts code spans from a fault-id scan, an over-read there exempts more, not a suppression finding); grep 'same answer|step-2 answer|approves the plan': init.md:255,270, CHANGELOG.md:68, README.md:447 fixed, the rest unrelated uses of 'same answer'; 'area first': schema fixed, CHANGELOG.md:6536 and docs/research left as history; 'own block is dropped': README, execute-task.md and CHANGELOG.md:29 fixed\n4 n/a - no rule to an agent added; the floor-block sentence now says the mark is a convention, not a proof\n5 n/a - no property recorded beyond measured-once timings stated as such\n6 floor guard decides from the comment token tokenize/scanner isolated, as ruff reads it; allow rows proven quiet (fa21, fa22) and red under the over-fire mutation; guard-edits unchanged\n7 no number written into prose; the layer comment's consumer count deleted",
+  "stamp": "audit-stamp: {\"content\":\"sha256:9535de9c9b4803187475334f50f12161a8e2d325e2d36659f596e438f8200597\",\"dirtyDigest\":\"sha256:5bd8389b739e109820e736145cc008f14ffe8462ed5b8455408dcda62ed74b28\",\"dirtyPaths\":{\"CHANGELOG.md\":\"92765f9537aa1d07\",\"CONTRIBUTING.md\":\"e61931b58853bb8a\",\"PLUGIN-BUILD-GUIDE.md\":\"cc2a8430d759b50a\",\"plugins/audit/README.md\":\"db0853ad98d94bd5\",\"plugins/audit/commands/init.md\":\"43ae96e7d0b9a075\",\"plugins/audit/evals/bugfix/case.yaml\":\"38101abf8dc320ec\",\"plugins/audit/evals/guard-stop/case.yaml\":\"6f6efc71c20e1733\",\"plugins/audit/reference/execute-task.md\":\"01c5c3cc1bd7c02a\",\"plugins/audit/schema/audit-plan.schema.json\":\"654aa0beb8943514\",\"plugins/audit/scripts/governance/_floor_guard.py\":\"1fda6869b141c10f\",\"plugins/audit/scripts/status/audit-lookup.py\":\"7bc894af99965358\",\"tests/test__areas.py\":\"59d78dd6eb6dce67\",\"tests/test__floor_guard.py\":\"208d70dd37229977\",\"tests/test__output_lints.py\":\"7648563e8eaf4c76\",\"tests/test__refs.py\":\"cee7e7332f7b869f\",\"tests/test_audit_lookup.py\":\"25485cf2e34141b3\",\"tests/test_build_shop.py\":\"1e1f1c75c3b982ff\",\"tests/test_guard_edits.py\":\"eae2cecbc1040f87\",\"tools/lints/_deps.py\":\"e13fcd44c23ff30c\",\"tools/lints/_output_lints.py\":\"f17df682c7006e4b\"},\"head\":\"f5a8e8ee\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"CONTRIBUTING.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/README.md\",\"plugins/audit/commands/init.md\",\"plugins/audit/evals/bugfix/case.yaml\",\"plugins/audit/evals/guard-stop/case.yaml\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/schema/audit-plan.schema.json\",\"plugins/audit/scripts/governance/_floor_guard.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test__areas.py\",\"tests/test__deps.py\",\"tests/test__floor_guard.py\",\"tests/test__output_lints.py\",\"tests/test__refs.py\",\"tests/test_audit_lookup.py\",\"tests/test_build_shop.py\",\"tests/test_guard_edits.py\",\"tools/lints/_deps.py\",\"tools/lints/_output_lints.py\"],\"scopeDigest\":\"sha256:a5f0fcff32481efe4bd7021e5c6c6ce281afccdda14540d04b7ecbb54fe6b9cd\",\"v\":2}",
+  "floorGuard": {
+    "answer": "findings",
+    "basis": "1 move(s) that lower the bar across 20 file(s) of the diff; 7 file(s) not read, having no syntax known here: CHANGELOG.md, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md, plugins/audit/commands/init.md, plugins/audit/reference/execute-task.md, plugins/audit/schema/audit-plan.schema.json; 7 test file(s) not compared for definition-changed, defining no test* function: tests/test__areas.py, tests/test__floor_guard.py, tests/test__output_lints.py, tests/test__refs.py, tests/test_audit_lookup.py, tests/test_build_shop.py, tests/test_guard_edits.py",
+    "findings": [
+      {
+        "move": "suppression-added",
+        "path": "plugins/audit/scripts/governance/_floor_guard.py",
+        "line": 203,
+        "side": "tree",
+        "what": "suppression added (noqa, new to the file): # read that way, and only that way, over a comment. The noqa shape is ruff's,"
+      }
+    ],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "CONTRIBUTING.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/commands/init.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/reference/execute-task.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/schema/audit-plan.schema.json",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "tests/test__areas.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test__floor_guard.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test__output_lints.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test__refs.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test_audit_lookup.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test_build_shop.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test_guard_edits.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      }
+    ],
+    "base": {
+      "commit": "f5a8e8ee10a6792ff1db6a028b442655e75ad1e9"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-17T14:46:42Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

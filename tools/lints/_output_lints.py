@@ -2500,6 +2500,12 @@ DEV_FILES = (("tools", os.path.join(REPO_ROOT, "tools", "_usage_bench.py")),
 # `_coverable_test_names` states for `py-launch.sh`.
 ALLOWED_DIRS = (os.path.join(PLUGIN_ROOT, "evals"),)
 
+# Directories directly under an allowed one that the walk does not enter: `claude
+# plugin eval` writes each run under `<plugin>/evals/results/`, which `.gitignore`
+# keeps out of the repository, so a file there exists on one machine and would
+# make a same-named suite an orphan everywhere else.
+ALLOWED_DIRS_UNREAD = ("results",)
+
 # The classes a build must be empty of. Named once, here, rather than re-spelled as a
 # tuple of keys at each call site.
 _DEFECT_CLASSES = ("uncovered", "stale_exempt", "orphans", "collisions")
@@ -2519,17 +2525,20 @@ def _test_name_for(rel):
                         .replace("-", "_"))
 
 
-def _coverable_test_names(directory):
+def _coverable_test_names(directory, unread=()):
     """Every `tests/` filename some file under `directory` could be covered by.
 
     EXTENSION-AGNOSTIC: whether a `tests/test_*.py` is an ORPHAN asks whether the
     test names anything the plugin ships, and `py-launch.sh` is shipped, runs ahead of
     every hook on every tool call, and has cases. Reading `.py` only would have called
     those cases dead weight. A file here is therefore ALLOWED a suite and never
-    REQUIRED one - `uncovered` stays a question about Python modules.
+    REQUIRED one - `uncovered` stays a question about Python modules. A directory
+    directly under `directory` whose name is in `unread` is not entered.
     """
     names = set()
     for root, dirnames, filenames in os.walk(directory):
+        if root == directory:
+            dirnames[:] = [d for d in dirnames if d not in unread]
         dirnames.sort()
         for fname in filenames:
             names.add(_test_name_for(posix_rel(os.path.join(root, fname),
@@ -2552,7 +2561,8 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None,
       orphans      DEFECT: a `tests/test_*.py` naming no module that exists. Asked of
                    every file under `scripts/` and `hooks/` WHATEVER its extension,
                    unlike the other classes - `_coverable_test_names` says why - and
-                   of every file under `allowed_dirs`, which adds no module
+                   of every file under `allowed_dirs` but the directories
+                   `ALLOWED_DIRS_UNREAD` names, which adds no module
       collisions   DEFECT: two modules mapping to one test name (`a-b.py` and `a_b.py`
                    both want `test_a_b.py`)
       defects      every name in every defect class above, each tagged with the class
@@ -2616,10 +2626,11 @@ def selftest_coverage(script_dir=None, hooks_dir=None, tests_dir=None,
             out["stale_exempt"].append("%s (has a test file)" % named)
 
     coverable = set(claimed)
-    for directory in ((script_dir, hooks_dir) + tuple(d for _k, d in dev_dirs)
-                      + tuple(allowed_dirs)):
+    walked = ([(d, ()) for d in (script_dir, hooks_dir) + tuple(d for _k, d in dev_dirs)]
+              + [(d, ALLOWED_DIRS_UNREAD) for d in allowed_dirs])
+    for directory, unread in walked:
         if directory is not None and os.path.isdir(directory):
-            coverable |= _coverable_test_names(directory)
+            coverable |= _coverable_test_names(directory, unread)
     for name in sorted(test_files - coverable):
         out["orphans"].append("tests/%s" % name)
     for expected in sorted(claimed):

@@ -2379,6 +2379,20 @@ def _writer_prompt_cases(check):
           "no acceptance clause" in none_closing and "{}" in none_closing
           and "clauses 1" not in none_closing)
 
+    prose = _wp_manifest(add=(), description="Fix it.\n\nAcceptance: the sweep is green.")
+    prose_closing = _wp_text(prose).split("\n")[-2]
+    listed = _wp_manifest(add=(), description="Fix it.\n\nAcceptance:\n1. one holds\n"
+                                              "2. two holds\n")
+    listed_closing = _wp_text(listed).split("\n")[-2]
+    check("wp17 an Acceptance list the reader did not find numbered in "
+          "parentheses is named as the reader numbered it - the whole unnumbered "
+          "text as one clause, or the items numbered at line starts - and no "
+          "parenthesised item is pointed at: %r / %r" % (prose_closing, listed_closing),
+          "clause 1 is" in prose_closing and "unnumbered" in prose_closing
+          and "(1)" not in prose_closing
+          and "clauses 1 to 2" in listed_closing and "line start" in listed_closing
+          and "(1)" not in listed_closing)
+
     check("wp11 two calls give identical bytes: %r"
           % (_wp_text(man) == text,),
           _wp_text(man) == text and _wp_text(_wp_manifest()) == text)

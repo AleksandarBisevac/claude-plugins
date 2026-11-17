@@ -262,7 +262,10 @@ verb writes and refuses, and what the run commands leave behind, is
      writes nothing - and writes a well-formed return once, to a path it derives from the task
      and its current start. The agent hands back the one line `submit` printed.
      **`submit` also adds a `floorGuard` block the agent does not write** (an agent's own is
-     dropped): `_floor_guard.find_moves` over the task's diff against the HEAD the red-first
+     dropped by `submit`; the block's `source: floor-guard` mark is a convention and not a
+     proof - a return filed straight through `audit-task.py file-return` with a typed, marked
+     block is read back as the script's reading, as a typed red-first block would be):
+     `_floor_guard.find_moves` over the task's diff against the HEAD the red-first
      helper's throwaway is built at (`task_root` and `tree_head` in `drive-phase.py`, the one
      base), handed the `tests.add` paths with their `casesAdded` ids and
      `floorGuard.acceptedSuppressions`. It holds `answer` (`clean`, `findings`,

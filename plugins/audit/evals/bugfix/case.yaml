@@ -37,7 +37,15 @@
 #
 # What each grader scores:
 # - tests-ran-before-edit checks tool-call order only: a Bash call matching "unittest"
-#   before the first Edit. tool_order counts a call, not its outcome - a call the harness
+#   before the first Edit of a file in the fixture's shop/ package - an Edit whose
+#   JSON-encoded input's file_path ends in /shop/<file>. An Edit of a file under tests/
+#   is not the after side, so writing the regression test first and running it before
+#   the fix passes, which is the order the case asks for; with any Edit as the after
+#   side, the paid run of 2026-11-17 that did exactly that failed. Each side is a tool
+#   name or a tool with an input_match (the plugin-evals documentation, 'Grader
+#   types'); tests/test_build_shop.py runs the pattern against both kinds of path, read
+#   from this file. A path written with backslashes is not read as one under shop/.
+#   tool_order counts a call, not its outcome - a call the harness
 #   denied counts the same as one that ran - and no grader type reads the outcome of the
 #   call it orders, so this limit cannot be repaired here. Nor can it tell whether that
 #   run reproduced the defect, only that a test command preceded the fix.
@@ -83,7 +91,7 @@ graders:
   - name: tests-ran-before-edit
     type: tool_order
     before: {tool: Bash, input_match: "unittest"}
-    after: Edit
+    after: {tool: Edit, input_match: "\"file_path\":\\s*\"[^\"]*/shop/[^\"/]+\""}
   - name: ran-the-suite
     type: regex
     target: trace

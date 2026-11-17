@@ -4357,10 +4357,15 @@ def _ia_read(text):
     if clause:
         stop = text.find("\n   - ", clause[0])
         bullet = _squash(text[clause[0]:stop if stop > 0 else None])
+    gate = _md_section(text, _IA_GATE)
+    # The gate's opening text: what step 6 says before its first sub-heading or
+    # code fence, which is where the list is printed above the plan. A sentence
+    # moved into a sub-step or an example is no longer the gate's own.
+    stops = [m.start() for m in re.finditer(r"^(?:#{3,} |```)", gate, re.M)]
     return {"numbers": [n for _off, n, _line in heads], "at": at,
             "clause": clause, "bullet": bullet,
             "assume": _md_section(text, _IA_ASSUME),
-            "gate": _md_section(text, _IA_GATE)}
+            "gate": gate[:stops[0]] if stops else gate}
 
 
 def _ia_once(facts, key):
@@ -4441,8 +4446,9 @@ def _init_assumption_cases(check):
     check("ia6 the clause rule's own bullet sends what cannot be stated "
           "observably to the phase's openChoices: %r" % (facts["bullet"][:300],),
           live["ia6"])
-    check("ia7 the approval gate still follows synthesis and prints step 4.5's "
-          "list, or %s" % (_IA_NONE,), live["ia7"])
+    check("ia7 the approval gate still follows synthesis and its opening text - "
+          "before any sub-step or example - prints step 4.5's list, or %s"
+          % (_IA_NONE,), live["ia7"])
 
     # THE ALLOW TWIN: a neighbour sentence reworded in each section the rules sit
     # in changes no verdict; it is here for a pin widened to whole sentences.
@@ -4472,6 +4478,9 @@ def _init_assumption_cases(check):
          _ia_drop(text, "**A finding that cannot be stated", "\n   - **`tests.gate`")),
         ("ia7", "the approval gate moved before synthesis",
          _ia_move(text, _IA_GATE, "## 7. ", _IA_SYNTH)),
+        ("ia7", "the gate's sentence printing the list moved into sub-step 6.1",
+         _ia_move(text, "Open with step 4.5's list", "A\ncorrection arrives",
+                  "Before the gate, propose")),
     )
     seen = [(cid, why, mutated is not None and mutated != text
              and not _ia_verdicts(_ia_read(mutated))[cid])

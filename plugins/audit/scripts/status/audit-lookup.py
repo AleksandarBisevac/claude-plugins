@@ -991,6 +991,21 @@ def _clause_span(first, last):
         "clauses %d to %d" % (first, last))
 
 
+def _acceptance_named(task, count):
+    """The Acceptance items as the reader numbered them - by the shape
+    `_clause_coverage.acceptance_reading` read the description in, so a list
+    it did not find numbered in parentheses is never pointed at as one."""
+    shape = _cc.acceptance_reading(task.get("description"))["shape"]
+    if shape == _cc.SHAPE_LINE_NUMBERED:
+        return ("the Acceptance items of the task description numbered %s at "
+                "line starts" % ("1" if count == 1 else "1 to %d" % count))
+    if shape == _cc.SHAPE_UNNUMBERED:
+        return ("the whole unnumbered text after the task description's "
+                "Acceptance marker, read as one item")
+    return ("the Acceptance items %s of the task description"
+            % ("(1)" if count == 1 else "(1) to (%d)" % count))
+
+
 def writer_closing_line(task):
     """The one line that asks for an answer per clause, numbered by
     `task_clauses`; a task with no clause is told the empty object is the
@@ -1001,12 +1016,12 @@ def writer_closing_line(task):
                 "message with the empty JSON object {}.")
     parts = []
     for kind, what in (("tests.add", "the Tests to add entries in the order listed"),
-                       ("acceptance", "the Acceptance items %s of the task description")):
+                       ("acceptance", None)):
         group = [c for c in clauses if c["kind"] == kind]
         if not group:
             continue
         if kind == "acceptance":
-            what = what % ("(1)" if len(group) == 1 else "(1) to (%d)" % len(group))
+            what = _acceptance_named(task, len(group))
         parts.append("%s %s %s" % (_clause_span(group[0]["n"], group[-1]["n"]),
                                    "is" if len(group) == 1 else "are", what))
     return ("Finish your last message with one JSON object holding one entry "

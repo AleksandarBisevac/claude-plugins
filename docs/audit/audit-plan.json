@@ -1388,7 +1388,8 @@
       "SG1.14-ukq",
       "SG1.15-ukq",
       "SG1.16-ukq",
-      "SG1.17-ukq"
+      "SG1.17-ukq",
+      "SG1.18-ukq"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1582,7 +1583,8 @@
       "P155.7",
       "P155.9",
       "P155.30-gfj",
-      "P157.7-mwz"
+      "P157.7-mwz",
+      "SG1.18-ukq"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -2035,7 +2037,8 @@
       "SG1.15-ukq",
       "SG1.16-ukq",
       "SG1.17-ukq",
-      "SG1.11-ukq"
+      "SG1.11-ukq",
+      "SG1.18-ukq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2529,7 +2532,8 @@
       "SG1.7",
       "SG1.8",
       "SG1.13-ukq",
-      "SG1.14-ukq"
+      "SG1.14-ukq",
+      "SG1.18-ukq"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -2725,7 +2729,8 @@
       "P148.21-xpz",
       "P156.8-3st",
       "SG1.7",
-      "SG1.8"
+      "SG1.8",
+      "SG1.18-ukq"
     ],
     "plugins/audit/commands/layout.md": [
       "P57.1",
@@ -3540,7 +3545,8 @@
       "SG1.5",
       "SG1.6",
       "SG1.11-ukq",
-      "SG1.14-ukq"
+      "SG1.14-ukq",
+      "SG1.18-ukq"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -3825,7 +3831,8 @@
       "P148.10-xpz",
       "P148.21-xpz",
       "P155.35-gfj",
-      "SG1.6"
+      "SG1.6",
+      "SG1.18-ukq"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -6269,7 +6276,8 @@
       "SG1.5",
       "SG1.6",
       "SG1.13-ukq",
-      "SG1.14-ukq"
+      "SG1.14-ukq",
+      "SG1.18-ukq"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -10356,14 +10364,16 @@
       "P131.2",
       "SG1.9",
       "SG1.16-ukq",
-      "SG1.17-ukq"
+      "SG1.17-ukq",
+      "SG1.18-ukq"
     ],
     "plugins/audit/evals/guard-stop/case.yaml": [
       "P101.3",
       "P101.4-1cb",
       "SG1.9",
       "SG1.16-ukq",
-      "SG1.17-ukq"
+      "SG1.17-ukq",
+      "SG1.18-ukq"
     ],
     "plugins/audit/scripts/ui/panel-css/tokens-and-reset.css": [
       "P109.1"
@@ -12074,7 +12084,8 @@
       "P156.15-3st",
       "P156.20-3st",
       "P159.2",
-      "SG1.4"
+      "SG1.4",
+      "SG1.18-ukq"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -12335,7 +12346,8 @@
     "tests/test__areas.py": [
       "P131.1",
       "P138.2",
-      "SG1.11-ukq"
+      "SG1.11-ukq",
+      "SG1.18-ukq"
     ],
     "tests/test__branch.py": [
       "P131.1",
@@ -12433,7 +12445,8 @@
       "P156.15-3st",
       "P156.12-3st",
       "P159.2",
-      "SG1.4"
+      "SG1.4",
+      "SG1.18-ukq"
     ],
     "tests/test__doctor_ado.py": [
       "P131.1"
@@ -12730,7 +12743,8 @@
       "SG1.11-ukq",
       "SG1.5",
       "SG1.14-ukq",
-      "SG1.10-ukq"
+      "SG1.10-ukq",
+      "SG1.18-ukq"
     ],
     "tests/test__report_html.py": [
       "P131.1",
@@ -12949,7 +12963,8 @@
       "SG1.5",
       "SG1.6",
       "SG1.13-ukq",
-      "SG1.14-ukq"
+      "SG1.14-ukq",
+      "SG1.18-ukq"
     ],
     "tests/test_audit_status.py": [
       "P131.1",
@@ -13238,7 +13253,8 @@
     ],
     "tests/test_guard_edits.py": [
       "P131.1",
-      "SG1.7"
+      "SG1.7",
+      "SG1.18-ukq"
     ],
     "tests/test_guard_history_rewrite.py": [
       "P131.1",
@@ -13507,7 +13523,8 @@
       "P148.12-xpz",
       "P152.10",
       "P155.30-gfj",
-      "SG1.16-ukq"
+      "SG1.16-ukq",
+      "SG1.18-ukq"
     ],
     "tools/lints/_ui_theme_lints.py": [
       "P131.2"
@@ -13568,7 +13585,8 @@
       "P155.17-gfj",
       "P155.30-gfj",
       "P161.5-toy",
-      "SG1.16-ukq"
+      "SG1.16-ukq",
+      "SG1.18-ukq"
     ],
     "tests/test__ui_theme_lints.py": [
       "P131.2"
@@ -13708,11 +13726,13 @@
     ],
     "plugins/audit/scripts/governance/_floor_guard.py": [
       "SG1.4",
-      "SG1.12-ukq"
+      "SG1.12-ukq",
+      "SG1.18-ukq"
     ],
     "tests/test__floor_guard.py": [
       "SG1.4",
-      "SG1.12-ukq"
+      "SG1.12-ukq",
+      "SG1.18-ukq"
     ],
     "plugins/audit/evals/bugfix/scaffold.sh": [
       "SG1.9",
@@ -13731,7 +13751,8 @@
     ],
     "tests/test_build_shop.py": [
       "SG1.16-ukq",
-      "SG1.17-ukq"
+      "SG1.17-ukq",
+      "SG1.18-ukq"
     ]
   },
   "bugs": [

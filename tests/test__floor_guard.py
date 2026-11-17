@@ -667,6 +667,62 @@ def _suppressions(check):
           [f["line"] for f in _moves(other, M.SUPPRESSION_ADDED)] == [3])
 
 
+# --- the marker is read where the linter reads it --------------------------------
+# Each spelling below was run through ruff on a two-line file before it was
+# written here: the deny rows are the ones ruff obeyed (the import was no longer
+# reported), the allow rows the ones it did not. A guard that matched the word
+# anywhere passes every deny row and fails the allow rows; a guard that read
+# only the lower-case word at the comment's start fails the deny rows.
+
+def _marker(check):
+    read = ("x = 1  # NOQA\n", "x = 1  # NoQa: F401\n", "x = 1  #noqa:F401\n",
+            "x = 1  #   noqa\n", "x = 1  # noqa trailing words\n",
+            "x = 1  # todo  # noqa\n")
+    seen = [(t, [f["line"] for f in _moves(_run([("src/cart.py", CART_SRC,
+                                                    CART_SRC + t)]),
+                                          M.SUPPRESSION_ADDED)]) for t in read]
+    check("fm33 a marker the linter obeys is a finding in any letter case, with "
+          "codes or text after it, or opening a second comment: %r" % (seen,),
+          [s[1] for s in seen] == [[10]] * len(read))
+
+    whole = ("# ruff: noqa\n", "# flake8: NOQA\n", "#ruff:noqa: F401\n")
+    seen = [(h, [f["line"] for f in _moves(_run([("src/cart.py", CART_SRC,
+                                                   h + CART_SRC)]),
+                                          M.SUPPRESSION_ADDED)]) for h in whole]
+    check("fm34 a file-level marker on its own line is a finding: %r" % (seen,),
+          [s[1] for s in seen] == [[1]] * len(whole))
+
+    prose = ("x = 1  # the word noqa here\n", "# a noqa added to source code is read\n",
+             "x = 1  # see: noqa\n", "x = 1  # noqa-like\n", "x = 1  # xnoqa\n",
+             "x = 1  # ruff: noqa\n")
+    got = [(t, _run([("src/cart.py", CART_SRC, CART_SRC + t)])) for t in prose]
+    test = _run([("tests/test_cart.py", CART_TEST,
+                  CART_TEST.replace("# three items", "# three items, a noqa is not"))])
+    check("fa21 a comment that only mentions the word - in prose, glued to other "
+          "letters, or a file-level directive written after code - gives no "
+          "finding, in source or in a test: %r / %s"
+          % ([(t, _show(g)) for t, g in got if g["findings"]], _show(test)),
+          [g["findings"] for _t, g in got] == [[]] * len(prose)
+          and [g["answer"] for _t, g in got] == [M.CLEAN] * len(prose)
+          and test["findings"] == [] and test["answer"] == M.CLEAN)
+
+    strings = ('MSG = "add # noqa to silence it"\n',
+               'def note():\n    """Write # noqa only with a code."""\n')
+    got = [_run([("src/cart.py", CART_SRC, CART_SRC + s)]) for s in strings]
+    base = "import os  # noqa: F401\n"
+    upper = _run([("src/boot.py", base, base + "import sys  # NOQA: F401\n")])
+    fresh = _run([("src/new_mod.py", None, "import sys\n\nimport x  # NOQA: E402\n")],
+                 accepted=("noqa: E402",))
+    check("fa22 a string or docstring holding the marker gives no finding, and "
+          "the marker in another letter case is the same code - beside the base's "
+          "copy and against an accepted entry: %s / %s / %s"
+          % ([_show(g) for g in got], _show(upper), _show(fresh)),
+          [g["findings"] for g in got] == [[], []]
+          and [g["answer"] for g in got] == [M.CLEAN, M.CLEAN]
+          and upper["findings"] == [] and upper["answer"] == M.CLEAN
+          and fresh["findings"] == [] and fresh["answer"] == M.CLEAN)
+
+
 # --- what cannot be read ---------------------------------------------------------
 
 def _unreadable(path):
@@ -762,6 +818,7 @@ def _cases(check):
     _allowed(check)
     _definitions(check)
     _suppressions(check)
+    _marker(check)
     _untold(check)
     _shape(check)
 

@@ -431,6 +431,40 @@ def _config_cases(check, cfg, tmp, tf):
             "mcp__filesystem__write_file", {"path": conf, "content": _CF_BODY},
             agent=None)
 
+        # The config spelled in other letter cases. Whether that is the same file
+        # is the filesystem's answer, so it is read off the scratch directory the
+        # config sits in - a probe file and its upper-cased name - never off the
+        # platform's name. Where case folds, the variant IS the config and is held
+        # as the config is; where it does not, the variant names another file
+        # (absent here) and the rule does not fire. The config exists for the
+        # case, since a variant spelling is matched to it by `samefile`.
+        cdir = os.path.dirname(conf)
+        os.makedirs(cdir, exist_ok=True)
+        with open(conf, "w", encoding="utf-8") as fh:
+            fh.write(_CF_BODY)
+        probe = os.path.join(cdir, "cf-fold-probe")
+        with open(probe, "w", encoding="utf-8") as fh:
+            fh.write("\n")
+        folds = os.path.exists(os.path.join(cdir, "CF-FOLD-PROBE"))
+        os.remove(probe)
+        name = os.path.basename(conf)
+        variants = (os.path.join(cdir, name.upper()),
+                    os.path.join(cdir, "Audit.Config.Json"),
+                    os.path.join(os.path.dirname(cdir),
+                                 os.path.basename(cdir).upper(), name))
+        seen = [(v, agent is None, _cf_decide(cfg, "Write", _w(v), tmp, agent)[0])
+                for v in variants for agent in ("agent-cf", None)]
+        want = [(v, main, ("ask" if main else "block") if folds else "allow")
+                for v, main, _got in seen]
+        os.remove(conf)
+        check("cf19 the config's path in another letter case - file name upper, "
+              "mixed, directory upper - is held as the config where the scratch "
+              "filesystem folds case (folds=%s): a subagent refused, the main "
+              "session asked; where it does not fold, it is another file and "
+              "allowed" % (folds,),
+              seen == want and len(seen) == 6,
+              "got %r" % ([(os.path.relpath(v, tmp), m, g) for v, m, g in seen],))
+
         # the allow twins: the rule is one file, a write, of THIS project
         for agent, who, k in (("agent-cf", "subagent", "s"),
                               (None, "main session", "m")):

@@ -5774,8 +5774,9 @@ Other languages are read by the `ASSERTIONS` lines a test file lost.
 
 A suppression is a finding only when its code - the marker's kind with one rule code read out of
 the comment by the `SUPPRESSIONS` table, a blanket marker being its own code - occurs in no comment
-of the file's base copy, so a file new to the diff reports every suppression it arrives with. What
-that gives up: a code the base already carries is no finding however many lines it spreads to, and
+of the file's base copy, so a file new to the diff reports every suppression it arrives with. A
+`noqa` is read only where ruff reads one (`_IN_COMMENT`, `_OWN_LINE`): where a comment opens, in any
+letter case, so a comment that only mentions the word is no finding. What that gives up: a code the base already carries is no finding however many lines it spreads to, and
 a kind is read without its scope. `accepted` holds codes a caller never wants reported, each written
 as its comment would be (`noqa: E402`); an entry matches by kind and exact code - surrounding blanks
 ignored, case significant, a prefix of a code another code - and an entry the table cannot read whole makes the answer could-not-tell rather than

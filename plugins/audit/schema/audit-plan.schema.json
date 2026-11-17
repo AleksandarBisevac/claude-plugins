@@ -1017,7 +1017,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Skills every executor subagent working in this area loads BEFORE the task's own — house conventions first, task specifics second. Merged with task.skills and deduped, area first. Explicit null is allowed for symmetry with task.skills and is EQUIVALENT to []: the area is itself the fallback, so there is nothing beneath it for a null to stop — it reads as 'this area deliberately declares no defaults', and resolution treats both as contributing nothing."
+          "description": "Skills every executor subagent working in this area loads BEFORE the task's own — house conventions first, task specifics second. The order the resolver applies: meta.defaultSkills, then meta.areas[tag].skills, then task.skills, deduped, first mention wins. Explicit null is allowed for symmetry with task.skills and is EQUIVALENT to []: the area is itself the fallback, so there is nothing beneath it for a null to stop — it reads as 'this area deliberately declares no defaults', and resolution treats both as contributing nothing."
         },
         "owner": {
           "type": [

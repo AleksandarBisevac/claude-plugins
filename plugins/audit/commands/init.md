@@ -252,8 +252,9 @@ Parse each result; findings that don't parse as JSON get one retry prompt, then 
 Before synthesizing, write down what the plan will rest on that nobody settled. Synthesis
 builds on these whether or not they are said, and an assumption the user never saw is one
 they cannot correct before tasks are minted from it. Settled means the user said it, in
-`$ARGUMENTS` or a step-2 answer; a point recon read off a file and nobody confirmed is still
-an assumption, and naming the file makes it a one-word correction. One line each:
+`$ARGUMENTS` or in any answer they gave in steps 2 to 3.5; a point recon read off a file and
+nobody confirmed is still an assumption, and naming the file makes it a one-word correction.
+One line each:
 
 - the stack and the test runner the gates will call, and the file each was read off
   (`pytest, pinned in pyproject.toml`) - a runner picked from several candidates, or with no
@@ -267,8 +268,9 @@ line that matters. When nothing is unsettled, the whole list is the words
 `no open assumptions`.
 
 This step asks nothing. Synthesis proceeds on the list as written, and step 6 prints it above
-the proposed plan, where the user corrects a line in the same answer that approves the plan -
-there is no separate question round for assumptions.
+the proposed plan. A correction is typed as the answer to step 6's gate question: the synthesis
+it touches is redone and the plan is presented again, and approval is the option chosen on that
+next presentation - there is no separate question round for assumptions.
 
 ## 5. Synthesis (orchestrator)
 

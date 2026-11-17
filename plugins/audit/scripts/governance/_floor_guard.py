@@ -32,7 +32,9 @@ THE MOVES, NAMED IN `MOVES`:
   * a skip added to a test file (`SKIPS`);
   * a suppression whose CODE is new to the file, read in comments only
     (`SUPPRESSIONS`), so one inside a fixture string - text a test feeds to
-    something else - is not. A code is the marker's kind with one rule code
+    something else - is not, and a `noqa` only where ruff reads one
+    (`_IN_COMMENT`), so a comment that mentions the word is not. A code is
+    the marker's kind with one rule code
     out of the comment (`noqa E402`, `type: ignore attr-defined`), and a
     blanket marker is its own code; a code some comment of the base copy
     already carries is the file's existing contract and gives no finding, so
@@ -196,6 +198,22 @@ _EMPTY_CATCH = re.compile(r"\bcatch\b\s*(?:\([^)]*\))?\s*\{\s*\}")
 # Over the RAW text, because the message is a string; the `throw` must be code.
 _NOT_IMPLEMENTED = re.compile(r"\bthrow\s+new\s+Error\s*\(\s*['\"`]\s*not\s+implemented",
                               re.IGNORECASE)
+
+# Where a comment carries a kind its linter reads only at a comment's opening -
+# read that way, and only that way, over a comment. The noqa shape is ruff's,
+# as ruff 0.16.2 obeyed it on two-line probe files: a hash, optional blanks, the
+# word in any letter case, then the end, a blank or a colon. A later hash inside
+# one comment opens another, and ruff obeys the word there too; the word after
+# other text with no hash before it, glued to letters or to other punctuation,
+# or inside a string is not obeyed. The file-level form names its linter in
+# lower case and is obeyed on a line of its own only. A caller's accepted entry
+# is not a comment: it is read through `SUPPRESSIONS`, in its written case.
+_IN_COMMENT = {
+    "noqa": re.compile(r"#[ \t]*(?i:noqa)(?![^\s:])"),
+}
+_OWN_LINE = {
+    "noqa": re.compile(r"[ \t]*#[ \t]*(?:ruff|flake8)[ \t]*:[ \t]*(?i:noqa)(?![^\s:])"),
+}
 
 _COMPILED = dict((name, re.compile(pat)) for name, pat, _f in SKIPS)
 _COMPILED.update((name, re.compile(pat)) for name, pat, _c in SUPPRESSIONS)
@@ -479,14 +497,25 @@ def _line_starts(text):
     return starts
 
 
-def _suppression_keys(text, anchored=False):
+def _in_comment(name, text, alone):
+    """The match of kind `name` in one line's comment text: where its linter
+    reads it when `_IN_COMMENT` says where (and, on a line holding nothing but
+    the comment, in its `_OWN_LINE` form too), anywhere in the comment else."""
+    if name not in _IN_COMMENT:
+        return _COMPILED[name].search(text)
+    own = _OWN_LINE[name].match(text) if alone and name in _OWN_LINE else None
+    return own or _IN_COMMENT[name].search(text)
+
+
+def _suppression_keys(text, anchored=False, alone=False):
     """[(kind, end, ((kind, code), ...))] for each suppression kind `text`
     carries, read through `SUPPRESSIONS`; a blanket one's single key has code
     None. `anchored` reads only a marker at the start of `text` - the form a
-    caller's accepted entry is written in."""
+    caller's accepted entry is written in; otherwise `text` is a line's comment
+    and `alone` says the line holds nothing else."""
     found = []
     for name, _pat, _codes in SUPPRESSIONS:
-        m = _COMPILED[name].match(text) if anchored else _COMPILED[name].search(text)
+        m = _COMPILED[name].match(text) if anchored else _in_comment(name, text, alone)
         if not m:
             continue
         codes_at = _CODES[name].match(text, m.end()) if name in _CODES else None
@@ -502,7 +531,8 @@ def _line_marks(raw_lines, code_lines, comment_lines, fam, test):
     marks = []
     for idx, (code, comment) in enumerate(zip(code_lines, comment_lines)):
         ln = idx + 1
-        for name, _end, keys in _suppression_keys(comment):
+        alone = bool(comment.strip()) and raw_lines[idx].strip() == comment.strip()
+        for name, _end, keys in _suppression_keys(comment, alone=alone):
             marks.append(_mark(SUPPRESSION_ADDED, name, ln, ln, raw_lines) + (keys,))
         if not test:
             continue

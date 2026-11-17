@@ -1075,6 +1075,23 @@ def _cases(check):
               "the real one in: the same suite is an orphan there: %r"
               % (_without["orphans"],),
               "tests/test_build_shop.py" in _without["orphans"])
+
+        # The eval command writes each run under the allowed directory's
+        # `results/`, which git ignores: a file there exists on one machine only,
+        # so it must not move the answer. `test_scaffold.py` is the allow twin -
+        # the same walk still reads the case directory beside `results/`.
+        _kw = _sc_tree(["_a.py"], [], ["test__a.py", "test_scaffold.py",
+                                       "test_transcript.py"])
+        _ran_dir = os.path.join(_evals, "results", "20261117T000000Z")
+        os.makedirs(_ran_dir)
+        with open(os.path.join(_ran_dir, "transcript.py"), "w", encoding="utf-8") as fh:
+            fh.write("\n")
+        _ok, _ran = _harness.attempt(L.selftest_coverage, allowed_dirs=(_evals,), **_kw)
+        check("sc14 a file under an allowed directory's results/ does not make a "
+              "same-named suite a non-orphan, and a case file beside it still "
+              "does: %r" % (_ran,),
+              _ok and _ran["orphans"] == ["tests/test_transcript.py"]
+              and _ran["total"] == 1)
     finally:
         _harness.remove_tree(sc_root)
     _real = L.selftest_coverage()
@@ -1084,11 +1101,23 @@ def _cases(check):
           % (_real["defects"],),
           _real["defects"] == [] and _real["total"] > 100)
     _real_names = _real["covered"] + _real["uncovered"] + _real["exempt"]
+    # The question is where a classified module SITS, so each kind-prefixed name
+    # is resolved to its file through the directories the classifier walked; a
+    # module whose name merely contains the directory's letters is no answer.
+    _kind_dirs = dict([("scripts", L.SCRIPTS_DIR), ("hooks", L.HOOKS_DIR)]
+                      + list(L.DEV_DIRS)
+                      + [(k, os.path.dirname(p)) for k, p in L.DEV_FILES])
+    _real_paths = [os.path.join(_kind_dirs.get(n.split("/", 1)[0], ""), n.split("/", 1)[1])
+                   for n in _real_names]
+    _evals_dir = os.path.realpath(os.path.join(L.PLUGIN_ROOT, "evals"))
+    _under = [p for p in _real_paths
+              if os.path.realpath(p).startswith(_evals_dir + os.sep)]
     check("sc13 the real tree reads plugins/audit/evals/ as allowed a suite: "
-          "tests/test_build_shop.py is no orphan, and nothing under evals/ is a "
-          "module the classifier counts: %r" % (_real["orphans"],),
+          "tests/test_build_shop.py is no orphan, and no classified module's path "
+          "sits under evals/: %r / %r" % (_real["orphans"], _under),
           "tests/test_build_shop.py" not in _real["orphans"]
-          and not [n for n in _real_names if "evals" in n or "build-shop" in n])
+          and _real_paths and all(os.path.isfile(p) for p in _real_paths)
+          and _under == [])
     check("sc8 NO FILE IS CLASSIFIED MIGRATED any more - the classes are covered, "
           "exempt and the four defects, and the helpers that spoke the old vocabulary "
           "are gone, so nothing can read a file as listed-and-skipped",

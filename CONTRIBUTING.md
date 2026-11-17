@@ -1007,7 +1007,9 @@ argument for a skill.
 `claude plugin eval` (evals/**/case.yaml + graders) is the right tool for
 testing the COMMAND PROSE (the orchestrator behavior CI cannot reach), but as
 of v0.6.0 it prints "currently in early access" and `eval init` does not
-scaffold — the case schema is not public. Adopt as soon as it opens up:
+scaffold — the case schema was not public then. (It is now: the plugin-evals
+documentation describes it in its 'case.yaml fields' and 'Grader types' tables, which
+the two shipped cases under `plugins/audit/evals/` follow.) Adopt as soon as it opens up:
 priority cases are `/audit:status` on a missing manifest, `run` guards on a
 done task, and the `#no-plan` bypass round-trip.
 

@@ -172,10 +172,10 @@ LAYERS = (
     ("_machine_paths", "_excerpt", "_usage_core", "_utc_stamp",
      # `_clause_coverage` numbers a task's clauses and reads a writer's answer
      # against them. It reaches `_output` and nothing else, and it is down here
-     # because its two consumers are entry points that may not load each other:
-     # `audit-lookup` builds the writer's closing line from the numbering and
-     # `drive-phase` reads the answer against it, so the one numbering lives
-     # below both.
+     # because its consumers are entry points that may not load each other - among
+     # them `audit-lookup`, which builds the writer's closing line from the
+     # numbering, and `drive-phase`, which reads the answer against it - so the one
+     # numbering lives below every one of them.
      "_clause_coverage",
      # `_impact` lists the tracked files that read a declared file, through
      # `git grep`. It reaches `_output` and nothing else; `audit-lookup`, which

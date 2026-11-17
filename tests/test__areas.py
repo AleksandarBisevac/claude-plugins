@@ -27,6 +27,7 @@ here would find it.
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
+import json
 import os
 import re
 import shutil
@@ -263,6 +264,17 @@ def _cases(check):
           not old_order.findall(M.SKILLS_RULE) and not old_order.findall(ref_text),
           "constant %r; reference %r"
           % (old_order.findall(M.SKILLS_RULE), old_order.findall(ref_text)))
+    # The schema's description of an area's skills is what an editor's tooltip
+    # shows the person writing that list, so it carries the resolver's order in
+    # the constant's own words, whole and once.
+    schema_path = os.path.join(_harness.SCRIPTS_DIR, os.pardir, "schema",
+                               "audit-plan.schema.json")
+    with open(schema_path, encoding="utf-8") as fh:
+        area_skills = json.load(fh)["$defs"]["area"]["properties"]["skills"]
+    said = " ".join(str(area_skills.get("description", "")).split())
+    check("so3 the schema's description of an area's skills carries SKILLS_RULE "
+          "once and no 'area first' order: %r" % (said,),
+          said.count(M.SKILLS_RULE) == 1 and not old_order.findall(said))
 
     # --- conflicts + unregistered tags -------------------------------------------
     check("c1 two areas declaring DIFFERENT reviewers is a conflict worth naming",

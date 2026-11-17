@@ -26,7 +26,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `drive-phase.py submit`, and the drive filing a headless writer's work, read the task's diff
   against the HEAD the red-first helper builds its throwaway at, for a test deleted or its
   definition changed, a skip, a suppression new to the file and a stub, and file what was found
-  in the return as a `floorGuard` block the verb writes - an agent's own block is dropped. The
+  in the return as a `floorGuard` block the verb writes - an agent's own block is dropped by
+  `submit`, and the block's mark is a convention, not a proof, on a return filed straight through
+  `audit-task.py file-return`. The
   reviewer's brief, per task and per owed task of a phase review, shows the block as an input to
   judge, with findings, files not read and could-not-tell kept apart; a return with no block
   reads *not measured*. A finding changes no gate, commit or sign-off, and a reading that crashes
@@ -65,7 +67,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   one line each, what neither you nor the interview settled - the stack and test runner and the
   file each was read off, what "done" means for a dimension you did not define, what the plan
   leaves out - or says `no open assumptions`, never inventing one. It asks nothing: the approval
-  gate prints the list above the proposed plan and you correct a line in the same answer. Synthesis
+  gate prints the list above the proposed plan, a correction is typed as the answer to the gate
+  question, the synthesis it touches is redone and the plan is presented again, and approval is
+  the option chosen on that next presentation. Synthesis
   now requires each `Acceptance:` clause of a task to state a command and its result, a named
   behaviour with its input and output, or a file that must or must not change; a finding that
   cannot be stated that way goes to the phase's `openChoices` instead of becoming a vague clause.
@@ -91,8 +95,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   compound command never matched; the harness's OS sandbox confines the shell instead. bugfix's
   `ran-the-suite` now reads unittest's tally inside a tool result rather than counting a call -
   it had passed on a call the harness denied - and guard-stop's `no-destructive-git` no longer
-  matches a stash listing, now catches a checkout of a path after `--`, and sets `min: 0` beside
-  `max: 0`, without which it could never pass.
+  matches a stash listing, an unstaging restore or a dry-run clean, now catches a checkout of a
+  path after `--` (a revision before it or not) or with no `--`, a forced checkout, a merge reset
+  and each of them behind git's `-C`, and sets `min: 0` beside `max: 0`, without which it could
+  never pass. bugfix's `tests-ran-before-edit` now orders the run before the first edit of the
+  fixture's source package rather than any edit, so writing the regression test first passes.
 
 ### Changed
 - **An Acceptance list the clause reader could not number is now read, never silently dropped.**
