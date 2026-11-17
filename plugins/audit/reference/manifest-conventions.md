@@ -167,6 +167,15 @@ not yet `done` or `cancelled` the validator **refuses** an entry naming no file
 (`COMPATIBILITY.md` → *Validation stays additive*). For `regression` and `gate-only`
 the shape is recommended, not required.
 
+**A task's Acceptance list is the text after the LAST `Acceptance:` in its `description`, and
+each item is a clause the executor answers** after the `tests.add` entries
+(`scripts/governance/_clause_coverage.py`'s `acceptance_reading`). Write it `Acceptance: (1) ...
+(2) ...` — the recommended form. A Markdown list (`1.` or `1)` starting a line) is read too, by
+the same rule that a number opens an item only after the one before it; prose with no number is
+read whole as ONE item; a marker with nothing after it is no item. When either of those two
+readings applied, `/audit:task add` and `scope --description` print one `acceptance:` line with
+the item count and the shape, so the author sees what the executor will be held to.
+
 **A CSS file named in `--files` that gives a selector a `:focus` or `:hover` rule gets an
 entry of its own, appended after the author's own `tests.add`.** `/audit:task add` reads
 only the `.css` paths already in the task's declared scope (never a wider scan) and asks

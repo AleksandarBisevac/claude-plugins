@@ -215,7 +215,165 @@ def _resume_cases(check):
                         clauses) == "")
 
 
+def _reading(description):
+    """(shape, items) of one description, as the clause reader reads it."""
+    got = M.acceptance_reading(description)
+    return got["shape"], got["items"]
+
+
+def _shape_cases(check):
+    """The shapes an Acceptance list is read in, and the silences.
+
+    Every fixture is built so that a reader with one rule missing reads a
+    DIFFERENT list: the line-start anchor dropped opens an item at a version
+    number, the sequence rule dropped opens one at a nested line or a year,
+    the unnumbered shape dropped reads prose as nothing, a whitespace tail read
+    as text reads a blank marker as one item, and shapes allowed to mix read a
+    parenthesised list's inner `1.` line as an item of its own.
+    """
+    md = "Do it.\nAcceptance:\n1. the first item\n2. the second item\n3. the third\n"
+    check("cs1 a Markdown numbered list after the marker is one item per number, "
+          "each the text after its number with surrounding whitespace removed, "
+          "read by the line-start shape: %r" % (_reading(md),),
+          _reading(md) == ("line-numbered",
+                           ["the first item", "the second item", "the third"])
+          and M.acceptance_items(md)
+          == ["the first item", "the second item", "the third"])
+
+    paren_close = "Acceptance:\n1) one thing\n2) another thing"
+    check("cs1b a number closed by a parenthesis at a line start is the same "
+          "shape: %r" % (_reading(paren_close),),
+          _reading(paren_close) == ("line-numbered", ["one thing", "another thing"]))
+
+    crlf = "Acceptance:\r\n1. first\r\n2. second\r\n"
+    check("cs1c Windows line endings read the same items, with no carriage "
+          "return left in any item: %r" % (_reading(crlf),),
+          _reading(crlf) == ("line-numbered", ["first", "second"]))
+
+    same_line = "Acceptance: 1. first\n2. second"
+    check("cs1d a `1.` right after the marker on its own line opens item one: "
+          "the marker ends a label, not a sentence: %r" % (_reading(same_line),),
+          _reading(same_line) == ("line-numbered", ["first", "second"]))
+
+    version_mid = ("Acceptance:\n1. bump to version 2. then rebuild\n"
+                   "2. the decimal 3.5 stays as written")
+    check("cs2 a number and a full stop in the MIDDLE of an item's line opens "
+          "nothing - `2.` inside `version 2. then` stays inside item one (the "
+          "line-start anchor's case): %r" % (_reading(version_mid),),
+          _reading(version_mid)
+          == ("line-numbered", ["bump to version 2. then rebuild",
+                                "the decimal 3.5 stays as written"]))
+
+    version_prose = ("Acceptance: ruff 1. and vermin 2. are both clean, "
+                     "and coverage holds at 2.5 percent.")
+    check("cs2b a marker followed by prose whose numbers all sit mid-sentence "
+          "is one unnumbered item - no number opened anything: %r"
+          % (_reading(version_prose),),
+          _reading(version_prose)
+          == ("unnumbered", ["ruff 1. and vermin 2. are both clean, and "
+                             "coverage holds at 2.5 percent."]))
+
+    nested = ("Acceptance:\n1. the first, which lists\n3. an aside that is not "
+              "next\n2. the second")
+    check("cs3 a line-start number that is NOT the next in sequence stays "
+          "inside the item it sits in (the sequence rule's case): %r"
+          % (_reading(nested),),
+          _reading(nested)
+          == ("line-numbered", ["the first, which lists\n3. an aside that is "
+                                "not next", "the second"]))
+
+    from_two = "Acceptance:\n2. the second\n3. the third"
+    check("cs3b a list starting at 2 opens no numbered item - the first must "
+          "be 1 - so it is read whole, as ONE unnumbered item, never as "
+          "nothing: %r" % (_reading(from_two),),
+          _reading(from_two) == ("unnumbered", ["2. the second\n3. the third"]))
+
+    year = ("Acceptance: the release holds the fix it shipped in\n"
+            "2026. The sweep is green.")
+    check("cs3c a sentence that begins a line with a year and a full stop "
+          "opens nothing; the text is one unnumbered item: %r" % (_reading(year),),
+          _reading(year)
+          == ("unnumbered", ["the release holds the fix it shipped in\n"
+                             "2026. The sweep is green."]))
+
+    year_twin = ("Acceptance: the release holds the fix it shipped in\n"
+                 "1. The sweep is green.")
+    check("cs3d TWIN of cs3c: the same text with `1.` at the line start opens "
+          "item one there, so the year's silence is the sequence rule and not "
+          "a reader that ignores line starts: %r" % (_reading(year_twin),),
+          _reading(year_twin) == ("line-numbered", ["The sweep is green."]))
+
+    paren_wins = ("Acceptance:\n(1) the list reads:\n1. an inner line\n"
+                  "(2) the second")
+    shape, items = _reading(paren_wins)
+    check("cs4 a parenthesised list whose first item holds a line-start `1.` "
+          "is read as parenthesised: two items, the inner line inside the "
+          "first (the shapes do not mix): %r" % ((shape, items),),
+          shape == "parenthesised" and len(items) == 2
+          and "1. an inner line" in items[0]
+          and items[1].startswith("the second"))
+
+    plain = "Acceptance: the full sweep is green; ruff and vermin are clean."
+    check("cs5 a marker followed by unnumbered text is exactly ONE item holding "
+          "that text: %r" % (_reading(plain),),
+          _reading(plain)
+          == ("unnumbered",
+              ["the full sweep is green; ruff and vermin are clean."]))
+
+    padded = "Acceptance:\n\n  line one,\n\n  line two  \n\t"
+    check("cs5b the unnumbered item is the text with SURROUNDING whitespace "
+          "removed and nothing else changed - the inner blank line and indent "
+          "stay: %r" % (_reading(padded),),
+          _reading(padded) == ("unnumbered", ["line one,\n\n  line two"]))
+
+    blank = "Do it.\nAcceptance:  \n\t\r\n  "
+    check("cs6 a marker followed by nothing but whitespace yields NO item and "
+          "no shape (the twin of cs5: a reader taking whitespace as text "
+          "reads one item here): %r" % (_reading(blank),),
+          _reading(blank) == (None, []) and M.acceptance_items(blank) == [])
+    check("cs6b no marker at all yields no item and no shape: %r"
+          % (_reading("no list here (1) a (2) b"),),
+          _reading("no list here (1) a (2) b") == (None, []))
+
+    paren = DESCRIPTION
+    check("cs7 the parenthesised form reads as before and names its shape: %r"
+          % (_reading(paren),),
+          _reading(paren)[0] == "parenthesised"
+          and M.acceptance_items(paren) == _reading(paren)[1]
+          and len(_reading(paren)[1]) == 2)
+
+    clauses = M.task_clauses({"description": md, "tests": {"add": ["tests/a.py: x"]}})
+    check("cs8 task_clauses numbers a Markdown list's items after the tests.add "
+          "entries, as acceptance clauses: %r"
+          % ([(c["n"], c["kind"], c["text"]) for c in clauses],),
+          [(c["n"], c["kind"], c["text"]) for c in clauses]
+          == [(1, "tests.add", "tests/a.py: x"),
+              (2, "acceptance", "the first item"),
+              (3, "acceptance", "the second item"),
+              (4, "acceptance", "the third")])
+
+
+def _reading_line_cases(check):
+    """The one line `add` and `scope` print about how acceptance was read."""
+    md = "Acceptance:\n1. the first\n2. the second"
+    plain = "Acceptance: the sweep is green."
+    lines = [M.reading_line(md), M.reading_line(plain)]
+    check("cs9 the reading line names the item count and the shape for a "
+          "line-numbered list and for unnumbered text: %r" % (lines,),
+          lines[0].startswith("acceptance: 2 items") and "numbered" in lines[0]
+          and lines[1].startswith("acceptance: 1 item") and "unnumbered" in lines[1]
+          and all("\n" not in ln for ln in lines))
+    quiet = [M.reading_line(DESCRIPTION), M.reading_line("Acceptance:  "),
+             M.reading_line("no marker")]
+    check("cs9b the parenthesised form, an empty marker and no marker print "
+          "nothing - an empty string, so a caller printing it only when "
+          "truthy adds no line: %r" % (quiet,),
+          quiet == ["", "", ""])
+
+
 def _cases(check):
+    _harness.stage(check, "cc-shape", _shape_cases)
+    _harness.stage(check, "cc-line", _reading_line_cases)
     _harness.stage(check, "cc-number", _numbering_cases)
     _harness.stage(check, "cc-verdict", _verdict_cases)
     _harness.stage(check, "cc-path", _path_cases)

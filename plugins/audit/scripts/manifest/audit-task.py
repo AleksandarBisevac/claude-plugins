@@ -490,6 +490,8 @@ import _tree_stamp            # noqa: E402  (parse_stamp, take: the per-path dig
 import _proc_group            # noqa: E402  (shell_invocation: `record-listing` runs
 #                                            its version command under the shell a
 #                                            plan command runs under)
+import _clause_coverage       # noqa: E402  (reading_line: how a description's Acceptance
+#                                            list was read, said at the write that set it)
 
 E_INVALID, E_USAGE, E_LIVE, E_STALE = 1, 2, 3, 4
 
@@ -4648,6 +4650,7 @@ def _locked_add(args, project, config, mpath, title, out):
     for line in _gate_directory_notes(project, task["tests"]["gate"],
                                       assembled.get("meta")):
         out(line)
+    _say_acceptance_reading(task.get("description"), out)
     if task["tests"]["expectRedFirst"] and not task["tests"]["add"]:
         # The stored expectation, not the mode: a fix task born tdd with no case
         # to place has it false (`_expects_red_first`), owes no red, and is not
@@ -10164,6 +10167,8 @@ def _locked_batch_add(args, project, config, mpath, doc, out, seed=None):
         out("  gate: %s (%s)" % (", ".join(gate) if gate else "none", gate_basis))
         out("  request: saved verbatim as phase.request; open choices: %s"
             % ("; ".join(phase["openChoices"]) or "none, as the file says",))
+    for task in phase["tasks"][first:]:
+        _say_acceptance_reading(task.get("description"), out, task["id"])
     for line in _wg.collapse(warnings, written_manifest):
         out("WARNING: " + line)
     if unjournaled:
@@ -11306,6 +11311,8 @@ def _locked_scope(args, project, config, mpath, tid, out):
     for row in changes:
         out("  %s: %s -> %s" % (row["field"], json.dumps(row["from"]),
                                 json.dumps(row["to"])))
+    if args.description:
+        _say_acceptance_reading(node.get("description"), out)
     if mode_note:
         out("  tests.mode: %s" % (mode_note,))
     for item in companions:
@@ -16836,18 +16843,29 @@ def _written_ids(headline):
     return set(_HEADLINE_ID.findall(subject))
 
 
+def _say_acceptance_reading(description, out, subject=None):
+    """Print how a description just written had its Acceptance list read, when
+    that was not the parenthesised form - a statement, never a refusal, so the
+    author sees the clauses the executor will be held to. The parenthesised
+    form and a description with no item print nothing."""
+    line = _clause_coverage.reading_line(description, subject)
+    if line:
+        out("  " + line)
+
+
 def _decided_lines(body, ids):
-    """The lines a write decided and the short form keeps: its gate basis, the
-    command that runs what it wrote, every warning about the gate and files of
-    the task it wrote (`TASK_WARNING_LEADS`), and every warning naming an id it
-    wrote. Any other warning - the validator's, about another item or the plan
-    as a whole, re-printed by every write, and a verb's warning about the
-    phase rather than the task - is what the short form drops and `--verbose`
-    prints."""
+    """The lines a write decided and the short form keeps: its gate basis, how
+    the Acceptance list it wrote was read, the command that runs what it wrote,
+    every warning about the gate and files of the task it wrote
+    (`TASK_WARNING_LEADS`), and every warning naming an id it wrote. Any other
+    warning - the validator's, about another item or the plan as a whole,
+    re-printed by every write, and a verb's warning about the phase rather than
+    the task - is what the short form drops and `--verbose` prints."""
     kept = []
     for line in body:
         text = line.strip()
-        if text.startswith("gate:") or text.startswith("ready now -- "):
+        if text.startswith(("gate:", "acceptance:", "acceptance (",
+                            "ready now -- ")):
             kept.append(text)
         elif text.startswith(TASK_WARNING_LEADS):
             kept.append(text)

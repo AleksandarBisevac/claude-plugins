@@ -10,7 +10,8 @@ lives here too, and only here: `audit-lookup.py` builds the writer's closing lin
 from `task_clauses` and this check reads the answer against the same list, so a
 clause the writer was asked about and a clause this check holds it to cannot be
 two different clauses. The list is the task's `tests.add` entries first, then the
-numbered items of its description after the LAST `Acceptance:` marker.
+items of its description after the LAST `Acceptance:` marker, read in one of the
+shapes `acceptance_reading` names.
 
 WHAT IS CHECKED, AND WHAT IS NOT. Four things make a clause a gap: no entry for
 its number, an entry that is not shaped as the closing line asks, a `delivered`
@@ -61,22 +62,27 @@ _output.install_path()
 # --- the clauses ----------------------------------------------------------------
 ACCEPTANCE_MARK = "Acceptance:"
 
+# The shapes an Acceptance list is read in, tried in this order; the first
+# that yields an item decides, so the shapes never mix.
+SHAPE_PARENTHESISED = "parenthesised"
+SHAPE_LINE_NUMBERED = "line-numbered"
+SHAPE_UNNUMBERED = "unnumbered"
 
-def acceptance_items(description):
-    """The texts of the description's numbered Acceptance items, in order.
+_PAREN_NUMBER = re.compile(r"\((\d+)\)")
+# A number closed by a full stop or a parenthesis, at the start of a line (or of
+# the text right after the marker, which ends a label rather than a sentence),
+# after at most an indent, and followed by whitespace: `version 2. then` sits
+# mid-line and `1.5` has no space after its stop, so neither opens anything.
+_LINE_NUMBER = re.compile(r"(?m)^[ \t]*(\d+)[.)](?=\s|\Z)")
 
-    Read after the LAST `Acceptance:` - a description numbers its own steps
-    before it - and by sequence: `(2)` opens the second item only once `(1)`
-    has opened the first, so a parenthesised number inside an item's own words
-    (`the last of (7) lines`) stays in that item. A description with no
-    `Acceptance:`, or no `(1)` after it, has no items."""
-    text = description if isinstance(description, str) else ""
-    at = text.rfind(ACCEPTANCE_MARK)
-    if at < 0:
-        return []
-    body = text[at + len(ACCEPTANCE_MARK):]
+
+def _sequence_items(pattern, body):
+    """The items `pattern`'s numbers open in `body`, by sequence: `2` opens the
+    second item only once `1` has opened the first, so a number that is not the
+    next one stays inside the item it sits in. Each item is the text up to the
+    next opening number, with its surrounding whitespace removed."""
     opens, want = [], 1
-    for m in re.finditer(r"\((\d+)\)", body):
+    for m in pattern.finditer(body):
         if int(m.group(1)) == want:
             opens.append((m.start(), m.end()))
             want += 1
@@ -84,9 +90,76 @@ def acceptance_items(description):
             for i, (_start, end) in enumerate(opens)]
 
 
+def acceptance_reading(description):
+    """`{"shape", "items"}` - how the description's Acceptance list reads, and
+    its items in order. `shape` is None exactly when there are no items.
+
+    Read after the LAST `Acceptance:` - a description numbers its own steps
+    before it - in these shapes, the first that yields an item deciding:
+
+    - parenthesised, `(1) ... (2) ...`: the recommended form, and the only one
+      read before the other two existed - so it is tried first and reads exactly
+      as it always did. A number inside an item's own words (`the last of (7)
+      lines`) is not the next in sequence and stays in that item.
+    - line-numbered, Markdown's own list (`1.` or `1)` starting a line): what an
+      author writes by habit. Read by the same sequence rule, and only at a line
+      start, so a version number or a decimal inside a sentence opens nothing.
+    - unnumbered: a marker followed by prose (`Acceptance: the sweep is green.`)
+      is still acceptance, so the whole text, its surrounding whitespace
+      removed, is ONE item.
+
+    There is no silent other reading: before the line-numbered and unnumbered
+    shapes, a list written either way read as no item at all, and a check holding a writer to its clauses passed
+    because it had read nothing. A description with no marker, or a marker
+    followed by nothing but whitespace, has no items."""
+    text = description if isinstance(description, str) else ""
+    at = text.rfind(ACCEPTANCE_MARK)
+    if at < 0:
+        return {"shape": None, "items": []}
+    body = text[at + len(ACCEPTANCE_MARK):]
+    for shape, pattern in ((SHAPE_PARENTHESISED, _PAREN_NUMBER),
+                           (SHAPE_LINE_NUMBERED, _LINE_NUMBER)):
+        items = _sequence_items(pattern, body)
+        if items:
+            return {"shape": shape, "items": items}
+    whole = body.strip()
+    if whole:
+        return {"shape": SHAPE_UNNUMBERED, "items": [whole]}
+    return {"shape": None, "items": []}
+
+
+def acceptance_items(description):
+    """The texts of the description's Acceptance items, in order - see
+    `acceptance_reading` for the shapes they are read in."""
+    return acceptance_reading(description)["items"]
+
+
+def reading_line(description, subject=None):
+    """The one line a write that sets a description prints about how its
+    Acceptance list was read, or "" when there is nothing new to say.
+
+    The executor is held to every item, so an author whose list was read by
+    the line-numbered or the unnumbered shape is told the count and the shape at
+    the write, where a misreading is still cheap to fix. The parenthesised form
+    and a description with no item print nothing. `subject` names the task when
+    one write sets several descriptions."""
+    reading = acceptance_reading(description)
+    count = len(reading["items"])
+    if reading["shape"] == SHAPE_LINE_NUMBERED:
+        said = ("%d item%s, read from a list numbered at line starts - the "
+                "executor answers each" % (count, "" if count == 1 else "s"))
+    elif reading["shape"] == SHAPE_UNNUMBERED:
+        said = ("1 item, the whole unnumbered text after the marker - the "
+                "executor answers it as one clause")
+    else:
+        return ""
+    return ("acceptance (%s): %s" % (subject, said) if subject
+            else "acceptance: %s" % (said,))
+
+
 def task_clauses(task):
     """`[{"n", "kind", "text"}]` - the clauses a task owes an answer to, numbered
-    from one: its `tests.add` entries first, in order, then the numbered items of
+    from one: its `tests.add` entries first, in order, then the items of
     its description's Acceptance list. THE ONE NUMBERING: the writer's closing
     line (`audit-lookup.py`) is built from this list and `check` reads the
     writer's answer against the same list rather than number the clauses a

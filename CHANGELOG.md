@@ -84,6 +84,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   classifier now reads `plugins/audit/evals/` as a directory whose files are allowed a suite and
   never required one, so that suite is not reported as an orphan.
 
+### Changed
+- **An Acceptance list the clause reader could not number is now read, never silently dropped.**
+  The items after a task description's last `Acceptance:` were read only when numbered
+  `(1) ... (2) ...`; a Markdown numbered list and unnumbered prose read as no clause, so the
+  executor was held to its `tests.add` entries alone and nothing said so. The reader now takes
+  the parenthesised form exactly as before, else a number closed by `.` or `)` at the start of a
+  line, by the same rule that a number opens an item only after the one before it (a version
+  number inside a sentence opens nothing), else the whole text after the marker as one item; a
+  marker with nothing after it is still no item. `/audit:task add` (single and `--from-file`) and
+  `scope --description` print one `acceptance:` line with the count and the shape when either new
+  reading applied, and nothing new for the parenthesised form. **On upgrade:** a task whose list
+  was unread owes an answer per clause at its next submit; a `done` task is not re-read, and
+  nothing a plan holds stops validating (`COMPATIBILITY.md` names the change).
+
 ### Security
 - **An agent can no longer switch its own governance off with an edit tool.** `.claude/**` is
   outside the plan gate, so an Edit or Write of `.claude/audit.config.json` setting

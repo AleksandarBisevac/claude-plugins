@@ -33,7 +33,8 @@ abandoned - ask the human (AskUserQuestion), then re-run with `--takeover`.
    work → offer `/audit:propose materialize <PROP-id>` first.
 2. **Gather the answers (ask only for what's missing):** `--description` (the brief - on stdin
    with `--description -` and a quoted heredoc whenever it holds backticks or code punctuation,
-   since a shell eats a backticked span and the writer refuses the hole it leaves); `--files`;
+   since a shell eats a backticked span and the writer refuses the hole it leaves; end it
+   `Acceptance: (1) ... (2) ...` - for another form the write says how it read it); `--files`;
    `--outputs` for files the task produces; `--tests-mode tdd|regression|gate-only`;
    `--tests-add "<path>: <what it asserts>"` - the leading path is what reaches `files` and
    `fileIndex`; `--expect-green-first` for a refactor whose added tests must pass on the base;

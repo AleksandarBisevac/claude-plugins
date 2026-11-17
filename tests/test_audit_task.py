@@ -23448,6 +23448,111 @@ def _expect_green_first_cases(check):
           and rows[0]["from"] is None and rows[0]["to"] == block)
 
 
+def _acceptance_reading_cases(check):
+    """`add` and `scope` say how an Acceptance list was read when it was not
+    the parenthesised form.
+
+    The executor is held to every item the clause reader takes from the
+    description, so the author is told, at the write, when that reading came
+    from a line-start numbered list or from unnumbered text taken whole. The
+    parenthesised form is the recommended one and prints nothing new, and the
+    two quiet cases (`ar3`, `ar6`) are the second direction: a line printed for
+    every description with a marker goes red there.
+    """
+    root = _harness.fixture_root("audit-task-ar-")
+    md = "Do it.\nAcceptance:\n1. the first\n2. the second"
+    plain = "Do it. Acceptance: the full sweep is green."
+    paren = "Do it. Acceptance: (1) the first (2) the second"
+
+    def project(name):
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        _panel_write._atomic_write_json(
+            os.path.join(proj, ".claude", "audit.config.json"),
+            {"manifestPath": "docs/audit/audit-plan.json"})
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        _panel_write._atomic_write_json(mpath, {
+            "meta": {"version": 2, "buildCommands": {"test": "true"}},
+            "phases": [{"id": "P1", "title": "Live", "status": "pending",
+                        "testGate": ["test"], "tasks": []}],
+            "fileIndex": {}, "bugs": []})
+        return proj
+
+    def said(txt):
+        return [ln.strip() for ln in txt.splitlines()
+                if ln.strip().startswith(("acceptance:", "acceptance ("))]
+
+    def add(proj, description):
+        return _cli_here(["add", "A task", "--phase", "P1", "--files",
+                          "src/a.ts", "--tests-mode", "tdd",
+                          "--description", description], proj)
+
+    try:
+        proj = project("add")
+        code_m, txt_m = add(proj, md)
+        code_p, txt_p = add(proj, plain)
+        code_q, txt_q = add(proj, paren)
+        code_n, txt_n = add(proj, "Do it, with no marker at all.")
+        check("ar1 `add` with a Markdown numbered Acceptance list prints ONE "
+              "line saying two items were read from a numbered list: %r"
+              % ((code_m, said(txt_m), txt_m),),
+              code_m == 0 and len(said(txt_m)) == 1
+              and said(txt_m)[0].startswith("acceptance: 2 items")
+              and "numbered" in said(txt_m)[0])
+        check("ar2 `add` with unnumbered Acceptance text prints ONE line saying "
+              "the text was read as one unnumbered item: %r"
+              % ((code_p, said(txt_p), txt_p),),
+              code_p == 0 and len(said(txt_p)) == 1
+              and said(txt_p)[0].startswith("acceptance: 1 item")
+              and "unnumbered" in said(txt_p)[0])
+        check("ar3 SECOND-DIRECTION CASE: `add` with the parenthesised form, or "
+              "with no marker, prints no acceptance line: %r"
+              % ((code_q, txt_q, code_n, txt_n),),
+              code_q == 0 and code_n == 0
+              and said(txt_q) == [] and said(txt_n) == [])
+
+        proj = project("scope")
+        add(proj, "Do it, with no marker at all.")
+        code_sm, txt_sm = _cli_here(["scope", "P1.1", "--description", md], proj)
+        code_sp, txt_sp = _cli_here(["scope", "P1.1", "--description", plain],
+                                    proj)
+        code_sq, txt_sq = _cli_here(["scope", "P1.1", "--description", paren],
+                                    proj)
+        check("ar4 `scope --description` with a Markdown numbered list prints "
+              "the same one line `add` does: %r" % ((code_sm, txt_sm),),
+              code_sm == 0 and len(said(txt_sm)) == 1
+              and said(txt_sm)[0].startswith("acceptance: 2 items"))
+        check("ar5 `scope --description` with unnumbered text prints the "
+              "one-item line: %r" % ((code_sp, txt_sp),),
+              code_sp == 0 and len(said(txt_sp)) == 1
+              and said(txt_sp)[0].startswith("acceptance: 1 item"))
+        check("ar6 SECOND-DIRECTION CASE: `scope --description` with the "
+              "parenthesised form prints no acceptance line: %r"
+              % ((code_sq, txt_sq),),
+              code_sq == 0 and said(txt_sq) == [])
+
+        proj = project("batch")
+        path = os.path.join(proj, "plan-batch.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"request": "two tasks", "openChoices": [],
+                       "phase": {"title": "Two", "desiredOutcome": "both read"},
+                       "tasks": [{"key": "a", "title": "md", "files": ["src/a.ts"],
+                                  "description": md,
+                                  "tests": {"mode": "gate-only"}},
+                                 {"title": "paren", "files": ["src/b.ts"],
+                                  "description": paren,
+                                  "tests": {"mode": "gate-only"}}]}, fh)
+        code_b, txt_b = _cli_here(["add", "--from-file", path], proj)
+        check("ar7 `add --from-file` names the task whose list was read by line "
+              "starts, and prints nothing for the parenthesised one beside it: "
+              "%r" % ((code_b, said(txt_b), txt_b),),
+              code_b == 0 and len(said(txt_b)) == 1
+              and said(txt_b)[0].startswith("acceptance (P2.1): 2 items"))
+    finally:
+        _harness.remove_tree(root)
+
+
 STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("at3-block", "_flag_cases"), ("at4-block", "_start_cases"),
           ("at5-block", "_close_cases"), ("at6-block", "_group_cases"),
@@ -23481,7 +23586,8 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("gk-block", "_gate_keep_cases"),
           ("lr-block", "_list_flag_cases"),
           ("grt-block", "_gate_reach_cases"),
-          ("egf-block", "_expect_green_first_cases"))
+          ("egf-block", "_expect_green_first_cases"),
+          ("ar-block", "_acceptance_reading_cases"))
 
 
 if __name__ == "__main__":

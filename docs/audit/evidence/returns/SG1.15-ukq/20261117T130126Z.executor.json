@@ -1,0 +1,110 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__clause_coverage.py tests/test_audit_task.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-17T13:20:37Z",
+    "basis": "`python3 tests/test_audit_task.py --selftest --stage ar-block` in a throwaway tree at HEAD exited 1 with 5 of 7 collected tests failing an assertion, the task's own among them (HEAD's own tests on HEAD's code failing only the unknown-stage check for `ar-block`, which the task's test files add - the stage is new at HEAD: its cases did not exist at HEAD, which is red for them), each passing with the working tree's implementation - ar1 (house FAIL), ar2 (house FAIL), ar4 (house FAIL), ar5 (house FAIL), ar7 (house FAIL): SELFTEST FAILED: 2/7 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "READER (plugins/audit/scripts/governance/_clause_coverage.py): new acceptance_reading(description) -> {shape, items}. It tries three shapes in order and the first that yields an item decides, so they never mix. (a) `parenthesised`: the old regex and slicing, moved unchanged into _sequence_items. (b) `line-numbered`: _LINE_NUMBER = (?m)^[ \\t]*(\\d+)[.)](?=\\s|\\Z), read by the same sequence rule. The text right after the marker counts as a line start, so `Acceptance: 1. x` opens item one (case cs1d). A number must be followed by whitespace, so `1.5` opens nothing. (c) `unnumbered`: body.strip() as ONE item when it is not empty. A marker followed only by whitespace, or no marker, gives shape None and []. acceptance_items() now returns acceptance_reading()[\"items\"]. New reading_line(description, subject=None) returns the line for shapes (b) and (c) and \"\" otherwise. Docstrings say why each shape exists. WRITER (plugins/audit/scripts/manifest/audit-task.py): imports _clause_coverage (layer below, edge rendered into the guide's module map by `_deps.py --write-map`). _say_acceptance_reading() prints the line after the gate lines in single `add`, after the change rows in `scope` when --description was passed, and once per new task in `add --from-file` as `acceptance (P2.1): ...`. _decided_lines keeps lines starting `acceptance:` / `acceptance (`, so the default short output shows the line. THE REAL LINES, printed by the ar-block fixtures through the verb's own __main__: shape (b) `add` printed `acceptance: 2 items, read from a list numbered at line starts - the executor answers each`. Shape (c) printed `acceptance: 1 item, the whole unnumbered text after the marker - the executor answers it as one clause`. Shape (a) `Acceptance: (1) the first (2) the second` printed nothing new: `[audit-task] P1.3 added to P1 -- A task; written: docs/audit/audit-plan.json` / `gate: test (the phase's testGate, wide -- ...)` / the tdd WARNING / `ready now -- /audit:run P1.3`, and no acceptance line. REAL-DATA ALLOW PROOF: scratch sg1.15/dump_items.py was run over every task of docs/audit/phases/*.json before the change (sg1.15/before.json) and after it (sg1.15/after.json), and both dumps are kept. Before: tasks=1545 marked=95 marked_no_item=35 of_which_whitespace_only=0 yielded=60. After: tasks=1545 marked=95 marked_no_item=0 of_which_whitespace_only=0 yielded=95. All 60 tasks that yielded items before read the identical list after, with 0 differing. The 35 newly read tasks are 11 by shape (b) (SG1.1-SG1.8, SG1.12-14: item counts equal their 1.-n. lines) and 24 by shape (c). No task with a marker is left reading nothing, and none of the marked tasks has a whitespace-only marker. The last item of a list still runs to the end of the description, as in shape (a), so an ADDED BEFORE START block after a list joins its last item. TESTS: tests/test__clause_coverage.py adds stages cc-shape and cc-line with cases cs1-cs9b. They cover the adversarial set: a version number and a decimal mid-sentence (cs2, cs2b), a year starting a line (cs3c, with twin cs3d), a nested out-of-sequence line (cs3), a list starting at 2 (cs3b), a parenthesised list whose first item holds a line-start `1.` (cs4), CRLF (cs1c), whitespace-only (cs6) and task_clauses numbering (cs8). The old cc cases are unchanged and green. `python3 tests/test__clause_coverage.py --selftest`: ALL PASS 34/34. tests/test_audit_task.py adds stage ar-block (STAGES row last) with ar1-ar7. `--stage ar-block`: 7/7; fb-block + sl-block: 26/26. RED: first run on unmodified code: clause suite 15/17 with both new blocks RAISED on the missing acceptance_reading/reading_line; ar-block 2/6 with ar1/ar2/ar4/ar5 red. Submit command: `python3 tests/test_audit_task.py --selftest --stage ar-block` (helper preview took 15 s, verdict red/proved: 5 of 7 failing an assertion). The whole test_audit_task suite does not fit the helper's deadline. That command leaves out the cs cases. A helper preview on `python3 tests/test__clause_coverage.py --selftest` (13:17:32Z) also returned proved, but by introduced-symbol absence, not by an assertion, which is why it was not the filed command. MUTATION PROBE scratch sg1.15/mutations.py runs in a throwaway copy, with output in sg1.15/mutations.out, exit 0, MUTATIONS ALL CAUGHT. Baseline twins: clause 34/34 and ar-block 7/7. The dump twin read 60/60 identically. Rows and the cases they turned red: line-start anchor removed -> cs2, cs2b. Sequence rule removed -> cs3, cs3b, cs3c. Shape (c) removed -> cs5, cs5b, cs2b, cs3b, cs3c, cs9, ar2, ar5. ALLOW (c) firing on whitespace -> cs6, cs9b. Shapes allowed to mix -> cs4. ALLOW line printed for shape (a) -> cs9b, ar3, ar6, ar7. Add/scope line removed -> ar1, ar2, ar4, ar5, ar7. Short form dropping the line -> the same five. DOCS: the CHANGELOG.md Unreleased/Changed entry and a COMPATIBILITY.md section-1 Promised entry each name the behaviour change on upgrade: a task whose list was unread owes an answer per clause at its next submit, a done task is not re-read, and nothing stops validating (the validator does not read the list - `grep -rln 'Acceptance\\|_clause_coverage' plugins/audit/scripts plugins/audit/hooks` names only audit-task.py, _clause_coverage.py, audit-lookup.py, drive-phase.py). reference/manifest-conventions.md gets a new paragraph under New task template. commands/task.md: `--description` now says `end it Acceptance: (1) ... (2) ... - for another form the write says how it read it`. A pointer to the reference file was refused by measure-context --gate (`BREACH /audit:task add: names reference/manifest-conventions.md in its body`), so task.md states the form itself. Its figure was 7877/8000 before and 7967/8000 after (`python3 tools/measure-context.py --gate`, exit 0, no ceiling raised). PLUGIN-BUILD-GUIDE.md: the _clause_coverage section states the shapes and reading_line, and the module map regenerates the audit-task line. GATES RUN: the orchestrator's run-test-gate.py ... SG1 --task SG1.15-ukq (not recorded) printed GATE GREEN, exit 0. tests/test__refs.py ALL PASS 318/318 (ia cases unchanged). tests/test_audit_lookup.py 204/204. ruff and vermin -t=3.8- clean on the four changed .py. prose_number_claims, house_style_violations, doc_prose_numbers and map_drift each 0. layer_violations 1, which is panel/_panel_state.py's, not mine. DEPENDANTS: drive-phase.py (gap_summary, resume_text, task_clauses/check at submit and on the writer path) still correct: it reaches the items only through task_clauses, so shape (a) is byte-identical (60/60). Shapes (b) and (c) were exercised via scratch sg1.15/callers.py: SG1.1 (b) owes 5 clauses, all-declined covered, last missing -> gap [5]; P130.4 (c) owes 3, last missing -> gap [3]. audit-lookup.py (an acceptance_items/task_clauses alias, writer_closing_line) is unchanged for (a): SG1.15-ukq still reads `clauses 3 to 7 are the Acceptance items (1) to (5)`. (b) SG1.1 reads `clauses 2 to 5 are the Acceptance items (1) to (4)`. FINDING, outside scope and not fixed: for (c) it prints `clause 3 is the Acceptance items (1) of the task description` for a description that holds no `(1)` - the wording should name the unnumbered text, which needs audit-lookup.py. tests/test_audit_lookup.py still green: its identity pins (M.acceptance_items is _cc.acceptance_items) hold. tests/test__refs.py and commands/init.md were left alone as told, and init.md's `(1) ... (2) ...` is still the recommended form. .github/sweep-costs.json has no figure for the new ar-block, so it is weighed by the suite's figure over its blocks. tests/test_commit_task_work.py imports helpers from test_audit_task.py, and none of them was renamed. Also outside scope: tools/lints/_deps.py's LAYERS comment says _clause_coverage's `two consumers are entry points`, and audit-task.py is now a third. The layer reasoning still holds, but the count is stale. I edited only through Edit/Write except one `sed -i` on _clause_coverage.py, a docstring word, which no hook refused.",
+    "descriptive": "A task's Acceptance list written as a Markdown numbered list or as plain prose is now read as clauses the executor must answer, instead of silently as none. /audit:task add and scope say how the list was read, and the parenthesised form reads exactly as before."
+  },
+  "testsAdded": [
+    "tests/test__clause_coverage.py cs1-cs9b: a Markdown numbered list (with `.` or `)`, CRLF, right after the marker) yields one item per number by the sequence rule; mid-sentence version numbers and decimals, a line-start year, a nested out-of-sequence line and a list starting at 2 open nothing; a parenthesised list wins over an inner line-start `1.`; unnumbered text is one stripped item; a whitespace-only marker and no marker yield none; task_clauses numbers the new items; reading_line speaks for the line-numbered and unnumbered shapes and is empty for the parenthesised one and for none",
+    "tests/test_audit_task.py ar1-ar7: `add` and `scope --description` print one `acceptance:` line for a Markdown list and for unnumbered text and none for the parenthesised form or no marker; `add --from-file` names the task whose list was read by line starts and stays quiet for the parenthesised task beside it"
+  ],
+  "casesAdded": [
+    [
+      "cs1",
+      "cs1b",
+      "cs1c",
+      "cs1d",
+      "cs2",
+      "cs2b",
+      "cs3",
+      "cs3b",
+      "cs3c",
+      "cs3d",
+      "cs4",
+      "cs5",
+      "cs5b",
+      "cs6",
+      "cs6b",
+      "cs7",
+      "cs8",
+      "cs9",
+      "cs9b"
+    ],
+    [
+      "ar1",
+      "ar2",
+      "ar3",
+      "ar4",
+      "ar5",
+      "ar6",
+      "ar7"
+    ]
+  ],
+  "claims": "claims:\n1 the shape order and the no-mix rule are the for loop in _clause_coverage.acceptance_reading over (SHAPE_PARENTHESISED, SHAPE_LINE_NUMBERED) then body.strip(); the line-start rule is _LINE_NUMBER's (?m)^ anchor; the printed line is reading_line, called by audit-task._say_acceptance_reading from add, scope (only with --description) and add --from-file, and kept in the short form by _decided_lines; COMPATIBILITY's 'the validator does not read the list' rests on the grep in the outcome naming no validator module\n2 mutations.py: 8 rows each CAUGHT by the named cases (anchor matched once, restored byte for byte, __pycache__ purged); the ALLOW rows (whitespace read as text, line printed for shape (a)) turned cs6/cs9b and cs9b/ar3/ar6 red; twins: unmodified copy green and the real-data dump 60/60 identical; the first run on unmodified code was red (clause blocks RAISED, ar 2/6)\n3 grep for acceptance_items|task_clauses|_clause_coverage over scripts and tests: audit-lookup.py (alias + writer_closing_line), drive-phase.py (two task_clauses/check sites), test_audit_lookup.py (identity pins) - each exercised per shape or left green; left: writer_closing_line's '(1)' wording for an unnumbered item and _deps.py's 'two consumers' comment, both outside this task's files and named in the outcome\n4 task.md's 'end it Acceptance: (1) ... (2) ...' is a recommendation, not a must; 'the write says how it read it' is enforced by reading_line and pinned by ar1-ar7; the reader's behaviour the conventions paragraph describes is pinned by cs1-cs9b\n5 the before/after counts are deterministic reads of a fixed tree, reproduced by the probe's dump twin in a second run with a gap (60/60 both times); the task.md byte figure is measure-context's own output, deterministic\n6 n/a - the reader is a parser of author text by design, not a guard over an operation\n7 every count is in this return beside the command that re-derives it (dump_items.py, measure-context.py --gate); no number was written into shipped prose, and the 'three shapes' wording was removed from the guide and the module docstrings",
+  "stamp": "audit-stamp: {\"content\":\"sha256:a0cb5ea6f325a6838123632ae6d5747e79a2da354f125f0852c42c680fa32a3a\",\"dirtyDigest\":\"sha256:67d0420a54c6d9142773228ce2fd95a8d11adae5f66b95449acba01bdc961a5e\",\"dirtyPaths\":{\"CHANGELOG.md\":\"fcf2f4c6fa74e150\",\"COMPATIBILITY.md\":\"068c76f7cd3788a7\",\"PLUGIN-BUILD-GUIDE.md\":\"dcc3f1d5f429099a\",\"plugins/audit/commands/task.md\":\"a3ea20b43f7d746c\",\"plugins/audit/reference/manifest-conventions.md\":\"963bd60077d9714d\",\"plugins/audit/scripts/governance/_clause_coverage.py\":\"f702be8448a29f90\",\"plugins/audit/scripts/manifest/audit-task.py\":\"2f101b3dca613a18\",\"tests/test__clause_coverage.py\":\"00911d344b944bec\",\"tests/test_audit_task.py\":\"9cae8f83c0b5a9cb\"},\"head\":\"f5ddbf76\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"COMPATIBILITY.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/commands/task.md\",\"plugins/audit/reference/manifest-conventions.md\",\"plugins/audit/scripts/governance/_clause_coverage.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"tests/test__clause_coverage.py\",\"tests/test_audit_task.py\"],\"scopeDigest\":\"sha256:4b144392b9dfd4f3e1b9be7227bc405e448ea10d09b5d6c84ba447bebb97f92c\",\"v\":2}",
+  "floorGuard": {
+    "answer": "clean",
+    "basis": "read 4 of the diff's 9 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 5 file(s) not read, having no syntax known here: CHANGELOG.md, COMPATIBILITY.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/commands/task.md, plugins/audit/reference/manifest-conventions.md; 2 test file(s) not compared for definition-changed, defining no test* function: tests/test__clause_coverage.py, tests/test_audit_task.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "COMPATIBILITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/commands/task.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/reference/manifest-conventions.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "tests/test__clause_coverage.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test_audit_task.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      }
+    ],
+    "base": {
+      "commit": "f5ddbf768413142917516cc813ef87f2ddfb451e"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-17T13:20:43Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": [
+    "tests/test__clause_coverage.py: a Markdown numbered acceptance list yields one item per number by the sequence rule, unnumbered text yields one item, an empty marker yields none, and the parenthesised form reads exactly as before - not checked: the submit's command did not run `tests/test__clause_coverage.py`, so the ids bound to it were not compared with any printed label"
+  ]
+}

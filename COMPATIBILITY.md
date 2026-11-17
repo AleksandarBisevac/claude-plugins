@@ -320,6 +320,18 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   unchained row appearing *after* a chained one in the same file, since without that
   the chain would be opt-out. The verdict a record reaches is the thing to depend on;
   the bytes it reaches it from are not.
+- **A task description's Acceptance list is read in more shapes, and that is a behaviour
+  change on upgrade, named as one.** The items after the last `Acceptance:` used to be read
+  only when numbered `(1) ... (2) ...`; a Markdown numbered list (`1.` starting a line) and
+  unnumbered text after the marker read as no clause at all, and the executor was held to
+  none of them. Now the first is read item by item and the second as one item. What that
+  changes for a plan that exists: **a task whose Acceptance list was unread owes an answer
+  per clause at its NEXT submit** — the executor's closing line asks for one, and the drive
+  reads the answer against them. A `done` task is not re-read: its clauses were judged, or
+  not, when it closed, and this change reopens nothing. **Nothing a plan holds stops
+  validating** — the validator does not read the description's list, and the parenthesised form reads
+  exactly the items it always did. `/audit:task add` and `scope --description` say how a
+  list in either of the new shapes was read; nothing else in the output changes.
 
 ### Not promised
 

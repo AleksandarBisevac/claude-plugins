@@ -439,7 +439,7 @@ L9:
   audit-logs -> _claude_home, _gate_feed, _output
   audit-lookup -> _areas, _claude_home, _clause_coverage, _config_rules, _evidence_io, _excerpt, _filed_returns, _gate_feed, _impact, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _scoped_commit
   audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _filed_returns, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme, _worktrees
-  audit-task -> _affected_tests, _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _impact, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _tree_stamp, _utc_stamp, _verdict_binding, _warning_groups, _worktrees
+  audit-task -> _affected_tests, _areas, _branch, _claude_home, _clause_coverage, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _impact, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _tree_stamp, _utc_stamp, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
@@ -5642,8 +5642,17 @@ are `tests/test__wave.py`.
 ### `plugins/audit/scripts/governance/_clause_coverage.py`
 Whether a writer answered every clause its task owes.
 
-`task_clauses(task)` is the one numbering: the `tests.add` entries in order, then the numbered items
-of the description after its last `Acceptance:` marker. `audit-lookup.py` builds the writer's closing
+`task_clauses(task)` is the one numbering: the `tests.add` entries in order, then the items of the
+description after its last `Acceptance:` marker. `acceptance_reading(description)` reads those items in
+these shapes, the first that yields an item deciding, so they never mix: parenthesised numbers
+(`(1) ... (2) ...`, the recommended form and the only one read before); else a number closed by a full
+stop or a parenthesis at the start of a line, by the same sequence rule, so a version number inside a
+sentence opens nothing; else the whole non-empty text after the marker, as ONE item. A marker followed
+by nothing but whitespace has no items. Before the second and third shapes, a list written either way
+read as no clause at all and the writer was held to none of it. `reading_line(description)` is the
+line `audit-task.py`'s `add` (single or `--from-file`) and `scope --description` print when the second
+or third shape read the list, naming the count and the shape; the first prints nothing new.
+`audit-lookup.py` builds the writer's closing
 line from it and `drive-phase.py` reads the writer's answer against it, which is why it lives below
 both rather than in either - two entry points may not load each other. `check(clauses, message,
 changed, root)` reads the JSON object the message ends with and returns `covered`, or a `gaps` list
