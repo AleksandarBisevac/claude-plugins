@@ -4922,7 +4922,7 @@ def _floor_status_cases(check):
     empty kind, nothing at all on a phase not due or one plainly clean."""
     import contextlib as _ctx_fg
     import io as _io_fg
-    move = {"move": "assertion-removed", "path": "tests/test_a.py", "line": 3,
+    move = {"move": "definition-changed", "path": "tests/test_a.py", "line": 3,
             "side": "base", "what": "an assert went"}
     unread = {"path": "tests/test_b.py", "move": "definition-changed",
               "reason": "no test definition"}
@@ -5021,6 +5021,27 @@ def _floor_status_cases(check):
           broken == ["       floor guard, not read: no evidence dir"]
           and M.floor_readings_block(plan, {"phases": [{"id": "P1"}]},
                                      nowhere, None) == {})
+
+    # A list too long for its line is cut between ids and says how many it left
+    # out; a list that fits is printed whole, with no count. A declared reading
+    # is a line of its own.
+    many = ["SG1.%d-ukq" % k for k in range(1, 15)]
+    few = ["P1.1", "P1.2"]
+    long_lines = M._floor_lines({"P1": {"notCompared": many, "declared": few}}, "P1")
+    shown = long_lines[0].split(": ", 1)[1] if long_lines else ""
+    named = shown.split(" and ")[0].split(", ")
+    more = re.search(r"and (\d+) more$", shown)
+    check("fg8 a list longer than its line names whole ids only and says how many "
+          "more there are, every id counted once; a declared reading has its own "
+          "line: %r" % (long_lines,),
+          len(long_lines) == 2 and more is not None
+          and named == many[:len(named)]
+          and len(named) + int(more.group(1)) == len(many)
+          and long_lines[1] == "       floor guard, declared changes to existing tests: "
+                               "P1.1, P1.2")
+    short = M._floor_lines({"P1": {"notCompared": few}}, "P1")
+    check("fg9 THE TWIN: a list that fits is printed whole, with no count: %r" % (short,),
+          short == ["       floor guard, files not compared: P1.1, P1.2"])
 
 
 def _selftest():

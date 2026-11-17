@@ -119,6 +119,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   fixture's source package rather than any edit, so writing the regression test first passes.
 
 ### Changed
+- **The floor guard says clean only for what it compared.** A binary test file, a Python test
+  file whose helpers, tables or fixtures changed, and a test file in a language whose assertions
+  the guard cannot see were read as clean; each is now listed as a file that could hold a move
+  and was not compared, and the answer is `partly-read` - on the reviewer's brief as *NOT clean
+  overall*, and under `/audit:status` as files not compared. A prose or data file is listed and
+  leaves the answer clean. A test file moved, by `git mv` or with its new path untracked, is no
+  longer a deleted test and its old skips are no longer new; a test moved unchanged into another
+  file is not gone. A skip put on a test's class or module now changes that test, while a reworded
+  skip reason does not, and a skip that replaced a different one elsewhere in the file is no longer
+  paired away. A suite written as labelled check rows is compared row by row. A `tests.add` path
+  with no case id bound to it covers only tests new to that file: an existing test changed there,
+  on the headless writer's route always, is now a finding; a case-bound change reads *clean apart
+  from declared changes*. Suppression markers are read where each checker reads them, so prose
+  that names one is no finding. `/audit:status` no longer cuts its floor id list mid-id; a list too
+  long for the line ends *and N more*.
 - **An Acceptance list the clause reader could not number is now read, never silently dropped.**
   The items after a task description's last `Acceptance:` were read only when numbered
   `(1) ... (2) ...`; a Markdown numbered list and unnumbered prose read as no clause, so on the

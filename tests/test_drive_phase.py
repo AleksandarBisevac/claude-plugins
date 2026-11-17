@@ -19015,6 +19015,106 @@ def _floor_guard_drive_cases(check):
           and weak["steps"] and weak["steps"][-1] == DONE)
 
 
+# A unittest file whose class already carries a skip at the base: moving the file
+# must not read that skip as added, nor the old path as a deleted test.
+_FM_TEST = "tests/test_take.py"
+_FM_MOVED = "tests/unit/test_take.py"
+_FM_BASE = ("import unittest\n\n\n@unittest.skipIf(False, 'never')\n"
+            "class TakeTest(unittest.TestCase):\n"
+            "    def test_take(self):\n        self.assertEqual(1 + 1, 2)\n\n"
+            "    def test_more(self):\n        self.assertTrue(True)\n")
+_FM_ADDS = {"mode": "regression", "add": ["%s: a new case" % (_FM_TEST,)],
+            "gate": ["true"]}
+
+
+def _fm_repo(M, name):
+    """`(root, ctx, phase, task)` over a committed one-task repository holding
+    the skipped unittest file, the task declaring that file in `tests.add`."""
+    root, mpath = _repo("flm-%s" % (name,), task_ids=TASKS[:1])
+    _write_lf(_fg_path(root, _FM_TEST), _FM_BASE)
+    _harness.git(root, "add", "-A")
+    _harness.git(root, "commit", "-qm", "the skipped suite")
+    phase = _phase_of(mpath)
+    task = dict(phase["tasks"][0], tests=_FM_ADDS)
+    return root, _verb_ctx(root, mpath), phase, task
+
+
+def _fm_moves(block):
+    return sorted((f.get("move"), f.get("path")) for f in block.get("findings") or [])
+
+
+def _floor_move_cases(check):
+    """The floor guard through the drive's own diff (`changed_rels`,
+    `floor_diff`, `floor_readers`) over a real repository: a test file moved is
+    no deletion and carries its old marks with it, whether the move is in the
+    index or the new path is untracked; a test file deleted for real still is
+    one; and a bare-path declaration of the task's test file covers what the
+    task added there, never a test the base held - on the writer's call and on
+    `submit`'s with no cases."""
+    M, why = _load("drive_phase_floor_moves")
+    if M is None:
+        check("flm1 the driver loads", False, why)
+        return
+    seen, diff = {}, ""
+    for name in ("plain", "index", "deleted"):
+        root, ctx, phase, task = _fm_repo(M, name)
+        if name == "plain":
+            os.makedirs(os.path.dirname(_fg_path(root, _FM_MOVED)), exist_ok=True)
+            os.rename(_fg_path(root, _FM_TEST), _fg_path(root, _FM_MOVED))
+        elif name == "index":
+            os.makedirs(os.path.dirname(_fg_path(root, _FM_MOVED)), exist_ok=True)
+            _harness.git(root, "mv", _FM_TEST, _FM_MOVED)
+        else:
+            os.remove(_fg_path(root, _FM_TEST))
+        block, _said = M.floor_reading(ctx, phase, task)
+        seen[name] = (block or {}).get("answer"), _fm_moves(block or {})
+        if name == "index":
+            top, _project, changes = M.changed_rels(ctx, phase)
+            diff = M.floor_diff(top, _head(root), changes or [])
+    check("flm5 the diff `floor_diff` hands the guard for a move in the index "
+          "carries git's rename header, not a deletion and an addition: %r"
+          % (diff[:300],),
+          "rename from %s\nrename to %s\n" % (_FM_TEST, _FM_MOVED) in diff
+          and "deleted file mode" not in diff)
+    check("flm1 a test file moved unchanged - its new path untracked, or the move "
+          "in the index - is no test-deleted and its class skip is not a skip "
+          "added: %r" % (seen,),
+          seen.get("plain") == ("clean", []) and seen.get("index") == ("clean", []))
+    check("flm2 THE TWIN: a test file deleted for real is still a test-deleted "
+          "finding on its path: %r" % (seen.get("deleted"),),
+          seen.get("deleted") == ("findings", [("test-deleted", _FM_TEST)]))
+
+    weak = _FM_BASE.replace("self.assertEqual(1 + 1, 2)", "self.assertTrue(True)") + (
+        "\n    def test_new(self):\n        self.assertEqual(3, 3)\n")
+    root, ctx, phase, task = _fm_repo(M, "bare")
+    _write_lf(_fg_path(root, _FM_TEST), weak)
+    writer, _said = M.floor_reading(ctx, phase, task)
+    named, _said = M.floor_reading(ctx, phase, task, None, [["test_take"]])
+    _r, _m, code, text, filed = _fg_filed(
+        M, "bare-submit", {_FG_TEST: _FG_WEAK.replace(
+            "\n\nif __name__", "\n    def test_w(self):\n        self.assertEqual(3, 3)\n"
+                               "\n\nif __name__")},
+        tests={"mode": "regression", "add": ["%s: test_w" % (_FG_TEST,)],
+               "gate": ["true"]},
+        body=_executor_body("P1.1", {"testsAdded": ["%s: test_w" % (_FG_TEST,)]}))
+    submitted = _fg_floor(filed)
+    check("flm3 a bare-path declaration does not cover a test the base held: on the "
+          "writer's call the weakened base test is a finding beside the test the "
+          "task added, and so it is on submit with no cases in the return: "
+          "%r / %r" % ((_fm_moves(writer or {}), (writer or {}).get("declared")),
+                       (code, _fm_moves(submitted), submitted.get("declared"),
+                        text[-400:])),
+          _fm_moves(writer or {}) == [("definition-changed", _FM_TEST)]
+          and (writer or {}).get("declared") == []
+          and code == 0 and _fm_moves(submitted) == [("definition-changed", _FG_TEST)]
+          and submitted.get("declared") == [])
+    check("flm4 THE TWIN: the same change with the base test named by case is "
+          "declared, and the reading says clean apart from declared changes: %r"
+          % (((named or {}).get("answer"), (named or {}).get("declared"), _said),),
+          (named or {}).get("findings") == [] and len((named or {}).get("declared") or []) == 1
+          and "clean apart from declared changes" in _said)
+
+
 STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("ws-block", "_writer_session_cases"),
           ("bg-block", "_background_gate_cases"),
@@ -19042,6 +19142,7 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("flr-block", "_floor_guard_submit_cases"),
           ("gfs-block", "_green_first_submit_cases"),
           ("flr10-block", "_floor_guard_drive_cases"),
+          ("flm-block", "_floor_move_cases"),
           ("e2e-signoff", "_e2e_signoff_cases"),
           ("sr2-block", "_redispatch_wave_cases"),
           ("lp-block", "_lint_probe_cases"),

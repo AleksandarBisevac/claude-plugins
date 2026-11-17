@@ -26,6 +26,8 @@ import _output                                     # noqa: E402  (PLUGIN_ROOT, f
 from _output import safe_stdio                     # noqa: E402
 import _loader                                     # noqa: E402
 import _status_facts as M                          # noqa: E402
+# The guard's own move names, so a fixture's move is one the guard can file.
+import _floor_guard                                # noqa: E402
 import _manifest_vocab as _vocab_sf                # noqa: E402  (the whole bug vocabulary)
 # The comparator itself, and the OTHER surface that reads it. Both are here so
 # the `porder` cases can measure the stamped rank against something derived a
@@ -2036,11 +2038,12 @@ def _intent_unanswered_cases(check):
 
 
 def _floor_block_fixture(answer="clean", findings=None, not_read=None,
-                         could_not_tell=None, source=True):
+                         could_not_tell=None, source=True, declared=None):
     """A floor block in the shape `drive-phase.py submit` files it, its field and
     mark spelled through `_filed_returns`' own names so a renamed key follows."""
     block = {"answer": answer, "basis": "read %s" % (answer,),
-             "findings": list(findings or []), "declared": [], "renamed": [],
+             "findings": list(findings or []), "declared": list(declared or []),
+             "renamed": [],
              "couldNotTell": list(could_not_tell or []),
              "notRead": list(not_read or []), "base": {"commit": "b" * 40},
              "acceptedSuppressions": [], "at": "2026-01-01T00:00:00Z"}
@@ -2055,7 +2058,7 @@ def _floor_reading_cases(check):
     return with no block, a block without the verb's mark and a return that is
     not an object each land there. A plain clean task, and any task not done,
     lands nowhere."""
-    move = {"move": "assertion-removed", "path": "tests/test_a.py", "line": 3,
+    move = {"move": _floor_guard.DEFINITION_CHANGED, "path": "tests/test_a.py", "line": 3,
             "side": "base", "what": "an assert went"}
     unread = {"path": "tests/test_b.py", "move": "definition-changed",
               "reason": "no test definition"}
@@ -2086,10 +2089,12 @@ def _floor_reading_cases(check):
         asked.append(task.get("id"))
         return returns.get(task.get("id"))
     got = M.floor_readings(phase, read)
-    check("fl1 the reading is four lists under their own keys, findings first: %r"
-          % (got,),
+    check("fl1 the reading is five lists under their own keys, findings first and "
+          "declared changes last: %r" % (got,),
           isinstance(got, dict) and list(got) == ["findings", "notCompared",
-                                                  "couldNotTell", "notMeasured"])
+                                                  "couldNotTell", "notMeasured",
+                                                  "declared"]
+          and move["move"] in _floor_guard.MOVES)
     lists = got if isinstance(got, dict) else {}
     check("fl2 a task whose answer is findings is listed under findings and "
           "nowhere else, a file it did not compare included: %r" % (lists,),
@@ -2113,10 +2118,10 @@ def _floor_reading_cases(check):
     clean_phase = {"id": "P2", "tasks": [{"id": "P2.1", "status": "done"},
                                          {"id": "P2.2", "status": "cancelled"}]}
     plain = M.floor_readings(clean_phase, lambda task: _floor_block_fixture("clean"))
-    check("fl7 a phase whose done tasks are all plainly clean reads four empty "
+    check("fl7 a phase whose done tasks are all plainly clean reads five empty "
           "lists, and a phase that is not an object reads the same: %r" % (plain,),
           plain == {"findings": [], "notCompared": [], "couldNotTell": [],
-                    "notMeasured": []}
+                    "notMeasured": [], "declared": []}
           and M.floor_readings(None, read) == plain)
     import inspect
     # The reading and the one helper it classifies through.
@@ -2127,6 +2132,46 @@ def _floor_reading_cases(check):
           "reading calls it and spells no field of the return itself",
           "_fr.floor_block(" in src and "FLOOR_FIELD" not in src
           and "floorGuard" not in src and '"source"' not in src)
+    _floor_kind_cases(check)
+
+
+def _floor_kind_cases(check):
+    """Only a file that could hold a move makes a reading NOT COMPARED: one the
+    guard read as prose or data is recorded and lists nothing, whether the block
+    says so with `kind` or was filed before `kind` existed (`move` None). A block
+    answering partly-read is not compared whatever its entries say, and a clean
+    reading apart from declared changes is its own list, never plain clean."""
+    prose = {"path": "docs/a.md", "move": None, "reason": "no syntax known",
+             "kind": _floor_guard.CANNOT_HOLD}
+    prose_old = {"path": "docs/a.md", "move": None, "reason": "no syntax known"}
+    helper = {"path": "tests/test_b.py", "move": _floor_guard.DEFINITION_CHANGED,
+              "reason": "code outside its test definitions changed",
+              "kind": _floor_guard.COULD_HOLD}
+    owned = {"move": _floor_guard.DEFINITION_CHANGED, "path": "tests/test_a.py",
+             "line": 3, "side": "tree", "what": "definition `test_a` differs"}
+    returns = {
+        "P1.1": _floor_block_fixture("clean", not_read=[prose]),
+        "P1.2": _floor_block_fixture("clean", not_read=[prose_old]),
+        "P1.3": _floor_block_fixture("partly-read", not_read=[helper]),
+        "P1.4": _floor_block_fixture("partly-read"),
+        "P1.5": _floor_block_fixture("clean", declared=[owned]),
+        "P1.6": _floor_block_fixture("clean", not_read=[prose], declared=[owned]),
+    }
+    phase = {"id": "P1", "tasks": [{"id": t, "status": "done"} for t in sorted(returns)]}
+    got = M.floor_readings(phase, lambda t: returns.get(t.get("id")))
+    lists = got if isinstance(got, dict) else {}
+    every = [t for v in lists.values() for t in v]
+    check("fl9 a file that cannot hold a move - prose or data, said by `kind` or by "
+          "an older block's empty move - makes no list: %r" % (lists,),
+          "P1.1" not in every and "P1.2" not in every)
+    check("fl10 THE TWIN: a file that could hold a move, and a block answering "
+          "partly-read, are NOT COMPARED: %r" % (lists.get("notCompared"),),
+          lists.get("notCompared") == ["P1.3", "P1.4"])
+    check("fl11 a reading clean apart from changes the task declared by case is "
+          "listed under declared, never as plain clean, and a cannot-hold file "
+          "beside it does not move it: %r" % (lists.get("declared"),),
+          lists.get("declared") == ["P1.5", "P1.6"]
+          and len(every) == len(set(every)) == 4)
 
 
 def _left_open_cases(check):

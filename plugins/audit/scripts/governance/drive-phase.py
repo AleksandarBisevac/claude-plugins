@@ -4055,7 +4055,9 @@ def floor_declared(task, cases, top, project):
     """The task's own test paths for `find_moves`' `declared`: each `tests.add`
     entry's path, spelled from `top`, as `path::case` for each case id the
     return binds to it by index (`casesAdded`), or the bare path when it binds
-    none - so a change to a test the task declares is its own to make."""
+    none. Only a `path::case` entry makes a change to a test the base held the
+    task's own; a bare path - the writer's always, and `submit`'s when the
+    return binds no case - covers the tests new to that file and nothing else."""
     hc = _loader.load_hooks_config(modname="audit__config")
     adds = (task.get("tests") or {}).get("add") or []
     cases = cases if isinstance(cases, list) else []
@@ -4096,12 +4098,15 @@ def floor_diff(top, base, changes):
     """The unified diff of `changes` (`changed_rels`) against `base`: the
     tracked paths in one `git diff <base>`, each untracked one against
     /dev/null, git's own `a/` and `b/` prefixes forced whatever the config
-    says. Raises `OSError` when git will not give it."""
+    says. The tracked diff detects renames, so a file moved in the index
+    reaches the guard as git's rename and is read old against new; the path
+    list it is limited to keeps both halves of a move, since `changed_rels`
+    lists them apart. Raises `OSError` when git will not give it."""
     tracked = [p for p, _plan, new in changes if not new]
     parts = []
     if tracked:
-        parts.append(_floor_git(top, _FLOOR_DIFF + ["--no-renames", base, "--"]
-                                + tracked))
+        parts.append(_floor_git(top, ["-c", "diff.renames=true"] + _FLOOR_DIFF
+                                + ["--find-renames", base, "--"] + tracked))
     for path in [p for p, _plan, new in changes if new]:
         parts.append(_floor_git(top, _FLOOR_DIFF + ["--no-index", "--", "/dev/null",
                                                     path], ok=(0, 1)))

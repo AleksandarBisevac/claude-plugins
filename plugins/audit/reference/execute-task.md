@@ -273,9 +273,15 @@ verb writes and refuses, and what the run commands leave behind, is
      `_floor_guard.find_moves` over the task's diff against the HEAD the red-first
      helper's throwaway is built at (`task_root` and `tree_head` in `drive-phase.py`, the one
      base), handed the `tests.add` paths with their `casesAdded` ids and
-     `floorGuard.acceptedSuppressions`. It holds `answer` (`clean`, `findings`,
-     `could-not-tell`), `findings`, `notRead` and `cannotTell` apart, and the reviewer's brief
-     shows it as an input to judge. **It refuses nothing**: no gate, commit or sign-off reads it,
+     `floorGuard.acceptedSuppressions`. A `tests.add` path with a case id bound to it makes a
+     change to that existing test the task's own (`declared`); a path with none covers only
+     the tests new to that file, so an existing test changed there is still a finding. It
+     holds `answer` (`clean`, `findings`, `could-not-tell`, or `partly-read` - nothing found
+     but a file that could hold a move was not compared), `findings`, `declared`, `notRead`
+     and `couldNotTell` apart; each `notRead` entry says whether the file `could-hold-one` (a
+     binary file, a test file whose helpers changed) or `cannot-hold-a-move` (prose, data),
+     and only the first kind makes the reading partly read. The reviewer's brief shows it as
+     an input to judge, opening with *NOT clean overall* while a could-hold file stands. **It refuses nothing**: no gate, commit or sign-off reads it,
      a reading that raises is filed as `could-not-tell` naming the exception's type, and under
      `floorGuard.mode: off` no block is filed and the brief says *not measured*. In the phase
      tree, a change already in the tree before the task started is read as the task's.
@@ -350,7 +356,8 @@ verb writes and refuses, and what the run commands leave behind, is
         a return the drive builds: the diff's paths, the proof's block with its HEAD and
         digest, every re-proof, the stamp, `casesAddedBasis` saying why no case is bound
         to a `tests.add` entry, the `floorGuard` block `submit` would file (no case ids:
-        the writer returns none), and the last session's final message in `writerClaim`, as
+        the writer returns none, so an existing test it changed is a finding, never
+        declared), and the last session's final message in `writerClaim`, as
         the session wrote it apart from the machine paths `file-return` scrubs from every
         committed return. That message is the writer's claim; the gate and the reviewer
         grade the work, never the message.

@@ -106,8 +106,10 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    labels the suite printed, reading no title (a title compare, scored as one string diff, flagged
    most of the danuvia tasks on language alone). **Each owed task's brief carries the floor
    guard's reading of its diff** - the `floorGuard` block `submit` filed, its findings, files
-   not read and could-not-tell shown apart, or *not measured* when none was filed - as leads the
-   reviewer judges; nothing at sign-off reads the block itself. **A task owing a green-first
+   not read and could-not-tell shown apart, opening *NOT clean overall* while a file that could
+   hold a move was not compared and *clean apart from declared changes* when the only changes
+   to existing tests are ones the task declared by case, or *not measured* when none was filed -
+   as leads the reviewer judges; nothing at sign-off reads the block itself. **A task owing a green-first
    proof is answered from one reader**, `green_first_reading` in `_filed_returns.py`, which the
    brief and the phase return's computed `greenFirst` both ask: the green helper's marked block
    gives its own word, and an owed proof whose filed return carries no such block is computed

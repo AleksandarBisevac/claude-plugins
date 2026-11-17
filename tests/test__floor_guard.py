@@ -26,6 +26,13 @@ from _output import safe_stdio                     # noqa: E402
 import _filed_returns                              # noqa: E402
 import _floor_guard as M                           # noqa: E402
 
+# Read through getattr, so a module without them fails each case that needs
+# them on its own line rather than ending the run; the stand-in never
+# equals a word the module writes.
+PARTLY_READ = getattr(M, "PARTLY_READ", "<absent: PARTLY_READ>")
+COULD_HOLD = getattr(M, "COULD_HOLD", "<absent: COULD_HOLD>")
+CANNOT_HOLD = getattr(M, "CANNOT_HOLD", "<absent: CANNOT_HOLD>")
+
 
 # --- building a diff ------------------------------------------------------------
 
@@ -406,20 +413,26 @@ def _allowed(check):
                    declared=("tests/test_cart.py",))
     other = _run([("tests/test_cart.py", CART_TEST, tree)],
                  declared=("tests/test_cart.py::test_empty",))
-    check("fa3 a changed definition the task declared is returned as declared, "
-          "apart from findings, and only for what was declared: %s / %s / %s"
+    check("fa3 a changed definition the task declared by its case is returned as "
+          "declared, apart from findings; a bare path or another case declares no "
+          "definition the base already held: %s / %s / %s"
           % (_show(by_case), _show(by_file), _show(other)),
           by_case["findings"] == [] and len(by_case["declared"]) == 1
           and by_case["declared"][0]["path"] == "tests/test_cart.py"
           and by_case["answer"] == M.CLEAN
-          and by_file["findings"] == [] and len(by_file["declared"]) == 1
+          and len(_moves(by_file, M.DEFINITION_CHANGED)) == 1 and by_file["declared"] == []
           and len(_moves(other, M.DEFINITION_CHANGED)) == 1 and other["declared"] == [])
 
     tree = JS_TEST.replace("toBe(3)", "toBe(4)")
     got = _run([("tests/add.test.js", JS_TEST, tree)], declared=("tests/add.test.js",))
-    check("fa4 an assertion line changed in a declared JS test is declared, not a "
-          "finding: %s" % _show(got),
-          got["findings"] == [] and len(got["declared"]) == 1)
+    named = _run([("tests/add.test.js", JS_TEST, tree)],
+                 declared=("tests/add.test.js::adds",))
+    check("fa4 an assertion line the base held, changed in a JS test the task "
+          "declares, is a finding whether the file or a case is declared - a "
+          "line of a JS test maps to no case name, and a declaration covers "
+          "only what is new: %s / %s" % (_show(got), _show(named)),
+          len(_moves(got, M.DEFINITION_CHANGED)) == 1 and got["declared"] == []
+          and len(_moves(named, M.DEFINITION_CHANGED)) == 1 and named["declared"] == [])
 
     base = "import os  # noqa: F401\nimport sys\n"
     moved = "import sys\nimport os  # noqa: F401\n"
@@ -524,12 +537,11 @@ def _definitions(check):
     tree = ROW_SUITE.replace('    check("c1 one", 1 == 1)\n',
                              '    check("c1 one", 1 == 1)\n    check("c2 two", 2 == 2)\n')
     got = _run([("tests/test_rows.py", ROW_SUITE, tree)])
-    listed = [n for n in got["notRead"] if n["path"] == "tests/test_rows.py"]
-    check("fa12 a case row added inside a case-table function gives no finding, "
-          "and the file is listed as not read for the definition move with a "
-          "reason: %s %r" % (_show(got), got.get("notRead")),
-          got["findings"] == [] and got["answer"] == M.CLEAN and len(listed) == 1
-          and listed[0].get("move") == M.DEFINITION_CHANGED and listed[0].get("reason"))
+    check("fa12 a labelled check added inside a case-table function gives no "
+          "finding, and the file - its labelled checks compared by label, its "
+          "other code only added to - is compared, not listed: %s %r"
+          % (_show(got), got.get("notRead")),
+          got["findings"] == [] and got["answer"] == M.CLEAN and got["notRead"] == [])
 
     tree = ROW_SUITE.replace("import sys\n", "import sys  # the runner's argv\n")
     got = _run([("tests/test_rows.py", ROW_SUITE, tree)])
@@ -539,9 +551,13 @@ def _definitions(check):
 
     tree = HELPER_TEST.replace("return [1, 2]", "return [1, 2, 3]")
     got = _run([("tests/test_cart.py", HELPER_TEST, tree)])
+    listed = [n for n in got["notRead"] if n["path"] == "tests/test_cart.py"]
     check("fa14 a helper changed beside untouched test_ functions gives no finding, "
-          "and the file was read: %s %r" % (_show(got), got.get("notRead")),
-          got["findings"] == [] and got["answer"] == M.CLEAN and got["notRead"] == [])
+          "and the file is listed as not compared for the definition move - the "
+          "helper is code outside its tests: %s %r" % (_show(got), got.get("notRead")),
+          got["findings"] == [] and got["answer"] == PARTLY_READ and len(listed) == 1
+          and listed[0].get("move") == M.DEFINITION_CHANGED
+          and listed[0].get("kind") == COULD_HOLD and listed[0].get("reason"))
 
     tree = HELPER_TEST.replace("return [1, 2]", "return [1, 2, 3]").replace(
         "assert total([1, 2]) == 3", "assert total([1, 2]) >= 0")
@@ -568,8 +584,11 @@ def _definitions(check):
     got = _run([("tests/test_cart.py", base, tree)])
     check("fa19 the convention is one fixed prefix, compared case-sensitively as "
           "unittest and pytest compare it: a changed setUp and a changed "
-          "Test_upper are not tests, so no finding: %s" % _show(got),
-          M.TEST_PREFIX == "test" and got["findings"] == [] and got["answer"] == M.CLEAN)
+          "Test_upper are not tests, so no finding - they are code outside the "
+          "tests, and the file is listed as not compared: %s" % _show(got),
+          M.TEST_PREFIX == "test" and got["findings"] == []
+          and got["answer"] == PARTLY_READ
+          and [n["path"] for n in got["notRead"]] == ["tests/test_cart.py"])
 
 
 # --- a suppression is a finding only when its code is new to the file -----------
@@ -723,6 +742,448 @@ def _marker(check):
           and fresh["findings"] == [] and fresh["answer"] == M.CLEAN)
 
 
+# --- a file counts as compared only when everything that could hold a move was --
+# Each rule below is held from both sides: the deny case goes red when the rule is
+# dropped, and its allow twin goes red when the rule widens into reporting honest
+# work - a test appended, a reason reworded, a fixture added, a file moved.
+
+def _binary_diff(path, added=False):
+    """A file section as git prints a binary change: no hunk at all."""
+    head = "diff --git a/%s b/%s\n" % (path, path)
+    if added:
+        return head + ("new file mode 100644\nindex 0000000..ba93eeb\n"
+                       "Binary files /dev/null and b/%s differ\n" % (path,))
+    return head + ("index 8ce3223..ba93eeb 100644\n"
+                   "Binary files a/%s and b/%s differ\n" % (path, path))
+
+
+def _binary(check):
+    got = M.find_moves(_binary_diff("tests/Cart.Tests.cs"), lambda p: "x", lambda p: "y")
+    listed = [n for n in got["notRead"] if n["path"] == "tests/Cart.Tests.cs"]
+    check("fm35 a binary test file is listed as not read with the reason binary, as "
+          "a file that could hold a move, and the answer is not clean: %s %r"
+          % (_show(got), got.get("notRead")),
+          got["answer"] == PARTLY_READ and len(listed) == 1
+          and "binary" in listed[0]["reason"] and listed[0].get("kind") == COULD_HOLD
+          and "1 of the diff" not in got["basis"])
+
+    diff = (_binary_diff("tests/fixtures/logo.png", added=True)
+            + _binary_diff("docs/shot.png"))
+    got = M.find_moves(diff, lambda p: "x", lambda p: "y")
+    check("fa23 THE TWIN: a binary fixture added and a binary image changed cannot "
+          "hold a move: listed as not read of the first kind, and the answer stays "
+          "clean: %s %r" % (_show(got), got.get("notRead")),
+          got["answer"] == M.CLEAN and got["findings"] == []
+          and sorted(n["path"] for n in got["notRead"]) == ["docs/shot.png",
+                                                            "tests/fixtures/logo.png"]
+          and all(n.get("kind") == CANNOT_HOLD for n in got["notRead"]))
+
+
+SKIPPED_CLASS = """\
+import sys
+import unittest
+
+
+@unittest.skipIf(sys.platform == 'win32', 'posix only')
+class TestCart(unittest.TestCase):
+    def test_one(self):
+        self.assertEqual(1, 1)
+
+    def test_two(self):
+        self.assertEqual(2, 2)
+"""
+
+MARKED_MODULE = """\
+import sys
+import pytest
+
+pytestmark = pytest.mark.skipif(sys.platform == 'win32', reason='posix')
+
+
+def test_one():
+    assert 1 == 1
+
+
+@pytest.mark.skip(reason='later')
+def test_later():
+    assert 2 == 2
+
+
+def test_inline():
+    if sys.platform == 'win32':
+        pytest.skip('not on windows')
+    assert 3 == 3
+"""
+
+JS_SKIPPED = """\
+describe("cart", () => {
+  it.skip("flaky one", () => {
+    expect(1).toBe(1);
+  });
+  it("b", () => {
+    expect(2).toBe(2);
+  });
+});
+"""
+
+
+def _skips(check):
+    tree = SKIPPED_CLASS.replace("sys.platform == 'win32'", "True")
+    got = _run([("tests/test_cart.py", SKIPPED_CLASS, tree)])
+    whats = sorted(f["what"] for f in _moves(got, M.DEFINITION_CHANGED))
+    check("fm36 a class's skip decorator widened is a change to each of its test "
+          "methods: %s" % _show(got),
+          len(whats) == 2 and "TestCart.test_one" in whats[0]
+          and "TestCart.test_two" in whats[1] and got["answer"] == M.FINDINGS)
+
+    tree = MARKED_MODULE.replace(
+        "pytest.mark.skipif(sys.platform == 'win32', reason='posix')", "pytest.mark.skip")
+    got = _run([("tests/test_cart.py", MARKED_MODULE, tree)])
+    whats = [f["what"] for f in _moves(got, M.DEFINITION_CHANGED)]
+    check("fm37 a module's pytestmark widened from skipif to skip is a change to "
+          "every test it marks: %s" % _show(got),
+          len(whats) == 3 and any("test_one" in w for w in whats))
+
+    tree = JS_SKIPPED.replace('describe("cart"', 'describe.skip("cart"').replace(
+        'it.skip("flaky one"', 'it("flaky one"')
+    got = _run([("tests/cart.test.js", JS_SKIPPED, tree)])
+    check("fm38 a JS skip moved from one call to its enclosing block is a new "
+          "skip on the block's line, not paired away by kind: %s" % _show(got),
+          [(f["line"], f["side"]) for f in _moves(got, M.SKIP_ADDED)] == [(1, "tree")])
+
+    reworded = (
+        ("tests/test_cart.py", SKIPPED_CLASS,
+         SKIPPED_CLASS.replace("'posix only'", "'posix only, see the runner'")),
+        ("tests/test_mark.py", MARKED_MODULE,
+         MARKED_MODULE.replace("reason='posix')", "reason='posix hosts')")
+         .replace("reason='later'", "reason='much later'")
+         .replace("'not on windows'", "'never on windows'")),
+        ("tests/cart.test.js", JS_SKIPPED,
+         JS_SKIPPED.replace('it.skip("flaky one"', 'it.skip("flaky, see the issue"')))
+    got = [_run([row]) for row in reworded]
+    check("fa24 THE TWIN: a skip whose reason is reworded on its own line - on a "
+          "class decorator, a module pytestmark, a test's marker, a call in its "
+          "body, a JS it.skip - gives no finding and leaves the file compared: %s"
+          % [_show(g) for g in got],
+          [g["findings"] for g in got] == [[], [], []]
+          and [g["answer"] for g in got] == [M.CLEAN] * 3
+          and [g["notRead"] for g in got] == [[], [], []])
+
+
+POSIX_GUARDED = """\
+import sys
+
+if sys.platform != 'win32':
+    def test_posix():
+        assert 1 == 1
+
+
+def test_any():
+    assert True
+"""
+
+API_TEST = """\
+import pytest
+
+CASES = [(1, 2), (2, 4), (0, 0), (-1, -2)]
+
+
+def _assert_ok(resp):
+    assert resp.status == 200
+    assert resp.body == 'ok'
+
+
+def test_get(client):
+    _assert_ok(client.get('/'))
+
+
+@pytest.mark.parametrize('a,b', CASES)
+def test_double(a, b):
+    assert a * 2 == b
+"""
+
+
+def _outside(check):
+    got = _run([("tests/test_p.py", POSIX_GUARDED,
+                 POSIX_GUARDED.replace("assert 1 == 1", "pass"))])
+    check("fm39 a test defined under an if-block whose assertion is replaced is a "
+          "definition change: %s" % _show(got),
+          [f["what"] for f in _moves(got, M.DEFINITION_CHANGED)
+           if "test_posix" in f["what"]] != [])
+
+    gutted = API_TEST.replace("    assert resp.status == 200\n    assert resp.body == 'ok'\n",
+                              "    return\n")
+    cut = API_TEST.replace("[(1, 2), (2, 4), (0, 0), (-1, -2)]", "[(0, 0)]")
+    seen = []
+    for label, tree in (("helper gutted", gutted), ("table cut", cut)):
+        got = _run([("tests/test_api.py", API_TEST, tree)])
+        seen.append((label, got["answer"], [(n["path"], n["move"], n.get("kind"))
+                                            for n in got["notRead"]], got["findings"]))
+    check("fm40 a Python test file whose code outside its test definitions changed "
+          "- a helper holding the assertions gutted, a parametrize table cut - is "
+          "listed as not compared for the definition move, and the answer is not "
+          "clean: %r" % (seen,),
+          [s[1:] for s in seen] == [(PARTLY_READ, [("tests/test_api.py",
+                                                      M.DEFINITION_CHANGED, COULD_HOLD)],
+                                     [])] * 2)
+
+    grown = ("import json\n" + API_TEST
+             + "\n\ndef _assert_json(resp):\n    assert json.loads(resp.body)\n"
+             + "\n\ndef test_json(client):\n    _assert_json(client.get('/j'))\n")
+    reworded = API_TEST.replace("def _assert_ok(resp):\n",
+                                "def _assert_ok(resp):\n    \"\"\"The answer is ok.\"\"\"\n"
+                                ).replace("def test_get(client):\n",
+                                          "def test_get(client):\n    # the root\n")
+    got = [_run([("tests/test_api.py", API_TEST, t)]) for t in (grown, reworded)]
+    check("fa25 THE TWIN: a test file that only gains code - an import, a helper "
+          "and a test appended - or whose helper gains a docstring and whose test "
+          "gains a comment is compared and clean, listed nowhere: %s / %s"
+          % (_show(got[0]), _show(got[1])),
+          [(g["answer"], g["findings"], g["notRead"]) for g in got]
+          == [(M.CLEAN, [], [])] * 2)
+
+    # Every base line of the helper stays; the one line added ends it before it
+    # asserts anything, so an addition alone is not always harmless.
+    early = API_TEST.replace("def _assert_ok(resp):\n",
+                             "def _assert_ok(resp):\n    return\n")
+    got = _run([("tests/test_api.py", API_TEST, early)])
+    check("fm50 a `return` added at the top of a helper the base held is no mere "
+          "addition: the file is listed as not compared and the answer is not "
+          "clean: %s" % _show(got),
+          got["answer"] == PARTLY_READ and got["findings"] == []
+          and [(n["path"], n.get("kind")) for n in got["notRead"]]
+          == [("tests/test_api.py", COULD_HOLD)])
+
+
+HOUSE_SUITE = """\
+import sys
+
+import _harness
+
+
+def _double(n):
+    return n * 2
+
+
+def _cases(check):
+    got = _double(2)
+    check("h1 two doubled is four: %r" % (got,), got == 4)
+    check("h2 zero doubled is zero", _double(0) == 0)
+
+
+def _selftest():
+    return _harness.run(_cases)
+"""
+
+
+def _labelled(check):
+    grown = HOUSE_SUITE.replace(
+        '    check("h2 zero doubled is zero", _double(0) == 0)\n',
+        '    check("h2 zero doubled is zero", _double(0) == 0)\n'
+        '    one = _double(1)\n    check("h3 one doubled is two", one == 2)\n')
+    got = _run([("tests/test_house.py", HOUSE_SUITE, grown)])
+    check("fa26 a script-style suite that only gains a labelled check and the line "
+          "before it is compared and clean: %s %r" % (_show(got), got["notRead"]),
+          got["answer"] == M.CLEAN and got["findings"] == [] and got["notRead"] == [])
+
+    lost = HOUSE_SUITE.replace('    check("h2 zero doubled is zero", _double(0) == 0)\n', "")
+    weak = HOUSE_SUITE.replace("_double(0) == 0)", "True)")
+    got = [_run([("tests/test_house.py", HOUSE_SUITE, t)]) for t in (lost, weak)]
+    hits = [[(f["side"], "h2" in f["what"]) for f in _moves(g, M.DEFINITION_CHANGED)]
+            for g in got]
+    check("fm41 a labelled check that is gone, and one whose condition changed, are "
+          "each a definition change naming the label - on the base line and the "
+          "tree line: %s / %s" % (_show(got[0]), _show(got[1])),
+          hits == [[("base", True)], [("tree", True)]])
+
+    helper = HOUSE_SUITE.replace("return n * 2", "return {2: 4, 0: 0}.get(n)")
+    fixture = HOUSE_SUITE.replace("got = _double(2)", "got = 4")
+    got = [_run([("tests/test_house.py", HOUSE_SUITE, t)]) for t in (helper, fixture)]
+    check("fm42 a script-style suite whose code outside its labelled checks was "
+          "changed - a helper, a line a check reads - is listed as not compared "
+          "for the definition move: %s / %s" % (_show(got[0]), _show(got[1])),
+          [[(n["path"], n["move"], n.get("kind")) for n in g["notRead"]] for g in got]
+          == [[("tests/test_house.py", M.DEFINITION_CHANGED, COULD_HOLD)]] * 2
+          and [g["answer"] for g in got] == [PARTLY_READ] * 2)
+
+    renamed = HOUSE_SUITE.replace('"h2 zero doubled is zero"', '"h2 zero doubled stays zero"')
+    said = HOUSE_SUITE.replace('% (got,), got == 4)', '% (got, 4), got == 4)')
+    got = [_run([("tests/test_house.py", HOUSE_SUITE, t)]) for t in (renamed, said)]
+    check("fa27 THE TWIN: a label reworded with its check unchanged, and the "
+          "values a label prints changed, give no finding: %s / %s"
+          % (_show(got[0]), _show(got[1])),
+          [(g["answer"], g["findings"], g["notRead"]) for g in got]
+          == [(M.CLEAN, [], [])] * 2)
+
+    bare = _run([("tests/test_house.py", HOUSE_SUITE, weak)],
+                declared=("tests/test_house.py",))
+    named = _run([("tests/test_house.py", HOUSE_SUITE, weak)],
+                 declared=("tests/test_house.py::h2",))
+    check("fm43 a bare-path declaration does not cover a labelled check the base "
+          "held; the case named by its id does: %s / %s" % (_show(bare), _show(named)),
+          len(_moves(bare, M.DEFINITION_CHANGED)) == 1 and bare["declared"] == []
+          and named["findings"] == [] and len(named["declared"]) == 1)
+
+
+def _declarations(check):
+    weak = CART_TEST.replace("assert total([1, 2]) == 3", "assert total([1, 2]) >= 0")
+    grown = weak + "\n\ndef test_three():\n    assert total([1, 1, 1]) == 3\n"
+    bare = _run([("tests/test_cart.py", CART_TEST, grown)],
+                declared=("tests/test_cart.py",))
+    check("fm44 a bare-path declaration covers the definition the task added and "
+          "not the base test it weakened beside it: %s" % _show(bare),
+          [("test_total" in f["what"]) for f in _moves(bare, M.DEFINITION_CHANGED)]
+          == [True] and bare["declared"] == [] and bare["answer"] == M.FINDINGS)
+    named = _run([("tests/test_cart.py", CART_TEST, grown)],
+                 declared=("tests/test_cart.py::test_total",))
+    check("fa28 THE TWIN: the same change declared by `path::test_total` is the "
+          "task's own, and the reading says clean apart from declared changes: %s"
+          % _show(named),
+          named["findings"] == [] and len(named["declared"]) == 1
+          and named["answer"] == M.CLEAN and "declared" in named["basis"])
+
+
+SRC_PY = "import os\n\n\ndef f(x):\n    return os.path.join(x)\n"
+SRC_JS = "function f(x) {\n  return x;\n}\n"
+
+
+def _marker_kinds(check):
+    prose = (("src/m.py", SRC_PY, "# the type: ignore that stood here is gone\n"),
+             ("src/m.py", SRC_PY, "x = 1  # the type: ignore that stood here\n"),
+             ("src/m.py", SRC_PY, "# never write pragma: no cover in this module\n"),
+             ("src/m.py", SRC_PY, "x = 1  # never write pragma: no cover here\n"),
+             ("src/m.py", SRC_PY, "# gitleaks:allow is not accepted here\n"),
+             ("src/m.py", SRC_PY, "# see nosemgrep in the docs\n"),
+             ("src/m.js", SRC_JS, "// the eslint-disable comment was removed on purpose\n"),
+             ("src/m.js", SRC_JS, "x = 1; // the eslint-disable went\n"),
+             ("src/m.js", SRC_JS, "// do not add @ts-ignore here\n"),
+             ("src/m.js", SRC_JS, "// nor an @ts-expect-error\n"),
+             ("src/m.js", SRC_JS, "// istanbul ignore comments are banned\n"),
+             ("src/m.js", SRC_JS, "/* the istanbul ignore next comment went */\n"),
+             ("src/m.js", SRC_JS, "// the Stryker disable comment went\n"))
+    got = [(t, _run([(p, b, b + t)])) for p, b, t in prose]
+    loud = [(t, _show(g)) for t, g in got if g["findings"] or g["answer"] != M.CLEAN]
+    check("fa29 a prose comment that mentions a suppression - every kind, on a line "
+          "of its own or after code - is no finding: %r" % (loud,), loud == [])
+
+    marked = (("src/m.py", SRC_PY, "x = 1  # type: ignore\n"),
+              ("src/m.py", SRC_PY, "x = 1  # pragma: no cover\n"),
+              ("src/m.py", SRC_PY, "TOKEN = 'abc'  # gitleaks:allow\n"),
+              ("src/m.py", SRC_PY, "x = run()  # nosemgrep: python.lang.x\n"),
+              ("src/m.py", SRC_PY, "# nosemgrep\nx = run()\n"),
+              ("src/m.js", SRC_JS, "// eslint-disable-next-line no-undef\nx = 1;\n"),
+              ("src/m.js", SRC_JS, "/* eslint-disable */\n"),
+              ("src/m.js", SRC_JS, "x = y; // @ts-ignore\n"),
+              ("src/m.js", SRC_JS, "// @ts-expect-error\nx = y;\n"),
+              ("src/m.js", SRC_JS, "/* istanbul ignore next */\n"),
+              ("src/m.js", SRC_JS, "// Stryker disable next-line all\nx = 1;\n"))
+    got = [(t, len(_moves(_run([(p, b, b + t)]), M.SUPPRESSION_ADDED))) for p, b, t in marked]
+    check("fm45 each kind's marker where its checker reads it is still a "
+          "suppression finding: %r" % (got,),
+          [n for _t, n in got] == [1] * len(marked))
+
+
+CS_TEST = """\
+public class CartTests {
+    [Fact]
+    public void Totals() {
+        Assert.Equal(3, Total(new[] {1, 2}));
+    }
+}
+"""
+
+
+def _other_languages(check):
+    got = _run([("tests/CartTests.cs", CS_TEST, CS_TEST.replace(
+        "        Assert.Equal(3, Total(new[] {1, 2}));\n", ""))])
+    listed = [n for n in got["notRead"] if n["path"] == "tests/CartTests.cs"]
+    check("fm46 a non-Python test file whose language has no assertion row that "
+          "matched either copy is listed as not compared, never counted as "
+          "compared: %s %r" % (_show(got), got["notRead"]),
+          got["answer"] == PARTLY_READ and len(listed) == 1
+          and listed[0].get("kind") == COULD_HOLD and "assert" in listed[0]["reason"])
+
+    yml = "jobs:\n  test:\n    runs: pytest\n"
+    data = _run([("tests/fixtures/ci.yml", yml, yml.replace("pytest", "pytest -q"))])
+    js = _run([("tests/add.test.js", JS_TEST, JS_TEST.replace('it("adds"', 'it("sums"'))])
+    check("fa30 THE TWIN: a data file under a test directory, and a JS test whose "
+          "assertions matched a row, are compared and clean: %s / %s"
+          % (_show(data), _show(js)),
+          [(g["answer"], g["notRead"]) for g in (data, js)] == [(M.CLEAN, [])] * 2)
+
+
+def _moved(check):
+    got = _run([("tests/test_take.py", SKIPPED_CLASS, None),
+                ("tests/unit/test_take.py", None, SKIPPED_CLASS)])
+    check("fa31 a test file moved unchanged, printed as a deletion and an "
+          "addition, is no deletion, and the skip it already carried is not "
+          "read as added: %s" % _show(got),
+          got["findings"] == [] and got["answer"] == M.CLEAN)
+
+    tree = SKIPPED_CLASS + ("\n\n@unittest.skip('later')\nclass TestMore(unittest.TestCase):\n"
+                            "    def test_three(self):\n        self.assertEqual(3, 3)\n")
+    got = _run([("tests/test_take.py", SKIPPED_CLASS, None),
+                ("tests/unit/test_take.py", None, tree)])
+    check("fm47 a test file moved that also gained a skip reports the new skip "
+          "alone, against the old copy: %s" % _show(got),
+          [(f["move"], f["path"], f["line"]) for f in got["findings"]]
+          == [(M.SKIP_ADDED, "tests/unit/test_take.py", 14)])
+
+    got = _run([("tests/test_take.py", SKIPPED_CLASS, None),
+                ("tests/test_other.py", None, "def test_x():\n    assert 1\n")])
+    check("fm48 a test file deleted beside an unrelated new file is still a "
+          "deletion: %s" % _show(got),
+          [(f["move"], f["path"]) for f in _moves(got, M.TEST_DELETED)]
+          == [(M.TEST_DELETED, "tests/test_take.py")])
+
+    one = "def test_a():\n    assert 1 == 1\n\n\ndef test_b():\n    assert 2 == 2\n"
+    two = "def test_c():\n    assert 3 == 3\n"
+    got = _run([("tests/test_one.py", one, one.replace(
+        "\n\ndef test_b():\n    assert 2 == 2\n", "")),
+        ("tests/test_two.py", two, two + "\n\ndef test_b():\n    assert 2 == 2\n")])
+    house = HOUSE_SUITE.replace('    check("h2 zero doubled is zero", _double(0) == 0)\n', "")
+    other = HOUSE_SUITE.replace("h1 two doubled", "h9 two doubled").replace(
+        '"h2 zero doubled is zero", _double(0) == 0', '"h8 zero", _double(0) == 0')
+    labels = _run([("tests/test_h1.py", HOUSE_SUITE, house),
+                   ("tests/test_h2.py", other,
+                    other + '\n\ndef _more(check):\n'
+                            '    check("h2 zero doubled is zero", _double(0) == 0)\n')])
+    check("fa32 a test function, and a labelled check, moved unchanged from one "
+          "test file to another give no finding: %s / %s" % (_show(got), _show(labels)),
+          got["findings"] == [] and labels["findings"] == [])
+
+    # THE TWIN for fa32: the test that appears in the other file is a DIFFERENT
+    # one, so the test gone from the first file was not moved anywhere.
+    elsewhere = _run([("tests/test_one.py", one, one.replace(
+        "\n\ndef test_b():\n    assert 2 == 2\n", "")),
+        ("tests/test_two.py", two, two + "\n\ndef test_d():\n    assert 4 == 4\n")])
+    check("fm49 THE TWIN: a test gone from one file while a different test is added "
+          "to another is still a finding on the first file: %s" % _show(elsewhere),
+          [(f["move"], f["path"]) for f in elsewhere["findings"]]
+          == [(M.DEFINITION_CHANGED, "tests/test_one.py")]
+          and elsewhere["renamed"] == [])
+
+
+def _kinds(check):
+    got = _run([("docs/notes.md", "a\n", "b\n"), ("tests/cart_test.lua", "a = 1\n", "a = 2\n"),
+                ("src/app.lua", "a = 1\n", "a = 2\n"), ("tests/fixtures/rows.json", "[]\n", "[1]\n")])
+    kinds = sorted((n["path"], n.get("kind")) for n in got["notRead"])
+    check("fx2 every file not read says which kind it is: prose, data and a source "
+          "file outside a test directory in a language read nowhere here cannot "
+          "hold a move as read here; a test in such a language could: %r" % (kinds,),
+          kinds == [("docs/notes.md", CANNOT_HOLD), ("src/app.lua", CANNOT_HOLD),
+                    ("tests/cart_test.lua", COULD_HOLD),
+                    ("tests/fixtures/rows.json", CANNOT_HOLD)]
+          and got["answer"] == PARTLY_READ
+          and M.MOVES == (M.TEST_DELETED, M.DEFINITION_CHANGED, M.SKIP_ADDED,
+                          M.SUPPRESSION_ADDED, M.STUB_ADDED))
+    docs = _run([("docs/notes.md", "a\n", "b\n"), ("src/cart.py", CART_SRC, CART_SRC + "\n")])
+    check("fx3 THE TWIN: a diff of compared files and prose answers clean, the "
+          "prose still listed: %s %r" % (_show(docs), docs["notRead"]),
+          docs["answer"] == M.CLEAN
+          and [n["path"] for n in docs["notRead"]] == ["docs/notes.md"])
+
+
 # --- what cannot be read ---------------------------------------------------------
 
 def _unreadable(path):
@@ -819,6 +1280,15 @@ def _cases(check):
     _definitions(check)
     _suppressions(check)
     _marker(check)
+    _binary(check)
+    _skips(check)
+    _outside(check)
+    _labelled(check)
+    _declarations(check)
+    _marker_kinds(check)
+    _other_languages(check)
+    _moved(check)
+    _kinds(check)
     _untold(check)
     _shape(check)
 

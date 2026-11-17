@@ -1301,10 +1301,14 @@ def _floor_block_cases(check):
     block is trusted only with the helper's mark. With no block the answer is
     NOT MEASURED, never none found."""
     import _floor_guard
-    check("ffg1 the three answer words are the floor guard's own, in its order: %r"
+    check("ffg1 the four answer words are the floor guard's own, in its order, and "
+          "so are the two kinds of file not read: %r"
           % (getattr(M, "FLOOR_ANSWERS", None),),
           tuple(getattr(M, "FLOOR_ANSWERS", ())) == (
-              _floor_guard.CLEAN, _floor_guard.FINDINGS, _floor_guard.COULD_NOT_TELL)
+              _floor_guard.CLEAN, _floor_guard.FINDINGS, _floor_guard.COULD_NOT_TELL,
+              _floor_guard.PARTLY_READ)
+          and (getattr(M, "FLOOR_CANNOT_HOLD", None), getattr(M, "FLOOR_COULD_HOLD", None))
+          == (_floor_guard.CANNOT_HOLD, _floor_guard.COULD_HOLD)
           and getattr(M, "FLOOR_FIELD", None) == "floorGuard")
     absent = M.floor_block(_executor())
     check("ffg2 a return with no floor block reads as not measured, with no "
@@ -1320,6 +1324,24 @@ def _floor_block_cases(check):
           "as no block, with a reason naming why: %r" % ((forged, typed, odd, bad),),
           all(got[0] is None and got[1] and "not measured" in got[1]
               for got in (forged, typed, odd, bad)))
+    loose = [_floor_measured(answer="clean", findings=[], notRead=["x.md"]),
+             _floor_measured(answer="clean", findings=[], base="abc")]
+    said = [M.floor_block(_executor(floorGuard=b)) for b in loose]
+
+    def _shown(block):
+        # A raise is recorded as the answer, so this case fails by name.
+        try:
+            return (M.floor_summary(_executor(floorGuard=block)),
+                    M.floor_lines(_executor(floorGuard=block)))
+        except Exception as exc:                  # the answer under test
+            return ("raised %s" % (type(exc).__name__,), ["raised"])
+    shown = [_shown(b) for b in loose]
+    check("ffg9 a marked block whose entry, or whose base, is not an object does not "
+          "read: not measured with the reason, and the summary and the brief say so "
+          "rather than raise: %r / %r" % (said, shown),
+          all(got[0] is None and "not an object" in (got[1] or "") for got in said)
+          and all(s.startswith("not measured") and "nothing measured" in ls[0]
+                  for s, ls in shown))
     whole = _floor_measured()
     trusted = M.floor_block(_executor(floorGuard=whole))
     check("ffg4 THE ALLOW TWIN: the block the verb writes is read back whole: %r"
@@ -1346,6 +1368,58 @@ def _floor_block_cases(check):
           and not summaries[2].startswith("clean")
           and "could-not-tell" in summaries[3] and "1 file" in summaries[3]
           and summaries[4].startswith("clean"))
+    prose = {"path": "docs/a.md", "move": None, "reason": "no syntax known"}
+    owned = dict(whole["findings"][0])
+    verdicts = [M.floor_verdict(b) for b in (
+        _floor_measured(answer="clean", findings=[], notRead=[prose]),
+        _floor_measured(answer="clean", findings=[],
+                        notRead=[dict(prose, kind=M.FLOOR_CANNOT_HOLD)]),
+        _floor_measured(answer="clean", findings=[],
+                        notRead=[dict(prose, kind=M.FLOOR_COULD_HOLD)]),
+        _floor_measured(answer="partly-read", findings=[]),
+        _floor_measured(answer="clean", findings=[], declared=[owned]),
+        _floor_measured(answer="clean", findings=[]))]
+    check("ffg6 one verdict word per block: a prose or data file not read - an "
+          "older block's empty move, or `kind` saying so - leaves it clean; the "
+          "same file marked could-hold, or the partly-read answer, is partly "
+          "read; declared changes alone are declared: %r" % (verdicts,),
+          verdicts == ["clean", "clean", "partly-read", "partly-read", "declared",
+                       "clean"])
+    lines = M.floor_lines(_executor(floorGuard=_floor_measured(
+        answer="partly-read", findings=[],
+        notRead=[dict(prose, kind=M.FLOOR_CANNOT_HOLD),
+                 {"path": "tests/test_b.py", "move": "definition-changed",
+                  "reason": "code outside its test definitions changed",
+                  "kind": M.FLOOR_COULD_HOLD}])))
+    calm = M.floor_lines(_executor(floorGuard=_floor_measured(
+        answer="clean", findings=[], notRead=[dict(prose, kind=M.FLOOR_CANNOT_HOLD)])))
+    check("ffg7 the reviewer's lines say NOT clean overall, counting only the file "
+          "that could hold a move, and list both files under what was not read; "
+          "THE TWIN: a prose file alone keeps the answer clean: %r / %r"
+          % (lines, calm),
+          any("NOT clean overall: 1 file(s) that could hold a move" in ln for ln in lines)
+          and any("docs/a.md" in ln for ln in lines)
+          and any("tests/test_b.py" in ln for ln in lines)
+          and not any("NOT clean overall" in ln for ln in calm)
+          and any("docs/a.md" in ln for ln in calm))
+    docs = [dict(prose, path="docs/long-name-%02d.md" % k, kind=M.FLOOR_CANNOT_HOLD)
+            for k in range(12)]
+    long_basis = "compared 1 of the diff's 13 file(s) " + "and found none " * 20
+    quiet = M.floor_summary(_executor(floorGuard=_floor_measured(
+        answer="clean", findings=[], basis=long_basis, notRead=docs)))
+    open_ = M.floor_summary(_executor(floorGuard=_floor_measured(
+        answer="partly-read", findings=[], basis=long_basis,
+        notRead=docs + [{"path": "tests/test_b.py", "move": "definition-changed",
+                         "reason": "helper changed", "kind": M.FLOOR_COULD_HOLD}])))
+    check("ffg8 a clean line counts the prose and data files it recorded and names "
+          "none of them, nor the basis, so it stays inside the printed bound; THE "
+          "TWIN: a file that could hold a move is still named: %r / %r"
+          % (quiet, open_),
+          quiet.startswith("clean - ") and "12 file(s) that cannot hold a move" in quiet
+          and "docs/long-name" not in quiet and "and found none" not in quiet
+          and len(quiet) < 120
+          and open_.startswith("partly read") and "tests/test_b.py" in open_
+          and "docs/long-name" not in open_)
 
 
 def _support_path_cases(check):

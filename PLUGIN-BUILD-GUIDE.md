@@ -195,7 +195,7 @@ claude-plugins/                           # this repo (personal, public)
           full-gate.py                    # the one command of the third place: a pre-push hook's whole obligation - run-test-gate.py --full --record as a subprocess, then a coupling and a bug per named selection miss of a red run (the red still blocks), or the sentence and exit 0 when no runnable meta.fullGate entry is declared; --learn-from <runId> runs nothing and learns from an imported row through the same function
           _runner_output.py               # every reading of what a test runner printed: its summary line (how many checks ran) and the lines naming a failing check
           _runner_collects.py             # does the test runner collect this path: collected, not collected, or could not tell - from the runner's own file listing, else a literal include in its config text
-          _floor_guard.py                 # which moves in a task's diff lower the bar - a test deleted, an existing test definition changed, a skip added, a suppression code new to the file, a stub added - as findings, clean, or could not tell; git stays out, the diff and two readers are arguments
+          _floor_guard.py                 # which moves in a task's diff lower the bar - a test deleted, an existing test definition changed, a skip added, a suppression code new to the file, a stub added - as findings, clean, partly read, or could not tell; git stays out, the diff and two readers are arguments
           _proc_group.py                  # one child tree stopped whole on timeout or interrupt; SIGINT/SIGTERM as an exception so a finally runs; the one POSIX sh (and its PATH) every plan command runs under, or a refusal - never cmd.exe
           _tree_stamp.py                  # which tree was this: HEAD + declared-work digest + dirty-path digest, and is it still that one
           _clause_coverage.py             # the ONE numbering of a task's clauses (tests.add entries, then the description's Acceptance items) and whether a writer's last JSON object answers every one, citing a file the diff touches - a missing or unreadable object is a gap of every clause
@@ -5520,8 +5520,10 @@ the drive's own cases play every agent through `submit`.
 `_floor_guard.find_moves` over the task's diff - `git diff` against the HEAD the red helper's
 throwaway is built at (`task_root` with `tree_head`, the one base `red_block`, `take_stamp`,
 `writer_prove` and `grade_stamp` read too, held equal by `flr6`), untracked files diffed against
-an empty file - with readers for that HEAD's blob and the tree's file, the `tests.add` paths
-bound to their `casesAdded` ids (`floor_declared`), and `floorGuard.acceptedSuppressions`. The
+an empty file, renames detected in the tracked half (`floor_diff`) - with readers for that HEAD's
+blob and the tree's file, the `tests.add` paths bound to their `casesAdded` ids
+(`floor_declared`; a bare path covers only tests new to it, `flm3`), and
+`floorGuard.acceptedSuppressions`. The
 result is filed as the return's `floorGuard` block, marked with `_filed_returns.FLOOR_SOURCE`,
 and its summary ends the printed line. It refuses nothing: any exception inside the reading is
 filed as `could-not-tell` naming its type, and the filing goes on (`flr5`); `floorGuard.mode:
@@ -5781,32 +5783,52 @@ path, line and the side the line counts in.
 
 A Python definition is compared only when it is a test by the runner's convention - a function or
 method whose name starts with `TEST_PREFIX`, the prefix unittest and pytest agree on - by `ast.dump`
-per function and `Class.method`, decorators included, line numbers and a leading docstring not.
-Helpers, fixtures and case-table functions are not compared, because a suite that keeps its cases as
-rows changes that function every time it gains a case. What that gives up is reported rather than
-hidden: a Python test file the diff modifies whose code changed while neither copy defines a test is
-listed under `notRead` with `move: definition-changed`, never clean in silence and never a finding.
-Other languages are read by the `ASSERTIONS` lines a test file lost.
+per function and `Class.method`, decorators included, skip reasons blanked, line numbers and a
+leading docstring not, together with what decides whether it runs: its class head and decorators,
+a `pytestmark`, and the `if`/`with`/`try` heads it sits under. A Python test file that defines no
+test but calls checks by label - one callable whose first argument is a constant string - is
+compared by label: a label gone or its arguments changed is a finding. Code outside the compared
+definitions or checks that was only added counts as compared; a base statement there removed or
+changed, or a `return`/`raise`/`break`/`continue` added into a function the base held, lists the
+file under `notRead` as one that could hold a move. Other languages are read by the `ASSERTIONS`
+lines a test file lost, and a test file whose copies match no assertion row is listed the same way.
+
+A FILE IS COMPARED ONLY WHOLE. Each `notRead` entry carries a `kind`: `could-hold-one` - a binary
+file, a test file with uncompared code changed, a test file with no assertion row known - or
+`cannot-hold-a-move`, a file with no syntax known here or a data file (`DATA_EXTENSIONS`). The
+answer has four values: `FINDINGS`, `COULD_NOT_TELL` with its reason, `PARTLY_READ` when nothing
+was found but a could-hold file was not compared, and `CLEAN` only when everything that could hold a
+move was compared; a cannot-hold file is recorded and leaves the answer clean. `couldNotTell` is
+kept beside findings rather than dropped. The block's readers in `_filed_returns` hold the kinds and
+`floor_verdict`, the one word every surface reads a block by, which infers a kind for a block filed
+before `kind` existed (`move` None is cannot-hold).
+
+A declaration covers what is new: a bare `declared` path covers definitions new to that file, and
+only `path::case` makes a change to a test the base held the task's own, returned under `declared`
+rather than as a finding; a non-Python test line is never declared. A test renamed unchanged, a test
+moved unchanged into another file of the diff, a reworded skip reason, a comment or docstring edit
+and a suppression inside a fixture string are no finding. A deleted file and an added file of the
+same family whose texts git's default would call a rename (`RENAME_SIMILARITY`) are read as one
+renamed file, so a file moved with its new path untracked carries its old marks; `drive-phase.py`'s
+`floor_diff` detects renames in the tracked diff for the move git sees itself. A tree skip or stub
+pairs away against a base mark of the same kind only on the two sides of one changed line or inside
+the same enclosing definition.
 
 A suppression is a finding only when its code - the marker's kind with one rule code read out of
 the comment by the `SUPPRESSIONS` table, a blanket marker being its own code - occurs in no comment
-of the file's base copy, so a file new to the diff reports every suppression it arrives with. A
-`noqa` is read only where ruff reads one (`_IN_COMMENT`, `_OWN_LINE`): where a comment opens, in any
-letter case, so a comment that only mentions the word is no finding. What that gives up: a code the base already carries is no finding however many lines it spreads to, and
-a kind is read without its scope. `accepted` holds codes a caller never wants reported, each written
-as its comment would be (`noqa: E402`); an entry matches by kind and exact code - surrounding blanks
-ignored, case significant, a prefix of a code another code - and an entry the table cannot read whole makes the answer could-not-tell rather than
-matching nothing.
-The answer has three values, as `_runner_collects` set: `FINDINGS`, `CLEAN`, or `COULD_NOT_TELL`
-with its reason - a diff that does not parse, a copy a reader cannot produce, a Python copy that
-does not compile, a tree that no longer holds the lines the diff added - and `couldNotTell` is kept
-beside findings rather than dropped. A change to a test the caller passes in `declared` (the task's
-own `tests.add`) is returned under `declared`, never as a finding; a test renamed unchanged, a
-suppression that only moved, a comment or docstring edit and a suppression inside a fixture string
-are no finding. A file with no comment syntax known here is listed under `notRead` with `move` None. What a test file is comes from `_filed_returns.is_test_path`, which is why the
-module sits one layer above it. Git stays out: the diff and both readers are arguments. It decides
-and refuses nothing - a caller reports what it returns. Its cases are in
-`tests/test__floor_guard.py`.
+of the file's base copy, so a file new to the diff reports every suppression it arrives with. Each
+kind is read only where its own checker reads it (`_MARKER_AT`): `noqa` and `type: ignore` after a
+hash, `eslint-disable` and the TypeScript pragmas as a comment's first word, `istanbul ignore` only
+before the words istanbul obeys, and the markers some scanners read anywhere on a code line only
+there - written from each checker's documented behaviour, not measured against it. What that gives
+up: a code the base already carries is no finding however many lines it spreads to, and a kind is
+read without its scope. `accepted` holds codes a caller never wants reported, each written as its
+comment would be (`noqa: E402`); an entry matches by kind and exact code - surrounding blanks
+ignored, case significant, a prefix of a code another code - and an entry the table cannot read
+whole makes the answer could-not-tell rather than matching nothing. What a test file is comes from
+`_filed_returns.is_test_path`, which is why the module sits one layer above it. Git stays out: the
+diff and both readers are arguments. It decides and refuses nothing - a caller reports what it
+returns. Its cases are in `tests/test__floor_guard.py`.
 
 ### `plugins/audit/scripts/governance/_runner_collects.py`
 `collects(path, runner, project, lister=None)` answers whether a runner would collect a path, with

@@ -751,32 +751,36 @@ def intent_unanswered(phase):
             and _intent_word(t) in (None, _fr.INTENT_DEFERRED)]
 
 
-# The four kinds of floor reading a phase's done task can carry that is not a
-# plain clean, in the order status prints them.
-FLOOR_KINDS = ("findings", "notCompared", "couldNotTell", "notMeasured")
+# The kinds of floor reading a phase's done task can carry that is not a plain
+# clean, in the order status prints them.
+FLOOR_KINDS = ("findings", "notCompared", "couldNotTell", "notMeasured", "declared")
+
+# `_filed_returns.floor_verdict`'s word for each kind; a plain clean is in none.
+_FLOOR_KIND_OF = {"findings": "findings", "could-not-tell": "couldNotTell",
+                  "partly-read": "notCompared", "declared": "declared"}
 
 
 def _floor_kind(executor):
     """The kind `executor`'s floor reading is, or None for a plain clean: a
-    trusted block reporting no move and leaving no file uncompared."""
+    trusted block reporting no move, declaring no change and leaving no file
+    that could hold a move uncompared. The verdict is `floor_verdict`'s, the
+    one word every surface reads a block by."""
     block, _why = _fr.floor_block(executor)
     if block is None:
         return "notMeasured"
-    if block["answer"] == "findings":
-        return "findings"
-    if block["answer"] == "could-not-tell":
-        return "couldNotTell"
-    return "notCompared" if block["notRead"] else None
+    return _FLOOR_KIND_OF.get(_fr.floor_verdict(block))
 
 
 def floor_readings(phase, read_executor):
-    """`phase`'s DONE tasks whose floor reading is not a plain clean, as four
-    lists of task ids under `FLOOR_KINDS`: findings, a clean answer with a file
-    it did not compare, could-not-tell, and NOT MEASURED - no return filed, no
-    block, or one `_filed_returns.floor_block` does not trust. Not measured is
-    its own list because it is no reading: folded into clean it would say a
-    diff nobody read had no move in it. A task answering findings is listed
-    there alone, whatever else its block holds.
+    """`phase`'s DONE tasks whose floor reading is not a plain clean, as lists
+    of task ids under `FLOOR_KINDS`: findings; NOT COMPARED - partly read, a
+    file that could hold a move not compared, while a file the guard read as
+    prose or data lists nothing; could-not-tell; NOT MEASURED - no return
+    filed, no block, or one `_filed_returns.floor_block` does not trust; and
+    declared - clean apart from changes to tests the task declared by case.
+    Not measured is its own list because it is no reading: folded into clean it
+    would say a diff nobody read had no move in it. Each task is listed once,
+    under the first of those its block answers, findings first.
 
     `read_executor(task)` is the caller's: the task's filed executor return as
     an object, or None when there is none or it cannot be read. This module

@@ -2293,14 +2293,32 @@ def floor_readings_block(manifest, summary, manifest_path, project):
 FLOOR_LINE_WORDS = (("findings", "moves found"),
                     ("notCompared", "files not compared"),
                     ("couldNotTell", "could not tell"),
-                    ("notMeasured", "not measured"))
+                    ("notMeasured", "not measured"),
+                    ("declared", "declared changes to existing tests"))
+
+# How wide a floor line's id list may run before it is cut between ids.
+FLOOR_IDS_MAX = 70
+
+
+def _id_list(ids, width):
+    """`ids` joined, cut between two ids once the next would pass `width`, and
+    ending `and N more` when cut - never mid-id, never silently short."""
+    shown = []
+    for k, tid in enumerate(ids):
+        rest = len(ids) - k - 1
+        tail = (" and %d more" % (rest,)) if rest else ""
+        if shown and len(", ".join(shown + [tid])) + len(tail) > width:
+            return "%s and %d more" % (", ".join(shown), len(ids) - len(shown))
+        shown.append(tid)
+    return ", ".join(shown)
 
 
 def _floor_lines(block, phase_id):
     """The floor lines under a phase due for sign-off: one per kind with a task
     in it, none for an empty kind, so a phase whose done tasks are all plainly
     clean prints nothing. Not measured is a kind of its own and is never
-    printed as none found."""
+    printed as none found. A list too long for the line names whole ids and
+    says how many more it holds (`_id_list`)."""
     if not isinstance(block, dict):
         return []
     reading = block.get(str(phase_id))
@@ -2311,7 +2329,8 @@ def _floor_lines(block, phase_id):
     if "elsewhere" in reading:
         return ["       floor guard, not read here: this phase was %s, and its "
                 "returns are filed there" % (reading.get("elsewhere") or "read from another copy",)]
-    return ["       floor guard, %s: %s" % (words, _clip(", ".join(reading[key]), 70))
+    return ["       floor guard, %s: %s" % (words, _id_list([str(t) for t in reading[key]],
+                                                         FLOOR_IDS_MAX))
             for key, words in FLOOR_LINE_WORDS if reading.get(key)]
 
 

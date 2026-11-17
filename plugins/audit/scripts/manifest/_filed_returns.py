@@ -1587,12 +1587,23 @@ def green_lines(executor, task=None):
 # takes the `source` mark off a typed `redFirst`, and a reader trusts a block only
 # with the mark - `floor_block`. A return with no trusted block reads NOT MEASURED,
 # never none found: the mode was off, the return predates the field, or the block
-# is not the verb's. The words are the guard's own three (`_floor_guard.CLEAN`,
-# `FINDINGS`, `COULD_NOT_TELL`), written here because that module imports this one;
-# `ffg1` in `tests/test__filed_returns.py` holds them equal.
+# is not the verb's. The words are the guard's own four (`_floor_guard.CLEAN`,
+# `FINDINGS`, `COULD_NOT_TELL`, `PARTLY_READ`), written here because that module
+# imports this one; `ffg1` in `tests/test__filed_returns.py` holds them equal.
+#
+# A FILE NOT READ IS ONE OF TWO KINDS, and only one of them says anything about the
+# bar. `FLOOR_CANNOT_HOLD` is a file no move can live in as this reading reads it -
+# prose, data, an image; `FLOOR_COULD_HOLD` is one that could hold a move and was not
+# compared - a binary suite, a test whose helpers changed. The guard writes the kind
+# on each `notRead` entry and borrows these two words from here. A block filed
+# before the field existed carries no kind, and `floor_unread_kind` reads its entry
+# the way that block's own reader did: a `move` named means a move went uncompared,
+# none means the file was read for no move.
 FLOOR_FIELD = "floorGuard"
 FLOOR_SOURCE = "floor-guard"
-FLOOR_ANSWERS = ("clean", "findings", "could-not-tell")
+FLOOR_ANSWERS = ("clean", "findings", "could-not-tell", "partly-read")
+FLOOR_CANNOT_HOLD = "cannot-hold-a-move"
+FLOOR_COULD_HOLD = "could-hold-one"
 _FLOOR_LISTS = ("findings", "declared", "couldNotTell", "notRead")
 
 
@@ -1615,24 +1626,80 @@ def floor_block(executor):
                       "%s" % (FLOOR_FIELD, block.get("answer"),
                               "%s not a list" % ", ".join(bad) if bad
                               else "not one of %s" % ", ".join(FLOOR_ANSWERS)))
+    # Every reader takes each entry, and `base`, as an object; one that is not
+    # would raise in the reader, so the block does not read at all.
+    loose = [k for k in _FLOOR_LISTS if not all(isinstance(e, dict) for e in block[k])]
+    if loose or not isinstance(block.get("base") or {}, dict):
+        return None, ("not measured: the %s block does not read - %s" % (
+            FLOOR_FIELD, "an entry of %s is not an object" % ", ".join(loose) if loose
+            else "base is not an object"))
     return block, None
+
+
+def floor_unread_kind(entry):
+    """`FLOOR_COULD_HOLD` or `FLOOR_CANNOT_HOLD` for one `notRead` entry: its own
+    `kind` when it carries one of the two, else read off its `move`. An entry
+    that is not an object says nothing about itself, so it is never read as
+    one that cannot hold a move (`floor_block` refuses such a block whole; this
+    answers a caller that asks of an entry alone)."""
+    if not isinstance(entry, dict):
+        return FLOOR_COULD_HOLD
+    kind = entry.get("kind")
+    if kind in (FLOOR_CANNOT_HOLD, FLOOR_COULD_HOLD):
+        return kind
+    return FLOOR_COULD_HOLD if entry.get("move") else FLOOR_CANNOT_HOLD
+
+
+def floor_not_compared(block):
+    """The `notRead` entries of a trusted block that could hold a move."""
+    return [n for n in block["notRead"] if floor_unread_kind(n) == FLOOR_COULD_HOLD]
+
+
+def floor_verdict(block):
+    """The reading a trusted block gives, in one word every surface shares:
+    `findings`, `could-not-tell`, `partly-read` - nothing found, but a file that
+    could hold a move was not compared - `declared` - clean apart from changes
+    to tests the task declared by case - or `clean`. A block filed before
+    `partly-read` existed answered `clean` beside such a file, so the file is
+    asked, not the word alone."""
+    if block["answer"] in ("findings", "could-not-tell"):
+        return block["answer"]
+    if block["answer"] == "partly-read" or floor_not_compared(block):
+        return "partly-read"
+    return "declared" if block["declared"] else "clean"
 
 
 def _floor_unread_text(entry):
     move = entry.get("move")
-    return "%s - %s: %s" % (entry.get("path"), "not compared for %s" % (move,)
-                            if move else "not read for any move", entry.get("reason"))
+    held = ("could hold a move" if floor_unread_kind(entry) == FLOOR_COULD_HOLD
+            else "cannot hold a move as it was read")
+    return "%s - %s (%s): %s" % (entry.get("path"), "not compared for %s" % (move,)
+                                 if move else "not read for any move", held,
+                                 entry.get("reason"))
 
 
 def floor_summary(executor):
     """One line for a surface that counts recorded facts: the floor block's
-    findings, the files it did not compare and what it could not tell, kept
-    apart - "not measured (why)" with no block, and "clean" only for a diff
-    every file of which was read."""
+    findings, the files that could hold a move and were not compared, and what
+    it could not tell, kept apart - "not measured (why)" with no block, "partly
+    read" while one such file stands, and "clean" otherwise. A file that cannot
+    hold a move (prose, data) stays recorded in the block and the basis; it
+    does not make the reading partly read, and the line counts it rather than
+    naming it. The line is printed under a byte bound, so a clean reading says
+    what its verdict rests on and leaves the full basis to the block."""
     block, why = floor_block(executor)
     if block is None:
         return "not measured (%s)" % (why[len("not measured: "):],)
-    unread = block["notRead"]
+    unread = floor_not_compared(block)
+    verdict = floor_verdict(block)
+    inert = len(block["notRead"]) - len(unread)
+    recorded = ("; %d file(s) that cannot hold a move recorded, not read" % (inert,)
+                if inert else "")
+    if verdict == "clean":
+        return "clean - every file that could hold a move was compared%s" % (recorded,)
+    if verdict == "declared":
+        return ("clean apart from declared changes - %d change(s) to tests the task "
+                "declared by case%s" % (len(block["declared"]), recorded))
     parts = []
     if block["findings"]:
         parts.append("%d finding(s)" % (len(block["findings"]),))
@@ -1641,9 +1708,7 @@ def floor_summary(executor):
     if unread:
         parts.append("%d file(s) not compared: %s" % (
             len(unread), ", ".join(str(n.get("path")) for n in unread)))
-    if block["answer"] == "clean" and not unread:
-        return "clean - %s" % (block.get("basis"),)
-    if block["answer"] == "clean":
+    if verdict == "partly-read":
         return "partly read, no finding in what was compared; %s" % ("; ".join(parts),)
     if not parts:
         parts.append(str(block.get("basis")))
@@ -1660,13 +1725,17 @@ def floor_lines(executor):
         return ["%s%s. Read that as nothing measured, never as a diff with no "
                 "move in it." % (why[:1].upper(), why[1:])]
     base = (block.get("base") or {}).get("commit") or "an unnamed base"
-    unread = block["notRead"]
+    verdict = floor_verdict(block)
     lines = ["The floor guard, a script `submit` ran over this task's diff "
              "against base %s, found these; judge each - it decides nothing "
              "and refused nothing." % (str(base)[:12],)]
-    if block["answer"] == "clean" and unread:
+    if verdict == "partly-read":
         lines.append("answer: no finding in the files it compared - NOT clean "
-                     "overall: %d file(s) not compared, listed below." % (len(unread),))
+                     "overall: %d file(s) that could hold a move not compared, "
+                     "listed below." % (len(floor_not_compared(block)),))
+    elif verdict == "declared":
+        lines.append("answer: clean apart from declared changes - %s"
+                     % (block.get("basis"),))
     else:
         lines.append("answer: %s - %s" % (block["answer"], block.get("basis")))
     lines.append("Findings:")
@@ -1674,7 +1743,7 @@ def floor_lines(executor):
                                            f.get("side"), f.get("what"))
               for f in block["findings"]] or ["- none"]
     lines.append("Files not read:")
-    lines += ["- %s" % (_floor_unread_text(n),) for n in unread] or ["- none"]
+    lines += ["- %s" % (_floor_unread_text(n),) for n in block["notRead"]] or ["- none"]
     lines.append("Could not tell:")
     cannot = ["- %s: %s" % (c.get("path"), c.get("reason")) for c in block["couldNotTell"]]
     if not cannot and block["answer"] == "could-not-tell":
