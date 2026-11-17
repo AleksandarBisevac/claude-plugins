@@ -1053,6 +1053,7 @@ def _selftest():
         _harness.stage(check, "tsp-block", _support_path_cases)
         _harness.stage(check, "ffg-block", _floor_block_cases)
         _harness.stage(check, "gfr-block", _green_first_cases)
+        _harness.stage(check, "gfrr-block", _green_reading_cases)
     return _harness.run(body)
 
 
@@ -1173,6 +1174,112 @@ def _green_first_cases(check):
           and "written to the new code" in shown
           and str((not_green or {}).get("basis")) in shown
           and "not-green" not in typed and str(mark) in typed)
+
+
+_GR_OWED = {"id": "P1.1", "tests": {"mode": "regression", "expectGreenFirst": True,
+                                    "expectRedFirst": False,
+                                    "add": ["tests/t.py: keeps v"]}}
+_GR_FREE = {"id": "P1.1", "tests": {"mode": "regression", "expectRedFirst": False,
+                                    "add": ["tests/t.py: keeps v"]}}
+
+
+def _green_reading_cases(check):
+    """One reader answers the green-first question for a task and its filed
+    return - proved, not-green, could-not-prove, owed and not measured, or not
+    owed - and the brief, the computed answer and the sign-off predicate all ask
+    it, so an owed proof that was never run is said, never left out."""
+    reading = getattr(M, "green_first_reading", None)
+    if reading is None:
+        check("gfr7 the module defines green_first_reading", False)
+        return
+    mark = M.GREEN_HELPER_SOURCE
+    proved = dict(_green_block(2) or {}, source=mark)
+    not_green = dict(_green_block(2, code=1) or {}, source=mark)
+    cannot = {"status": "could-not-prove", "at": "2026-01-01T00:00:00Z",
+              "source": mark,
+              "basis": "`python3 tests/t.py` in a throwaway tree at HEAD exited 2 "
+                       "and collected no case"}
+    typed = {"status": "proved", "at": "z",
+             "basis": "the agent says the new case passed on the base"}
+    got = [reading(_GR_OWED, _executor(greenFirst=b))
+           for b in (proved, not_green, cannot)]
+    check("gfr7 an owed task whose return carries the helper's marked block reads "
+          "as that block's word - proved, not-green, could-not-prove - with the "
+          "block itself and as measured: %r" % (got,),
+          [(g or {}).get("status") for g in got]
+          == ["proved", "not-green", "could-not-prove"]
+          and [(g or {}).get("block") for g in got] == [proved, not_green, cannot]
+          and all((g or {}).get("measured") is True for g in got))
+    absent = reading(_GR_OWED, _executor()) or {}
+    untrusted = reading(_GR_OWED, _executor(greenFirst=typed)) or {}
+    unfiled = reading(_GR_OWED, None) or {}
+    check("gfr8 OWED AND ABSENT is a state, not a silence: an owed task whose "
+          "return carries no trusted block - none at all, one the agent typed, or "
+          "no return - reads `not-attempted`, not measured, its basis saying the "
+          "proof is owed and not measured, and carrying the return's own words "
+          "when it typed some: %r" % ((absent, untrusted, unfiled),),
+          all(r.get("status") == "not-attempted" and r.get("measured") is False
+              and r.get("block") is None
+              and "owed and not measured" in str(r.get("basis"))
+              for r in (absent, untrusted, unfiled))
+          and typed["basis"] in str(untrusted.get("basis"))
+          and typed["basis"] not in str(absent.get("basis")))
+    free = [reading(_GR_FREE, _executor()), reading(_GR_FREE, _executor(
+        greenFirst=proved)), reading(None, _executor()), reading({}, None)]
+    check("gfr9 THE TWIN: a task owing no green-first reads None - not owed - "
+          "whatever its return carries, so a reader that answered every task "
+          "goes red here: %r" % (free,), free == [None, None, None, None])
+    rel = "returns/P1.1/x.executor.json"
+    gate = ("whole", "every gate runs all")
+    owed_ans, owed_owed = M.mechanical_answers((rel, _executor(), None), gate,
+                                               _GR_OWED)
+    free_ans, _f = M.mechanical_answers((rel, _executor(), None), gate, _GR_FREE)
+    proved_ans, _p = M.mechanical_answers(
+        (rel, _executor(greenFirst=proved), None), gate, _GR_OWED)
+    phase_rel = "returns/P1/abc1234.reviewer.json"
+    done, _took, problems = M.complete_phase_return(
+        _hn_body([_hn_entry("P1.1")]), {"P1.1": owed_ans})
+    asked = M.needs_human([(phase_rel, done, "")])
+    check("gfr10 sign-off reads the same state: an owed task with no trusted block "
+          "computes greenFirst `not-attempted`, its basis naming the return, and "
+          "the sign-off predicate stops on it as on not-green; a task owing none "
+          "computes nothing and a proved block stops nothing: %r"
+          % ((owed_ans, free_ans, proved_ans, asked),),
+          owed_ans.get("greenFirst") == "not-attempted"
+          and rel in str(owed_ans.get("greenFirstBasis"))
+          and "owed and not measured" in str(owed_ans.get("greenFirstBasis"))
+          and "greenFirst" not in owed_owed and problems == []
+          and [a["what"] for a in asked] == ["green-first not-attempted"]
+          and "greenFirst" not in free_ans
+          and proved_ans.get("greenFirst") == "proved"
+          and "not-attempted" in M.HUMAN_GREEN_FIRST)
+    where = _harness.fixture_root("filed-returns-gfr-")
+    try:
+        phase = {"id": "P1", "tasks": [
+            dict(_GR_OWED, commit="a" * 40, startedAt=_START),
+            dict(_GR_FREE, id="P1.2", commit="b" * 40, startedAt=_START)]}
+        computed = M.phase_answers(where, phase, {}, lambda entries: [])
+    finally:
+        _harness.remove_tree(where)
+    owed_p = (computed.get("P1.1") or ({}, {}))[0]
+    free_p = (computed.get("P1.2") or ({}, {}))[0]
+    check("gfr12 the phase review's computed answers hand each task to the reader: "
+          "an owed task with no filed return computes `not-attempted`, owed and not "
+          "measured, and its sibling owing none computes no greenFirst: %r"
+          % ((owed_p, free_p),),
+          owed_p.get("greenFirst") == "not-attempted"
+          and "owed and not measured" in str(owed_p.get("greenFirstBasis"))
+          and "greenFirst" not in free_p)
+    shown = "\n".join(M.green_lines(_executor(), _GR_OWED))
+    said = "\n".join(M.green_lines(_executor(greenFirst=typed), _GR_OWED))
+    quiet = M.green_lines(_executor(), _GR_FREE)
+    check("gfr11 the brief's lines come from the same reader: an owed task with no "
+          "block says owed and not measured, with the return's own reason when it "
+          "gave one, and a task owing none with no block gets no line: %r"
+          % ((shown, said, quiet),),
+          "owed and not measured" in shown.lower()
+          and typed["basis"] in said and typed["basis"] not in shown
+          and quiet == [])
 
 
 def _floor_measured(**over):

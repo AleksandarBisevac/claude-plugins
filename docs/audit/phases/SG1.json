@@ -29,8 +29,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/status/_status_facts.py (not in the diff); the diff surfaces the floor reading only at plugins/audit/scripts/status/audit-lookup.py:1914-1950 and plugins/audit/scripts/governance/drive-phase.py:12408-12413",
         "issue": "contradicts task clause: \"The phase report / status surfaces the count the way other recorded facts are surfaced; ... with no block recorded, say 'not measured', never 'none found'.\" No status or report surface reads the floor block. The only readers of floor_summary / floor_block / floor_lines are the two reviewer briefs and the one-line `did` text submit prints (grep over plugins/ and tools/). The executor's outcome says NOT DONE and gives the reason (no status or report module is among the task's files, and none shows filed-return facts today). The reason is true of the diff but does not meet the clause. The task description's own dependants line also named 'the panel and report if they enumerate return keys'.",
-        "resolution": "Either land the surface (have _status_facts.py or the phase report call _filed_returns.floor_summary per filed executor return, so 'not measured' and 'N file(s) not compared' show where other recorded facts show), or record the carve-out as a follow-up task in SG1 with its own tests.add so the clause is not silently dropped at sign-off. Do not close the task as fully meeting its description.",
-        "fixTask": "SG1.13-ukq"
+        "resolution": "fixed in SG1.13-ukq (38f98b5c1af2): Either land the surface (have _status_facts.py or the phase report call _filed_returns.floor_summary per filed executor return, so 'not measured' and 'N file(s) not compared' show where other recorded facts show), or record the carve-out as a follow-up task in SG1 with its own tests.add so the clause is not silently dropped at sign-off. Do not close the task as fully meeting its description.",
+        "fixTask": "SG1.13-ukq",
+        "commit": "38f98b5c1af2",
+        "status": "fixed"
       },
       {
         "id": "SG1-R2",
@@ -40,7 +42,7 @@
         "resolution": "Word the README and execute-task.md sentence as 'dropped by `submit`', and state that the mark is a convention rather than a proof. If the class is wanted closed, record it once for redFirst and floorGuard together (for example a digest the verb binds to the return), not for this key alone."
       }
     ],
-    "outcome": "[findings: 2 - 0 high, 1 med, 1 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 2 - 0 high, 1 med, 1 low; 1 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1062,7 +1064,7 @@
     {
       "id": "SG1.13-ukq",
       "title": "Status names, where sign-off is due, the done tasks whose floor reading is not a plain clean",
-      "status": "in_progress",
+      "status": "done",
       "description": "REVIEW FINDING SG1-R1 (med), verified by the orchestrator against the tree: SG1.5 files the floor guard's reading in the executor's return (key floorGuard, mark source: floor-guard) and shows it in the two reviewer briefs, but no status surface reads it. Its description asked for 'the phase report / status surfaces the count the way other recorded facts are surfaced', and the executor filed that clause as NOT DONE. Checked: the only readers of _filed_returns.floor_block / floor_summary / floor_lines are plugins/audit/scripts/status/audit-lookup.py (the briefs) and drive-phase.py's one printed line.\n\nWHERE IT GOES, AND WHY THERE. /audit:status already prints one fact about filed work at the place a human judges a phase: under a phase whose sign-off is due, the line 'no intent answer: <ids>' (plugins/audit/scripts/status/audit-status.py, the block opening 'WHERE SIGN-OFF IS DUE', fed by _status_facts.intent_unanswered). The floor reading belongs beside it, by the same rule and for the same reason - only where sign-off is due, because a plan older than the field has no reading on any finished phase and a line about that is history nobody can rewrite.\n\nBUILD:\n(1) In plugins/audit/scripts/status/_status_facts.py, one function beside intent_unanswered that takes the phase and a reader of a task's filed executor return, and returns, for the phase's DONE tasks, four lists of task ids kept apart: findings (the block's answer is findings), not compared (answer clean but notRead is non-empty), could not tell (answer could-not-tell), and not measured (no trusted block: none filed, floorGuard off at the time, or a block _filed_returns.floor_block does not trust). A task with a plain clean block and nothing unread is in none of them. Read the block ONLY through _filed_returns.floor_block / floor_summary - do not parse the return's keys a second time here. Find how the filed executor return of a task's last start is located by reading how audit-lookup.py's brief code and audit-task.py's done --from-return find it (return_path, read_filed_return_checked and the plain-read rule plain_read_violations enforces - an unchecked read outside its exempt table fails the build, so use the reader the rule allows and say which).\n(2) In audit-status.py, under the 'no intent answer' line and under the same signoffDue condition, at most one line per non-empty list, each naming what it is in words a reader who never saw the guard understands: e.g. 'floor guard, moves found: <ids>', 'floor guard, files not compared: <ids>', 'floor guard, could not tell: <ids>', 'floor guard, not measured: <ids>'. NOT MEASURED IS NEVER PRINTED AS NONE FOUND, and a phase where every done task is a plain clean prints no floor line at all.\n(3) The same four lists in the --json rollup of that phase entry, if (and only if) the intent line's fact is already there - follow what intent_unanswered's value does in the JSON shape; if it is not in the JSON, say so in your outcome and add neither.\n\nALLOW AND DENY, each pinned: a phase not due for sign-off prints no floor line whatever its returns hold; a done task with a plain clean block is in no list; a task with findings is listed under moves found and nowhere else; clean-with-unread is listed under not compared, never omitted; a task with no return file, and one whose return carries an unmarked floorGuard block, are both 'not measured'; a cancelled or pending task is in no list; an unreadable return file is 'not measured' with the phase still printed (status is advisory and must not crash on a damaged evidence file).\n\nNOT IN THIS TASK, and say so in the outcome rather than building it: the HTML/Markdown report and the panel. They render task objects from the manifest and never read filed returns; showing the reading there needs the block copied onto the task object, which is a new key the plan schema would promise. That is recorded as an open question for the owner, not decided here.\n\nDependants to answer for: tests/test_audit_status.py and tests/test__status_facts.py (existing cases over the sign-off-due block and over the JSON rollup - several pin the exact lines printed there); plugins/audit/README.md and plugins/audit/commands/status.md where they describe what status prints for a phase due for sign-off (add the floor lines in the document's own voice, no counts in prose); PLUGIN-BUILD-GUIDE.md's section on _status_facts.py; tools/measure-context.py --gate (status output is not a pipeline entry, but check the gate stays green); the layer rule in tools/lints/_deps.py (_status_facts already imports _filed_returns as _fr - confirm no new edge is needed).\n\nAcceptance:\n1. Where sign-off is due, status names the done tasks whose floor reading has findings, has files not compared, could not tell, or was not measured - four kinds kept apart, each on its own line, none printed when its list is empty.\n2. A task with no trusted floor block is 'not measured' and is never shown as clean or omitted.\n3. A phase not due for sign-off, and a phase whose done tasks are all plainly clean, print no floor line.\n4. The block is read only through _filed_returns' own readers, and a damaged or missing return file does not stop status from printing.\n\nADDED BEFORE START (what a second look at the tree found, after SG1.6 closed at 0fb6194):\n- THE GATE THE ORCHESTRATOR RUNS IS WIDER THAN YOUR OWN SUITES: it adds every suite the affected-test derivation relates to your changed files, and the previous task lost an attempt to a suite outside its scope. Before you file, run that gate once yourself WITHOUT recording it - the command is in the session notes you were dispatched with - and fix any red your change introduced, or say why it is not yours.\n- SG1.6 added a second verb-written block to the executor's return (greenFirst, mark green-first-helper). It is NOT this task's: the status lines here are about the floor reading alone. Do not add green-first lines; a later task owns what an owed-and-absent green proof looks like.",
       "files": [
         "plugins/audit/scripts/status/_status_facts.py",
@@ -1098,14 +1100,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "38f98b5c1af2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "BUILT (1): plugins/audit/scripts/status/_status_facts.py gains FLOOR_KINDS and floor_readings(phase, read_executor) beside intent_unanswered, with one helper _floor_kind. For the phase's DONE tasks only it returns four lists of ids - findings, notCompared (answer clean, notRead non-empty), couldNotTell, notMeasured (no return, no block, an unmarked block, a return that is not an object) - a plain clean task in none, a findings task under findings alone. The block is read ONLY through _fr.floor_block (fl8 pins that the two functions call it and spell no field of the return). The module still opens nothing: the reader is the caller's. BUILT (2): audit-status.py gains _executor_reader, floor_readings_block, FLOOR_LINE_WORDS and _floor_lines. The reader is _fr.read_filed_return_checked(_fr.return_path(evidence_dir, task, 'executor'), journal rows, project) - the CHECKED read, which plain_read_violations allows anywhere, so no exemption row was needed (plain_read_violations() returns [] after the change); a journal that cannot be read leaves the read unchecked as a close's does, and any raise in the per-task read is no reading (not measured). floor_readings_block reads only phases whose rollup entry has signoffDue, and is injected into the summary for the human render alone (beside keptTrees in main), so --json is unchanged. _floor_lines prints under the 'no intent answer' line, inside the same signoffDue branch, one line per non-empty kind: 'floor guard, moves found: <ids>', 'floor guard, files not compared: <ids>', 'floor guard, could not tell: <ids>', 'floor guard, not measured: <ids>'. Two lines beyond the brief, each so a missing reading is never printed as 'not measured' or as nothing: a due phase whose row was read from another copy (rollup copy.read) prints 'floor guard, not read here: this phase was read from <copy>, and its returns are filed there' instead of reading this checkout's returns, and an evidence directory that cannot be resolved prints 'floor guard, not read: <why>'. (3) JSON: intent_unanswered's fact is NOT in audit-status's --json rollup (its only JSON home is audit-task.py's sign-off output, intentUnanswered), so I added neither list to the rollup; fg5 pins that the payload carries no floor key. NOT IN THIS TASK: the HTML/Markdown report and the panel render task objects from the manifest and never read filed returns; showing the floor reading there needs the block copied onto the task object, a new key the plan schema would promise - left as the owner's open question, nothing built. Not tested: a return edited after filing reading as not measured is the checked read's own behaviour, pinned in its own suite (tests/test__filed_returns.py), not re-pinned here. DOCS: plugins/audit/commands/status.md gets one paragraph on what a sign-off-due phase prints (intent line, then the four floor kinds, not measured never shown as clean, no line for a plain clean phase, the other-copy line, --json carries neither); plugins/audit/README.md's floorGuard.mode row gets one sentence; PLUGIN-BUILD-GUIDE.md gets sentences in the _status_facts.py, audit-status.py and _filed_returns floor-block sections. No count written into prose. DEPENDANTS: tests/test_audit_status.py and tests/test__status_facts.py - changed (new cases), every existing case still green (418/418 and 196/196, the ni/fo sign-off-due cases included); plugins/audit/README.md, plugins/audit/commands/status.md, PLUGIN-BUILD-GUIDE.md - changed as above; tests/test__help_lints.py, test__refs.py, test__deps.py, test__output_lints.py, test__filed_returns.py all green over the edited docs and code (sweep --jobs 4: 5/5 files ok); tools/measure-context.py --gate - GATE OK, status.md is not among its gated entries; tools/lints/_deps.py - no new edge: _status_facts already imported _filed_returns as _fr, audit-status already imported _fr, _evidence_io and _loader; audit-lookup.py, drive-phase.py and their suites - not edited, still correct, green in the task gate. COMMANDS: python3 tools/sweep-selftests.py tests/test__status_facts.py tests/test_audit_status.py tests/test_audit_lookup.py tests/test_drive_phase.py -> 4/4 files ok, exit 0. Red before the fix (first run, tests written before the code): test__status_facts.py 188/189 with 'FAIL fl RAISED ... no attribute floor_readings'; test_audit_status.py 414/416 with FAIL fg1 (rows []) and FAIL fg2. The orchestrator's wider gate, run once unrecorded (run-test-gate.py ... SG1 --task SG1.13-ukq, no --record): GATE GREEN, exit 0. ruff check and vermin -t=3.8- on the four code files: clean. Red-first command narrowed to tests/test__status_facts.py and tests/test_audit_status.py (measured 11.2 s); it runs every case this task added and leaves out only the two slow suites, which hold none of them. Mutation probe: scratch sg1.13/mutations.py, one row per rule with an ALLOW twin per deny, output in mutations.out.",
+        "descriptive": "/audit:status now names, under a phase due for sign-off, the done tasks whose floor guard reading found moves, left files uncompared, could not tell, or was never measured."
       },
       "startedAt": "2026-11-17T08:39:56Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-17T09:11:32Z",
+      "verifiedBy": [
+        "tests/test__status_facts.py fl1-fl8: floor_readings keeps four lists apart; findings alone under findings; clean with a file not compared listed, never omitted; could-not-tell its own; missing, block-less, unmarked and non-object returns not measured; plain clean, cancelled and pending tasks in none; an all-clean phase reads four empty lists; the block is read through floor_block alone",
+        "tests/test_audit_status.py fg1-fg7: through main() over a real evidence directory, a due phase prints exactly the four kind lines (a missing, an unmarked and an unreadable return all not measured) straight after its intent line; a signed-off phase, one with open work and an all-clean due phase print none; a damaged return does not stop the render; --json carries no floor list; a phase read from another copy and an unresolvable evidence directory say what was not read"
+      ],
       "notes": [
         {
           "at": "2026-11-16T22:19:40Z",
@@ -1157,13 +1162,25 @@
         "runId": "2026-11-17T09:11:29Z.80109f",
         "status": "passed",
         "at": "2026-11-17T09:11:29Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "38f98b5c1af2",
+        "at": "2026-11-17T09:11:32Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-17T08:58:51Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__status_facts.py tests/test_audit_status.py` in a throwaway tree at HEAD exited 1 with 2 of 417 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fg1 (house FAIL), fg2 (house FAIL): SELFTEST FAILED: 414/417 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "SG1.14-ukq",
       "title": "A green-first proof is run on the headless writer path too, and an owed proof with no block is said as owed",
-      "status": "pending",
-      "description": "FOUND WHILE VERIFYING SG1.6, confirmed by the orchestrator in the tree: the green-first helper runs only where an agent files through drive-phase.py submit. On the headless writer path (executor.writerModel set; the drive files the writer's return itself through file_writer_return / writer_prove) a task with tests.expectGreenFirst true gets a red-first block of not-attempted whose basis says a green-first proof is owed in its place (unowed_red_first in plugins/audit/scripts/governance/drive-phase.py) - and then no green helper runs and no greenFirst block is filed. The reviewer brief shows the green-first section only where the filed return carries a block (audit-lookup.py: 'Green-first is a question only where the filed return answered it'), so on that path an owed proof is silently absent: two execution paths, one of which drops a check the plan asked for without saying so.\n\nBUILD:\n(1) The headless path runs the green helper for a task that owes it, through the same code submit uses - find what submit calls for green (the argv builder and the block writer next to _fr.owes_green_first in drive-phase.py) and call THAT from the writer path; do not write a second runner or a second block shape. The command is the one the writer path already derives for red-first (writer_prove's derived test command); where no command can be derived, the block is could-not-prove naming that basis, exactly as writer_prove does for red.\n(2) OWED AND ABSENT IS A STATE, said wherever the block is read: a filed executor return of a task that owes green-first (owes_green_first) and carries no trusted greenFirst block is shown in the reviewer brief's green-first section as owed and not measured, with the reason if the return says one - never omitted. A task that owes none still gets no section. Use _filed_returns' own readers; if one function there can answer 'owed, proved / not-green / could-not-prove / owed-and-absent / not owed', add it there once and have both the brief and sign-off read it.\n(3) Sign-off: read what SG1.6 made a human settle (not-green) and make owed-and-absent stop the same way or say plainly, in the code and in reference/phase-signoff.md, why it does not. Decide by this rule: a proof the plan asked for that was never run is not weaker evidence than one that ran and failed.\n\nALLOW AND DENY, each pinned: headless path, owed, test passes on base -> greenFirst proved, same mark as submit's; headless path, owed, test fails on base -> not-green; headless path, owed, no derivable command -> could-not-prove naming it; headless path, NOT owed -> no green helper runs and no block (unchanged, and the red-first behaviour of a tdd task on that path is unchanged); subagent path -> exactly as SG1.6 left it; a return on an owed task with no block (an old return, or one filed through audit-task.py file-return) -> the brief says owed and not measured; a return on a task owing none -> no section.\n\nDependants to answer for: tests/test_drive_phase.py's writer-path cases (the ones over file_writer_return and writer_prove pin the calls made and their order - several will need the new call accounted for, none deleted); tests/test_audit_lookup.py's green-first brief cases from SG1.6; tests/test__filed_returns.py; plugins/audit/reference/execute-task.md and phase-signoff.md and plugins/audit/README.md where SG1.6 wrote that submit runs the proof (make them say both paths, in the documents' own voice, no counts in prose); PLUGIN-BUILD-GUIDE.md's drive-phase section; tools/measure-context.py --gate (the agent files are at their ceilings - this task should not need to touch them; say so if it does).\n\nAcceptance:\n1. On the headless writer path a task owing green-first files a greenFirst block from the same helper and under the same mark as submit: proved, not-green or could-not-prove.\n2. A task owing none is unchanged on both paths.\n3. An owed proof with no trusted block is shown as owed and not measured in the reviewer brief, never omitted.\n4. Sign-off treats owed-and-absent as the description decides, and the reference document says which and why.",
+      "status": "in_progress",
+      "description": "FOUND WHILE VERIFYING SG1.6, confirmed by the orchestrator in the tree: the green-first helper runs only where an agent files through drive-phase.py submit. On the headless writer path (executor.writerModel set; the drive files the writer's return itself through file_writer_return / writer_prove) a task with tests.expectGreenFirst true gets a red-first block of not-attempted whose basis says a green-first proof is owed in its place (unowed_red_first in plugins/audit/scripts/governance/drive-phase.py) - and then no green helper runs and no greenFirst block is filed. The reviewer brief shows the green-first section only where the filed return carries a block (audit-lookup.py: 'Green-first is a question only where the filed return answered it'), so on that path an owed proof is silently absent: two execution paths, one of which drops a check the plan asked for without saying so.\n\nBUILD:\n(1) The headless path runs the green helper for a task that owes it, through the same code submit uses - find what submit calls for green (the argv builder and the block writer next to _fr.owes_green_first in drive-phase.py) and call THAT from the writer path; do not write a second runner or a second block shape. The command is the one the writer path already derives for red-first (writer_prove's derived test command); where no command can be derived, the block is could-not-prove naming that basis, exactly as writer_prove does for red.\n(2) OWED AND ABSENT IS A STATE, said wherever the block is read: a filed executor return of a task that owes green-first (owes_green_first) and carries no trusted greenFirst block is shown in the reviewer brief's green-first section as owed and not measured, with the reason if the return says one - never omitted. A task that owes none still gets no section. Use _filed_returns' own readers; if one function there can answer 'owed, proved / not-green / could-not-prove / owed-and-absent / not owed', add it there once and have both the brief and sign-off read it.\n(3) Sign-off: read what SG1.6 made a human settle (not-green) and make owed-and-absent stop the same way or say plainly, in the code and in reference/phase-signoff.md, why it does not. Decide by this rule: a proof the plan asked for that was never run is not weaker evidence than one that ran and failed.\n\nALLOW AND DENY, each pinned: headless path, owed, test passes on base -> greenFirst proved, same mark as submit's; headless path, owed, test fails on base -> not-green; headless path, owed, no derivable command -> could-not-prove naming it; headless path, NOT owed -> no green helper runs and no block (unchanged, and the red-first behaviour of a tdd task on that path is unchanged); subagent path -> exactly as SG1.6 left it; a return on an owed task with no block (an old return, or one filed through audit-task.py file-return) -> the brief says owed and not measured; a return on a task owing none -> no section.\n\nDependants to answer for: tests/test_drive_phase.py's writer-path cases (the ones over file_writer_return and writer_prove pin the calls made and their order - several will need the new call accounted for, none deleted); tests/test_audit_lookup.py's green-first brief cases from SG1.6; tests/test__filed_returns.py; plugins/audit/reference/execute-task.md and phase-signoff.md and plugins/audit/README.md where SG1.6 wrote that submit runs the proof (make them say both paths, in the documents' own voice, no counts in prose); PLUGIN-BUILD-GUIDE.md's drive-phase section; tools/measure-context.py --gate (the agent files are at their ceilings - this task should not need to touch them; say so if it does).\n\nAcceptance:\n1. On the headless writer path a task owing green-first files a greenFirst block from the same helper and under the same mark as submit: proved, not-green or could-not-prove.\n2. A task owing none is unchanged on both paths.\n3. An owed proof with no trusted block is shown as owed and not measured in the reviewer brief, never omitted.\n4. Sign-off treats owed-and-absent as the description decides, and the reference document says which and why.\n\nADDED BEFORE START (the tree as SG1.13-ukq left it, commit 38f98b5):\n- SG1.6 holds the green-first status words in a vocabulary lint (tools/lints/_refs.py, green_first_vocabulary_drift) with a row in tools/prove-gates.py. If owed-and-absent becomes a word any surface prints or stores, it joins that vocabulary and the lint, or you say why it is a sentence and not a word. tools/lints/_refs.py and tests/test__refs.py are in your scope for that; touch them only if it is needed.\n- SG1.13-ukq made /audit:status print the floor reading of done tasks where sign-off is due (plugins/audit/scripts/status/_status_facts.py and audit-status.py). An owed-and-absent green proof is a fact of the same kind. Do NOT add it to status in this task - say in your outcome whether the reader you add in _filed_returns would serve a status line unchanged, so a later task can be one line.\n- The documents SG1.6 wrote say `submit` runs the proof and that the headless path is not covered (plugins/audit/reference/execute-task.md and CHANGELOG.md say so explicitly). Those sentences become false with this task: find each and make it true, and add this task's own CHANGELOG entry under Unreleased (CHANGELOG.md is added to your scope).",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
         "plugins/audit/scripts/manifest/_filed_returns.py",
@@ -1174,7 +1191,10 @@
         "plugins/audit/reference/execute-task.md",
         "plugins/audit/reference/phase-signoff.md",
         "plugins/audit/README.md",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/lints/_refs.py",
+        "tests/test__refs.py",
+        "CHANGELOG.md"
       ],
       "tests": {
         "mode": "tdd",
@@ -1185,7 +1205,7 @@
         ],
         "expectRedFirst": true,
         "gate": [
-          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_lookup.py tests/test__filed_returns.py"
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_lookup.py tests/test__filed_returns.py tests/test__refs.py"
         ],
         "gateBasis": "tests.add"
       },
@@ -1194,16 +1214,55 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-17T09:12:15Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-17T09:12:00Z",
+          "text": "it quotes one phrase of the execute-task reference about the gates key of a return; this task rewrites the sentences about where the green-first proof runs and leaves that phrase as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-17T09:12:00Z",
+          "text": "it quotes a phrase of the build guide's section on the affected-test derivation; this task edits the section on the drive only",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-17T09:12:00Z",
+          "text": "it quotes a sentence of the build guide's section on the doctor's trail check; this task edits the section on the drive only",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-17T09:12:00Z",
+          "text": "it reads the heading of the build guide's generated module map; this task adds no module, so the map and its heading stay as they are",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-17T09:12:00Z",
+          "reader": "tests/test__refs.py",
+          "reads": "PLUGIN-BUILD-GUIDE.md",
+          "text": "declared to answer a reading: tests/test__refs.py reads PLUGIN-BUILD-GUIDE.md - quotes its text beside its path: \"The executor's carries the resolved skills\""
+        },
+        {
+          "at": "2026-11-17T09:12:13Z",
+          "text": "it reads the Unreleased heading of CHANGELOG.md; this task adds an entry under that heading and leaves the heading as it is",
+          "waives": "tools/release.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T09:43:54Z.c4af9b",
+        "status": "passed",
+        "at": "2026-11-17T09:43:54Z"
+      }
     }
   ],
   "parentBranch": "integration/skill-gates",

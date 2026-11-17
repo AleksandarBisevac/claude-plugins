@@ -2951,6 +2951,13 @@ def _writer_reading_cases(check):
           red.get("status") == "not-attempted"
           and "regression" in str(red.get("basis") or "")
           and red.get("source") is None)
+    filed_r = _filed_body(mpath, "P1.1") or {}
+    check("gfw4 THE TWIN: a writer task owing no green-first is filed with no "
+          "greenFirst block and its outcome names no green-first proof - a drive "
+          "that ran the green helper for every task goes red here: %r"
+          % ((sorted(filed_r), filed_r.get("outcome")),),
+          filed_r != {} and _fr.GREEN_FIELD not in filed_r
+          and "green-first" not in str(filed_r.get("outcome")))
 
     root_u, mpath_u = _tdd_writer_repo("wj-unknown", (_wf_gate(),))
     _signal_next(M, root_u, mpath_u)
@@ -2979,6 +2986,83 @@ def _writer_reading_cases(check):
           "casesAdded" not in body_u
           and "writer" in str(body_u.get("casesAddedBasis") or "")
           and len(body_u.get(_fr.GAPS_FIELD) or []) == 1)
+
+
+def _green_writer_repo(prefix, gate):
+    """`_tdd_writer_repo`'s plan with its task made a refactor owing a
+    green-first proof, as `/audit:task add --expect-green-first` writes it."""
+    root, mpath = _tdd_writer_repo(prefix, gate)
+    with open(mpath, encoding="utf-8") as fh:
+        plan = json.load(fh)
+    tests = plan["phases"][0]["tasks"][0]["tests"]
+    tests.update(mode="regression", expectRedFirst=False, expectGreenFirst=True)
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump(plan, fh, indent=2)
+    for argv in (["add", "-A"], ["commit", "-qm", "a refactor owing green-first"]):
+        _harness.git(root, *argv)
+    return root, mpath
+
+
+# A refactor's characterization suite: its new case holds on the base (`v` is
+# one there and stays one) - and the twin whose new case holds only on the new
+# code, so the green helper's run on the base fails it.
+_WG_KEPT_TEST = _wf_suite([("old1", "mine.v >= 1"), ("new1", "mine.v == 1")])
+
+
+def _writer_green_cases(check):
+    """A writer session's return on a task owing green-first is filed with the
+    green helper's block, run through the call `submit` makes and under its
+    mark: proved where the added tests pass on the base, not-green where they
+    fail there, could-not-prove naming the basis where no command is derived."""
+    M, why = _load("drive_phase_writer_green")
+    if M is None:
+        check("gfw1 the driver loads", False, why)
+        return
+    stubs = os.path.realpath(_harness.fixture_root("drive-gfw-stub-"))
+    bindir = _writer_stub(stubs)
+    log = os.path.join(stubs, "runs.jsonl")
+    mark = _fr.GREEN_HELPER_SOURCE
+
+    def filed(prefix, gate, edit, cost):
+        root, mpath = _green_writer_repo(prefix, gate)
+        _signal_next(M, root, mpath)
+        code, line = _writer_round(M, root, mpath, bindir, log, cost, edit=edit,
+                                   result=_said("done"))
+        return code, line, _filed_body(mpath, "P1.1") or {}
+
+    code, line, body = filed("gfw-kept", (_wf_gate(),),
+                             {_WF_SRC: "v = 1  # refactored\n",
+                              _WF_TEST: _WG_KEPT_TEST}, "0.71")
+    green, red = body.get(_fr.GREEN_FIELD) or {}, body.get("redFirst") or {}
+    check("gfw1 a writer task owing green-first whose added tests pass on the base "
+          "is filed with the green helper's block, proved, under the mark submit "
+          "puts on it, its basis the helper's run in a throwaway tree, and "
+          "red-first not-attempted beside it: %r" % ((line, green, red),),
+          green.get("status") == "proved" and green.get("source") == mark
+          and "in a throwaway tree at HEAD" in str(green.get("basis"))
+          and red.get("status") == "not-attempted"
+          and "green-first" in str(red.get("basis"))
+          and "green-first proved" in str((body.get("outcome") or {})
+                                          .get("technical")))
+    code, line, body = filed("gfw-new", (_wf_gate(),),
+                             {_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST}, "0.72")
+    green = body.get(_fr.GREEN_FIELD) or {}
+    check("gfw2 ...and one whose added test fails on the base is filed not-green, "
+          "under the same mark, for a human to settle: %r" % ((line, green),),
+          green.get("status") == "not-green" and green.get("source") == mark
+          and "new1" in str(green.get("basis")))
+    blind = '"%s" -c "import sys"' % (sys.executable.replace("\\", "/"),)
+    code, line, body = filed("gfw-blind", (blind,),
+                             {_WF_SRC: "v = 1  # refactored\n",
+                              _WF_TEST: _WG_KEPT_TEST}, "0.73")
+    green = body.get(_fr.GREEN_FIELD) or {}
+    check("gfw3 where no gate entry names the tests.add file, no command is "
+          "derived: the return is filed could-not-prove, its basis naming why, "
+          "and with no helper mark - no helper ran: %r" % ((line, green),),
+          green.get("status") == "could-not-prove"
+          and "no gate entry" in str(green.get("basis"))
+          and _WF_TEST in str(green.get("basis"))
+          and green.get("source") is None and green.get("at"))
 
 
 def _no_machine_path(text, root):
@@ -18952,6 +19036,7 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("wl-block", "_writer_lock_cases"),
           ("wi-block", "_writer_invariant_cases"),
           ("wj-block", "_writer_reading_cases"),
+          ("gfw-block", "_writer_green_cases"),
           ("dl-block", "_lock_stop_cases"),
           ("ds-block", "_submit_cases"),
           ("flr-block", "_floor_guard_submit_cases"),

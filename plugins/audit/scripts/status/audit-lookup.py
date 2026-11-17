@@ -1929,14 +1929,17 @@ def _tests_add_review_lines(task, filed):
 # own, in a phase brief a line in each task's section. The reading is the filed
 # return's own block (`_fr.floor_lines`), never recomputed here.
 FLOOR_SECTION = "Moves that lower the bar (the floor guard)"
-# ...and the green-first block, shown only where the filed return carries one
-# (`_fr.green_lines` answers [] otherwise), so a task owing none pays nothing.
+# ...and the green-first block, shown where the filed return carries one or the
+# task owes the proof - an owed proof with no block is said as owed and not
+# measured (`_fr.green_first_reading`), never left out - and nowhere else
+# (`_fr.green_lines` answers []), so a task owing none pays nothing.
 GREEN_SECTION = "Green-first (a refactor's tests on the base)"
 
 
-def green_section(filed_obj):
-    """The green-first section's lines, or [] for a return with no block."""
-    lines = _fr.green_lines(filed_obj)
+def green_section(filed_obj, task):
+    """The green-first section's lines, or [] for a task owing no green-first
+    proof whose return carries no block."""
+    lines = _fr.green_lines(filed_obj, task)
     return _section(GREEN_SECTION, lines) if lines else []
 
 
@@ -1961,7 +1964,7 @@ def compose_reviewer_brief(manifest, phase, task, ctx, filed):
     lines += _section("The intent question", CLAUSE_QUOTING_LINES)
     lines += _section("tests.add", _tests_add_review_lines(task, filed_obj))
     lines += _section(FLOOR_SECTION, _fr.floor_lines(filed_obj))
-    lines += green_section(filed_obj)
+    lines += green_section(filed_obj, task)
     lines += _section("The recorded gate run", [
         "runId %s, status %s, at %s (task.testEvidence)"
         % (evidence.get("runId"), evidence.get("status"), evidence.get("at"))
@@ -2304,7 +2307,7 @@ def phase_brief_parts(manifest, phase, ctx):
         answers, owed_by = mechanical.get(tid, ({}, {}))
         computed = answer_lines(answers, owed_by) if (
             not owed_why and _fr.owed_answer(task, phase, live, answered)) else []
-        green = _fr.green_lines(_filed_obj(text))
+        green = _fr.green_lines(_filed_obj(text), task)
         # The task's own description and its filed return are the LAST two
         # things in the section, adjacent and in that order (`claim_section`)
         # - everything a reviewer needs to ask about first (the gate, the

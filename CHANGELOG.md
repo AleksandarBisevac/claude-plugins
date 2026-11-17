@@ -47,9 +47,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   human settles, which the reviewer's brief explains and sign-off waits on; zero collected, a
   compile or import error and a refusal are `could-not-prove` with the reason verbatim. The
   validator refuses the field beside `expectRedFirst` true and beside an empty `tests.add`,
-  and `green_first_vocabulary_drift()` holds the status words to the schema. Not covered: a
-  return filed straight through `audit-task.py file-return`, and the headless drive's own
-  filing, which runs only the red helper.
+  and `green_first_vocabulary_drift()` holds the status words to the schema. The headless
+  drive's own filing runs the same helper (entry below); a return filed straight through
+  `audit-task.py file-return` is not covered, and is read as owed and not measured.
+- **A green-first proof is run on the headless writer path too, and an owed proof with no block
+  is said as owed.** When the drive files a writer session's work for a task owing green-first, it
+  runs the same green call `submit` makes, over the test command it derives for the task, and
+  files the helper's `greenFirst` block under the same `green-first-helper` mark; where no gate
+  entry names the `tests.add` file it files `could-not-prove` naming that. A task owing none is
+  unchanged on both paths. A filed return of an owed task carrying no marked block - an older
+  return, or one filed straight through `audit-task.py file-return` - is no longer left out of
+  the reviewer's brief: its green-first section says the proof is owed and not measured, with
+  the return's own words when it typed some, and the phase review's computed `greenFirst` for
+  it is `not-attempted`, which sign-off now stops on as it stops on `not-green`.
 
 ## [3.8.0]
 

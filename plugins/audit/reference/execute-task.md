@@ -120,8 +120,15 @@ verb writes and refuses, and what the run commands leave behind, is
        task's own seen passing; `not-green` is a test failing on the base - written to the
        new code - and only a human settles it (`_filed_returns.needs_human`); zero collected,
        a compile or import error, or a refusal is `could-not-prove` with the reason verbatim.
-       Not covered: a return filed straight through `audit-task.py file-return`, and the
-       headless drive's own filing (`file`), which runs only the red helper.
+       The headless drive's own filing of a writer session runs the same call
+       (`drive-phase.py` `green_block`, through `writer_green`) over the command it derives
+       for the task, and files the block under the same mark; where no gate entry names the
+       `tests.add` file it files `could-not-prove` naming that, unmarked, as it does for red.
+       A return filed straight through `audit-task.py file-return` is not covered: an owed
+       proof with no marked block on the return is read as **owed and not measured**
+       (`_filed_returns.green_first_reading`) - the reviewer's brief says so in its green-first
+       section, and the phase sign-off stops on it (`greenFirst` `not-attempted`) as it stops
+       on `not-green`.
 
      **Ask what happened to the PROOF, not only to the gate.** A gate verdict says the
      suite is green; it cannot say whether the new assertion was ever watched failing, and

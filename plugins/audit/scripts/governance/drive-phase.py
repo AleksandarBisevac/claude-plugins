@@ -3930,12 +3930,14 @@ def writer_test_command(manifest, phase, task):
     """`(argv, None)` - the resolved gate command naming one of the task's
     `tests.add` files, split into words: `_filed_returns.red_command`, the one
     reader the executor's brief prints after `--` - or `(None, basis)` saying
-    why there is none. A task that owes no red-first proof
-    (`_filed_returns.owes_red_first`: not `tdd`, or its stored `expectRedFirst`
-    false) is `(None, None)`, whatever its `tests.add` names."""
+    why there is none. The command of whichever proof the task owes: the red
+    helper's (`writer_prove`) or the green helper's (`writer_green`). A task
+    owing neither (`_filed_returns.owes_red_first`: not `tdd`, or its stored
+    `expectRedFirst` false; and `owes_green_first` false) is `(None, None)`,
+    whatever its `tests.add` names."""
     tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
     added = _fr.tests_add_files(task)
-    if not _fr.owes_red_first(task):
+    if not (_fr.owes_red_first(task) or _fr.owes_green_first(task)):
         return None, None
     if not added:
         return None, ("%s is %s and its tests.add names no file, so no test "
@@ -3944,8 +3946,9 @@ def writer_test_command(manifest, phase, task):
     cmd = _fr.red_command(task, _evio.resolved_commands(manifest, entries))
     if cmd is None:
         return None, ("no gate entry of %s names its tests.add file (%s) as a "
-                      "path, so no test command could be derived and no red was "
-                      "run" % (task["id"], ", ".join(added)))
+                      "path, so no test command could be derived and no %s was "
+                      "run" % (task["id"], ", ".join(added), "green-first proof"
+                               if _fr.owes_green_first(task) else "red"))
     try:
         return shlex.split(cmd), None
     except ValueError as exc:
@@ -4299,11 +4302,12 @@ def writer_prove(ctx, manifest, phase, task, tree=None):
     over and the HEAD its throwaway ran at; `could-not-prove` naming the basis
     where no command can be derived; `not-attempted` where the task owes no
     red-first proof (`unowed_red_first`) - or `(None, None, why)` with the
-    helper's own words when it gave no block or refused."""
-    cmd, basis = writer_test_command(manifest, phase, task)
-    if cmd is None and basis is None:
+    helper's own words when it gave no block or refused. A task owing a
+    green-first proof owes no red one: its command is `writer_green`'s."""
+    if not _fr.owes_red_first(task):
         return dict(unowed_red_first(task), at=_utc_stamp(),
                     head=tree_head(ctx, tree)), None, None
+    cmd, basis = writer_test_command(manifest, phase, task)
     if cmd is None:
         return {"status": "could-not-prove", "at": _utc_stamp(),
                 "head": tree_head(ctx, tree), "basis": basis}, None, None
@@ -4324,6 +4328,24 @@ def writer_prove(ctx, manifest, phase, task, tree=None):
     if isinstance(impl, dict):
         block["implementationDigest"] = impl
     return block, dict(payload or {}, implementationDigest=impl), None
+
+
+def writer_green(ctx, manifest, phase, task, tree=None):
+    """`(block, None)` - the `greenFirst` block a writer's return is filed with:
+    `green_block`'s, the very call and mark `submit` makes, over the command
+    `writer_test_command` derives; `could-not-prove` naming the basis, with no
+    helper mark, where no command can be derived, as `writer_prove` answers
+    for red - or `(None, None)` for a task owing no green-first proof, or
+    `(None, stop)` when the helper refused or gave no block. Run at the filing,
+    over the bytes filed, so no held proof can stand for a tree it was not
+    made over."""
+    if not _fr.owes_green_first(task):
+        return None, None
+    cmd, basis = writer_test_command(manifest, phase, task)
+    if cmd is None:
+        return {"status": "could-not-prove", "at": _utc_stamp(),
+                "basis": basis}, None
+    return green_block(ctx, task, cmd, tree=tree)
 
 
 def hold_proof(ctx, state, task, block, payload=None):
@@ -4507,23 +4529,27 @@ def writer_holds(state, task):
             and writer_round_done(state, task))
 
 
-def writer_return(task, paths, block, stamp, claim, claim_why, reproofs=()):
+def writer_return(task, paths, block, stamp, claim, claim_why, reproofs=(),
+                  green=None):
     """The return the drive files for a writer session: the diff's paths, the
-    red-first block, the stamp, every re-proof over changed test files, and the
-    last session's final message as the writer's CLAIM - which the recorded
-    gate and the reviewer grade, never a verdict itself. `file-return` scrubs
-    machine paths from it as from every committed return."""
+    red-first block, the green-first block of a task owing one (`writer_green`),
+    the stamp, every re-proof over changed test files, and the last session's
+    final message as the writer's CLAIM - which the recorded gate and the
+    reviewer grade, never a verdict itself. `file-return` scrubs machine paths
+    from it as from every committed return."""
     tests = task.get("tests") if isinstance(task.get("tests"), dict) else {}
     added = [a for a in tests.get("add") or []
              if isinstance(a, str) and a.split(":", 1)[0].strip() in paths]
-    return {
+    body = {
         "gates": {},
         "outcome": {
             "technical": "Filed by the drive at the writer's green gate: the diff "
-                         "touches %s; red-first %s. The session's last message %s "
+                         "touches %s; red-first %s%s. The session's last message %s "
                          "%s as the writer's claim, not a verdict: the recorded "
                          "gate and the reviewer grade the work." % (
                              ", ".join(paths) or "no path", block.get("status"),
+                             "" if green is None
+                             else "; green-first %s" % (green.get("status"),),
                              "is kept in" if claim_why is None
                              else "is absent (%s) from" % (claim_why,),
                              WRITER_CLAIM_FIELD),
@@ -4535,6 +4561,9 @@ def writer_return(task, paths, block, stamp, claim, claim_why, reproofs=()):
         WRITER_CLAIM_FIELD: claim,
         DIFF_PATHS_FIELD: list(paths),
         REPROOFS_FIELD: list(reproofs)}
+    if green is not None:
+        body[_fr.GREEN_FIELD] = green
+    return body
 
 
 def file_writer_return(ctx, state, manifest, phase, task, tree=None):
@@ -4590,12 +4619,25 @@ def file_writer_return(ctx, state, manifest, phase, task, tree=None):
     if covered["declined"]:
         ctx["did"].append("%s: the writer reports clause %s as not delivered"
                           % (task["id"], ", ".join(str(n) for n in covered["declined"])))
+    # GREEN-FIRST, after the proof and before the stamp, as `submit` runs it: a
+    # task owing the proof is filed with the green helper's block, never with
+    # none - an owed proof left off the return is the reviewer's to be told of,
+    # and here there is no agent to have skipped it.
+    green, stop = writer_green(ctx, manifest, phase, task, tree)
+    if stop is not None:
+        return stop
+    if green is not None:
+        ctx["did"].append("green-first %s" % (green.get("status"),))
     line, stop = take_stamp(ctx, task, tree) if tree else take_stamp(ctx, task)
     if stop is not None:
         return stop
-    body = writer_return(task, paths, block, line, claim, why, held["reproofs"])
+    body = writer_return(task, paths, block, line, claim, why, held["reproofs"],
+                         green)
     cmd, _basis = writer_test_command(manifest, phase, task)
-    printed = proof.get("printed") if cmd else None
+    # The labels the case binding reads are the run that ran the task's tests:
+    # the green helper's for a task owing green-first, else the held red proof's.
+    printed = (ctx.get("printed") if green is not None
+               else proof.get("printed")) if cmd else None
     body[_fr.GAPS_FIELD] = case_binding_gaps(task, None, printed, cmd)
     body[_fr.UNCHECKED_FIELD] = (_fr.case_binding_unchecked(task, cmd)
                                  if cmd and printed is not None else [])
@@ -12104,15 +12146,18 @@ def green_args(project, manifest, task_id, cmd, cases=(), deps_from=None):
     return ["green"] + argv[1:]
 
 
-def green_block(ctx, task, args, cmd, tree=None):
+def green_block(ctx, task, cmd, cases=(), deps_from=None, tree=None):
     """`(block, None)` - the green helper's `greenFirst` block for a task owing
-    a green-first proof (`_fr.owes_green_first`) - or `(None, stop)`, the way
-    `red_block` answers for the red helper."""
+    a green-first proof (`_fr.owes_green_first`), marked
+    `_fr.GREEN_HELPER_SOURCE` - or `(None, stop)`, the way `red_block` answers
+    for the red helper. THE ONE GREEN RUN: `submit` calls it for an executor,
+    and `writer_green` after a writer session, so the two blocks cannot differ
+    by how they were asked for or marked."""
     block, _payload, why = red_reading(ctx, task, green_args(
-        task_root(ctx, tree), ctx["manifest"], task["id"], cmd, args.case,
-        args.deps_from), key=_fr.GREEN_FIELD)
+        task_root(ctx, tree), ctx["manifest"], task["id"], cmd, cases,
+        deps_from), key=_fr.GREEN_FIELD)
     if why is None:
-        return block, None
+        return dict(block, source=_fr.GREEN_HELPER_SOURCE), None
     kind, code, text = why
     if kind == "refused":
         return None, relay_refusal(ctx, "stamp-verification.py", code, text)
@@ -12436,11 +12481,11 @@ def submit(ctx, manifest, args, cmd, text):
             ctx["did"].append("changed paths not compared with %s's files: %s"
                               % (task["id"], why))
         if cmd and green:
-            block, stop = (green_block(ctx, task, args, cmd, tree) if tree
-                           else green_block(ctx, task, args, cmd))
+            block, stop = green_block(ctx, task, cmd, args.case, args.deps_from,
+                                      tree)
             if stop is not None:
                 return stop
-            body[_fr.GREEN_FIELD] = dict(block, source=_fr.GREEN_HELPER_SOURCE)
+            body[_fr.GREEN_FIELD] = block
             ctx["did"].append("green-first %s" % (block.get("status"),))
         elif cmd:
             block, stop = (red_block(ctx, task, args, cmd, tree) if tree

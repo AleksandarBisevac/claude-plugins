@@ -1,0 +1,99 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_lookup.py tests/test__filed_returns.py tests/test__refs.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-17T09:32:34Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__filed_returns.py tests/test_audit_lookup.py` in a throwaway tree at HEAD exited 1 with 3 of 204 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - gfr7 (house FAIL), gfb3 (house FAIL), gfb5 (house FAIL): SELFTEST FAILED: 202/204 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "drive-phase.py: green_block(ctx, task, cmd, cases, deps_from, tree) now puts the green-first-helper mark on the block itself and is the one green run; submit calls it as before, and the new writer_green calls it from file_writer_return after the clause coverage and before the stamp, over the command writer_test_command derives. writer_test_command now derives for a task owing either proof (its no-gate-entry basis says 'no green-first proof was run' for a green task); writer_prove checks owes_red_first first, so a green task still files red-first not-attempted and runs no red helper. Where no command is derived the writer path files greenFirst could-not-prove naming the basis, with no mark, as writer_prove does for red. writer_return carries the green block and names 'green-first <word>' in outcome.technical; the case binding reads the green run's printed labels for a green task. _filed_returns.py: new green_first_reading(task, executor) - None when not owed, else {status, basis, block, measured}; an owed proof with no marked block is status not-attempted (the schema's own word for no proof made), measured false, basis 'owed and not measured: ...', plus the typed block's basis as the return's own words. green_lines(executor, task=None) and mechanical_answers(executor, gate, task=None) both ask it; phase_answers hands the task; HUMAN_GREEN_FIRST gains not-attempted, so needs_human (driver triage, audit-task signoff, close-phase) stops on owed-and-absent as on not-green. audit-lookup.py: green_section and the phase unit pass the task. Owed-and-absent is a sentence and a basis, never a stored word: the stored word is the schema's not-attempted, already in GREEN_FIRST_WORDS and named in the reviewer brief, so green_first_vocabulary_drift stays green with no new row (run: problems []); tools/lints/_refs.py comment only, tests/test__refs.py untouched. Sign-off decision (description item 3): stops, by the stated rule; phase-signoff.md says which and why. could-not-prove is left as SG1.6 left it (does not stop) - not in this task's scope, flagged for the orchestrator since the same rule could be read to reach it. Docs: execute-task.md, CHANGELOG.md (SG1.6's 'not covered' sentence corrected, plus this task's own entry), README.md, phase-signoff.md, PLUGIN-BUILD-GUIDE.md. Tests: test__filed_returns.py block gfrr-block gfr7-gfr12 (135/135), test_audit_lookup.py gfb3-gfb5 (204/204), test_drive_phase.py new block gfw-block gfw1-gfw3 and gfw4 in wj-block. The red-first command after `--` is narrowed to tests/test__filed_returns.py and tests/test_audit_lookup.py (measured once: 6.3 s); gfw1-gfw4 are therefore NOT in the red run, and the mutation probe covers each of them. The task gate ran with --jobs 4 per the session's machine-load rule: exit 0, 4/4 files ok. The orchestrator's wider gate (run-test-gate.py SG1 --task SG1.14-ukq, unrecorded) exit 0, GATE GREEN; it ran before gfb3 was tightened, after which gfb-block was rerun 204/204. Mutation probe sg1.14/mutations.py: 17 rows (allow twins included), all applied, all caught, exit 0. tools/measure-context.py --gate exit 0, agent files untouched. ruff and vermin exit 0 on every changed .py. Status: green_first_reading(task, executor) would serve a /audit:status line unchanged - the caller reads the task's filed executor return (as phase_answers does) and prints status, with measured false meaning owed and not measured.",
+    "descriptive": "A refactor's green-first proof now runs on the headless writer path through the same call and mark as submit, and an owed proof with no block is said as owed and not measured in the reviewer's brief and stops sign-off like not-green."
+  },
+  "testsAdded": [
+    "test_drive_phase.py gfw1-gfw3: the headless writer path files the green helper's block under the submit mark - proved when the added test passes on the base, not-green when it fails there, could-not-prove unmarked when no gate entry names the tests.add file",
+    "test_drive_phase.py gfw4 (in wj-block): a writer task owing no green-first files no greenFirst block",
+    "test_audit_lookup.py gfb3-gfb5: an owed task with no trusted block is shown as owed and not measured inside the green-first section (task and phase brief), with the return's own words; a task owing none gets no section",
+    "test__filed_returns.py gfr7-gfr12: green_first_reading answers proved / not-green / could-not-prove / owed-and-absent / not owed, and the brief lines, computed phase answer, phase_answers and needs_human read it"
+  ],
+  "casesAdded": [
+    [
+      "gfw1",
+      "gfw2",
+      "gfw3",
+      "gfw4"
+    ],
+    [
+      "gfb3",
+      "gfb4",
+      "gfb5"
+    ],
+    [
+      "gfr7",
+      "gfr8",
+      "gfr9",
+      "gfr10",
+      "gfr11",
+      "gfr12"
+    ]
+  ],
+  "claims": "claims:\n1 _filed_returns.py green_first_reading is the reader the docs name; mechanical_answers and green_lines call it; HUMAN_GREEN_FIRST holds not-attempted; drive-phase.py file_writer_return calls writer_green, which calls green_block (the call submit makes)\n2 probe sg1.14/mutations.py: 17 rows each mutated once (anchor count 1), red seen, restored byte for byte; allow twins (every task owed / every writer task runs green) turned gfr9, gfb4, gfw4 red; one row survived on the first run (gfb3 matched the verbatim claim section) and gfb3 was narrowed to the section, then all caught\n3 grep for 'only the red helper', 'not covered', 'headless' near green across docs and code: execute-task.md and CHANGELOG.md hits fixed; README.md row 408 and 722, phase-signoff.md, PLUGIN-BUILD-GUIDE.md _filed_returns, audit-lookup and drive-phase sections updated; schema descriptions saying submit runs green left, still true and out of scope\n4 sign-off stop is enforced by _filed_returns.needs_human via HUMAN_GREEN_FIRST, named in phase-signoff.md's sentence\n5 measured once: the narrowed red-first command at 6.3 s\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:0990a66a0c7cc93f67c70ba7627bb7ab53457a1fd4aaa1be282dc2fee60af75d\",\"dirtyDigest\":\"sha256:5e7aa6c6866d58499b264fddcab0964f4de95ce37783c542e684d3db30a139de\",\"dirtyPaths\":{\"CHANGELOG.md\":\"edc5e90094a2ec45\",\"PLUGIN-BUILD-GUIDE.md\":\"e105bcd747e9d553\",\"plugins/audit/README.md\":\"18ba60c4da0e8b06\",\"plugins/audit/reference/execute-task.md\":\"3750d2c937d2450b\",\"plugins/audit/reference/phase-signoff.md\":\"1bd5a543d5de88d1\",\"plugins/audit/scripts/governance/drive-phase.py\":\"a9f0fd8a380564e0\",\"plugins/audit/scripts/manifest/_filed_returns.py\":\"e41fc8edd19fbf60\",\"plugins/audit/scripts/status/audit-lookup.py\":\"8c425bb7a5a339e8\",\"tests/test__filed_returns.py\":\"c7aaa2cdcc8d1765\",\"tests/test_audit_lookup.py\":\"632f548b85bf3587\",\"tests/test_drive_phase.py\":\"128dc4d587dbab94\",\"tools/lints/_refs.py\":\"18e19deb943cd2c8\"},\"head\":\"38f98b5c\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/README.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/reference/phase-signoff.md\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/manifest/_filed_returns.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test__filed_returns.py\",\"tests/test__refs.py\",\"tests/test_audit_lookup.py\",\"tests/test_drive_phase.py\",\"tools/lints/_refs.py\"],\"scopeDigest\":\"sha256:52af7485e210d2f0e201aae8947b7b3c19112033e5580be487db8bced9c20f84\",\"v\":2}",
+  "floorGuard": {
+    "answer": "clean",
+    "basis": "read 7 of the diff's 12 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 5 file(s) not read, having no syntax known here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md, plugins/audit/reference/execute-task.md, plugins/audit/reference/phase-signoff.md; 2 test file(s) not compared for definition-changed, defining no test* function: tests/test__filed_returns.py, tests/test_audit_lookup.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/reference/execute-task.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/reference/phase-signoff.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "tests/test__filed_returns.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test_audit_lookup.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      }
+    ],
+    "base": {
+      "commit": "38f98b5c1af2aa86eb710ff65cc995bd16bd916d"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-17T09:32:37Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

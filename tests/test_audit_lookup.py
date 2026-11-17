@@ -3391,8 +3391,72 @@ def _green_brief_cases(check):
         check("gfb2 the phase brief shows an owed task its own green-first block "
               "in that task's section: %r" % (unit[:300],),
               _GFB_BLOCK["basis"] in unit and "written to the new code" in unit)
+        owed = _gfb_owed(_bf_manifest())
+        absent = brief("gfb-owed-absent", None, manifest=owed)
+        typed = brief("gfb-owed-typed", {"status": "proved", "at": "z",
+                                         "basis": _GFB_TYPED}, manifest=owed)
+        # Read inside the section: the brief also prints the filed return
+        # verbatim under the claim, so a typed basis is in the brief whether the
+        # section carried it or not.
+        sec_absent, sec_typed = _gfb_section(absent), _gfb_section(typed)
+        check("gfb3 OWED AND ABSENT: the reviewer's brief of a task owing "
+              "green-first whose filed return carries no trusted block shows the "
+              "section once, saying owed and not measured - with the return's "
+              "own reason when it gave one - never omitting it: %r"
+              % ((heads(absent), sec_typed[:300]),),
+              len(heads(absent)) == 1 and len(heads(typed)) == 1
+              and "owed and not measured" in sec_absent.lower()
+              and "owed and not measured" in sec_typed.lower()
+              and _GFB_TYPED in sec_typed and _GFB_TYPED not in sec_absent)
+        check("gfb4 THE TWIN: a task owing none, its return carrying no block, "
+              "gets no green-first section and no owed sentence: %r"
+              % (heads(plain),),
+              heads(plain) == [] and "owed and not measured" not in plain.lower()
+              and plain != "")
+        signed = _bf_signed_phase()
+        signed["phases"][0]["tasks"][0] = _gfb_owed_task(
+            signed["phases"][0]["tasks"][0])
+        ptext = brief("gfb-phase-owed", None, node_id="P1", role="phase",
+                      out="phase.md", manifest=signed)
+        at = ptext.find("## P1.1 ")
+        nxt = ptext.find("\n## P1.", at + 1)
+        unit = ptext[at:nxt if nxt > at else len(ptext)] if at >= 0 else ""
+        rest = ptext[nxt:] if nxt > at >= 0 else ""
+        check("gfb5 the phase brief says owed and not measured in the owed task's "
+              "own section, and in no other task's: %r" % (unit[-400:],),
+              "owed and not measured" in unit.lower()
+              and "owed and not measured" not in rest.lower())
     finally:
         _harness.remove_tree(root)
+
+
+_GFB_TYPED = "the agent says its new case passed on the base"
+
+
+def _gfb_section(text):
+    """The body of a brief's green-first section, up to the next heading, or ""
+    when it has none."""
+    head = next((ln for ln in text.splitlines()
+                 if ln.startswith("## ") and "green-first" in ln.lower()), None)
+    if head is None:
+        return ""
+    body = text[text.index(head) + len(head):]
+    end = body.find("\n## ")
+    return body if end < 0 else body[:end]
+
+
+def _gfb_owed_task(task):
+    """`task` owing a green-first proof, as `/audit:task add
+    --expect-green-first` writes it."""
+    return dict(task, tests=dict(task.get("tests") or {}, mode="regression",
+                                 add=["tests/test_refund.py: keeps the sum"],
+                                 expectRedFirst=False, expectGreenFirst=True))
+
+
+def _gfb_owed(manifest):
+    manifest["phases"][0]["tasks"][0] = _gfb_owed_task(
+        manifest["phases"][0]["tasks"][0])
+    return manifest
 
 
 _FGB_FINDING = {"move": "definition-changed", "path": "tests/test_refund.py",

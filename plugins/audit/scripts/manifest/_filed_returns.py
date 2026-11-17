@@ -1518,10 +1518,54 @@ GREEN_NOT_MEANS = ("`not-green` on a refactor means the tests it added fail on t
                    "human settles it - the phase sign-off stops on it.")
 
 
-def green_lines(executor):
+def green_first_reading(task, executor):
+    """The green-first question for `task` and its filed executor return, read
+    one way for the brief and the sign-off: None when the task owes no
+    green-first proof (`owes_green_first`), whatever the return carries; else
+    `{"status", "basis", "block", "measured"}`. The helper's marked block
+    (`helper_green_first`) answers with its own word and basis, `measured`
+    true - the helper ran, whatever it concluded. With
+    no such block - none filed, a return with no block, or one the agent typed
+    - the answer is `not-attempted`, the schema's word for no proof made, NOT
+    MEASURED, its basis saying the proof is owed and carrying the typed
+    block's basis as the return's own words. An owed proof that never ran is
+    never read as absent: it is the same stop at sign-off as `not-green`."""
+    if not owes_green_first(task):
+        return None
+    block = helper_green_first(executor)
+    if block is not None:
+        return {"status": block["status"], "basis": block["basis"],
+                "block": block, "measured": True}
+    typed = executor.get(GREEN_FIELD) if isinstance(executor, dict) else None
+    said = typed.get("basis") if isinstance(typed, dict) else None
+    basis = ("owed and not measured: tests.expectGreenFirst is true, and %s, so "
+             "no run of the added tests on the base is on the record"
+             % ("no filed executor return was read"
+                if not (isinstance(executor, dict) and executor)
+                else "the return carries no greenFirst block from the green "
+                     "helper (`source: %s`)" % (GREEN_HELPER_SOURCE,)))
+    if isinstance(said, str) and said.strip():
+        basis += "; the return's own words, not the helper's: %s" % (said.strip(),)
+    return {"status": "not-attempted", "basis": basis, "block": None,
+            "measured": False}
+
+
+def green_lines(executor, task=None):
     """The green-first block as a reviewer's brief shows it, or [] when the
-    return carries none - so a task owing no green-first pays nothing. A block
-    without the verb's mark is named as not the helper's, never shown as one."""
+    return carries none and `task` owes no green-first proof - so a task owing
+    none pays nothing. A block without the verb's mark is named as not the
+    helper's, never shown as one; an owed proof with no block is said as owed
+    and not measured (`green_first_reading`), never left out."""
+    reading = green_first_reading(task, executor) if task is not None else None
+    if reading is not None and not reading["measured"]:
+        return ["OWED AND NOT MEASURED: this task owes a green-first proof, and no "
+                "block from the green helper is on its filed return.",
+                "basis: %s" % (reading["basis"],),
+                "Read it as no proof that the added tests pass on the base, not as "
+                "a pass. The phase sign-off stops on it (`greenFirst` "
+                "`not-attempted`) as it stops on `not-green`: a proof the plan "
+                "asked for that never ran is no weaker a question than one that "
+                "ran and failed."]
     if not (isinstance(executor, dict) and GREEN_FIELD in executor):
         return []
     block = helper_green_first(executor)
@@ -1777,11 +1821,12 @@ def gate_reading(build, resolved):
                      "read as running the whole project" % (shown,))
 
 
-def mechanical_answers(executor, gate):
+def mechanical_answers(executor, gate, task=None):
     """`(answers, owed)` for one task: the fields a script fills, and for each
     answer it does not fill, why it stays the reviewer's. `executor` is
     `(rel, body, problem)` of its filed executor return - body None when none
-    is filed - and `gate` is `gate_reading`'s answer."""
+    is filed - `gate` is `gate_reading`'s answer, and `task` the plan's task,
+    whose green-first obligation (`green_first_reading`) is asked when given."""
     rel, body, problem = executor
     answers, owed = {}, {}
     block = None if problem else helper_red_first(body)
@@ -1796,10 +1841,18 @@ def mechanical_answers(executor, gate):
     else:
         owed["redFirst"] = ("the `redFirst` in %s is not the red-first helper's "
                             "block, so it is graded by reading" % (rel,))
-    # Only a return carrying the green helper's block answers green-first: no
-    # block is no question, so nothing is owed for it.
+    # A task owing green-first is answered by `green_first_reading`, an owed
+    # proof with no block as `not-attempted`, which the sign-off stops on. For
+    # a task owing none, only a return carrying the green helper's block
+    # answers it: no block is no question, so nothing is owed for it.
     green = None if problem else helper_green_first(body)
-    if green is not None:
+    reading = green_first_reading(task, None if problem else body)
+    if reading is not None and not reading["measured"]:
+        answers["greenFirst"] = reading["status"]
+        answers["greenFirstBasis"] = "%s (read from %s%s)" % (
+            reading["basis"], rel, ", which does not read: %s" % (problem,)
+            if problem else "")
+    elif green is not None:
         answers["greenFirst"] = green["status"]
         answers["greenFirstBasis"] = "%s (the green helper's block in %s, at %s)" \
             % (green["basis"], rel, green["at"])
@@ -1924,7 +1977,7 @@ def phase_answers(evidence_dir, phase, build, resolve):
             return_path(evidence_dir, task, "executor"))
         entries, _whose = task_gate_entries(phase, task)
         found[tid] = mechanical_answers(
-            (rel, body, problem), gate_reading(build, resolve(entries)))
+            (rel, body, problem), gate_reading(build, resolve(entries)), task)
     return found
 
 
@@ -2012,7 +2065,8 @@ def _typed_over(tid, entry, answers, word, basis):
 
 # --- the answers only a human settles ---------------------------------------------
 # A reviewer's `diverges` or `cannot-tell`, a red-first grade of `not-proved`, a
-# green-first `not-green` and an inherited test `flagged` are the answers no
+# green-first `not-green` or owed `not-attempted` and an inherited test
+# `flagged` are the answers no
 # agent settles. The driver's
 # triage stops on them and the sign-off verb refuses over them, through this one
 # predicate, so the documented verb run by hand cannot sign off what the driver
@@ -2021,8 +2075,11 @@ HUMAN_ANSWERS = ("diverges", "cannot-tell")
 HUMAN_RED_FIRST = ("not-proved",)
 HUMAN_INHERITED = ("flagged",)
 # A refactor's tests seen failing on the base: the green helper's `not-green`,
-# computed into the phase entry, is settled the way a `not-proved` is.
-HUMAN_GREEN_FIRST = ("not-green",)
+# computed into the phase entry, is settled the way a `not-proved` is - and so
+# is `not-attempted`, computed for a task owing the proof whose return carries
+# no helper block (`green_first_reading`): a proof the plan asked for that never
+# ran is no weaker a question than one that ran and failed.
+HUMAN_GREEN_FIRST = ("not-green", "not-attempted")
 # The words a reviewer may type over a computed answer (`_typed_over`): per
 # field, the answers only a human settles, so a computed answer never stands
 # between a reviewer and the human it escalates to.
@@ -2050,7 +2107,7 @@ def needs_human(returns, settled=(), bound=()):
     `returns` (`phase_returns`' list) that only a human settles and is not
     settled: a task entry answering `diverges` or `cannot-tell`, grading
     red-first `not-proved` or inherited tests `flagged`, carrying green-first
-    `not-green`, and a phase intent of
+    `not-green` or `not-attempted`, and a phase intent of
     `diverges` or `cannot-tell`. `sha256` is the signature of the return the
     answer sits in. An answer is settled when its key is in `settled` - a
     settlement by name, which only the reading of a verdict recording no read

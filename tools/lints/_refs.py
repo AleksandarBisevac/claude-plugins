@@ -1255,9 +1255,10 @@ def red_first_vocabulary_drift(repo_root=None):
 #   - the verb's mark is the red-first helper's spelled for green, never equal to
 #     it, so a reader can tell the two blocks apart;
 #   - the reviewer's brief names every word only a human settles
-#     (`HUMAN_GREEN_FIRST`), the one it may type over a computed answer;
+#     (`HUMAN_GREEN_FIRST`), the words it may type over a computed answer;
 #   - the executor's brief declares no `greenFirst` block: `submit` writes it and
-#     drops one the agent typed, so a declared shape would ask for a dropped key.
+#     drops one the agent typed (the drive writes it for a writer session), so a
+#     declared shape would ask for a dropped key.
 # The helper's and the verb's tuples are read off their SOURCE, as
 # `PHASE_ENTRY_KEYS` is below, because both sit in layers this module may not
 # import.
@@ -1266,7 +1267,9 @@ GREEN_FIRST_DEF = "greenFirst"
 GREEN_FIRST_HELPER = "scripts/governance/stamp-verification.py"
 GREEN_FIRST_VERB = "scripts/manifest/_filed_returns.py"
 # `not-attempted` is the word for a task where no proof was made: no run of the
-# helper produces it, so the helper's list omits it on purpose.
+# helper produces it, so the helper's list omits it on purpose. The filing verb
+# computes it for a task owing the proof whose return carries no helper block
+# (`green_first_reading`) - owed and not measured, a word only a human settles.
 GREEN_FIRST_UNWRITTEN = ("not-attempted",)
 _GF_EXEC_SHAPE = re.compile(r'"greenFirst":')
 

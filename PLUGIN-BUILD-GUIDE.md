@@ -2424,7 +2424,7 @@ an absence; `claims_from_return` hands the commit path the `claims` text verbati
 directory is handed in rather than resolved — resolving it is `_evidence_io`'s, one layer up —
 so the module reaches nothing but `_output`. `needs_human` is the one reading of which phase-return
 answers only a human settles - a task entry's `diverges`/`cannot-tell`, `not-proved`, `flagged`
-or green-first `not-green` (`HUMAN_GREEN_FIRST`), and a phase intent of `diverges`/`cannot-tell` - shared by the driver's triage and
+or green-first `not-green` or `not-attempted` (`HUMAN_GREEN_FIRST`), and a phase intent of `diverges`/`cannot-tell` - shared by the driver's triage and
 `audit-task.py signoff`, which refuses while one is unsettled; `settlement_record` reads the
 settlement the triage's `--answer accept` writes at `drive_state_path` (`<stateDir>/drive/<phase>.json`)
 through `settlement_after` - each settled answer's key, and beside it the signature of the return
@@ -2449,8 +2449,16 @@ helper's), `owes_green_first` says a task with `tests.expectGreenFirst` true and
 entry owes one - and `owes_red_first` is false for it - `mechanical_answers` computes the
 `greenFirst` pair of a phase entry from it, and `green_lines` is the brief's reading, with the
 sentence that `not-green` means the tests were written to the new code; a return carrying no
-block yields no line, so a task owing none pays nothing in its brief. Its words are
-`GREEN_FIRST_WORDS`, the schema enum (`gfr1`-`gfr6`).
+block yields no line for a task owing none, so such a task pays nothing in its brief. Its words
+are `GREEN_FIRST_WORDS`, the schema enum (`gfr1`-`gfr6`). **`green_first_reading(task,
+executor)` is the one answer to the question for a task**: None when the task owes none, else
+the helper's word with its block, or - an owed proof whose return carries no marked block -
+`not-attempted` with `measured` false and a basis saying *owed and not measured*, carrying the
+typed block's basis as the return's own words. `green_lines` given the task and
+`mechanical_answers` given the task both ask it, so the brief says an owed-and-absent proof
+rather than omitting it, and the phase entry's computed `not-attempted` is in
+`HUMAN_GREEN_FIRST`, which sign-off stops on as on `not-green`; owed-and-absent is a sentence
+the brief prints and a basis, never a stored word of its own (`gfr7`-`gfr11`).
 
 **The floor guard's block** (`FLOOR_FIELD`) is read here once for every surface that shows it:
 `floor_block` trusts a block only with the source mark `submit` stamps (`FLOOR_SOURCE`), an
@@ -3587,7 +3595,9 @@ carrying, on a task that owes a red-first proof (`_filed_returns.owes_red_first`
 `tests.expectRedFirst` not false), the gate command that names its `tests.add` file after `--`
 (`red_command`), since `submit` takes the stamp and runs the red-first helper itself — the same
 command, with a note, on a task owing a green-first proof (`_filed_returns.owes_green_first`),
-whose reviewer briefs show the filed `greenFirst` block (`GREEN_SECTION`, absent with no block) —
+whose reviewer briefs show the filed `greenFirst` block (`GREEN_SECTION`), or say the proof is
+owed and not measured when the filed return carries no marked block (`gfb3`, `gfb5`), the
+section absent only for a task owing none whose return carries no block (`gfb4`) —
 and,
 only when `attempts > 1`, what the last attempt left on the record. Both reviewer briefs file
 through `submit` too, the phase review's with `--head` - but a per-task reviewer run as a
@@ -5473,7 +5483,12 @@ block and no filing (`red_block`) - or, on a task owing a green-first proof
 (`_filed_returns.owes_green_first`), `stamp-verification.py green --json` in its place
 (`green_args`, `green_block`), refused without a command, whose block is filed under the
 `green-first-helper` mark beside red-first `not-attempted`; any `greenFirst` block the agent
-typed is dropped (`gfs1`-`gfs3`); then `stamp-verification.py take --json`, after the red run
+typed is dropped (`gfs1`-`gfs3`). `green_block` puts that mark on itself and is the one green
+run: `file_writer_return` reaches it through `writer_green` before the stamp, over the command
+`writer_test_command` derives for whichever proof the task owes (`writer_prove` keeps owing no
+red for a green-first task), and where no command is derived files `could-not-prove` naming why,
+with no mark, as `writer_prove` does for red; a task owing none runs no green and files no block
+(`gfw1`-`gfw4`); then `stamp-verification.py take --json`, after the red run
 because the stamp is taken after the last claim, refused as a missing stamp when it prints no
 `audit-stamp:` line or git put no HEAD in it (`take_stamp`); and last `audit-task.py
 file-return`, the write-once door, which a reviewer's return and a phase review's (`--head`)

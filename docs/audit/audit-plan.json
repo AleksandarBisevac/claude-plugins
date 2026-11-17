@@ -1384,7 +1384,8 @@
       "SG1.6",
       "SG1.7",
       "SG1.8",
-      "SG1.9"
+      "SG1.9",
+      "SG1.14-ukq"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -12063,7 +12064,8 @@
       "P131.2",
       "P131.15-dau",
       "P109.9",
-      "SG1.6"
+      "SG1.6",
+      "SG1.14-ukq"
     ],
     "tools/ui-tests/number-format.test.mjs": [
       "P130.8",
@@ -12708,7 +12710,8 @@
       "SG1.6",
       "SG1.8",
       "SG1.11-ukq",
-      "SG1.5"
+      "SG1.5",
+      "SG1.14-ukq"
     ],
     "tests/test__report_html.py": [
       "P131.1",

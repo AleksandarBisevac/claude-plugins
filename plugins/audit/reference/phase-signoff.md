@@ -107,7 +107,16 @@ Run only when **all** tasks in the phase are `done`. All review/test work runs o
    most of the danuvia tasks on language alone). **Each owed task's brief carries the floor
    guard's reading of its diff** - the `floorGuard` block `submit` filed, its findings, files
    not read and could-not-tell shown apart, or *not measured* when none was filed - as leads the
-   reviewer judges; nothing at sign-off reads the block itself. **A reviewer's `matches`
+   reviewer judges; nothing at sign-off reads the block itself. **A task owing a green-first
+   proof is answered from one reader**, `green_first_reading` in `_filed_returns.py`, which the
+   brief and the phase return's computed `greenFirst` both ask: the green helper's marked block
+   gives its own word, and an owed proof whose filed return carries no such block is computed
+   `not-attempted`, its basis saying *owed and not measured*. Sign-off stops on that
+   `not-attempted` exactly as it stops on `not-green` - the same `needs_human` predicate, settled
+   the same way, by a human through `--answer accept --reason` - because a proof the plan asked
+   for that was never run is not weaker evidence than one that ran and failed: neither says the
+   added tests pass on the base, and the one that never ran does not even say they were run. A
+   task owing none is computed nothing and stops nothing. **A reviewer's `matches`
    answer whose note quotes none of the task's own `description`** is refused as unsupported before
    it can file - `unsupported_match_basis` in `_filed_returns.py` - so a renamed scope cannot read
    back as matching on the strength of the executor's own restatement. **A planned test's
