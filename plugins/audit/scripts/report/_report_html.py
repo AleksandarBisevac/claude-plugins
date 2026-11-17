@@ -1480,10 +1480,16 @@ def _global_filter_row(authors, tags, dmin, dmax, owners=None):
     Server-rendered like every other filter control (the chips rule): built in
     JS it would be missing wherever scripts do not run, and "the filters are
     gone" is indistinguishable from "the filters are broken". The controls are
-    selects and date inputs rather than chip rows on purpose — this row stays
-    one line; the full multi-select vocabulary lives where it always did (area
-    chips in More filters, author chips in Usage), and report.js keeps the two
-    presentations of each filter in sync over one state.
+    selects and date inputs rather than chip rows on purpose — one compact
+    control per filter keeps the row short, where a chip row would add one
+    control per value. Where the row still does not fit the bar's width it
+    wraps onto rows with a gap (report-css/shell.css, .gfilters), the date
+    range as one item; how many rows depends on the font the machine draws in,
+    so what is held is the pinned stack's height, to a budget per viewport
+    class (tools/check-report-interactive.mjs, lm4), not a line count. The full
+    multi-select vocabulary lives where it always did (area chips in More
+    filters, author chips in Usage), and report.js keeps the two presentations
+    of each filter in sync over one state.
 
     `authors` arrives ordered (by spend, matching the Usage chips); `tags` in
     first-seen order (matching the panel chips). An author set smaller than two

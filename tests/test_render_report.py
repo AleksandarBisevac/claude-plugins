@@ -1149,8 +1149,9 @@ def _cases(check):
     # count of "165 phases" over a table showing five was the defect: the view
     # was a gate on the rows and on nothing the counter said.
     # A construct pin: the wording's behaviour - the count matches the rows
-    # drawn, names the selected option's short name, and is one line of text
-    # at every size and in every state - is the browser gate's ("at rest the
+    # drawn, names the selected option's short name, and keeps its drawn text
+    # inside its bar at every size and in every state, free to wrap onto a row
+    # of its own or across its own words - is the browser gate's ("at rest the
     # count names the view the View select sets", lm3).
     check("c5b: the phase count names the view it counts in, at rest as well as "
           "filtered - by the option's bracket-free short name, said in the live "

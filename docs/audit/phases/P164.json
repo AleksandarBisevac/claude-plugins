@@ -29,7 +29,8 @@
         "severity": "low",
         "file": "tools/check-report-interactive.mjs:2843-2873",
         "issue": "STACK_BUDGET's shares (phone 0.45, tablet 0.3, laptop 0.4, desktop 0.25) are stated once and the class is derived from the size, as asked, but nothing beside the constant says where any share comes from. The comment gives an intent ('a laptop or tablet may wrap the filter bar ... onto a second row'), and a tablet getting a smaller share than a laptop is left unexplained. Measured in this review (new renders, both fonts), the margin at the tightest cell of each class is: phone 27px (844x390, 148/175), laptop 37px (1024x768 demo-large, 270/307), tablet 52px (834x1194, 306/358), desktop 56px (1920x1080 Verdana demo-large, 214/270). That is roughly one control row everywhere. So the budget was not tuned to the pixel, but the headroom is something the reader has to re-measure, not something the code states.",
-        "resolution": "State the basis beside STACK_BUDGET as a rule the shares follow, e.g. the stack a class is designed to draw in the wide font plus one bar row, and say which cell is each class's tightest. Or derive each share from that rule so the numbers are not free constants."
+        "resolution": "State the basis beside STACK_BUDGET as a rule the shares follow, e.g. the stack a class is designed to draw in the wide font plus one bar row, and say which cell is each class's tightest. Or derive each share from that rule so the numbers are not free constants.",
+        "fixTask": "P164.2-y2u"
       },
       {
         "id": "P164-R2",
@@ -44,16 +45,23 @@
         "file": "tests/test_render_report.py:1151-1154",
         "issue": "The c5b comment still says the count 'is one line of text at every size and in every state - is the browser gate's (... lm3)'. lm3 now holds the count's drawn text inside its bar and explicitly allows it to wrap. The executor flagged this in its claims and left it, although the file is in the task's scope.",
         "resolution": "Change the parenthesis to what lm3 now asserts: the count's drawn text lies inside its bar at every size, state and font."
+      },
+      {
+        "id": "P164-R4",
+        "severity": "low",
+        "file": "tools/check-report-interactive.mjs:2868-2871,2882",
+        "issue": "The new basis says the shares give 'about one control row of headroom' and that 'the measurement is what says each one leaves a row to spare', but the comment's own figures do not show that for the phone. The only row height the comment measures is the desktop's: 214px in the wide font against 182px in the page font, so a row is 32px. The phone's headroom is 27px (148/175), which is less than that row, so a phone whose filter bar wraps one more row would fail lm4. Laptop (37), tablet (52) and desktop (56) do clear 32px. A second, smaller mismatch: the rule is phrased as 'the stack a class's tightest cell draws in the wide font', yet the phone and laptop tightest cells listed are not labelled as wide-font cells ('either report', 'a status chip on'), unlike the tablet and desktop lines, so for those two classes the rule names a different cell from the one the figure was read at.",
+        "resolution": "Say the phone's margin is just under one row: 27px against the 32px row the desktop line measures. Either keep 0.45 and state that the phone has less than a row of headroom, or raise the phone share until its margin clears a row. Also word the rule as 'the largest stack the class's cells draw in either font' (or mark which font each listed cell was read in), so the rule and the listed cells describe the same measurement."
       }
     ],
-    "outcome": "[findings: 3 - 0 high, 0 med, 3 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 4 - 0 high, 0 med, 4 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
     {
       "id": "P164.1",
       "title": "The report's layout holds under any runner font: the matrix asserts what the page controls, wrapping is designed with headroom, and a wide-font pass runs locally",
-      "status": "in_progress",
+      "status": "done",
       "description": "The layout matrix in tools/check-report-interactive.mjs is green on macOS and red on the release CI runner (run 43991712323, head a936cc11): lm5 at 834x1194 \"header's filter row is one line\" fails on acme and demo-large in every View/state, and lm4 at 1024x768 \"filter bar at most 1 line at rest\" fails on demo-large. The page fits with no headroom at one font's width; a line count depends on font metrics the page does not ship. Fix the CLASS, nothing per pixel:\n\n1. The contract measures what the page controls. The matrix stops asserting \"one line\" anywhere. It asserts, at every size, state and fixture: (a) no horizontal overflow and nothing clipped; (b) the sticky stack's height stays within a stated budget per viewport class - the budget stated ONCE as a named constant beside the matrix (phone / tablet / laptop / desktop classes, derived from the viewport list, not per size); (c) no control or chip wraps inside a word; (d) the counter stays inside its bar. Remove the one-line assertions and say in the matrix's comment why a line count is not a contract.\n2. Wrapping is designed, not accidental. Where the toolbar or the header filter row can wrap, the CSS allows it as rows with a gap (flex-wrap + row-gap from tokens), and the breakpoints / container queries that collapse controls carry headroom - choose thresholds that hold with a font measurably wider than the one used here. The design must not sit at the edge of one font's width. Follow the writing-css and refactoring-the-assembled-ui skills.\n3. Locally the gate stresses the font. The matrix runs a SECOND pass, by default (no flag needed, so the task gate gets it), with an injected font override (a style added via page.addStyleTag / addInitScript setting font-family on :root and every element to a font wider than any runner default and present on macOS - Verdana; fall back to the next wide font present and SAY which font each pass used in the output; if no wide font is installed, the pass reports that it could not run, it never passes silently). Every lm* case in the wide pass carries a \"wide font\" label so a failure names its pass. A layout passing the wide pass passes the runner.\n4. Red-first, required, in your report: the NEW checker run over the a936cc11 renders (git show a936cc11:examples/acme-store/acme-store-audit.html and a936cc11:docs/demo-large.html into a temp dir) must FAIL in the wide pass at lm5 834x1194 and at lm4 1024x768 on demo-large, as CI did; and the same checker must PASS over your new renders. Paste both outcomes (the failing case lines and the final summary lines).\n\nRefresh every rendered follower (examples/report.sh, which also writes docs/index.html; docs/demo-large.html; node tools/capture-screenshots.mjs) so tests/test__refs.py sc1/sc2 and check-rendered-artifacts ra5/ra5b stay green. No register ids (F/P/BUG/R) in comments.",
       "files": [
         "plugins/audit/scripts/ui/report-css/tables.css",
@@ -105,14 +113,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1bc06a20080a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/check-report-interactive.mjs: the layout matrix no longer counts lines anywhere (barLines/rowLines/countLines/LAPTOP_BAR_LINES and the band counter are gone; grep confirms). Per cell it asks lm1/lm2 (unchanged), lm3 the count's drawn text inside its bar, lm4 the pinned stack within STACK_BUDGET for the size's class (phone 0.45, tablet 0.3, laptop 0.4, desktop 0.25 - stated once beside the matrix; viewportClass() derives the class from the size: phone where TOPBAR_SCROLLS matches in the page, else width <1024 tablet, <1600 laptop, desktop; a class no size reaches fails by name), lm5 no word of the chrome (top bar, strip, filter bar, table head, and the More-filters panel when open) drawn on two lines - a word is a run of letters/digits so breaks at spaces/hyphens are allowed, lm8 no in-flow child out of its row's content box (only the non-scrolling axis for a scrolling box), no field cut off (select vs its width holding only the chosen option, date field vs its natural width, empty search vs its placeholder, buttons/chips scrollWidth), page no wider than the screen; lm5 and lm8 again with More filters open. LAYOUT_SIZES gained 1920x1080 (desktop) and lost the `laptop` flag. The matrix comment says why a line count is not a contract. Second pass by default: WIDE_FONTS = Verdana, DejaVu Sans, Bitstream Vera Sans; the first INSTALLED font that draws a sample line wider than the page's own font is injected with page.addStyleTag(':root,*,*::before,*::after{font-family:...!important}'); every label of that pass carries `[wide font: <name>]`; the drawn font of each pass is read from the renderer (CDP CSS.getPlatformFontsForNode) and printed in a note and on a new closing line `layout matrix fonts: ...`; one expect asserts the wide pass actually draws in the named font. No candidate installed, or none wider, => the pass does not run and says `wide-font pass NOT RUN - ...` in notes and on the summary line; FEATURE_ABSENT excuses only the font-identity expect by that note (and lm5/lm8 'with More filters open' by the existing phone-panel note). Font facts measured here: Verdana sample line 426px vs 380px in the page's own font (.SF NS); DejaVu Sans is NOT installed on this machine, so Verdana-vs-DejaVu was not measurable here. CSS: controls.css .toolbar gap from token (var(--sp-1)) with a comment that wrapping onto rows is designed; #audit-q min-width calc(16ch + 2 * var(--sp-2)) - a floor that widens with the drawn font - instead of 8rem; count comment updated to the new lm ids. shell.css: .gfilters gap var(--sp-1); new .gfrange (flex, wrap, gap var(--sp-1)) so the date pair + its scope + All time wrap as one item; the scope-under-label compaction moved from (52rem < width <= 64rem) to (52rem < width < 70rem), with a dated measurement as its basis (Verdana one-row width 916-924px vs 961px of row at 64rem; at 70rem the row is 1057px), and the 9rem select cap dropped (it cut a long author off). Markup: _report_page.py placeholder 'Filter by text…' (aria-label unchanged: 'Filter phases and tasks by text'); _report_html.py wraps the range in <span class=\"gfrange\">. Followers refreshed: examples/report.sh (acme html+md, docs/index.html), docs/demo-large.html via the --how recipe, node tools/capture-screenshots.mjs (rc 0, 'OK (exit 0): screenshots captured - report + panel'). Mutation proofs over scratch copies of the new demo-large render (checker unchanged): fchip max-width 2.6rem + overflow-wrap:anywhere -> 120 lm5 FAIL (+4 lm4); #audit-count left:120vw -> 60 lm3 + 120 lm8; .sectools padding-bottom 12rem -> 54 lm4 + 29 lm2; #audit-view max-width 3rem -> 120 lm8; .tablehead min-width 130vw -> 120 lm8. Allow case: status chips max-width 5.6rem so 'In progress' wraps at its space in both fonts (confirmed 2 lines, others 1) -> 0 FAIL, rc 0. No-font path (scratch copy, WIDE_FONTS=['No Such Font P164']) -> rc 0 with 'layout matrix fonts: page's own font (.SF NS); wide-font pass NOT RUN - none of No Such Font P164 is installed'; narrower-only candidates -> 'wide-font pass NOT RUN - no installed candidate is wider than the page's own font'; ['Arial Narrow','Verdana'] -> picks Verdana. Commands and exits: sweep of the 4 gate suites rc 0 (821 cases); dependant suites test__config, test__output, test__report_ui, test__surface_digest, test__ui_theme, test__ui_theme_lints, test__report_usage, test__evidence_view, test_gen_demo_manifest rc 0 (976 cases); tools/check-rendered-artifacts.py selftest 43 cases ok; check-rendered-artifacts.py --before-commit 'OK: 3 committed artifact(s) match a fresh render'; tests/test__refs.py 292 cases ok (sc1/sc2 green after the re-capture); npx vitest run 853 passed; browser gate command rc 0 twice, ~30 min apart, identical counts (848/854/807). An out-of-scope one-line edit to forced-colors.css (its phone .toolbar gap) was refused by the bash-write guard and reverted by me; that rule still writes `.5rem .5rem` raw - left for its owner.",
+        "descriptive": "The layout matrix now checks only what the page controls (no overflow or cut-off text, no split words, the count inside its bar, the pinned stack within a per-class budget) in the page's own font and again in Verdana by default; the toolbar and header row wrap as designed rows with token gaps, and the search placeholder no longer gets cut off in a wider font."
       },
       "startedAt": "2026-11-17T01:15:04Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-17T03:18:41Z",
+      "verifiedBy": [
+        "lm3 (rewritten): the count's drawn text lies inside its bar, every cell, both fonts",
+        "lm4 (rewritten): the pinned stack is within its viewport class's STACK_BUDGET, every cell, both fonts; plus a by-name failure for a class no size reaches",
+        "lm5 (rewritten): no control, chip or label of the chrome breaks inside a word, at rest and with More filters open",
+        "lm8 (widened): nothing runs past its row, no field/button text cut off, page no wider than the screen, at rest and with More filters open",
+        "lm (new): the wide-font pass draws the page in the font it names",
+        "the whole matrix re-run as a second, default-on wide-font pass labelled [wide font: <name>]"
+      ],
       "notes": [
         {
           "at": "2026-11-17T01:14:58Z",
@@ -146,7 +161,184 @@
         "runId": "2026-11-17T03:02:11Z.a6a913",
         "status": "passed",
         "at": "2026-11-17T03:02:11Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "1bc06a20080a",
+        "at": "2026-11-17T03:18:41Z",
+        "return": "docs/audit/evidence/returns/P164.1/20261117T011504Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task with tests.expectRedFirst false, so no helper red was owed. The task's own red-first (requirement 4) was made by hand and watched: the NEW checker over `git show a936cc11:` renders of examples/acme-store/acme-store-audit.html and docs/demo-large.html (scratch dir /tmp/p164-old.2nxm) exited 1 on both, 56 FAIL lines each, every one lm8. Quoted from the demo-large run: `FAIL lm8 834x1194 [wide font: Verdana] View=active at rest: nothing runs past its box, no control's text is cut off, and the page is no wider than the screen (outside: nothing; cut off: #audit-q placeholder 227px in 214px; page 819px on a 834px screen; top bar 151px): got false, want true` and `FAIL lm8 1024x768 [wide font: Verdana] View=active at rest: ... (outside: nothing; cut off: #audit-q placeholder 227px in 214px; page 1009px on a 1024px screen; top bar 122px): got false, want true`; summaries `REPORT IS INERT: 56 interaction(s) did not work in /tmp/p164-old.2nxm/demo-large.html` / `.../acme.html`, each followed by `layout matrix fonts: page's own font (.SF NS); wide font Verdana (Verdana)`. Said plainly: under the new contract the old renders do NOT fail lm4 (budget) at those cells - the extra row CI counted (header 151px at 834; bar 92px at 1024 on demo-large) sits within the tablet and laptop budgets; what fails there is the search field's placeholder being cut off, a real defect visible in a screenshot ('Filter phases & tasks by te'). Of those 56 failures, 16 occur in the default-font pass too (e.g. 834x1194 placeholder 204px in 147px). The same checker over the new renders: `report is interactive: 848 checks passed in examples/acme-store/acme-store-audit.html`, `report is interactive: 854 checks passed in docs/demo-large.html`, `report is interactive: 807 checks passed in .../lp/audit-report.html`, each with `layout matrix fonts: page's own font (.SF NS); wide font Verdana (Verdana)` and `the layout matrix read 60 cells: 6 sizes by 5 states, in two fonts`.",
+        "at": "2026-11-17 (local session; old-render run /tmp/p164-old.2nxm/*.final, final gate /tmp/p164-gate3.log)"
       }
+    },
+    {
+      "id": "P164.2-y2u",
+      "title": "fix P164-R1: STACK_BUDGET's shares (phone 0.45, tablet 0.3, laptop 0.4, deskt...",
+      "status": "in_progress",
+      "description": "STACK_BUDGET's shares (phone 0.45, tablet 0.3, laptop 0.4, desktop 0.25) are stated once and the class is derived from the size, as asked, but nothing beside the constant says where any share comes from. The comment gives an intent ('a laptop or tablet may wrap the filter bar ... onto a second row'), and a tablet getting a smaller share than a laptop is left unexplained. Measured in this review (new renders, both fonts), the margin at the tightest cell of each class is: phone 27px (844x390, 148/175), laptop 37px (1024x768 demo-large, 270/307), tablet 52px (834x1194, 306/358), desktop 56px (1920x1080 Verdana demo-large, 214/270). That is roughly one control row everywhere. So the budget was not tuned to the pixel, but the headroom is something the reader has to re-measure, not something the code states.\n\nResolution asked: State the basis beside STACK_BUDGET as a rule the shares follow, e.g. the stack a class is designed to draw in the wide font plus one bar row, and say which cell is each class's tightest. Or derive each share from that rule so the numbers are not free constants.",
+      "files": [
+        "tools/check-report-interactive.mjs",
+        "plugins/audit/scripts/report/_report_html.py",
+        "tests/test__report_html.py",
+        "tests/test_render_report.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_render_report.py tests/test__report_html.py tests/test__report_page.py tests/test__refs.py",
+          "sh -c 'W=$(mktemp -d) && rc=0 && for f in examples/acme-store/acme-store-audit.html docs/demo-large.html; do node tools/check-report-interactive.mjs \"$f\" || rc=1; done && python3 tools/plan-window.py docs/audit/audit-plan.json \"$W/win\" && python3 plugins/audit/scripts/report/render-report.py \"$W/win/docs/audit/audit-plan.json\" --out-dir \"$W/lp\" --format html && node tools/check-report-interactive.mjs \"$W\"/lp/*.html || rc=1; rm -rf \"$W\"; exit $rc'"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 2,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-17T03:19:39Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-17T03:18:51Z",
+          "text": "scope: tools/check-report-interactive.mjs, every path the finding(s) P164-R1 name"
+        },
+        {
+          "at": "2026-11-17T03:18:51Z",
+          "text": "no suite: tools/check-report-interactive.mjs - 2 test files name it and none is named for it (tests/test__report_html.py, tests/test_audit_lookup.py); name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-11-17T03:18:51Z",
+          "text": "no tests.add clause for P164-R1: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        },
+        {
+          "at": "2026-11-17T03:19:20Z",
+          "text": "reads _report_html.py's section names; only a docstring and test comments change",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
+        },
+        {
+          "at": "2026-11-17T03:19:24Z",
+          "text": "Covers P164-R1, R2 and R3 (all comment/docstring lows from P164.1's review): state STACK_BUDGET's basis beside the constant (the measured margins and why tablet < laptop) or derive it; fix _global_filter_row's 'stays one line' docstring; fix test_render_report c5b comment to lm3's new meaning. No register ids in comments."
+        }
+      ],
+      "fixes": [
+        "P164-R1"
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-17T04:04:38Z.819ca6",
+        "status": "passed",
+        "at": "2026-11-17T04:04:38Z"
+      }
+    },
+    {
+      "id": "P164.3-y2u",
+      "title": "fix P164-R2: The docstring of _global_filter_row, the function this diff edit...",
+      "status": "cancelled",
+      "description": "The docstring of _global_filter_row, the function this diff edits, still says 'this row stays one line'. The diff makes the same row wrap onto rows by design (.gfrange, shell.css's new comment: 'Where its controls do not fit one row they wrap onto rows with a gap'), so the docstring now claims the opposite of what the code does.\n\nResolution asked: Reword it to say the row wraps onto rows with a gap, with the date range wrapping as one item, and that its cost is held by the pinned-stack budget.",
+      "files": [
+        "plugins/audit/scripts/report/_report_html.py",
+        "tests/test__report_html.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__report_html.py: Reword it to say the row wraps onto rows with a gap, with the date range wrapping as one item, and that its cost is held by the pinned-stack budget"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__report_html.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: folded into P164.2-y2u: one comment-only fix task for the three review lows"
+      },
+      "startedAt": null,
+      "completedAt": "2026-11-17T03:19:21Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-17T03:18:55Z",
+          "text": "scope: plugins/audit/scripts/report/_report_html.py, every path the finding(s) P164-R2 name"
+        },
+        {
+          "at": "2026-11-17T03:18:55Z",
+          "text": "scope: tests/test__report_html.py, the suite that tests plugins/audit/scripts/report/_report_html.py (python: its import closure reaches plugins/audit/scripts/report/_report_html.py)"
+        }
+      ],
+      "fixes": [
+        "P164-R2"
+      ]
+    },
+    {
+      "id": "P164.4-y2u",
+      "title": "fix P164-R3: The c5b comment still says the count 'is one line of text at eve...",
+      "status": "cancelled",
+      "description": "The c5b comment still says the count 'is one line of text at every size and in every state - is the browser gate's (... lm3)'. lm3 now holds the count's drawn text inside its bar and explicitly allows it to wrap. The executor flagged this in its claims and left it, although the file is in the task's scope.\n\nResolution asked: Change the parenthesis to what lm3 now asserts: the count's drawn text lies inside its bar at every size, state and font.",
+      "files": [
+        "tests/test_render_report.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_render_report.py: the case P164-R3 asks for, locking the behaviour at HEAD"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_render_report.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "sonnet",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: folded into P164.2-y2u: one comment-only fix task for the three review lows"
+      },
+      "startedAt": null,
+      "completedAt": "2026-11-17T03:19:22Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-17T03:18:55Z",
+          "text": "scope: tests/test_render_report.py, every path the finding(s) P164-R3 name"
+        },
+        {
+          "at": "2026-11-17T03:18:55Z",
+          "text": "no test runner in this task's gate for the test P164-R3 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test_render_report.py'], derived as narrowed to this task's tests.add paths, in the spelling meta.phaseGate.derived.spelling records; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        }
+      ],
+      "fixes": [
+        "P164-R3"
+      ]
     }
   ],
   "reviewPerTask": "signals",

@@ -2865,6 +2865,27 @@ const STACK_SLACK_PX = 2;
 const STACK_CEILING_SHARE = 0.5;
 const STACK_TABLE_SHARE = +(1 - STACK_CEILING_SHARE).toFixed(2);
 // The share of the screen the pinned stack may take, per viewport class.
+// The rule the shares follow: the stack a class's tightest cell draws in the
+// wide font, plus about one control row of headroom, over that cell's height.
+// They were set before that was measured and are not computed from it; the
+// measurement is what says each one leaves a row to spare rather than fitting
+// one machine's font to the pixel. A share is a fraction of the HEIGHT while
+// the stack is a sum of rows, so a tall screen spends a smaller share on the
+// same rows: the tablet cell is portrait and pins more pixels than the laptop
+// cell does, yet a smaller part of its screen, which is why the tablet's share
+// is the smaller of the two.
+// Measured 2026-11-17 on macOS, as headroom = budget - stack at each class's
+// tightest cell; re-derive it by running
+//   node tools/check-report-interactive.mjs <report> 2>&1 | grep lm4
+// over examples/acme-store/acme-store-audit.html and docs/demo-large.html and
+// taking the smallest gap per class between "<stack>px against <budget>px":
+//   phone    27px at 844x390, either report (stack 148px, budget 175px)
+//   laptop   37px at 1024x768, demo-large, a status chip on (270px, 307px)
+//   tablet   52px at 834x1194, wide-font pass, either report (306px, 358px)
+//   desktop  56px at 1920x1080, wide-font pass (Verdana), demo-large
+//            (214px, 270px) - the page's own font pins 182px there, so the
+//            extra is a row the desktop wraps only in the wider font.
+// Changing a share means re-measuring this, not editing a figure above.
 const STACK_BUDGET = { phone: 0.45, tablet: 0.3, laptop: 0.4, desktop: 0.25 };
 // A phone is where the top bar scrolls (TOPBAR_SCROLLS, read by the page's own
 // matchMedia); past that the class is the width's: under 64rem a tablet, under
