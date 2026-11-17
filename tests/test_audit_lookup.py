@@ -3318,7 +3318,81 @@ def _selftest():
         _harness.stage(check, "hd-block", _unborn_head_entry_cases)
         _harness.stage(check, "rk-block", _review_skill_brief_cases)
         _harness.stage(check, "fgb-block", _floor_brief_cases)
+        _harness.stage(check, "gfb-block", _green_brief_cases)
     return _harness.run(body)
+
+
+_GFB_BLOCK = {"status": "not-green", "at": "2026-01-01T00:00:00Z",
+              "source": "green-first-helper",
+              "basis": "`python3 tests/test_refund.py` in a throwaway tree at HEAD "
+                       "exited 1 with failing cases gfb-new1 (house FAIL)"}
+
+
+def _green_brief_cases(check):
+    """The reviewer's brief shows the green-first block the filing verb recorded,
+    with the sentence that explains `not-green` - and shows nothing at all for a
+    return that carries none, so a task owing no green-first pays nothing."""
+    root = _harness.fixture_root("audit-lookup-gfb-")
+
+    def brief(name, block, node_id="P1.1", role="reviewer",
+              out="20260101T000000Z.reviewer.md", manifest=None):
+        proj = os.path.join(root, name)
+        os.makedirs(os.path.join(proj, ".claude"))
+        with open(os.path.join(proj, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(manifest or _bf_manifest(), fh)
+        body = json.loads(_BF_EXEC)
+        if block is not None:
+            body["greenFirst"] = block
+        path = os.path.join(proj, "docs", "audit", "evidence", "returns", "P1.1",
+                            "20260101T000000Z.executor.json")
+        os.makedirs(os.path.dirname(path))
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            fh.write(json.dumps(body, indent=2) + "\n")
+        with contextlib.redirect_stdout(io.StringIO()), \
+                contextlib.redirect_stderr(io.StringIO()):
+            try:
+                M.main([mpath, "brief", node_id, "--role", role, "--project", proj])
+            except SystemExit:
+                pass
+        try:
+            with open(os.path.join(proj, ".claude", "state", "briefs", node_id,
+                                   out), "r", encoding="utf-8") as fh:
+                return fh.read()
+        except OSError:
+            return ""
+
+    def heads(text):
+        return [ln for ln in text.splitlines()
+                if ln.startswith("## ") and "green-first" in ln.lower()]
+
+    try:
+        shown = brief("gfb-shown", _GFB_BLOCK)
+        plain = brief("gfb-none", None)
+        check("gfb1 the task reviewer's brief shows the recorded greenFirst block "
+              "under a heading of its own - the word, the helper's basis verbatim "
+              "and the sentence that not-green means the tests were written to "
+              "the new code - and a return with no block gets no such section: "
+              "%r" % ((heads(shown), heads(plain)),),
+              len(heads(shown)) == 1 and "not-green" in shown
+              and _GFB_BLOCK["basis"] in shown
+              and "written to the new code" in shown
+              and heads(plain) == [] and "written to the new code" not in plain
+              and plain != "")
+        ptext = brief("gfb-phase", _GFB_BLOCK, node_id="P1", role="phase",
+                      out="phase.md", manifest=_bf_signed_phase())
+        at = ptext.find("## P1.1 ")
+        nxt = ptext.find("\n## P1.", at + 1)
+        unit = ptext[at:nxt if nxt > at else len(ptext)] if at >= 0 else ""
+        check("gfb2 the phase brief shows an owed task its own green-first block "
+              "in that task's section: %r" % (unit[:300],),
+              _GFB_BLOCK["basis"] in unit and "written to the new code" in unit)
+    finally:
+        _harness.remove_tree(root)
 
 
 _FGB_FINDING = {"move": "definition-changed", "path": "tests/test_refund.py",

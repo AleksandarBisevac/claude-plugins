@@ -1244,6 +1244,135 @@ def red_first_vocabulary_drift(repo_root=None):
             "problems": problems}
 
 
+# --- one green-first vocabulary, from the schema outward -----------------------
+# A refactor's mirror of the red-first proof (`tests.expectGreenFirst`) has its
+# words in five places, and each would read as consistent on its own the way the
+# red-first briefs once did. THE SCHEMA ENUM IS THE ONE SOURCE again, and held to
+# it:
+#   - the helper (`stamp-verification.py green`) writes only schema words, and
+#     every schema word but those the helper never writes (`GREEN_FIRST_UNWRITTEN`);
+#   - the filing verb's `GREEN_FIRST_WORDS` IS the enum, in its order;
+#   - the verb's mark is the red-first helper's spelled for green, never equal to
+#     it, so a reader can tell the two blocks apart;
+#   - the reviewer's brief names every word only a human settles
+#     (`HUMAN_GREEN_FIRST`), the one it may type over a computed answer;
+#   - the executor's brief declares no `greenFirst` block: `submit` writes it and
+#     drops one the agent typed, so a declared shape would ask for a dropped key.
+# The helper's and the verb's tuples are read off their SOURCE, as
+# `PHASE_ENTRY_KEYS` is below, because both sit in layers this module may not
+# import.
+GREEN_FIRST_SCHEMA = RED_FIRST_SCHEMA
+GREEN_FIRST_DEF = "greenFirst"
+GREEN_FIRST_HELPER = "scripts/governance/stamp-verification.py"
+GREEN_FIRST_VERB = "scripts/manifest/_filed_returns.py"
+# `not-attempted` is the word for a task where no proof was made: no run of the
+# helper produces it, so the helper's list omits it on purpose.
+GREEN_FIRST_UNWRITTEN = ("not-attempted",)
+_GF_EXEC_SHAPE = re.compile(r'"greenFirst":')
+
+
+def _module_literals(root, rel, names):
+    """`({name: value}, problem)` - the literal assignments `names` in a module's
+    source, read by `ast.literal_eval`; a name it does not bind is absent."""
+    try:
+        with open(os.path.join(root, PLUGIN_REL, *rel.split("/")), "r",
+                  encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+    except (OSError, SyntaxError, ValueError) as exc:
+        return {}, "%s: unreadable (%s)" % (rel, exc)
+    found = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 \
+                and isinstance(node.targets[0], ast.Name) \
+                and node.targets[0].id in names:
+            try:
+                found[node.targets[0].id] = ast.literal_eval(node.value)
+            except ValueError:
+                continue
+    return found, None
+
+
+def _green_first_enum(root):
+    """`(words, problem)` - the schema's `greenFirst.status` enum."""
+    path = os.path.join(root, PLUGIN_REL, *GREEN_FIRST_SCHEMA.split("/"))
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError) as exc:
+        return None, "%s: unreadable (%s)" % (GREEN_FIRST_SCHEMA, exc)
+    enum = ((((doc.get("$defs") or {}).get(GREEN_FIRST_DEF) or {})
+             .get("properties") or {}).get("status") or {}).get("enum") or []
+    if not enum:
+        return None, ("%s: $defs.%s.status declares no enum" % (
+            GREEN_FIRST_SCHEMA, GREEN_FIRST_DEF))
+    return list(enum), None
+
+
+def _brief_text(root, rel):
+    try:
+        with open(os.path.join(root, PLUGIN_REL, *rel.split("/")), "r",
+                  encoding="utf-8", errors="replace") as fh:
+            return fh.read(), None
+    except OSError as exc:
+        return None, "%s: unreadable (%s)" % (rel, exc)
+
+
+def green_first_vocabulary_drift(repo_root=None):
+    """{"schema", "helper", "verb": [word, ...], "problems": [str, ...]}.
+
+    Empty `problems` is the healthy answer; a source that could not be read is a
+    problem naming why, never a list compared as if it were empty."""
+    root = repo_root or REPO_ROOT
+    schema, problem = _green_first_enum(root)
+    problems = [problem] if problem else []
+    helper, problem = _module_literals(root, GREEN_FIRST_HELPER, ("GREEN_WORDS",))
+    problems += [problem] if problem else []
+    verb, problem = _module_literals(root, GREEN_FIRST_VERB, (
+        "GREEN_FIRST_WORDS", "HUMAN_GREEN_FIRST", "HELPER_SOURCE",
+        "GREEN_HELPER_SOURCE"))
+    problems += [problem] if problem else []
+    words = list(helper.get("GREEN_WORDS") or [])
+    vocab = list(verb.get("GREEN_FIRST_WORDS") or [])
+    human = list(verb.get("HUMAN_GREEN_FIRST") or [])
+    out = {"schema": schema or [], "helper": words, "verb": vocab,
+           "problems": problems}
+    if schema is None:
+        return out
+    problems.extend("%s: GREEN_WORDS writes %r, which the schema does not declare"
+                    % (GREEN_FIRST_HELPER, w) for w in words if w not in schema)
+    problems.extend("%s: GREEN_WORDS omits %r, a schema word the helper owes"
+                    % (GREEN_FIRST_HELPER, w) for w in schema
+                    if w not in words and w not in GREEN_FIRST_UNWRITTEN)
+    if vocab != schema:
+        problems.append("%s: GREEN_FIRST_WORDS is %r, not the schema's enum %r"
+                        % (GREEN_FIRST_VERB, vocab, schema))
+    problems.extend("%s: HUMAN_GREEN_FIRST names %r, not a schema word"
+                    % (GREEN_FIRST_VERB, w) for w in human if w not in schema)
+    red_mark, mark = verb.get("HELPER_SOURCE"), verb.get("GREEN_HELPER_SOURCE")
+    if not mark or mark == red_mark or mark != str(red_mark).replace(
+            "red-first", "green-first"):
+        problems.append("%s: GREEN_HELPER_SOURCE is %r beside the red-first "
+                        "helper's %r - it must be that mark spelled for green, "
+                        "so the two blocks are told apart" % (
+                            GREEN_FIRST_VERB, mark, red_mark))
+    text, problem = _brief_text(root, RED_FIRST_REVIEWER_BRIEF)
+    if problem:
+        problems.append(problem)
+    else:
+        problems.extend("%s: never names `%s`, the green-first word only a human "
+                        "settles, so no reviewer can type it over a computed "
+                        "answer" % (RED_FIRST_REVIEWER_BRIEF, w)
+                        for w in human if "`%s`" % (w,) not in text)
+    text, problem = _brief_text(root, RED_FIRST_EXECUTOR_BRIEF)
+    if problem:
+        problems.append(problem)
+    elif _GF_EXEC_SHAPE.search(text):
+        problems.append("%s: declares a greenFirst block of its own - `submit` "
+                        "writes that block and drops one the agent typed"
+                        % (RED_FIRST_EXECUTOR_BRIEF,))
+    return out
+
+
 # --- the keys of a phase review's per-task entry ----------------------------------
 # Under `review.perTask: phase` the phase reviewer answers each task in a `tasks`
 # entry, and the filing verb refuses an entry that lacks a key of

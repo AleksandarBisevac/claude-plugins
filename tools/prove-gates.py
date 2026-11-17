@@ -703,14 +703,22 @@ TABLE = (
  # every document still points at it, every document still passes, and the record
  # has nowhere to put what the documents just promised.
  ("red_first_drift", "plugins/audit/schema/audit-plan.schema.json", "replace",
-  '            "could-not-prove",\n            "not-attempted"\n',
-  '            "not-attempted"\n', REF, "rf2"),
+  # Anchored from `proved` down: the green-first enum ends on the same two
+  # lines, so only the red-first list's three in a row name it alone.
+  '            "proved",\n            "could-not-prove",\n            "not-attempted"\n',
+  '            "proved",\n            "not-attempted"\n', REF, "rf2"),
  # The reviewer's return grading with a word the schema rejects and nothing
  # declares reviewer-only - the shipped state, `not-applicable` standing where
  # the executor's `not-attempted` belongs, which read as consistent on its own.
  ("red_first_vocabulary_drift", "plugins/audit/agents/audit-reviewer.md", "replace",
   '"redFirst": "proved|not-proved|could-not-prove|not-attempted"',
   '"redFirst": "proved|not-proved|could-not-prove|not-applicable"', REF, "rv1"),
+ # The reviewer's escalation list loses `not-green`: a computed green-first
+ # answer then has no word a reviewer may type over it, and the sign-off's human
+ # question is reachable only through the verb's own computation.
+ ("green_first_vocabulary_drift", "plugins/audit/agents/audit-reviewer.md",
+  "replace", "(`not-proved`, `not-green`, `flagged`,", "(`not-proved`, `flagged`,",
+  REF, "gfv1"),
  # The phase review's per-task entry loses `commit`, the key that binds each
  # answer to the diff it was given: every reviewer following the format files
  # an entry the verb refuses, and sign-off can never write the answers.
@@ -1770,6 +1778,12 @@ ALLOW = (
  ("red_first_vocabulary_drift", L + "_refs.py", "replace",
   "    allowed = set(schema) | set(RED_FIRST_REVIEWER_ONLY)\n",
   "    allowed = set(schema)\n", REF, "rv3"),
+ # The words the helper never writes dropped, so the helper is convicted for
+ # not writing `not-attempted` - the word no run produces, which a helper that
+ # wrote it would be claiming a proof nothing made.
+ ("green_first_vocabulary_drift", L + "_refs.py", "replace",
+  "                    if w not in words and w not in GREEN_FIRST_UNWRITTEN)\n",
+  "                    if w not in words)\n", REF, "gfv2"),
  # The comparison made unconditional: every key the verb reads is reported as
  # omitted whether the format names it or not, so a format and a verb that
  # agree are convicted - the over-fire that gets a check deleted.

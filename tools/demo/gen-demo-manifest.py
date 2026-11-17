@@ -1082,6 +1082,36 @@ SCHEMA_EXEMPTIONS = {
         "of its own: every other timestamp this generator stamps is derived from "
         "the plan's own dates, and an attempt has no date in a fixture where no "
         "attempt happened.",
+    # `task.greenFirst` AND ITS THREE FIELDS, with `tests.expectGreenFirst`
+    # beside them: the refactor's mirror of the red-first proof, exempt on
+    # `task.redFirst`'s own argument - no rendered surface reads either key.
+    "task.greenFirst":
+        "what happened to a refactor's GREEN-FIRST PROOF - whether the tests it "
+        "added passed on the base. No rendered surface reads it: not the report, "
+        "not the panel, not /audit:status - the same reason `task.redFirst` is "
+        "exempt above. The word worth showing is `not-green` or `could-not-prove`, "
+        "and a published fixture carrying either would advertise a refused proof "
+        "as the normal state of a finished plan.",
+    "greenFirst.status":
+        "one of the four words, and unreachable for the reason the block itself "
+        "is. Coverage for the vocabulary is the schema enum plus "
+        "_refs.green_first_vocabulary_drift(), which reads the helper, the "
+        "filing verb and both agent briefs.",
+    "greenFirst.basis":
+        "the run the green helper watched, or its refusal verbatim. Same reason "
+        "as the block above; a fabricated run in a published fixture would be a "
+        "quoted observation nobody made.",
+    "greenFirst.at":
+        "when the proof was attempted. Same reason as the block above, with "
+        "`redFirst.at`'s own addition: an attempt has no date in a fixture where "
+        "no attempt happened.",
+    "tests.expectGreenFirst":
+        "marks a task as a refactor whose added tests must pass on the base. No "
+        "rendered surface reads it - only the executor's brief and `submit` do, "
+        "and neither runs against a generated fixture. Carrying it true would "
+        "also declare a green-first proof owed on a finished task whose "
+        "`task.greenFirst` block this fixture cannot carry (above), and an "
+        "absent key is the value every task without the field already means.",
     # `task.intentCheck` AND ITS FIELDS, on `task.redFirst`'s own argument: no
     # rendered surface reads it (not the report, not the panel), and the fixture
     # is what those surfaces are built from, so a block here would be a key

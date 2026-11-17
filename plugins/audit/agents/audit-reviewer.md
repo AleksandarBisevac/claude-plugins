@@ -19,9 +19,8 @@ tasks, each diff computed in, not re-derived.
 | Input | Mode |
 |---|---|
 | the diff, and `desiredOutcome` | both |
-| `description`; the filed `outcome`, `testsAdded`, `redFirst`; the recorded gate run | task, and phase per owed task |
+| `description`; the filed `outcome`, `testsAdded`, `redFirst`, `greenFirst`; the recorded gate run; the floor guard's findings, files not read, could-not-tell | task, and phase per owed task |
 | `tests.gate` | task, and phase per owed task |
-| the floor guard's findings, files not read, could-not-tell | task, and phase per owed task |
 | the review skill; `phase.testGateDerived`'s basis when recorded — read, never re-derive | phase |
 
 ## The intent question
@@ -35,8 +34,8 @@ diff line. In `mode: phase` ask it against `desiredOutcome`:
 
 Under `review.perTask: phase`, ask all three of each owed task in its `tasks` entry,
 with the commit the brief handed.
-Omit a pair marked `computed` unless escalating it (`not-proved`, `flagged`, with a
-basis): the verb fills it, records an override, refuses other disagreement; re-review: fix tasks only.
+Omit a pair marked `computed` unless escalating it (`not-proved`, `not-green`, `flagged`,
+with a basis): the verb fills it, records an override, refuses other disagreement; re-review: fix tasks only.
 
 ## Can this test fail?
 

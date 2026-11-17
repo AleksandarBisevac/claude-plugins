@@ -2020,6 +2020,14 @@ with no table or no row are each a problem; `rows` and `anchors` are counted bes
 see whether the printed rule says what the row says - that is the reviewer's, as for every prose
 rule. The `fa` cases in `tests/test__refs.py` hold each refusal beside the allow case.
 
+`green_first_vocabulary_drift()` is the green-first sibling of the red-first vocabulary lint:
+the schema's `greenFirst.status` enum is the one source, and the helper's `GREEN_WORDS` (every
+schema word but `GREEN_FIRST_UNWRITTEN`), the filing verb's `GREEN_FIRST_WORDS` (the enum
+itself), its `GREEN_HELPER_SOURCE` (the red-first mark spelled for green, never equal to it),
+the reviewer brief's backticked `HUMAN_GREEN_FIRST` words and the executor brief's silence about
+a `greenFirst` block are each held to it, read off their source by AST. An unreadable schema is
+a problem, never a skip (`gfv1`-`gfv5`).
+
 `--selftest`.
 
 ### `plugins/audit/scripts/_surface_digest.py`
@@ -2415,8 +2423,8 @@ byte-identical; `read_filed_return` reports a file that will not parse as a prob
 an absence; `claims_from_return` hands the commit path the `claims` text verbatim. The evidence
 directory is handed in rather than resolved — resolving it is `_evidence_io`'s, one layer up —
 so the module reaches nothing but `_output`. `needs_human` is the one reading of which phase-return
-answers only a human settles - a task entry's `diverges`/`cannot-tell`, `not-proved` or `flagged`,
-and a phase intent of `diverges`/`cannot-tell` - shared by the driver's triage and
+answers only a human settles - a task entry's `diverges`/`cannot-tell`, `not-proved`, `flagged`
+or green-first `not-green` (`HUMAN_GREEN_FIRST`), and a phase intent of `diverges`/`cannot-tell` - shared by the driver's triage and
 `audit-task.py signoff`, which refuses while one is unsettled; `settlement_record` reads the
 settlement the triage's `--answer accept` writes at `drive_state_path` (`<stateDir>/drive/<phase>.json`)
 through `settlement_after` - each settled answer's key, and beside it the signature of the return
@@ -2434,6 +2442,15 @@ their signatures or None for a verdict recording none, and `ref_phase_returns` /
 `tip_phase_returns` read the returns a branch commits straight off git, the one command this
 module runs (`rd1`-`rd4`). What it cannot hold: the task
 id and role a caller files under are the caller's word. Cases in `tests/test__filed_returns.py`.
+
+**The green-first block** (`GREEN_FIELD`) follows the red-first one: `helper_green_first`
+trusts a block only under the mark `submit` stamps (`GREEN_HELPER_SOURCE`, never the red-first
+helper's), `owes_green_first` says a task with `tests.expectGreenFirst` true and a `tests.add`
+entry owes one - and `owes_red_first` is false for it - `mechanical_answers` computes the
+`greenFirst` pair of a phase entry from it, and `green_lines` is the brief's reading, with the
+sentence that `not-green` means the tests were written to the new code; a return carrying no
+block yields no line, so a task owing none pays nothing in its brief. Its words are
+`GREEN_FIRST_WORDS`, the schema enum (`gfr1`-`gfr6`).
 
 **The floor guard's block** (`FLOOR_FIELD`) is read here once for every surface that shows it:
 `floor_block` trusts a block only with the source mark `submit` stamps (`FLOOR_SOURCE`), an
@@ -2491,7 +2508,10 @@ is the comparison `run-test-gate.py`'s gate-reach reading makes: each declared p
 run carries reaches, as `{path, why, suites}` - the reason in the affected-test derivation's
 terms and the suites it selects as a list beside it, never joined into the reason; a widening's
 own reason is a `cause` beside the fixed `why`, so a writer bounds the varying part alone - and a
-path with no answer named as not asked rather than counted as reached. Also the
+path with no answer named as not asked rather than counted as reached.
+`green_first_findings(where, tests)` holds `tests.expectGreenFirst` true to its two rules, each a
+finding naming which fired - beside `expectRedFirst` true, and beside an empty `tests.add` - and
+draws nothing for a task without the field. Also the
 per-phase rules a schema cannot express — a parallel-run `claim` left on a finished phase,
 an `area` that normalises to no tags at all, a `budgetUSD` of zero, and a phase marked done
 over tasks that are not **finished** (done *or* cancelled).
@@ -3554,7 +3574,10 @@ the gate resolved through `meta.buildCommands`, the `executor.runsGate` reading 
 command, the filing command — one `drive-phase.py submit`, resolved against this plugin copy,
 carrying, on a task that owes a red-first proof (`_filed_returns.owes_red_first`: `tdd`, with
 `tests.expectRedFirst` not false), the gate command that names its `tests.add` file after `--`
-(`red_command`), since `submit` takes the stamp and runs the red-first helper itself — and,
+(`red_command`), since `submit` takes the stamp and runs the red-first helper itself — the same
+command, with a note, on a task owing a green-first proof (`_filed_returns.owes_green_first`),
+whose reviewer briefs show the filed `greenFirst` block (`GREEN_SECTION`, absent with no block) —
+and,
 only when `attempts > 1`, what the last attempt left on the record. Both reviewer briefs file
 through `submit` too, the phase review's with `--head` - but a per-task reviewer run as a
 session under `executor.writerModel` is told not to, and the drive files its return. The
@@ -5435,7 +5458,11 @@ question is within the paths that answer was given for, and asks again otherwise
 command, `stamp-verification.py red --json`, whose `redFirst` block replaces the agent's - owed
 on a task that owes a red-first proof, which is refused without one, while a `tdd` task whose
 `expectRedFirst` is false, given no command, has its `not-attempted` block filed by `submit`, and a test that passes without the fix gets no
-block and no filing (`red_block`); then `stamp-verification.py take --json`, after the red run
+block and no filing (`red_block`) - or, on a task owing a green-first proof
+(`_filed_returns.owes_green_first`), `stamp-verification.py green --json` in its place
+(`green_args`, `green_block`), refused without a command, whose block is filed under the
+`green-first-helper` mark beside red-first `not-attempted`; any `greenFirst` block the agent
+typed is dropped (`gfs1`-`gfs3`); then `stamp-verification.py take --json`, after the red run
 because the stamp is taken after the last claim, refused as a missing stamp when it prints no
 `audit-stamp:` line or git put no HEAD in it (`take_stamp`); and last `audit-task.py
 file-return`, the write-once door, which a reviewer's return and a phase review's (`--head`)
@@ -5771,6 +5798,18 @@ The names `stamp-verification.py` keeps for them are this module's objects.
 ### `plugins/audit/scripts/governance/stamp-verification.py`
 The CLI over it: `take` a stamp, or `compare` one against the tree now — and `red`, which
 proves a red-first without touching the tree it is pointed at.
+
+**`green` is `red`'s mirror, for a refactor whose added tests must pass on the base**
+(`tests.expectGreenFirst`). It takes the scope, the deadline, the environment and the throwaway
+through `red`'s own functions (`_red_scope`, `sized_deadline` over `GREEN_RUNS`,
+`_build_throwaway`, `_isolated_run`) and makes two runs, HEAD's own and then the task's test
+files over HEAD's code; `green_verdict` reads them. `proved` (exit 0) needs a green run, at least
+one case collected and a case of the task's own seen passing - a label HEAD's own run did not
+print, or under the sweep, which prints no label for a green file, its row's count rising over
+HEAD's run. `not-green` (exit 1) is a red on the base with HEAD's own tests green; zero
+collected, a run that reached no verdict, a red baseline and a refusal are `could-not-prove`
+(exit 3) with the reason verbatim. Its words are `GREEN_WORDS`, held to the schema by
+`_refs.green_first_vocabulary_drift()`.
 
 **Why a command and not a helper** — the caller is orchestrator and agent *prose*, which reaches
 Python only through Bash, the same reason `verify-invariants.py` and `check-ado-item.py` are

@@ -131,6 +131,11 @@ UNCHECKED_FIELD = "testsAddUnchecked"
 REVIEWER_ONLY_RED_FIRST = ("not-proved",)
 INHERITED_WORDS = ("none-found", "flagged", "not-asked")
 
+# The green-first words: the schema's `greenFirst.status` enum, kept here for the
+# reason `RED_FIRST_WORDS` is, and held equal to it - and to the words
+# `stamp-verification.py green` writes - by `_refs.green_first_vocabulary_drift`.
+GREEN_FIRST_WORDS = ("proved", "not-green", "could-not-prove", "not-attempted")
+
 
 # --- the path ---------------------------------------------------------------------
 def return_start_key(started_at):
@@ -1310,15 +1315,17 @@ def _entry_problems(entry, label):
                 if key not in entry]
     words = (("answer", REVIEW_ANSWERS),
              ("redFirst", RED_FIRST_WORDS + REVIEWER_ONLY_RED_FIRST),
-             ("inheritedTests", INHERITED_WORDS))
+             ("inheritedTests", INHERITED_WORDS),
+             ("greenFirst", GREEN_FIRST_WORDS))
     problems += ["%s: `%s` is %r, not one of %s"
                  % (label, key, entry.get(key), ", ".join(vocab))
                  for key, vocab in words
                  if key in entry and entry.get(key) not in vocab]
     if "missing" in entry and not isinstance(entry.get("missing"), list):
         problems.append("%s: `missing` is not a list" % (label,))
-    if "redFirstBasis" in entry and not _said(entry, "redFirstBasis"):
-        problems.append("%s: `redFirstBasis` is empty" % (label,))
+    for basis in ("redFirstBasis", "greenFirstBasis"):
+        if basis in entry and not _said(entry, basis):
+            problems.append("%s: `%s` is empty" % (label, basis))
     if entry.get("inheritedTests") == "not-asked" \
             and not _said(entry, "inheritedTestsBasis"):
         problems.append("%s: `inheritedTests` is not-asked with no basis"
@@ -1404,7 +1411,8 @@ COMPUTED_FIELD = "computedAnswers"
 # overrode: `{task id: {word: {"computed": ..., "basis": ...}}}`.
 OVERRIDDEN_FIELD = "computedOverridden"
 _ANSWER_PAIRS = (("redFirst", "redFirstBasis"),
-                 ("inheritedTests", "inheritedTestsBasis"))
+                 ("inheritedTests", "inheritedTestsBasis"),
+                 ("greenFirst", "greenFirstBasis"))
 # `red_verdict` in `stamp-verification.py` opens every basis with the command
 # and the throwaway it ran in; `ma1` in the tests reads a block it wrote.
 # The value of `redFirst.source` on a block `drive-phase.py submit` filled from
@@ -1464,6 +1472,67 @@ def helper_red_first(executor):
             and _HELPER_BASIS.match(red["basis"])):
         return None
     return red
+
+
+# --- the green-first block ----------------------------------------------------------
+# What `stamp-verification.py green` printed for a refactor task owing it
+# (`owes_green_first`), filed by `drive-phase.py submit` under GREEN_FIELD with
+# GREEN_HELPER_SOURCE as its mark - the red-first helper's mark spelled for the
+# green helper, held apart from it by `_refs.green_first_vocabulary_drift`.
+# Written by the verb, never by the agent: `submit` drops a block of this name the
+# agent's return carried, and a reader trusts one only with the mark
+# (`helper_green_first`). A return filed straight through `audit-task.py
+# file-return` is not covered by the drop - only the mark and the basis are read.
+GREEN_FIELD = "greenFirst"
+GREEN_HELPER_SOURCE = "green-first-helper"
+
+
+def helper_green_first(executor):
+    """The executor return's `greenFirst` when it is the green helper's block -
+    a word of the vocabulary, the helper's basis, its time, and the mark
+    `submit` puts on it - else None, the way `helper_red_first` reads red."""
+    green = executor.get(GREEN_FIELD) if isinstance(executor, dict) else None
+    if not (isinstance(green, dict) and green.get("source") == GREEN_HELPER_SOURCE
+            and green.get("status") in GREEN_FIRST_WORDS
+            and _said(green, "at") and _said(green, "basis")
+            and _HELPER_BASIS.match(green["basis"])):
+        return None
+    return green
+
+
+def owes_green_first(task):
+    """Whether `task` owes a green-first proof: its stored
+    `tests.expectGreenFirst` is true and `tests.add` names a case to watch pass.
+    Absent - every plan written before the field - owes none."""
+    tests = task.get("tests") if isinstance(task, dict) else None
+    if not isinstance(tests, dict):
+        return False
+    return tests.get("expectGreenFirst") is True and bool(tests.get("add"))
+
+
+# What `not-green` means, said where the block is shown and nowhere a task owing
+# no green-first pays for it.
+GREEN_NOT_MEANS = ("`not-green` on a refactor means the tests it added fail on the "
+                   "code before the change: they were written to the new code, not "
+                   "the old, so they do not show the behaviour was kept. Only a "
+                   "human settles it - the phase sign-off stops on it.")
+
+
+def green_lines(executor):
+    """The green-first block as a reviewer's brief shows it, or [] when the
+    return carries none - so a task owing no green-first pays nothing. A block
+    without the verb's mark is named as not the helper's, never shown as one."""
+    if not (isinstance(executor, dict) and GREEN_FIELD in executor):
+        return []
+    block = helper_green_first(executor)
+    if block is None:
+        return ["The return's %s block carries no `source: %s` mark with the "
+                "helper's basis, so `submit` did not write it: read it as no "
+                "green-first proof." % (GREEN_FIELD, GREEN_HELPER_SOURCE)]
+    return ["The green helper ran this task's tests on HEAD's code in a throwaway "
+            "tree (filed by `submit`, %s):" % (block.get("at"),),
+            "status: %s" % (block["status"],),
+            "basis: %s" % (block["basis"],), GREEN_NOT_MEANS]
 
 
 # --- the floor block ----------------------------------------------------------------
@@ -1727,6 +1796,13 @@ def mechanical_answers(executor, gate):
     else:
         owed["redFirst"] = ("the `redFirst` in %s is not the red-first helper's "
                             "block, so it is graded by reading" % (rel,))
+    # Only a return carrying the green helper's block answers green-first: no
+    # block is no question, so nothing is owed for it.
+    green = None if problem else helper_green_first(body)
+    if green is not None:
+        answers["greenFirst"] = green["status"]
+        answers["greenFirstBasis"] = "%s (the green helper's block in %s, at %s)" \
+            % (green["basis"], rel, green["at"])
     kind, basis = gate
     if kind == "whole":
         answers["inheritedTests"] = "not-asked"
@@ -1761,11 +1837,14 @@ def owes_red_first(task):
     fix prompt - because `audit-task._expects_red_first` is the only writer of
     the field and writes false for a fix task that names no case, which has
     nothing to prove a red by. A tdd task with the field absent is a plan written
-    by hand before the field was derived, and keeps the mode's reading."""
+    by hand before the field was derived, and keeps the mode's reading - unless
+    it owes a green-first proof (`owes_green_first`): its added tests must PASS
+    on the base, so no red is owed of them."""
     tests = task.get("tests") if isinstance(task, dict) else None
     if not isinstance(tests, dict):
         return False
-    return tests.get("mode") == "tdd" and tests.get("expectRedFirst") is not False
+    return (tests.get("mode") == "tdd" and tests.get("expectRedFirst") is not False
+            and not owes_green_first(task))
 
 
 # What may stand on either side of a path a command names: the command's ends,
@@ -1932,18 +2011,23 @@ def _typed_over(tid, entry, answers, word, basis):
 
 
 # --- the answers only a human settles ---------------------------------------------
-# A reviewer's `diverges` or `cannot-tell`, a red-first grade of `not-proved` and
-# an inherited test `flagged` are the answers no agent settles. The driver's
+# A reviewer's `diverges` or `cannot-tell`, a red-first grade of `not-proved`, a
+# green-first `not-green` and an inherited test `flagged` are the answers no
+# agent settles. The driver's
 # triage stops on them and the sign-off verb refuses over them, through this one
 # predicate, so the documented verb run by hand cannot sign off what the driver
 # would have stopped. A phase intent counts under every review key.
 HUMAN_ANSWERS = ("diverges", "cannot-tell")
 HUMAN_RED_FIRST = ("not-proved",)
 HUMAN_INHERITED = ("flagged",)
+# A refactor's tests seen failing on the base: the green helper's `not-green`,
+# computed into the phase entry, is settled the way a `not-proved` is.
+HUMAN_GREEN_FIRST = ("not-green",)
 # The words a reviewer may type over a computed answer (`_typed_over`): per
 # field, the answers only a human settles, so a computed answer never stands
 # between a reviewer and the human it escalates to.
-ESCALATIONS = {"redFirst": HUMAN_RED_FIRST, "inheritedTests": HUMAN_INHERITED}
+ESCALATIONS = {"redFirst": HUMAN_RED_FIRST, "inheritedTests": HUMAN_INHERITED,
+               "greenFirst": HUMAN_GREEN_FIRST}
 
 # Where a human's settlement is recorded: the driver's state for the phase,
 # under `<stateDir>/drive/<phase>.json`, whose `answersAccepted` the triage's
@@ -1965,7 +2049,8 @@ def needs_human(returns, settled=(), bound=()):
     """`[{"key", "who", "what", "note", "sha256"}]` - every answer in
     `returns` (`phase_returns`' list) that only a human settles and is not
     settled: a task entry answering `diverges` or `cannot-tell`, grading
-    red-first `not-proved` or inherited tests `flagged`, and a phase intent of
+    red-first `not-proved` or inherited tests `flagged`, carrying green-first
+    `not-green`, and a phase intent of
     `diverges` or `cannot-tell`. `sha256` is the signature of the return the
     answer sits in. An answer is settled when its key is in `settled` - a
     settlement by name, which only the reading of a verdict recording no read
@@ -1989,6 +2074,9 @@ def needs_human(returns, settled=(), bound=()):
             if entry.get("inheritedTests") in HUMAN_INHERITED:
                 said.append(("inherited tests %s" % (entry["inheritedTests"],),
                              entry.get("inheritedTestsBasis")))
+            if entry.get("greenFirst") in HUMAN_GREEN_FIRST:
+                said.append(("green-first %s" % (entry["greenFirst"],),
+                             entry.get("greenFirstBasis")))
             found += [{"key": "%s#%s#%s" % (rel, entry.get("id"), what),
                        "who": str(entry.get("id")), "what": what, "note": note,
                        "sha256": sig}

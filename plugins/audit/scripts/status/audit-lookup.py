@@ -711,8 +711,9 @@ def compose_executor_brief(manifest, phase, task, ctx, files, gate):
     tests = task.get("tests") or {}
     entries, whose = _task_gate(manifest, phase, task)
     lines += _section("Tests", [
-        "mode: %s; expectRedFirst: %s" % (tests.get("mode"),
-                                          json.dumps(tests.get("expectRedFirst"))),
+        "mode: %s; expectRedFirst: %s%s" % (
+            tests.get("mode"), json.dumps(tests.get("expectRedFirst")),
+            "; expectGreenFirst: true" if _fr.owes_green_first(task) else ""),
         "tests.add:"] + (["- %s" % (a,) for a in (tests.get("add") or [])]
                          or ["- none"])
         + ([BIND_RULE] if tests.get("add") else [])
@@ -1626,8 +1627,18 @@ def executor_submit_lines(manifest, phase, task, ctx):
     ends on the command to run."""
     tid = str(task.get("id"))
     tdd = _fr.owes_red_first(task)
-    cmd = red_command(manifest, phase, task) if tdd else None
-    if (task.get("tests") or {}).get("mode") == "tdd" and not tdd:
+    green = _fr.owes_green_first(task)
+    cmd = red_command(manifest, phase, task) if tdd or green else None
+    if green:
+        tail, note = " -- %s" % (cmd or "<the command that runs your new test>",), [
+            "This task owes a green-first proof (tests.expectGreenFirst): `submit` "
+            "runs `stamp-verification.py green` on the command after `--`, and "
+            "the tests you added must PASS on HEAD's code - a test written to "
+            "the new code files `not-green`, which only a human settles. It "
+            "files `redFirst` as not-attempted itself."
+            + ("" if cmd else " No gate entry names your tests.add file, so name "
+               "the command that runs your new test.")]
+    elif (task.get("tests") or {}).get("mode") == "tdd" and not tdd:
         tail, note = "", [
             "This tdd task's expectRedFirst is false (it names no case to prove "
             "a red by), so no red-first proof is owed: run `submit` with no "
@@ -1918,6 +1929,15 @@ def _tests_add_review_lines(task, filed):
 # own, in a phase brief a line in each task's section. The reading is the filed
 # return's own block (`_fr.floor_lines`), never recomputed here.
 FLOOR_SECTION = "Moves that lower the bar (the floor guard)"
+# ...and the green-first block, shown only where the filed return carries one
+# (`_fr.green_lines` answers [] otherwise), so a task owing none pays nothing.
+GREEN_SECTION = "Green-first (a refactor's tests on the base)"
+
+
+def green_section(filed_obj):
+    """The green-first section's lines, or [] for a return with no block."""
+    lines = _fr.green_lines(filed_obj)
+    return _section(GREEN_SECTION, lines) if lines else []
 
 
 def compose_reviewer_brief(manifest, phase, task, ctx, filed):
@@ -1941,6 +1961,7 @@ def compose_reviewer_brief(manifest, phase, task, ctx, filed):
     lines += _section("The intent question", CLAUSE_QUOTING_LINES)
     lines += _section("tests.add", _tests_add_review_lines(task, filed_obj))
     lines += _section(FLOOR_SECTION, _fr.floor_lines(filed_obj))
+    lines += green_section(filed_obj)
     lines += _section("The recorded gate run", [
         "runId %s, status %s, at %s (task.testEvidence)"
         % (evidence.get("runId"), evidence.get("status"), evidence.get("at"))
@@ -2028,7 +2049,11 @@ def answer_lines(answers, owed):
     lines = []
     for label, word, basis in (("red-first", "redFirst", "redFirstBasis"),
                                ("inherited tests", "inheritedTests",
-                                "inheritedTestsBasis")):
+                                "inheritedTestsBasis"),
+                               ("green-first", "greenFirst", "greenFirstBasis")):
+        # Green-first is a question only where the filed return answered it.
+        if word == "greenFirst" and word not in answers:
+            continue
         if word in answers:
             ups = " or ".join("`%s`" % (u,) for u in _fr.ESCALATIONS[word])
             lines.append("%s: computed (%s) - the filing verb fills `%s` and "
@@ -2279,6 +2304,7 @@ def phase_brief_parts(manifest, phase, ctx):
         answers, owed_by = mechanical.get(tid, ({}, {}))
         computed = answer_lines(answers, owed_by) if (
             not owed_why and _fr.owed_answer(task, phase, live, answered)) else []
+        green = _fr.green_lines(_filed_obj(text))
         # The task's own description and its filed return are the LAST two
         # things in the section, adjacent and in that order (`claim_section`)
         # - everything a reviewer needs to ask about first (the gate, the
@@ -2292,7 +2318,8 @@ def phase_brief_parts(manifest, phase, ctx):
             "commit: %s" % (task.get("commit"),),
             "files:"] + ["- %s" % (f,) for f in task.get("files") or []]
             + _tests_add_review_lines(task, _filed_obj(text))
-            + ["%s:" % (FLOOR_SECTION,)] + _fr.floor_lines(_filed_obj(text)) + [
+            + ["%s:" % (FLOOR_SECTION,)] + _fr.floor_lines(_filed_obj(text))
+            + (["%s:" % (GREEN_SECTION,)] + green if green else []) + [
             _recorded_run_line(evidence, rows, rows_why),
             _gate_results_line(evidence, rows, rows_why),
             "gate commands, %s:" % (whose,)] + gate_lines(manifest, entries)

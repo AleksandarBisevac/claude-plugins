@@ -715,6 +715,12 @@ KNOWN_TASK = {"id", "title", "status", "model", "skills", "blockedBy",
               # does: a set here would be anchored, drift-checked and green while
               # a wrong word stayed exactly as accepted.
               "redFirst",
+              # Its mirror for a behaviour-preserving refactor
+              # (`tests.expectGreenFirst`): whether the tests it added were
+              # watched PASSING on the base. `done --from-return` copies it off
+              # the green helper's marked block alone; its words live in the
+              # schema's `greenFirst` enum for `redFirst`'s reason.
+              "greenFirst",
               # Whether the closed diff does what `description` asked, which
               # neither `testEvidence` nor `redFirst` beside it can say - a
               # gate proves the suite is green and says nothing about whether

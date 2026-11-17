@@ -1468,6 +1468,10 @@
           "$ref": "#/$defs/redFirst",
           "description": "What happened to this task's red-first proof, which `testEvidence` beside it cannot say: that block records whether the gate passed, and this records whether the assertion the gate ran was ever watched failing. A task whose proof could not be made carries 'could-not-prove' here with the refusal verbatim, and still commits — the fix and its assertion exist and the gate answered, so the missing thing is the proof and not the work."
         },
+        "greenFirst": {
+          "$ref": "#/$defs/greenFirst",
+          "description": "What happened to this task's green-first proof - the refactor's mirror of `redFirst`: whether the tests it added were watched PASSING on the code before the change. Optional and absent by default, and absent on every task that owes none (`tests.expectGreenFirst` not true)."
+        },
         "intentCheck": {
           "$ref": "#/$defs/intentCheck",
           "description": "Whether the closed diff does what this task's `description` asked, which neither `testEvidence` nor `redFirst` can say: a gate proves the suite is green and says nothing about whether the green change is the change somebody wanted. Optional and absent by default — a manifest written before this block existed, a task closed by an older copy of the plugin, and a close whose reviewer call could not be made are one and the same state, and every surface must read absence as 'no answer', never as agreement."
@@ -1829,6 +1833,10 @@
           "type": "boolean",
           "description": "Machine-readable disambiguation of `add`: true (typical for tdd) means the tests are expected to fail on current code before the fix."
         },
+        "expectGreenFirst": {
+          "type": "boolean",
+          "description": "The mirror of `expectRedFirst`, for a behaviour-preserving refactor: true means the tests `add` names must PASS on the code before the change, or they characterize the new behaviour rather than the old. Optional; absent means no green-first proof is owed and every reader behaves as it did before the field existed. Owed only beside a non-empty `add`, and never beside `expectRedFirst` true - a test cannot both fail and pass on the base; the validator refuses either pairing, naming the rule. A task owing it owes no red-first proof, and `drive-phase.py submit` runs `stamp-verification.py green` on the test command after `--` and files the `greenFirst` block that helper prints; `/audit:task add --expect-green-first` sets it."
+        },
         "falsifiers": {
           "type": "object",
           "description": "RETIRED, and read by nothing: a plan that carries it keeps validating, with no finding and no warning, and the drive, the filing verb and the validator all go past it. It is a planned test's former 'must fail if' line - each key was one `add` entry, spelled verbatim, its value a mutation of the code that test had to fail against. The key stays accepted so no plan that validated stops validating; removing it is a 4.0.0 item beside `meta.muted`.",
@@ -1947,6 +1955,34 @@
         "at": {
           "type": "string",
           "description": "ISO timestamp of the attempt this block records, so a reader can tell a fresh observation from one left behind by an earlier run of the same task."
+        }
+      }
+    },
+    "greenFirst": {
+      "type": "object",
+      "required": [
+        "status",
+        "basis"
+      ],
+      "additionalProperties": true,
+      "description": "WHAT HAPPENED TO THE GREEN-FIRST PROOF of a behaviour-preserving refactor (`tests.expectGreenFirst`): whether the characterization tests it added PASS on the code before the change. A test written after the new code may describe the new behaviour rather than the old, and then the refactor proves nothing kept. Optional and absent by default; `status` and `basis` are required together for the reason `redFirst` gives. Written by `drive-phase.py submit` from `stamp-verification.py green`'s output, marked `source: green-first-helper`; submit drops a block of this name the agent's return typed. additionalProperties stays permissive, this document's policy at every object level.",
+      "properties": {
+        "status": {
+          "description": "'proved' means the command exited 0 in a throwaway tree at HEAD with the task's test files laid over it, and at least one case of the task's own was seen collected and passing - by its label, or by its file's case count rising over HEAD's own run - and `basis` names it. 'not-green' means the task's tests FAILED there: they describe the new code, not the base, and only a human settles it - the phase sign-off stops on it the way it stops on a red-first `not-proved`. 'could-not-prove' means the run reached no verdict - zero collected, a compile or import error, a run that could not start, a refusal - with the reason VERBATIM, carrying `redFirst`'s doctrine for the word unchanged. 'not-attempted' means no proof was made, and `basis` says why. THE ENUM MAY GAIN MEMBERS, as `redFirst.status`'s may.",
+          "enum": [
+            "proved",
+            "not-green",
+            "could-not-prove",
+            "not-attempted"
+          ]
+        },
+        "basis": {
+          "type": "string",
+          "description": "The observation that makes the `status` true - the command, its exit code, the tally and the task's own case - and for 'could-not-prove' the reason VERBATIM."
+        },
+        "at": {
+          "type": "string",
+          "description": "ISO timestamp of the run this block records."
         }
       }
     },

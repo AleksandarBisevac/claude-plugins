@@ -58,6 +58,13 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   validating against every later one in the major line. The repository rule behind
   this is in `CONTRIBUTING.md` under *Hard rules*, and it predates this document.
 
+  **`tests.expectGreenFirst` is additive under this promise.** The field is new, and the
+  two rules the validator holds it to - refused beside `tests.expectRedFirst` true, and
+  beside an empty `tests.add` - fire only on a task carrying it true, which no plan
+  written before the field existed does (`_manifest_phases.green_first_findings`). The
+  task's `greenFirst` block is a new record the filing verb writes; a plan without either
+  key reads and validates as before.
+
   **The `tests.add` path requirement was the first thing announced under this promise
   rather than excused from it, and the promise held through the whole 2.x line.** A task in
   `tests.mode: "tdd"` that is **not** `done` or `cancelled` must write each

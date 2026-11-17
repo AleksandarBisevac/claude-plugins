@@ -4249,7 +4249,80 @@ def _selftest():
         _harness.stage(check, "prk-block", _phase_key_cases)
         _harness.stage(check, "fa-block", _followed_anchor_cases)
         _harness.stage(check, "sl-block", _split_literal_cases)
+        _harness.stage(check, "gfv-block", _green_first_vocabulary_cases)
     return _harness.run(body)
+
+
+# --- (gfv) one green-first vocabulary: schema, helper, filing verb, both briefs ---
+_GFV_SCHEMA = json.dumps({"$defs": {"greenFirst": {"properties": {
+    "status": {"enum": ["proved", "not-green", "could-not-prove",
+                        "not-attempted"]},
+    "basis": {"type": "string"}}}}})
+_GFV_HELPER = ('GREEN_WORDS = ("proved", "not-green", "could-not-prove")\n')
+_GFV_VERB = ('HELPER_SOURCE = "red-first-helper"\n'
+             'GREEN_HELPER_SOURCE = "green-first-helper"\n'
+             'GREEN_FIRST_WORDS = ("proved", "not-green", "could-not-prove",\n'
+             '                     "not-attempted")\n'
+             'HUMAN_GREEN_FIRST = ("not-green",)\n')
+_GFV_REVIEWER = "Omit a pair unless escalating it (`not-proved`, `not-green`).\n"
+_GFV_EXECUTOR = '{"redFirst": {"status": "proved|could-not-prove|not-attempted"}}\n'
+
+
+def _green_first_vocabulary_cases(check):
+    """`green_first_vocabulary_drift`: the schema's `greenFirst.status` enum is
+    the one source; the helper writes a subset of it, the filing verb's tuple is
+    it, the verb's mark follows the red-first helper's, the reviewer can type
+    the word only a human settles, and the executor declares no block of its
+    own - the verb writes it."""
+    lint = getattr(M, "green_first_vocabulary_drift", None)
+    if lint is None:
+        check("gfv1 the lint exists", False)
+        return
+    live = lint()
+    check("gfv1 the live tree carries ONE green-first vocabulary: the schema "
+          "enum, the helper's words, the filing verb's tuple and mark, and both "
+          "agent briefs agree: %r" % (live,),
+          live["problems"] == [] and "not-green" in live["schema"]
+          and set(live["helper"]) < set(live["schema"]))
+
+    def run(schema=_GFV_SCHEMA, helper=_GFV_HELPER, verb=_GFV_VERB,
+            reviewer=_GFV_REVIEWER, executor=_GFV_EXECUTOR):
+        tmp = tempfile.mkdtemp(prefix="qg-gfv-")
+        try:
+            for rel, text in ((M.GREEN_FIRST_SCHEMA, schema),
+                              (M.GREEN_FIRST_HELPER, helper),
+                              (M.GREEN_FIRST_VERB, verb),
+                              (M.RED_FIRST_REVIEWER_BRIEF, reviewer),
+                              (M.RED_FIRST_EXECUTOR_BRIEF, executor)):
+                if text is not None:
+                    _write(tmp, M.PLUGIN_REL + "/" + rel, text)
+            return lint(tmp)["problems"]
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    allow = run()
+    alien = run(helper=_GFV_HELPER.replace('"not-green"', '"red-ish"'))
+    short = run(verb=_GFV_VERB.replace('"not-green", "could', '"could'))
+    mute = run(reviewer=_GFV_REVIEWER.replace(", `not-green`", ""))
+    typed = run(executor=_GFV_EXECUTOR + '{"greenFirst": {"status": "proved"}}\n')
+    same = run(verb=_GFV_VERB.replace('"green-first-helper"', '"red-first-helper"'))
+    gone = run(schema=None)
+    check("gfv2 THE ALLOW CASE: a tree whose five sources agree is quiet: %r"
+          % (allow,), allow == [])
+    check("gfv3 a helper word the schema does not declare is reported by word, "
+          "and so is a filing-verb tuple that drops a schema word: %r"
+          % ((alien, short),),
+          len(alien) >= 1 and any("'red-ish'" in p for p in alien)
+          and len(short) == 1 and "not-green" in short[0])
+    check("gfv4 a reviewer brief that cannot type `not-green` and an executor "
+          "brief that declares a greenFirst block of its own are each reported: "
+          "%r" % ((mute, typed),),
+          len(mute) == 1 and "not-green" in mute[0]
+          and len(typed) == 1 and "greenFirst" in typed[0])
+    check("gfv5 the verb's mark spelled as the red-first helper's is reported - "
+          "a reader could not tell the two blocks apart - and an unreadable "
+          "schema is a problem, never a skip: %r" % ((same, gone),),
+          len(same) == 1 and "red-first-helper" in same[0]
+          and len(gone) == 1 and "unreadable" in gone[0])
 
 
 if __name__ == "__main__":

@@ -35,6 +35,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `acceptedSuppressions`, the codes never reported (`["noqa: E402"]`); a value of another shape
   reads as the defaults and is a validator finding. The panel's Settings tab gains a *Weakened
   tests* card for both.
+- **A refactor can prove its tests were green before the change.** A task with the new
+  `tests.expectGreenFirst` true - written by `/audit:task add --expect-green-first`, or the
+  same key in an `add --from-file` batch - owes tests that PASS on the base instead of a red.
+  `drive-phase.py submit` runs the new `stamp-verification.py green` in red's throwaway tree
+  (HEAD's own run first, then the task's test files over it), refuses such a return given no
+  test command after `--`, and files the helper's `greenFirst` block marked
+  `green-first-helper`, with red-first `not-attempted`; a `greenFirst` block the agent typed is
+  dropped by `submit`. `proved` needs exit 0 and a case of the task's own seen passing;
+  `not-green` - a test failing on the base, so written to the new code - is an answer only a
+  human settles, which the reviewer's brief explains and sign-off waits on; zero collected, a
+  compile or import error and a refusal are `could-not-prove` with the reason verbatim. The
+  validator refuses the field beside `expectRedFirst` true and beside an empty `tests.add`,
+  and `green_first_vocabulary_drift()` holds the status words to the schema. Not covered: a
+  return filed straight through `audit-task.py file-return`, and the headless drive's own
+  filing, which runs only the red helper.
 
 ## [3.8.0]
 

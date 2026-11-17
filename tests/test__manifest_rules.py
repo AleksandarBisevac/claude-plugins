@@ -1074,6 +1074,7 @@ def _cases(record):
     _cases_falsifier(record)
     _cases_directory_entries(record)
     _cases_derived_gate_entries(record)
+    _cases_green_first(record)
     _cases_gate_entry_shape(record)
 
 
@@ -1455,6 +1456,50 @@ def _cases_derived_gate_entries(record):
            "under the phase and not under a task",
            len(phase) == 1 and "P0" in phase[0] and repr(entry) in phase[0]
            and "P0.1" not in phase[0], repr(phase))
+
+
+def _cases_green_first(record):
+    """`tests.expectGreenFirst`: a refactor's added tests must pass on the base.
+    Each refusal is asked with the field set and with it absent, so a rule that
+    fires on every task, or on none, reads red here."""
+    import copy
+
+    def findings_for(**tests):
+        plan = copy.deepcopy(_valid_manifest())
+        plan["phases"][0]["tasks"][0]["tests"].update(tests)
+        return M.validate(plan)
+
+    add = ["tests/test_a.py: the base keeps its answer"]
+    both, _w = findings_for(mode="tdd", expectRedFirst=True,
+                            expectGreenFirst=True, add=add)
+    empty, _w = findings_for(mode="regression", expectGreenFirst=True, add=[])
+    green, green_w = findings_for(mode="regression", expectRedFirst=False,
+                                  expectGreenFirst=True, add=add)
+    plain = copy.deepcopy(_valid_manifest())
+    plain_f, plain_w = M.validate(plain)
+    off, off_w = findings_for(mode="tdd", expectRedFirst=True,
+                              expectGreenFirst=False, add=add)
+    red_only, red_w = findings_for(mode="tdd", expectRedFirst=True, add=add)
+    record("gv1 expectGreenFirst with expectRedFirst both true is refused, the "
+           "finding naming which rule fired: a test cannot both fail and pass on "
+           "the base",
+           len([x for x in both if "expectGreenFirst" in x
+                and "expectRedFirst" in x]) == 1, repr(both))
+    record("gv2 expectGreenFirst with an empty tests.add is refused, the finding "
+           "naming that rule: there is no case to watch pass on the base",
+           len([x for x in empty if "expectGreenFirst" in x
+                and "tests.add" in x]) == 1, repr(empty))
+    record("gv3 THE TWINS: a green-first task naming its case with expectRedFirst "
+           "false validates clean, and so does one setting the field false beside "
+           "a red-first - neither rule fires on a task it is not about",
+           green == [] and off == [] and not [x for x in green_w + off_w
+                                             if "expectGreenFirst" in x],
+           repr((green, green_w, off, off_w)))
+    record("gv4 a plan without the field validates exactly as before: the stock "
+           "fixture and a red-first task carry no finding or warning naming it",
+           plain_f == [] and red_only == []
+           and not [x for x in plain_w + red_w if "GreenFirst" in x],
+           repr((plain_f, plain_w, red_only, red_w)))
 
 
 def _reads_no_file(call, expect):

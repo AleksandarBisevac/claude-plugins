@@ -18684,6 +18684,74 @@ def _fg_floor(filed):
     return block if isinstance(block, dict) else {}
 
 
+def _green_task(**tests):
+    """A refactor task owing a green-first proof, as `/audit:task add
+    --expect-green-first` writes it."""
+    base = {"mode": "regression", "add": ["tests/test_mine.py: new1 keeps v"],
+            "gate": ["true"], "expectRedFirst": False, "expectGreenFirst": True}
+    base.update(tests)
+    return _step_task(files=["src/mine.py", "tests/test_mine.py"], tests=base)
+
+
+_GREEN_BLOCK = {"status": "not-green", "at": "2026-01-01T00:00:00Z",
+                "basis": "`python3 tests/test_mine.py` in a throwaway tree at HEAD "
+                         "exited 1 with new1 failing: the tests describe the new "
+                         "code, not the base"}
+
+
+def _green_first_submit_cases(check):
+    """`submit` on a task owing a green-first proof runs the green helper - not
+    the red one - and files its block under the verb's mark; refuses an owed
+    return with no command; and drops a block the agent typed."""
+    M, why = _unit_driver("drive_phase_green_first")
+    if M is None:
+        check("gfs1 the driver loads", False, why)
+        return
+    mark = getattr(_fr, "GREEN_HELPER_SOURCE", None)
+    typed = {"status": "proved", "basis": "typed by the agent", "at": "z",
+             "source": mark}
+
+    def submitted(task_u, cmd, body, answers=None):
+        plan_u = _step_plan(_step_phase([task_u]))
+        ctx, calls = _submit_rig(M, task_u, answers)
+        try:
+            said = _caught(M.submit, ctx, plan_u, _submit_args(), cmd,
+                           json.dumps(body))
+        finally:
+            _harness.remove_tree(ctx["project"])
+        return said, (_filed_bodies(calls) or [{}])[0], _scripts(calls)
+
+    body = _executor_body("P1.1", {"testsAdded": ["new1"], "greenFirst": typed})
+    del body["redFirst"]
+    payload = json.dumps({"greenFirst": _GREEN_BLOCK, "printed": ["old1", "new1"]})
+    said, filed, ran = submitted(
+        _green_task(), [sys.executable, "tests/test_mine.py"], body,
+        {("stamp-verification.py", "green"): (1, payload, "")})
+    green = filed.get("greenFirst") or {}
+    check("gfs1 submit on a task owing green-first runs `stamp-verification.py "
+          "green` and not `red`, files the helper's block under the verb's mark in "
+          "place of the one the agent typed, and files red-first not-attempted: %r"
+          % ((said, ran, green, filed.get("redFirst")),),
+          said[0] == 0 and ("stamp-verification.py", "green") in ran
+          and ("stamp-verification.py", "red") not in ran
+          and green == dict(_GREEN_BLOCK, source=mark) and mark is not None
+          and (filed.get("redFirst") or {}).get("status") == "not-attempted")
+    said_n, filed_n, ran_n = submitted(_green_task(), None, body)
+    check("gfs2 an owed return with no test command after `--` is refused with "
+          "the reason - the task owes a green-first proof - and nothing runs or "
+          "is filed: %r" % ((said_n, ran_n),),
+          said_n[0] == 1 and "green-first" in _text_of(said_n[1])
+          and "expectGreenFirst" in _text_of(said_n[1])
+          and ran_n == [] and filed_n == {})
+    plain = _executor_body("P1.1", {"greenFirst": typed})
+    said_p, filed_p, ran_p = submitted(_step_task(), None, plain)
+    check("gfs3 THE TWIN: a task owing no green-first files as before - no green "
+          "helper runs, and a greenFirst block the agent typed is dropped, never "
+          "filed: %r" % ((said_p, ran_p, filed_p.get("greenFirst")),),
+          said_p[0] == 0 and ("stamp-verification.py", "green") not in ran_p
+          and "greenFirst" not in filed_p)
+
+
 def _floor_guard_submit_cases(check):
     """`submit` reads the task's diff for moves that lower the bar and files the
     floor guard's answer as a block of its own, written by the verb: findings,
@@ -18887,6 +18955,7 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("dl-block", "_lock_stop_cases"),
           ("ds-block", "_submit_cases"),
           ("flr-block", "_floor_guard_submit_cases"),
+          ("gfs-block", "_green_first_submit_cases"),
           ("flr10-block", "_floor_guard_drive_cases"),
           ("e2e-signoff", "_e2e_signoff_cases"),
           ("sr2-block", "_redispatch_wave_cases"),

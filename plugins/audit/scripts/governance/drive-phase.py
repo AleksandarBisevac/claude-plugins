@@ -4272,7 +4272,11 @@ def unowed_red_first(task):
     if _fr.owes_red_first(task):
         return None
     tests = task.get("tests") or {}
-    if tests.get("mode") == "tdd":
+    if _fr.owes_green_first(task):
+        basis = ("tests.expectGreenFirst is true: this task's added tests must "
+                 "PASS on the base, so a green-first proof is owed in place of a "
+                 "red-first one")
+    elif tests.get("mode") == "tdd":
         basis = ("tests.expectRedFirst is false on this tdd task: it names no "
                  "case to prove a red by, so no red-first proof is owed")
     else:
@@ -12091,6 +12095,31 @@ def red_block(ctx, task, args, cmd, tree=None):
     return block, stop
 
 
+def green_args(project, manifest, task_id, cmd, cases=(), deps_from=None):
+    """The arguments of `stamp-verification.py green` for `task_id` over `cmd`:
+    `red_args`' spelling with the verb `green` and no symbol options - a green
+    run has no missing symbol to excuse."""
+    argv = red_args(project, manifest, task_id, cmd, cases, (), deps_from)
+    argv.remove("--derive-introduces")
+    return ["green"] + argv[1:]
+
+
+def green_block(ctx, task, args, cmd, tree=None):
+    """`(block, None)` - the green helper's `greenFirst` block for a task owing
+    a green-first proof (`_fr.owes_green_first`) - or `(None, stop)`, the way
+    `red_block` answers for the red helper."""
+    block, _payload, why = red_reading(ctx, task, green_args(
+        task_root(ctx, tree), ctx["manifest"], task["id"], cmd, args.case,
+        args.deps_from), key=_fr.GREEN_FIELD)
+    if why is None:
+        return block, None
+    kind, code, text = why
+    if kind == "refused":
+        return None, relay_refusal(ctx, "stamp-verification.py", code, text)
+    return None, _stopped(ctx, "the green-first helper gave no block (exit %d): "
+                          "%s Nothing filed." % (code, text))
+
+
 def red_run(ctx, task, argv):
     """`(block, payload, None)` for one `stamp-verification.py red` run over
     `argv` (`red_args`) - the helper's block and its whole payload, which
@@ -12106,10 +12135,11 @@ def red_run(ctx, task, argv):
                                 "%d): %s Nothing filed." % (code, text))
 
 
-def red_reading(ctx, task, argv):
+def red_reading(ctx, task, argv, key="redFirst"):
     """`(block, payload, None)` - as `red_run` - or `(None, None, why)`, `why`
     being `("refused", exit, the helper's words)` or `("no-block", exit, its
-    note)`: what each caller turns into its own stop or decision."""
+    note)`: what each caller turns into its own stop or decision. `key` is the
+    payload's block - `redFirst`, or the green helper's `greenFirst`."""
     code, out, err = run_verb(ctx, "stamp-verification.py", argv)
     try:
         payload = json.loads(out)
@@ -12125,7 +12155,7 @@ def red_reading(ctx, task, argv):
                              "so no red could be run; the helper said: %s"
                              % (task["id"], " ".join((out + err).split()))}, {}, None
         return None, None, ("refused", code, out + err)
-    block = payload.get("redFirst") if isinstance(payload, dict) else None
+    block = payload.get(key) if isinstance(payload, dict) else None
     printed = payload.get("printed") if isinstance(payload, dict) else None
     ctx["printed"] = printed if isinstance(printed, list) else None
     if not isinstance(block, dict):
@@ -12341,16 +12371,28 @@ def submit(ctx, manifest, args, cmd, text):
         return _stopped(ctx, "the %s return for %s: %s" % (
             args.role, args.id, machine))
     owed = task is not None and _fr.owes_red_first(task)
+    green = task is not None and _fr.owes_green_first(task)
     executor = task is not None and args.role == "executor"
     if executor and owed and not cmd:
         return _stopped(ctx, "%s is a tdd task, so its red-first block is the "
                         "helper's: name the test command after `--`. Nothing "
                         "filed." % (task["id"],))
+    if executor and green and not cmd:
+        return _stopped(ctx, "%s owes a green-first proof (tests.expectGreenFirst "
+                        "is true), so its greenFirst block is the green helper's: "
+                        "name the test command after `--`. Nothing filed."
+                        % (task["id"],))
+    # The green-first block is the verb's alone, as the floor block is: whatever
+    # the agent's return carried under the key is dropped before anything runs.
+    if executor and isinstance(body, dict):
+        body.pop(_fr.GREEN_FIELD, None)
     # A tdd task that owes nothing (`expectRedFirst` false) and is given no
-    # command: the driver files the not-attempted block itself, since no helper
-    # ran and a typed block would claim a proof nothing made.
-    unowed = (executor and not cmd and isinstance(body, dict) and
-              (task.get("tests") or {}).get("mode") == "tdd" and not owed)
+    # command - or a task owing a green-first proof, whose command runs the
+    # green helper, not the red one: the driver files the not-attempted block
+    # itself, since no red helper ran and a typed block would claim a proof
+    # nothing made.
+    unowed = (executor and isinstance(body, dict) and not owed and (
+        green or (not cmd and (task.get("tests") or {}).get("mode") == "tdd")))
     if unowed:
         body["redFirst"] = dict(unowed_red_first(task), at=_utc_stamp())
     fills = (["stamp"] + (["redFirst"] if cmd else [])) if executor else []
@@ -12393,7 +12435,14 @@ def submit(ctx, manifest, args, cmd, text):
             # when it cannot either.
             ctx["did"].append("changed paths not compared with %s's files: %s"
                               % (task["id"], why))
-        if cmd:
+        if cmd and green:
+            block, stop = (green_block(ctx, task, args, cmd, tree) if tree
+                           else green_block(ctx, task, args, cmd))
+            if stop is not None:
+                return stop
+            body[_fr.GREEN_FIELD] = dict(block, source=_fr.GREEN_HELPER_SOURCE)
+            ctx["did"].append("green-first %s" % (block.get("status"),))
+        elif cmd:
             block, stop = (red_block(ctx, task, args, cmd, tree) if tree
                            else red_block(ctx, task, args, cmd))
             if stop is not None:

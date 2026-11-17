@@ -1,0 +1,182 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py --jobs 4 tests/test_stamp_verification.py tests/test_drive_phase.py tests/test__filed_returns.py tests/test__manifest_rules.py tests/test_audit_lookup.py tests/test__refs.py tests/test_audit_task.py tests/test__manifest_phases.py tests/test__manifest_vocab.py": "pass",
+    "python3 tools/sweep-selftests.py --jobs 4 tests/test_gen_demo_manifest.py tests/test_validate_manifest.py tests/test_render_report.py tests/test__deps.py tests/test__output_lints.py": "pass",
+    "python3 tools/measure-context.py --gate": "pass",
+    "python3 tools/prove-gates.py --only green_first": "pass",
+    "python3 tools/prove-gates.py --only red_first --red": "pass",
+    "python3 /<scratchpad>/sg1.6/mutations.py": "pass",
+    "python3 plugins/audit/scripts/manifest/validate-manifest.py examples/acme-store/audit-plan.json": "pass",
+    "ruff check (the changed .py files)": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-17T08:26:11Z",
+    "basis": "`python3 tools/sweep-selftests.py --jobs 4 tests/test_stamp_verification.py tests/test__filed_returns.py tests/test__manifest_rules.py tests/test_audit_lookup.py tests/test__refs.py` in a throwaway tree at HEAD exited 1 with 17 of 370 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - gfr1 (house FAIL), gfr2 (house FAIL), gfr3 (house FAIL), gfr4 (house FAIL), gfr5 (house FAIL), gfr6 (house FAIL), gv1 (house FAIL), gv2 (house FAIL) and 9 more: SELFTEST FAILED: 364/370 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "ATTEMPT 2 (the orchestrator's gate was red on tests/test_gen_demo_manifest.py: the five new schema fields were neither carried by the demo fixture nor exempted). CHOSEN: all five EXEMPTED in tools/demo/gen-demo-manifest.py SCHEMA_EXEMPTIONS - `task.greenFirst`, `greenFirst.status`, `greenFirst.basis`, `greenFirst.at` on `task.redFirst`'s own argument (no rendered surface - report, panel, /audit:status - reads the block, and the only words worth showing, not-green / could-not-prove, would publish a refused proof as a finished plan's normal state; a fabricated basis would be a quoted observation nobody made; an attempt has no date in a fixture where none happened), and `tests.expectGreenFirst` (no rendered surface reads it - only the executor brief and `submit`, neither of which runs against a generated fixture; carrying it true would declare a green-first proof owed on a finished task whose greenFirst block the fixture cannot carry; absent is what every task without the field already means). The file's rule (docstring, `schema_coverage()`): every schema field is carried or exempt with a true reason, and an exemption for a carried field is stale - the fixture carries none of the five, so the stale direction (`...and no exemption is stale`) stays PASS with `[]`. Nothing under examples/acme-store changes. RAN: `python3 tools/sweep-selftests.py --jobs 4 tests/test_gen_demo_manifest.py tests/test_validate_manifest.py tests/test_render_report.py tests/test__deps.py tests/test__output_lints.py` -> `5/5 files ok, 952 cases` (exit 0); the task gate's own suites are unchanged since attempt 1's green gate run (the only new edit is in tools/demo/). Mutation probe gains two rows (the tests.expectGreenFirst and task.greenFirst exemptions dropped -> the coverage case, whose label begins `every`, goes red, with the stale-exemption case beside it since the renamed key names no schema field); re-run: every baseline green (test_gen_demo_manifest 131/131), 29 rows CAUGHT, `MUTATIONS ALL CAUGHT`, exit 0 (mutations.out). Further dependants run directly in this attempt: test_validate_manifest 59/59, test_gen_demo_usage 30/30, test__task_outputs 72/72, test_repair_tests_add 21/21, test_verify_invariants 73/73, test_full_gate 51/51, test_close_phase 272/272, test_drive_without_model 74/74, test_audit_status 411/411. GREP `grep -rln expectRedFirst plugins tools tests examples` - 34 files; edited in this task: README, audit-reviewer.md, schema, _filed_returns, audit-task, _manifest_phases, audit-lookup, drive-phase, manifest-conventions, execute-task, verbs-in-full, gen-demo-manifest (now), test_drive_phase, test_audit_lookup, test_audit_task, test__manifest_rules, test__filed_returns. LEFT, each because: agents/audit-executor.md:127 (describes submit's red helper on a tdd task - still true; a green-owed task is told its command and the green run by its brief's note, and the executor file is at its ceiling); _manifest_rules.py:181 (a comment on the tdd/expectRedFirst rule, unchanged); templates/audit-plan.starter.json (a gate-only starter task with expectRedFirst false; absent expectGreenFirst is correct); commands/init.md:289,300 and commands/bug.md:93 (they choose red-first for bug/feature tasks; nothing there writes a refactor's tests object - init offering --expect-green-first for behaviour-preserving work would be a new feature, not in this scope); tools/demo/gen-demo-manifest.py's expectRedFirst writer (writes the fixture's red-first field as add does; the green field is exempt above); tests/test_repair_tests_add.py, test_gen_demo_manifest.py, test_verify_invariants.py, test__invariants.py, test__manifest_phases.py (fixtures building a tests object with expectRedFirst; none enumerates the schema's keys - the one that does is gen-demo-manifest's coverage, now answered); examples/acme-store/phases/*.json (committed plan data; validates unchanged). DOCUMENTS: every claim that green-first runs names `submit`; execute-task.md and CHANGELOG.md name the headless drive's `file` path as not covered, and no document says green-first runs on every path.\n\nGATE: the task's gate command (the brief's, with --jobs 4 for machine load) exited 0: `9/9 files ok, 3654 cases` (test_drive_phase 994 cases 650.6s slot, test_audit_task 1256, test_stamp_verification 370). After that run gf3 was tightened (see below) and its stage re-run green: `python3 tests/test_stamp_verification.py --selftest --stage sg-green` -> ALL PASS 6/6. Red-first command, narrowed: `python3 tools/sweep-selftests.py --jobs 4 tests/test_stamp_verification.py tests/test__filed_returns.py tests/test__manifest_rules.py tests/test_audit_lookup.py tests/test__refs.py` - the five files holding five of the six tests.add entries' cases; test_drive_phase (the gfs cases) is left out because its own run alone is 650s of slot time (gate run above), and three runs of it cannot fit the helper's 480s default deadline (on darwin the cost table is not read, so the default stands - `sized_deadline` printed `secs 480`, no sizing). Measured once: exit 0, `5/5 files ok, 1189 cases`, 43s wall, so three runs fit. The gfs cases are therefore not in the red run and the binding check will report them unprinted; they were seen red before the fix (tdd, drafted first) and are held by mutation rows below.\n\nWHAT WAS BUILT. (1) Schema: `tests.expectGreenFirst` (boolean) and task `greenFirst` -> `$defs.greenFirst` {status enum proved|not-green|could-not-prove|not-attempted, basis, at}, described as written by submit under `source: green-first-helper`, and `submit drops a block of this name the agent's return typed`. (2) Validator: `_manifest_phases.green_first_findings` - two findings, each naming its rule: `phases.walk_phases.green-first-with-red-first` and `phases.walk_phases.green-first-names-no-case`; nothing for a task without the field (gv4: stock fixture and a red-first task, no finding or warning naming it). examples/acme-store/audit-plan.json and the starter template validate (exit 0 each); the dogfood plan validates. (3) Helper: `stamp-verification.py green` (`run_green`), built from red's own functions (`_red_scope`, `sized_deadline(..., runs=GREEN_RUNS)`, `inline_overlays`, `child_env`, `holder_base`, `_build_throwaway`, `_isolated_run`, `unlink_junctions`, `_remove_throwaway`); two runs, HEAD's own (new files stubbed, as red does) then the task's test files; `green_verdict` reads them: proved exit 0 needs a green run, collected > 0 and an own case seen passing (a PASS label HEAD's run did not print, or under the sweep a per-file count rising over HEAD's run); red on the base with HEAD's own tests green -> not-green exit 1; zero collected / no verdict / red baseline / start refusal -> could-not-prove exit 3 with the reason verbatim; no command -> exit 2 `green needs the test command after `--``. `proof_need`/`fit_problem`/`sized_deadline` take the run tuple (default unchanged for red). `success_line` reads green's lines. (4) Submit (`drive-phase.py`): `green_args`/`green_block` (red's spelling, no symbol flags; `red_reading` gains `key`); a green-owed executor return with no command stops `... owes a green-first proof (tests.expectGreenFirst is true) ... Nothing filed.`; every executor return has `greenFirst` popped; with a command a green-owed task runs `green` (never `red`), files `greenFirst` = helper block + `source: green-first-helper`, and red-first `not-attempted` via `unowed_red_first` (new basis naming expectGreenFirst). (5) Filing verb (`_filed_returns`): GREEN_FIRST_WORDS, GREEN_FIELD, GREEN_HELPER_SOURCE, `helper_green_first`, `owes_green_first`, `owes_red_first` false for a green-owed task, `mechanical_answers` fills greenFirst/greenFirstBasis, `_entry_problems` checks the word, HUMAN_GREEN_FIRST=('not-green',) in ESCALATIONS and `needs_human` -> sign-off waits on it; `green_lines` + GREEN_NOT_MEANS. (6) Briefs (`audit-lookup.py`): `GREEN_SECTION` in the task reviewer brief and the phase unit, only when the filed return carries the key (`green_lines` [] otherwise), carrying the not-green sentence; answer_lines shows a computed greenFirst pair; the executor brief's tests line shows `expectGreenFirst: true` and a note + command for a green-owed task. (7) `/audit:task add --expect-green-first` (VERB_FLAGS, BATCH_FLAG_KEYS, the batch key `tests.expectGreenFirst` with a bool check) writes expectGreenFirst true + expectRedFirst false, absent otherwise; `done --from-return` copies only the helper-marked greenFirst block onto the task with a journal change row; `_manifest_vocab.KNOWN_TASK` gains greenFirst (mv18 required it). (8) Lint: `_refs.green_first_vocabulary_drift()` - schema enum the one source; helper GREEN_WORDS (schema minus GREEN_FIRST_UNWRITTEN), verb tuple == enum, HUMAN_GREEN_FIRST in schema, GREEN_HELPER_SOURCE == HELPER_SOURCE spelled red->green and != it, reviewer brief backticks each human word, executor brief declares no `\"greenFirst\":`, unreadable schema a problem. (9) prove-gates: rf2 anchor repaired to start at `\"proved\",` so it names only the red enum (the green enum ends on the same two lines) - `--only red_first --red` -> `red_first_drift RED rf2, rv1, prk2`; two new rows for green_first_vocabulary_drift: deny (reviewer loses `not-green` -> gfv1 RED) and allow (GREEN_FIRST_UNWRITTEN dropped -> gfv1-gfv4 RED); `--only green_first` -> 1 of 1 proven red, 1 of 1 proven quiet.\n\nTEST FIX AFTER THE PROBE: gf3 first asserted only the `0/0` tally in the zero-collected basis, and the zero-collected branch survived a mutation (the run fell through to the own-case reason carrying the same tally); gf3 now also requires `zero collected` in the basis. Two other test edits are to definitions that existed: test_audit_task's fb-block remedies table gains the `expect_green_first` row (its own case requires every add flag graded), and test__filed_returns' fixture writes its `0 cases` tally through `%d` (the prose-number lint pn0 fired on the literal).\n\nMUTATION PROBE (scratchpad sg1.6/mutations.py, output mutations.out): one row per new rule, each anchor asserted to match exactly once, restored byte for byte with __pycache__ purged; allow rows: own-case requirement dropped (gf4), owes_green_first ignoring empty add (gfr4), validator firing without the field (gv3, gv4), every task written green-first (egf2). First run: 25 of 27 caught; gf3's zero-collected branch survived (test tightened, above) and the gfv5 row's mutation did not compile (probe fixed). Re-run after both fixes: every baseline stage green, 27 rows `CAUGHT`, `MUTATIONS ALL CAUGHT`, exit 0 (mutations.out). Further dependants run directly: tests/test__invariants.py 141/141, tests/test__manifest_io.py 193/193, tests/test__evidence_io.py 335/335, tests/test__worktrees.py 182/182.\n\nAGENT FILES: audit-reviewer.md 6993 -> 6985 bytes - the floor-guard input row merged into the filed-return row (paid for it), `greenFirst` added to that row and `not-green` to the escalation list (the lint requires the reviewer to name it). audit-executor.md unchanged at 8982: no pin or return shape forces a change - submit writes greenFirst and the lint requires the executor brief NOT to declare it. commands/task.md 7795 -> 7877 of 8000 (`--expect-green-first` in argument-hint and step 2). `python3 tools/measure-context.py --gate` -> GATE OK.\n\nFILES ADDED TO SCOPE: _manifest_phases.py CHANGED (the walk is where every tests.* rule lives, so the two rules live there); tests/test__manifest_phases.py NOT changed (the cases are in test__manifest_rules.py, which validates whole manifests through the walk; it runs green, 147 cases); _manifest_vocab.py CHANGED (KNOWN_TASK greenFirst - mv18 named it); tests/test__manifest_vocab.py NOT changed (mv18, existing, is the guard that caught it; 68 cases green); reference/manifest-conventions.md CHANGED (new task template's tests object); reference/verbs-in-full.md CHANGED (--expect-green-first, file-return/submit sentence); commands/task.md CHANGED (above); tools/prove-gates.py CHANGED (above). _manifest_rules.py NOT changed: the rule's home is the walk it calls. Docs: README (followed-table test-discipline row, /audit:task usage, review.perTask word list, --from-return), reference/execute-task.md (Green-first bullet), COMPATIBILITY.md (additive under Validation stays additive), CHANGELOG.md (Unreleased/Added), PLUGIN-BUILD-GUIDE.md (stamp-verification, _filed_returns, _refs, _manifest_phases, audit-lookup, drive-phase submit) - each says `dropped by submit` and names the uncovered file-return path.\n\nDEPENDANTS: stamp-verification.py - tests/test__claude_home.py (16/16), tests/test__proc_group.py (39/39), tests/test__filed_returns.py (129/129), tests/test_audit_lookup.py, tests/test_audit_task.py (gate) still correct: red's signatures keep their defaults (`proof_need(wall, runs=PROOF_RUNS)`, `sized_deadline(..., runs=PROOF_RUNS)`), `_red_scope` words its refusal with args.action, which for red is the old sentence; names used in test_stamp_verification (_build_throwaway, _decisive_line, ...) unchanged; the prose mention in _filed_returns still true. drive-phase.py - hooks/drive-without-model.py, scripts/git/_worktrees.py, tests/test__filed_returns.py, tests/test__invariants.py import it: no removed or renamed name, `red_reading` gained a defaulted `key`; README/PLUGIN-BUILD-GUIDE prose updated where submit is described. _manifest_rules.py - unchanged. audit-task.py - full-gate.py, run-test-gate.py (tests/test_run_test_gate.py 624/624), the test suites: `_done_task` gained a defaulted green_first, `_from_return_values` a key, VERB_FLAGS/BATCH_* a row each; verbs-in-full.md and PLUGIN-BUILD-GUIDE prose still correct. audit-lookup.py - test__evidence_io, test__filed_returns, test_audit_lookup (201/201), test_drive_phase (gate): no name removed; README/execute-task prose on own-tests and runsGate untouched and true. schema - examples/acme-store/audit-plan.json and the starter template validate; tools/check-example-ledgers.py exit 0; tests/test__manifest_io.py 193/193; prove-gates' rf2 anchor repaired. audit-reviewer.md - prove-gates rows rv1 and the new gfv1 row anchored (`--list`), run-agent-session (tests/test_run_agent_session.py 80/80). audit-executor.md - unchanged, so evals.json, test__refs, test_require_plan (245/245) unaffected. execute-task.md - prove-gates rows anchored; tests/test_run_test_gate.py reads it at its line, 624/624. COMPATIBILITY.md - the readers named (_config.py, _config_rules, _evidence_io) read other sections; only an additive paragraph was added.\n\nLIMITS (not closed here): a return filed straight through `audit-task.py file-return` is not covered (recorded before this task); the headless drive's own filing (`file`) runs only the red helper, so a green-owed task driven headless files red-first not-attempted and no greenFirst block; `not-green` reaches sign-off through the phase return's computed entry (review.perTask phase) - under `always` the per-task reviewer's brief shows it but sign-off's needs_human reads phase returns only.",
+    "descriptive": "A task flagged tests.expectGreenFirst now proves its added tests pass on the base: submit runs `stamp-verification.py green`, files the helper's marked block, and a not-green answer waits for a human at sign-off."
+  },
+  "testsAdded": [
+    "tests/test_stamp_verification.py sg-green gf1-gf6: green proves on a pass at HEAD with an own case, not-green on a fail, could-not-prove on zero collected / SyntaxError / start refusal, twins for no own case and an unmatched --case, the sweep's count rise, and the no-command usage error",
+    "tests/test_drive_phase.py gfs-block gfs1-gfs3: submit runs green not red and files the marked block with red-first not-attempted; an owed return with no command is refused; a typed greenFirst on a task owing none is dropped",
+    "tests/test__filed_returns.py gfr-block gfr1-gfr6: the mark is trusted only as green-first-helper's; mechanical_answers fills greenFirst; not-green is a needs_human answer; owes_green_first and owes_red_first; the word check; the brief lines",
+    "tests/test__manifest_rules.py gv1-gv4: both flags true refused, empty tests.add refused, twins clean, a plan without the field unchanged",
+    "tests/test_audit_lookup.py gfb-block gfb1-gfb2: the task reviewer brief and the phase unit show the block and the not-green sentence, nothing without one",
+    "tests/test__refs.py gfv-block gfv1-gfv5: green_first_vocabulary_drift live-clean, allow, alien and dropped words, the reviewer and executor briefs, the mark and an unreadable schema",
+    "tests/test_audit_task.py egf-block egf1-egf4 (beyond tests.add): the flag writes the field, a task without it carries none, the flag beside an empty add is refused, done --from-return records only the marked block"
+  ],
+  "casesAdded": [
+    [
+      "gf1",
+      "gf2",
+      "gf3",
+      "gf4",
+      "gf5",
+      "gf6"
+    ],
+    [
+      "gfs1",
+      "gfs2",
+      "gfs3"
+    ],
+    [
+      "gfr1",
+      "gfr2",
+      "gfr3",
+      "gfr4",
+      "gfr5",
+      "gfr6"
+    ],
+    [
+      "gv1",
+      "gv2",
+      "gv3",
+      "gv4"
+    ],
+    [
+      "gfb1",
+      "gfb2"
+    ],
+    [
+      "gfv1",
+      "gfv2",
+      "gfv3",
+      "gfv4",
+      "gfv5"
+    ]
+  ],
+  "claims": "claims:\n1 stamp-verification.py green_verdict/run_green are what the guide and execute-task.md describe; drive-phase.py submit's `if executor and green and not cmd` stop and `body.pop(_fr.GREEN_FIELD, None)` are the `dropped by submit` sentence; _filed_returns.needs_human's greenFirst branch is the sign-off wait\n2 mutation probe scratchpad sg1.6/mutations.py, one row per rule with allow rows (gf4, gfr4, gv3/gv4, egf2); first run 25/27 caught, gf3 tightened and the gfv5 row's mutation fixed, re-run 27 CAUGHT and exit 0 (mutations.out); prove-gates --only green_first: RED gfv1 and quiet-proven gfv1-gfv4\n3 rf2's anchor was the class (an enum tail shared by two enums): a python str.count of the old anchor over the schema answers 2 after the new enum and of the new anchor 1; rf2 now starts at `\"proved\",` and names one enum; no other prove-gates row anchors on the red enum's tail\n4 the not-green rule to a reviewer is enforced by green_first_vocabulary_drift (named in the lint and the guide); the executor's `do not type greenFirst` is enforced by submit's drop and named in the schema description and docs\n5 measured once: the narrowed red command 43s wall, beside the number here\n6 n/a - no guard reading a command\n7 every count written in the outcome carries the command that printed it beside it",
+  "stamp": "audit-stamp: {\"content\":\"sha256:909746ac17fa7ec2b258b537c6aa21f1deace3321dcfe6ed3bd0394f1b60637c\",\"dirtyDigest\":\"sha256:bfb1fb8fc77d2b69adafa5d44e376e4f52955796dafb514b4746fef28072bd7f\",\"dirtyPaths\":null,\"head\":\"e6c3954b\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"COMPATIBILITY.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/README.md\",\"plugins/audit/agents/audit-executor.md\",\"plugins/audit/agents/audit-reviewer.md\",\"plugins/audit/commands/task.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/reference/manifest-conventions.md\",\"plugins/audit/reference/verbs-in-full.md\",\"plugins/audit/schema/audit-plan.schema.json\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"plugins/audit/scripts/manifest/_filed_returns.py\",\"plugins/audit/scripts/manifest/_manifest_phases.py\",\"plugins/audit/scripts/manifest/_manifest_rules.py\",\"plugins/audit/scripts/manifest/_manifest_vocab.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test__filed_returns.py\",\"tests/test__manifest_phases.py\",\"tests/test__manifest_rules.py\",\"tests/test__manifest_vocab.py\",\"tests/test__refs.py\",\"tests/test_audit_lookup.py\",\"tests/test_audit_task.py\",\"tests/test_drive_phase.py\",\"tests/test_gen_demo_manifest.py\",\"tests/test_stamp_verification.py\",\"tools/demo/gen-demo-manifest.py\",\"tools/lints/_refs.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:33cec658b9667fb430bf91dc871c29927674fb4cc3e3b41f14b557ffaf3ffe2c\",\"v\":2}",
+  "floorGuard": {
+    "answer": "findings",
+    "basis": "1 move(s) that lower the bar across 27 file(s) of the diff; 10 file(s) not read, having no syntax known here: CHANGELOG.md, COMPATIBILITY.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md, plugins/audit/agents/audit-reviewer.md, plugins/audit/commands/task.md, plugins/audit/reference/execute-task.md, plugins/audit/reference/manifest-conventions.md, plugins/audit/reference/verbs-in-full.md, plugins/audit/schema/audit-plan.schema.json; 6 test file(s) not compared for definition-changed, defining no test* function: tests/test__filed_returns.py, tests/test__manifest_rules.py, tests/test__refs.py, tests/test_audit_lookup.py, tests/test_audit_task.py, tests/test_stamp_verification.py",
+    "findings": [
+      {
+        "move": "stub-added",
+        "path": "plugins/audit/scripts/governance/stamp-verification.py",
+        "line": 3098,
+        "side": "tree",
+        "what": "stub added (empty except): except OSError:"
+      }
+    ],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "COMPATIBILITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/agents/audit-reviewer.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/commands/task.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/reference/execute-task.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/reference/manifest-conventions.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/reference/verbs-in-full.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "plugins/audit/schema/audit-plan.schema.json",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name"
+      },
+      {
+        "path": "tests/test__filed_returns.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test__manifest_rules.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test__refs.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test_audit_lookup.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test_audit_task.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      },
+      {
+        "path": "tests/test_stamp_verification.py",
+        "move": "definition-changed",
+        "reason": "its code changed, but neither copy defines a function or method named test*, so its cases are not definitions this reading can compare"
+      }
+    ],
+    "base": {
+      "commit": "e6c3954b6f79e8639734e304014fcdfbeffd466b"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-17T08:26:19Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

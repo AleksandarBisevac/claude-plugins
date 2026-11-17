@@ -108,6 +108,20 @@ verb writes and refuses, and what the run commands leave behind, is
        (run it, confirm red — proves the bug), THEN implement until green. (`tests.expectRedFirst` is true here; a tdd fix task that names no case has it false, owes no red, and `submit` files red-first `not-attempted` for it with no command after `--`.)
      - `regression` → implement the fix and add a test locking the corrected behavior (`task.tests.add`).
      - `gate-only` → no new test; only ensure `task.tests.gate` stays green.
+     - **Green-first**, any mode, when `tests.expectGreenFirst` is true (a behaviour-preserving
+       refactor, `/audit:task add --expect-green-first`): the tests `task.tests.add` names must
+       PASS on the base. Such a task owes no red (`_filed_returns.owes_red_first` is false for
+       it, and the validator refuses `expectRedFirst` true beside it, or the field beside an
+       empty `tests.add`). `submit` refuses its return with no command after `--`, runs
+       `stamp-verification.py green` in red's throwaway - HEAD's own run first, then the
+       task's test files over it - and files the helper's `greenFirst` block marked
+       `source: green-first-helper`, with red-first `not-attempted`; a `greenFirst` block the
+       agent's return typed is dropped by `submit`. `proved` is exit 0 with a case of the
+       task's own seen passing; `not-green` is a test failing on the base - written to the
+       new code - and only a human settles it (`_filed_returns.needs_human`); zero collected,
+       a compile or import error, or a refusal is `could-not-prove` with the reason verbatim.
+       Not covered: a return filed straight through `audit-task.py file-return`, and the
+       headless drive's own filing (`file`), which runs only the red helper.
 
      **Ask what happened to the PROOF, not only to the gate.** A gate verdict says the
      suite is green; it cannot say whether the new assertion was ever watched failing, and

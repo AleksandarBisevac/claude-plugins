@@ -1052,7 +1052,127 @@ def _selftest():
         _harness.stage(check, "rm-block", _red_command_cases)
         _harness.stage(check, "tsp-block", _support_path_cases)
         _harness.stage(check, "ffg-block", _floor_block_cases)
+        _harness.stage(check, "gfr-block", _green_first_cases)
     return _harness.run(body)
+
+
+# --- green-first: a refactor's added tests, run on the base ---
+_GF_HEAD = ("sweep: 1 files, 1 workers\n"
+            "  ok      tests/test_mine.py                    %d cases  [0.1s]\n\n"
+            "1/1 files ok, %d cases\n")
+
+
+def _green_block(task_cases, head_cases=1, code=0):
+    """A green-first block as `stamp-verification.py green` writes it - its own
+    `green_verdict` over a sweep's recorded runs, never a hand-typed copy - or
+    None when the helper does not define it yet."""
+    import _loader                                 # noqa: E402  (load_script)
+    sv = _loader.load_script("stamp-verification.py",
+                             modname="stamp_verification_for_fr_green")
+    verdict = getattr(sv, "green_verdict", None)
+    if verdict is None:
+        return None
+    cmd = ["python3", "tools/sweep-selftests.py", "tests/test_mine.py"]
+    task_text = (_GF_HEAD % (task_cases, task_cases) if code == 0 else
+                 "sweep: 1 files, 1 workers\n"
+                 "  FAILED  tests/test_mine.py   exited 1  [0.1s]\n\n"
+                 "--- tests/test_mine.py: exited 1 ---\nPASS old1\nFAIL new1\n"
+                 + "SELFTEST FAILED: %d/%d cases " % (1, 2) + "passed\n\n"
+                 "FAIL  tests/test_mine.py: exited 1\n0/1 files ok, %d cases\n"
+                 % (0,))
+    run = {"cmd": cmd, "code": code, "text": task_text, "problem": None,
+           "head": {"code": 0, "text": _GF_HEAD % (head_cases, head_cases),
+                    "problem": None}}
+    return verdict(run, {"tests": ["tests/test_mine.py"], "new": [], "cases": [],
+                         "dropped": []})[2]
+
+
+def _green_first_cases(check):
+    """The green-first block: the helper's words, the verb's mark, and the
+    answer only a human settles."""
+    helper_green = getattr(M, "helper_green_first", _absent)
+    owes_green = getattr(M, "owes_green_first", _absent)
+    green_lines = getattr(M, "green_lines", lambda executor: [])
+    mark = getattr(M, "GREEN_HELPER_SOURCE", None)
+    proved, not_green = _green_block(2), _green_block(2, code=1)
+    marked = dict(not_green, source=mark) if isinstance(not_green, dict) else None
+    bare = dict(not_green or {})
+    check("gfr1 a greenFirst block reads as the helper's only with the mark "
+          "`submit` puts on it - a bare copy of the helper's own words, one typed "
+          "by hand, one marked as the red-first helper's and none at all are not "
+          "trusted: %r" % ((mark, proved, not_green),),
+          bool(mark) and mark != M.HELPER_SOURCE and mark != M.FLOOR_SOURCE
+          and isinstance(proved, dict) and proved.get("status") == "proved"
+          and isinstance(not_green, dict) and not_green.get("status") == "not-green"
+          and helper_green(_executor(greenFirst=marked)) == marked
+          and helper_green(_executor(greenFirst=bare)) is None
+          and helper_green(_executor(greenFirst=dict(bare, source=M.HELPER_SOURCE)))
+          is None
+          and helper_green(_executor(greenFirst={"status": "proved",
+                                                 "basis": "typed", "at": "z",
+                                                 "source": mark})) is None
+          and helper_green(_executor()) is None)
+    rel = "returns/P1.1/x.executor.json"
+    filled, owed = M.mechanical_answers((rel, _executor(greenFirst=marked), None),
+                                        ("whole", "every gate runs all"))
+    plain, plain_owed = M.mechanical_answers((rel, _executor(), None),
+                                             ("whole", "every gate runs all"))
+    check("gfr2 the filing verb computes `greenFirst` from the helper's marked "
+          "block, its basis naming the return, and computes nothing and owes "
+          "nothing about it for a return that carries none - a plan without the "
+          "field behaves as before: %r" % ((filled, owed, plain, plain_owed),),
+          filled.get("greenFirst") == "not-green"
+          and rel in str(filled.get("greenFirstBasis"))
+          and "greenFirst" not in owed and "greenFirst" not in plain
+          and "greenFirst" not in plain_owed and "greenFirstBasis" not in plain)
+    phase_rel = "returns/P1/abc1234.reviewer.json"
+    entry = _hn_entry("P1.1")
+    done, took, problems = M.complete_phase_return(
+        _hn_body([entry]), {"P1.1": filled})
+    asked = M.needs_human([(phase_rel, done, "")])
+    passing = M.needs_human([(phase_rel, _hn_body([
+        _hn_entry("P1.1", greenFirst="proved", greenFirstBasis="b")]), "")])
+    check("gfr3 not-green is an answer only a human settles: the verb's computed "
+          "`not-green` lands in the phase entry and the sign-off predicate lists "
+          "it, while a `proved` green-first lists nothing: %r"
+          % ((took, problems, asked, passing),),
+          problems == [] and "greenFirst" in (took.get("P1.1") or [])
+          and [a["what"] for a in asked] == ["green-first not-green"]
+          and asked[0]["who"] == "P1.1" and passing == [])
+    owes = [owes_green(t) for t in (
+        {"tests": {"mode": "regression", "expectGreenFirst": True,
+                   "add": ["tests/t.py: keeps v"]}},
+        {"tests": {"mode": "regression", "expectGreenFirst": True, "add": []}},
+        {"tests": {"mode": "regression", "add": ["tests/t.py: keeps v"]}},
+        {"tests": {"mode": "regression", "expectGreenFirst": False,
+                   "add": ["tests/t.py: keeps v"]}}, None)]
+    tdd_green = {"tests": {"mode": "tdd", "expectGreenFirst": True,
+                           "add": ["tests/t.py: keeps v"]}}
+    check("gfr4 a task owes green-first only with expectGreenFirst true and a "
+          "case named; a tdd task that owes it owes no red-first: %r"
+          % ((owes, M.owes_red_first(tdd_green)),),
+          owes == [True, False, False, False, False]
+          and M.owes_red_first(tdd_green) is False)
+    words = getattr(M, "GREEN_FIRST_WORDS", ())
+    bad = M._entry_problems(dict(_hn_entry("P1.1"), greenFirst="green",
+                                 greenFirstBasis="b"), "entry")
+    good = M._entry_problems(dict(_hn_entry("P1.1"), greenFirst="not-green",
+                                  greenFirstBasis="b"), "entry")
+    check("gfr5 a phase entry's greenFirst is one of the words, and an entry "
+          "without the key still validates: %r" % ((words, bad, good),),
+          "not-green" in words and "proved" in words
+          and [p for p in bad if "greenFirst" in p] != [] and good == []
+          and M._entry_problems(_hn_entry("P1.1"), "entry") == [])
+    shown = "\n".join(green_lines(_executor(greenFirst=marked)))
+    typed = "\n".join(green_lines(_executor(greenFirst=bare)))
+    check("gfr6 the brief's green-first lines: none for a return with no block, "
+          "the helper's block with the sentence that not-green means the tests "
+          "were written to the new code, and a typed block named as not the "
+          "helper's: %r" % ((shown, typed),),
+          green_lines(_executor()) == [] and "not-green" in shown
+          and "written to the new code" in shown
+          and str((not_green or {}).get("basis")) in shown
+          and "not-green" not in typed and str(mark) in typed)
 
 
 def _floor_measured(**over):

@@ -44,6 +44,9 @@ Usage:
                                 [--case ID|LABEL ...] [--introduces SYMBOL ...]
                                 [--derive-introduces] [--deps-from DIR] [--timeout S] [--json]
                                 -- <test command>
+  stamp-verification.py green   [--project DIR] --manifest M --task T
+                                [--case ID|LABEL ...] [--deps-from DIR] [--timeout S]
+                                [--json] -- <test command>
 
   `compare` reads the stamp from stdin when neither --stamp nor --stamp-file is
   given, so a report or a commit message can be piped straight in.
@@ -60,6 +63,12 @@ Exit codes:
      or it was interrupted) - 4 the throwaway tree could not be removed - 2 as
      above, and for a task with no test file, a symbol that is not an
      identifier, or a command that names the shared tree
+  green: 0 proved - 1 not-green (a test failed on HEAD's code) - 3 could not
+     prove - 4 and 2 as for red
+
+GREEN IS RED'S MIRROR, for a refactor whose added tests must PASS on the base:
+the same throwaway, HEAD's own run first, then the task's; the `green` section
+below says what proves it.
 
 RED IS THE THIRD ACTION, AND THE ONE THAT BUILDS SOMETHING. It proves a new test
 can fail by running it in a throwaway tree - HEAD, with the task's test files
@@ -356,7 +365,7 @@ import _runner_output  # noqa: E402  (every reading of what a test runner printe
 import _filed_returns  # noqa: E402  (title_names_clause, is_test_support_path)
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
 
-USAGE = ("usage: stamp-verification.py take|compare|red [--project DIR] ...\n")
+USAGE = ("usage: stamp-verification.py take|compare|red|green [--project DIR] ...\n")
 
 E_STALE, E_USAGE, E_UNESTABLISHED = 1, 2, 3
 
@@ -3661,6 +3670,155 @@ def red_verdict(run, ctx):
                                          else "", env_clause)}, None
 
 
+# --- green: the refactor's mirror, on the same throwaway ----------------------
+# A behaviour-preserving refactor adds characterization tests, and they must PASS
+# on the code before the change - written after the new code, they may describe
+# it instead of the old behaviour, and then the refactor proves nothing kept. So
+# `green` builds `red`'s throwaway the same way (`_build_throwaway`, then
+# `_isolated_run` per run: HEAD, the task's declared test files laid over it)
+# and makes two runs: HEAD's own tests first, the baseline `red` makes, then the
+# task's. Proved is exit 0 with a case of the task's own seen collected AND
+# passing: by its label where the runner prints one for a passing case and the
+# baseline did not print it (a house run), else by a test file's case count
+# rising over the baseline's (the sweep's row per file, or the run's tally). A
+# red there is `not-green` - against a green baseline every failure is the task's
+# change to the tests. Zero collected, a compile or import error, a run that
+# could not start and a refusal are `could-not-prove` with the reason verbatim.
+# The words are the schema's `greenFirst.status` enum less the one no run gives
+# (`not-attempted`); `_refs.green_first_vocabulary_drift` holds the three equal.
+GREEN_WORDS = ("proved", "not-green", "could-not-prove")
+GREEN_PROVED, GREEN_NOT, GREEN_CANNOT = GREEN_WORDS
+E_NOT_GREEN = 1
+# What a green proof runs: HEAD's own tests, then the task's - no fix run.
+GREEN_RUNS = ("baseline", "task")
+
+
+def _passing_labels(text, cmd):
+    """The labels a run printed a PASS line for, or None when its runner prints
+    no label for a passing case - every runner but a house one run directly."""
+    labels = _runner_output.printed_labels(text, cmd)
+    if labels is None:
+        return None
+    failing = set(_runner_output._house_fail_labels(text))
+    return [label for label in labels if label not in failing]
+
+
+def _case_counts(text, cmd):
+    """`{file: cases}` a run counted, per file where the sweep printed a row for
+    it, else `{None: total}` off its one tally; `{}` when it counted nothing."""
+    rows = sweep_ok_counts(text)
+    if rows:
+        return dict((posixpath.normpath(p.replace("\\", "/")), n)
+                    for p, n in rows.items())
+    summary = _runner_output.sweep_summary(text)
+    if summary is not None:
+        return {None: summary["cases"]}
+    tally = _runner_output.read_run_tally(text, cmd)
+    if tally is None or tally["runner"] is None:
+        return {}
+    return {None: tally["collected"]}
+
+
+def _risen(head, task, tests):
+    """`["<file> ran N case(s) at HEAD's own run and M with the task's", ...]` -
+    each count of the task's run above the baseline's, read per declared test
+    file when the sweep printed a row for it, else as the run's total."""
+    rels = set(posixpath.normpath(t) for t in tests)
+    keys = [k for k in task if k is None or k in rels]
+    return ["%s ran %d case(s) at HEAD's own run and %d with the task's"
+            % ("the run" if k is None else k, head.get(k, 0), task[k])
+            for k in sorted(keys, key=lambda k: k or "")
+            if task[k] > head.get(k, 0)]
+
+
+def _own_passing(run, ctx):
+    """`(own, how, problem)`: the task's own cases seen passing and how they
+    were seen, or the reason none was."""
+    cmd, head = run["cmd"], run.get("head") or {}
+    passed = _passing_labels(run["text"], cmd)
+    before = _passing_labels(head.get("text") or "", cmd)
+    cases = ctx.get("cases") or []
+    if passed is not None and before is not None:
+        new = [label for label in passed if label not in before]
+        named = [label for label in new if not cases or any(
+            _is_named({"id": house_case_id(label), "label": label}, c)
+            for c in cases)]
+        if named:
+            return named, "passing, not printed by HEAD's own run", None
+        return [], None, (
+            "--case %s names no case that passed and that HEAD's own run did not "
+            "print" % (", ".join(cases),) if cases else
+            "no case passed that HEAD's own run did not print, so no case of the "
+            "task's own was seen passing")
+    risen = _risen(_case_counts(head.get("text") or "", cmd),
+                   _case_counts(run["text"], cmd), ctx.get("tests") or [])
+    if risen:
+        unnamed = ("; --case %s not checked by name: the run prints no label for "
+                   "a passing case" % (", ".join(cases),) if cases else "")
+        return risen, "seen by count" + unnamed, None
+    return [], None, ("the run prints no label for a passing case, and no test "
+                      "file's case count rose over HEAD's own run, so no case of "
+                      "the task's own was seen collected")
+
+
+def green_verdict(run, ctx):
+    """`(exit, verdict, block)` - what the task's tests did on HEAD's code.
+
+    `run` is `{"cmd", "code", "text", "problem", "head"}`: the task's run in the
+    throwaway and `head`, HEAD's own tests run first on the same tree, the new
+    declared test files laid over as empty files. `ctx` is `{"tests", "new",
+    "cases", "dropped"}` with the optional `"naming"`, `"deps"`, `"sized"`,
+    `"support"` and `"inline"` `red_verdict` reads too."""
+    at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    cmd = run["cmd"]
+    shown = " ".join(cmd)
+    env = "; run without %s" % (", ".join(ctx.get("dropped") or []) or "nothing",)
+    if ctx.get("naming"):
+        env += "; kept, naming the shared root: %s" % (", ".join(ctx["naming"]),)
+    env += (support_clause(ctx.get("support")) + deps_clause(ctx.get("deps"))
+            + deadline_clause(ctx.get("sized")))
+
+    def cannot(verdict, why):
+        return E_CANNOT_PROVE, verdict, {"status": GREEN_CANNOT, "at": at,
+                                         "basis": why + env}
+
+    if run["problem"] is not None:
+        return cannot(V_NOT_RUN, "`%s` in a throwaway tree at HEAD: %s"
+                      % (shown, run["problem"]))
+    baseline = baseline_problem(run.get("head"), cmd, (), ctx.get("new") or [])
+    where = "`%s` in a throwaway tree at HEAD exited %d" % (shown, run["code"])
+    verdict, tally = classify_run(run["code"], run["text"], cmd)
+    line = _decisive_line(run["text"], tally)
+    if baseline is not None:
+        return cannot(verdict, "%s, but %s - %s" % (where, baseline, line))
+    if ctx.get("inline"):
+        return cannot(verdict, "%s, but an inline suite's test hunks are told from "
+                      "its implementation only by the definitions they lie in, so "
+                      "a run of them on HEAD cannot be told from a misread split - "
+                      "%s" % (where, line))
+    if verdict == V_RED:
+        failing = _failing_cases(run["text"], tally["runner"], cmd)
+        return E_NOT_GREEN, verdict, {
+            "status": GREEN_NOT, "at": at,
+            "basis": "%s with failing cases %s against HEAD's own tests green on "
+                     "HEAD's code: the task's tests fail on the code before the "
+                     "change, so they describe the new code, not the base - %s%s"
+                     % (where, _ids(failing), line, env)}
+    if verdict != V_GREEN:
+        return cannot(verdict, "%s, but it reached no verdict (%s): %s"
+                      % (where, verdict, line))
+    if tally is not None and tally["runner"] is not None and not tally["collected"]:
+        return cannot(verdict, "%s, but it collected no test (zero collected): %s"
+                      % (where, line))
+    own, how, problem = _own_passing(run, ctx)
+    if problem is not None:
+        return cannot(verdict, "%s, but %s - %s" % (where, problem, line))
+    return E_PROVED, verdict, {
+        "status": GREEN_PROVED, "at": at,
+        "basis": "%s with HEAD's own tests green on HEAD's code and the task's "
+                 "own cases %s: %s - %s%s" % (where, how, "; ".join(own), line, env)}
+
+
 def _at_head(root, rels, deadline):
     """`(present, problem)` - which of `rels` HEAD holds, asked of git under
     the one deadline."""
@@ -4111,12 +4269,13 @@ def _runs_named(names):
     return "the %s runs" % ("%s and %s" % (head, names[-1]) if head else names[-1],)
 
 
-def proof_need(wall):
-    """The wall seconds every run of a proof together takes, or None when no
-    suite the command names has a recorded cost."""
+def proof_need(wall, runs=PROOF_RUNS):
+    """The wall seconds every run of a proof - `runs`, `red`'s three unless
+    said - together takes, or None when no suite the command names has a
+    recorded cost."""
     if wall is None or not wall["costed"]:
         return None
-    return len(PROOF_RUNS) * wall["wall"]
+    return len(runs) * wall["wall"]
 
 
 def fit_problem(sized):
@@ -4129,8 +4288,9 @@ def fit_problem(sized):
     return ("no run was started: %s need about %ds of wall time - %ds "
             "each, %s - and the deadline is %ds, so a run started inside it "
             "could not finish and its timeout would be the deadline's, not the "
-            "task's" % (_runs_named(PROOF_RUNS), need, sized["wall"]["wall"],
-                        wall_clause(sized["wall"]), sized["seconds"]))
+            "task's" % (_runs_named(sized.get("runs") or PROOF_RUNS), need,
+                        sized["wall"]["wall"], wall_clause(sized["wall"]),
+                        sized["seconds"]))
 
 
 def start_problem(owed, budget, left):
@@ -4164,7 +4324,8 @@ def start_problem(owed, budget, left):
 # `MAX_TIMEOUT`. A command the table says nothing about keeps the default, and
 # the basis says that was the reason. `--timeout`, when given, is used as given;
 # what the runs need is measured either way, and `fit_problem` reads the two.
-def sized_deadline(cmd, costs, problem, explicit, default, blocks=None, jobs=None):
+def sized_deadline(cmd, costs, problem, explicit, default, blocks=None, jobs=None,
+                   runs=PROOF_RUNS):
     """`{"seconds", "source", "why", "wall", "need"}` - the deadline `red` works
     to, where it came from, and what one run and the whole proof take in wall
     time. `explicit` is `--timeout` or None, `default` the figure used when
@@ -4175,10 +4336,11 @@ def sized_deadline(cmd, costs, problem, explicit, default, blocks=None, jobs=Non
     `source` is one of "timeout", "costs" and "default"; `why` is what the
     clause quotes: the suites and the wall time for "costs", else the sentence
     saying why the default stood. `wall` is `sweep_wall`'s answer and `need`
-    `proof_need`'s, both None when nothing measured them."""
+    `proof_need`'s over `runs` (kept as `runs`), both None when nothing
+    measured them."""
     wall = None if problem else sweep_wall(cmd, costs, blocks, jobs)
-    need = proof_need(wall)
-    measured = {"wall": wall, "need": need}
+    need = proof_need(wall, runs)
+    measured = {"wall": wall, "need": need, "runs": tuple(runs)}
     if explicit is not None:
         return dict(measured, seconds=explicit, source="timeout", why="--timeout")
     suites = sweep_suites(cmd)
@@ -4194,7 +4356,7 @@ def sized_deadline(cmd, costs, problem, explicit, default, blocks=None, jobs=Non
                         % (", ".join(suites), SWEEP_COSTS_REL))
     wanted = TIMEOUT_PER_COST * need
     said = ("%d times the %ds of wall time %s need, %ds each - %s"
-            % (TIMEOUT_PER_COST, need, _runs_named(PROOF_RUNS), wall["wall"],
+            % (TIMEOUT_PER_COST, need, _runs_named(runs), wall["wall"],
                wall_clause(wall)))
     if wanted <= default:
         return dict(measured, seconds=default, source="default",
@@ -4259,12 +4421,13 @@ def budget_clause(budget):
 
 
 def _red_scope(args, cmd, deadline):
-    """`(scope, problem)` - everything `red` needs before it builds anything."""
+    """`(scope, problem)` - everything `red` (or `green`, which reads the same
+    scope) needs before it builds anything."""
     if not cmd:
-        return None, "red needs the test command after `--`"
+        return None, "%s needs the test command after `--`" % (args.action,)
     if not (args.task and args.manifest) or args.files:
-        return None, ("red takes its scope off the plan: pass --manifest and "
-                      "--task, and no --files")
+        return None, ("%s takes its scope off the plan: pass --manifest and "
+                      "--task, and no --files" % (args.action,))
     if args.timeout is not None and not 1 <= args.timeout <= MAX_TIMEOUT:
         return None, ("--timeout %s is outside 1..%d: one deadline covers every run, "
                       "and it must leave the host's %d-second Bash limit room for "
@@ -4580,6 +4743,131 @@ def run_red(args, cmd, out):
     return exit_code
 
 
+def run_green(args, cmd, out):
+    """`green`: run the task's test files on HEAD's code in `red`'s throwaway and
+    print the `greenFirst` block. The scope, the deadline, the environment and
+    the throwaway are `red`'s own, built by the same functions; what differs is
+    the two runs it makes and the verdict (`green_verdict`)."""
+    start = time.time()
+    explicit = args.timeout
+    args.timeout = DEFAULT_TIMEOUT if explicit is None else explicit
+    deadline = start + args.timeout
+    scope, problem = _red_scope(args, cmd, deadline)
+    if problem is not None:
+        sys.stderr.write("ERROR: %s\n" % (problem,))
+        return E_USAGE
+    root = scope["root"]
+    costs, blocks, cost_problem = (load_sweep_table(root) if sweep_suites(cmd)
+                                   else ({}, {}, None))
+    jobs = sweep_jobs(cmd)
+    sized = sized_deadline(cmd, costs, cost_problem, explicit, DEFAULT_TIMEOUT,
+                           blocks=blocks, jobs=jobs, runs=GREEN_RUNS)
+    args.timeout = sized["seconds"]
+    deadline = start + args.timeout
+    # A budget with nothing held back: `green` makes no fix run.
+    budget = sweep_budget(cmd, costs, cost_problem, args.timeout, blocks=blocks,
+                          jobs=jobs)
+    overlays, inline, inline_problem = inline_overlays(root, scope["tests"], deadline)
+    leftovers = leftover_throwaways(root, timeout=max(1, _left(deadline)))
+    env, dropped, naming = child_env(root)
+    env = dict(env, PYTHONDONTWRITEBYTECODE="1")
+    for key in sorted(k for k in env if k.lower() == "npm_config_userconfig"):
+        del env[key]
+        dropped.append(key)
+    deps = scope["deps"]
+    digest = test_digest(root, scope["declared"])
+    _c, head = _git(root, ["rev-parse", "HEAD"], timeout=max(1, _left(deadline)))
+    base = holder_base(root)
+    if base is None:
+        sys.stderr.write("ERROR: every temp directory this machine offers is inside "
+                         "the shared tree %s, and a throwaway there would be a "
+                         "worktree siblings see; set TMPDIR outside it\n" % (root,))
+        return E_USAGE
+    holder = tempfile.mkdtemp(prefix=THROWAWAY_PREFIX, dir=base)
+    path = os.path.join(holder, "tree")
+    try:
+        with open(os.path.join(holder, OWNER_FILE), "w", encoding="utf-8",
+                  newline="\n") as fh:
+            json.dump({"pid": os.getpid()}, fh)
+    except OSError:
+        pass
+    run = {"cmd": cmd, "code": None, "text": "", "problem": None, "head": None}
+    new, stubs, support, copied = [], [], [], []
+    previous = _arm()
+    try:
+        try:
+            run["problem"] = fit_problem(sized) or inline_problem
+            present = set()
+            if run["problem"] is None:
+                present, run["problem"] = _at_head(root, scope["declared"], deadline)
+            if run["problem"] is None:
+                new = sorted(set(scope["tests"]) - present)
+                # jest and vitest fail an empty suite, so their new files are left
+                # absent in HEAD's run, as `red` leaves them.
+                stubs = [rel for rel in new
+                         if not _is_js_test_path(rel, set(scope["tests"]))]
+                # A test-support module HEAD has may carry the change itself, and
+                # a pass leaning on it would be no pass on the base: HEAD's copy.
+                support = support_at_head(root, scope["tests"], present, deadline)
+                _copied, run["problem"] = _build_throwaway(
+                    root, path, [], timeout=max(1, _left(deadline)))
+            if run["problem"] is None:
+                run["problem"] = start_problem(list(GREEN_RUNS), budget,
+                                               _left(deadline))
+            if run["problem"] is None:
+                run["head"], _c = _isolated_run(root, path, [], cmd, deadline,
+                                                args.timeout, env, holder,
+                                                "baseline", stubs=stubs, deps=deps)
+                if run["head"]["problem"] is not None:
+                    run["problem"] = ("HEAD's own run could not be made: %s"
+                                      % (run["head"]["problem"],))
+            if run["problem"] is None:
+                task, copied = _isolated_run(
+                    root, path, [rel for rel in scope["declared"]
+                                 if rel not in support], cmd, deadline,
+                    args.timeout, env, holder, "green", deps=deps, texts=overlays)
+                run["code"], run["text"], run["problem"] = (
+                    task["code"], task["text"], task["problem"])
+        except KeyboardInterrupt as exc:
+            run["problem"] = ("interrupted by %s before the run finished; the "
+                              "run's process group was torn down"
+                              % (exc or "an interrupt",))
+        exit_code, verdict, block = green_verdict(run, {
+            "tests": scope["tests"], "new": stubs, "cases": args.case,
+            "dropped": dropped, "naming": naming, "deps": deps, "sized": sized,
+            "support": support, "inline": inline})
+    finally:
+        unremoved = unlink_junctions(path, deps)
+        removed = (False if unremoved is not None
+                   else _remove_throwaway(root, holder, path))
+        if previous is not None:
+            _proc_group.disarm_interrupt(previous)
+    payload = {"verdict": verdict, "greenFirst": block,
+               "printed": _runner_output.printed_labels(run["text"], cmd),
+               "testDigest": digest, "atHead": scope["implementation"],
+               "copied": copied, "supportAtHead": support, "leftovers": leftovers,
+               "throwaway": {"path": path, "head": head, "removed": removed,
+                             "problem": unremoved},
+               "run": {"argv": cmd, "exit": run["code"],
+                       "outputTail": run["text"].splitlines()[-20:],
+                       "head": _run_record(run["head"])}}
+    if args.as_json:
+        out(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        out("green-first: %s (throwaway at HEAD %s, removed: %s)"
+            % (verdict, (head or "?")[:12], "yes" if removed else "NO"))
+        out("  at HEAD: %s" % (", ".join(scope["implementation"]) or "(none declared)"))
+        out("  from the working tree: %s" % (", ".join(copied) or "(none)"))
+        for left in leftovers:
+            out("  %s: %s" % (leftover_line(left), left["path"]))
+        out("greenFirst: %s" % (json.dumps(block),))
+    if not removed:
+        sys.stderr.write("ERROR: the throwaway tree at %s could not be removed; "
+                         "`git worktree list` names what is left\n" % (path,))
+        return E_LEFT_BEHIND
+    return exit_code
+
+
 def _run_record(extra):
     """What the payload keeps of one of `red`'s extra runs, or None."""
     if extra is None:
@@ -4595,7 +4883,7 @@ def build_parser():
         prog="stamp-verification.py", add_help=True, allow_abbrev=False,
         description="Stamp a verification with the tree it was taken on, and "
                     "grade that stamp against the tree now.")
-    parser.add_argument("action", choices=("take", "compare", "red"))
+    parser.add_argument("action", choices=("take", "compare", "red", "green"))
     parser.add_argument("--project", default=".",
                         help="the tree to stamp or to grade against "
                              "(default: the current directory)")
@@ -4626,9 +4914,9 @@ def build_parser():
                              "to; the basis names which")
     parser.add_argument("--case", action="append", default=[],
                         help="the id or full label of a case the task added; "
-                             "`red` only - a red "
-                             "counts only when one of the task's own cases "
-                             "fails an assertion")
+                             "`red` and `green` only - a red counts only when "
+                             "one of the task's own cases fails an assertion, a "
+                             "green only when one it names passes")
     parser.add_argument("--deps-from", dest="deps_from", default=None,
                         help="the checkout whose ignored node_modules and .venv "
                              "directories are linked into the throwaway; `red` only "
@@ -4705,13 +4993,14 @@ def success_line(lines):
     token = [ln for ln in said if ln.startswith(_tree_stamp.STAMP_TOKEN)]
     if token:
         return ("", token[-1])
-    block = [ln for ln in said if ln.startswith("redFirst: ")]
+    block = [ln for ln in said if ln.startswith(("redFirst: ", "greenFirst: "))]
     # A run that kept or left anything behind says so on a line of its own,
     # which the caller must still read: only the lines every run prints may
     # stand beside the verdict and the block.
-    usual = ("red-first: ", "redFirst: ", "at HEAD: ", "from the working tree: ",
-             "environment: ", "dependencies:")
-    if block and said[0].startswith("red-first: "):
+    usual = ("red-first: ", "redFirst: ", "green-first: ", "greenFirst: ",
+             "at HEAD: ", "from the working tree: ", "environment: ",
+             "dependencies:")
+    if block and said[0].startswith(("red-first: ", "green-first: ")):
         return (said[0], block[-1]) if all(ln.startswith(usual)
                                           for ln in said) else None
     if said and said[0].startswith("VERDICT: "):
@@ -4732,8 +5021,10 @@ def main(argv, out=print, stdin=None):
         return E_USAGE if exc.code else 0
     if args.action == "red":
         return run_red(args, cmd, out)
+    if args.action == "green":
+        return run_green(args, cmd, out)
     if cmd is not None:
-        sys.stderr.write("ERROR: only `red` takes a command after `--`\n")
+        sys.stderr.write("ERROR: only `red` and `green` take a command after `--`\n")
         return E_USAGE
     if args.action == "take":
         return run_take(args, out)

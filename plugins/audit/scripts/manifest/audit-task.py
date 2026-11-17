@@ -16,7 +16,8 @@ Usage:
                 [--outputs pat,pat]
                 [--risk low|med|high] [--blocked-by id,id] [--depends-on id,id]
                 [--description TEXT|-] [--tests-mode tdd|regression|gate-only]
-                [--tests-add TEXT ...] [--gate CMD ... | --gate-clear]
+                [--tests-add TEXT ...] [--expect-green-first]
+                [--gate CMD ... | --gate-clear]
                 [--failing-from RUNID] [--fixes finding,finding]
                 [--bug BUGID] [--introduces KIND ...] [--dry-run]
                 [--project-dir DIR] [--takeover] [--json]
@@ -3458,6 +3459,12 @@ def _build_task(task_id, title, args, phase, assembled, failing_row=None,
         "completedAt": None,
         "verifiedBy": [],
     }
+    # A refactor's tests must PASS on the base, so it owes no red: the validator
+    # refuses both true, and refuses green-first beside an empty tests.add.
+    # Written only when asked, so a task without the flag is what it was.
+    if getattr(args, "expect_green_first", False):
+        task["tests"]["expectGreenFirst"] = True
+        task["tests"]["expectRedFirst"] = False
     # WRITTEN ONLY WHEN ASKED FOR, which is why `outputs` is not in
     # `_TEMPLATE_KEYS`. `area` and `reviewSkill` are absent from the phase
     # template for the same reason one level up: most tasks produce no declared
@@ -7561,7 +7568,7 @@ def _close_evidence_refusal(project, mpath, git_root, task, sha, verified,
 
 def _done_task(task, now, commit, descriptive, technical, verified, intent,
                intent_basis=None, no_change=None, red_first=None,
-               intent_return=None):
+               intent_return=None, green_first=None):
     """Close one task; returns the values it held before.
 
     THE FIELDS ARE THE ONES `reference/execute-task.md`'s STEP 4 NAMES -- 4b's
@@ -7619,6 +7626,7 @@ def _done_task(task, now, commit, descriptive, technical, verified, intent,
            "noChange": prior.get("noChange"),
            "verifiedBy": task.get("verifiedBy"),
            "redFirst": task.get("redFirst"),
+           "greenFirst": task.get("greenFirst"),
            "intentCheck": task.get("intentCheck")
            if isinstance(task.get("intentCheck"), dict) else None}
     task["status"] = "done"
@@ -7645,6 +7653,8 @@ def _done_task(task, now, commit, descriptive, technical, verified, intent,
             task["intentCheck"]["return"] = intent_return
     if red_first is not None:
         task["redFirst"] = dict(red_first)
+    if green_first is not None:
+        task["greenFirst"] = dict(green_first)
     return was
 
 
@@ -7681,9 +7691,10 @@ def _done_changes(tid, was, task):
     if task.get("intentCheck") != was["intentCheck"]:
         rows.append({"id": tid, "field": "intentCheck",
                      "from": was["intentCheck"], "to": task.get("intentCheck")})
-    if task.get("redFirst") != was.get("redFirst"):
-        rows.append({"id": tid, "field": "redFirst",
-                     "from": was.get("redFirst"), "to": task.get("redFirst")})
+    for field in ("redFirst", "greenFirst"):
+        if task.get(field) != was.get(field):
+            rows.append({"id": tid, "field": field,
+                         "from": was.get(field), "to": task.get(field)})
     return rows
 
 
@@ -7920,7 +7931,9 @@ def _close_intent(args, tid, filed, no_change, held, fix_task):
 
 def _from_return_values(filed, tid):
     """`(values, refusal)` - what `--from-return` takes off the executor's filed
-    return: the outcome halves, `verifiedBy` from `testsAdded`, and `redFirst`."""
+    return: the outcome halves, `verifiedBy` from `testsAdded`, `redFirst`, and
+    `greenFirst` only as the green helper's marked block - `submit` drops one
+    the agent typed, so an unmarked block is no proof to record."""
     executor = filed.get("executor")
     if executor is None:
         return None, ("[audit-task] REFUSED: --from-return closes from the "
@@ -7932,7 +7945,8 @@ def _from_return_values(filed, tid):
     return {"descriptive": outcome.get("descriptive"),
             "technical": outcome.get("technical"),
             "verified": list(body.get("testsAdded") or []),
-            "redFirst": body.get("redFirst")}, None
+            "redFirst": body.get("redFirst"),
+            "greenFirst": _fr.helper_green_first(body)}, None
 
 
 def _still_open(phase):
@@ -8173,14 +8187,16 @@ def _locked_done(args, project, config, mpath, tid, out):
     now = _utc_stamp.utc_stamp()
     verified = None if args.verified_by is None else _split_csv(args.verified_by)
     descriptive, technical, red_first = args.descriptive, args.technical, None
+    green_first = None
     if from_values is not None:
         descriptive, technical = (from_values["descriptive"],
                                   from_values["technical"])
         verified, red_first = from_values["verified"], from_values["redFirst"]
+        green_first = from_values.get("greenFirst")
     was = _done_task(node, now, sha, descriptive, technical, verified,
                      intent, intent_basis=intent_basis,
                      no_change=no_change, red_first=red_first,
-                     intent_return=intent_return)
+                     intent_return=intent_return, green_first=green_first)
     # The key this close was held to, kept where nothing recorded one: a task
     # blocked from `pending` reaches here with no `start` having written it.
     _record_key(node, phase, key)
@@ -9539,7 +9555,7 @@ BATCH_PHASE_KEYS = tuple(key for key, _dest in PHASE_KEY_DESTS)
 BATCH_TASK_KEYS = ("key", "title", "description", "files", "outputs", "risk",
                    "model", "skills", "tests", "dependsOn", "blockedBy",
                    "fixes")
-BATCH_TESTS_KEYS = ("mode", "add", "gate")
+BATCH_TESTS_KEYS = ("mode", "add", "gate", "expectGreenFirst")
 # Where the file takes the value of each `add` flag, for the refusal that sends
 # a caller from the flag to the file: the path of the key, or None for a flag
 # the batch has no key for. Not listed: `from_file` (the batch itself) and
@@ -9555,6 +9571,7 @@ BATCH_FLAG_KEYS = {
     "tests_mode": "tasks[].tests.mode", "tests_add": "tasks[].tests.add",
     "gate": "tasks[].tests.gate", "gate_clear": "tasks[].tests.gate",
     "fixes": "tasks[].fixes", "title": "tasks[].title",
+    "expect_green_first": "tasks[].tests.expectGreenFirst",
     "bug": None, "introduces": None, "failing_from": None}
 _RISKS = ("low", "med", "high")
 
@@ -9734,6 +9751,9 @@ def _batch_tests_problems(tests, where):
         if key in tests and not _is_text_list(tests[key]):
             out.append("%s.tests.%s must be a list of non-empty strings"
                        % (where, key))
+    if "expectGreenFirst" in tests and not isinstance(tests["expectGreenFirst"],
+                                                      bool):
+        out.append("%s.tests.expectGreenFirst must be true or false" % (where,))
     out.extend(_batch_gate_problems(tests.get("gate"), "%s.tests.gate" % (where,)))
     return out
 
@@ -9984,7 +10004,8 @@ def _batch_task_args(task, keys):
         depends_on=[keys.get(r, r) for r in task.get("dependsOn") or []],
         description=task.get("description") or "",
         gate=list(gate) if gate else None, gate_clear=gate == [],
-        failing_from=None)
+        failing_from=None,
+        expect_green_first=tests.get("expectGreenFirst") is True)
 
 
 def _locked_batch_add(args, project, config, mpath, doc, out, seed=None):
@@ -15894,7 +15915,7 @@ VERB_FLAGS = {
     "add": ("phase", "skills", "model", "files", "outputs", "risk",
             "blocked_by", "depends_on", "description", "tests_mode",
             "tests_add", "gate", "gate_clear", "dry_run", "failing_from",
-            "from_file", "fixes", "bug", "introduces"),
+            "from_file", "fixes", "bug", "introduces", "expect_green_first"),
     "add-phase": ("phase_id", "outcome", "description", "area", "review_skill",
                   "blocked_by", "gate", "gate_clear", "park", "parent_branch"),
     "cancel": ("reason",),
@@ -16117,6 +16138,11 @@ def build_parser():
                    default=None,
                    help=_entry_help("add, scope: a `<path>: <what it asserts>` "
                                     "entry"))
+    p.add_argument("--expect-green-first", dest="expect_green_first",
+                   action="store_true",
+                   help="add: a behaviour-preserving refactor - the tests "
+                        "--tests-add names must PASS on the base; writes "
+                        "tests.expectGreenFirst true and expectRedFirst false")
     p.add_argument("--gate", action="append", default=None,
                    help=_entry_help("add, add-phase, retarget, scope: a gate "
                                     "entry - a meta.buildCommands key or a "

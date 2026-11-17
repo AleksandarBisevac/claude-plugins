@@ -145,7 +145,10 @@ Every newly created task MUST be initialized with ALL of:
 `outcome: {technical: null, descriptive: null}`, `startedAt: null`,
 `completedAt: null`, `verifiedBy: []`, plus explicit `blockedBy: []` /
 `dependsOn: []` (empty when none) and a `tests` object with `mode`, `add`,
-`expectRedFirst`, `gate`.
+`expectRedFirst`, `gate` - plus `expectGreenFirst: true` only for a behaviour-preserving
+refactor whose added tests must pass on the base (`add --expect-green-first`, which writes
+`expectRedFirst` false beside it; the validator refuses both true, and the field beside an
+empty `add`). Absent means no green-first proof is owed.
 
 **`tests.gate` is the task's own scope, not a copy of the phase's.** The phase gate is
 wide because its question is wide, and a task gate is narrowed to the task's own files —

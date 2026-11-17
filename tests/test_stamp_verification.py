@@ -6976,7 +6976,127 @@ STAGES = (
     ("swd-block", "_sweep_deadline_cases"),
     ("su-sweep-table", "_su_sweep_table_cases"),
     ("swn-block", "_sweep_new_suite_cases"),
+    ("sg-green", "_green_first_cases"),
 )
+
+
+# --- green: a refactor's added tests, run on the base -----------------------------
+def _green(root, man, cmd, *extra):
+    code, text = _run(["green", "--project", root, "--manifest", man,
+                       "--task", "P1.1", "--json"] + list(extra) + ["--"] + cmd)
+    try:
+        return code, json.loads(text)
+    except ValueError:
+        return code, {"unparsed": text}
+
+
+def _green_block(got):
+    return got.get("greenFirst") or {}
+
+
+def _green_sweep(rows, ok, files, code=0, block=""):
+    """A sweep's loud output: one `ok` row per `(path, cases)` and the total."""
+    text = "sweep: %d files, 1 workers\n" % (files,)
+    text += "".join("  ok      %-50s %d cases  [0.1s]\n" % (p, n) for p, n in rows)
+    return text + block + "\n" + _sweep_total(ok, files, sum(n for _p, n in rows))
+
+
+def _green_first_cases(check):
+    """`green`: the task's test files over HEAD's code must PASS, and a case of
+    the task's own must be among what passed - the mirror of `red`, on the same
+    throwaway. Each verdict is asked of a real run in a real repository, and the
+    sweep's count reading of the pure verdict function."""
+    py = sys.executable
+    keep = _house_test("import mine", [("old1", "mine.v >= 1"),
+                                       ("new1", "mine.v >= 1")])
+    root, man = _red_repo("stamp-green-proved-", keep)
+    before = _snapshot(root)
+    code, got = _green(root, man, [py, "tests/test_mine.py"])
+    block = _green_block(got)
+    check("gf1 a characterization case that passes on HEAD's code proves "
+          "green-first: exit 0, the block's word `proved`, its basis opening with "
+          "the command in a throwaway tree at HEAD and naming the task's own "
+          "case, the shared tree untouched and the throwaway removed: %r"
+          % ((code, block, got.get("throwaway")),),
+          code == 0 and block.get("status") == "proved"
+          and str(block.get("basis", "")).startswith(
+              "`%s tests/test_mine.py` in a throwaway tree at HEAD exited 0" % (py,))
+          and "new1" in block.get("basis", "") and block.get("at")
+          and _snapshot(root) == before
+          and (got.get("throwaway") or {}).get("removed") is True)
+    root_r, man_r = _red_repo("stamp-green-red-", _house_test(
+        "import mine", [("old1", "mine.v >= 1"), ("new1", "mine.v == 2")]))
+    code_r, got_r = _green(root_r, man_r, [py, "tests/test_mine.py"])
+    red = _green_block(got_r)
+    check("gf2 a case that FAILS on HEAD's code answers `not-green`, exit 1, the "
+          "basis naming the failing case and saying the tests describe the new "
+          "code, not the base: %r" % ((code_r, red),),
+          code_r == 1 and red.get("status") == "not-green"
+          and "new1" in red.get("basis", "")
+          and "not the base" in red.get("basis", ""))
+    root_z, man_z = _red_repo("stamp-green-zero-", _house_test("import mine", []))
+    code_z, got_z = _green(root_z, man_z, [py, "tests/test_mine.py"])
+    zero = _green_block(got_z)
+    root_c, man_c = _red_repo("stamp-green-compile-", "def broken(:\n")
+    code_c, got_c = _green(root_c, man_c, [py, "tests/test_mine.py"])
+    broke = _green_block(got_c)
+    gone = os.path.join(_harness.fixture_root("stamp-green-gone-"), "no-such-python")
+    root_g, man_g = _red_repo("stamp-green-refused-", keep)
+    code_g, got_g = _green(root_g, man_g, [gone, "tests/test_mine.py"])
+    refused = _green_block(got_g)
+    check("gf3 zero collected, a compile error and a run that could not start are "
+          "`could-not-prove`, exit 3, each basis carrying the reason verbatim: "
+          "the zero tally, the SyntaxError line, the start refusal: %r"
+          % ((code_z, zero, code_c, broke, code_g, refused),),
+          (code_z, code_c, code_g) == (3, 3, 3)
+          and [b.get("status") for b in (zero, broke, refused)]
+          == ["could-not-prove"] * 3
+          and "0/0" in zero.get("basis", "")
+          # The reason by name, not only the tally beside it: a zero-case run
+          # that fell through to "no case of the task's own was seen" would
+          # carry the same tally line and a different, wrong reason.
+          and "zero collected" in zero.get("basis", "")
+          and "SyntaxError" in broke.get("basis", "")
+          and "could not start" in refused.get("basis", ""))
+    root_s, man_s = _red_repo("stamp-green-same-", _house_test(
+        "import mine", [("old1", "mine.v > 0")]))
+    code_s, got_s = _green(root_s, man_s, [py, "tests/test_mine.py"])
+    same = _green_block(got_s)
+    code_n, got_n = _green(root, man, [py, "tests/test_mine.py"], "--case", "zz9")
+    named = _green_block(got_n)
+    check("gf4 THE TWINS of gf1: a pass in which no case of the task's own ran - "
+          "HEAD's one case reworded - and a pass whose --case names a case that "
+          "did not pass are `could-not-prove`, never `proved`: %r"
+          % ((code_s, same, code_n, named),),
+          code_s == 3 and same.get("status") == "could-not-prove"
+          and code_n == 3 and named.get("status") == "could-not-prove"
+          and "zz9" in named.get("basis", ""))
+    cmd = ["python3", "tools/sweep-selftests.py", "tests/test_mine.py"]
+    verdict = getattr(M, "green_verdict", None)
+
+    def sweep(head_n, task_n):
+        if verdict is None:
+            return (None, None, {})
+        return verdict({"cmd": cmd, "code": 0, "problem": None,
+                        "text": _green_sweep([("tests/test_mine.py", task_n)], 1, 1),
+                        "head": {"code": 0, "problem": None,
+                                 "text": _green_sweep(
+                                     [("tests/test_mine.py", head_n)], 1, 1)}},
+                       {"tests": ["tests/test_mine.py"], "new": [], "cases": [],
+                        "dropped": []})
+    rose, flat = sweep(1, 3), sweep(3, 3)
+    check("gf5 under the sweep, which prints no label for a green file, the "
+          "task's own cases are seen by its row's count rising over HEAD's own "
+          "run: a rise is `proved` naming both counts, an equal count is "
+          "`could-not-prove`: %r" % ((rose, flat),),
+          rose[0] == 0 and rose[2].get("status") == "proved"
+          and "tests/test_mine.py" in rose[2].get("basis", "")
+          and flat[0] == 3 and flat[2].get("status") == "could-not-prove")
+    code_u, said_u = _run(["green", "--project", root, "--manifest", man,
+                           "--task", "P1.1"])
+    check("gf6 green with no command after `--` is a usage error, exit 2, saying "
+          "the command is what it lacks: %r" % ((code_u, said_u[-200:]),),
+          code_u == 2 and "green needs the test command after `--`" in said_u)
 
 
 # The subject blocks: groups of cases that each took less than a block process

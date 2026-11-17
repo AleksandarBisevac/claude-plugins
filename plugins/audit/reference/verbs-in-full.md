@@ -273,7 +273,12 @@ per add is the class of error the script exists to delete.
      out of a sentence. On a `tdd` task that is neither `done` nor `cancelled`
      the validator **warns** when an entry names no file, and that becomes a
      **finding at 3.0.0** — `COMPATIBILITY.md` → *Validation stays additive* is
-     where the window is recorded), `--gate "<entry>"` (repeatable; pass it only to
+     where the window is recorded), `--expect-green-first` (a behaviour-preserving
+     refactor whose `--tests-add` cases must PASS on the base: writes
+     `tests.expectGreenFirst` true and `expectRedFirst` false, and `submit` then runs
+     `stamp-verification.py green` instead of `red`; refused by the validator beside an
+     empty `tests.add`; `tests.expectGreenFirst` is the same key in a `--from-file`
+     batch), `--gate "<entry>"` (repeatable; pass it only to
      OVERRIDE — with no `--gate` the script DERIVES the gate from this task and
      reports which of three defaults it took, see *The task gate is derived* below),
      `--gate-clear` for the **empty** gate — the state a phase can
@@ -1012,7 +1017,9 @@ directions.
 Not typed by a person, and not by an agent either any more: an agent's last act is
 `drive-phase.py submit`, which takes the stamp, runs the red-first helper on the test command
 after `--` - one a task that owes a red-first proof (`tdd`, `tests.expectRedFirst` not false)
-must give - and then runs this verb once with the return on stdin. The agent hands back the one line `submit`
+must give, and one a task owing a green-first proof (`tests.expectGreenFirst` true) must give
+to the green helper instead, whose `greenFirst` block it files and any agent-typed one of which
+it drops - and then runs this verb once with the return on stdin. The agent hands back the one line `submit`
 printed.
 
 ```

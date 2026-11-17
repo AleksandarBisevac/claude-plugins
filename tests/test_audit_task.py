@@ -15668,6 +15668,10 @@ def _batch_remedy_cases(check, project, batch, tree_bytes):
         "fixes": ("finding-a", "tasks[].fixes",
                   task_edit(fixes=["finding-a"])),
         "title": ("a title", "tasks[].title", task_edit(title="a title")),
+        # The first task names a tests.add entry, which a green-first task
+        # needs: the validator refuses the field beside an empty tests.add.
+        "expect_green_first": (None, "tasks[].tests.expectGreenFirst",
+                               tests_edit(expectGreenFirst=True)),
     }
     keyless = {"bug": "B1", "introduces": "sym", "failing_from": "run1"}
     parser = M.build_parser()
@@ -23370,6 +23374,80 @@ def _gate_reach_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _expect_green_first_cases(check):
+    """`add --expect-green-first`: the flag writes `tests.expectGreenFirst` true
+    and `expectRedFirst` false, a task added without it carries no such key,
+    and the flag beside an empty `tests.add` is refused by the validator with
+    nothing kept."""
+    root = _harness.fixture_root("audit-task-egf-")
+    try:
+        proj = os.path.join(root, "p")
+        os.makedirs(os.path.join(proj, ".claude"))
+        _panel_write._atomic_write_json(
+            os.path.join(proj, ".claude", "audit.config.json"),
+            {"manifestPath": "docs/audit/audit-plan.json"})
+        mpath = os.path.join(proj, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(mpath))
+        _panel_write._atomic_write_json(mpath, {
+            "meta": {"version": 2, "buildCommands": {"test": "true"}},
+            "phases": [{"id": "P1", "title": "Live", "status": "pending",
+                        "testGate": ["test"], "tasks": []}],
+            "fileIndex": {}, "bugs": []})
+
+        def added(mode, *extra):
+            code, txt = _cli_here(["add", "refactor", "--phase", "P1", "--files",
+                                   "src/r.py", "--tests-mode", mode]
+                                  + list(extra), proj)
+            with open(mpath, "r", encoding="utf-8") as fh:
+                tasks = json.load(fh)["phases"][0]["tasks"]
+            return code, txt, tasks
+
+        # tdd, whose expectRedFirst is true unless the flag turns it off.
+        code, txt, tasks = added("tdd", "--tests-add", "tests/test_r.py: keeps r",
+                                 "--expect-green-first")
+        tests = tasks[-1]["tests"] if tasks else {}
+        check("egf1 `add --expect-green-first` writes tests.expectGreenFirst true "
+              "and expectRedFirst false - a refactor's tests owe a green on the "
+              "base, never a red: %r" % ((code, tests),),
+              code == 0 and len(tasks) == 1
+              and tests.get("expectGreenFirst") is True
+              and tests.get("expectRedFirst") is False)
+        code, txt, tasks = added("tdd", "--tests-add", "tests/test_q.py: keeps q")
+        check("egf2 THE TWIN: a task added without the flag carries no "
+              "expectGreenFirst key at all, so a plan that never asks is what it "
+              "was: %r" % ((code, tasks[-1]["tests"] if tasks else None),),
+              code == 0 and len(tasks) == 2
+              and "expectGreenFirst" not in tasks[-1]["tests"])
+        code, txt, tasks = added("regression", "--expect-green-first")
+        check("egf3 the flag beside an empty tests.add is refused by the "
+              "validator, naming the rule, and nothing is kept: %r"
+              % ((code, txt[-240:], len(tasks)),),
+              code != 0 and len(tasks) == 2 and "expectGreenFirst" in txt
+              and "tests.add" in txt)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+    block = {"status": "proved", "at": "2026-01-01T00:00:00Z",
+             "basis": "`python3 tests/test_r.py` in a throwaway tree at HEAD "
+                      "exited 0 with the task's own cases passing: new1",
+             "source": _fr.GREEN_HELPER_SOURCE}
+    marked = M._from_return_values({"executor": ("r.json", {
+        "outcome": {}, "greenFirst": block})}, "P1.1")[0]
+    typed = M._from_return_values({"executor": ("r.json", {
+        "outcome": {}, "greenFirst": dict(block, source="executor")})}, "P1.1")[0]
+    task = {"id": "P1.1", "status": "in_progress"}
+    was = M._done_task(task, "2026-01-02T00:00:00Z", "a" * 40, None, None, None,
+                       None, green_first=marked["greenFirst"])
+    rows = [r for r in M._done_changes("P1.1", was, task)
+            if r["field"] == "greenFirst"]
+    check("egf4 `done --from-return` records the green helper's marked block on "
+          "the task with a journal change row, and takes nothing from a block "
+          "the agent typed: %r" % ((marked["greenFirst"], typed["greenFirst"],
+                                    task.get("greenFirst"), rows),),
+          marked["greenFirst"] == block and typed["greenFirst"] is None
+          and task.get("greenFirst") == block and len(rows) == 1
+          and rows[0]["from"] is None and rows[0]["to"] == block)
+
+
 STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("at3-block", "_flag_cases"), ("at4-block", "_start_cases"),
           ("at5-block", "_close_cases"), ("at6-block", "_group_cases"),
@@ -23402,7 +23480,8 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("dd-block", "_dependant_dispatch_cases"),
           ("gk-block", "_gate_keep_cases"),
           ("lr-block", "_list_flag_cases"),
-          ("grt-block", "_gate_reach_cases"))
+          ("grt-block", "_gate_reach_cases"),
+          ("egf-block", "_expect_green_first_cases"))
 
 
 if __name__ == "__main__":

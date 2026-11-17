@@ -1055,6 +1055,29 @@ def tests_add_graded(task):
     return task.get("status") not in TERMINAL
 
 
+def green_first_findings(where, tests):
+    """The findings `tests.expectGreenFirst` true draws, each naming its rule:
+    beside `expectRedFirst` true - a test cannot both fail and pass on the
+    base - and beside an empty `tests.add`, which names no case to watch pass.
+    A plan without the field, or with it false, draws none: the field is new,
+    and `COMPATIBILITY.md` promises a plan that validated keeps validating."""
+    if tests.get("expectGreenFirst") is not True:
+        return []
+    out = []
+    if tests.get("expectRedFirst") is True:
+        out.append(_output.finding(
+            "phases.walk_phases.green-first-with-red-first",
+            "%s: tests.expectGreenFirst and tests.expectRedFirst are both true - "
+            "a test cannot both fail and pass on the base; a refactor's tests "
+            "owe green-first, so set expectRedFirst false" % (where,)))
+    if not tests.get("add"):
+        out.append(_output.finding(
+            "phases.walk_phases.green-first-names-no-case",
+            "%s: tests.expectGreenFirst is true with an empty tests.add - there is "
+            "no case to watch pass on the base; name it with `--tests-add`" % (where,)))
+    return out
+
+
 # --- what a one-shot repair may do to an entry -----------------------------------
 # The rule above refuses, and a refusal with no migration behind it strands every
 # plan written before it. So this is the other half: what can be repaired
@@ -1958,6 +1981,8 @@ def _walk_phases(phases, build_keys=()):
                          % (twhere, type(tests).__name__)))
             if isinstance(tests, dict) and tests.get("mode") not in TESTS_MODE:
                 f.append(_output.finding("phases.walk_phases.tests-mode", "%s: tests.mode %r not in %s" % (twhere, tests.get("mode"), list(TESTS_MODE))))
+            if isinstance(tests, dict):
+                f.extend(green_first_findings(twhere, tests))
             # `tdd` + `expectRedFirst` + nothing named is an instruction to
             # prove a red first with no case to prove it with, and nothing said so:
             # a live run met exactly this on the largest security change of a phase,
