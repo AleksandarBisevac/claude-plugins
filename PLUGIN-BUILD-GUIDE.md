@@ -5706,9 +5706,12 @@ reader both columns go through. `acceptance_reading` reads with the strict colum
 held to) and, unless called with `wide=False` as `acceptance_items` is, again with the wide one:
 the text folded by `_fold` (NFKC, format characters dropped; line breaks kept, so its line numbers
 are the text's), the marker the word with its colon anywhere, or a line's first word once
-Markdown's marks are set aside without its colon only where a list numbered one opens directly
-under it - on the rest of the line or at the start of the next line holding text
-(`_list_opens_under`), so a line that merely begins with the word is prose - and one opener form
+Markdown's marks are set aside without its colon only where a list numbered one opens under it -
+on the rest of the line or at the start of the next line holding text, label words allowed
+before it in either place; on the word's own line only where an opener numbered two, the same
+way, follows (`_list_opens_under`, `_list_after_label`), and `_read_body` then reads the numbers
+from the opener, the label its lead-in - so a line that merely begins with the word is prose -
+and one opener form
 (`_ANY_FORM`) taking every number form either list style knows and a square-bracketed one, mixed,
 a 1 written another way than the list's openers starting a nested list. `wide` is None when both
 find the same items, each with the same text, else the wide count and the first line holding

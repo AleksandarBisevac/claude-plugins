@@ -270,12 +270,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   column, which is what a task is held to and is unchanged, and with every choice at its widest -
   the text folded to Unicode's compatibility form with its format characters dropped, a marker
   wherever the marker word in any case stands with its colon, or opens a line without it once
-  Markdown's marks are set aside where a list numbered one opens directly under it (on the rest
-  of that line or at the start of the next line holding text), and an item opened by a number in
-  any of the forms either list style knows or in square brackets, at a line start after an indent
-  and a bullet, the forms mixed. A line that merely begins with the word - an item wrapping onto
-  it, a closing paragraph, a list under it opening at another number - is prose to both readings,
-  so a plain list holding the word in its prose prints nothing. When the two find different items
+  Markdown's marks are set aside where a list numbered one opens under it (on the rest of that
+  line or at the start of the next line holding text, words of a label allowed before it in
+  either place - on the word's own line only where a second number, written the same way,
+  follows the first, so a sentence citing a single `(1)` stays prose and
+  `Acceptance criteria (1) ... (2) ...` reads as it does over two lines), and an item opened by a
+  number in any of the forms either list style knows or in square brackets, at a line start after
+  an indent and a bullet, the forms mixed. A line that merely begins with the word - an item
+  wrapping onto it, a closing paragraph, a list under it opening at another number - is prose to
+  both readings, so a plain list holding the word in its prose prints nothing. Two limits are
+  stated in `manifest-conventions.md` rather than built round: a label without its colon is read
+  only over a list numbered from one, and a reference numbered one directly after the word in
+  prose is read as a list. When the two find different items
   the line adds how many the wider reading finds - or, when it finds as many with different text,
   that it finds the same number placed differently - and the first line holding text where they
   part, numbered as written and its text quoted; a blank line between the list and the departure

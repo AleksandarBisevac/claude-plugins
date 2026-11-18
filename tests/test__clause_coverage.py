@@ -1215,6 +1215,88 @@ def _wide_bare_cases(check):
           "%r" % (got,))
 
 
+# Colon-less labels of several words, as a review wrote them over its lists.
+_SAME_LINE_LABELS = ("Acceptance criteria", "**Acceptance criteria**",
+                     "Acceptance checks (all required)", "acceptance criteria",
+                     "## Acceptance criteria")
+
+
+def _wide_same_line_cases(check):
+    """A colon-less label is read the same way whether its list opens on its own
+    line or on the next. Each said row is a reading that took label words only
+    across a line break (the bug); each quiet row is a reading that took label
+    words on the word's own line before any lone reference or version number."""
+    # A dotted, closing-bracket or square-bracketed number part-way along a line
+    # opens no item to either reading - `Acceptance (1) a 2. b` is one item to
+    # the word alone too - so those lists, written on one line, read as one item.
+    mid_line = ("paren", "full-width brackets", "full-width digits")
+    built = []
+    for label in _SAME_LINE_LABELS:
+        for name, opener in _GEN_FORMS:
+            for where, gap in (("same line", " "), ("next line", "\n")):
+                tail = " %s a holds%s%s b holds" % (opener(1), gap, opener(2))
+                want = 2 if gap == "\n" or name in mid_line else 1
+                built.append(("%s, %s, second item on the %s" % (label, name, where),
+                              "Do it.\n\n%s%s" % (label, tail), "Do it.\n\nAcceptance" + tail,
+                              want))
+    got = [(label, _items(t), M.reading_line(t), t, M.reading_line(alone), want)
+           for label, t, alone, want in built]
+    said = "%s %%d item" % (_WIDE,)
+    wrong = [(label, items, ln) for label, items, ln, t, alone, want in got
+             if not (items == [] and _NONE_READ in ln and said % want in ln
+                     and said % want in alone and _quotes_its_line(t, ln, 3))]
+    check("cw14 a colon-less label of several words - plain, emphasised, with a word "
+          "in brackets, in lower case, as a heading - with a two-item list opening on "
+          "its own line in every numbering form, the second item on that line or the "
+          "next, reads no strict item, and the line says no clause was read, that a "
+          "wider reading finds the items the word alone finds, and quotes the "
+          "label's line (over %d descriptions)" % (len(built),),
+          not wrong, some_of(wrong, render=repr))
+
+    prose = [
+        ("a parenthesised reference later in the line",
+         "Fix it.\n\nAcceptance tests cover step (1) of the flow."),
+        ("a bracketed citation later in the line",
+         "Fix it.\n\nAcceptance testing follows the guideline [1] of the handbook."),
+        ("a closing-bracket reference later in the line, lower case",
+         "Fix it.\n\nacceptance runs after phase 1) of the rollout."),
+        ("a numbered reference later in the line, then prose on the next",
+         "Fix it.\n\nAcceptance criteria are listed in section 1. of the guide.\nThat is all."),
+        ("a version number directly after the word",
+         "Fix it.\n\nAcceptance 1.2 is the version in use."),
+        ("a version number after label words",
+         "Fix it.\n\nAcceptance suite 1.0 ships today."),
+        ("a reference numbered one, then a reference numbered three in the same form",
+         "Fix it.\n\nAcceptance tests cover step (1) and step (3) of the flow."),
+    ]
+    got = [(label, len(_items(d)), M.reading_line(d)) for label, d in prose]
+    check("cw15 ALLOW: a prose line beginning with the marker word and holding one "
+          "reference numbered one later in the line - parenthesised, bracketed, "
+          "closing-bracket, dotted - or a version number, directly or after label "
+          "words, or a reference numbered one whose next is not numbered two, reads "
+          "no item and prints nothing",
+          [(n, ln) for _l, n, ln in got] == [(0, "")] * len(prose),
+          "%r" % ([g for g in got if (g[1], g[2]) != (0, "")],))
+
+    fenced = [
+        ("the word, then a fence opening, then an opener numbered one",
+         "Fix it.\n\nAcceptance\n```\n(1) not a list\n(2) still not\n```\nmore prose"),
+        ("label words, then a fence opening, then a dotted opener numbered one",
+         "Fix it.\n\nAcceptance example\n```\n1. not a list\n2. still not\n```\nmore prose"),
+        ("the word, then a tilde fence opening, then a bracketed opener",
+         "Fix it.\n\nacceptance\n~~~\n[1] not a list\n[2] still not\n~~~\nmore prose"),
+    ]
+    # The fence's own opening line is the next line holding text, and it opens
+    # no item, so a walk that steps over it is what this row goes red for; the
+    # fence check behind it cannot be reached while the walk stops there.
+    got = [(label, len(_items(d)), M.reading_line(d)) for label, d in fenced]
+    check("cw16 ALLOW: the marker word, alone or with label words, followed on the "
+          "next line by a code fence whose first line is an opener numbered one, is "
+          "no marker: no item is read and nothing is printed",
+          [(n, ln) for _l, n, ln in got] == [(0, "")] * len(fenced),
+          "%r" % ([g for g in got if (g[1], g[2]) != (0, "")],))
+
+
 def _wide_parting_cases(check):
     """The parting line holds text: blank lines, a line of blanks and carriage
     returns between the list and the continuing numbering do not move it."""
@@ -1492,6 +1574,7 @@ def _cases(check):
     _harness.stage(check, "cw-allow", _wide_allow_cases)
     _harness.stage(check, "cw-generated", _wide_generated_cases)
     _harness.stage(check, "cw-bare", _wide_bare_cases)
+    _harness.stage(check, "cw-same", _wide_same_line_cases)
     _harness.stage(check, "cw-plain", _wide_plain_generated_cases)
     _harness.stage(check, "cw-part", _wide_parting_cases)
     _harness.stage(check, "cw-equal", _wide_equal_cases)

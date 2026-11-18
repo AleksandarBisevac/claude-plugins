@@ -1,0 +1,71 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__clause_coverage.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T10:08:57Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__clause_coverage.py` in a throwaway tree at HEAD exited 1 with 1 of 88 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cw14 (house FAIL): SELFTEST FAILED: 87/88 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "(1) _clause_coverage.py: _list_opens_under now returns (opens, at). The direct path (an opener numbered one right after the word) and the next-line path (an opener numbered one at the start of the next line holding text, outside a fence) are unchanged byte for byte in behaviour and return at=None. A new third path, _list_after_label, takes label words on the word's own line: the first opener numbered one after a blank opens a list only when an opener numbered two, the same way, follows after a blank later on the line or at the start of the next line holding text, outside a fence. It is one pass along the line, keeping the first one of each way. New helpers: _opener (number and way of an opener), _opener_on_line, _next_text_line (the existing blank-line walk, factored out). _markers stores where such a list opens as marker['list']; _read passes it to _read_body, which reads numbers from there as if it opened the line, so the label becomes the lead-in, as it already was across a line break. The strict column never takes the bare word, so marker['list'] is always None there and the strict reading is untouched. (2) tests/test__clause_coverage.py: new stage cw-same with cw14 (60 descriptions: 5 multi-word labels x 6 numbering forms x second item on the same or the next line; the wide count comes from the construction and equals the one-word twin's count, the parting line is the label's line), cw15 (allow: 7 prose lines with a single reference numbered one later in the line, a version number directly or after label words, a (1) followed by a (3)), and cw16 (allow: the word or label words, then a backtick or tilde fence whose first line is an opener numbered one). (3) Docs: the module docstring (SILENT ONLY ON AGREEMENT), the READING_CHOICES bare row, the _markers and acceptance_reading docstrings, manifest-conventions.md, the PLUGIN-BUILD-GUIDE.md _clause_coverage section and the Unreleased CHANGELOG entry now state the rule and its two limits (a bare label is read only over a list numbered from one; a reference numbered one directly after the word in prose is read as a list). Both limits were checked against the code: 'Acceptance (1) of the handbook says so.' prints 'finds 1 item'; '## Acceptance criteria' over '> 1.'/'> 2.', 'Acceptance criteria' over '**1.**', '2. a' and '(2) a (3) b' print nothing. (4) The fence check on the next-line path is unreachable, an equivalent mutant: a bare marker word is never inside a fence (_markers skips it), so the next line holding text after its line is outside every fence or is the fence's own opening line, and that line starts with backticks or tildes and so cannot match an opener. cw16 pins the behaviour, and the fence's opening line is what stops it today. No case can fail without the check, so Acceptance item 3 cannot be met as written. Mutation row 3 shows it: 88/88 green and 0 of 40210 descriptions differ. Row 4 shows cw16 goes red once a fenced line is reachable and the check is gone. Row 5 shows the check alone keeps cw16 green when the walk does reach the fenced line. cw15 and cw16 are allow cases and pass before and after; cw14 carries the red. EVIDENCE: suite 88/88 after (85 before plus 3 new; red on HEAD's code 87/88 with cw14 failing); mutations.py exit 0; mine.py sg1.41 exit 0 (WRONG 0); sg1.39 and sg1.29 sets exit 0; p2_silent exit 0, with only the two excepted AFTER rows SILENT-WRONG; p2_plans exit 0 (zero); walk exit 0 (ITEMS CHANGED 0, none gone quiet, none newly printing, no committed description's line changed); d1_strict against ORIGIN: 0 strict diffs, 0 lines lost; against HEAD: 0 strict diffs, 0 lost, 251 of 100000 generated newly printing, and every new or reworded generated line (518) comes from the label path; d8: 0 bad; d7: 16 silent before, 0 after, and the 16 changed answers are exactly those 16; d2c shares unchanged against HEAD; d5 linear; time on the longest committed description (P75.2-j5h) 0.68 to 0.69 ms before and after. GATES RUN: python3 tools/sweep-selftests.py tests/test__clause_coverage.py, run in the unrecorded orchestrator gate (run-test-gate.py SG1 --task SG1.41-ukq): GATE GREEN, exit 0; sweep --jobs 4 over test__clause_coverage, test__output_lints and test__deps after the last edit: 3/3 files ok; sweep --jobs 4 over test__deps, test__output_lints, test__refs and test__clause_coverage: 4/4 files ok; tools/prove-gates.py --list exit 0; ruff and vermin -t=3.8- clean on both .py files. A change made after the tests were drafted: cw14 was drafted asserting two items for every form. Mid-line, a dotted, closing-bracket or square-bracketed number opens no item to either reading (_ANY_NUMBER's mid-line alternative is parenthesised only, and the one-word 'Acceptance 1. a 2. b' already reads one item), so cw14 now takes its count from the construction and holds it equal to the one-word twin's. DEPENDANTS: drive-phase.py (gap_summary and reading_line, unchanged shapes) uy-block 64/64, wl-block 15/15, rw-block 9/9: still correct. audit-task.py (reading_line, task_clauses) ar-block 11/11: still correct. audit-lookup.py (task_clauses) tests/test_audit_lookup.py 207/207: still correct. tests/test__clause_coverage.py is changed by this task (three cases added). tests/test_audit_lookup.py, unchanged: green. tests/test__refs.py 320 cases, green. PLUGIN-BUILD-GUIDE.md and CHANGELOG.md are changed by this task (the rule and limits). .github/sweep-costs.json has a file-level figure for the suite; this task adds a stage and the cost table is not in scope. No returned key changes: acceptance_reading's keys are as before, marker dicts are private and gained a 'list' key read only by _read. Sibling files reached: none.",
+    "descriptive": "A colon-less Acceptance label of several words is now read by the wider reading whether its list opens on its own line or the next, while a prose line citing a single numbered reference or a version stays quiet."
+  },
+  "testsAdded": [
+    "cw14: a multi-word colon-less label (plain, bold, with a word in brackets, lower case, heading) over a two-item list on its own line, in every numbering form, second item on that line or the next: no strict item, the line says no clause was read and gives the wide count the one-word twin gives, quoting the label's line",
+    "cw15 ALLOW: a prose line beginning with the word holding one reference numbered one later in the line (parenthesised, bracketed, closing-bracket, dotted), a version number directly or after label words, or a (1) followed by a (3): no item, nothing printed",
+    "cw16 ALLOW: the word or label words followed on the next line by a code fence (backtick or tilde) whose first line is an opener numbered one: no item, nothing printed"
+  ],
+  "casesAdded": [
+    "cw14",
+    "cw15",
+    "cw16"
+  ],
+  "claims": "claims:\n1 _clause_coverage.py _list_after_label is the going-on rule the docstring and manifest-conventions.md state; _list_opens_under keeps the direct and next-line paths; _read_body reads from marker['list']. Both limits observed: 'Acceptance (1) of the handbook says so.' prints 'finds 1 item'; quoted, emphasised and from-two lists under a label print nothing\n2 mutations.py exit 0: label path removed -> cw14 red (87/88); going-on dropped -> cw15 red (87/88); walk over the fence line + check removed -> cw16 red; fence check alone removed -> 88/88 and 0 of 40210 differ (equivalent, said as such); first red on HEAD's code: cw14 FAIL, 87/88\n3 grep 'directly under|without its colon|numbered one' over the module, manifest-conventions.md, PLUGIN-BUILD-GUIDE.md, CHANGELOG.md: each hit about the bare rule was rewritten (module lines 32, 205, 381, 715; conventions 201-202; guide 5709; changelog 273); hits about other things (guide 5993 and 6216, changelog 2488 and 7871, module 300, 329, 351 and 540) were left because they state something else\n4 n/a - no rule addressed to an agent\n5 walk timing: 7 runs each before and after, least 0.68 and most 0.69 ms; d5 HEAD vs tree, one run per size at 100k, 200k and 1000k, measured once\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:5172b8ac7c2bbdae3edc6b1a09e73d9f055c23f2824e0f1dbc0a1f035af1953f\",\"dirtyDigest\":\"sha256:4252304e7dc01cec96f3e91075bae20a6af550f65c2f1f073bd9557a2871c32f\",\"dirtyPaths\":{\"CHANGELOG.md\":\"c40cb271d12d175c\",\"PLUGIN-BUILD-GUIDE.md\":\"6eb299d24d29c262\",\"plugins/audit/reference/manifest-conventions.md\":\"6929e61d37a53dd5\",\"plugins/audit/scripts/governance/_clause_coverage.py\":\"4f4f348e162eb257\",\"tests/test__clause_coverage.py\":\"251aba6adbd45168\"},\"head\":\"2116541f\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/manifest-conventions.md\",\"plugins/audit/scripts/governance/_clause_coverage.py\",\"tests/test__clause_coverage.py\"],\"scopeDigest\":\"sha256:9274694a68b59ae10cce1cc9ae145ccbfcf83c324677142c6c82239251d8327a\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 1 of the diff's 5 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 3 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/reference/manifest-conventions.md; 1 file(s) that could hold a move not compared: tests/test__clause_coverage.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/reference/manifest-conventions.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test__clause_coverage.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was only added: every statement of the base copy outside them stands in the tree copy, in order and in place, and the first added one is at tree line 1219 (`_SAME_LINE_LABELS = (\"Acceptance criteria\", \"**Acceptance criteria**\",`); what it runs is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "2116541f54c5e37130ac809af8743147360619b9"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-18T10:08:59Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

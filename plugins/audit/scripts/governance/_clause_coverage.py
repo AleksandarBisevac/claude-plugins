@@ -30,9 +30,20 @@ its colon, what opens an item, whether the text is folded first - are one
 table, `READING_CHOICES`, and the description is read twice by the same reader,
 once with the strict column (what a task is held to) and once with the wide
 one. The wide column takes the word without its colon only where it opens a
-line and a list numbered one opens directly under it, so a line that merely
-begins with the word - an item wrapping there, a closing paragraph - is prose
-to both. The line is empty only when the strict reading is the plain one,
+line and a list numbered one opens under it, so a line that merely begins with
+the word - an item wrapping there, a closing paragraph - is prose to both. One
+rule for both places the list may open, the word's own line and the next line
+holding text: words of a label may stand before the opener numbered one
+(`Acceptance criteria (1) ...` as `Acceptance criteria` over `(1) ...`). On the
+word's own line, where a reference in prose and a list look alike, label words
+are allowed only when the list goes on - an opener numbered two, the same way,
+follows - and an opener numbered one directly after the word is a list as it
+stands. Two limits follow and are not built round: a bare label is read only
+over a list numbered from one, so a colon-less heading over a list starting at
+another number, or with its numbers quoted (`> 1.`) or emphasised (`**1.**`),
+is not read and nothing is said; and a reference numbered one directly after
+the word in prose (`Acceptance (1) of the handbook`) is read as a list. The
+line is empty only when the strict reading is the plain one,
 nothing is scanned as above, and the wide reading finds the same items, each
 with the same text; otherwise it adds how many the wide reading finds - or that
 it finds the same number, placed differently - and the first line holding text
@@ -145,10 +156,13 @@ _MARK_EXACT = re.compile(re.escape(ACCEPTANCE_MARK))
 _MARK_ANY = re.compile(r"(?i)(?<![^\W_])acceptance(?![^\W_])(?:[ \t*_`]*:)?")
 _INDENT = re.compile(r"[ \t]*")
 # What may stand between a bare marker word and a list opening on its own line:
-# blanks and closing emphasis. An opener numbered one is short, so the rest of
-# the line is read no further than `_OPENER_REACH` characters.
+# blanks and closing emphasis. An opener is short, so the text at a place one
+# may open is read no further than `_OPENER_REACH` characters. Past words of a
+# label, an opener on the word's own line stands after a blank (`_BLANK_RUN`),
+# so `exit(1)` and a backticked `(1)` open nothing there.
 _AFTER_BARE = " \t*_`"
 _OPENER_REACH = 16
+_BLANK_RUN = re.compile(r"[ \t]+")
 # A line holding no text: blanks only, up to its end.
 _BLANK_LINE = re.compile(r"[^\S\n]*(?:\n|\Z)")
 # What may stand before the marker for it to open a sentence part-way along a
@@ -200,8 +214,9 @@ READING_CHOICES = (
     # opens a line or, the first, a sentence
     ("colonAnywhere", False, True),
     # whether the marker word WITHOUT its colon counts where it opens a line
-    # and a list numbered one opens directly under it (`_list_opens_under`); a
-    # line that merely begins with the word is prose either way
+    # and a list numbered one opens under it, label words allowed before it on
+    # either line (`_list_opens_under`); a line that merely begins with the
+    # word is prose either way
     ("bare", False, True),
     # the opener forms, each tried alone, the earliest-opening one read
     ("forms", (_PAREN_FORM, _LINE_FORM), (_ANY_FORM,)),
@@ -282,49 +297,103 @@ def _sentence_cut(text, line_start, at):
     return cut
 
 
+def _opener(text, at, forms):
+    """`(number, way)` of the item opener in one of `forms` at `at`, or None.
+    `way` tells the forms apart - `(1)`, `1.`, `1)` and `[1]` are four ways -
+    and not the indent or bullet before the number."""
+    for i, form in enumerate(forms):
+        m = form["pattern"].match(text, at)
+        if m is not None:
+            return int(m.group(m.lastgroup)), (i, m.lastgroup, m.group(0)[-1])
+    return None
+
+
 def _opens_one(text, at, forms):
     """Whether an item numbered one, in one of `forms`, opens at `at`."""
-    for form in forms:
-        m = form["pattern"].match(text, at)
-        if m is not None and int(m.group(m.lastgroup)) == 1:
-            return True
-    return False
+    got = _opener(text, at, forms)
+    return got is not None and got[0] == 1
+
+
+def _opener_on_line(text, at, line_end, forms):
+    """`_opener` of the text at `at` read as if it opened a line - the way the
+    text right after the marker is read - no further than `_OPENER_REACH`
+    characters and never past `line_end`."""
+    return _opener(text[at:min(line_end, at + _OPENER_REACH)], 0, forms)
+
+
+def _next_text_line(text, line_end):
+    """Where the next line holding text starts after the line ending at
+    `line_end`, or None when only blank lines follow."""
+    at = line_end + 1
+    while at < len(text):
+        blank = _BLANK_LINE.match(text, at)
+        if blank is None:
+            return at
+        if text[blank.end() - 1] != "\n":
+            return None
+        at = blank.end()
+    return None
+
+
+def _list_after_label(text, at, line_end, after, layout, forms):
+    """Where a list opens after words of a label on the marker word's own
+    line, or None. Here a reference in prose and a list look alike, so the
+    first opener numbered one after a blank opens a list only when the list
+    goes on: an opener numbered two, the same way, after a blank later on the
+    line or at the start of the next line holding text (`after`, None when
+    there is none), outside a code fence. One pass along the line, keeping the
+    first one of each way, so a line costs its length."""
+    ones = {}
+    for gap in _BLANK_RUN.finditer(text, at, line_end):
+        got = _opener_on_line(text, gap.end(), line_end, forms)
+        if got is None:
+            continue
+        number, way = got
+        if number == 1:
+            ones.setdefault(way, gap.end())
+        elif number == 2 and way in ones:
+            return ones[way]
+    if not ones or after is None or _inside(after, layout):
+        return None
+    got = _opener(text, after, forms)
+    return ones.get(got[1]) if got is not None and got[0] == 2 else None
 
 
 def _list_opens_under(text, end, layout, forms):
-    """Whether a list numbered one opens directly under a marker word ending
-    at `end`: on the rest of its line, past blanks and closing emphasis, or at
-    the start of the next line holding text, outside a code fence. Words of a
-    label may stand between the word and its line's end (`Acceptance criteria`)
-    when the list opens on the next line; a line that only begins with the word
-    has prose, or a list opening at another number, after it."""
+    """`(opens, at)` - whether a list numbered one opens under a marker word
+    ending at `end`, and where, when words of a label stand before it on the
+    word's own line (None otherwise: the reader then starts after the word as
+    for any marker). One rule for both places: the list opens directly after
+    the word, past blanks and closing emphasis; or at the start of the next
+    line holding text, outside a code fence; and in either place words of a
+    label may stand before it (`Acceptance criteria`) - on the word's own line
+    only where the list goes on (`_list_after_label`). A line that only begins
+    with the word has prose, or a list opening at another number, after it."""
     line = _line_of(end, layout)
     starts = layout["lines"]
     line_end = starts[line] - 1 if line < len(starts) else len(text)
     at = end
     while at < line_end and text[at] in _AFTER_BARE:
         at += 1
-    if _opens_one(text[at:min(line_end, at + _OPENER_REACH)], 0, forms):
-        return True
-    at = line_end + 1
-    while at < len(text):
-        blank = _BLANK_LINE.match(text, at)
-        if blank is None:
-            return not _inside(at, layout) and _opens_one(text, at, forms)
-        if text[blank.end() - 1] != "\n":
-            return False
-        at = blank.end()
-    return False
+    got = _opener_on_line(text, at, line_end, forms)
+    if got is not None and got[0] == 1:
+        return True, None
+    after = _next_text_line(text, line_end)
+    if after is not None and not _inside(after, layout) and _opens_one(text, after, forms):
+        return True, None
+    label = _list_after_label(text, at, line_end, after, layout, forms)
+    return label is not None, label
 
 
 def _markers(text, layout, choices):
-    """`[{"at", "end", "cut", "indent", "line"}]` of each marker that counts,
+    """`[{"at", "end", "cut", "indent", "line", "list"}]` of each marker that counts,
     outside a code fence: one opening a line (after an indent and the marks
     `choices["opener"]` allows), and - for the first only - one opening a
     sentence, so a description written as one paragraph still has its list.
     At a line's start the marker word without its colon counts only under the
-    `bare` choice, and only where a list numbered one opens directly under it
-    (`_list_opens_under`). Away from a line's start the marker holds its colon.
+    `bare` choice, and only where a list numbered one opens under it
+    (`_list_opens_under`; `list` is where, when label words stand before it on
+    the word's own line). Away from a line's start the marker holds its colon.
     Strictly, inside a body a marker ends the body before it only when it opens
     a line; one that opens a sentence there, or sits inside a sentence, behind a
     backtick or a quotation mark, is a mention of the word, never the list's
@@ -342,10 +411,13 @@ def _markers(text, layout, choices):
         if line_start not in opener_end:
             opener_end[line_start] = choices["opener"].match(text, line_start).end()
         bare = not m.group(0).endswith(":")
+        listed = None
         if opener_end[line_start] >= at:
-            if bare and not (choices["bare"] and _list_opens_under(
-                    text, m.end(), layout, choices["forms"])):
-                continue
+            if bare:
+                opens, listed = (_list_opens_under(text, m.end(), layout, choices["forms"])
+                                 if choices["bare"] else (False, None))
+                if not opens:
+                    continue
             cut = line_start
         elif bare:
             continue
@@ -356,7 +428,8 @@ def _markers(text, layout, choices):
             if cut is None:
                 continue
         found.append({"at": at, "end": m.end(), "cut": cut, "line": line,
-                      "indent": _INDENT.match(text, line_start, at).group(0)})
+                      "indent": _INDENT.match(text, line_start, at).group(0),
+                      "list": listed})
     return found
 
 
@@ -432,14 +505,17 @@ def _opens(body, offset, layout, marker_indent, form):
     return {"opens": opens, "restart": restart, "indent": indent}
 
 
-def _read_body(text, start, stop, layout, marker_indent, forms):
+def _read_body(text, start, stop, layout, marker_indent, forms, listed=None):
     """One marker's reading of `text[start:stop]`: the numbered shape whose
     first item opens earlier, the other shape's item count when it yielded
     items too, the text before the first item, and the unnumbered reading when
     no number opened one - each item, opener and lead-in also as a `(start,
-    end)` span of `text`."""
-    body = text[start:stop]
-    tried = [(form["shape"], _opens(body, start, layout, marker_indent, form))
+    end)` span of `text`. `listed` is where a bare marker's list opens after
+    words of a label on its own line (`_list_opens_under`): numbers are read
+    from there, as if it opened the line, and the label is the lead-in."""
+    at = listed if listed is not None and start <= listed < stop else start
+    body = text[at:stop]
+    tried = [(form["shape"], _opens(body, at, layout, marker_indent, form))
              for form in forms]
     yielded = sorted((t for t in tried if t[1]["opens"]),
                      key=lambda t: t[1]["opens"][0][0])
@@ -453,7 +529,7 @@ def _read_body(text, start, stop, layout, marker_indent, forms):
     other = None
     if len(yielded) > 1:
         other = {"shape": yielded[1][0], "count": len(yielded[1][1]["opens"])}
-    opens = [(start + s, start + e) for s, e in got["opens"]]
+    opens = [(at + s, at + e) for s, e in got["opens"]]
     ends = [s for s, _e in opens[1:]] + [stop]
     lead = _stripped(text, start, opens[0][0])
     return {"shape": shape, "openers": opens, "other": other,
@@ -552,7 +628,7 @@ def _read(text, choices):
         start, stop, end = _body(text, layout, marker, end)
         readings.append((marker, (start, stop, end),
                          _read_body(text, start, stop, layout, marker["indent"],
-                                    choices["forms"])))
+                                    choices["forms"], marker["list"])))
     numbered = [r for r in readings if _is_numbered(r[2]["shape"])]
     why = None
     if len(readings) > 1:
@@ -649,7 +725,7 @@ def acceptance_reading(description, wide=True):
     items). The reading above is the STRICT one, and it is what a task is held
     to; the wide reading is the same reader with every choice in
     `READING_CHOICES` at its widest - among them the marker word without its
-    colon, where a list numbered one opens directly under it. `wide` is None
+    colon, where a list numbered one opens under it. `wide` is None
     when the two find the same items, else what the wide reading finds and the
     first line holding text where the two part - so a departure no list of
     shapes names is still said."""

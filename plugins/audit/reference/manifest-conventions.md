@@ -199,11 +199,20 @@ items. The wider reading is the same reader with each of its choices widened (th
 its format characters dropped, so full-width brackets and digits, a no-break space and a
 character without width read as their plain twins; a marker wherever the word `acceptance`, in
 any case, stands with its colon, and - without its colon - where it is a line's first word once
-Markdown's marks and backticks are set aside AND a list numbered one opens directly under it, on
-the rest of that line or at the start of the next line holding text (`## Acceptance` or
-`Acceptance criteria` over `1. ...`). A line that merely begins with the word - an item wrapping
-there, a closing paragraph, a list under it opening at another number - is prose to both
-readings. An item is opened by a number written `(n)`, `n.`, `n)` or `[n]` at a line start
+Markdown's marks and backticks are set aside AND a list numbered one opens under it, on the rest
+of that line or at the start of the next line holding text (`## Acceptance` or
+`Acceptance criteria` over `1. ...`). Words of a label may stand before the list's first number
+in either place, one rule for both (`Acceptance criteria (1) ... (2) ...` on one line reads as
+it does over two). On the word's own line, where a reference in prose looks like a list, they may
+only when the list goes on: a second number, written the same way, follows the first - later on
+that line or at the start of the next line holding text; a list numbered one directly after the
+word needs no second item. A line that merely begins with the word - an item wrapping there, a
+closing paragraph, a list under it opening at another number, a sentence citing a single `(1)`
+or a version number - is prose to both readings. Two limits are stated rather than built round:
+a label without its colon is read only over a list numbered from one, so one over a list
+starting at another number, or with its numbers quoted (`> 1.`) or emphasised (`**1.**`), is
+not read and nothing is said; and a reference numbered one directly after the word in prose
+(`Acceptance (1) of the handbook`) is read as a list. An item is opened by a number written `(n)`, `n.`, `n)` or `[n]` at a line start
 after an indent and a bullet, the forms mixed, or by a `(n)` after a blank. What a task is held
 to is the strict reading alone. The line carries the item count, the shape, how many items the
 wider reading finds - or, when it finds as many with different text, that it finds the same
