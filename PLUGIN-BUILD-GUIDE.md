@@ -5996,9 +5996,11 @@ no case (`house_case_id`; a whole label is never compared, since the two runs ar
 different temp and home directories), or the runner's PASSED count rising over HEAD's run (the
 sweep's row per file, else the tally's `passed`). A rise made only of skips is no pass.
 
-**Green-first proves by taking the task's own tests out.** For `green` alone, `_baseline_files`
-is handed `take_out` and lays each new Python test file over at HEAD's run as ITSELF with the
-task's own test definitions taken out (`take_out_own`): every `test`-named def that `red`'s
+**Green-first proves by taking the task's own tests out, with one baseline for every Python test
+file.** For `green` alone, `_baseline_files` is handed `take_out` and lays every declared Python
+test file over at HEAD's run - new at HEAD, or held by it and changed by the task
+(`_held_candidate`; a test-support module and an inline suite keep their own rules) - as the
+task's copy with the task's own test definitions taken out (`take_out_own`): every `test`-named def that `red`'s
 credit reading calls the task's own - not identical, under the same class chain and name, to a
 def in HEAD's tree (`_head_copy`) - removed by its span, decorators included, a block left
 empty given `pass`, its imports, classes, helpers and copies of HEAD's tests kept. The payload's
@@ -6008,13 +6010,25 @@ count rose between them, the basis stating both figures and the definitions take
 difference answers what a count of definitions could not: a method in a class the runner never
 collects, a case the command deselects, a file its pattern does not run, a skip a class or module
 fixture raised, a skip decorator bound to another name, and a HEAD class imported or inherited
-(which runs in both runs) all leave it flat. A new file with no definition of the task's own to
+(which runs in both runs) all leave it flat. A file HEAD holds does not keep HEAD's copy: against
+it, a subclass of HEAD's class the task adds collects HEAD's cases again and raises the count with
+nothing of the task's run, so the payload's `takenOut` and the basis name it with the new files,
+and the basis says HEAD's run held the task's copy of it (`_baseline_said`) rather than calling
+it HEAD's own tests. A case the task edited is not identical to HEAD's and is taken out; one it
+deleted is in neither run. A file with no definition of the task's own to
 take out is `could-not-prove`, saying none was found and that a case generated when the module
 loads is not one, and naming a HEAD test class only when the file imports or inherits one. What is
 left of a new file must load on the base: when it does not, HEAD's run is not a green baseline and
-the basis names the module and the runner's line. Three files stay empty stubs: one that does not
+the basis names the module and the runner's line. **What follows for a file HEAD holds:** a
+helper or fixture the task changed there runs at HEAD's own run on HEAD's code, so a change that
+breaks HEAD's cases leaves the baseline not green and the answer `could-not-prove`, the basis
+naming what was taken out and the cases HEAD's run failed (`_baseline_held_clause`) - unless the
+task's run fails a case too, which is `not-green` first, as a green baseline would have answered;
+a new file keeps the baseline-first order. Three new files stay empty stubs, and a file HEAD holds
+stays HEAD's copy, for the same reasons: one that does not
 parse, any under the sweep, and the script a command runs with nothing taken out of it (a house
-suite, read by its ids). `red` keeps the empty-file baseline. **Two limits follow, and both are
+suite, read by its ids). `red` keeps the empty-file baseline. **Two limits follow, for a file HEAD
+holds as for a new one, and both are
 `could-not-prove` although a case of the task's own ran:** a case that overrides an inherited test
 of the same name runs in that test's place, so taking it out leaves the count flat; and a case
 generated at import - by `setattr`, `type()` or a `load_tests` hook - is no definition to take out.
@@ -6022,15 +6036,15 @@ Under unittest a skip a class or module fixture raises is counted among the skip
 `Ran`, so the passed figure reads low for it - which can hide a rise but never make one, and the
 basis says so.
 
-**Where nothing is taken out, the count route stays.** Under jest, vitest and playwright, whose
+**Where nothing is taken out, the count route stays.** Under jest, vitest and playwright alone, whose
 definitions are read by a tokenizer that finds a case but does not cut one out, a new file is left
 absent (or empty) and `_count_proof` weighs the rise: `own_definitions` counts the cases the
 declared test files define that HEAD's test files do not hold identically, read through `red`'s
 own credit reading (`_definition_in`, `_head_copy`, `_js_head_copy`; `go10` holds both verbs to
 it), and the rise proves only when there are more of them than the cases the run skipped or
 expected to fail beyond HEAD's own run - the basis stating both figures and labelling it the weaker
-proof, with the reason. A task changing only declared files HEAD holds is weighed the same way,
-those files keeping HEAD's copy at HEAD's run. Where the definitions were not read, or a case cannot
+proof, with the reason; a jest, vitest or playwright file HEAD holds keeps HEAD's copy at HEAD's
+run. Where the definitions were not read, or a case cannot
 be counted, the rise proves as a count alone and the basis names that weaker proof. A house run
 and the sweep keep their own id and per-file routes.
 
@@ -6042,9 +6056,10 @@ runner's line, read off the runner's own report block (`_runner_output.failure_k
 reads the same order and names such a module apart from its failing cases, its verdicts
 unchanged: a load failure never failed an assertion, so it was never credited, and a case it
 collected is never said to have not loaded.
-`not-green` (exit 1) is a collected case failing on the base with HEAD's own tests green - by an
+`not-green` (exit 1) is a collected case failing on the base with HEAD's run green - or not green
+only through a file HEAD holds laid over as the task's copy, above - by an
 assertion or by raising, read off one runner's tally - or an expected failure HEAD's run did not
-have; zero collected, no tally, two runners' tallies, a red baseline and a refusal are
+have; zero collected, no tally, two runners' tallies, any other red baseline and a refusal are
 `could-not-prove` (exit 3) with the reason verbatim. A test-support module held at HEAD's copy
 is named by `support_held_clause`, not by `red`'s two-run sentence. Its words are `GREEN_WORDS`,
 held to the schema by `_refs.green_first_vocabulary_drift()`.

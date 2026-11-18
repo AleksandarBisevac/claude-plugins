@@ -3479,7 +3479,7 @@
     {
       "id": "SG1.32-ukq",
       "title": "Green-first proves by taking the task's own tests out, and a failing case outranks a module that did not load",
-      "status": "in_progress",
+      "status": "done",
       "description": "A third review of the green-first verdict found two regressions in the reading of a module that did not load and four inputs where proved is answered with no case of the task's own having run. Each was run by the reviewer and again by the orchestrator through the real green verb on a git fixture. This is the third correction of how a case of the task's own is told from the rest, each of the earlier ones a rule read off the runner's printed text or off a count, so this task replaces the argument instead of adding to it.\n\nMEASURED on the tree as it stands.\nA MODULE THAT DID NOT LOAD.\n(a) REGRESSION. One new test file does not compile and another new file's own case fails an assertion on the base: could-not-prove, the basis naming only the file that did not load. Before the last task: not-green. The load failure is read first and returns before a failing case is asked about.\n(b) REGRESSION. An own case fails an assertion whose message quotes a line shaped like the loader's stand-in; or, in pytest's layout, a failing test whose captured output holds a line starting with the word the collection summary starts with: could-not-prove, could not load. Before: not-green. The reading matches any line of the whole output.\nBoth turn an answer that stops sign-off into one that stops nothing.\nA RISING COUNT.\n(c) A test method defined in a plain class the runner never collects, beside a subclass of a HEAD test class: proved, 1 defined.\n(d) A subclass of a HEAD class adding a case that FAILS on the base, the command deselecting it by name: proved.\n(e) The own case in a declared file the command's pattern does not run, a second new file re-running HEAD's class: proved.\n(f) A class-level skip raised in setUpClass over two own cases: proved, 2 defined more than 1 more skipped - the runner counts a class-level skip once.\n(g) An own case under a skip decorator bound to another name: proved by the weaker route, with 0 defined and 1 more skipped in the same basis.\n(h) REGRESSION on the allow side. A passing case generated at import with setattr: could-not-prove, with the reason that the rise is made of a HEAD class the file imports or inherits - it imports none. Before: proved.\n\nWHY. The proof counts what the declared files DEFINE and what the run SKIPPED, and argues that more defined than skipped means one ran. Whether a definition is collected, selected, run, or skipped under its class is not in either number, so each of (c) to (g) is a way for the two numbers to say yes while nothing of the task's ran.\n\nTHE RULE TO BUILD.\n1. PROVED IS A DIFFERENCE BETWEEN TWO RUNS OF THE SAME FILES. Where the task's own cases are not seen by a printed label, the baseline run - HEAD's own tests on HEAD's code - is made with each declared Python test file that is new at HEAD laid over NOT as an empty file but as itself with the task's own test definitions taken out: every test definition the red verb's reading calls the task's own (defined there, and not identical to a definition of the same name and class chain in HEAD's tree), removed from the source by its span, decorators included, a class or function left without a body given one that does nothing. Everything else of the file - its imports, its classes and their bases, its helpers, a test it copies from HEAD - stays. The task's run is as today. Then the passed count rising between those two runs is the task's own definitions running and passing, because nothing else differs between them: a definition never collected, deselected, not run by the command, skipped by its class, its module or a renamed decorator, adds nothing to the second run, and a HEAD class imported or inherited is in both. The basis states it that way: the two counts and the definitions taken out, by name. This is the green verb's baseline alone; the red verb's baseline stays the empty file it is today.\n2. A declared test file that exists at HEAD keeps HEAD's copy as its baseline, as today: what the task added to it is already the difference.\n3. NO OWN DEFINITION, NO PROOF BY COUNT. Where the declared files hold no definition the reading can take out - cases generated at import, built by a loader hook - the answer is could-not-prove, and the reason says exactly that: no test definition of the task's own was found to take out, and a case generated when the module loads is not one. The sentence about a HEAD class is printed only when a HEAD class is imported or inherited.\n4. Where the file with its own definitions taken out does not load on the base, that is the baseline not being green: could-not-prove, the runner's line in the basis. This is the same answer rule 6 gives for the whole file, by the same reading.\n5. Runners and languages whose definitions the reading cannot take out keep today's baseline and today's count route, labelled as the weaker proof in the basis as today; the label names the reason. State in the module which runners those are.\n6. A FAILING CASE OUTRANKS A MODULE THAT DID NOT LOAD. The run is read in this order: a collected case of the task's run that failed or errored and is not a module's load failure makes the answer not-green, and any module that did not load is named beside it in the same basis; only when no such case is left does a module that did not load make it could-not-prove.\n7. A MODULE THAT DID NOT LOAD IS READ FROM THE RUNNER'S OWN REPORT OF IT, not from any line that resembles one: under unittest, the errored entry whose id is the loader's stand-in AND whose block, between that header and the next entry or the summary rule, carries the loader's own sentence; under pytest, a path named in the collection-error section AND in the short summary as an error. A line inside another case's failure message or captured output is inside that case's block and is never a load failure. The red verdict reads the same function, and its basis no longer says could not load for a case that was collected.\n\nWHAT THIS COSTS, SAID IN THE OUTCOME. A case of the task's own that OVERRIDES an inherited test of the same name runs in place of it, so taking it out leaves the count where it was: could-not-prove, where the truth is that one ran. A case generated at import is could-not-prove. Say both in the module and in the document, with the reason, as limits.\n\nHOW TO PROVE. A case for each of (a) to (h) through the real green verb on a git fixture over real unittest runs, red before the change; pytest's layout through the verdict function over text in that layout, saying so. Allow twins, the same before and after: a new file with one passing case of its own; a subclass of a HEAD class adding one passing case; two own cases, one skipped and one passing; a new case added to a file HEAD holds; a collected case raising in its body, or in setUpClass, stays not-green; the house and sweep routes untouched, shown by their cases. The red verb's cases unchanged. A mutation probe the orchestrator can run: the baseline put back to an empty file (a case of (c) to (g) must go red); the removal widened to every definition in the file, HEAD's copies included (the copied-test case must go red); the order of rule 6 reversed; the block reading of rule 7 widened back to any line.\n\nNOT in this task: whether could-not-prove stops a sign-off; jest and vitest beyond the label of rule 5; a runner option that prints one line per case.\n\nAcceptance:\n(1) Each of (c) to (g) is could-not-prove through the real verb, and the basis names the definitions taken out and the two counts.\n(2) A new file with a passing case of its own is proved by the difference between the file with and without its own definitions.\n(3) A run holding both a module that did not load and a failing collected case is not-green and names both.\n(4) A line shaped like a load failure inside a case's failure message or captured output is not read as one, under unittest and in pytest's layout, by either verb.\n(5) A file with no definition to take out is could-not-prove with a reason that is true of it.\n(6) The allow twins answer as before, and the red verb's cases are unchanged.\n(7) The module, the build guide, the changelog and the reference document state the rule and its two limits and are true of the code.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -3511,14 +3511,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "cae665b00e6b",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "stamp-verification.py: green's baseline lays each new Python test file over at HEAD's run as itself minus the task's own test definitions (take_out_own: test-named defs red's credit reading calls own, removed by span with decorators, an emptied block given pass), via _baseline_files(take_out={'defs': head_defs}) in run_green only; red's call is unchanged and keeps the empty-file baseline. Files that stay empty stubs: unparseable, under the sweep, and the script a command runs with nothing taken out (house suite). Payload baseline gains takenOut. _difference_proof (unittest, pytest; not a sweep) proves when the passed count rose between the two runs, naming the definitions taken out and both counts; no own definition -> could-not-prove 'no test definition of the task's own was found to take out of X, and a case generated when the module loads is not one', the HEAD-class sentence only when the file imports or inherits a HEAD class (_uses_head_class); a flat count -> could-not-prove stating both limits, plus a unittest fixture-skip note when more skips. _baseline_loads_clause names a module that did not load at HEAD's run with its definitions taken out (rule 4). _count_proof stays for jest/vitest/playwright (named in _TAKEN_OUT_RUNNERS's comment) and for existing-file-only tasks, labelled 'a weaker proof than a difference between two runs' with the reason. _read_failures gives both verbs one order: a failing collected case outranks a module that did not load (green: not-green naming both; red: verdicts unchanged, basis no longer says a collected case could not load). _runner_output.py: failure_kind(failure, text) -> case|load|quoted read off the runner's own block (unittest: an ERROR entry for the stand-in id directly under the = rule whose block carries 'ImportError: Failed to import test module: '; pytest: a path in an ERROR collecting header and on a short-summary ERROR line); did_not_load(failure, text) and load_failures use it. Docs: module comments, PLUGIN-BUILD-GUIDE.md (_runner_output and stamp-verification sections), CHANGELOG.md (Unreleased green-first entry), plugins/audit/reference/execute-task.md state the rule, the count-route runners and both limits. Tests: new stage sg-green-diff gd1-gd12, ru20; helpers _gv/_defined_ctx/_unit_verdict/_pytest_verdict model the taken-out baseline; go1-go7, go9, gl5 (_load_readers), gf13 (taken={} house), ru19 (two-argument did_not_load) updated on purpose. Runs: the gate command exit 0 (2/2 files ok, 437 cases; 47 s wall, 144.1 s summed over test_stamp_verification's 47 blocks; a first run gave 50 s and 157.3 s); orchestrator gate run-test-gate.py SG1 --task SG1.32-ukq unrecorded: GATE GREEN exit 0 in 527 s; sweep of test__deps/test__output_lints/test__refs 3/3 files ok, 792 cases; prove-gates.py --list exit 0; ruff and vermin clean on the four .py files; dependants test__filed_returns 146, test_audit_lookup 207, test__status_facts 199 cases ok, test_drive_phase stages gfw-block 3/3, gfs-block 3/3, us-block 84/84. Mutation probe (a copy, five rows, __pycache__ purged between rows): ALL CAUGHT, exit 0.",
+        "descriptive": "Green-first now proves by the difference between two runs of the same files - HEAD's with the task's own tests taken out - and a failing collected case outranks a module that did not load, read only off the runner's own block."
       },
       "startedAt": "2026-11-18T04:44:22Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T05:42:50Z",
+      "verifiedBy": [
+        "gd1-gd5: through the real green verb, a never-collected method, a deselected failing case, a declared file the pattern does not run, a setUpClass skip and a renamed skip decorator are could-not-prove, naming the definitions taken out and both counts",
+        "gd6, gd7 (gd8, gd12 supporting): own passing cases prove by the difference; a file with no definition to take out is could-not-prove with a reason true of it, the HEAD-class sentence only where one is imported or inherited; red's baseline unchanged; take_out_own removes by span",
+        "gd9-gd11: a module that did not load beside a failing case is not-green naming both; a stand-in-shaped line inside a failure message, or an ERROR line in pytest captured output, is not a load failure for green or red",
+        "ru20: _runner_output reads a load failure off unittest's own entry and off pytest's collection header plus short-summary line together"
+      ],
       "notes": [
         {
           "at": "2026-11-18T04:44:16Z",
@@ -3536,6 +3541,18 @@
         "runId": "2026-11-18T05:42:46Z.022008",
         "status": "passed",
         "at": "2026-11-18T05:42:46Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "cae665b00e6b",
+        "at": "2026-11-18T05:42:50Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T05:28:17Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test__runner_output.py` in a throwaway tree at HEAD exited 1 with 22 of 409 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ru20 (house FAIL), gl5 (house FAIL), go1 (house FAIL), go2 (house FAIL), go3 (house FAIL), go4 (house FAIL), go5 (house FAIL), go6 (house FAIL) and 14 more: SELFTEST FAILED: 388/409 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -3750,6 +3767,65 @@
       "startedAt": null,
       "completedAt": null,
       "verifiedBy": []
+    },
+    {
+      "id": "SG1.37-ukq",
+      "title": "Green-first proves by the same difference for a test file HEAD already holds",
+      "status": "in_progress",
+      "description": "The last green-first task made proved a difference between two runs of the same new test file, with the task's own test definitions and without them. For a declared test file that HEAD already holds it was told to keep HEAD's copy as the baseline, on the argument that what the task added is then already the difference. That argument is false, the task's executor said so in its hand-back, and the orchestrator ran it through the real green verb on git fixtures.\n\nMEASURED on the tree as it stands, each a task that edits a test file HEAD holds and adds no new one; each answers proved with no case of the task's own having run and passed:\n(a) the file gains a subclass of a HEAD test class and a test method in a plain class the runner never collects;\n(b) it gains two subclasses of a HEAD class and a class of own cases skipped as a class on the base;\n(c) it gains a subclass with an own case the command deselects by name;\n(d) it gains a subclass with an own case under a skip decorator bound to another name.\nIn each the rise between HEAD's copy and the task's copy is the HEAD class's inherited cases collected again - the same hole the last task closed for a new file. The same file gaining only an empty subclass is refused today, and a passing own case added to a HEAD class, to a new class or to a subclass is proved today; both stay.\n\nTHE RULE TO BUILD. One baseline for every declared Python test file, new at HEAD or not: the task's copy of the file with the task's own test definitions taken out - by the function the last task built, with the same reading of which definitions are the task's own (not identical to a definition of the same name and class chain in HEAD's tree). The task's run is as today. Proved is the passed count rising between those two runs, because nothing but the task's own definitions differs between them. The count argument - definitions against skips - is no longer used for any file whose definitions can be taken out; it stays only for the runners the module already names as ones whose definitions it cannot take out, labelled the weaker proof as today.\nWhat follows, and is stated in the module and the document: the baseline is no longer HEAD's own copy of an edited test file, so a task that changes a helper in that file in a way that breaks HEAD's cases on HEAD's code gets a baseline that is not green and the answer could-not-prove with the runner's line - where the task's own run of the same file is not also failing, which is not-green first. And the two limits of the last task hold for an existing file as for a new one.\n\nWHAT STAYS. The red verb and its baseline. Every answer for a NEW file (the previous probes, where the orchestrator's brief says). The payload's shape and keys. The house and sweep routes.\n\nHOW TO PROVE. A case for each of (a) to (d) through the real green verb on a git fixture, red before the change. Allow twins through the real verb, proved before and after: a passing case added to a HEAD class; a new class with one passing case added to the file; a subclass of a HEAD class with one passing own case; two own cases, one skipped and one passing. Still not-green: a case added to the file that fails on the base. Still could-not-prove: the file gaining only an empty subclass. One case for what follows from the rule: a helper changed so that HEAD's cases fail on HEAD's code, with the answer and its basis. A mutation probe the orchestrator can run: the existing-file baseline put back to HEAD's copy (a case of (a) to (d) goes red); the count argument put back for an existing file; an allow row (the difference refused for an existing file turns a twin red).\n\nNOT in this task: jest, vitest and playwright; whether could-not-prove stops a sign-off; the schema's wording of the field.\n\nAcceptance:\n(1) Each of (a) to (d) is could-not-prove through the real verb, its basis naming the definitions taken out and the two counts.\n(2) Every declared Python test file, new or held by HEAD, gets the same baseline: the task's copy with the task's own definitions taken out.\n(3) The allow twins are proved, the failing case is not-green and the empty subclass is could-not-prove, as before.\n(4) The answers for a new file and the red verb's answers are unchanged.\n(5) A helper change that breaks HEAD's cases on HEAD's code is answered as the rule says, shown by a case.\n(6) The module, the build guide, the changelog and the reference document state one baseline and are true of the code.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test_stamp_verification.py",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/execute-task.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_stamp_verification.py: through the real green verb, a test file HEAD holds that gains a subclass of a HEAD class beside a never-collected method, a class-skipped class, a deselected own case or an own case under a renamed skip decorator is could-not-prove, the basis naming the definitions taken out and both counts",
+          "tests/test_stamp_verification.py: a test file HEAD holds that gains a passing case in a HEAD class, in a new class or in a subclass is proved, a failing one is not-green, and an empty subclass alone is could-not-prove",
+          "tests/test_stamp_verification.py: a helper changed in a test file HEAD holds so that HEAD's cases fail on HEAD's code is answered with the baseline's own line"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_stamp_verification.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-18T05:43:11Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T05:43:09Z",
+          "text": "it reads the Unreleased heading of CHANGELOG.md; this task rewords the green-first entry under that heading and leaves the heading as it is",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T05:43:09Z",
+          "text": "it quotes the sentence of execute-task.md on the gates each return lists; this task edits only the passage on the green-first proof and leaves that sentence as it is",
+          "waives": "tools/prove-gates.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T06:28:35Z.75efa8",
+        "status": "passed",
+        "at": "2026-11-18T06:28:35Z"
+      }
     }
   ],
   "parentBranch": "integration/skill-gates",

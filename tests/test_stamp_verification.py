@@ -6983,6 +6983,7 @@ STAGES = (
     ("sg-green-loaded", "_green_loaded_cases"),
     ("sg-green-own", "_green_own_cases"),
     ("sg-green-diff", "_green_diff_cases"),
+    ("sg-green-held", "_green_held_cases"),
 )
 
 
@@ -9825,15 +9826,24 @@ def _unit_run(files, args):
     return got.returncode, got.stdout, root
 
 
-def _laid(new, task_files, head_defs):
-    """`(texts, taken, stubs)` - each of the `new` files as `green` lays it for
-    HEAD's run: with the task's own definitions taken out (`take_out_own`), or
-    an empty stub when it does not parse. A module with no `take_out_own` lays
+def _changed_held(declared, head_files, task_files, new):
+    """The declared Python test files HEAD holds that the task changed - the
+    ones `green` lays over at HEAD's run as the task's copy, as it does a new
+    one."""
+    return [rel for rel in declared if rel not in new and rel.endswith(".py")
+            and rel in head_files and head_files[rel] != task_files.get(rel)]
+
+
+def _laid(new, task_files, head_defs, held=()):
+    """`(texts, taken, stubs)` - each of the `new` files, and each of the
+    changed `held` ones, as `green` lays it for HEAD's run: with the task's own
+    definitions taken out (`take_out_own`); a new one that does not parse as an
+    empty stub, a held one as HEAD's copy. A module with no `take_out_own` lays
     every new file as an empty stub, so a case built on this fails by its
     assertion there rather than raising while the block is built."""
     texts, taken = {}, {}
     take_out = getattr(M, "take_out_own", None) or (lambda _text, _defs: (None, None))
-    for rel in new:
+    for rel in list(new) + list(held):
         text, names = take_out(task_files.get(rel, ""), head_defs)
         if text is not None:
             texts[rel], taken[rel] = text, names
@@ -9843,23 +9853,26 @@ def _laid(new, task_files, head_defs):
 def _defined_ctx(declared, head_files, task_files, new=()):
     """`green`'s ctx for a task's run over `task_files` against HEAD's
     `head_files`: the declared test files' texts, the definitions of every test
-    file HEAD holds - a new file is not one of HEAD's - and how each new file
-    was laid over for HEAD's run (`_laid`)."""
+    file HEAD holds - a new file is not one of HEAD's - and how each new file,
+    and each held one the task changed, was laid over for HEAD's run
+    (`_laid`)."""
     held = dict((rel, text) for rel, text in head_files.items() if rel not in new)
     head_defs = M.test_definitions(held)
-    _texts, taken, stubs = _laid(new, task_files, head_defs)
+    changed = _changed_held(declared, held, task_files, new)
+    _texts, taken, stubs = _laid(new, task_files, head_defs, changed)
     return {"tests": list(declared), "new": stubs, "taken": taken, "cases": [],
-            "dropped": [],
+            "dropped": [], "taken_held": [rel for rel in changed if rel in taken],
             "wt": dict((rel, task_files.get(rel, "")) for rel in declared),
             "head_defs": head_defs, "head_js": M.js_test_definitions({})}
 
 
 def _unit_verdict(head_files, task_files, args, declared=(_U_NEW,), new=(_U_NEW,)):
     """`(exit, status, basis)` - `green_verdict` over two real unittest runs:
-    HEAD's own, each new declared file laid over as `green` lays it - with the
-    task's own definitions taken out, or empty when it does not parse - then
-    the task's."""
-    texts, _taken, stubs = _laid(new, task_files, M.test_definitions(head_files))
+    HEAD's own, each new declared file and each held one the task changed laid
+    over as `green` lays it - with the task's own definitions taken out, or a
+    new one empty when it does not parse - then the task's."""
+    texts, _taken, stubs = _laid(new, task_files, M.test_definitions(head_files),
+                                 _changed_held(declared, head_files, task_files, new))
     head_files = dict(head_files, **dict(texts, **dict((rel, "") for rel in stubs)))
     head_code, head_text, _r = _unit_run(head_files, args)
     code, text, _r = _unit_run(task_files, args)
@@ -10143,14 +10156,15 @@ def _green_own_cases(check):
                       ["tests.test_old"], declared=(_U_OLD_REL,), new=())]
     check("go3 THE ALLOW CASES for go1 and go2: a new file with a passing case of "
           "its own, a new file inheriting HEAD's TestCase beside a passing case of "
-          "its own, and a new case in an EXISTING test file are `proved` - the two "
-          "new files by the difference their own definitions make, naming them, the "
-          "existing file against HEAD's copy by the count of its own definitions: %s"
+          "its own, and a new case in an EXISTING test file are `proved` - all three "
+          "by the difference their own definitions make, naming them, the existing "
+          "file laid over as the task's copy, never counted against HEAD's copy: %s"
           % (_folded(allowed),),
           [(c, s) for c, s, _b in allowed] == [(M.E_PROVED, "proved")] * 3
           and "N.test_a" in allowed[0][2] and "N.test_more" in allowed[1][2]
-          and all(_go_rose(b) for _c, _s, b in allowed[:2])
-          and "1 defined > 0 more skipped" in allowed[2][2])
+          and "T.test_more" in allowed[2][2]
+          and all(_go_rose(b) for _c, _s, b in allowed)
+          and "defined >" not in allowed[2][2])
     two = ("import unittest\nimport mine\n\n\nclass N(unittest.TestCase):\n"
            "    def test_a(self):\n        self.assertEqual(mine.v, 1)\n\n"
            "    @unittest.skip('later')\n    def test_b(self):\n        pass\n")
@@ -10558,6 +10572,132 @@ def _green_diff_cases(check):
           and sorted(k[:2] for k in left) == [((), "helper"), (("T",), "test_old")]
           and "skipUnless" not in taken[0] and "expectedFailure" not in taken[0]
           and "def helper" in taken[0])
+
+
+# --- green: a test file HEAD already holds gets the same baseline -------------
+# Every case below runs the REAL `green` verb on a git fixture whose task EDITS
+# HEAD's own test file (`_G_HEAD`, `T.test_old`) and adds no new one, so the
+# baseline is the task's copy of that file with its own definitions taken out.
+_GH_HELD = "HEAD's own tests green on HEAD's code"
+
+
+def _gh_verb(prefix, wt_test, tail=(), head_test=_G_HEAD):
+    """`(exit, status, basis, payload)` of the real `green` verb on a git fixture
+    whose HEAD holds `head_test` as `tests/test_mine.py` and whose task rewrites
+    it as `wt_test`, declaring no other test file."""
+    root, man = _red_repo(prefix, wt_test, head_test=head_test, extra={},
+                          files=["src/mine.py", "tests/test_mine.py"])
+    code, got = _green(root, man, [sys.executable] + _GD_DISCOVER + list(tail))
+    block = _green_block(got)
+    return code, block.get("status"), str(
+        block.get("basis") or got.get("note") or got.get("unparsed") or ""), got
+
+
+def _gh_rose(got, *names):
+    """Whether a verdict is `proved` by a difference that rose, naming each of
+    `names` as taken out, and not calling its baseline HEAD's own copy."""
+    counts = _gd_counts(got[2])
+    return (got[:2] == (M.E_PROVED, "proved") and counts is not None
+            and counts[1] > counts[0] and "taken out" in got[2]
+            and all(n in got[2] for n in names) and _GH_HELD not in got[2])
+
+
+def _green_held_cases(check):
+    head = _G_HEAD
+    never = _gh_verb("stamp-gh-never-", head + "class Checks:\n    def test_new_api(self):\n"
+                     "        self.assertEqual(mine.new_api(), 1)\nclass R(T):\n    pass\n")
+    class_skip = _gh_verb("stamp-gh-classskip-", head + (
+        "class R(T):\n    pass\nclass R2(T):\n    pass\n"
+        "class N(unittest.TestCase):\n    @classmethod\n    def setUpClass(cls):\n"
+        "        if not hasattr(mine, 'new_api'):\n"
+        "            raise unittest.SkipTest('needs new_api')\n"
+        "    def test_a(self):\n        self.assertEqual(mine.new_api(), 1)\n"
+        "    def test_b(self):\n        self.assertEqual(mine.new_api(), 1)\n"))
+    deselected = _gh_verb("stamp-gh-deselect-", head + (
+        "class N(T):\n    def test_new_api(self):\n"
+        "        self.assertEqual(mine.new_api(), 1)\n"), tail=["-k", "old"])
+    renamed = _gh_verb("stamp-gh-renamed-", head + (
+        "needs_api = unittest.skipUnless(hasattr(mine, 'new_api'), 'later')\n"
+        "class N(T):\n    @needs_api\n    def test_new_api(self):\n"
+        "        self.assertEqual(mine.new_api(), 1)\n"))
+    check("gh1 a test file HEAD HOLDS, edited so that no case of the task's own runs "
+          "and passes - a never-collected method beside a subclass of HEAD's class, a "
+          "class-skipped class beside two subclasses, an own case the command "
+          "deselects, an own case under a skip decorator bound to another name - is "
+          "`could-not-prove` by the difference, naming what was taken out and both "
+          "counts, and never on the weaker count: %s"
+          % (_folded([_gd_short(g) for g in (never, class_skip, deselected, renamed)]),),
+          _gd_flat(never, "Checks.test_new_api")
+          and _gd_flat(class_skip, "N.test_a", "N.test_b")
+          and _gd_flat(deselected, "N.test_new_api")
+          and _gd_flat(renamed, "N.test_new_api")
+          and not any("weaker" in g[2] or _GH_HELD in g[2]
+                      for g in (never, class_skip, deselected, renamed)))
+    in_head = _gh_verb("stamp-gh-inhead-", head + "    def test_more(self):\n"
+                       "        self.assertEqual(mine.v * 2, 2)\n")
+    new_class = _gh_verb("stamp-gh-newclass-", head + "class N(unittest.TestCase):\n"
+                         "    def test_more(self):\n        self.assertEqual(mine.v + 1, 2)\n")
+    sub = _gh_verb("stamp-gh-sub-", head + "class N(T):\n    def test_more(self):\n"
+                   "        self.assertEqual(mine.v + 1, 2)\n")
+    pair = _gh_verb("stamp-gh-pair-", head + "    @unittest.skip('later')\n"
+                    "    def test_later(self):\n        pass\n    def test_more(self):\n"
+                    "        self.assertEqual(mine.v * 2, 2)\n")
+    failing = _gh_verb("stamp-gh-failing-", head + "    def test_new_api(self):\n"
+                       "        self.assertEqual(mine.new_api(), 1)\n")
+    empty = _gh_verb("stamp-gh-empty-", head + "class R(T):\n    pass\n")
+    check("gh2 THE ALLOW TWINS of gh1, in the file HEAD holds: a passing case added "
+          "to HEAD's class, a new class with one passing case, a subclass of HEAD's "
+          "class with one passing own case, and two own cases one skipped and one "
+          "passing are `proved` by a difference that rose, naming what was taken out; "
+          "a case failing on the base is `not-green`; an empty subclass alone is "
+          "`could-not-prove` with nothing to take out: %s"
+          % (_folded([_gd_short(g) for g in (in_head, new_class, sub, pair, failing,
+                                              empty)]),),
+          _gh_rose(in_head, "T.test_more") and _gh_rose(new_class, "N.test_more")
+          and _gh_rose(sub, "N.test_more")
+          and _gh_rose(pair, "T.test_later", "T.test_more")
+          and failing[:2] == (M.E_NOT_GREEN, "not-green") and "test_new_api" in failing[2]
+          and empty[:2] == (M.E_CANNOT_PROVE, "could-not-prove")
+          and _GO_NONE in empty[2])
+    # HEAD's case reads a value only the task's own case (sorted first) primes,
+    # once the task has changed the helper: the task's run passes and the
+    # baseline - the same file with that own case taken out - does not.
+    primed_head = _GD_HEADER + ("CACHE = {}\n\n\ndef value():\n    return mine.v\n\n\n"
+                                "class T(unittest.TestCase):\n    def test_old(self):\n"
+                                "        self.assertEqual(value(), 1)\n")
+    primed = _gh_verb("stamp-gh-primed-", primed_head.replace(
+        "    return mine.v\n", "    return CACHE['v']\n").replace(
+        "class T(unittest.TestCase):\n", "class T(unittest.TestCase):\n"
+        "    def test_a_prime(self):\n        CACHE['v'] = mine.v\n"
+        "        self.assertEqual(CACHE['v'], 1)\n"), head_test=primed_head)
+    broken = _gh_verb("stamp-gh-broken-", primed_head.replace(
+        "    return mine.v\n", "    return mine.v + 1\n") + (
+        "class N(unittest.TestCase):\n    def test_more(self):\n"
+        "        self.assertEqual(mine.v, 1)\n"), head_test=primed_head)
+    check("gh3 a helper changed in a test file HEAD holds so that HEAD's case fails "
+          "on HEAD's code once the task's own cases are taken out: the baseline is "
+          "not green, so the answer is `could-not-prove` naming the baseline's "
+          "failing case and that the baseline was the task's copy with its own "
+          "definitions taken out; where the task's run fails the same way, "
+          "`not-green` comes first: primed %s; broken %s"
+          % (_gd_short(primed), _gd_short(broken)),
+          primed[:2] == (M.E_CANNOT_PROVE, "could-not-prove")
+          and "test_old" in primed[2] and "T.test_a_prime" in primed[2]
+          and "taken out" in primed[2] and _GH_HELD not in primed[2]
+          and broken[:2] == (M.E_NOT_GREEN, "not-green") and "test_old" in broken[2])
+    two_head = head + "    def test_two(self):\n        self.assertEqual(mine.v, 1)\n"
+    edited = _gh_verb("stamp-gh-edited-", two_head.replace(
+        "        self.assertEqual(mine.v, 1)\n    def test_two",
+        "        self.assertTrue(mine.v == 1)\n    def test_two"), head_test=two_head)
+    deleted = _gh_verb("stamp-gh-deleted-", head, head_test=two_head)
+    check("gh4 a task that only EDITS one of HEAD's cases so that it still passes is "
+          "`proved` by the difference, the edited case being the task's own and taken "
+          "out of the baseline; one that only DELETES a case has nothing of its own to "
+          "take out and is `could-not-prove`: edited %s; deleted %s"
+          % (_gd_short(edited), _gd_short(deleted)),
+          _gh_rose(edited, "T.test_old")
+          and deleted[:2] == (M.E_CANNOT_PROVE, "could-not-prove")
+          and _GO_NONE in deleted[2])
 
 
 def _reached(source, name):

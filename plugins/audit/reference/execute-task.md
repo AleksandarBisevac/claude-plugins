@@ -119,16 +119,21 @@ verb writes and refuses, and what the run commands leave behind, is
        agent's return typed is dropped by `submit`. `proved` is exit 0 with a case of the
        task's own seen to run and pass - by a case id HEAD's own run printed for no case, or
        by the runner's passed count rising over HEAD's own run; a skipped case is no pass.
-       Under unittest and pytest HEAD's own run is handed each new Python test file with the
-       task's own test definitions taken out (`take_out_own`), so the proof is the passed
-       count rising between two runs of the same files (`_difference_proof`): a case never
-       collected, deselected, not run, or skipped - by a decorator or a fixture - leaves it
-       flat, and a file holding no definition of its own to take out (one that only imports or
-       subclasses HEAD's TestCase) is `could-not-prove` saying so; what is left of a new file
-       must load on the base, or the baseline is not green. Two limits are `could-not-prove`
+       Under unittest and pytest HEAD's own run is handed every declared Python test file -
+       new at HEAD, or held by it and changed by the task - as the task's copy with the
+       task's own test definitions taken out (`take_out_own`), never HEAD's own copy, so the
+       proof is the passed count rising between two runs of the same files
+       (`_difference_proof`): a case never collected, deselected, not run, or skipped - by a
+       decorator or a fixture - leaves it flat, and a file holding no definition of its own to
+       take out (one that only imports or subclasses HEAD's TestCase, or only loses a case) is
+       `could-not-prove` saying so; a case the task edited is its own and is taken out. What
+       is left of a file must pass on the base, or the baseline is not green: a helper the task
+       changed in a file HEAD holds so that HEAD's cases fail there is `could-not-prove` with
+       the runner's line, unless the task's run fails a case too, which is `not-green` first.
+       Two limits are `could-not-prove`, for a file HEAD holds as for a new one,
        although a case of the task's own ran: one overriding an inherited test of the same
        name, and one generated at import (`setattr`, `type()`, `load_tests`). Under jest,
-       vitest and playwright, whose definitions are not taken out, a rise proves only when the
+       vitest and playwright alone, whose definitions are not taken out, a rise proves only when the
        declared files define more cases HEAD's do not hold identically than the extra skips
        (`_count_proof`), and the basis labels it the weaker proof. A failing collected case
        outranks a module that did not load (`not-green`, the module named beside it); a module

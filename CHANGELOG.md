@@ -49,17 +49,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   a case id HEAD's own run printed for no case, or the runner's passed count rising - never a
   whole label, which differs between the two runs when it quotes a temp path, and never a
   skipped case. **Under unittest and pytest the proof is a difference between two runs of the
-  same files**: HEAD's own run is handed each new Python test file as itself with the task's own
-  test definitions taken out - read the way `red` credits a case, removed with their decorators,
-  a block left empty given `pass` - so a passed count that rises is those definitions running
-  and passing. A method in a class the runner never collects, a case the command deselects, a
-  file its pattern does not run, a skip a fixture raised and a HEAD TestCase imported or
-  subclassed all leave it flat, and a new file with no definition of its own to take out is
-  `could-not-prove` saying so; what is left of a new file must load on the base, or the baseline
-  is not green and the basis names the module. `red` keeps its empty-file baseline. Two limits
+  same files**: HEAD's own run is handed every declared Python test file - new at HEAD, or held
+  by it and changed by the task - as the task's copy with the task's own test definitions taken
+  out - read the way `red` credits a case, removed with their decorators, a block left empty
+  given `pass` - so a passed count that rises is those definitions running and passing. A file
+  HEAD holds gets that baseline too, never HEAD's own copy, against which a subclass of HEAD's
+  class added beside the task's cases raises the count with nothing of the task's run. A method
+  in a class the runner never collects, a case the command deselects, a file its pattern does
+  not run, a skip a fixture raised and a HEAD TestCase imported or subclassed all leave it flat,
+  and a file with no definition of its own to take out - one that only gains an empty subclass,
+  or only loses a case - is `could-not-prove` saying so; a case the task edited is its own and
+  is taken out. What is left of a file must pass on the base, or the baseline is not green and
+  the basis names the module or the case and what was taken out: a helper the task changed in a
+  file HEAD holds so that HEAD's cases fail there gives `could-not-prove`, unless the task's run
+  fails a case too, which is `not-green` first. `red` keeps its empty-file baseline. Two limits
   are `could-not-prove` although a case ran: a case overriding an inherited test of the same
   name, which leaves the count flat, and a case generated at import (`setattr`, `type()`,
-  `load_tests`), which is no definition to take out. Under jest, vitest and playwright, whose
+  `load_tests`), which is no definition to take out; both hold for a file HEAD holds as for a new
+  one. Under jest, vitest and playwright alone, whose
   definitions are not taken out, the declared test files must define more cases HEAD's test
   files do not hold identically than the run skipped or expected to fail beyond HEAD's own, and
   the basis states both figures and labels that count the weaker proof, saying why; where the
