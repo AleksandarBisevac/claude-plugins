@@ -161,11 +161,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   skip reason does not, and a skip that replaced a different one elsewhere in the file is no longer
   paired away. A suite written as labelled check rows is compared row by row. A test or a check
   is compared with its position - every statement enclosing it, the part of each that holds it,
-  and how many statements that are not tests or checks stand before it there - wherever it
-  stands, so one wrapped in `if False:`, moved into a function nothing calls, put under a loop
-  over a cut table or a `try` that swallows it, placed below a new statement, or called through
-  another function is a finding, and so is one moved to another file of the diff anywhere but the
-  same position there. A Python test file counts as compared only when its syntax tree with the
+  and its place among the statements that are not tests or checks there - wherever it stands.
+  The place is read by pairing, not by counting: a test or check stays in place when some longest
+  common subsequence of the two copies' statements around it, and around each statement enclosing
+  it, pairs nothing across it. So one wrapped in `if False:`, moved into a function nothing calls,
+  put under a loop over a cut table or a `try` that swallows it, moved past a statement or into a
+  later block whose head reads the same, or called through another function is a finding, and so
+  is one moved to another file of the diff anywhere but the same position there; while a set-up
+  line, a helper or a duplicate of an existing statement added before it leaves it in place - the
+  file is listed as not compared, only added, and nothing is found. A Python test file counts as compared only when its syntax tree with the
   tests and checks taken out is identical in both copies and every existing test and check has
   its twin; otherwise it is listed as not compared, and the reason says whether its code outside
   them was only added - naming the first added statement - or changed or removed - naming the

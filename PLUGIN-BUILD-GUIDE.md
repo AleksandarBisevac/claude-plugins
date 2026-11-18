@@ -5825,14 +5825,23 @@ function is collected by no runner), a labelled check, a call of the one callabl
 labelled calls go to most. A unit is found wherever it stands, inside a loop, a conditional, a `with`, a `try` or
 another function, and compared by `ast.dump` (decorators included, skip reasons blanked, line
 numbers and a leading docstring not), a check also by the name it is called through, together with
-its position: each statement enclosing it from the module down, read by its head (`_head`, built
-from the node's own fields, so no statement kind is listed) and by which part of it holds the unit
-(the body, the else, which handler, the finally), every `pytestmark` on the way, and how many
-statements that are not units stand before it in that part (`_statements`' `place`). A unit whose
-own text is the same and whose position differs is a finding saying it moved, from which line and
-place to which; a check the tree calls through another name is gone. A unit gone from one file is
-read as moved only to the same position in another file of the diff, the file apart, so a check
-placed in a new file under a dead condition is a finding on the first. Other languages are read by
+its position, read by pairing rather than by counting. In each part (a body, an else, a handler, a
+finally) the statements that are not units form a sequence of tokens: a simple statement's dump, a
+compound one's head (`_head`, built from the node's own fields, so no statement kind is listed). A
+best pairing of two such sequences is a longest common subsequence, and a unit standing after i
+statements of the base part and j of the tree part is in place when some best pairing pairs nothing
+across it - LCS of the first i with the first j, plus LCS of the rest with the rest, equals LCS of
+the whole. A unit is in the same position when every statement enclosing it from the module down is
+in place by the same test with itself as a paired member, the part of each holding it is the same
+part (each handler read against the handler of the same place), every `pytestmark` on the way is
+the same, and it is in place in its own part. `_judge` gathers every cell the tests ask and builds
+one table each way per pair of parts (`_pairing`), reading a cell inside the two sequences' common
+prefix or suffix off its length, so each unit's test is a lookup. A unit whose own text is the same
+and whose position differs is a finding saying it moved, from which line and place to which; a
+check the tree calls through another name is gone. A unit gone from one file is read as moved only
+to the same position in another file of the diff - counted there (`_statements`' `place`), since no
+pairing spans two files - so a check placed in a new file under a dead condition is a finding on
+the first. Other languages are read by
 the `ASSERTIONS` lines a test file lost, and a test file whose copies match no assertion row is
 listed under `notRead`.
 
@@ -5848,13 +5857,15 @@ fitting the base copy's rest into the tree copy's in order and in place (`_fit`)
 naming the first added statement at its tree line - or changed or removed - naming the first base
 statement with no place in the tree copy at its base line. A file new to the diff is read against an
 empty base, so its code outside the units is only added. The cost is stated rather than tuned away:
-a new helper, import or set-up line makes its file not compared, and a statement put before a unit
-in that unit's own part makes the unit a finding too. What the reading does not claim: it compares
-structure and never evaluates code, so a new test or check can itself do anything when it runs and
-is reported as new, not as harmless; code outside the diff's test files - a changed helper module, a
-conftest in another directory - is read by the other rules or not at all; and a position names each
-enclosing statement by its head, so a unit moved between sibling blocks with identical heads, its
-count unchanged, keeps its position.
+a new helper, import or set-up line makes its file not compared. It leaves every unit after it in
+place, a duplicate of an existing statement included - one best pairing crosses the unit and
+another does not, and one is enough; a unit moved across a statement, under a new or another block,
+or into a later block whose head reads the same is a finding, moved; and where the rest was changed
+or removed, each unit is still judged against the best pairing of what is there. What the reading
+does not claim: it compares structure and never evaluates code, so a new test or check can itself
+do anything when it runs and is reported as new, not as harmless; and code outside the diff's test
+files - a changed helper module, a conftest in another directory - is read by the other rules or
+not at all.
 
 A FILE IS COMPARED ONLY WHOLE. Each `notRead` entry carries a `kind`: `could-hold-one` - a binary
 file, a Python test file whose rest is not the same, a test file with no assertion row known - or

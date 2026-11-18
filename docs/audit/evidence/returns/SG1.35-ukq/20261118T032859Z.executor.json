@@ -1,0 +1,117 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__floor_guard.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T04:27:58Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__floor_guard.py` in a throwaway tree at HEAD exited 1 with 10 of 141 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fm52 (house FAIL), fm55 (house FAIL), fx4 (house FAIL), fm68 (house FAIL), fm72 (house FAIL), fa46 (house FAIL), fa47 (house FAIL), fa48 (house FAIL) and 2 more: SELFTEST FAILED: 131/141 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "plugins/audit/scripts/governance/_floor_guard.py: a new section 'a unit's position, read by pairing' - _layout (each part's non-unit statement indices and each record's slot), _chain, _plan (per level: same depth, same part name, same head token via _own, same pytestmark chain, else not in position), _lcs_rows (one forward LCS table, rows kept one at a time, cut at the last row/column asked), _pairing (tokens mapped to ints; cells inside the common prefix/suffix read off lengths - F=min(i,j) for min(i,j)<=p, F=L-(n-i) at aligned suffix, B symmetric - and only the rest from a forward table on a[p:] and a backward table on the reversed a[:n-s]; equal sequences return None, where in place means the same slot), _in_place (unit: F(i,j)+B(i,j)==L; member: same token and F(k,k')+1+B(k+1,k'+1)==L) and _judge (gathers every cell all pairs ask, one table each way per pair of parts). _compare_definitions and _compare_checks now ask _judge for same-file position (kept pairs, and renames by anonymous dump/signature plus position) instead of comparing the count `place`; `place` stays only in the cross-file move signatures (unchanged rule) and in the finding's words (unchanged text). Rule 5 (same / only added / changed or removed) is still _same_rest/_fit/_added over the same _own tokens: greedy earliest-fit with the recursive fit predicate is exactly 'subsequence at every level' and keeps every existing reason; the pairing tables serve rule 3. Which statements are units, the cross-file rule, reason texts and the block's shape are unchanged. Module docstring, the Python-units section comment and _statements' docstring rewritten for pairing; the closed gap sentence (identical sibling heads keep their position) removed from the docstring and the build guide; PLUGIN-BUILD-GUIDE.md, CHANGELOG.md and plugins/audit/README.md (its floorGuard.mode row stated the count) now state the pairing rule. plugins/audit/reference/execute-task.md states no position rule and is untouched. Tests: new cases fm72, fa46, fa47, fa48, fa49, fa50, fx6; fx4 extended - fixtures gained two same-head blocks each, two operators added ('a set-up line inserted before it', 'moved into another block whose head reads the same'), and the only-added expectation now also computes, by the case's own dump route with the inserted statements holed out, which units moved; fx4 now reads 447 edits, 57 set-up insertions only added, 4 same-head moves read as moved, wrong 0. Existing cases changed on purpose (each pinned the count): fm52 asserted labels found [0,1,1] (the check after the wrapper moved) and asserts [0,1,0]; fm55 asserted FINDINGS with r1,r2,r3 each a definition change and asserts PARTLY_READ, no finding, only added at tree line 12 naming sys.exit(0); fm68 accepted FINDINGS or PARTLY_READ ('the tests after it may be findings') and asserts PARTLY_READ with no finding. Runs: gate `python3 tools/sweep-selftests.py tests/test__floor_guard.py` exit 0, 141 cases; `python3 tools/sweep-selftests.py --jobs 4 tests/test__deps.py tests/test__output_lints.py tests/test__refs.py tests/test__floor_guard.py` exit 0, 933 cases; `python3 tools/prove-gates.py --list` exit 0; ruff and vermin -t=3.8- clean on both .py files; dependants: test_drive_phase.py --stage flr-block 9/9, flr10-block 1/1, flm-block 5/5, wf-block 12/12; sweep of test__filed_returns.py 146, test__status_facts.py 199, test_audit_lookup.py 207 cases, exit 0; the orchestrator's run-test-gate.py SG1 --task SG1.35-ukq without --record: GATE GREEN, exit 0. Mutation probe (scratch sg1.35/mutations.py, on a copy, anchors asserted once, __pycache__ purged per row): p1a in-place test put back to the count -> fa46, fa49, fm55, fm68, fx4 red; p2d enclosing statements matched by head alone -> fm72, fx4 red; p3a ambiguous pairing read against the unit -> fa47 red; p4t tables dropped for a per-unit recomputation -> fx6 red; p5a (allow twin of p2d) enclosing statement read by count -> fa48 red; p6d (deny twin of p1a/p3a) every unit in place -> fx4 red; '6 row(s): every row was caught' (p4t and p6d first SURVIVED: fx6 was sized at 12 parts of 250, where the per-unit recomputation ran 5.47s against 0.57s under a 10s ceiling, so it was resized to 4 parts of 750 - tables 0.79s, per-unit 50.59s, measured in memory by scratch sg1.35/time_probe.py; p6d's anchor missed the equal-sequence path and was moved to the function head). Third review probes with FG_TREE at this tree: p1_deny WRONG: 0, p4_crossfile WRONG: 0, p3_allow BAD: 0; diffed against the orchestrator's HEAD runs, p4 is byte-identical, p3 differs only in A1 tests/test__excerpt.py (findings, 2 moved -> partly-read, no finding), and p1 differs only in X8 (`_callTestMethod` override, which is fm68): findings with TestA.test_two and test_three 'moved' -> partly-read, only added naming _callTestMethod - still not clean, same kind of reason, but not the same answer word. Measurement (scratch sg19 measure.py, read-only git): b4492a27 1031 commits clean 293, declared 1, findings 303, partly-read 434; c0411713 clean 236, declared 1, findings 577, partly-read 217; now 1032 commits (the extra is c0411713 itself, which reads findings for its own edits to existing cases) clean 236, declared 1, findings 304, partly-read 491. Against b4492a27: 0 commits lost a finding by (move,path,line) and 0 by (move,path), and no commit is findings now that was not then. Against c0411713: all 274 newly-findings commits are partly-read again; the 256 moved-only commits (reproduced: gained 274, moved-only 256) all read partly-read with 0 findings; findings lost against c0411713 are 24110 worded moved and 36 worded gone, and both commits checked of the 36 now list the check as renamed (label reworded, condition and position unchanged), as b4492a27 read them. Ten moved-only commits sampled evenly and judged by hand from their diffs: 29668cb7fe, 66027d6e83, cfab9710d0, d36d84e800, 8b38e70bc0, 2dfff56635, 17f292ab63, c38330bf45 are pure insertions before the check (every hunk -N,0); 0d581086db rewrote set-up calls (subprocess.run -> _harness.git) above the checks; ecf1bb09b6 added a helper, a build parameter and set-up lines - no check line was removed and re-added in any of them, so none of the ten moves is real. Time on the repository's largest test file (tests/test_audit_task.py, a set-up line and a check appended after the last direct check of _held_cases, scratch sg1.35/time_largest.py): 2.26s, 2.23s, 2.69s, runs 5s apart, partly-read, no finding; HEAD's guard on the same input 2.13s, 2.10s.",
+    "descriptive": "The floor guard reads a test's position by pairing the statements around it, so a set-up line added above a check no longer calls it moved, while a check moved into a later block whose head reads the same now is."
+  },
+  "testsAdded": [
+    "fa46: a set-up line before an existing check in a row suite and a class attribute before a unittest method give no finding, only added naming the line",
+    "fm72: a check moved from a for, and from an if, into a later block with the same head across FAILED.clear() is a finding, moved, the file compared",
+    "fa47: a duplicate of the set-up line before a check, and of the print after one, inserted beside it gives no finding",
+    "fa48: a new helper above the first test of a pytest file gives no finding, only added",
+    "fa49: a set-up line and a new check added between two existing checks give no finding",
+    "fa50: two adjacent unittest methods swapped read clean",
+    "fx6: a generated row suite of 4 parts of 750 set-up lines and checks, each part edited at both ends, is read under the ceiling in a child killed at the deadline, with no finding",
+    "fx4 extended: two operators and an only-added expectation that also names the units moved"
+  ],
+  "casesAdded": [
+    [
+      "fa46"
+    ],
+    [
+      "fm72"
+    ],
+    [
+      "fa47",
+      "fa48",
+      "fa49",
+      "fa50"
+    ],
+    [
+      "fx6"
+    ]
+  ],
+  "claims": "claims:\n1 _floor_guard.py `_in_place` is the in-place test the docstring states (unit F+B==L, member same token and F+1+B==L); `_plan` holds depth, part name, head and pytestmark; `_compare_definitions`/`_compare_checks` read position through `_judge`; cross-file signatures still use `place` - as the docstring, guide and changelog now say\n2 mutations p1a-p6d on a copy each turned their named cases red (6 rows, every row caught); p4t and p6d first survived and the case/anchor were fixed before the final run; allow twins p1a, p3a, p5a red under over-fire\n3 git grep for the gap sentence and the count wording ('heads are identical', 'identical heads', 'keeps its position', 'count before it', 'statement put before a unit', 'stand before it'): each hit in _floor_guard.py, PLUGIN-BUILD-GUIDE.md, CHANGELOG.md and README.md rewritten; _place_text's docstring left (it describes the finding's words, which still count); overview.js:849 left, unrelated\n4 n/a - no rule to an agent\n5 largest-file timing taken three times 5s apart (2.23-2.69s) and HEAD twice (2.10-2.13s); fx6's margin taken from a single in-memory run per size (tables 0.79s, per-unit 50.59s), measured once\n6 n/a - no guard over commands\n7 every number in prose removed from the documents; numbers in this return come from the commands named beside them",
+  "stamp": "audit-stamp: {\"content\":\"sha256:3c4aa0180c2e03ad1d27fb59119a3fb64f08988e902acbb36a09578eb8a83fb8\",\"dirtyDigest\":\"sha256:9d0eda43d1c903ee91989973dbb63c922e053f46cd9f256c47ce480ab27ab164\",\"dirtyPaths\":{\"CHANGELOG.md\":\"bc5a95bd92e035d6\",\"PLUGIN-BUILD-GUIDE.md\":\"f1df76cca016875b\",\"plugins/audit/README.md\":\"eb9746627d38f716\",\"plugins/audit/scripts/governance/_floor_guard.py\":\"85ac5690b24a7499\",\"tests/test__floor_guard.py\":\"1b24444cbe6e7e56\"},\"head\":\"c0411713\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/README.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/scripts/governance/_floor_guard.py\",\"tests/test__floor_guard.py\"],\"scopeDigest\":\"sha256:ba92186b8d8875714300ab0157a7e1013c8cd76fb5b6daaa2d91e3be9c724c89\",\"v\":2}",
+  "floorGuard": {
+    "answer": "findings",
+    "basis": "4 move(s) that lower the bar across 5 file(s) of the diff; 3 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md; 1 file(s) that could hold a move not compared: tests/test__floor_guard.py",
+    "findings": [
+      {
+        "move": "definition-changed",
+        "path": "tests/test__floor_guard.py",
+        "line": 1323,
+        "side": "base",
+        "what": "labelled check `fm52 (c) a check put under a for over an empty tuple, and (d) wrapp...` is gone from the tree copy"
+      },
+      {
+        "move": "definition-changed",
+        "path": "tests/test__floor_guard.py",
+        "line": 1347,
+        "side": "base",
+        "what": "labelled check `fm55 (g) a call of sys.exit added above the checks: the file is not...` is gone from the tree copy"
+      },
+      {
+        "move": "definition-changed",
+        "path": "tests/test__floor_guard.py",
+        "line": 1900,
+        "side": "base",
+        "what": "labelled check `fx4 over %d generated edits (%d not parsing, skipped) the guard agr...` is gone from the tree copy"
+      },
+      {
+        "move": "definition-changed",
+        "path": "tests/test__floor_guard.py",
+        "line": 2045,
+        "side": "base",
+        "what": "labelled check `fm68 (e) a new method under a name the framework calls on every tes...` is gone from the tree copy"
+      }
+    ],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test__floor_guard.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 1597 (`INV_ROWS = '''import sys`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "c0411713a0e4903b4c1dc7f03c661e4510c33e9a"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-18T04:28:00Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

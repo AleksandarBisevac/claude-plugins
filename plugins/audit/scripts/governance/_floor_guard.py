@@ -28,17 +28,22 @@ THE MOVES, NAMED IN `MOVES`:
     loop, a conditional, a `with`, a `try`, another function - and compared by
     `ast.dump` (line numbers excluded, decorators included, a leading
     docstring dropped, every skip's reason text blanked), a check also by the
-    name it is called through, together with its POSITION: each statement
-    enclosing it from the module down, read by its head (an `if`'s test, a
-    `for`'s target and iterable, a `with`'s items, a `try`'s handler types and
-    its else and finally, a def's or class's name, arguments, bases and
-    decorators) and by which part of it holds the unit (the body, the else,
-    which handler, the finally), every `pytestmark` on the way, and how many
-    statements that are not units stand before it in that part. A unit whose
-    text is the same and whose position differs is a finding saying it moved,
-    from where to where. A unit that disappears is reported unless one with the
-    same body and position appeared, in its own file (a rename) or in another
-    file of the diff (a move); a check the tree no longer calls through the
+    name it is called through, together with its POSITION, read by PAIRING:
+    in each part (a body, an else, a handler, a finally) the statements that
+    are not units are a sequence of tokens - a simple statement's syntax, a
+    compound one's head (an `if`'s test, a `for`'s target and iterable, a
+    `with`'s items, a `try`'s handler types and its else and finally, a def's
+    or class's name, arguments, bases and decorators) - and a unit is IN PLACE
+    when some longest common subsequence of the two copies' sequences pairs
+    nothing across it. A unit is in the same position when every statement
+    enclosing it from the module down is in place as a paired member, the part
+    of each holding it is the same part, every `pytestmark` on the way is the
+    same, and it is in place in its own part. A unit whose text is the same and
+    whose position differs is a finding saying it moved, from where to where.
+    A unit that disappears is reported unless one with the same body and
+    position appeared, in its own file (a rename) or in another file of the
+    diff (a move - read there by the count of statements before it, since no
+    pairing spans two files); a check the tree no longer calls through the
     base's callable is gone. For any other language the assertion lines
     removed from a test file are reported, read through `ASSERTIONS`;
   * a skip added to a test file (`SKIPS`), a raised `SkipTest` and an
@@ -97,8 +102,11 @@ statement with no place in the tree copy and its base line. A file new to the
 diff is read against an empty base copy, so any statement in it outside its
 units is only added. A reformat, a reworded label, a new unit and two adjacent
 units swapped are therefore clean; a new helper, import or set-up line makes
-its file not compared; and a statement put before a unit in that unit's own
-part makes the unit a finding as well, since its position is not the base's.
+its file not compared and leaves every unit after it in place, a duplicate of
+an existing statement included; a unit moved across a statement, under a new
+or another block, or into a later block whose head reads the same is a
+finding, moved; and where the rest was changed or removed, each unit is still
+judged against the best pairing of what is there.
 
 WHAT THE READING DOES NOT CLAIM. It compares structure and never evaluates
 code. A new test or a new check can itself do anything when it runs, and the
@@ -147,10 +155,7 @@ its scope, so an `eslint-disable-next-line <rule>` the base holds hides the same
 rule disabled for the whole file. The marker shapes are written from each
 checker's documented behaviour, not measured against the checkers. A non-Python
 test file is read by assertion line, so a weakened test whose assertions stay
-is not seen. A binary file is never read. A position names each enclosing
-statement by its head and part, not by where that statement stands, so a unit
-moved between two sibling blocks whose heads are identical, the count before
-it unchanged, keeps its position.
+is not seen. A binary file is never read.
 
 This module carries no `--selftest` of its own; its cases live in
 `tests/test__floor_guard.py`.
@@ -814,16 +819,17 @@ def _scope_of(spans, line):
 # A UNIT is what a runner runs as one case: a test definition, or - in a file
 # that defines none a runner collects, none outside a function
 # (`_collected_tests`) - a labelled check (below), wherever it stands in the file.
-# A unit is compared together with its POSITION: each statement enclosing it,
-# from the module down, read by its head (`_head`) and the part of it that holds
-# the unit, the `pytestmark` of each body on the way, and how many statements
-# that are not units stand before it in its own part. So a unit whose own text
-# is the same is still a change when a statement around it, or before it,
-# changed - a check wrapped in `if False:`, moved into a function nothing calls,
-# put under a loop over a table that was cut, inside a `try` whose handler
-# swallows it, or below a new statement; a skip widened on a class is a change
-# to every test under it. A skip's reason text is no part of any comparison, so
-# a reason reworded is no change.
+# A unit is compared together with its POSITION, read by pairing (the section
+# after `_collected_tests`): each statement enclosing it, from the module down,
+# read by its head (`_head`), paired in place, and the part of it that holds the
+# unit, the `pytestmark` of each body on the way, and the unit in place among
+# the statements of its own part. So a unit whose own text is the same is still a
+# change when a statement around it changed or it moved across one - a check
+# wrapped in `if False:`, moved into a function nothing calls, put under a loop
+# over a table that was cut, inside a `try` whose handler swallows it, or moved
+# past a statement; a skip widened on a class is a change to every test under
+# it. A skip's reason text is no part of any comparison, so a reason reworded is
+# no change.
 
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
 
@@ -923,8 +929,10 @@ def _statements(tree, unit_key):
     """Every statement of `tree`, outermost first, as a dict: `node`; `chain`,
     the heads of the statements enclosing it with the part of each that holds
     it and every `pytestmark` on the way; `place`, the chain closed by how many
-    statements that are not units stand before it in its own part - a unit's
-    POSITION; `parent`, the index of the record whose part holds it (None at
+    statements that are not units stand before it in its own part - the words a
+    finding gives a unit's place, and its signature for a move to another file,
+    while its POSITION in its own file is read by pairing (`_judge`); `parent`,
+    the index of the record whose part holds it (None at
     module level), and `part`, which part; `unit`, its key when
     `unit_key(node, prefix)` names one, whose inside is not walked; `first`
     and `last`, its lines, decorators counted in; `end`, the index just past
@@ -979,11 +987,195 @@ def _collected_tests(records):
     return any(rec["unit"] for k, rec in enumerate(records) if k not in inside)
 
 
+# --- a unit's position, read by pairing -------------------------------------------
+# A part is a statement list: the module's body, a function's, a class's, each
+# part of a compound statement. Its statements that are not units form a sequence
+# of TOKENS - a simple statement's dump, a compound one's head (`_own`), so a
+# function whose body gained a line still pairs with itself. A BEST PAIRING of two
+# such sequences is a longest common subsequence, and there can be several. A unit
+# standing after i statements of the base part and after j of the tree part is IN
+# PLACE when some best pairing pairs nothing across it: LCS(first i, first j) +
+# LCS(rest, rest) == LCS(whole, whole). A statement enclosing a unit is in place by
+# the same test with itself as a paired member, and the two are then read part by
+# part - body with body, else with else, each handler with the handler of the same
+# place, finally with finally. A unit is IN THE SAME POSITION when every statement
+# enclosing it from the module down is in place, the `pytestmark` of each body on
+# the way is the same, and it is in place in its own part.
+#
+# So a statement added before a unit leaves it in place, a duplicate of an
+# existing statement inserted beside it included - one best pairing crosses it and
+# another does not, and one is enough. A unit moved across a statement, under a new
+# or another block, or into a later block whose head reads the same is not in
+# place. Two adjacent units swapped are both in place: no statement that is not a
+# unit stands between them.
+#
+# A count of the statements before a unit is a position only when the statements
+# counted are the same in both copies; it survives here only where nothing pairs
+# two copies - the signature that recognises a unit moved to another file, and the
+# words of a finding.
+#
+# The tables are built once per pair of parts, forwards and backwards, for exactly
+# the cells the judgements ask (`_judge`), so each unit's test is a lookup. A cell
+# inside the common prefix or suffix of two sequences is read off its length
+# without a table, which is where the cells of an ordinary edit fall.
+
+def _layout(records):
+    """One copy's parts: `parts` maps (parent record index, part) to the indices
+    of its statements that are not units, in order; `slot` gives each record its
+    index among them, or for a unit how many of them stand before it."""
+    parts, slot = {}, {}
+    for k, rec in enumerate(records):
+        here = parts.setdefault((rec["parent"], rec["part"]), [])
+        slot[k] = len(here)
+        if rec["unit"] is None:
+            here.append(k)
+    return {"records": records, "parts": parts, "slot": slot}
+
+
+def _tokens(layout, part):
+    records = layout["records"]
+    return [_own(records[k]["node"]) for k in layout["parts"].get(part, ())]
+
+
+def _chain(layout, k):
+    """[(part, slot, record index)] from the module's part down to record k's."""
+    records, out = layout["records"], []
+    while k is not None:
+        rec = records[k]
+        out.append(((rec["parent"], rec["part"]), layout["slot"][k], k))
+        k = rec["parent"]
+    return out[::-1]
+
+
+def _marks_on_the_way(rec):
+    """The `pytestmark`s of each body enclosing a record, level by level."""
+    return tuple(("|",) if isinstance(c[0], tuple) else c for c in rec["chain"])
+
+
+def _plan(base, tree, b, t):
+    """The in-place tests deciding whether tree record `t` stands where base record
+    `b` does: [(base part, tree part, kind, i, j)], kind "member" for an enclosing
+    statement and "unit" for the record itself; None when no pairing can make it
+    so - another depth, another part of an enclosing statement, another head or
+    another `pytestmark` on the way."""
+    cb, ct = _chain(base, b), _chain(tree, t)
+    if len(cb) != len(ct) or _marks_on_the_way(base["records"][b]) != \
+            _marks_on_the_way(tree["records"][t]):
+        return None
+    out = []
+    for d, ((pb, ib, kb), (pt, it, kt)) in enumerate(zip(cb, ct)):
+        last = d == len(cb) - 1
+        if pb[1] != pt[1] or not last and _own(base["records"][kb]["node"]) != \
+                _own(tree["records"][kt]["node"]):
+            return None
+        out.append((pb, pt, "unit" if last else "member", ib, it))
+    return out
+
+
+def _lcs_rows(a, b, points):
+    """{(i, j): LCS(a[:i], b[:j])} for each of `points`: one table, its rows kept
+    one at a time and cut at the last row and column a point asks for."""
+    out, rows = {}, {}
+    for i, j in points:
+        if i == 0 or j == 0:
+            out[(i, j)] = 0
+        else:
+            rows.setdefault(i, []).append(j)
+    if not rows:
+        return out
+    width = max(j for js in rows.values() for j in js)
+    cols, prev = b[:width], [0] * (width + 1)
+    for i in range(1, max(rows) + 1):
+        x, cur = a[i - 1], [0] * (width + 1)
+        for j, y in enumerate(cols, 1):
+            if x == y:
+                cur[j] = prev[j - 1] + 1
+            else:
+                up, left = prev[j], cur[j - 1]
+                cur[j] = up if up > left else left
+        for j in rows.get(i, ()):
+            out[(i, j)] = cur[j]
+        prev = cur
+    return out
+
+
+def _pairing(a, b, fwd, bwd):
+    """The pairing of two token sequences as the in-place tests read it: `L` the
+    length of a best pairing, `F` LCS(a[:i], b[:j]) for each of `fwd`, `B`
+    LCS(a[i:], b[j:]) for each of `bwd`; None when the sequences are equal, where a
+    unit is in place exactly at its own slot. Inside the common prefix of length
+    p, F is min(i, j) and B at i == j is L - i; inside the common suffix of length
+    s, B is min(n - i, m - j) and F at aligned ends is L less the shared tail - so
+    only a cell between the two needs a table."""
+    if a == b:
+        return None
+    ids = {}
+    a = [ids.setdefault(x, len(ids)) for x in a]
+    b = [ids.setdefault(x, len(ids)) for x in b]
+    n, m = len(a), len(b)
+    p = 0
+    while p < min(n, m) and a[p] == b[p]:
+        p += 1
+    s = 0
+    while s < min(n, m) - p and a[n - 1 - s] == b[m - 1 - s]:
+        s += 1
+    core = (n - s - p, m - s - p)
+    big = p + s + _lcs_rows(a[p:n - s], b[p:m - s], [core])[core]
+    forward, todo = {}, []
+    for i, j in fwd:
+        if min(i, j) <= p:
+            forward[(i, j)] = min(i, j)
+        elif n - i == m - j <= s:
+            forward[(i, j)] = big - (n - i)
+        else:
+            todo.append((i, j))
+    got = _lcs_rows(a[p:], b[p:], [(i - p, j - p) for i, j in todo])
+    forward.update(((i, j), p + got[(i - p, j - p)]) for i, j in todo)
+    backward, todo = {}, []
+    for i, j in bwd:
+        if min(n - i, m - j) <= s:
+            backward[(i, j)] = min(n - i, m - j)
+        elif i == j <= p:
+            backward[(i, j)] = big - i
+        else:
+            todo.append((i, j))
+    got = _lcs_rows(a[:n - s][::-1], b[:m - s][::-1], [(n - s - i, m - s - j) for i, j in todo])
+    backward.update(((i, j), s + got[(n - s - i, m - s - j)]) for i, j in todo)
+    return {"a": a, "b": b, "L": big, "F": forward, "B": backward}
+
+
+def _in_place(pairing, kind, i, j):
+    if pairing is None:
+        return i == j
+    if kind == "member":
+        return pairing["a"][i] == pairing["b"][j] and \
+            pairing["F"][(i, j)] + 1 + pairing["B"][(i + 1, j + 1)] == pairing["L"]
+    return pairing["F"][(i, j)] + pairing["B"][(i, j)] == pairing["L"]
+
+
+def _judge(base, tree, pairs):
+    """{(base record, tree record): whether the tree one stands in the base one's
+    position} for each of `pairs`; `base` and `tree` are `_layout`s. Every cell
+    the tests ask is gathered first, so each pair of parts gets one table each way."""
+    plans = dict((pair, _plan(base, tree, pair[0], pair[1])) for pair in set(pairs))
+    need = {}
+    for plan in plans.values():
+        for pb, pt, kind, i, j in plan or ():
+            fwd, bwd = need.setdefault((pb, pt), (set(), set()))
+            fwd.add((i, j))
+            bwd.add((i + 1, j + 1) if kind == "member" else (i, j))
+    tables = dict((key, _pairing(_tokens(base, key[0]), _tokens(tree, key[1]), fwd, bwd))
+                  for key, (fwd, bwd) in need.items())
+    return dict((pair, plan is not None and all(_in_place(tables[(pb, pt)], kind, i, j)
+                                                for pb, pt, kind, i, j in plan))
+                for pair, plan in plans.items())
+
+
 def _dump(entry, anonymous=False):
     """One definition as the comparison reads it: `ast.dump` without line
     numbers, leading docstring or skip reasons, followed by its position;
     `anonymous` also drops its name, to recognise a rename."""
-    node, place = entry
+    node, place = entry[:2]
     return "%s %r" % (_own_dump(node, anonymous), place)
 
 
@@ -1021,14 +1213,14 @@ def _own_dump(node, anonymous=False):
 
 
 def _test_units(records):
-    """{(name, n): (node, place)} for the test definitions of `records`. `n`
-    counts back from the last definition of a name, so 0 is the one Python
-    keeps - and a weaker test appended under an existing name is a change to
-    that name - while an earlier one is still compared as itself."""
+    """{(name, n): (node, place, record index)} for the test definitions of
+    `records`. `n` counts back from the last definition of a name, so 0 is the
+    one Python keeps - and a weaker test appended under an existing name is a
+    change to that name - while an earlier one is still compared as itself."""
     by_name = collections.OrderedDict()
-    for rec in records:
+    for k, rec in enumerate(records):
         if rec["unit"] is not None:
-            by_name.setdefault(rec["unit"], []).append((rec["node"], rec["place"]))
+            by_name.setdefault(rec["unit"], []).append((rec["node"], rec["place"], k))
     return dict(((q, n), entry) for q, entries in by_name.items()
                 for n, entry in enumerate(reversed(entries)))
 
@@ -1039,9 +1231,17 @@ def _compare_definitions(base_records, tree_records, new):
     one that reappears unchanged in another file of the diff is a move;
     `renamed` holds {path, from, to, line}; `fresh` holds (sign, name, line)
     for each test new to the tree copy. A rename keeps the body AND the
-    position, and so does a move to another file."""
+    position, and so does a move to another file - read there by the count of
+    statements before it, since no pairing spans two files."""
     base_defs, tree_defs = _test_units(base_records), _test_units(tree_records)
     fresh = dict((k, e) for k, e in tree_defs.items() if k not in base_defs)
+    base, tree = _layout(base_records), _layout(tree_records)
+    kept = _judge(base, tree, [(e[2], tree_defs[k][2]) for k, e in base_defs.items()
+                               if k in tree_defs])
+    shapes = dict((k, _own_dump(e[0], anonymous=True)) for k, e in fresh.items())
+    named = _judge(base, tree, [(e[2], f[2]) for k, e in base_defs.items() if k not in tree_defs
+                                for fk, f in fresh.items()
+                                if shapes[fk] == _own_dump(e[0], anonymous=True)])
     changed, renamed = [], []
     for key, entry in sorted(base_defs.items(), key=lambda kv: kv[1][0].lineno):
         qual = key[0]
@@ -1050,17 +1250,15 @@ def _compare_definitions(base_records, tree_records, new):
             if _own_dump(entry[0]) != _own_dump(twin[0]):
                 changed.append((("def", qual), "definition `%s` differs from its base copy"
                                 % qual, twin[0].lineno, "tree", None))
-            elif entry[1] != twin[1]:
+            elif not kept[(entry[2], twin[2])]:
                 changed.append((("def", qual), _moved_what(
                     "definition", qual, (entry[0].lineno, entry[1]),
                     (twin[0].lineno, twin[1])), twin[0].lineno, "tree", None))
             continue
-        shape = _dump(entry, anonymous=True)
-        twin = next((k for k in sorted(fresh) if _dump(fresh[k], anonymous=True) == shape),
-                    None)
+        twin = next((k for k in sorted(fresh) if named.get((entry[2], fresh[k][2]))), None)
         if twin is None:
             changed.append((("def", qual), "definition `%s` is gone from the tree copy" % qual,
-                            entry[0].lineno, "base", ("def", shape)))
+                            entry[0].lineno, "base", ("def", _dump(entry, anonymous=True))))
         else:
             renamed.append({"path": new, "from": qual, "to": twin[0],
                             "line": fresh.pop(twin)[0].lineno})
@@ -1124,16 +1322,26 @@ def _check_key(callables):
 
 
 def _checks(records):
-    """[(label, signature, place, line)] for each labelled check of `records`;
-    the signature is the name it is called through and its other arguments."""
+    """[(label, signature, place, line, record index)] for each labelled check of
+    `records`; the signature is the name it is called through and its other
+    arguments."""
     out = []
-    for rec in records:
+    for k, rec in enumerate(records):
         if rec["unit"] is not None:
             call = rec["node"].value
             sign = "|".join([ast.dump(call.func)] + [ast.dump(a) for a in call.args[1:]]
-                            + [ast.dump(k) for k in call.keywords])
-            out.append((rec["unit"], sign, rec["place"], rec["node"].lineno))
+                            + [ast.dump(kw) for kw in call.keywords])
+            out.append((rec["unit"], sign, rec["place"], rec["node"].lineno, k))
     return out
+
+
+def _alike(base_checks, tree_checks, key):
+    """(base record, tree record) for each two checks `key` reads the same -
+    grouped, so a suite of many checks is not paired all against all."""
+    by = {}
+    for t in tree_checks:
+        by.setdefault(key(t), []).append(t[4])
+    return [(b[4], k) for b in base_checks for k in by.get(key(b), ())]
 
 
 def _case_id(label):
@@ -1162,11 +1370,15 @@ def _compare_checks(base_records, tree_records, new):
     alone - a check whose arguments changed - then on signature and position,
     a rename. A check gone, or new, carries its position in its move signature,
     so one placed elsewhere in another file of the diff is no move."""
-    tree_left = _checks(tree_records)
-    _same, base_left = _take(_checks(base_records), tree_left, lambda b, t: b[:3] == t[:3])
+    base_checks, tree_left = _checks(base_records), _checks(tree_records)
+    base, tree = _layout(base_records), _layout(tree_records)
+    kept = _judge(base, tree, _alike(base_checks, tree_left, lambda c: c[:2]))
+    _same, base_left = _take(base_checks, tree_left,
+                             lambda b, t: b[:2] == t[:2] and kept[(b[4], t[4])])
     moved, base_left = _take(base_left, tree_left, lambda b, t: b[:2] == t[:2])
     edited, base_left = _take(base_left, tree_left, lambda b, t: b[0] == t[0])
-    named, gone = _take(base_left, tree_left, lambda b, t: b[1:3] == t[1:3])
+    still = _judge(base, tree, _alike(base_left, tree_left, lambda c: c[1]))
+    named, gone = _take(base_left, tree_left, lambda b, t: still.get((b[4], t[4]), False))
     changed = [(("check", b[0]), _moved_what("labelled check", _short(b[0]), (b[3], b[2]),
                                              (t[3], t[2])), t[3], "tree", None)
                for b, t in moved]

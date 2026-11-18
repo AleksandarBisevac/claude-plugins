@@ -20,7 +20,9 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import ast
 import collections
 import difflib
+import json
 import re
+import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
@@ -1196,8 +1198,9 @@ def _kinds(check):
 
 # --- a unit is compared with its position ----------------------------------------
 # A unit (a test definition or a labelled check) is compared with its position -
-# the statements enclosing it, the part of each that holds it, and how many other
-# statements stand before it there - and the file with everything outside its units
+# the statements enclosing it, the part of each that holds it, and where it stands
+# among the other statements there, read by pairing (see the section on pairing
+# below) - and the file with everything outside its units
 # (see the section on the rest below). Each input below lowers the bar while every
 # unit's own text stays the same, so a reading that compares the units alone calls
 # it clean.
@@ -1321,10 +1324,10 @@ def _wrapped(check):
         seen.append((label, _labels_found(got, ("r1", "r2", "r3")),
                      _names_line(got, path, lines), _show(got)))
     check("fm52 (c) a check put under a for over an empty tuple, and (d) wrapped in a "
-          "try whose except passes, is a definition change of that check - and of the "
-          "check after it, which now has the new statement standing before it - and "
+          "try whose except passes, is a definition change of that check alone - the "
+          "check after it stays in place, the new statement only added before it - and "
           "the file is not compared at the added line: %r" % (seen,),
-          [s[1:3] for s in seen] == [([0, 1, 1], True)] * 2)
+          [s[1:3] for s in seen] == [([0, 1, 0], True)] * 2)
 
     got = _run([(path, ROWS_ARG, ROWS_ARG.replace("(1, 2)", "(1,)"))])
     check("fm53 (e) the literal table a loop of checks iterates, cut from two entries "
@@ -1345,10 +1348,11 @@ def _wrapped(check):
     tree = ROWS_MAIN.replace("    x = 1 + 1\n", "    x = 1 + 1\n    sys.exit(0)\n")
     got = _run([(path, ROWS_MAIN, tree)])
     check("fm55 (g) a call of sys.exit added above the checks: the file is not "
-          "compared at that line, and each check after it, the call now standing "
-          "before it, is a definition change: %s %r" % (_show(got), got["notRead"]),
-          got["answer"] == M.FINDINGS and _names_line(got, path, (12,))
-          and _labels_found(got, ("r1", "r2", "r3")) == [1, 1, 1])
+          "compared, only added at that line - a statement added before a check "
+          "leaves the check in place, so it is no finding: %s %r"
+          % (_show(got), got["notRead"]),
+          got["answer"] == PARTLY_READ and got["findings"] == []
+          and _reason_says(got, path, "only added", "tree", 12, "sys.exit(0)"))
 
     base = ("import pytest\n\n\ndef test_plain():\n    assert 1 + 1 == 2\n\n\n"
             "for _n in (1, 2):\n    def test_looped(n=_n):\n"
@@ -1590,7 +1594,9 @@ def _inert_twins(check):
 # name, and the two texts' `ast.dump`s, placeholders deleted, are compared. Which
 # of the two kinds a difference is comes from deleting the tree statements whose
 # every line difflib calls inserted and comparing again; a unit's position is the
-# same dump with only that unit marked. A fixed table of edit operators is applied
+# same dump with only that unit marked - and, where the rest was only added, with
+# those inserted statements taken out of the tree copy first, so a statement added
+# above a unit does not move it. A fixed table of edit operators is applied
 # at every statement position of two small fixtures, so the edits and their count
 # are reproducible.
 
@@ -1621,12 +1627,15 @@ def _cases(check):
     check("delta three", x + 1 == 3)
     for n in (1, 2):
         check("beta row %d" % n, n < 3)
+        check("theta row %d" % n, n > 0)
     if x > 1:
         y = x
         check("eps big", y > 1)
     else:
         check("eta small", x <= 1)
     check("gamma limit", LIMIT == 3)
+    for n in (1, 2):
+        check("iota row %d" % n, n != 0)
     print("done", 4)
 
 
@@ -1667,6 +1676,21 @@ class TestA(unittest.TestCase):
 
     def test_three(self):
         _helper(self, self.x)
+
+
+if BASE > 1:
+    def test_four():
+        assert BASE == 2
+
+    def test_five():
+        assert BASE > 0
+
+
+SECOND = BASE + 1
+
+if BASE > 1:
+    def test_six():
+        assert SECOND == 3
 '''
 
 INV_HOLE = "__inv_hole__"
@@ -1740,13 +1764,28 @@ def _inv_copy(text, rows):
         marked = _inv_fill(holed, [_inv_span(node)], INV_ME)
         found[name] = (ast.dump(node), _inv_dump(marked), node.lineno)
     return {"lines": lines, "units": found, "holed": holed, "rest": _inv_dump(holed),
-            "rows": rows}
+            "rows": rows, "spans": dict((name, _inv_span(node)) for node, name in units)}
+
+
+def _inv_lost(base, tree, gone):
+    """The base units with no twin of the same name, own syntax and position in
+    the tree copy once the statements spanning `gone` are taken out of it; a twin
+    inside one of them went with it."""
+    lines = _inv_fill(tree["holed"], gone, INV_HOLE) if gone else tree["holed"]
+    lost = []
+    for name, unit in base["units"].items():
+        span = tree["spans"].get(name)
+        if span is None or tree["units"][name][0] != unit[0] \
+                or any(g[0] <= span[0] and span[1] <= g[1] for g in gone) \
+                or _inv_dump(_inv_fill(lines, [span], INV_ME)) != unit[1]:
+            lost.append(name)
+    return sorted(lost)
 
 
 def _inv_added(base, tree):
-    """The first lines of the outermost tree statements outside the units whose
-    every line difflib calls inserted, and whether deleting them leaves the base
-    copy's rest - ONLY ADDED - or not."""
+    """The spans of the outermost tree statements outside the units whose every
+    line difflib calls inserted, and whether deleting them leaves the base copy's
+    rest - ONLY ADDED - or not."""
     inserted = set()
     for tag, _i1, _i2, j1, j2 in difflib.SequenceMatcher(
             None, base["holed"], tree["holed"], autojunk=False).get_opcodes():
@@ -1771,18 +1810,19 @@ def _inv_added(base, tree):
                 visit(handler.body)
     visit(ast.parse("".join(tree["holed"])).body)
     left = _inv_dump(_inv_fill(tree["holed"], gone, INV_HOLE)) if gone else None
-    return [g[0] for g in gone], left == base["rest"]
+    return gone, left == base["rest"]
 
 
 def _inv_expect(base, tree):
-    """("only added", lines) / ("changed or removed", None) when the rest differs;
-    ("findings", names) when it is the same and a base unit has no twin of the
-    same name, own syntax and position; ("clean", None) otherwise."""
+    """("only added", (lines, names lost)) / ("changed or removed", None) when the
+    rest differs; ("findings", names) when it is the same and a base unit has no
+    twin of the same name, own syntax and position; ("clean", None) otherwise."""
     if base["rest"] != tree["rest"]:
-        lines, only = _inv_added(base, tree)
-        return ("only added", lines) if only else ("changed or removed", None)
-    lost = sorted(name for name, unit in base["units"].items()
-                  if tree["units"].get(name, (None, None))[:2] != unit[:2])
+        gone, only = _inv_added(base, tree)
+        if not only:
+            return ("changed or removed", None)
+        return ("only added", ([g[0] for g in gone], _inv_lost(base, tree, gone)))
+    lost = _inv_lost(base, tree, [])
     return ("findings", lost) if lost else ("clean", None)
 
 
@@ -1815,12 +1855,41 @@ def _inv_parts(tree):
     return out
 
 
+def _inv_same_heads(tree, lines):
+    """(block, other block) for every two compound statements of one body whose
+    head lines read the same, definitions apart."""
+    out = []
+    for node in ast.walk(tree):
+        for field in ("body", "orelse", "finalbody"):
+            body = getattr(node, field, None)
+            if not isinstance(body, list):
+                continue
+            heads = [s for s in body if isinstance(s, (ast.If, ast.For, ast.While, ast.With))]
+            out.extend((a, b) for a in heads for b in heads
+                       if a is not b and lines[a.lineno - 1] == lines[b.lineno - 1])
+    return out
+
+
+def _inv_rehome(lines, node, a, b):
+    """`node`, a statement of block `a`'s body, moved to the end of block `b`'s
+    body when `b` comes later, to its start when earlier. None when it would leave
+    `a`'s body empty."""
+    if not any(n is node for n in a.body) or len(a.body) < 2:
+        return None
+    first, last = _inv_span(node)
+    seg, rest = lines[first - 1:last], lines[:first - 1] + lines[last:]
+    at = (b.body[-1].end_lineno - len(seg)) if b.lineno > a.lineno \
+        else _inv_span(b.body[0])[0] - 1
+    return rest[:at] + seg + rest[at:]
+
+
 def _inv_edits(text, rows):
     """(operator, edited text) for every operator of the table at every
     statement position of `text`, units included, each edit once."""
     lines = text.splitlines(True)
     tree = ast.parse(text)
     parts = _inv_parts(tree)
+    twins = _inv_same_heads(tree, lines)
     unit = ('check("zeta new", 1 == 1)\n',) if rows else (
         "def test_zeta(self=None):\n", "    self = 1\n")
     edits = []
@@ -1835,6 +1904,11 @@ def _inv_edits(text, rows):
                       put(first - 1, ("_q = setattr(sys, 'flags', None)\n",))))
         edits.append(("a new def whose default is a call",
                       put(first - 1, ("def _fresh(x=sys.exit(0)):\n", "    return x\n"))))
+        edits.append(("a set-up line inserted before it", put(first - 1, ("_k = 0\n",))))
+        for a, b in twins:
+            rehomed = _inv_rehome(lines, node, a, b)
+            if rehomed is not None:
+                edits.append(("moved into another block whose head reads the same", rehomed))
         edits.append(("a new unit after it", put(last, unit)))
         edits.append(("wrapped under a new condition",
                       lines[:first - 1] + [pad + "if LIMIT > 9:\n"]
@@ -1864,15 +1938,17 @@ def _inv_agrees(expect, got, path):
     """Whether the guard's reading `got` is the one `expect` computed."""
     kind, detail = expect
     listed = [n for n in got["notRead"] if n["path"] == path and n.get("kind") == COULD_HOLD]
+    named = sorted(f["what"].split("`")[1] for f in got["findings"])
     if kind in ("only added", "changed or removed"):
         other = "changed or removed" if kind == "only added" else "only added"
         said = [n["reason"] for n in listed if kind in n["reason"] and other not in n["reason"]]
         at = [int(m) for r in said for m in re.findall(
             r"\b%s line (\d+)" % ("tree" if kind == "only added" else "base"), r)]
+        lines, lost = detail if detail is not None else (None, None)
         return (got["answer"] in (M.FINDINGS, PARTLY_READ) and len(said) == 1
-                and len(at) == 1 and (detail is None or at[0] in detail))
+                and len(at) == 1 and (lines is None or at[0] in lines)
+                and (lost is None or named == lost))
     if kind == "findings":
-        named = sorted(f["what"].split("`")[1] for f in got["findings"])
         return got["answer"] == M.FINDINGS and listed == [] and named == detail
     return (got["answer"], got["findings"], got["notRead"]) == (M.CLEAN, [], [])
 
@@ -1891,20 +1967,26 @@ def _invariant(check):
                 tally["unparsed"] += 1
                 continue
             tally[expect[0]] += 1
+            tally[(op, expect[0])] += 1
             got = _run([(path, base_text, tree_text)])
             if not _inv_agrees(expect, got, path):
                 wrong.append((path, op, expect, [ln for ln in difflib.unified_diff(
                     base_text.splitlines(), tree_text.splitlines(), n=0, lineterm="")
                     if ln[:1] in "+-" and ln[:3] not in ("+++", "---")],
                     _show(got), [n.get("reason") for n in got["notRead"]]))
+    setup = tally[("a set-up line inserted before it", "only added")]
+    rehomed = tally[("moved into another block whose head reads the same", "findings")]
     check("fx4 over %d generated edits (%d not parsing, skipped) the guard agrees with "
           "the case's own tree comparison - %d only added, %d changed or removed, %d "
-          "with a base unit lost or moved, %d clean: wrong %d: %s"
+          "with a base unit lost or moved, %d clean; %d set-up lines inserted before a "
+          "statement read as only added, %d units moved into a block whose head reads "
+          "the same read as moved: wrong %d: %s"
           % (tally["made"], tally["unparsed"], tally["only added"],
-             tally["changed or removed"], tally["findings"], tally["clean"], len(wrong),
-             some_of(wrong, render=repr)),
-          wrong == [] and all(tally[k] > 0 for k in ("only added", "changed or removed",
-                                                    "findings", "clean")))
+             tally["changed or removed"], tally["findings"], tally["clean"], setup, rehomed,
+             len(wrong), some_of(wrong, render=repr)),
+          wrong == [] and setup > 0 and rehomed > 0
+          and all(tally[k] > 0 for k in ("only added", "changed or removed",
+                                         "findings", "clean")))
 
 
 def _nested_helper(check):
@@ -2044,9 +2126,8 @@ def _rest_deny(check):
                                "    def setUp(self):"))])
     check("fm68 (e) a new method under a name the framework calls on every test, the "
           "suite naming it nowhere, is not compared, named at its line - and the tests "
-          "after it, a statement now standing before each, may be findings: %s %r"
-          % (_show(got), got["notRead"]),
-          got["answer"] in (M.FINDINGS, PARTLY_READ)
+          "after it stay in place, no finding: %s %r" % (_show(got), got["notRead"]),
+          got["answer"] == PARTLY_READ and got["findings"] == []
           and _reason_says(got, upath, "only added", "tree", 5, "_callTestMethod"))
 
     suite = ('def main(check):\n    check("c1 two", 1 + 1 == 2)\n'
@@ -2168,6 +2249,186 @@ def _rest_allow(check):
           [(g["answer"], g["findings"]) for g in got] == [(M.CLEAN, [])] * 2)
 
 
+# --- a unit's position is read by pairing, not by counting ------------------------
+# A unit is in place when some longest common subsequence of the statements around
+# it - in its part, and in the part of every statement enclosing it - pairs nothing
+# across it. A count of the statements before a unit is a position only when the
+# statements counted are the same ones in both copies: one set-up line added above
+# a check moved every check after it under a count, and a check moved into a later
+# block whose head reads the same was never seen moving at all.
+
+BLOCKS = '''import sys
+
+FAILED = []
+
+
+def check(label, ok):
+    if not ok:
+        FAILED.append(label)
+
+
+def main():
+    x = 2
+    for n in (1, 2):
+        check("b1 positive", n > 0)
+        check("b2 small", n < 3)
+    if x > 1:
+        check("i1 big", x > 1)
+        check("i2 two", x == 2)
+    FAILED.clear()
+    for n in (1, 2):
+        check("b3 nonzero", n != 0)
+    if x > 1:
+        check("i3 positive", x > 0)
+    sys.exit(1 if FAILED else 0)
+
+
+main()
+'''
+
+
+def _only_added_at(result, path, lines, text):
+    """True when `path` is listed as not compared, only added, at one of `lines`
+    of the tree copy, the reason holding `text` - a duplicate's pairing may name
+    either copy of the statement."""
+    return any(_reason_says(result, path, "only added", "tree", ln, text) for ln in lines)
+
+
+def _pairing_deny(check):
+    path = "tests/test_blocks.py"
+    b2 = '        check("b2 small", n < 3)\n'
+    i2 = '        check("i2 two", x == 2)\n'
+    across_for = BLOCKS.replace(b2, "").replace(
+        '        check("b3 nonzero", n != 0)\n', b2 + '        check("b3 nonzero", n != 0)\n')
+    across_if = BLOCKS.replace(i2, "").replace(
+        '        check("i3 positive", x > 0)\n', '        check("i3 positive", x > 0)\n' + i2)
+    seen = []
+    for label, tree, words in (("for", across_for, ("b1", "b2", "b3")),
+                               ("if", across_if, ("i1", "i2", "i3"))):
+        got = _run([(path, BLOCKS, tree)])
+        seen.append((label, got["answer"], _labels_found(got, words),
+                     _not_compared(got, path), _show(got)))
+    check("fm72 a check moved out of a block into a later block whose head reads the "
+          "same, across a statement clearing the failures - under a for, and under an "
+          "if - is a finding, moved, and the file is compared, its rest the same: %r"
+          % (seen,),
+          [s[1:4] for s in seen] == [(M.FINDINGS, [0, 1, 0], [])] * 2)
+
+
+def _pairing_allow(check):
+    path, upath = "tests/test_house.py", "tests/test_unit.py"
+    rows = HOUSE_SUITE.replace('    check("h1 two', '    seed = 2\n    check("h1 two')
+    unit = UNIT_TWO.replace("    def test_two(self):",
+                            "    maxDiff = None\n\n    def test_two(self):")
+    got = [_run([(path, HOUSE_SUITE, rows)]), _run([(upath, UNIT_TWO, unit)])]
+    check("fa46 a set-up line added before an existing check, in a row suite and in a "
+          "unittest test's class, gives no finding: the file is not compared, only "
+          "added, naming the line: %s %r / %s %r"
+          % (_show(got[0]), got[0]["notRead"], _show(got[1]), got[1]["notRead"]),
+          [(g["answer"], g["findings"]) for g in got] == [(PARTLY_READ, [])] * 2
+          and _reason_says(got[0], path, "only added", "tree", 12, "seed = 2")
+          and _reason_says(got[1], upath, "only added", "tree", 8, "maxDiff = None"))
+
+    rpath = "tests/test_rows.py"
+    # The duplicate pairs with either copy; one pairing crosses the check beside
+    # it and the other does not, and the rule reads it in the check's favour.
+    before = ROWS_MAIN.replace('    check("r2 three', '    x = 1 + 1\n    check("r2 three')
+    after = ROWS_MAIN.replace('    check("r3 list', '    print("3/3 cases passed")\n'
+                              '    check("r3 list')
+    got = [_run([(rpath, ROWS_MAIN, t)]) for t in (before, after)]
+    check("fa47 a duplicate of an existing statement inserted beside a check - a copy "
+          "of the set-up line before it, and of the print after it - gives no finding, "
+          "though one best pairing crosses the check: only added: %s / %s"
+          % (_show(got[0]), _show(got[1])),
+          [(g["answer"], g["findings"]) for g in got] == [(PARTLY_READ, [])] * 2
+          and _only_added_at(got[0], rpath, (11, 13), "x = 1 + 1")
+          and _only_added_at(got[1], rpath, (14, 16), "print("))
+
+    cpath = "tests/test_cart.py"
+    tree = CART_TEST.replace("def test_total():", "def _basket():\n    return [1, 2]\n\n\n"
+                             "def test_total():")
+    got = _run([(cpath, CART_TEST, tree)])
+    check("fa48 a new helper above the first test of a file gives no finding: only "
+          "added, named at its line: %s %r" % (_show(got), got["notRead"]),
+          (got["answer"], got["findings"]) == (PARTLY_READ, [])
+          and _reason_says(got, cpath, "only added", "tree", 6, "def _basket():"))
+
+    tree = ROWS_MAIN.replace('    check("r2 three', '    y = x\n    check("r9 y", y == 2)\n'
+                             '    check("r2 three')
+    got = _run([(rpath, ROWS_MAIN, tree)])
+    check("fa49 a set-up line and a new check added together after one check and "
+          "before the next give no finding: only added at the set-up line: %s %r"
+          % (_show(got), got["notRead"]),
+          (got["answer"], got["findings"]) == (PARTLY_READ, [])
+          and _reason_says(got, rpath, "only added", "tree", 13, "y = x"))
+
+    two = "    def test_two(self):\n        self.assertEqual(self.x, 2)\n\n"
+    three = "    def test_three(self):\n        self.assertNotEqual(self.x, 3)\n\n"
+    got = _run([(upath, UNIT_TWO, UNIT_TWO.replace(two + three, three + two))])
+    check("fa50 two adjacent test methods swapped read clean - no statement that is "
+          "not a unit stands between them: %s %r" % (_show(got), got["notRead"]),
+          (got["answer"], got["findings"], got["notRead"]) == (M.CLEAN, [], []))
+
+
+# The child is killed at DEADLINE; CEILING is what the reading may take inside it.
+# A per-unit recomputation of the pairing turns the reading cubic in a part's
+# length, which is the difference these two numbers are there to show.
+BIG_PARTS, BIG_SIZE = 4, 750
+BIG_CEILING, BIG_DEADLINE = 10.0, 60
+
+BIG_CHILD = r'''
+import json, sys, time
+sys.path[:0] = json.loads(sys.argv[1])
+import _floor_guard as M
+job = json.load(sys.stdin)
+start = time.perf_counter()
+got = M.find_moves(job["diff"], {job["path"]: job["base"]}.get, {job["path"]: job["tree"]}.get)
+print(json.dumps({"seconds": time.perf_counter() - start, "answer": got["answer"],
+                  "findings": len(got["findings"] or ())}))
+'''
+
+
+def _big_suite(parts, size, edited):
+    """A row suite of `parts` functions of `size` set-up lines and checks each;
+    `edited` adds a set-up line at the top of every function and a set-up line
+    and a check at its end, so no part shares a prefix or a suffix with its base
+    and the pairing of every part needs its tables."""
+    out = ["import sys\n"]
+    for p in range(parts):
+        out.append("\n\ndef _cases_%d(check):\n" % p)
+        if edited:
+            out.append("    seed = %d\n" % p)
+        for k in range(size):
+            out.append("    v%d = %d\n" % (k, k))
+            out.append('    check("p%d case %d", v%d == %d)\n' % (p, k, k, k))
+        if edited:
+            out.append('    tail = %d\n    check("p%d tail", tail == %d)\n' % (p, p, p))
+    return "".join(out)
+
+
+def _time(check):
+    path = "tests/test_big.py"
+    base, tree = _big_suite(BIG_PARTS, BIG_SIZE, False), _big_suite(BIG_PARTS, BIG_SIZE, True)
+    job = json.dumps({"diff": _file_diff(path, base, tree), "path": path, "base": base,
+                      "tree": tree})
+    try:
+        proc = subprocess.run([sys.executable, "-c", BIG_CHILD, json.dumps(sys.path)],
+                              input=job, capture_output=True, text=True,
+                              timeout=BIG_DEADLINE)
+        lines = proc.stdout.strip().splitlines()
+        said = json.loads(lines[-1]) if proc.returncode == 0 and lines else None
+        why = "exit %d, stderr %r" % (proc.returncode, proc.stderr[-300:])
+    except subprocess.TimeoutExpired:
+        said, why = None, "killed at the %ds deadline" % BIG_DEADLINE
+    check("fx6 a generated row suite of %d parts, each %d set-up lines and %d checks, "
+          "a set-up line added at the top of every part and a check with its set-up "
+          "line at its end, is read in under %.0fs with no finding and the file only "
+          "added: %r %s"
+          % (BIG_PARTS, BIG_SIZE, BIG_SIZE, BIG_CEILING, said, "" if said else why),
+          said is not None and said["seconds"] < BIG_CEILING
+          and (said["answer"], said["findings"]) == (PARTLY_READ, 0))
+
+
 # --- what cannot be read ---------------------------------------------------------
 
 def _unreadable(path):
@@ -2285,6 +2546,9 @@ def _cases(check):
     _rest_deny(check)
     _rest_reason(check)
     _rest_allow(check)
+    _pairing_deny(check)
+    _pairing_allow(check)
+    _time(check)
     _untold(check)
     _shape(check)
 
