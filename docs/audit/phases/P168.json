@@ -1007,7 +1007,7 @@
     {
       "id": "P168.8-icj",
       "title": "This repository's related listing says which edge pulls in each suite, and stops listing the whole tree for a file whose change cannot reach it",
-      "status": "in_progress",
+      "status": "done",
       "description": "For most files under the plugin's scripts, this repository's own selector (tools/affected.py --list-related) lists nearly every suite, so the affected step of a task gate here is close to the whole sweep and was half of a month's task-gate time. For other files it lists a few dozen. Nothing prints why a suite is in the list. First make the selector answer that: a flag that prints, for each listed suite, the chain of imports or runs that reaches it from the changed path. Then act on what it shows. Where the chain is a real one (the suite runs the changed file) it stays. Where every suite is reached through one shared helper that imports a product module only to locate it, or through a rule that fires on any Python change, narrow that edge only if a replay shows no miss: use the replay that already exists. tools/measure-affected-miss.py replays recent task commits, plants faults, and counts the suites the selection left out, and it takes another selector by path. Do not write a second tool: put the narrowed rule behind a variant of the selector the tool can be pointed at, run both over the same commits, and require zero misses from the narrowed one before it becomes the default; extend the tool only where it cannot yet answer that. If the replay shows a miss, or the chain is real, leave the selector as it is and record the measurement and the edge in the selector's docstring as the reason, with the command that re-derives it. The gathering itself is not free either: the stage record of the previous phase shows about twenty seconds of selection before every task gate here; say where those seconds go (the listing command, the import graph scan) and whether one scan can serve both listings. This is the repository's tool, not the plugin's rule; nothing under plugins/audit changes. Dependants you answer for: tools/verify.sh and CI, which call the selector for the affected slices; the gate-parity check on the checks the selector may name; the plan's recorded listing commands, whose output shape (one path per token) must not change; the selector's own cases; tests/test__affected_tests.py and tools/prove-gates.py, which use the selector's graph; the recorded miss table inside the selector, which a new measurement replaces with its date and command. Both tools carry their own cases, as every tool under tools/ does, so the new cases go into each tool's own suite and no file under tests/ is added. The replay runs whole sweeps: run it in scratch worktrees outside every checkout, as the tool already does, and never a browser gate. Acceptance: (1) the new flag prints one chain per listed suite and a suite with no chain is an error, not an omission; (2) the measurement's table for both selectors is quoted in the task's outcome with the command that produced it; (3) either the list for a governance script is shorter than the whole tree with zero misses over the replay, or it is unchanged and the docstring carries the edge and the measurement; (4) the output of the two listing commands the plan records keeps its shape.",
       "files": [
         "tools/affected.py",
@@ -1036,14 +1036,21 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e181d6103ee5",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/affected.py: (1) reach_chains(graph, rel) is a breadth-first walk over sorted neighbours that returns, for each file reaching rel, the shortest chain [(changed, rel), (imported by|run by, f), ...]. reached_by() is now set(reach_chains()), so the set and its explanation have one home. (2) select() wraps a new _select(), which records at each line that names a suite or tool gate the chain that named it (a graph chain from _reached_selection, which now also returns chains, or [(changed, p), (rule: <why>, target)]), plus full_why for a full-set widening. The select() 4-tuple is unchanged. (3) New mode --why-related <paths>: one line per path --list-related prints, `<listed>  <=  <changed> > imported by X > run by Y ...`; a listed path with no chain gets `affected: NO CHAIN reaches <p>` and exit 1 (render_why, related_chains, _related). --list-related, --list-all and --list-scanners are byte-unchanged in shape; a21d pins one existing path per line. (4) The edge it showed: drive-phase.py reached the whole listing through run by plugins/audit/scripts/git/_worktrees.py, whose restore_command() spells _loader.script_path(\"drive-phase.py\") into a printed command, and _worktrees is imported by _evidence_io, which most of the tree imports. run-test-gate.py (via import-evidence/full-gate and audit-task spellings) and stamp-verification.py were the same. New TEXT_RESOLVERS=(\"script_path\",) plus _scan's `spelled` flag (_spells, SPELL_NODES, QUOTE_CALL): a script_path call whose value is an operand of a % format or an argument of shlex.quote, reached only through tuples, lists or dicts, is not a run and not an unknown target. Scan rows gained a 7th field, and every unpack site was updated. (5) The docstring gains WHERE A LISTING'S SECONDS GO plus the measurement at TEXT_RESOLVERS and above MEASURED_MISSES (both with date and command). tools/measure-affected-miss.py: --compare-selector <file> (DEFAULTS compare_selector). select_in_tree takes an optional selector. measure_in_tree takes both selections and still sweeps a commit whose default is full when the comparison is narrower. run_mutation re-checks the union of both selections' unselected reds once and charges each selection only its own misses (missed / compare_missed, compare_unselected). _changed_verdict, describe, render (`MISS (compare)` lines, `compare selector misses X of Y commits (<file>)` headline), result.compare_selector and main were extended. CONTRIBUTING.md documents both flags. Cases: affected 66/66 (new a21, a21b, a21c, a21d, a21e); measure-affected-miss 28/28 (new m23). Gate `python3 tools/sweep-selftests.py tools/affected.py tools/measure-affected-miss.py tests/test__deps.py` exit 0, 3/3 files ok, 378 cases. Dependants `python3 tools/sweep-selftests.py tests/test__refs.py tests/test__output_lints.py tests/test__affected_tests.py tests/test_derive_phase_gate.py tests/test__gate_derive.py` exit 0, 5/5 files, 635 cases. An earlier run including tools/prove-gates.py, tools/bench-hooks.py and tools/gate-parity.py was 7/8; the one red was test__refs (c5 and tb1: my fixture .py names written under tools/), fixed by assembling them, then 292/292. MEASUREMENT, quoted from the run: `python3 tools/measure-affected-miss.py --rev c56ea741 --commits 5 --budget-minutes 100 --no-ci --selector <scratch>/affected_head.py --compare-selector <scratch>/affected_narrow.py` (affected_head.py = git show HEAD:tools/affected.py; affected_narrow.py = this change, whose graph I checked identical to the final file, 1439 run edges). Exit 0. Wall: real 2316.76 s, one observation, machine shared. Output: window: 5 task commit(s), fb61b6b89..c56ea741f, 4 measured (0 of them the full set) | c56ea741f raise: red 13, unselected 0, missed 0 (compare: unselected 0, missed 0); style: red 2, unselected 0, missed 0 (compare: unselected 0, missed 0) | a6025ce4e no Python changed | b8926c1b6 raise: red 88, unselected 0, missed 0 (compare: unselected 0, missed 0); style: red 2, unselected 0, missed 0 (compare: 0/0) | 3e55c8d49 raise: red 3, unselected 0, missed 0 (compare 0/0); style: red 2, 0/0 (compare 0/0) | fb61b6b89 raise: red 13, unselected 0, missed 0 (compare 0/0); style: red 2, 0/0 (compare 0/0) | HEADLINE `misses 0 of 4 commits (mutation); compare selector misses 0 of 4 commits (...affected_narrow.py); CI not asked (--no-ci)`. What it could show: selection size at each commit, from a git-archive export with each selector copied in (`--json` count / `--list-related` lines): c56ea741 head 194/194 vs narrow 62/45; b8926c1b 194/194 vs 194/194; 3e55c8d4 36/3 vs 36/3; fb61b6b8 194/194 vs 67/51. So the narrowing was actually tested on 2 commits (one drive-phase.py commit, one run-test-gate.py commit), and every red there was inside the narrower set. What it could not show: other faults than the two mutations, other commits, and the CI half (not run). Acceptance (3): --list-related plugins/audit/scripts/governance/drive-phase.py now prints 45 lines against --list-all's 196 (stamp-verification.py 47, run-test-gate.py 51), with zero misses over that replay. audit-task.py still lists 194, through tools/demo/gen-demo-manifest.py, a dev tool that really runs it, so that chain is real and left. COST: profile of one listing: import 0.03 s, reach_graph 6.76 s (ast.parse about 3 s, the rest the _scan walk), select 0.00 s, _all_suite_paths 0.00 s. The plugin's gate runs one --list-related per declared path (prefetch_listings, side by side) plus one for the whole change, and --list-all only when a suite changed, so each related call rebuilds the same graph. --list-all scans nothing. One scan could serve every related call only through a plugin change (one process answering every path) or a tree-keyed cache, which reach_graph() refuses; both are out of this task's files. Recorded in the docstring. The new spelled reading costs a few percent per graph build: two windows over an hour apart, each three interleaved pairs, now vs HEAD. Window 1 (replay running): 8.15/6.94, 7.57/7.19, 7.63/7.11 s. Window 2 (load avg 12.7): 6.76/6.39, 6.81/6.28, 6.56/6.19 s. DEPENDANTS: tools/verify.sh and CI: still correct. They read `--json`, whose shape is unchanged; the selection is narrower for a governance script (drive-phase.py 194 -> 62 runner files), with the scanner widening untouched. gate-parity: still correct. The gate strings and the TOOL_SELFTEST template are unchanged, and tools/gate-parity.py --selftest passed in the 7/8 run. The plan's listing commands: shape unchanged, pinned by a21d plus test_derive_phase_gate 38/38. Selector's own cases: 66/66. tests/test__affected_tests.py: still correct (reached_by and reach_graph signatures kept), passed in the 5/5 run. tools/prove-gates.py (uses _call_name and reach_graph): passed its selftest in the 7/8 run. Recorded miss table: the new measurement found no miss, so no row was replaced; the rows stay as regression locks and a dated note with the command now heads the table. tests/test__output_lints.py's prose-scan exemption for measure-affected-miss's fixtures: tool kept at its path, fixtures kept, 183/183. tools/lints/_deps.py, tests/test__deps.py, PLUGIN-BUILD-GUIDE.md: not edited, nothing there names the flags; test__deps 284/284 over my prose. .github/sweep-costs.json, tests/test__refs.py, tools/lints/_refs.py, tools/bench-hooks.py (by path): paths unchanged, test__refs 292/292. HOW EDITS WERE MADE: two multi-site replacements in tools/affected.py were written with a python heredoc via Bash rather than Edit (row unpacks, and the fixture spelling); neither was refused and both are in my files. The plan gate refused one Bash command because a stray `cp ... tools/_tmp_never.py` drafting line in it would have written under tools/; that command did not run and nothing was created (`ls tools/_tmp_never.py`: No such file). The built-in safety check refused a `rm -rf` of a scratch export directory and then a zsh `${(f)}` loop it could not parse; I removed nothing and used a scratch Python script (sizes_at.py) instead. The git-archive exports are left in the session scratchpad under exp-<sha>-<variant>-*; a person may delete them.",
+        "descriptive": "The selector now explains every listed suite with --why-related; the edge that made a governance script list the whole tree (a script path spelled into a printed command) is no longer a run, which a two-selector replay showed misses nothing, and drive-phase.py's related listing went from 194 to 45 lines."
       },
       "startedAt": "2026-11-18T11:31:18Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T12:44:59Z",
+      "verifiedBy": [
+        "affected a21: for drive-phase.py, _doctor_policy.py, test_drive_phase.py, and a hook plus CONTRIBUTING.md, every listed path has a chain from a changed path; each graph hop is checked against the graph's own imported_by/run_by and each rule hop is the single last step; at least one multi-hop chain exists",
+        "affected a21b: render_why exits 1 with a NO CHAIN line for a listed path with no chain and prints no chain line for it; a fully chained listing exits 0 with one line per path",
+        "affected a21c: a full-set widening (an unrecognised path) chains every file of the full listing through the one full set rule",
+        "affected a21d: --why-related prints one line per --list-related line, led by that path; --list-related stays one existing path per line",
+        "affected a21e (beyond tests.add, new behaviour): a script_path spelled via shlex.quote or a % format is no run and no unknown, while the same path in an argv list is a run",
+        "measure-affected-miss m23: with a wide default and a narrow --compare-selector over the same fixture commits, the default misses nothing and the comparison misses the suite it left out, in separate fields, MISS (compare) lines and headline; swapping the two swaps the charge; a missing --compare-selector file exits 2"
+      ],
       "notes": [
         {
           "at": "2026-11-18T06:49:54Z",
@@ -1065,7 +1072,40 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T12:36:54Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 3934000,
+            "startedAt": "2026-11-18T11:31:20Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T12:44:41Z.0a85dc",
+            "kind": "wait",
+            "ms": 62000,
+            "startedAt": "2026-11-18T12:37:05Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T12:44:41Z.0a85dc, ending at its startedAt",
+            "kind": "selection",
+            "ms": 32087,
+            "runId": "2026-11-18T12:44:41Z.0a85dc",
+            "startedAt": "2026-11-18T12:38:07Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T12:44:41Z.0a85dc",
+            "kind": "gate",
+            "ms": 361597,
+            "runId": "2026-11-18T12:44:41Z.0a85dc",
+            "startedAt": "2026-11-18T12:38:40Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit e181d6103ee5",
+            "kind": "commit",
+            "ms": 1592,
+            "startedAt": "2026-11-18T12:44:56Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T11:31:18Z"
       },
       "reviewPerTask": "signals",
@@ -1073,6 +1113,18 @@
         "runId": "2026-11-18T12:44:55Z.5fe54c",
         "status": "passed",
         "at": "2026-11-18T12:44:55Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "e181d6103ee5",
+        "at": "2026-11-18T12:44:59Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T12:36:52Z",
+        "basis": "`python3 tools/sweep-selftests.py tools/affected.py tools/measure-affected-miss.py tests/test__deps.py` in a throwaway tree at HEAD exited 1 on \"NameError: name 'related_chains' is not defined\" (read as house abort), and the task introduces 'related_chains': absent from HEAD's tools/lints/_deps.py, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md, tools/affected.py, tools/measure-affected-miss.py and present in the working tree's tools/affected.py; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1491,7 +1543,7 @@
     {
       "id": "P168.14-icj",
       "title": "The drive's comments describe the read-back it now performs, a step name cannot break the signal line, and a repeated gate's timing says what it repeats",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Findings of the review of the task that changed how the drive reads a background gate back. Two docstrings in the drive still describe the behaviour that task replaced. (a) The docstring of the function that picks a gate's red lines says a background gate's red reaches its reader as a repeat every time, which is the reason it gives for filtering the repeat banner; a background red is now read from its own row and carries no banner, and the filter still serves a second ask that repeated a red. (b) The module docstring says of a background gate that the verdict is that row's, repeated rather than measured again; now a red is acted on as its row records it, and a green is asked again, repeating each step that grades the tree and measuring an entry that names a path the identity leaves out. Correct both to what the code does, and then read every other comment and docstring in the drive that speaks of reading a gate back, repeating a verdict or measuring again, and correct any that the same change made untrue; list the ones you read in the outcome, changed or not. (c) The read-back clause embeds each measured step's name, which is the gate entry's command text, unbounded: a long command makes the signal line drop the whole clause to a count, and a command holding the field separator is joined into a separator-joined field. Clip each step name in that clause to a fixed width and replace the separator inside names, with a case for a long name and one for a name holding the separator; the printed text under --explain keeps the whole name. (d) When a task gate's newest row is a repeat, the drive says the gate stage of the task's timing was not recorded because the row has no readable start. A repeated row names the run it repeats; the stage should be the cost of the ask itself with a basis that says the verdict was repeated from that run, or be left out with that same sentence, whichever the timing record's rules already allow - decide from the timing helper's docstring, state which, and case it. Dependants you answer for: the signal line's field rules and their existing cases; /audit:status, which prints the stages the drive records. Acceptance: (1) the two docstrings state the present behaviour and no comment in the drive contradicts the read-back as it now is; (2) a long step name and one holding the separator each leave the signal line parseable, by case; (3) a repeated task gate leaves either a stage with an honest basis or one sentence naming the run it repeats, by case; (4) no case added passes with its feature removed.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1514,14 +1566,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T12:45:00Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1531,7 +1583,17 @@
           "reads": "plugins/audit/scripts/governance/drive-phase.py",
           "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/governance/drive-phase.py - a section headed by its path"
         }
-      ]
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T12:45:00Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T13:28:18Z.d99eda",
+        "status": "passed",
+        "at": "2026-11-18T13:28:18Z"
+      }
     },
     {
       "id": "P168.15-icj",

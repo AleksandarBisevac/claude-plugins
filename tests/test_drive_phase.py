@@ -1748,7 +1748,95 @@ def _readback_cases(check):
                if r.get("scope") == "task"] == [got["run"]]
           and any(("red read back from run %s" % (got["run"],)) in c
                   for c in got["did"]))
+    _readback_signal_cases(check, M)
     _readback_phase_cases(check, M)
+
+
+# A step's name is its gate entry's command text, which no width bounds: one the
+# line cannot hold whole, and one holding the did field's own clause separator.
+# The step script reads its first argument alone, so the words after it change
+# the name and not what the step does.
+_RB_LONG = "%s --pad-%s-end" % (_RB_VALIDATE, "w" * 150)
+_RB_SPLIT = '%s "qa; qb"' % (_RB_VALIDATE,)
+
+
+def _rb_signal_back(M, root, mpath, plays=1):
+    """The background gate of `_rb_background`, its `run:` line played `plays`
+    times - a second play repeats the first one's verdict - and read back by
+    one `next --signal`: `{line, explain, rows}`, `explain` the `--explain`
+    text of the line's subject, read before another `next` replaces it, and
+    `rows` the task's ledger rows before the read-back."""
+    _signal_raw(M, root, mpath)
+    _file_executor(root, mpath, "P1.1")
+    _signal_raw(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    for _n in range(plays):
+        _play_gate(root, _run_argv(block) or [])
+    rows = _rows_of(root, mpath, "P1.1")
+    _code, line = _signal_raw(M, root, mpath)
+    head = _signal_head(line) or (None, None)
+    _c, explain = _explain_of(M, root, mpath, head[1] or "P1.1")
+    return {"line": line, "explain": explain, "rows": rows}
+
+
+def _rb_pieces(M, text):
+    """Every `; `-separated piece of the did field of each line in `text`."""
+    return [c for body in M.did_bodies(text) for c in body.split("; ")]
+
+
+def _readback_signal_cases(check, M):
+    """The read-back clause on the one-line signal: each step it names is
+    clipped to a fixed width, with the did field's separator replaced inside
+    it, so a long name or one holding `; ` neither drops the clause to a count
+    nor splits it into two; `--explain` keeps every name whole. And a task
+    gate whose background row repeated an earlier verdict says, once, that no
+    stage is recorded for it and which run it repeats - never that the row
+    has no readable start."""
+    root, mpath = _rb_repo("rb-long", (_RB_SWEEP, _RB_LONG))
+    got = _rb_signal_back(M, root, mpath)
+    pieces = _rb_pieces(M, got["line"])
+    said = [p for p in pieces if "read back" in p]
+    # The clause itself on the line is what a drop to a count loses; a `+N`
+    # standing for the clauses after it is `fit_rest`'s rule for whatever the
+    # room does not hold, and says nothing about this one.
+    check("rd8 a measured step whose name is longer than the line leaves the "
+          "read-back clause on the signal line rather than dropped to a count, "
+          "the name clipped, the line within its bound and its three fields, "
+          "and --explain naming the step whole: %r"
+          % ((got["line"], _signal_ok(got["line"])),),
+          len(got["line"].split(" | ")) == 3 and _signal_ok(got["line"]) is None
+          and len(said) == 1 and "..." in said[0] and _RB_LONG not in said[0]
+          and "-end (" in said[0]
+          and got["explain"].count(_RB_LONG) == 1)
+    root, mpath = _rb_repo("rb-split", (_RB_SWEEP, _RB_SPLIT))
+    got = _rb_signal_back(M, root, mpath)
+    pieces = _rb_pieces(M, got["line"])
+    holding = [p for p in pieces if "qa" in p or "qb" in p]
+    check("rd9 a measured step whose name holds the did field's separator is one "
+          "clause on the signal line - both halves of the name in the same "
+          "piece, the line's three fields intact - and --explain names it "
+          "whole: %r" % ((got["line"], holding),),
+          len(got["line"].split(" | ")) == 3 and len(holding) == 1
+          and "qa" in holding[0] and "qb" in holding[0]
+          and "read back" in holding[0]
+          and got["explain"].count(_RB_SPLIT) == 1)
+    root, mpath = _rb_repo("rb-twice", ("true",))
+    got = _rb_signal_back(M, root, mpath, plays=2)
+    rows = got["rows"]
+    first = rows[0].get("runId") if rows else None
+    again = rows[-1].get("runId") if rows else None
+    said = [p for p in _rb_pieces(M, got["explain"])
+            if p.startswith("timing: gate stage of P1.1")]
+    check("rd10 a background row that repeated an earlier run's verdict leaves "
+          "no gate stage of its own and one sentence naming that row and the run "
+          "it repeats - never that it records no readable start: %r"
+          % ((said, [(r.get("runId"), r.get("verdictSource")) for r in rows],
+              _tm_stages(mpath, "gate")),),
+          len(rows) == 2 and rows[-1].get("verdictSource") == "reused"
+          and (rows[-1].get("reusedFrom") or {}).get("runId") == first
+          and len(said) == 1 and again in said[0] and first in said[0]
+          and "readable" not in got["explain"]
+          and not [s for s in _tm_stages(mpath, "gate") if s.get("runId") == again])
 
 
 def _readback_phase_cases(check, M):

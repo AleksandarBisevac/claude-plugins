@@ -5109,7 +5109,13 @@ phase gate). What the second ask did is a did-line clause (`repeat_said`, off th
 recorded): nothing for a whole repeat (`GATE VERDICT REUSED`); else the steps it repeated and the
 ones it measured again with their seconds, and `did not repeat on this tree` only when a measured
 step is one the runner did not say names a left-out path (`GATE_LEFT_OUT`, its line mirrored),
-with the reason taken from the identities the runner recorded on the two rows. A read-back that
+with the reason taken from the identities the runner recorded on the two rows. On the one-line
+signal that clause rides in a shorter form of its own (`say_clause` keeps it under
+`SIGNAL_FORMS_KEY`, which `signal_line` reads): each step's name - its gate entry's command text,
+which nothing bounds - cut to `SIGNAL_STEP_BYTES` around `...` and with the did field's `; `
+taken out of it (`signal_step_name`), so a long command does not drop the clause to a count and
+one holding the separator is not read as two clauses; the plain did-line and `--explain` name
+every step whole (`rd8`, `rd9`). A read-back that
 measured steps is a gate stage of its own with its own length; a whole repeat adds none, since its
 row names the run already staged. A red read back names its verdict line, never the
 repeat's banner (`gate_red_lines`, read by the gate-red decision, the re-gate on the phase
@@ -5623,7 +5629,9 @@ notes and close are the phase tree's writes, so its stages land in the phase tre
 source that cannot be read queues nothing, and `_task_timing.summarize` then carries that time
 as unattributed; the step says so on its did-line (`stage_unread`) - the ledger or a row
 unreadable, a row with no start or length, a hand-out with no stamp - once per stage and reason,
-never as a warning or a stop. The `tm` cases drive each stage from its source, `tm3` compares the
+never as a warning or a stop. A row that repeated another run's verdict is no stage: it measured
+nothing and records no start, which a stage must carry (`_task_timing.stage_problems`), so the
+line names that row and the run it repeats (`rd10`) rather than a start it could not read. The `tm` cases drive each stage from its source, `tm3` compares the
 journal's actions and the commit count with a drive whose stages are never queued, `tm8` holds
 the Agent route, `tm9` a wave member's stages in the phase tree's shard, and `tm10` to `tm16` the
 set-aside's commit stage, the no-change close, the unread lines and the fallback bases.

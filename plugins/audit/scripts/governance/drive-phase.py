@@ -173,7 +173,10 @@ chosen one way (`gate_in_background`): one whose recorded mean is past the
 Bash tool's foreground bound, or that no run has measured, is no call inside
 `next` but a step of its own: `dispatch-gate` prints the recorded gate run as
 a `run:` line for the background, `wait-gate` holds until a row of it exists,
-and the verdict is that row's, repeated rather than measured again; one
+and that row is read back (`read_back`): a red is acted on as the row records
+it, asked nothing again, and a green is asked again through the same recorded
+gate, which repeats each step that grades the tree while nothing it graded has
+moved and measures an entry naming a path its identity leaves out; one
 measured under the bound runs inline. A red's base measurement is chosen the
 same way, as `dispatch-base` and `wait-base`, read back off the start's mark
 (`base_reading_for`). A red task gate on a task with a
@@ -1630,11 +1633,22 @@ def row_stages(row, kind="gate"):
     """`([(source, stage)], gaps)` for one evidence row: the run's own length
     under `kind`, and for a gate run the time it spent choosing what to run,
     which ends where the run's own `startedAt` begins. `gaps` says why a
-    `kind` stage was not built - a row with no start or no length; a row with
-    no `selectionMs` is one from before the key existed, and is no gap."""
+    `kind` stage was not built - a row that repeated another run's verdict,
+    named with that run, or a row with no start or no length; a row with no
+    `selectionMs` is one from before the key existed, and is no gap."""
     if not isinstance(row, dict) or not row.get("runId"):
         return [], ["the evidence row read names no run"]
     run_id, started = str(row["runId"]), row.get(_evio.STARTED_KEY)
+    if row.get(_evio.VERDICT_SOURCE) == _evio.REUSED:
+        # A repeat measured nothing and records no start: a stage needs one
+        # (`_task_timing.stage_problems`), and the record's rule is that a
+        # missing source is named. `reusedFrom` is the key
+        # `_evidence_io.measured_row` reads through to the run it repeats.
+        source = (row.get("reusedFrom") or {}).get("runId")
+        return [], ["evidence row %s repeated the verdict %s rather than "
+                    "measuring it, and records no start of its own"
+                    % (run_id, "of run %s" % (source,) if source
+                       else "of a run it does not name")]
     if _usage_core.parse_ts(started) is None:
         return [], ["evidence row %s records no readable %s (%r)"
                     % (run_id, _evio.STARTED_KEY, started)]
@@ -4163,9 +4177,10 @@ def release_orphaned_launches(ctx, state):
 def gate_red_lines(text):
     """The lines of a gate run's output that hold its verdict - every line
     holding GATE but the banner a repeated verdict opens with. The verdict is
-    a line after that banner, and a background gate's red reaches its reader
-    as a repeat every time, so a reader taking the first GATE line would name
-    the banner as the red."""
+    a line after that banner, and a gate run inside `next` that repeated a red
+    opens with it, so a reader taking the first GATE line would name the
+    banner as the red. A background red is read off its row
+    (`recorded_red`) and carries no banner."""
     return [ln for ln in (text or "").splitlines()
             if "GATE" in ln and not ln.startswith(GATE_REUSED_BANNER)]
 
@@ -5008,7 +5023,9 @@ def run_followers(ctx, run_id):
     except Exception:                                          # noqa: BLE001
         return []
     # A repeated verdict's row names the run that measured it, and the
-    # followers are that run's: a background gate's red reaches here as one.
+    # followers are that run's: a red a gate run inside `next` repeated
+    # reaches here as one, and so does a background row that repeated one,
+    # whose own id `recorded_red` names.
     row = _evio.row_by_run(rows, run_id)
     row = _evio.measured_row(rows, row) or row or {}
     return [f for f in row.get(_evio.FOLLOWERS_KEY) or []
@@ -6591,13 +6608,49 @@ def grades_left_out(text, name):
                for form in GATE_LEFT_OUT)
 
 
-def step_seconds(step):
+def step_seconds(step, name=str):
     """`"<name> (1.2 s)"` for a measured step, `not timed` when its row keeps
-    no duration."""
+    no duration; `name` spells the step's name (`signal_step_name` for the
+    signal's form)."""
     ms = step.get("durationMs")
     took = ("%.1f s" % (ms / 1000.0,) if isinstance(ms, (int, float))
             and not isinstance(ms, bool) else "not timed")
-    return "%s (%s)" % (step.get("name"), took)
+    return "%s (%s)" % (name(step.get("name")), took)
+
+
+# A step's name is its gate entry's command text, which nothing bounds. On the
+# one-line signal a read-back clause is carried in a form of its own: each name
+# cut to this width - its head and its tail, where an entry's own words sit -
+# with the did field's clause separator taken out of it, so a long command
+# does not push the clause off the line and one holding `; ` is not read as two
+# clauses. The plain did-line and `--explain` name every step whole. `rd8` and
+# `rd9` hold both on the real read-back.
+SIGNAL_STEP_BYTES = 28
+# Where a step keeps the signal's form of a did-line clause that has one:
+# `{clause: form}`, read by `signal_line`.
+SIGNAL_FORMS_KEY = "signalForms"
+
+
+def signal_step_name(name):
+    """`name` as the signal carries it: on one line, with no ` | ` (`_flat`)
+    and no `; `, and past `SIGNAL_STEP_BYTES` cut to its head and its tail
+    around `...`."""
+    flat = _flat(name).replace("; ", ";")
+    data = flat.encode("utf-8")
+    if len(data) <= SIGNAL_STEP_BYTES:
+        return flat
+    head = (SIGNAL_STEP_BYTES - 3) // 3
+    tail = SIGNAL_STEP_BYTES - 3 - head
+    return (data[:head].decode("utf-8", "ignore") + "..."
+            + data[-tail:].decode("utf-8", "ignore"))
+
+
+def say_clause(ctx, clause, form=None):
+    """Put `clause` on the step's did-line, and `form` - its signal form, when
+    it has one - where `signal_line` reads it."""
+    ctx["did"].append(clause)
+    if form is not None:
+        ctx.setdefault(SIGNAL_FORMS_KEY, {})[clause] = form
 
 
 def repeat_reason(rows, run_id, row):
@@ -6617,13 +6670,15 @@ def repeat_reason(rows, run_id, row):
 
 
 def repeat_said(ctx, run_id, text, label):
-    """The did-line clause for the second ask that read back the background row
+    """`(clause, form)` for the second ask that read back the background row
     `run_id`, from the row that ask recorded: None when it repeated the whole
-    verdict (`GATE_REUSED_BANNER`, the line the runner prints for it). Else
-    which steps it repeated and which it measured again, with their seconds;
-    `did not repeat on this tree` only when a measured step grades the tree -
-    one the gate did not say names a path its identity leaves out
-    (`grades_left_out`) - with the gate's reason (`repeat_reason`)."""
+    verdict (`GATE_REUSED_BANNER`, the line the runner prints for it). The
+    clause says which steps it repeated and which it measured again, with
+    their seconds; `did not repeat on this tree` only when a measured step
+    grades the tree - one the gate did not say names a path its identity
+    leaves out (`grades_left_out`) - with the gate's reason (`repeat_reason`).
+    `form` is the signal's shorter form of it, each name cut by
+    `signal_step_name`; None for the clause that names no step."""
     if GATE_REUSED_BANNER in text:
         return None
     found = _RUN_ID.search(text or "")
@@ -6637,18 +6692,23 @@ def repeat_said(ctx, run_id, text, label):
     if row is None:
         return ("%s measured again inside next: run %s did not repeat on this "
                 "tree, and what the second ask measured is unknown - %s"
-                % (label, run_id, why if found else "it named no run"))
+                % (label, run_id, why if found else "it named no run")), None
     steps = [s for s in row.get("steps") or [] if isinstance(s, dict)]
     repeated = [str(s.get("name")) for s in steps if _evio.step_repeated(s)]
     measured = [s for s in steps if not _evio.step_repeated(s)]
     timed = ", ".join(step_seconds(s) for s in measured) or "nothing"
+    short = ", ".join(step_seconds(s, signal_step_name)
+                      for s in measured) or "nothing"
     if any(not grades_left_out(text, s.get("name")) for s in measured):
         return ("%s measured again inside next: run %s did not repeat on this "
                 "tree - %s - measured again: %s"
-                % (label, run_id, repeat_reason(rows, run_id, row), timed))
-    return "%s read back from run %s: %smeasured again: %s" % (
+                % (label, run_id, repeat_reason(rows, run_id, row), timed),
+                "%s did not repeat on this tree: measured %s" % (label, short))
+    return ("%s read back from run %s: %smeasured again: %s" % (
         label, run_id, "%s repeated, not run again - " % (", ".join(repeated),)
-        if repeated else "", timed)
+        if repeated else "", timed),
+        "%s read back: measured %s%s" % (
+            label, short, ", %d repeated" % (len(repeated),) if repeated else ""))
 
 
 def read_back(ctx, run_id, status, repeat, label):
@@ -6664,7 +6724,8 @@ def read_back(ctx, run_id, status, repeat, label):
     - and measures the rest: an entry naming a path its identity leaves out
     (the plan) is measured on every ask, so a second ask on the same content
     is no free repeat. `repeat_said` puts what it repeated and what it measured
-    on a did-line clause naming `label`. An empty gate's row, the runner's own
+    on a did-line clause naming `label`, with the signal's shorter form of it.
+    An empty gate's row, the runner's own
     green, is asked again by the same call, which over a gate still empty runs
     nothing and over one given steps since measures them; it has no verdict to
     have repeated, so it says none. Any other word is the red the row carries
@@ -6677,7 +6738,7 @@ def read_back(ctx, run_id, status, repeat, label):
     said = None if status == GATE_EMPTY else repeat_said(ctx, run_id, out + err,
                                                          label)
     if said is not None:
-        ctx["did"].append(said)
+        say_clause(ctx, *said)
     return code, out, err
 
 
@@ -13148,10 +13209,13 @@ def signal_line(ctx, verb, subject, clauses, basis, nxt):
     `next:` field shrink for them instead. Inside `SIGNAL_BYTES` whenever those
     clauses and the shorter of the two commands fit beside the head; a step
     whose read events alone are longer prints them whole past the bound, since
-    a dropped one would move a span with nothing saying so."""
+    a dropped one would move a span with nothing saying so. A clause the step
+    gave a signal form of its own (`SIGNAL_FORMS_KEY`) is carried in that form;
+    `--explain` prints the did-line whole."""
     subject = _fit(_flat(subject) or ctx["phase"], 60)
     head = "audit %s %s %s" % (ctx["phase"], verb, subject)
-    read, rest = read_clauses(clauses)
+    forms = ctx.get(SIGNAL_FORMS_KEY) or {}
+    read, rest = read_clauses([forms.get(c, c) for c in clauses])
     did = "; ".join(read)
     fixed = _width(head) + (_width(did) + 1 if did else 0) + _width(" |  | next: ")
     nxt = _flat(nxt) or "wait"
