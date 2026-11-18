@@ -1,0 +1,976 @@
+{
+  "id": "P169",
+  "title": "A run's record lives in the plan and in git",
+  "status": "in_progress",
+  "description": "The gate runner appends every run to an evidence ledger beside the plan, and the readers that grew on it are no longer only a cache of a verdict: the time per task, the repeat of a step whose inputs did not change, the drive's reading of a run it launched in the background, the reading of a red against the base, and the binding of a commit to the run that graded it all read ledger rows. A design that only says the ledger's writes go away would take those with it. So the record moves first, the readers follow through one seam, and the writes stop last, each step with a green gate behind it. The plan and git are the two stores that remain; a row already written stays readable as frozen history and is never migrated. The properties are written before the code: after any number of recorded runs a subject holds exactly one record, the last one printed; a run that exits 0 or 1 has its record in the shard and a record that could not be written is exit 3 naming the log, never exit 0; the pointer is derivable from the record; a decision read from the record equals the run's own output for green and red with no commit made; a recorded run changes no byte inside the content identity; a plan and ledger written by the previous release answer the same after the upgrade, and with the ledger deleted the gate conditions still answer the same. Out of scope here and next in line: the drive's own state, the filed returns, the brief protocol and the subagent writer.",
+  "desiredOutcome": "A task's verdict is in its commit's Audit-Task, Audit-Gate and Audit-Run trailers, the newest run of every task and phase is one record in its own shard, a phase's CI run is in its shard, every reader of recorded runs goes through one reader over those records and the frozen older rows, the base is measured only when a red could predate the task, and no evidence row, per-call journal row or preimage file is written under the default configuration.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "987174f6e7c250ad838f56187ae724785f92ec5a",
+  "branch": "audit/p169-a-run-s-record-lives-in-the-pl",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": [
+      {
+        "id": "P169-R1",
+        "severity": "low",
+        "file": ".github/workflows/ci.yml:391-461 and 478-547 (the two install blocks)",
+        "issue": "The seven install steps are written out twice, and the only thing holding them together is a comment ('a change to one is owed to the other', ci.yml:~356). Nothing compares them, so a later edit to one job (a package-name tweak, a key change) leaves the other on the old shell with every gate green. The task's own dependants named gate-parity.py's matrix rules; none covers this.",
+        "resolution": "Move the steps into a composite action (.github/actions/browser-install/action.yml) that both jobs call, or add a gate-parity rule that fails when the two jobs' install step lists differ. Either replaces the prose rule with a mechanism."
+      },
+      {
+        "id": "P169-R2",
+        "severity": "low",
+        "file": ".github/workflows/ci.yml:421-460 (sysdeps steps, both jobs)",
+        "issue": "The step title 'the archive is asked only for a .deb the restored set lacks' and the log line 'not in the restored set, so fetched from the archive: $fetch' say the archive is asked for the missing .deb. The code passes $MISSING, not $fetch, to apt-get install --download-only, and apt sees only the fresh $dl directory, so on a partial set the archive is asked for the whole set plus its dependency closure and cp overwrites the restored files. The result is correct (that .deb is fetched), but the claim is narrower than the behaviour and only the miss path was exercised on a real runner. Separately, the ls check names only the packages in $MISSING, so a restored set missing a dependency-only .deb (a package apt pulled in that playwright did not name) is not detected and dpkg -i fails with an unmet dependency: a red job, not a green one.",
+        "resolution": "Either reword the title and log line to say the whole set is refetched when any one is absent, or install $fetch and let the dependency closure follow. Optionally verify the restored set with `dpkg-deb --info` per file, or by `dpkg -i` failing over into one refetch."
+      },
+      {
+        "id": "P169-R3",
+        "severity": "low",
+        "file": ".github/workflows/ci.yml:430-436 and 445-460",
+        "issue": "A poisoned or truncated cache entry is permanent. Cache keys are immutable and an exact hit is never re-saved, so a bad .deb in a saved entry makes dpkg -i fail (red) on every run of that branch until the key changes or GitHub evicts it, and the step has no path that drops a restored set it cannot install. The same holds for the partial set in finding 2: the repair is not persisted, so each later run repeats the full fetch. The entry can only come to hold a bad file if the job that saved it was green, so this is unlikely, and every outcome seen in the shell is red, not a green job without the packages. The sysdeps key also omits runner.arch, which the browser key carries; a .deb for another architecture would be refused by dpkg (red).",
+        "resolution": "Add a manual version token to the sysdeps key (chromium-sysdeps-v1-...) so a poisoned entry can be bypassed without a code change, include runner.arch in it, and on a dpkg -i failure fall back once to the fetch path before failing."
+      },
+      {
+        "id": "P169-R4",
+        "severity": "low",
+        "file": "the filed outcome.descriptive (not the diff)",
+        "issue": "The descriptive line says 'The browser jobs' install drops from 3-9 minutes to 12-26 seconds'. The before figures are slow-mirror runs; the after figures come from two fast-mirror runs, and the pre-change install on a fast mirror was 38s (run 41322244766). The change's measured saving is the 21s to 12s (panel) and 26s to 15s (report) between the miss and hit runs, and a miss on a slow mirror costs what it cost before, minus the upgrades. The ci.yml comments say exactly this; the outcome summary does not. Also, main's push runs skip the browser jobs, so main saves no entry and the first run on a new ci/ branch misses both caches, so the hit path may be the rarer one in this repo's own practice; nothing here measures the hit rate.",
+        "resolution": "State in the outcome that the measured install is 12-26s on a fast mirror on both paths and that the slow-mirror saving is a hit-only saving not measured; decide separately whether a workflow_dispatch on main should seed the caches."
+      }
+    ],
+    "outcome": "[findings: 4 - 0 high, 0 med, 4 low; 0 with a recorded fix commit]"
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P169.1",
+      "title": "The browser jobs' time bound is about the slice: the Chromium install is timed by step and cached, and each bound's basis is re-measured",
+      "status": "in_progress",
+      "description": "The `browser (report)` job is bounded at 19 minutes on a recorded longest run of about nine, and on three runs in one day it took 17m44s once and was cut at the bound twice, the second time with the slice's VERIFY OK printed in the same second. Two costs sit in that job and in `browser (panel)` beside it. The install step (`npm ci`, then `npx playwright install --with-deps chromium`) took between six and nine minutes. The slice took over eleven where its recorded longest whole job was nine.\n\nMeasure before changing: split the install into steps that each print their own duration (the package install, the browser download, the system packages) and read one run. Then remove what can be removed: cache the browser download keyed by the pinned playwright version in the lock file, and install only the system packages the runner image lacks. A cache miss must still install and pass; a cache hit must not skip a version change. For the slice: read its per-step seconds from the run's log (verify.sh prints them) and compare with the run the `longest` line names; if a step grew, name it and the commit range in the outcome and file what you find rather than fixing a product regression inside this task.\n\nThen re-record: each browser job's `longest` line names a run measured after this change, and its bound is two to three times that, which is the rule tools/gate-parity.py holds. Do not raise a bound to make room for a cost you did not measure.\n\nACCEPTANCE.\n1. One dispatched run (the orchestrator dispatches it on the phase's CI branch; say in the outcome which lines to read) shows the install by step, and a second shows the cached path with its seconds.\n2. `python3 tools/gate-parity.py` is green: every job's bound is backed by its `longest` line.\n3. The outcome states the job's whole duration before and after, each with its run id, and what remains of the slice's growth.\n4. Nothing in the slice itself is skipped, narrowed or moved to the release tier to buy time.\n\nDEPENDANTS to answer for by name: tools/gate-parity.py's job bounds and its matrix rules, tools/verify.sh's slices (unchanged), CONTRIBUTING.md and CLAUDE.md where they describe CI's shape, and the release-tier jobs that share the install step.",
+      "files": [
+        ".github/workflows/ci.yml",
+        "tools/gate-parity.py",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/gate-parity.py",
+          "python3 tools/sweep-selftests.py tools/gate-parity.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [
+        "reproducing-ci-locally",
+        "choosing-what-to-optimize",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-18T17:39:54Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T17:39:23Z",
+          "text": "it quotes the shard matrix line from the workflow; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T17:39:23Z",
+          "text": "it quotes 'print it with' from CONTRIBUTING.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-18T17:39:23Z",
+          "text": "it quotes 'refuses to start' from CONTRIBUTING.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tools/sweep-selftests.py"
+        }
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T17:39:54Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T18:23:01Z.c904d6",
+        "status": "passed",
+        "at": "2026-11-18T18:23:01Z"
+      }
+    },
+    {
+      "id": "P169.2",
+      "title": "A task's verdict is in its commit: Audit-Task, Audit-Gate, Audit-Run and Audit-Override trailers, written by the commit verb and read back from git alone",
+      "status": "in_progress",
+      "description": "The commit verb writes the verdict it bound the commit to into the commit itself. Today a task commit carries Audit-Row (a journal nonce) and an optional Co-Authored-By; which run graded it is known only through the evidence ledger and the journal. Add: Audit-Task: <task id>; Audit-Gate: <status> <gate digest>; Audit-Run: <runId>; and, when the verb was told to commit over a verdict, Audit-Override: <the reason, verbatim>. The values come from the one place that already decides them, the verdict binding the verb asks before it commits (_verdict_binding.binding): the trailers name the run the binding bound, never another, so a commit made in the phase tree after a wave member's bytes were integrated names the run that graded the phase tree's bytes. Audit-Row stays as it is.\n\nReading: _commit_trail.py gains the reader, over git log alone. A commit carrying Audit-Task and no Audit-Gate reads as no verdict recorded, never as passed. A commit carrying no Audit-Task (every commit made before this release, and every commit made by hand) is not a trailer commit and its verdict is read as before. Status (_status_facts.py) and the report (_evidence_view.py) read a done task's verdict at its commit from the trailers, and say which source they read.\n\nACCEPTANCE.\n1. A task commit made by the verb in a real git fixture carries the trailers, and `git interpret-trailers --parse` returns them.\n2. In a clone of that fixture with the evidence directory removed, the reader returns the same task, status, digest and run.\n3. Audit-Task without Audit-Gate reads as no verdict recorded; a status word this build does not know is reported as itself, never folded into passed or failed.\n4. An override reason is carried verbatim. Decide what a reason holding a newline does by what git round-trips (a folded trailer, or a refusal naming the line) and pin it with a case; a silent truncation is the defect.\n5. Status and the report render the same verdict from the trailers as from the row, on one fixture read both ways.\n6. A commit made over a tree other than the one the bound run graded is refused as today; the new trailers do not weaken that refusal.\n7. COMPATIBILITY.md states the four trailer names as read from this release on, and that Audit-Row and the co-author trailer are unchanged; CHANGELOG.md and PLUGIN-BUILD-GUIDE.md describe what the commit now carries.\n\nDEPENDANTS to answer for by name: every reader of a task commit's message or trailers - _invariants.trailer_carriers and commits_carrying, the doctor's trail checks, drive-phase.py own_commit (it finds a task's commit through Audit-Row; it must keep working unchanged), close-phase.py, integrate-task.py, tools/check-git-pipeline.py (it drives the write half against a real repository and pins message shapes), and any suite asserting an exact commit message.",
+      "files": [
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/scripts/manifest/_commit_trail.py",
+        "plugins/audit/scripts/governance/_scoped_commit.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/report/_evidence_view.py",
+        "tests/test_commit_task_work.py",
+        "tests/test__commit_trail.py",
+        "tests/test__status_facts.py",
+        "tests/test__evidence_view.py",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__scoped_commit.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__commit_trail.py: a task's verdict is read from the trailers in a clone with no evidence directory; Audit-Task without Audit-Gate reads as no verdict recorded; an unknown status word is reported as itself",
+          "tests/test_commit_task_work.py: the commit the verb makes carries Audit-Task, Audit-Gate and Audit-Run naming the run the binding bound; an override carries the reason verbatim; a reason holding a newline does what the case pins",
+          "tests/test__evidence_view.py: the report renders the same task verdict from the trailers as from the evidence row on the same fixture",
+          "tests/test__status_facts.py: status reads a done task's verdict at its commit from the trailers and names the source"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__commit_trail.py tests/test_commit_task_work.py tests/test__evidence_view.py tests/test__status_facts.py tests/test__scoped_commit.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-18T17:40:01Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T17:39:25Z",
+          "text": "it reads the Unreleased heading and moves the section at a release; this task adds entries inside the section and keeps the heading and its structure",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T17:39:25Z",
+          "text": "it quotes one sentence about a fixed literal in the scope position from PLUGIN-BUILD-GUIDE.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T17:39:25Z",
+          "text": "it quotes 'beside the manifest' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        },
+        {
+          "at": "2026-11-18T17:39:25Z",
+          "text": "it quotes 'which one wins' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-18T17:39:25Z",
+          "text": "it quotes 'Validation stays additive' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-18T17:39:25Z",
+          "text": "it quotes 'names no file' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tests/test__manifest_phases.py"
+        },
+        {
+          "at": "2026-11-18T17:39:25Z",
+          "text": "it quotes 'related listing' from PLUGIN-BUILD-GUIDE.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-18T17:39:25Z",
+          "text": "it quotes a sentence about each copy's own age from PLUGIN-BUILD-GUIDE.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-18T17:39:25Z",
+          "text": "it quotes a section marker of the drive from PLUGIN-BUILD-GUIDE.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tests/test_drive_phase.py"
+        },
+        {
+          "at": "2026-11-18T17:39:25Z",
+          "text": "it quotes the generated module map's heading; no module is added or moved from PLUGIN-BUILD-GUIDE.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-18T17:39:25Z",
+          "reader": "tests/test__scoped_commit.py",
+          "reads": "plugins/audit/scripts/governance/_scoped_commit.py",
+          "text": "declared to answer a reading: tests/test__scoped_commit.py reads plugins/audit/scripts/governance/_scoped_commit.py - its own suite"
+        }
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T17:40:01Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T18:14:44Z.ce7901",
+        "status": "failed",
+        "at": "2026-11-18T18:14:44Z"
+      }
+    },
+    {
+      "id": "P169.3",
+      "title": "The newest run of a task or a phase is one record in its own shard, written by the gate under the phase lock",
+      "status": "pending",
+      "description": "Add the record that will replace the ledger row, beside the row, changing no reader yet. After a recorded run (run-test-gate.py --record, task or phase scope) the subject in its shard carries `lastRun`: the run's id, moments and durations (startedAt, durationMs, selectionMs), status and failed list, verdictSource and reusedFrom, the reuse key, the gate digest and source, leftToPhaseGate, the tested state (head, dirty, tree key), the banners and the machine and attribution lines, and per step: name, exit, ran, outcome, failing lines up to the existing cap, the measured duration when measured here, and reusedFrom when copied. A copied step carries its source's verdict fields forward, so the record is the newest measurement of each current step and no older record is needed to read it. `testEvidence` stays the three-key pointer and is written from the record in the same write. Replace, never append.\n\nThe write. Today the pointer write is skipped when the phase lock is held, because the ledger row stands anyway. A record that is the only copy cannot be skipped: the recorder takes the phase lock with a bounded wait behind any verb's write, and a record it still could not write is exit 3 naming the log path. Never exit 0 or 1 without the record. A verb that rewrites a task (move, reopen, group sign-off's copy of a carrier's pointer, reconcile) does to `lastRun` what it does to `testEvidence`.\n\nThe launch. `--launch <token>` is stored on the record, so a caller that started the run in the background can find the record of exactly that run.\n\nTime. The recorder appends the gate and the selection stage to the task's `timing` itself, in the same locked write, from the same figures, citing the run by id; today the drive queues them in its own state from the ledger row. The stage survives the record's replacement.\n\nACCEPTANCE (each a case).\n1. After five recorded runs of one gate a subject holds exactly one `lastRun`, its runId is the last one printed, and the shard is no larger than after the first run.\n2. Exit 0 or 1 implies the shard's record names the printed runId and status; a lock that stays held past the wait is exit 3 naming the log, and the shard is unchanged.\n3. `testEvidence` equals the pointer derived from `lastRun`; delete the pointer and reconcile restores it from the record.\n4. A verb's write and a background record write, interleaved in both orders, both land: neither field is lost.\n5. A recorded run changes no byte inside the content identity: the reuse key is the same before and after, and the set of paths the run modified (git status in a fixture) is exactly what recorded_paths names.\n6. The record's size is bounded by the gate's width: failing lines per step at the existing cap, steps no more than declared plus derived. Print the measured bytes for this repository's own task gate in the outcome.\n7. The schema accepts `lastRun` on a task and on a phase, a plan without it validates unchanged, and a one-file plan and a per-phase plan both carry it.\n8. A machine path in a failing line reads scrubbed, as every string the shard write passes does, and the verdict fields are untouched.\n9. The evidence row is still written, byte for byte as before, with the same runId as the record.\n\nDEPENDANTS to answer for by name: every reader of a task or phase object that copies, renders or validates its keys - validate-manifest.py and _manifest_rules.py, _manifest_io's split and join, audit-task.py's verbs named above, render-report.py and the panel's composition (an unknown key must not be rendered as content), tools/demo/gen-demo-manifest.py and the committed examples, tools/check-committed-pii.py (the record holds a head and failing lines), tools/check-example-ledgers.py, and drive-phase.py's timing queue (queue_row, row_stages, stage_args): once the recorder writes the stages, the drive must not write them a second time.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/manifest/_task_timing.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/reference/manifest-conventions.md",
+        "tests/test_run_test_gate.py",
+        "tests/test__evidence_io.py",
+        "tests/test__task_timing.py",
+        "tests/test_audit_task.py",
+        "tests/test_drive_phase.py",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_test_gate.py: after five recorded runs a subject holds one lastRun naming the last runId and the shard did not grow; exit 0 or 1 implies the record is in the shard; a lock held past the wait is exit 3 naming the log with the shard unchanged; a recorded run moves no byte inside the content identity",
+          "tests/test__evidence_io.py: the pointer equals the pointer derived from the record and reconcile restores a deleted one; a verb's write and a record write interleaved both land; the record's bytes are bounded by the gate's width",
+          "tests/test__task_timing.py: the gate and selection stage the recorder appends carry the run's own figures and survive the record's replacement",
+          "tests/test_drive_phase.py: a task closed by the drive carries each gate stage once"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__evidence_io.py tests/test__task_timing.py tests/test_drive_phase.py tests/test_audit_task.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T17:39:26Z",
+          "text": "it reads the Unreleased heading and moves the section at a release; this task adds entries inside the section and keeps the heading and its structure",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T17:39:26Z",
+          "text": "it quotes two red-first vocabulary words from the plan schema; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T17:39:26Z",
+          "text": "it quotes one refusal sentence of the gate runner ('the work under test declares no files'); this task leaves that sentence as it is",
+          "waives": "tools/check-example-ledgers.py"
+        },
+        {
+          "at": "2026-11-18T17:39:26Z",
+          "text": "it quotes 'beside the manifest' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        },
+        {
+          "at": "2026-11-18T17:39:26Z",
+          "text": "it quotes 'which one wins' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-18T17:39:26Z",
+          "text": "it quotes 'Validation stays additive' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-18T17:39:26Z",
+          "text": "it quotes 'names no file' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tests/test__manifest_phases.py"
+        }
+      ]
+    },
+    {
+      "id": "P169.4",
+      "title": "Every reader of recorded runs goes through one reader over the shard records and the older rows, and answers the same from either",
+      "status": "pending",
+      "description": "`_evidence_io.read_rows` is the seam every reader of recorded runs already goes through (count its callers with grep before you start and put the count's command in the outcome). Make what it returns the union of the frozen ledger rows and the `lastRun` records of the plan's subjects, each record presented in the row's shape, one entry per runId (a run present as both is one entry). Then prove that nothing downstream needs the ledger: for a fixture holding records only and the same fixture holding rows only, each of these gives the same answer - the verdict binding (_verdict_binding.binding, with its reused row followed to the measured source), the step repeat (reusable_run, repeated_step_sources, step_parts) and its part-reused result, the reading of a red against the base (base_run), latest_by_subject, row_by_run, the gate's mean, the drive's read-back of a run it launched (green and red, with no commit made, and a red read back runs no step), close-phase's reading of a branch's runs (it reads the branch's ledger texts through git today; it must read the branch's shards the same way), and audit-task's --failing-from and couple --basis-run (resolve against records and rows, or refuse naming both places).\n\nThe drive finds the record of the run it launched by the launch token, not by comparing the subject's run ids against a list kept in its own state.\n\nWith one record per subject, a rule written over 'the newest row for the identity' has only one candidate; where a branch can no longer be reached (a newer row for the same identity), delete it and its case rather than leaving it unreachable, and name each deleted branch in the outcome.\n\nACCEPTANCE.\n1. The table: every reader named above, records-only against rows-only, same answer.\n2. A second ask on an unchanged tree, with records only, measures exactly the steps the left-out reading names and copies every other, each copy naming a run that measured it.\n3. A record whose reuse key is not the current key repeats nothing.\n4. The drive's decision read from the record equals the run's own --json for green and for red, with no commit made; reading a red back runs no gate step.\n5. A reader of history that finds no older directory says so with a basis; it never prints a zero as if it had counted.\n6. A plan and ledger as the previous release wrote them (use a committed example or build the fixture from real rows) give the same status, report and gate-condition answers before and after this change.\n\nDEPENDANTS to answer for by name: every caller of read_rows, row_by_run, latest_by_subject and oldest_first (the callers span the drive, the gate runner, audit-task.py, audit-lookup.py, full-gate.py, the doctor's trail and completion checks, the report, the panel, usage economics, propose-gates.py, validate-manifest.py's suite keys, record-outside-run.py, tools/plan-window.py, tools/gate-parity.py, tools/check-example-ledgers.py and the release guard under .claude/hooks). A caller that reads `rowFiles` or `files` to name where a run lives must still be able to: say what those mean for an entry that came from a shard.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/_verdict_binding.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test__evidence_io.py",
+        "tests/test__verdict_binding.py",
+        "tests/test_run_test_gate.py",
+        "tests/test_drive_phase.py",
+        "tests/test_close_phase.py",
+        "tests/test_audit_task.py",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__evidence_io.py: the reader returns one entry per run over records and rows; a fixture of records only and the same fixture of rows only give the same latest-by-subject, by-run lookup, reusable run, base reading and gate mean; an absent older directory is reported with a basis",
+          "tests/test__verdict_binding.py: the binding answers the same from a record as from the row it replaces, over the existing table of fixtures",
+          "tests/test_run_test_gate.py: with records only, a second ask on an unchanged tree measures exactly the steps the left-out reading names and copies the rest; a record under another key repeats nothing",
+          "tests/test_drive_phase.py: the drive finds the run it launched by its launch token and reads green and red back from the record with no commit made and no step run",
+          "tests/test_close_phase.py: a branch's runs are read from the branch's shards as they were from its ledger texts",
+          "tests/test_audit_task.py: --failing-from and couple --basis-run resolve a run held only as a record, and refuse an unknown id naming both places they looked"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test__verdict_binding.py tests/test_run_test_gate.py tests/test_drive_phase.py tests/test_close_phase.py tests/test_audit_task.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P169.3",
+        "P169.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T17:39:27Z",
+          "text": "it reads the Unreleased heading and moves the section at a release; this task adds entries inside the section and keeps the heading and its structure",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T17:39:27Z",
+          "text": "it quotes one refusal sentence of the gate runner ('the work under test declares no files'); this task leaves that sentence as it is",
+          "waives": "tools/check-example-ledgers.py"
+        }
+      ]
+    },
+    {
+      "id": "P169.5",
+      "title": "The base is measured only when a red could predate the task, its verdict is kept per commit, and the writer is not held for it",
+      "status": "pending",
+      "description": "After a red task gate the drive measures the phase's base so that a red the base already has is not blamed on the task. Today that measurement is due whenever the reading is no-base or not-knowable, the red's decision is held until the base verdict exists, and the verdict lives in a base-scope ledger row, a progress record under the drive's state and a mark. State the rule as a property of the records and move the verdict where it survives.\n\nNeeded means all three: the task gate is red; some failing case or step is not one a file this task's `tests.add` created (a case the task itself added cannot predate it); and no clean-tree measurement of that step at that base commit is recorded. Otherwise no base run is started and the decision says which of the three made it unnecessary.\n\nKept means: the base verdict for a commit is in the plan (on the red task's record, keyed by the base commit, readable through the one reader), computed at most once per commit and step set, and a second red at the same base reads it.\n\nNot held means: when a writer session exists to resume, the red's failing lines go to it at once, and the base runs beside it; if the base then shows the same red, the next decision says so and the writer is not resumed over it again. Where no session exists (the dispatched writer), the decision is offered with the base named as still running rather than withheld.\n\nKeep what the phase before this one fixed: one liveness reading decides both the reading of a base run's record and the removal of its tree.\n\nACCEPTANCE.\n1. A red whose failing cases all live in files the task's tests.add created starts no base run, and the decision says why.\n2. A second red at the same base commit and step set starts no base run and reads the kept verdict, which equals the first.\n3. A red with a session to resume sends the failing lines before the base verdict exists; a base that then shows the same red produces the base decision and no further resume over that red.\n4. A base run killed mid-way leaves no tree and no claim behind after the next call, as today.\n5. The seconds: print, for one red on this repository's own plan, the wall time from the red to the writer's resume before and after, measured twice with a gap.\n\nDEPENDANTS to answer for by name: run-test-gate.py base_red and base_reading, _evidence_io.base_run and its row keys (baseOf, baseRed), the drive's dispatch-base, wait-base, gate-red-base and gate-red-base-unknown decisions and every document that names them (the orchestrator reference and the phase command), audit-lookup.py's red lines, and the time record's base stage.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/reference/orchestrator.md",
+        "tests/test_drive_phase.py",
+        "tests/test_run_test_gate.py",
+        "tests/test__evidence_io.py",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a red whose failing cases live only in files the task added starts no base run and says why; a second red at the same base reads the kept verdict; a red with a session to resume is sent before the base verdict exists and is not resumed again over a red the base has",
+          "tests/test_run_test_gate.py: the base verdict for a commit and step set is computed once and a hit returns the same verdict",
+          "tests/test__evidence_io.py: a base verdict kept on a record is read by the base reading as the base row was"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_run_test_gate.py tests/test__evidence_io.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim",
+        "choosing-what-to-optimize"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P169.4"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T17:39:28Z",
+          "text": "it reads the Unreleased heading and moves the section at a release; this task adds entries inside the section and keeps the heading and its structure",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T17:39:28Z",
+          "text": "it quotes one refusal sentence of the gate runner ('the work under test declares no files'); this task leaves that sentence as it is",
+          "waives": "tools/check-example-ledgers.py"
+        },
+        {
+          "at": "2026-11-18T17:39:28Z",
+          "text": "it quotes the sentence forbidding push and stash from the orchestrator reference; this task adds to that document and leaves the quoted text as it is",
+          "waives": ".claude/hooks/guard-uncommitted.py"
+        },
+        {
+          "at": "2026-11-18T17:39:28Z",
+          "text": "it quotes the Reporting heading from the orchestrator reference; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tools/prove-gates.py"
+        }
+      ]
+    },
+    {
+      "id": "P169.6",
+      "title": "A phase's CI run is in its shard at the sign-off commit, through one path from CI to the plan",
+      "status": "pending",
+      "description": "A phase's own gate verdict is on the phase already (its record and pointer). What graded the phase's commit on CI is not: the drive keeps the run it dispatched in its own state, and a red CI run reaches the plan as a bug through two call sites. Record on the phase `ci`: {runId, sha, conclusion, at}, written by one verb in the sign-off path, where sha is the head the run graded. A recorded red run files one bug naming the run and its failed jobs, through one module; reading the same run again files nothing. A run that cannot be read is refused and nothing is written. When CI has not reported by sign-off, the record says so (conclusion absent, with the basis) rather than being omitted.\n\nACCEPTANCE.\n1. A signed-off fixture phase's shard carries ci with runId, sha and conclusion in the sign-off commit.\n2. A recorded red run files one bug naming run and jobs; the same run read again files nothing.\n3. An unreadable run is refused, exit non-zero, shard unchanged.\n4. The bug-from-a-CI-run path is reached from one module only; name the call site removed.\n5. The schema accepts the object and a plan without it validates unchanged.\n6. Stated in the outcome as an orchestrator check, not a case: the recorded sha equals the head_sha GitHub reports for the recorded run.\n\nDEPENDANTS to answer for by name: full-gate.py's learn path, the drive's CI cadence section, close-phase.py's sign-off commit, the status and report renders of a phase head line, the release guard under .claude/hooks (it reads provisional phases), validate-manifest.py, and COMPATIBILITY.md (an additive key).",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/scripts/governance/full-gate.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "tests/test_audit_task.py",
+        "tests/test_close_phase.py",
+        "tests/test_full_gate.py",
+        "tests/test_drive_phase.py",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_close_phase.py: a signed-off fixture phase's shard carries ci with runId, sha and conclusion in the sign-off commit, and a run not yet reported is recorded as such with its basis",
+          "tests/test_full_gate.py: a recorded red CI run files one bug naming the run and its jobs, the same run read again files nothing, and an unreadable run is refused with the shard unchanged",
+          "tests/test_audit_task.py: the schema accepts the ci object and a plan without it validates unchanged"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_close_phase.py tests/test_full_gate.py tests/test_audit_task.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P169.4"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T17:39:29Z",
+          "text": "it reads the Unreleased heading and moves the section at a release; this task adds entries inside the section and keeps the heading and its structure",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T17:39:29Z",
+          "text": "it quotes two red-first vocabulary words from the plan schema; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T17:39:29Z",
+          "text": "it quotes 'beside the manifest' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        },
+        {
+          "at": "2026-11-18T17:39:29Z",
+          "text": "it quotes 'which one wins' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-18T17:39:29Z",
+          "text": "it quotes 'Validation stays additive' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-18T17:39:29Z",
+          "text": "it quotes 'names no file' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tests/test__manifest_phases.py"
+        }
+      ]
+    },
+    {
+      "id": "P169.7",
+      "title": "A full-scope run's answer for a merged phase is in the plan, and a phase certified whole stays whole",
+      "status": "pending",
+      "description": "`meta.fullGate` names a third gate, and whether a merged phase has been certified whole by it is answered today by walking every full-scope ledger row for a green, measured, clean, verbatim run whose head contains the phase's merge. With one record per subject that walk has nothing to walk, and keeping only the last full run would turn a certified phase provisional the moment a later full run is red. Put the answer where it is asked: when a full run is recorded, each merged phase its head contains and that it certifies carries the certifying run (id, head, moment); a later red run removes no certification. `full_status` answers from those and from the frozen rows, with the same words (whole, provisional, stale, unknown) and the same bases. A plan that declares no fullGate reads and renders exactly as it does today.\n\nACCEPTANCE.\n1. Over the existing table of full_status fixtures, the answer from the plan's own records equals the answer from the rows.\n2. A phase certified by a green full run stays whole after a later red full run on a head that contains it.\n3. A full run that could not be asked about (no mergedHead, ancestry not establishable) reads unknown with its basis, as today.\n4. The release guard's reading of provisional phases is unchanged on its own cases.\n5. A plan with no fullGate is byte-identical after a recorded task run.\n\nDEPENDANTS to answer for by name: audit-status.py's provisional, stale-full-run and unknown-full-run conditions, _status_facts.py, render-report.py, the panel's state and areas, .claude/hooks/guard-release.py, the doctor's full-run check, full-gate.py's own recording and its learn path, and COMPATIBILITY.md's sentences about the full run.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/full-gate.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "tests/test__evidence_io.py",
+        "tests/test_run_test_gate.py",
+        "tests/test_full_gate.py",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__evidence_io.py: full_status answers the same from the plan's records as from the rows over the existing fixtures; a phase certified whole stays whole after a later red full run",
+          "tests/test_full_gate.py: a recorded green full run certifies each merged phase its head contains, and a plan with no fullGate is unchanged by a recorded run"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_full_gate.py tests/test_run_test_gate.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P169.4"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T17:39:30Z",
+          "text": "it reads the Unreleased heading and moves the section at a release; this task adds entries inside the section and keeps the heading and its structure",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T17:39:30Z",
+          "text": "it quotes two red-first vocabulary words from the plan schema; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T17:39:30Z",
+          "text": "it quotes one refusal sentence of the gate runner ('the work under test declares no files'); this task leaves that sentence as it is",
+          "waives": "tools/check-example-ledgers.py"
+        },
+        {
+          "at": "2026-11-18T17:39:30Z",
+          "text": "it quotes 'beside the manifest' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        },
+        {
+          "at": "2026-11-18T17:39:30Z",
+          "text": "it quotes 'which one wins' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-18T17:39:30Z",
+          "text": "it quotes 'Validation stays additive' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-18T17:39:30Z",
+          "text": "it quotes 'names no file' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tests/test__manifest_phases.py"
+        }
+      ]
+    },
+    {
+      "id": "P169.8",
+      "title": "No evidence row is written: the record in the shard is the only copy, and the older rows are frozen history",
+      "status": "pending",
+      "description": "Stop the writes. A recorded run of any scope appends no row, writes no anchor row to the journal for it and chains nothing; its record in the shard and, for a task, its commit's trailers are the record. The set of paths a recorded run writes (recorded_paths) loses the evidence directory, and every reader of that set follows through the one function: the reuse identity, the left-out reading and its names, the stamp's recorder exclusion, the scope digest, the commit scope and its label, and the landing refusal's evidence half. `evidence.dir` stays a read key: it is where the frozen rows are. Rows already written are never rewritten, migrated or deleted by this plugin, and a ledger written before this release keeps verifying.\n\nRemoved: import-evidence.py (the CI row adapter) and the gate runner's --writer; record-outside-run.py writes its subject's record instead of a row, or is removed if no caller remains (say which, with the grep).\n\nCOMPATIBILITY.md gains the major section's entries for this phase: the evidence file is no longer written; `testEvidence` stops meaning a cache of that file and is the pointer to the subject's record or to the run its commit names, and deleting the block is still always safe; --record's exit 3 means the shard record was not written; sign-off, done and close bind to the newest recorded run, a record or an older row; --failing-from and couple --basis-run resolve a record or an older row and no superseded run; tallies over history count one run per subject from this release on; the unknown-full-run arm about an unreadable ledger is restated. CHANGELOG.md says the first run after the upgrade measures every step, because the key no longer leaves the evidence directory out.\n\nACCEPTANCE.\n1. A fixture phase driven from its first task to sign-off leaves the bytes under the evidence directory identical, and no task commit of it contains a path under that directory.\n2. recorded_paths equals the set of paths a recorded run modifies, by git status in a fixture; the difference in the plan's meta across a recorded run is within the recorder's own keys.\n3. On a plan and ledger as the previous release wrote them, status, the report, failing-tests and no-test-evidence answer the same after this change; with the ledger then deleted the two conditions still answer the same and the report says pointer without evidence, never failed.\n4. The evidence boundary never moves later across the upgrade, and a record's moment never feeds it.\n5. The doctor reports the trail from the plan and git, verifies a frozen ledger that is present, and says so when none is.\n6. tools/check-example-ledgers.py, the demo generator and the committed examples are consistent with what the release writes: decide whether the examples keep a frozen ledger as history or carry records, state it, and keep `python3 tools/check-rendered-artifacts.py` green.\n7. The code lines removed and added, by the plan's command, in the outcome.\n\nDEPENDANTS to answer for by name: every caller of append_row, record and write_pointer; the journal's anchor row and whoever reads it (the doctor, audit-journal.py's merge and verify); _invariants.py's and commit-task-work.py's record paths; close-phase.py's ignored-stamp refusal; stamp-verification.py's recorder exclusion; tools/check-committed-pii.py, tools/check-rendered-artifacts.py and tools/check-git-pipeline.py (each names the evidence directory); SECURITY.md's fail-mode table if a row's write was in it; and the README or reference page that tells a user to commit the evidence directory.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/import-evidence.py",
+        "plugins/audit/scripts/governance/record-outside-run.py",
+        "plugins/audit/scripts/governance/_invariants.py",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "tools/lints/_deps.py",
+        "tools/demo/gen-demo-manifest.py",
+        "tools/check-example-ledgers.py",
+        "tests/test_run_test_gate.py",
+        "tests/test__evidence_io.py",
+        "tests/test_import_evidence.py",
+        "tests/test_record_outside_run.py",
+        "tests/test__invariants.py",
+        "tests/test_commit_task_work.py",
+        "tests/test_close_phase.py",
+        "tests/test__doctor_trail.py",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test_stamp_verification.py",
+        "tests/test__deps.py",
+        "tests/test_gen_demo_manifest.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_test_gate.py: a recorded run appends no row and leaves the evidence directory's bytes identical; the paths it modifies are exactly the recorded paths; exit 3 means the shard record was not written",
+          "tests/test__evidence_io.py: the boundary never moves later when records replace rows and a record's moment never feeds it; a plan and ledger of the previous release give the same pointers, and the same conditions with the ledger deleted",
+          "tests/test__invariants.py: no task commit may carry a path under the evidence directory, and a commit of the previous release that does is still read as before",
+          "tests/test__doctor_trail.py: the doctor reports the trail from the plan and git, verifies a frozen ledger that is present and says so when none is"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__evidence_io.py tests/test__invariants.py tests/test__doctor_trail.py tests/test_import_evidence.py tests/test_record_outside_run.py tests/test_commit_task_work.py tests/test_close_phase.py tests/test_stamp_verification.py tests/test__deps.py tests/test_gen_demo_manifest.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P169.5",
+        "P169.6",
+        "P169.7"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T17:39:32Z",
+          "text": "it reads the Unreleased heading and moves the section at a release; this task adds entries inside the section and keeps the heading and its structure",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T17:39:32Z",
+          "text": "it quotes one sentence about a fixed literal in the scope position from PLUGIN-BUILD-GUIDE.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T17:39:32Z",
+          "text": "it quotes 'beside the manifest' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        },
+        {
+          "at": "2026-11-18T17:39:32Z",
+          "text": "it quotes 'which one wins' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-18T17:39:32Z",
+          "text": "it quotes 'Validation stays additive' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-18T17:39:32Z",
+          "text": "it quotes 'names no file' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tests/test__manifest_phases.py"
+        },
+        {
+          "at": "2026-11-18T17:39:32Z",
+          "reader": "tests/test_stamp_verification.py",
+          "reads": "plugins/audit/scripts/governance/stamp-verification.py",
+          "text": "declared to answer a reading: tests/test_stamp_verification.py reads plugins/audit/scripts/governance/stamp-verification.py - its own suite"
+        },
+        {
+          "at": "2026-11-18T17:39:32Z",
+          "reader": "tests/test__deps.py",
+          "reads": "tools/lints/_deps.py",
+          "text": "declared to answer a reading: tests/test__deps.py reads tools/lints/_deps.py - its own suite"
+        },
+        {
+          "at": "2026-11-18T17:39:32Z",
+          "reader": "tests/test_gen_demo_manifest.py",
+          "reads": "tools/demo/gen-demo-manifest.py",
+          "text": "declared to answer a reading: tests/test_gen_demo_manifest.py reads tools/demo/gen-demo-manifest.py - its own suite"
+        }
+      ]
+    },
+    {
+      "id": "P169.9",
+      "title": "Under the default configuration no per-call journal row and no preimage file is written, and a session's start clears what ended sessions left",
+      "status": "pending",
+      "description": "The hook that journals every Edit and Bash call writes a hash-chained row and, for a write, a preimage file. On this repository's own checkout the state directory they fill is measured in gigabytes and tens of thousands of files (print `du -sk .claude/state` and the file count in the outcome, before and after). Turn the per-call rows and the preimage files off by default: `journal.enabled` absent means off, true writes rows and verifies exactly as before, and the key keeps being read. The rows the plugin's own verbs write when they change the plan (a task moved, a bug filed, the commit's Audit-Row) are not per-call rows and are unchanged by this task: a task's commit must still be found by the drive under the default configuration, and a case holds that. The session-start sweep removes preimage files and the state files of sessions that have ended and keeps the live session's.\n\nACCEPTANCE.\n1. Under the default configuration an Edit and a Bash call write no journal row and no preimage file.\n2. With journal.enabled true the rows are written and verify as before.\n3. tools/bench-hooks.py --gate is green, and the disabled path imports only what the hook floor already imports.\n4. After the sweep, a fixture state directory holding files of ended sessions and of the live one holds only the live one's; nothing outside the plugin's own state names is removed.\n5. A verb's own journal row and a task commit's Audit-Row are written under the default configuration, and the drive finds that commit.\n6. COMPATIBILITY.md records the changed default in the major section without removing the key; SECURITY.md's fail-mode table and the config reference say what the default now is and what turning it on restores.\n\nDEPENDANTS to answer for by name: every reader of journal.enabled (hooks/_config.py's defaults, the doctor's trail checks, the panel's settings and help text, the config schema and the example config), restore points if they read preimages (say whether they do, with the grep), verify-invariants.py's checks that read per-call rows, the usage meter's session files, and any document that tells a user the journal records every tool call.",
+      "files": [
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/meter-usage.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "plugins/audit/reference/config.md",
+        "COMPATIBILITY.md",
+        "SECURITY.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tools/bench-hooks.py",
+        "tests/test_journal_writes.py",
+        "tests/test__journal_io.py",
+        "tests/test_meter_usage.py",
+        "tests/test__config.py",
+        "tests/test_hooks.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_journal_writes.py: under the default configuration an Edit and a Bash call write no journal row and no preimage file, and with journal.enabled true the rows are written and verify as before",
+          "tests/test_meter_usage.py: the session-start sweep removes preimage files and state files of ended sessions, keeps the live session's and touches nothing outside the plugin's own state names",
+          "tests/test__journal_io.py: a verb's own row is written under the default configuration",
+          "tests/test__config.py: an absent journal.enabled reads as off and a set value is read as set"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_journal_writes.py tests/test_meter_usage.py tests/test__journal_io.py tests/test__config.py tests/test_hooks.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [
+        "writing-python",
+        "no-silent-pass",
+        "before-you-claim"
+      ],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T17:39:34Z",
+          "text": "it reads the Unreleased heading and moves the section at a release; this task adds entries inside the section and keeps the heading and its structure",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T17:39:34Z",
+          "text": "it quotes 'beside the manifest' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        },
+        {
+          "at": "2026-11-18T17:39:34Z",
+          "text": "it quotes 'which one wins' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-18T17:39:34Z",
+          "text": "it quotes 'Validation stays additive' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-18T17:39:34Z",
+          "text": "it quotes 'names no file' from COMPATIBILITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tests/test__manifest_phases.py"
+        },
+        {
+          "at": "2026-11-18T17:39:34Z",
+          "text": "it quotes the security contact's label from SECURITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": ".github/ISSUE_TEMPLATE/config.yml"
+        },
+        {
+          "at": "2026-11-18T17:39:34Z",
+          "text": "it quotes 'It denies the tool, not the knowledge.' from SECURITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tests/test__panel_page.py"
+        },
+        {
+          "at": "2026-11-18T17:39:34Z",
+          "text": "it quotes 'Secret-read guard is name-based' from SECURITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tests/test_guard_secrets_read.py"
+        },
+        {
+          "at": "2026-11-18T17:39:34Z",
+          "text": "it quotes 'everywhere else' from SECURITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-18T17:39:34Z",
+          "text": "it quotes 'deliberately loud rather than silent' from SECURITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tools/check-git-pipeline.py"
+        },
+        {
+          "at": "2026-11-18T17:39:34Z",
+          "text": "it holds SECURITY.md's fail-mode table to the hooks hooks.json registers; this task registers and removes no hook and changes no fail mode",
+          "waives": "tools/gate-parity.py"
+        },
+        {
+          "at": "2026-11-18T17:39:34Z",
+          "text": "it quotes the guard-edits row of the fail-mode table from SECURITY.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T17:39:34Z",
+          "text": "a research note with a section headed by SECURITY.md's path; it describes guard ownership, which this task does not change",
+          "waives": "docs/research/guard-ownership-design.md"
+        },
+        {
+          "at": "2026-11-18T17:39:34Z",
+          "text": "it names tools/bench-hooks.py as the hook import budget step; this task keeps the tool's flags and exit codes",
+          "waives": "tools/verify.sh"
+        },
+        {
+          "at": "2026-11-18T17:39:34Z",
+          "reader": "tests/test_hooks.py",
+          "reads": "SECURITY.md",
+          "text": "declared to answer a reading: tests/test_hooks.py reads SECURITY.md - quotes its text beside its path: 'write, after the fact'"
+        }
+      ]
+    },
+    {
+      "id": "P169.10-6l3",
+      "title": "A case that compares two gate runs' printed lines says which line differed, and its Windows-only red has a named cause",
+      "status": "pending",
+      "description": "One case of tests/test_run_test_gate.py, pgo7, failed once on a Windows CI runner (run 44363694425, job \"selftests (windows, plain 2)\") over product code that passed it on the same runner image in two other runs the same day. The case runs a task's gate once with executor.phaseGateOnly absent and once with it empty and asserts that the two print the same lines once ids and times are masked. In the failing run both exited 0 with the same steps and the same row keys, so the difference is in the printed lines, and the failure message does not show them. A case that reddens a green tree once in three runs is how a CI verdict stops being read.\n\nDo this in order. First, make the case's failure say what differed: when the masked line lists are unequal, the message carries the first differing pair of lines (and the lengths if they differ), so the next red of this case names its own cause. Second, read the failing job's log (gh run view --job with the job's id from that run, read-only) for anything the run printed around the case, and read the case's mask against every line the gate prints: a duration that changes unit between two runs (ms to s), a count of workers or slots, a path under a temp directory with a random part, a line that appears only when a step crosses a time threshold, the order of two lines written by different streams. Third, fix the cause where it is: if a line legitimately varies with time, the mask must cover its whole varying part; if a line appears or not depending on timing, the two runs are not comparable on that line and the case must say so rather than compare it; if the product prints something nondeterministic that a user would also see vary, that is a product fix and belongs in run-test-gate.py.\n\nACCEPTANCE.\n1. With the two line lists made to differ in one line (a mutation in a scratch copy, restored in the same command), the failure message names that line pair.\n2. The cause is named in the outcome with the evidence that it is the cause (the log line, or the unmasked form found by reading), or stated as not established with what was ruled out; a mask widened without a named cause is not accepted.\n3. The case still fails when executor.phaseGateOnly set to an empty list changes what a task's run prints: prove it by mutation.\n4. The suite is green under the sweep and under the cp1252 leg locally (python3 tools/sweep-selftests.py tests/test_run_test_gate.py, and the same with --encoding cp1252).\n\nDEPENDANTS: the suite's other cases that share pgo7's masking helper, if it is shared.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T18:17:22Z",
+          "text": "it quotes one refusal sentence of the gate runner ('the work under test declares no files'); this task leaves that sentence as it is",
+          "waives": "tools/check-example-ledgers.py"
+        },
+        {
+          "at": "2026-11-18T18:20:16Z",
+          "text": "Second sighting the same evening: run 44366022835, job 'selftests (linux, stress 1)', the same case and the same message shape, over the same product code. So it is not Windows-only: it failed on two of four runs of that product code that day, once on Windows plain and once under the Linux stress leg, which runs the sweep under load. Read the stress job's log as well; a cause that depends on how long a step took fits both sightings."
+        }
+      ]
+    }
+  ],
+  "request": "neka njihov dokument bude osnova! I u odnosu na to treba napraviti plan implementacije",
+  "openChoices": [
+    "Where a full-scope run lives once rows are not written: on each merged phase the run certified, or on the phase's ci record. The task full-run-in-plan decides it against one property: a phase certified whole stays whole after a later red full run.",
+    "Whether a trailer's spelling is a compatibility promise. This plan says yes for Audit-Task, Audit-Gate, Audit-Run and Audit-Override: once the commit is the record, a release that stops reading a spelling loses history.",
+    "The hash-chained journal is deleted later in this release by the owner's decision; this phase only turns the per-call rows and the preimage files off by default."
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "2b3b3ad6-53c7-447e-9ceb-53c614bccbc5",
+    "branch": "audit/p169-a-run-s-record-lives-in-the-pl",
+    "at": "2026-11-18T17:39:54Z"
+  },
+  "startedAt": "2026-11-18T17:39:54Z"
+}
