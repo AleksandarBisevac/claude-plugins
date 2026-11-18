@@ -1410,9 +1410,12 @@ AUDITED_EXEMPTIONS = {
     "CLAUDE_LIVE_WRITES": ("live", "tools/sweep-selftests.py cw10"),
     "EXCLUDED": ("live", "tests/test__refs.py t2"),
     # What the floor guard leaves out of its comparison. `fx8` reads every row
-    # for its name, a function the module defines and a reason that is not empty;
-    # whether the module sets aside only what the rows say is `fx4`'s question,
-    # and neither judges whether a reason's sentence is true.
+    # for its name, a function the module defines and a reason that is not empty.
+    # Whether the module sets aside no more than the rows say is asked of the edits
+    # `fx4` generates: its own comparison sets aside what each row says and no more,
+    # the guard must agree with it on every edit, and `fx9` holds that edits just
+    # outside each row were generated and none read clean. Only those edits are
+    # asked, over two fixtures, and no case judges whether a reason's sentence is true.
     "SET_ASIDE": ("live", "tests/test__floor_guard.py fx8"),
 }
 

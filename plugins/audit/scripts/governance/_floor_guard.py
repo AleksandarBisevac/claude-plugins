@@ -121,15 +121,20 @@ why it cannot change what runs:
   * A LABEL'S LITERAL TEXT. A check's own syntax is all of it but the constant
     text of its label; every expression the label formats is compared like
     the condition. A check whose literal text alone changed is a rename; one
-    whose label values changed is a changed check, `part` "label".
+    whose label values changed is a changed check, `part` "label"; one whose
+    label gained a value has new literal text, which is what names a check, so
+    the check is gone and the new label is listed as new.
   * THE BODY OF A BARE NEW TEST, OR A NEW LABELLED CHECK. A new test is a unit
     only when it is bare - no decorator, no default, no evaluated annotation -
-    nested in no function, and under a name no identifier of the base copy
-    spells (a string is no identifier); only then is it set aside, with what it
-    runs. Any other new test is no unit: it stays in the rest, so its file is
-    not compared, only added, naming it - unless it is the rename of a base
-    test gone from the tree with the same head and body, whose head is then
-    compared with that test's.
+    nested in no function, and under a name the base copy cannot have bound:
+    no identifier of it spells the name, none of its strings holds it as a
+    word, and it binds nothing by computation in the scope the test lands in
+    (`_computed_scopes`); only then is it set aside, with what it runs. Any
+    other new test is no unit: it stays in the rest, so its file is not
+    compared, only added, naming it - and, held by a string or by computation,
+    how the base copy can bind it - unless it is the rename of a base test gone
+    from the tree with the same head and body, under such a name, whose head is
+    then compared with that test's.
   * A DOCSTRING HOLDING NO EXAMPLE. A docstring is set aside only when neither
     copy's text of it holds a doctest prompt; one that does is syntax of the
     statement holding it, a unit's (`part` "body") or the rest's.
@@ -981,23 +986,35 @@ def _bare(node, lazy):
                 or not lazy and any(n is not None for n in notes))
 
 
-def _new_test_aside(base_ast, tree_ast, base_records):
+def _new_test_aside(base_ast, tree_ast, base_records, base_text):
     """The tree copy's records of a file read by its definitions, with each
     test new to the tree a unit - its body set aside, nothing of it judged -
-    only when it is bare, nested in no function, and under a name no identifier
-    of the base copy spells. A test is new when the base copy has no unit of
-    its name and count (`_test_units`), so a second definition under an
+    only when it is bare, nested in no function, and under a name the base copy
+    cannot have bound: no identifier of it spells the name, none of its strings
+    holds it as a word, and it binds nothing by computation in the scope the
+    test lands in (`_bound_by`). A test is new when the base copy has no unit
+    of its name and count (`_test_units`), so a second definition under an
     existing name is new too. One that is not bare stays a unit only as the
     rename of a base test gone from the tree with the same head and body, so
-    `_compare_definitions` judges its head against that test's. Any other new
-    test is no unit: it stays in the rest, so its file is not compared, only
-    added, naming it - and the copy is walked again, since a definition put
-    back may hold another."""
+    `_compare_definitions` judges its head against that test's - under a name
+    the base copy cannot have bound. Any other new test is no unit: it stays in
+    the rest, so its file is not compared, only added, naming it - and the copy
+    is walked again, since a definition put back may hold another. A record
+    held by the base copy's strings or computation carries `bound`: (its key,
+    how the base copy can bind it)."""
     base_defs, names = _test_units(base_records), _identifiers(base_ast)
-    lazy, held = _lazy_annotations(tree_ast), set()
+    lazy, held, bound, readings = _lazy_annotations(tree_ast), set(), {}, []
 
     def key(node, prefix):
         return None if id(node) in held else _test_key(node, prefix)
+
+    def bindable(qual, node):
+        if not readings:
+            readings.extend((_string_words(base_text), _computed_scopes(base_ast)))
+        said = _bound_by(qual, node.name, readings)
+        if said is not None:
+            bound[id(node)] = (qual, said)
+        return said is not None
     while True:
         records = _statements(tree_ast, key)
         tree_defs = _test_units(records)
@@ -1006,8 +1023,12 @@ def _new_test_aside(base_ast, tree_ast, base_records):
                       if k not in tree_defs)
         more = set(id(e[0]) for k, e in tree_defs.items() if k not in base_defs and (
             nested[id(e[0])] or e[0].name in names
-            or not _bare(e[0], lazy) and _own_dump(e[0], anonymous=True) not in renames))
+            or not _bare(e[0], lazy) and _own_dump(e[0], anonymous=True) not in renames
+            or bindable(k[0], e[0])))
         if not more:
+            for rec in records:
+                if id(rec["node"]) in bound:
+                    rec["bound"] = bound[id(rec["node"])]
             return records
         held |= more
 
@@ -1022,9 +1043,10 @@ SET_ASIDE = (
      "evaluated, so it is compared"),
     ("the body of a bare new test, or a new labelled check", "_new_test_aside",
      "nothing of it runs before it runs as the new case it is: a bare new test "
-     "evaluates nothing when it is defined and binds a name the base copy spells "
-     "nowhere; what a new case does when it runs is not judged (see WHAT THE "
-     "READING DOES NOT CLAIM)"),
+     "evaluates nothing when it is defined, and binds a name the base copy cannot "
+     "have bound - one it mentions nowhere, as an identifier or inside a string, "
+     "in a scope where it binds nothing by computation; what a new case does when "
+     "it runs is not judged (see WHAT THE READING DOES NOT CLAIM)"),
     ("a docstring holding no example", "_docstring_aside",
      "a string no runner executes; a docstring holding a doctest prompt in either "
      "copy is executed by doctest, so it is compared"),
@@ -1053,6 +1075,240 @@ def _identifiers(tree):
         if isinstance(node, ast.ImportFrom) and node.module:
             out.update(node.module.split("."))
     return out
+
+
+# --- what can bind a test name without spelling it --------------------------------
+# A bare new test replaces nothing only where the base copy cannot already bind
+# its name. It can by spelling it - as an identifier (`_identifiers`) or as a word
+# of a string (`_string_words`) - or by computation in the scope the test lands in
+# (`_computed_scopes`): one of the forms of `_COMPUTED` in a statement of that
+# scope's own body, at any depth of its blocks but in no function or class nested
+# in it, or one that points at the scope from anywhere in the copy, or a class
+# form of `_CLASS_COMPUTED`. A name bound by an import-time side effect of another
+# module is not read.
+
+_WORD = re.compile(r"\w+")
+_HERE, _MODULE = "here", "module"
+_NAMESPACES = ("globals", "locals", "vars")
+_NAMESPACE_WRITES = ("update", "setdefault", "__setitem__")
+
+
+def _string_words(text):
+    """Every word - a run of letters, digits and underscores - of every string
+    constant of a copy's source text: a plain or bytes string (bytes read
+    leniently), the constant pieces of a formatted string, a docstring, a
+    reason. Read from the text, since `_parse_test` blanks a reason's."""
+    out = set()
+    for node in ast.walk(ast.parse(text)):
+        value = getattr(node, "value", None) if isinstance(node, ast.Constant) else None
+        if isinstance(value, bytes):
+            value = value.decode("utf-8", "replace")
+        if isinstance(value, str):
+            out.update(_WORD.findall(value))
+    return out
+
+
+def _called(node, *names):
+    return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
+        and node.func.id in names
+
+
+def _namespace(node):
+    """Whose names a call of globals(), locals() or vars() hands out, when they
+    are this copy's: the module's for globals() and for vars() of a module
+    looked up in `sys.modules`, the scope it stands in for locals() and a bare
+    vars(); None for vars() of any other object, and for any other node."""
+    if not _called(node, *_NAMESPACES):
+        return None
+    if node.func.id == "globals":
+        return _MODULE
+    if node.func.id == "locals" or not node.args:
+        return _HERE
+    return _MODULE if _is_module_entry(node.args[0]) else None
+
+
+def _is_module_entry(node):
+    """`sys.modules[...]`, or any `<x>.modules[...]`: a module looked up by name."""
+    return isinstance(node, ast.Subscript) and isinstance(node.value, ast.Attribute) \
+        and node.value.attr == "modules"
+
+
+def _namespace_store(node):
+    where = _namespace(node.value) if isinstance(node, ast.Subscript) \
+        and isinstance(node.ctx, ast.Store) else None
+    return (where,) if where else ()
+
+
+def _namespace_written(node):
+    where = _namespace(node.func.value) if isinstance(node, ast.Call) \
+        and isinstance(node.func, ast.Attribute) and node.func.attr in _NAMESPACE_WRITES else None
+    return (where,) if where else ()
+
+
+def _setattr_call(node):
+    if not (_called(node, "setattr") and node.args):
+        return ()
+    first = node.args[0]
+    if isinstance(first, ast.Name):
+        return (_HERE, ("class", first.id))
+    return (_HERE, _MODULE) if _is_module_entry(first) else (_HERE,)
+
+
+def _module_attribute_store(node):
+    return (_MODULE,) if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Store) \
+        and _is_module_entry(node.value) else ()
+
+
+def _type_call(node):
+    return (_HERE,) if _called(node, "type") and len(node.args) == 3 else ()
+
+
+def _exec_call(node):
+    """Where an exec or eval call binds: the scope it stands in, and the module
+    from anywhere when it is handed what globals() hands out."""
+    if not _called(node, "exec", "eval"):
+        return ()
+    handed = [_namespace(a) for a in node.args[1:] + [k.value for k in node.keywords]]
+    return (_HERE, _MODULE) if _MODULE in handed else (_HERE,)
+
+
+def _star_import(node):
+    return (_HERE,) if isinstance(node, ast.ImportFrom) \
+        and any(a.name == "*" for a in node.names) else ()
+
+
+# Each form that binds names by computation: (what it is, the function giving
+# where it binds - `_HERE`, the scope whose statement holds it; `_MODULE`; or a
+# class by its name - for one node). A namespace merely handed to a call other
+# than exec or eval is no form: the callee may only read it, as this tree's
+# staged suites hand globals() to the runner that looks their blocks up.
+_COMPUTED = (
+    ("a store into the names globals(), locals() or vars() hands out", _namespace_store),
+    ("a call writing into the names globals(), locals() or vars() hands out",
+     _namespace_written),
+    ("a setattr call", _setattr_call),
+    ("a store into a module's attribute looked up in sys.modules", _module_attribute_store),
+    ("a class made by a call to type", _type_call),
+    ("an exec or eval call", _exec_call),
+    ("a star import", _star_import),
+)
+
+
+def _has_metaclass(node, _hooks=()):
+    return any(k.arg == "metaclass" for k in node.keywords)
+
+
+# The class decorators that only mark a class - a runner's skip, or a pytest mark,
+# by the dotted name it is called through (`.*` any mark) - and add no name to it.
+_MARKING_DECORATORS = ("unittest.skip", "unittest.skipIf", "unittest.skipUnless",
+                       "unittest.expectedFailure", "pytest.mark.*")
+
+
+def _marks_only(decorator):
+    spelled = _dotted(decorator.func if isinstance(decorator, ast.Call) else decorator) or ""
+    return any(spelled == name or name.endswith(".*") and spelled.startswith(name[:-1])
+               for name in _MARKING_DECORATORS)
+
+
+def _decorated_class(node, _hooks=()):
+    return any(not _marks_only(d) for d in node.decorator_list)
+
+
+def _hooked_base(node, hooks):
+    return any(isinstance(b, ast.Name) and b.id in hooks for b in node.bases)
+
+
+# Each form by which a class's own names are bound by code run when it is made:
+# (what it is, the function asking it of a class and the copy's `_subclass_hooks`).
+_CLASS_COMPUTED = (
+    ("a class decorator", _decorated_class),
+    ("a metaclass", _has_metaclass),
+    ("a base class of the copy running code for each subclass", _hooked_base),
+)
+
+
+def _subclass_hooks(tree):
+    """The names of the copy's classes that run code for each subclass: one
+    defining `__init_subclass__` or given a metaclass, and one deriving from such
+    a class of the copy."""
+    defs = [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+    hooks = set(n.name for n in defs if _has_metaclass(n) or any(
+        isinstance(s, _FUNCTIONS) and s.name == "__init_subclass__" for s in n.body))
+    while True:
+        more = set(n.name for n in defs if n.name not in hooks and _hooked_base(n, hooks))
+        if not more:
+            return hooks
+        hooks |= more
+
+
+def _own_nodes(stmt):
+    """`stmt` and every node of it that is not inside a statement nested in it -
+    its head's expressions, lambdas and comprehensions included."""
+    out, todo = [], [stmt]
+    while todo:
+        node = todo.pop()
+        out.append(node)
+        for _name, value in ast.iter_fields(node):
+            for child in (value if isinstance(value, list) else [value]):
+                if isinstance(child, ast.AST) and not isinstance(child, ast.stmt):
+                    todo.append(child)
+    return out
+
+
+def _computed_scopes(tree):
+    """{scope: (line, what)} for each scope of a copy that binds names by
+    computation - the module as "", a class by its dotted name under its
+    classes, the keys `_test_key` gives - with the first form found there."""
+    found, pointed, classes = {}, [], {}
+    hooks = _subclass_hooks(tree)
+
+    def note(scope, line, what):
+        if scope not in found or line < found[scope][0]:
+            found[scope] = (line, what)
+
+    def visit(stmt, scope, prefix):
+        for node in _own_nodes(stmt):
+            for what, form in _COMPUTED:
+                for target in form(node):
+                    if target == _HERE and scope is not None:
+                        note(scope, node.lineno, what)
+                    elif target == _MODULE:
+                        note("", node.lineno, what)
+                    elif isinstance(target, tuple):
+                        pointed.append((target[1], node.lineno, what))
+        inner = (scope, prefix)
+        if isinstance(stmt, ast.ClassDef):
+            key = prefix + stmt.name
+            classes.setdefault(stmt.name, []).append(key)
+            for what, form in _CLASS_COMPUTED:
+                if form(stmt, hooks):
+                    note(key, stmt.lineno, what)
+            inner = (key, key + ".")
+        elif isinstance(stmt, _FUNCTIONS):
+            inner = (None, prefix)
+        for _pos, stmts in _bodies(stmt):
+            for child in stmts:
+                visit(child, inner[0], inner[1])
+    for stmt in tree.body:
+        visit(stmt, "", "")
+    for name, line, what in pointed:
+        for key in classes.get(name, ()):
+            note(key, line, what)
+    return found
+
+
+def _bound_by(key, name, readings):
+    """None when the base copy can bind `name`, a test landing at `key`, only by
+    spelling it as an identifier; otherwise how it can, in words. `readings` is
+    (the base copy's string words, its computed scopes)."""
+    words, scopes = readings
+    said = ["holds its name inside a string"] if name in words else []
+    scope = key.rpartition(".")[0]
+    if scope in scopes:
+        line, what = scopes[scope]
+        said.append("binds names by computation in the scope it lands in (%s, at "
+                    "line %d of the base copy)" % (what, line))
+    return " and ".join(said) or None
 
 
 def _parse_test(text):
@@ -1997,7 +2253,7 @@ def _python_test(out, rec, base, tree, index):
                  _check_callables([base_ast]) or _check_callables([tree_ast]))
     unit_key = _test_key if has_tests else _check_key(callables)
     base_records = _statements(base_ast, unit_key)
-    tree_records = (_new_test_aside(base_ast, tree_ast, base_records) if has_tests
+    tree_records = (_new_test_aside(base_ast, tree_ast, base_records, base_text) if has_tests
                     else _statements(tree_ast, unit_key))
     changed, out["renamed"], out["fresh"] = (
         _compare_definitions(base_records, tree_records, path) if has_tests
@@ -2019,6 +2275,10 @@ def _python_test(out, rec, base, tree, index):
             if callables else "any test - it defines none and calls no labelled check")
     reason = _rest_reason((base_records, _text_lines(base_text)),
                           (tree_records, _text_lines(tree_text)), held)
+    bound = ["`%s` is no new test, since the base copy %s" % r["bound"]
+             for r in tree_records if r.get("bound")]
+    if reason is not None and bound:
+        reason = "%s; %s" % (reason, "; ".join(bound))
     if reason is not None:
         out["notRead"] = _unread(path, DEFINITION_CHANGED, reason, True)
     else:
@@ -2235,7 +2495,8 @@ def find_moves(diff, read_base, read_tree, declared=(), accepted=()):
     open_ = [n for n in not_read if n["kind"] == COULD_HOLD]
     if findings:
         answer, basis = FINDINGS, ("%d move(s) that lower the bar across %d file(s) of "
-                                   "the diff%s" % (len(findings), len(records), tail))
+                                   "the diff%s%s" % (len(findings), len(records),
+                                                     _units_text(units, renamed), tail))
     elif cannot:
         answer, basis = COULD_NOT_TELL, ("; ".join(c["reason"] for c in cannot)
                                          + _tail(owned, (), not_read))

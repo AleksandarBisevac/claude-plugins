@@ -243,6 +243,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   its body. The reading is a comparison of structure that never evaluates code: a new test or check
   can do anything when it runs, and an author set on defeating it can; clean means every existing
   test stands where it stood, unchanged, and nothing in a test file but tests was touched.
+- **A bare new test is set aside only where the base copy cannot have bound its name.** It
+  already was not, under a name the base copy spells as an identifier; now also not under one the
+  base copy holds as a word of any string - a list of names, a sentence, a formatted string's
+  text, a bytes constant, a docstring - nor in a scope where the base copy binds names by
+  computation: a store into, or a write through, what `globals()`, `locals()` or `vars()` hands
+  out, `setattr`, a class made by `type`, `exec` or `eval` (from anywhere when handed `globals()`),
+  a star import, a store through `sys.modules`, and for a class also a `setattr` naming it anywhere, a
+  decorator that is not a skip or a mark, a metaclass, or a base class of the same file running
+  code for each subclass. A loop storing generated tests into `globals()`, or a class body storing
+  one into `locals()`, and a bare test added under one of those names read clean while the base
+  copy had a failing test the tree copy no longer runs; the file is now not compared, only added,
+  and its reason names the test and how the base copy can bind it. A bare new test in another
+  class, or under a name a string holds only inside a longer word, stays a new unit. The guard's
+  own invariant case now sets aside exactly what each row says - a reason's and a label's literal
+  text and never a value in it, the skips the module names under the receivers it names - and
+  generates, beside each row, edits just outside it, which must each be a finding or a file not
+  compared. A check whose label gains a value was said to be a finding naming its label's values:
+  the literal text is what names a check, so the check is reported gone, and the new label is
+  listed as new - the basis of an answer with findings now lists the new units too.
 - **An Acceptance list the clause reader could not number is now read, never silently dropped.**
   The items after a task description's last `Acceptance:` were read only when numbered
   `(1) ... (2) ...`; a Markdown numbered list and unnumbered prose read as no clause, so on the

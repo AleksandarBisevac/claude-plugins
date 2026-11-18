@@ -5983,19 +5983,30 @@ What is set aside is one table, `SET_ASIDE`, each row naming the function that s
 why it cannot change what runs; everything else of both copies is compared, by S for the rest and
 by U for a unit. A label's literal text (`_literal_text_aside`): every expression a label formats is
 compared like the condition, so a check whose literal text alone changed is a rename and one whose
-label values changed is a changed check. The body of a bare new test, or a new labelled check
-(`_new_test_aside`): a new test is a unit only when it has no decorator, default or evaluated
-annotation, is nested in no function, and is under a name no identifier of the base copy spells;
-any other new test stays in the rest, so its file is not compared, only added, naming it - unless
-it is the rename of a base test gone from the tree with the same head and body, whose head is then
-compared with that test's. A docstring holding no example (`_docstring_aside`): one holding a
+label values changed is a changed check; a label that gained a value has new literal text, which
+is what names a check, so the check is reported gone and the new label is listed as new. The body
+of a bare new test, or a new labelled check (`_new_test_aside`): a new test is a unit only when it
+has no decorator, default or evaluated annotation, is nested in no function, and is under a name
+the base copy cannot have bound - it mentions the name nowhere, as an identifier (`_identifiers`)
+or as a word inside a string (`_string_words`), and binds nothing by computation in the scope the
+test lands in (`_computed_scopes`, by the forms of `_COMPUTED` and `_CLASS_COMPUTED`: a store into
+or a write through what `globals()`, `locals()` or `vars()` hands out, `setattr`, a class made by
+`type`, `exec` or `eval` - from anywhere when handed `globals()` - a star import, a store through
+`sys.modules`; for a class also a `setattr` naming it anywhere in the copy, a decorator that is not
+a skip or a mark, a metaclass, or a base class of the copy running code for each subclass; a
+namespace merely handed to another call is no form, since the callee may only read it). Any
+other new test stays in the rest, so its file is not compared, only added, naming it, and one held
+by a string or by computation is named with how the base copy can bind it - unless it is the
+rename of a base test gone from the tree with the same head and body, under a name the base copy
+cannot have bound, whose head is then compared with that test's. A name bound by an import-time
+side effect of another module is not read. A docstring holding no example (`_docstring_aside`): one holding a
 doctest prompt in either copy is syntax of the statement holding it. A reason, where the skip's own
 signature calls it one (`_reason_aside`, by `_REASONS`): the literal text of the argument each known
 skip or expected-failure decorator or call documents as its reason, by position or keyword; an
 expected-failure mark's first positional argument is its condition and is compared, and a skip the
 table does not know has nothing set aside. The cost is measured rather than tuned away: a new
-decorated or parametrised test makes its file not compared, and a check whose message gained a
-value is a finding that says so. What the reading does not claim: it is a comparison of structure
+decorated or parametrised test makes its file not compared, and so does a bare one beside a table
+of tests the base copy generates into its namespace. What the reading does not claim: it is a comparison of structure
 that never evaluates code, so a new test or check can do anything when it runs and is reported as
 new, not as harmless, and an author set on defeating it can; clean means every existing test
 stands where it stood, unchanged, and nothing in a test file but tests was touched. Code outside the
