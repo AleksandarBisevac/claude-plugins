@@ -129,6 +129,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `max: 0`, without which it could never pass. The header names the destructive shapes it does
   not see. bugfix's `tests-ran-before-edit` now orders the run before the first edit of the
   fixture's source package rather than any edit, so writing the regression test first passes.
+  The tripwire reads any command in time that grows with its length. Its pattern is assembled
+  from named parts, `TRIPWIRE_PARTS` in `tests/test_build_shop.py`, each arguing that no two
+  alternatives of its repeated group read the same text, and `case.yaml` holds the string they
+  assemble to, which the suite holds equal. Written by hand, two alternatives read a run of
+  backslashes and quotes in more than one way, and a harmless command with escaped quotes in a
+  double-quoted argument took time that grew exponentially with the number of quotes. The suite
+  times each kind of long passed-over text at the lengths `TRIPWIRE_UNITS` names, each double
+  the last, in a child killed at `TRIPWIRE_DEADLINE`, against `TRIPWIRE_POWER` and
+  `TRIPWIRE_CEILING` - in Python's `re`, and in node when node is on PATH. A character a
+  backslash escapes is now passed over with it, so an escaped quote opens no argument, and an
+  escaped separator or a continued line starts no command.
 
 ### Changed
 - **A brief's rules win over a skill's instruction, and the phase review is handed its review
