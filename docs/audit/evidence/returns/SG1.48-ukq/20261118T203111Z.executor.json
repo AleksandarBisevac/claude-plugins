@@ -1,0 +1,103 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_guard_edits.py tests/test_journal_writes.py tests/test__config.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T21:58:26Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_guard_edits.py tests/test_journal_writes.py tests/test__config.py` in a throwaway tree at HEAD exited 1 with 9 of 200 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cf29 (house FAIL), cf29b (house FAIL), cf34 (house FAIL), cf36 (house FAIL), cf36b (house FAIL), cf38b (house FAIL), cf38c (house FAIL), cf38d (house FAIL) and 1 more: SELFTEST FAILED: 199/200 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "(1) THE PROPERTY, one sentence in the audit_config_way docstring, SECURITY.md, README row and PLUGIN-BUILD-GUIDE: a write is held when a tree of this repository, or a repository nested under the project, would load the written file. plugins/audit/hooks/_config.py: new _registered_trees(project) reads the trees from the common directory with no process - the main tree (parent of a common dir named .git) and each <common>/worktrees/<name>/gitdir - and passes over a registration that is no regular file or names no existing directory; new _read_pointer reads a pointer file only when os.path.isfile and only to _POINTER_BYTES (used by _admin_of_tree, _common_of, _registered_trees); new _nested_tops (rule 2: the directory two levels above the spelled file, as spelled and resolved, via _config_shaped_top - never the config folder - kept when it holds a repository and lies under the project by identity); new _candidate_tops assembles fixed trees + tree_for's config-shaped top + (config-named only) nested tops + registered trees, the registrations read once per question via a cache. The as-written walk candidate is gone; the upward walk SURVIVES only for the session's directory (_session_tree -> _tree_as_spelled), pinned by ln43 (another tree's config hard-linked into the project under another name, session in that tree's src: held). tree_for and path_tree NOT touched.\n(2) WHEN THE REGISTRATIONS ARE READ: only after the string test _config_named on the spelled or resolved basename. Disk calls, same fixture, HEAD vs now (direct run): existing source file 23 (lstat 21, stat 2) before and after; new source file 24 (lstat 23, stat 1) before and after; config-named file in a plain folder 32 (lstat 26, stat 6, 0 listings) before -> 98 (lstat 61, stat 36, listdir 1) now. cf38: 0 registrations / 0 listings / 0 processes for every ordinary row; cf38b: registrations read, one listing (the common dir's worktrees), 0 processes. probe_t (git processes per ordinary write, 0 and 30 nested worktrees, two rounds with a gap): git count equal before/after on all 26 rows (0, or 2 for a write in ext).\n(3) ORACLE: cf36/cf36b/cf34 take their trees from what the fixture recorded (world['trees'] / _link_world's trees) and ask _config.load for each - no walk. Blindness demonstrated in the mutation probe: with the module never asking a nested repository, the real oracle reports 378 disagreeing rows; the same broken module with the oracle's trees taken from _candidate_tops reports 'disagreeing 0' (cf36 then reds only on its separate clause that every residual row is read: 354 ran, 0 read).\n(4) NOT MATCHED, each a row allowed while a loader reads it: ln40 (hard link under a non-config name placed in the project to another tree's existing config, session in the project - _LINK_RESIDUAL, cf34c); ln41 (repo nested under a tree other than the project); ln42 (worktree whose registration is gone); ln36 (outside unrelated repository); cf36 residual family nested-repo-at-destination (354 rows, all read, all allowed); the shell route (journalled, not refused). Listed in SECURITY.md, README row, PLUGIN-BUILD-GUIDE and the docstring.\n(5) PROBES vs this tree: probe_v1 (CV_NEWEST=tree) exit 0, UNSAFE 0, NEWEST block/ask on all 10 rows; probe_v2 REGRESSION 0; probe_v4 WRONG 0 (7 rows, all now block/ask, were allow); probe_v5 NEWEST block/ask absent and present (held). probe_u (CQ_ALL_TREES=1): no BAD row; the only AFTER verdict that changed is u3b allow -> block/ask (the BEFORE column of the stored file came from another export). probe_a old (c77a5c9) vs new: 10 DIFF rows, all 'ext symlink-file' (proj/lf_ext.json a symlink to ext's config) x Write/Edit/MultiEdit/NotebookEdit/MCP x agent: allow -> ask (main) / block (agent) - rule 1: the resolved basename is config-named, so the registrations are read and the file is ext's config by identity. probe_f: flagged [], before = after on every row, no image left attached. verify_all exits 1 on ONE line: probe_j's u3b changed from guard=allow/no row to guard=ask with one config.edit row - the hold the task asks for, with the journal agreeing; every other check ok. I did not touch the stored baseline.\n(6) MUTATIONS (session scratchpad sg1.48/mutations.py, run from the tree, output sg1.48/mutations.out, closing line 'MUTATIONS ALL CAUGHT, BLIND ROW GREEN', exit 0; each anchor asserted to land exactly once, on a copy, pycache purged between rows, restore verified, no disk image left): walk start put back to the config folder -> cf36, cf36b (378 disagreeing); nested not asked -> cf36, cf36b, cf29; BLIND as in (3); registrations not read -> cf36, cf36b, cf38b, cf38c, cf38d, cf34, cf29, cf29b, oq5b, oq5c; registrations read on every write -> cf29, cf29b, cf38, cf34c, cf37b; main tree left out -> cf38d; registration read whatever kind of file -> cf38c (hang), cf29; stale registration still asked -> cf38c, cf29; session walk removed -> cf34 (ln43), cf36; ALLOW over-fire (every config-named write under any directory holding a git entry held) -> twins cf22e, cf28, cf36 plain twins, cf34b and more; ALLOW nested top accepted wherever it lies -> cf34, cf34c, cf34b, cf28e, cf36.\n(7) CASES CHANGED ON PURPOSE: cf29/cf29b re-pinned model - the config-named row now reads the registrations (listings asserted [0,0,1], was 0) and the old walk cost is gone; cf34 oracle = fixture trees, ln38 now held where it was the stated residual; cf34b wording; cf36/cf36b oracle from the fixture, new dims (folder link-repo/repo/git-entry, dest owner/project/outside, form plain twin), measured rows h1/h2/m2/u3b added; cf37 constructor gains the dest field; oq5 families over (dim,value) and the MCP skip renamed; oq5b narrowed to its first three rows, the later rows moved to new oq5c. New: cf34c, cf38, cf38b, cf38c, cf38d, oq5c, ln40-ln43.\n(8) RED FIRST (HEAD's code with the new test files, a copy): guard 123/131 (cf29, cf29b, cf34, cf36, cf36b, cf38b, cf38c timeouts, cf38d), journal 199/200 (oq5c). GREEN: gate command exit 0, 3/3 files, 745 cases; unrecorded run-test-gate for SG1.48-ukq GATE GREEN exit 0. Guard suite seconds: 40.4s (126 cases) before; 49.0s (130) after alone, 53.6s inside the 8-suite sweep, 81.6s (131) with a second sweep in parallel. Dependants (sweep --jobs 4): test__config 414, test__journal_io 282, test_audit_journal 186, test_guard_bash_writes 239, test_guard_edits 130, test_hooks 247, test_journal_writes 200, test_require_plan 245 - 8/8 ok, 1943 cases (before cf38d was added; the gate run since covers the guard suite at 131). bench-hooks --gate exit 0 (Python 3.14.7 only; 3.8-3.13 not measured). After the last doc edit: test__deps, test__output_lints, test__refs, test_hooks 4/4 ok; gate-parity exit 0; prove-gates --list exit 0. Documents: SECURITY.md (no fail-mode row touched, 'write, after the fact' kept), plugins/audit/README.md row, PLUGIN-BUILD-GUIDE.md (_config.py and guard-edits.py sections), CHANGELOG.md.",
+    "descriptive": "The config hold now asks every tree the repository registers (main tree and worktrees, read from the common directory with no process) and the repository a config hangs off under the project, only for a config-named write; its property cases judge against the trees the fixture built."
+  },
+  "testsAdded": [
+    "cf36/cf36b/cf34c: generated and measured arrangements - config folder a symlink to a repository, itself a repository, or holding an empty git entry, destination in the owner, the project or outside - held exactly where the loader of a fixture-recorded tree reads the write; the not-matched rows allowed while read",
+    "cf38/cf38b/cf38c/cf38d: an ordinary write reads no registration, lists nothing, starts no process; a config-named one reads the registrations; a pipe, directory or stale registration and a pipe commondir change no verdict within a bounded time; the main checkout's config held from a linked-worktree project",
+    "oq5c: the journal hook run as a process writes one config row for each later measured arrangement the guard holds, each being read by a loader"
+  ],
+  "casesAdded": [
+    [
+      "cf36",
+      "cf36b",
+      "cf34c"
+    ],
+    [
+      "cf38",
+      "cf38b",
+      "cf38c",
+      "cf38d"
+    ],
+    [
+      "oq5c"
+    ]
+  ],
+  "claims": "claims:\n1 _config.py _registered_trees / _nested_tops / _candidate_tops / _read_pointer are the code the docstring's PROPERTY and candidate list describe; SECURITY.md, README row and PLUGIN-BUILD-GUIDE say only what those reach, and name the not-matched rows by case id\n2 sg1.48/mutations.py: 11 rows (the probe prints one ROW line each), every DENY and both ALLOW rows red on the named cases, BLIND row shows the module-fed oracle reporting 0 disagreeing where the real one reports 378; restored byte for byte, closing line 'MUTATIONS ALL CAUGHT, BLIND ROW GREEN', exit 0\n3 the class is 'a tree found by a walk from the written path': grep for _tree_as_spelled callers - one left, _session_tree, kept because an ordinary write reads no registration and ln43 needs that tree; the as-written candidate removed; the oracle's walk helpers (_lexical_tree, _of_this_repository, _spelled_inside, _gen_above, _gen_same_dir, _gen_of_repository) removed\n4 n/a - no rule addressed to an agent\n5 guard suite timed in four runs with gaps (40.4s before; 49.0s, 53.6s, 81.6s after, the last under a parallel sweep); disk calls counted once per row in a fixed fixture, and the counts are asserted by cf29/cf38, not written as prose\n6 the decision reads the resolved path's identity against each tree's config and config folder (_one_place), the registrations from the files git writes; allow twins (plain-form cf36 rows, cf22e, cf28, cf34b) proven red under the over-fire row\n7 no number written into prose; the case ids and the counted calls are what the suites print",
+  "stamp": "audit-stamp: {\"content\":\"sha256:0cb5f57e3a7541d213d46bfe4ef37bad32abee02744623aff2b105c6916197c6\",\"dirtyDigest\":\"sha256:e878b807d664fd372a5abb0359fa750107e27432d88cd3409213d673df063d16\",\"dirtyPaths\":{\"CHANGELOG.md\":\"f7d27b33410722df\",\"PLUGIN-BUILD-GUIDE.md\":\"39e8f2dfd215f45b\",\"SECURITY.md\":\"f968b758c94d406e\",\"plugins/audit/README.md\":\"5f5aa5064d658f6e\",\"plugins/audit/hooks/_config.py\":\"1a19822e2928250d\",\"tests/test_guard_edits.py\":\"a063d71d800c984b\",\"tests/test_journal_writes.py\":\"e0699bcfa1f18d32\"},\"head\":\"c77a5c96\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/README.md\",\"plugins/audit/hooks/_config.py\",\"tests/test__config.py\",\"tests/test_guard_edits.py\",\"tests/test_journal_writes.py\"],\"scopeDigest\":\"sha256:cea3509f61169b877f7554215cef3f43746def4d53838b23c844a0330e374f6d\",\"v\":2}",
+  "floorGuard": {
+    "answer": "findings",
+    "basis": "1 move(s) that lower the bar across 7 file(s) of the diff; 4 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, SECURITY.md, plugins/audit/README.md; 2 file(s) that could hold a move not compared: tests/test_guard_edits.py, tests/test_journal_writes.py",
+    "findings": [
+      {
+        "move": "definition-changed",
+        "path": "tests/test_journal_writes.py",
+        "line": 2522,
+        "side": "tree",
+        "what": "labelled check `oq5b ...and for the measured arrangements written by an edit tool -...` differs from its base copy in its condition and arguments",
+        "part": "arguments"
+      }
+    ],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "SECURITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test_guard_edits.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 979 (`at = os.path.dirname(os.path.normpath(target))`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test_journal_writes.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 2485 (`skipped[\"mcp-not-this-hooks-decide\"] = len(every) - len(seen)`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "c77a5c96b5eb22dd5fba7f5b269413e54e36a720"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-18T21:58:28Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

@@ -2473,17 +2473,21 @@ def _generated_question_cases(check):
 
     def visit_edit_tool(world, arr, path, cwd):
         # An MCP write is not this hook's `decide` to classify: its row comes
-        # from the sweep after the call, and a config CREATED that way leaves
-        # none today - a gap of its own, outside this question. So the MCP
-        # arrangements are counted out here, by name, not compared.
+        # from the sweep after the call, and an MCP write of another tree's
+        # config leaves none today, whatever the guard says - a residual of the
+        # sweep, outside this question. So the MCP arrangements are counted out
+        # here, by name, not compared.
         if arr.tool.startswith("mcp__"):
             return arr, None, None
         return visit(world, arr, path, cwd)
 
     every, skipped, ran, _worlds = TGE.gen_sweep(base, visit_edit_tool)
     seen = [s for s in every if s[1] is not None]
-    skipped["mcp-not-this-hooks-decide"] = len(every) - len(seen)
-    families = dict((w, sum(1 for s in seen if s[0].whose == w)) for w in ran)
+    skipped["mcp-write-of-another-trees-config-leaves-no-row"] = (
+        len(every) - len(seen))
+    families = dict(("%s=%s" % k, sum(1 for s in seen
+                                      if getattr(s[0], k[0]) == k[1]))
+                    for k in sorted(ran))
     apart = [(TGE._gen_label(s[0]), s[1], s[2]) for s in seen if s[1] != s[2]]
     held = sum(1 for s in seen if s[1])
     check("oq5 over the guard suite's generated arrangements the journal "
@@ -2493,23 +2497,28 @@ def _generated_question_cases(check):
              _output.some_of(apart, render=repr)),
           not apart and all(families.values()) and 0 < held < len(seen))
 
-    rows_seen = []
+    # The first review's arrangements and the later ones, apart: oq5c is the
+    # case the later rounds owe, the journal row a hold lost with it.
+    first = ("a-absent", "a-present", "b-case-above")
+    rows_seen, later = [], []
     for name, arr in TGE._GEN_MEASURED:
         if arr.tool != "Write" or arr.session != "project":
             continue
-        world = TGE._gen_world(os.path.join(base, "p-" + name), arr.whose,
-                               arr.folder, arr.present)
+        world = TGE._gen_world_of(os.path.join(base, "p-" + name), arr)
         path, _cwd = TGE._gen_spell(world, arr)
         rows, codes = _oq_write(path, world["proj"], "sess-oq5b-" + name)
-        # Read by the owner's loader exactly when the file its config folder
-        # resolves to now holds the write - not so for the case variant where
-        # names do not fold, which then names another file.
-        dest = TGE._gen_dest_path(world)
-        loaded = False
-        if os.path.exists(dest):
-            with open(dest, "r", encoding="utf-8") as fh:
-                loaded = fh.read() == _OQ_BODY
-        rows_seen.append((name, loaded, rows, codes))
+        # Read by a loader exactly when the config file of a tree the fixture
+        # built now holds the write - not so for the case variant where names
+        # do not fold, which then names another file.
+        loaded = any(_oq_holds_body(t) for t in world["trees"])
+        (rows_seen if name in first else later).append(
+            (name, loaded, rows, codes))
+
+    def one_row_where_read(seen_rows):
+        return all(codes == (0, 0)
+                   and [r[0] for r in rows if r[0] == "config.edit"]
+                   == (["config.edit"] if loaded else [])
+                   for _n, loaded, rows, codes in seen_rows)
     check("oq5b ...and for the measured arrangements written by an edit tool - "
           "a linked worktree's config outside the project through its linked-out "
           "folder, absent and present, and the project's config at its folder's "
@@ -2517,11 +2526,26 @@ def _generated_question_cases(check):
           "journal hook run as a process writes one config row where the write "
           "is the config a loader reads, and none where it is not: %r"
           % (rows_seen,),
-          len(rows_seen) == 3 and all(
-              codes == (0, 0)
-              and [r[0] for r in rows if r[0] == "config.edit"]
-              == (["config.edit"] if loaded else [])
-              for _n, loaded, rows, codes in rows_seen))
+          len(rows_seen) == len(first) and one_row_where_read(rows_seen))
+    check("oq5c ...and for the later rounds' arrangements written by an edit "
+          "tool - a nested worktree's and a nested repository's config folder "
+          "a symlink to a repository, an outside worktree's folder a symlink to "
+          "a repository, an outside worktree's config written at its link's "
+          "destination inside the project and outside it - the journal hook "
+          "run as a process writes one config row, each being read by a "
+          "loader: %r" % (later,),
+          len(later) >= 4 and all(loaded for _n, loaded, _r, _c in later)
+          and one_row_where_read(later))
+
+
+def _oq_holds_body(tree):
+    """Whether `tree`'s config file now holds the body the journal cases write,
+    read at the path the tree's loader opens."""
+    path = os.path.join(tree, *_config.CONFIG_REL.split("/"))
+    if not os.path.isfile(path):
+        return False
+    with open(path, "r", encoding="utf-8") as fh:
+        return fh.read() == _OQ_BODY
 
 
 # --- oq: the pre-image slot follows the file, not the spelling ----------------------

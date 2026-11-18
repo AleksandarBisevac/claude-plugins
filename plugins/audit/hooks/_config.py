@@ -1749,17 +1749,14 @@ def _common_of(at):
     entry with no process - the directory itself, or a linked worktree's
     admin directory and the `commondir` it names - or "" when that entry names
     no git directory. Git's own reading also honours `GIT_DIR` and
-    `GIT_COMMON_DIR`; `_tree_as_spelled` says why that loses no hold."""
+    `GIT_COMMON_DIR`; `_tree_as_spelled` says why that loses no hold. Each
+    file is read only when regular, and only to a bounded length
+    (`_read_pointer`)."""
     dotgit = os.path.join(at, ".git")
     gitdir = dotgit if os.path.isdir(dotgit) else _admin_of_tree(at)
     if not gitdir:
         return ""
-    try:
-        with open(os.path.join(gitdir, "commondir"), "r",
-                  encoding="utf-8") as fh:
-            common = fh.readline().strip()
-    except (OSError, ValueError):
-        common = ""
+    common = _read_pointer(os.path.join(gitdir, "commondir"))
     if common:
         gitdir = os.path.normpath(os.path.join(gitdir, common))
     return gitdir if _git_dir_shaped(gitdir) else ""
@@ -1770,6 +1767,14 @@ def _tree_as_spelled(directory, project):
     SPELLED - made absolute by the caller, `..` folded lexically, no link
     resolved - or None: the project itself (asked anyway), a directory in no
     repository, or one in another repository outside the project.
+
+    Asked of the session's directory only (`_session_tree`): that tree is
+    asked about every write, an ordinary one included - a hard link under
+    another name to its existing config is its config by identity - and an
+    ordinary write reads no registration, so this walk is how that tree is
+    found. The trees a written path could be the config of are found from the
+    repository's registrations and the directory the config hangs off instead
+    (`audit_config_way`), never by a walk up from the written path.
 
     Walked up with no process and no listing: the first directory holding a
     repository (`_holds_repository`, the stop git's discovery makes) is the
@@ -1826,11 +1831,91 @@ def _session_tree(tree):
 
 def _config_named(spelled, real):
     """Is the file a path names - as spelled, or resolved - called as the
-    config is, without regard to case? Strings only: the as-written tree is
-    walked for no other write, which keeps an ordinary write from paying for
-    it."""
+    config is, without regard to case? Strings only: the registrations are
+    read, and a nested repository looked for, for no other write, which keeps
+    an ordinary write from paying for either."""
     want = _CONFIG_FOLDED[-1]
     return any(os.path.basename(p).casefold() == want for p in (spelled, real))
+
+
+def _registered_trees(project):
+    """Every tree the repository of the directory `project` records: its main
+    tree - the directory holding the common git directory, when that directory
+    is a `.git` (a bare repository has none) - and each worktree registered in
+    `<common>/worktrees/<name>/gitdir`, the one-line file naming the path of
+    that worktree's `.git` file, relative to the registration where it is not
+    absolute. Read from the files with no process; a registration that is no
+    regular file, or names a directory that does not exist, is passed over.
+
+    The back-pointer is not checked: a registration naming a directory that is
+    no longer that worktree (removed, and something else made there) asks one
+    tree too many, which can hold a write, never let one through."""
+    common = _common_of(project)
+    if not common:
+        return []
+    common = os.path.normpath(common)
+    out = []
+    if os.path.basename(common) == ".git":
+        out.append(os.path.dirname(common))
+    regs = os.path.join(common, "worktrees")
+    try:
+        names = sorted(os.listdir(regs))
+    except (OSError, ValueError):
+        return out
+    for name in names:
+        reg = os.path.join(regs, name)
+        dotgit = _read_pointer(os.path.join(reg, "gitdir"))
+        if not dotgit:
+            continue
+        at = os.path.dirname(os.path.normpath(os.path.join(reg, dotgit)))
+        if os.path.isdir(at):
+            out.append(at)
+    return out
+
+
+def _nested_tops(spelled, real, project):
+    """The repositories under the project a config-named write could be the
+    config of without being a tree of this repository: the directory the
+    config's components hang off (`_config_shaped_top`) as spelled and once
+    resolved - the directory above the config folder, never the folder, so a
+    git entry inside a config folder decides nothing - where that directory
+    holds a repository (`_holds_repository`) and lies at or under the project,
+    as spelled or resolved, by identity."""
+    out = []
+    for top in (_config_shaped_top(os.path.normpath(spelled)),
+                _config_shaped_top(real)):
+        if top is None or top in out or not _holds_repository(top):
+            continue
+        if _under_directory(top, project) or _under_directory(
+                os.path.realpath(top), project):
+            out.append(top)
+    return out
+
+
+def _candidate_tops(tree, spelled, real, project, fixed, cache):
+    """The trees asked about one spelling of the written path, in the order
+    asked, as (directory, already resolved, config-shaped): the trees asked of
+    every write (`fixed`), the config-shaped directory off the resolved path
+    inside the tree `tree_for` placed it in, and - for a config-named write
+    alone - the repositories nested under the project it could be the config
+    of (`_nested_tops`) and every tree the repository registers
+    (`_registered_trees`, read once per question through `cache`)."""
+    out = [(top, False, False) for top in fixed]
+    if tree["inside"]:
+        out.append((_config_shaped_top(real), True, True))
+    if _config_named(spelled, real):
+        try:
+            nested = _nested_tops(spelled, real, project)
+        except (OSError, ValueError):
+            nested = []
+        out.extend((top, False, False) for top in nested)
+        if "registered" not in cache:
+            try:
+                cache["registered"] = _registered_trees(project)
+            except (OSError, ValueError):
+                cache["registered"] = []
+        out.extend((top, False, False) for top in cache["registered"])
+    return [c for c in out if c[0] is not None]
 
 
 def audit_config_way(tree, which=False):
@@ -1842,44 +1927,46 @@ def audit_config_way(tree, which=False):
     tree that answered it), or (None, None): what `config_of_tree` reads, and
     only it.
 
+    THE PROPERTY: a write is held when a tree of this repository, or a
+    repository nested under the project, would load the written file.
+
     THE CANDIDATE TREES do not depend on where the path resolves to, since a
     symlinked `.claude` resolves out of every tree while the project's loader
-    still reads through it. Asked, each once by its resolved directory: the
-    tree `tree_for` placed the path in, when it did; the project; the tree the
-    session stands in (`_session_tree`); the directory the resolved path's
-    last components hang off, when they are `CONFIG_REL`'s without regard to
-    case, that directory holds a repository and `tree_for` placed the path in
-    a tree; and, for a file named as the config is, the tree the path lies in
-    AS WRITTEN (`_tree_as_spelled`), wherever it lies - under the project or
-    outside it, through a link or not. That is how a linked worktree placed
-    under the project, one outside it whose `.claude` links out of the
-    repository, or a nested repository reached through a symlinked folder, is
-    seen, since the placement answers by where the path resolves. The trees
-    the session's directory and the written path stand in are found with no
-    process. A plain folder holding a `.claude/audit.config.json` holds no
-    repository and is not matched; a nested repository of any kind under the
-    project is, since its config is the one its own hooks read when a session
-    runs there.
+    still reads through it, nor on the path's spelling. Asked of every write,
+    each once by its resolved directory: the tree `tree_for` placed the path
+    in, when it did; the project; the tree the session stands in
+    (`_session_tree`); and the directory the resolved path's last components
+    hang off, when they are `CONFIG_REL`'s without regard to case, that
+    directory holds a repository and `tree_for` placed the path in a tree.
+    Asked of a write whose file is named as the config is, as spelled or
+    resolved, and of no other (`_candidate_tops`): every tree the repository
+    registers - its main tree and each worktree in its common directory's
+    registrations (`_registered_trees`), wherever each lies and whatever its
+    config folder is - and each repository nested under the project that the
+    config's components hang off, as spelled and once resolved
+    (`_nested_tops`). An ordinary write therefore reads no registration, lists
+    no directory and starts no process here; the identity half of the question
+    is asked of the trees asked of every write.
 
     Each candidate's config and the written file are compared resolved against
     resolved and, where both exist, by identity; neither existing, the
     directories they hang off by identity too (`_one_place`) - so a symlinked
     `.claude` (inside the project, out of the repository, into another tree's
-    folder, through a chain, or dangling), a case variant at any directory
-    level, and a hard link of an existing config are all the config; the
-    project being always asked, a hard link to its config is matched wherever
-    it is placed. A config written at its link's destination is matched when
-    one of the trees asked loads it, and not otherwise: a linked worktree's
-    config written at the outside destination of its `.claude` link, from a
-    session standing elsewhere, is no asked tree's and is not matched. NOT
-    matched either, stated: a hard link to a NESTED tree's config under a name
-    that is not the config's, and one placed in the project to the config of a
-    tree outside it, since a tree other than the placed one, the project and
-    the session's is a candidate only for a file named as the config is -
-    which is what keeps an ordinary write from asking about one; a symlink
-    FILE in the project pointing at an outside tree's existing config, which
-    `tree_for` places in no tree; and the config of a repository that is no
-    tree of this one. An OSError or a ValueError asking one candidate, or
+    folder, through a chain, to a repository, or dangling), a case variant at
+    any directory level, and a hard link of an existing config are all the
+    config; the project being always asked, a hard link to its config is
+    matched wherever it is placed, and a config written at its link's
+    destination is matched for every tree asked, a registered worktree's
+    included. NOT matched, each shown allowed while a loader reads it by a
+    case of the guard's suite: a hard link under a name that is not the
+    config's to another tree's existing config, from a session standing in no
+    tree that loads it - identity is asked only of the trees asked of every
+    write; a repository nested under a tree other than the project; a worktree
+    whose registration is gone; a repository that is no tree of this one and
+    lies outside the project; and a repository nested under the project that
+    is no tree of this one, its config written at its folder link's
+    destination from a session standing elsewhere - no component of that path
+    hangs off it. An OSError or a ValueError asking one candidate, or
     resolving one spelling, answers None for that one and the rest are still
     asked."""
     miss = (None, None) if which else None
@@ -1895,31 +1982,15 @@ def audit_config_way(tree, which=False):
         session = None
     if session is not None:
         fixed.append(session)
-    resolved = {}
+    resolved, cache = {}, {}
     for spelled in spellings:
         try:
             real = os.path.realpath(spelled)
         except (OSError, ValueError):
             continue
-        # (directory, already resolved, config-shaped). The config-shaped
-        # directory off the resolved path is a tree of this repository only
-        # inside the tree `tree_for` placed the path in, and is a prefix of
-        # the resolved path, so resolved already. The tree the path lies in
-        # as written is found wherever it lies (`_tree_as_spelled`), for a
-        # file named as the config is.
-        candidates = [(top, False, False) for top in fixed]
-        if tree["inside"]:
-            candidates.append((_config_shaped_top(real), True, True))
-        if _config_named(spelled, real):
-            try:
-                written = _tree_as_spelled(
-                    os.path.dirname(os.path.normpath(spelled)), project)
-            except (OSError, ValueError):
-                written = None
-            candidates.append((written, False, False))
-        candidates = [c for c in candidates if c[0] is not None]
         asked = set()
-        for top, done, shaped in candidates:
+        for top, done, shaped in _candidate_tops(tree, spelled, real, project,
+                                                 fixed, cache):
             try:
                 found = _candidate_word(real, top, done, shaped, asked,
                                         resolved)
@@ -1987,18 +2058,32 @@ def _candidate_word(real, top, done, shaped, asked, resolved):
 TASK_MARKER_FILE = "audit-worktree.json"
 
 
+# The longest line read from a file git keeps to point at a directory - a `.git`
+# file, a worktree's `commondir`, a registration's `gitdir`. A path longer than
+# any the platforms allow is cut, names nothing, and is passed over.
+_POINTER_BYTES = 4096
+
+
+def _read_pointer(path):
+    """The first line of the git pointer file `path`, stripped, or "" when it
+    is no regular file or cannot be read. Read only when regular and only to
+    `_POINTER_BYTES`, so a pipe or a device standing where git keeps a pointer
+    cannot hold a hook waiting on it."""
+    if not os.path.isfile(path):
+        return ""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.readline(_POINTER_BYTES).strip()
+    except (OSError, ValueError):
+        return ""
+
+
 def _admin_of_tree(tree):
     """The admin directory of a LINKED worktree, or "" for a main checkout.
     One stat for the ordinary tree (`.git` is a directory), and one small read
     for a linked one - no process is started."""
     dotgit = os.path.join(str(tree), ".git")
-    if not os.path.isfile(dotgit):
-        return ""
-    try:
-        with open(dotgit, "r", encoding="utf-8") as fh:
-            head = fh.readline().strip()
-    except (OSError, ValueError):
-        return ""
+    head = _read_pointer(dotgit)
     if not head.startswith("gitdir:"):
         return ""
     admin = head[len("gitdir:"):].strip()

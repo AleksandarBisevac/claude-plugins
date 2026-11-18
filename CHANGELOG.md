@@ -403,7 +403,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   nested worktree's config, through a symlinked folder as above; a hard link to the project's
   config under any name, wherever it is placed; and a spelling differing only in letter case,
   where the directory that name is looked up in folds case. **Not matched:** a symlink file in
-  the project pointing at the existing config of a worktree outside it, a hard link placed in
+  the project pointing at the existing config of a worktree outside it (held by a later entry
+  of this release), a hard link placed in
   the project to the config of a tree outside it, a hard link to a nested tree's config under
   another name, the config of a repository that is no tree of this one, and the shell route,
   which is journalled and not refused. A link that cannot be followed is held as before. An
@@ -425,12 +426,39 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   compared by identity, and only the names below the nearest existing directory by the
   per-directory rule on letter case. Both writes are now refused to a subagent and asked of the
   main session, and the journal's row agrees with the guard on each. A config written at its
-  link's destination is held when one of those trees loads it and not otherwise: a linked
+  link's destination was held when one of those trees loaded it and not otherwise, so a linked
   worktree's config written at the outside destination of its `.claude` link from a session
-  standing elsewhere is not matched. The property case is now generated as the product of named
-  dimensions, each impossible combination skipped by a named predicate and counted, and a case
-  counts the git processes of an ordinary write through a shim on PATH from the project, a
-  nested worktree and a linked worktree outside it.
+  standing elsewhere was not matched - the next entry holds it. The property case is now
+  generated as the product of named dimensions, each impossible combination skipped by a named
+  predicate and counted, and a case counts the git processes of an ordinary write through a shim
+  on PATH from the project, a nested worktree and a linked worktree outside it.
+- **The config hold asks every tree the repository registers, and its property case finds no
+  tree by a walk of its own.** The tree a path lies in as written was found by walking up from
+  the config folder, so a config folder that held a git entry - a symlink to a dotfiles
+  repository, a folder that is itself a repository - was taken as the tree: a nested worktree's
+  or a nested repository's config written through such a folder from a session in the project
+  was allowed, by an edit tool and an MCP write, with no journal row, where the release before
+  had held it; an outside worktree's config written through such a folder was allowed too, and
+  so was an outside worktree's config written at its link's destination, inside the project or
+  outside it. A write is now held when a tree of this repository, or a repository nested under
+  the project, would load the written file. For a file named as the config is, and for no other
+  write, the trees asked are read from what the repository records - its main tree and every
+  worktree its common directory's registrations name, read from those files with no process,
+  wherever each lies and whatever its config folder is - and a repository under the project is
+  asked by the directory the config's components hang off, never by the folder; a git entry
+  inside a config folder decides nothing. The walk up stays for the tree the session stands in
+  alone, which an ordinary write still asks. A registration, or the file naming a linked
+  worktree's common directory, is read only when it is a regular file and only to a bounded
+  length, so a pipe standing there no longer holds the hook waiting; one naming no existing
+  directory is passed over. The property case's oracle now asks the loader of every tree its
+  fixture built, finding none by a walk, over config folders that link to a repository, are one,
+  or hold an empty git entry, and link destinations inside the project and outside it; a case
+  counts the registrations, listings and processes the question costs, none for an ordinary
+  write. Still not matched, each a case allowing the write while a loader reads it: a hard link
+  placed in the project under another name to another tree's existing config, a repository
+  nested under a tree other than the project, a worktree whose registration is gone, a
+  repository outside the project that is no tree of this one, and a nested repository's config
+  written at its folder link's destination from a session standing elsewhere.
 - **A config or plan file created by a shell command or an MCP tool leaves its journal row, and
   so does the write that switches the journal off.** For those two routes the journal cannot
   read from the payload what was written, so its pass before the call notes the files it
