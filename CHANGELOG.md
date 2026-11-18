@@ -21,10 +21,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   measurement, the record commit, and the wait between a handed-out step and its start are
   appended to the task's `timing`, each read off its own record. An executor or reviewer
   dispatched as an agent is timed from its hand-out to its filed return, with a basis saying
-  the agent's own start is not recorded. They ride the session notes
-  and the close the driver already writes, so a task costs no extra commit and no extra write.
-  A session whose record holds no duration adds no stage, and that time shows as unattributed.
-  `/audit:task note` and `done` take the stages on a repeatable `--stage`.
+  the agent's own start is not recorded. When that time is a returned file's modification
+  time, the basis says why - the journal could not be read, or names no row for the file, or the
+  role's filing writes none - and that such a time can move later but never earlier. The
+  commit stage is the commit verb's own runs added up, so a set-aside's second gate between
+  them counts once, as the gate stage it is. They ride the session notes and every close the
+  driver makes, the no-change answer's included, so a task costs no extra commit and no extra
+  write. A session whose record holds no duration adds no stage, and that time shows as
+  unattributed; a stage whose source cannot be read - the ledger or a row, a row with no start
+  or length, an agent hand-out with no stamp - adds none either, and the step's did-line says
+  which stage and why, once. `/audit:task note` and `done` take the stages on a repeatable
+  `--stage`, and the journal row of each names the timing change.
 - **`/audit:status` prints where a task's wall time went.** When a task in view carries a
   timing record, the table grows a `time` column holding the task's whole window from its
   first start to its completion, in hours or days once past an hour - `-` for no record, `open`

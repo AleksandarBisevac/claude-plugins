@@ -23606,6 +23606,42 @@ def _timing_cases(check):
               == record["stages"] + [good, dict(good, kind="commit", ms=40)]
               and (closed.get("timing") or {}).get("firstStartedAt")
               == record["firstStartedAt"])
+
+        # The journal is the audit trail of every locked write, so a stage the
+        # write appended is a change its row names. A note with no stage is
+        # here for the other direction: a row that named a timing change on
+        # every note would pass the stage-carrying half alone.
+        fx9 = base_manifest()
+        fx9["phases"][1]["tasks"].append(
+            {"id": "P2.4", "title": "running", "status": "in_progress",
+             "attempts": 1, "maxAttempts": 3,
+             "startedAt": "2025-12-03T00:00:00Z", "completedAt": None,
+             "timing": json.loads(json.dumps(record))})
+        proj9, mp9 = mk("tmg-journal", fx9)
+        steps9 = [
+            run(["note", "P2.4", "--text", "plain", "--project-dir", proj9])[0],
+            run(["note", "P2.4", "--text", "timed", "--stage", json.dumps(good),
+                 "--project-dir", proj9])[0],
+            run(["done", "P2.4", "--no-change", "--reason", "nothing to change",
+                 "--stage", json.dumps(dict(good, kind="commit", ms=40)),
+                 "--project-dir", proj9])[0]]
+
+        def timing_changes(row):
+            return [c.get("field") for c in
+                    ((row.get("details") or {}).get("changes") or [])
+                    if str(c.get("field") or "").startswith("timing")
+                    and c.get("id") == "P2.4"]
+        rows9 = [(r.get("action"), timing_changes(r))
+                 for r in _journal_io.read_all(proj9)
+                 if (r.get("details") or {}).get("taskId") == "P2.4"
+                 and r.get("action") in ("task.note", "task.done")]
+        check("tmg8 the journal row of a note and of a close that each carried a "
+              "stage names the timing change, and a note with no stage names "
+              "none: %r" % ((steps9, rows9),),
+              steps9 == [0, 0, 0]
+              and rows9 == [("task.note", []),
+                            ("task.note", ["timing.stages"]),
+                            ("task.done", ["timing.stages"])])
     finally:
         _harness.remove_tree(tmp)
 

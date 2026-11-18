@@ -1383,9 +1383,19 @@ def _spend(state, kind, task):
 # measures itself. The queue lives under `TIMING_KEY`, beside the marks and
 # keyed by task rather than by start, so a stage read before a restart still
 # reaches the shard. A source that cannot be read queues nothing, and the
-# summary then carries that time as unattributed rather than as a zero.
+# summary then carries that time as unattributed rather than as a zero - and
+# the step says so on its did-line (`stage_unread`), once per stage and
+# reason: a refused write is already said, and a failed read was not.
 TIMING_KEY = "timing"
 STAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+# Where `close_task` adds up the commit verb's own runs for the commit stage,
+# in milliseconds - `commit_verb` adds each - so a proof or a gate the step
+# runs between two of them is not inside the figure.
+COMMIT_MS = "commitMs"
+# The roles whose filing appends a `task.return.filed` journal row: the
+# executor's, by `submit` and by `file_writer_return`. A reviewer's return is
+# filed with no row, so the file's modification time is all there is.
+ROW_FILED_ROLES = ("executor",)
 
 
 def queue_stage(state, task, source, stage):
@@ -1399,6 +1409,22 @@ def queue_stage(state, task, source, stage):
     state.setdefault(TIMING_KEY, {})[task["id"]] = dict(
         held, seen=seen + [source],
         pending=list(held.get("pending") or []) + [stage])
+
+
+def stage_unread(ctx, state, task, kind, why):
+    """Say on the step's did-line that `task`'s `kind` stage is not recorded,
+    and `why` - once per stage and reason, however many reads meet it. True
+    when it was said now, so the caller writes the state. Never a warning and
+    never a stop: timing does not block a gate, a commit or a close."""
+    held = (state.get(TIMING_KEY) or {}).get(task["id"]) or {}
+    said = list(held.get("unread") or [])
+    key = "%s: %s" % (kind, why)
+    if key in said:
+        return False
+    state.setdefault(TIMING_KEY, {})[task["id"]] = dict(held, unread=said + [key])
+    ctx["did"].append("timing: %s stage of %s not recorded - %s"
+                      % (kind, task["id"], why))
+    return True
 
 
 # The Agent route's two roles, each with the stage kind its length is written
@@ -1420,49 +1446,70 @@ def agent_handed_out(state, task, role):
 
 def filed_moment(ctx, task, role):
     """`(stamp, what)` - when `task`'s `role` return for its current start was
-    filed, and the record that says so: the journal row that filed it, or,
-    for a role whose filing writes no row (a reviewer's), the filed file's own
-    modification time, read to the whole second as every other stamp here.
-    `(None, None)` when neither can be read."""
+    filed, and the record that says so: the journal row that filed it, or the
+    filed file's own modification time, read to the whole second as every
+    other stamp here. `what` says which, and for the file why: the journal
+    could not be read, it holds no row for this file, or the role's filing
+    writes none (`ROW_FILED_ROLES`). `(None, why)` when neither can be read."""
     path = _fr.return_path(ctx["evidence"], task, role)
-    try:
-        rows = _journal_io.read_all(ctx["project"], ctx.get("config"))
-    except Exception:                                          # noqa: BLE001
-        rows = None
+    unread = None
+    rows = None
+    if role in ROW_FILED_ROLES:
+        try:
+            rows = _journal_io.read_all(ctx["project"], ctx.get("config"))
+        except Exception as exc:                               # noqa: BLE001
+            unread = "%s: %s" % (type(exc).__name__, exc)
     row = _fr.already_filed_row(rows, path, ctx["project"]) if rows else None
     if row is not None and _usage_core.parse_ts(row.get("ts")) is not None:
         return row["ts"], "journal row %s at %s" % (_fr.RETURN_FILED_ACTION,
                                                     row["ts"])
     try:
         stamp = time.strftime(STAMP_FORMAT, time.gmtime(os.path.getmtime(path)))
-    except (OSError, TypeError):
-        return None, None
-    return stamp, ("the filed file's modification time, %s - no journal row "
-                   "files a %s return" % (stamp, role))
+    except (OSError, TypeError) as exc:
+        return None, "the filed %s return's time could not be read (%s: %s)" % (
+            role, type(exc).__name__, exc)
+    if role not in ROW_FILED_ROLES:
+        why = ("no journal row files a %s return, and a modification time "
+               "moves later when the file is written again - a stash, a branch "
+               "switch, a copy - never earlier" % (role,))
+    elif unread is not None:
+        why = ("the journal, which holds the %s row of the %s's filing, could not "
+               "be read (%s)" % (_fr.RETURN_FILED_ACTION, role, unread))
+    else:
+        why = "no journal row of %s names this file" % (_fr.RETURN_FILED_ACTION,)
+    return stamp, "the filed file's modification time, %s - %s" % (stamp, why)
 
 
 def agent_stage(ctx, task, role, at):
-    """The stage of an Agent `role` handed out at `at` whose return is filed:
-    from the hand-out to the filing (`filed_moment`). None while nothing says
-    it was filed, and for a filing stamped more than a second before its
-    hand-out - both stamps are whole seconds - since that is a clock that
-    moved. NO WAIT STAGE ON THIS ROUTE: no record says when the agent began,
-    so its wait cannot be told apart from its work, and the basis says the
-    length holds both rather than a wait of zero being written."""
+    """`(stage, None)` for an Agent `role` handed out at `at` whose return is
+    filed: from the hand-out to the filing (`filed_moment`). `(None, why)`
+    for a hand-out with no stamp, a filing whose time cannot be read, and a
+    filing stamped more than a second before its hand-out - both stamps are
+    whole seconds - since that is a clock that moved. NO WAIT STAGE ON THIS
+    ROUTE: no record says when the agent began, so its wait cannot be told
+    apart from its work, and the basis says the length holds both rather than
+    a wait of zero being written."""
+    begin = _usage_core.parse_ts(at)
+    if begin is None:
+        return None, "the hand-out of the %s holds no readable stamp (%r)" % (
+            role, at)
     stamp, what = filed_moment(ctx, task, role)
-    begin, end = _usage_core.parse_ts(at), _usage_core.parse_ts(stamp)
-    if begin is None or end is None or end < begin - 1:
-        return None
+    end = _usage_core.parse_ts(stamp)
+    if end is None:
+        return None, what
+    if end < begin - 1:
+        return None, ("the %s's filing (%s) reads before its hand-out at %s"
+                      % (role, what, at))
     return _timing.make_stage(
         AGENT_KINDS[role], at, int(round(max(0.0, end - begin) * 1000)),
         "hand-out to the filed return (%s); the agent's own start is not "
-        "recorded, so any wait before it is inside this length" % (what,))
+        "recorded, so any wait before it is inside this length" % (what,)), None
 
 
 def queue_agent_stage(ctx, state, task, role):
     """Queue the stage of `task`'s `role` Agent once its return is filed - only
     for an Agent this start handed out, since a session's stages come off its
-    own record - and write the state when one was queued."""
+    own record - or say why it is not recorded; write the state either way."""
     entry = (state.get(TIMING_KEY) or {}).get(task["id"]) or {}
     handout = (entry.get("handout") or {}).get(role) or {}
     if handout.get("start") != start_key(task):
@@ -1470,9 +1517,11 @@ def queue_agent_stage(ctx, state, task, role):
     source = "agent:%s:%s" % (role, handout["start"])
     if source in (entry.get("seen") or []):
         return
-    stage = agent_stage(ctx, task, role, handout.get("at"))
+    stage, why = agent_stage(ctx, task, role, handout.get("at"))
     if stage is not None:
         queue_stage(state, task, source, stage)
+        write_state(ctx, state)
+    elif stage_unread(ctx, state, task, AGENT_KINDS[role], why):
         write_state(ctx, state)
 
 
@@ -1555,27 +1604,41 @@ def session_stages(dispatch, run, kind, first):
     return out
 
 
+def ledger_unread(exc):
+    """Why no row was read when the ledger itself would not read. It names no
+    run: the launch's read and its repeat's name two runs of one measurement,
+    and an unreadable ledger cannot say they are one, so the line is said once
+    for the ledger rather than once for each name."""
+    return "the evidence ledger could not be read (%s: %s)" % (
+        type(exc).__name__, exc)
+
+
 def ledger_row(ctx, run_id):
-    """The evidence row of `run_id`, or None when the ledger will not read or
-    holds no such row."""
+    """`(row, None)` - the evidence row of `run_id` - or `(None, why)` when the
+    ledger will not read or holds no such row."""
     try:
         rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
-    except Exception:                                          # noqa: BLE001
-        return None
-    return _evio.row_by_run(rows, run_id)
+    except Exception as exc:                                   # noqa: BLE001
+        return None, ledger_unread(exc)
+    row = _evio.row_by_run(rows, run_id)
+    if row is None:
+        return None, "the evidence ledger holds no row of run %s" % (run_id,)
+    return row, None
 
 
 def row_stages(row, kind="gate"):
-    """`[(source, stage)]` for one evidence row: the run's own length under
-    `kind`, and for a gate run the time it spent choosing what to run, which
-    ends where the run's own `startedAt` begins. Nothing for a figure the row
-    lacks - a row from before a key existed included."""
+    """`([(source, stage)], gaps)` for one evidence row: the run's own length
+    under `kind`, and for a gate run the time it spent choosing what to run,
+    which ends where the run's own `startedAt` begins. `gaps` says why a
+    `kind` stage was not built - a row with no start or no length; a row with
+    no `selectionMs` is one from before the key existed, and is no gap."""
     if not isinstance(row, dict) or not row.get("runId"):
-        return []
+        return [], ["the evidence row read names no run"]
     run_id, started = str(row["runId"]), row.get(_evio.STARTED_KEY)
     if _usage_core.parse_ts(started) is None:
-        return []
-    out = []
+        return [], ["evidence row %s records no readable %s (%r)"
+                    % (run_id, _evio.STARTED_KEY, started)]
+    out, gaps = [], []
     selection = _evio.selection_ms(row)
     if kind == "gate" and selection is not None:
         out.append(("selection:%s" % (run_id,), _timing.make_stage(
@@ -1587,7 +1650,10 @@ def row_stages(row, kind="gate"):
         out.append(("%s:%s" % (kind, run_id), _timing.make_stage(
             kind, started, ms, "durationMs in evidence row %s" % (run_id,),
             run_id=run_id)))
-    return out
+    else:
+        gaps.append("evidence row %s records no readable durationMs (%r)"
+                    % (run_id, row.get("durationMs")))
+    return out, gaps
 
 
 def run_start(row):
@@ -1598,17 +1664,24 @@ def run_start(row):
     return _stamp_less(started, selection) if selection is not None else started
 
 
-def queue_row(ctx, state, task, row, kind="gate", since=None):
-    """Queue `row`'s stages for `task`, and the wait from a hand-out stamped
-    at `since` to the run's start, then write the state."""
-    pairs = row_stages(row, kind)
+def queue_row(ctx, state, task, read, kind="gate", since=None):
+    """Queue the stages of the row `read` holds - `(row, why)`, as `ledger_row`
+    and `gate_row_read` return it - for `task`, and the wait from a hand-out
+    stamped at `since` to the run's start, then write the state. A row that
+    could not be read, or a stage it lacks a figure for, is said
+    (`stage_unread`) rather than dropped in silence."""
+    row, why = read
+    if row is None and why is None:
+        return
+    pairs, gaps = row_stages(row, kind) if why is None else ([], [why])
     if since and pairs:
         pairs = [("wait:%s:%s" % (kind, row.get("runId")), wait_stage(
             since, run_start(row), "hand-out stamped by the drive -> start of "
             "evidence row %s" % (row.get("runId"),)))] + pairs
     for source, stage in pairs:
         queue_stage(state, task, source, stage)
-    if pairs:
+    said = [gap for gap in gaps if stage_unread(ctx, state, task, kind, gap)]
+    if pairs or said:
         write_state(ctx, state)
 
 
@@ -2873,15 +2946,25 @@ def gate_row(ctx, text):
     measured it, for a repeated verdict, when that one is still there - or None
     when the output names no run, the ledger will not read, or no row carries
     the id."""
+    return gate_row_read(ctx, text)[0]
+
+
+def gate_row_read(ctx, text):
+    """`gate_row` with why it holds no row: `(row, None)`, `(None, why)` when
+    the ledger will not read or holds no row of the run the output names, and
+    `(None, None)` when the output names no run - a gate that recorded no run
+    has no stage to lose, so `queue_row` says nothing of it."""
     found = _RUN_ID.search(text or "")
     if not found:
-        return None
+        return None, None
     try:
         rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
-    except Exception:                                          # noqa: BLE001
-        return None
+    except Exception as exc:                                   # noqa: BLE001
+        return None, ledger_unread(exc)
     row = _evio.row_by_run(rows, found.group(1))
-    return _evio.measured_row(rows, row) or row
+    if row is None:
+        return None, "the evidence ledger holds no row of run %s" % (found.group(1),)
+    return _evio.measured_row(rows, row) or row, None
 
 
 GATE_RED_HEAD = "The task gate the drive ran after your session is red. Its failing lines:"
@@ -5254,14 +5337,25 @@ def committed_sha(out):
     return found.group(1) if found else None
 
 
+def commit_verb(ctx, args):
+    """`run_verb` of `commit-task-work.py` with `args`, its length added to
+    `ctx[COMMIT_MS]` when the close is timing the commit - so the commit stage
+    holds the verb's own runs and nothing the step does between them."""
+    clock = time.monotonic()
+    try:
+        return run_verb(ctx, "commit-task-work.py", args)
+    finally:
+        if isinstance(ctx.get(COMMIT_MS), list):
+            ctx[COMMIT_MS].append((time.monotonic() - clock) * 1000.0)
+
+
 def refusal_answer(ctx, task):
     """The JSON answer (`_scoped_commit.answer`'s shape) of a `commit-task-work.py
     --json` run, asked after a refusal to read WHICH arm refused; None when its
     stdout holds no object. A refusal stages nothing, so the run asks the same
     question of the same tree - and a refusal that came and went commits here,
     which the answer then says."""
-    _code, out, _err = run_verb(ctx, "commit-task-work.py",
-                                commit_args(ctx, task) + ["--json"])
+    _code, out, _err = commit_verb(ctx, commit_args(ctx, task) + ["--json"])
     try:
         answer = json.loads(out)
     except ValueError:
@@ -5526,7 +5620,7 @@ def writer_commit(ctx, state, phase, task):
     back: the refusal is relayed naming it - after the clean ones are set aside
     and the work gated again, so a later close stands on that gate. Any other
     refusal is relayed in the verb's own words."""
-    code, out, err = run_verb(ctx, "commit-task-work.py", commit_args(ctx, task))
+    code, out, err = commit_verb(ctx, commit_args(ctx, task))
     if code == 0:
         return committed_sha(out), None
     answer = refusal_answer(ctx, task)
@@ -5544,7 +5638,7 @@ def writer_commit(ctx, state, phase, task):
     if stop is not None:
         return None, stop
     # Asked again, so a refusal relayed now names what the tree still holds.
-    code, out, err = run_verb(ctx, "commit-task-work.py", commit_args(ctx, task))
+    code, out, err = commit_verb(ctx, commit_args(ctx, task))
     if code != 0:
         return None, relay_refusal(ctx, "commit-task-work.py", code,
                                    (out + err).rstrip("\n") + said)
@@ -5956,6 +6050,26 @@ def _reviewer_facts(state, task, due, reviewer, stepped):
 
 
 # --- a task's close and advance: the facts read, the arm performed ------------
+def close_carrying(ctx, state, task, args, send=None):
+    """Close `task` through `audit-task.py done <args>`, carrying every stage
+    queued for it (`stage_args`) - the one way the drive closes a task, so no
+    route of a close leaves the queue behind. `send(argv)` runs the verb when
+    the close carries a prose value, which goes on stdin through a
+    `_verb_with_text` call the caller writes; else `_verb_or_stop`. None once
+    closed, the queue dropped with the task's timing entry; else the stop,
+    with the queue kept for the close asked again."""
+    done_args = _task_args(ctx, "done", task["id"], *args) + stage_args(state, task)
+    if send is None:
+        _out, stop = _verb_or_stop(ctx, "audit-task.py", done_args)
+    else:
+        _out, stop = send(done_args)
+    if stop is not None:
+        return stop
+    stages_carried(state, task, closed=True)
+    write_state(ctx, state)
+    return None
+
+
 def close_task(ctx, state, phase, task, intent_basis=None):
     """Findings, commit and close for a task whose returns are filed; None when
     the drive goes on, else the instruction or stop to print."""
@@ -5985,22 +6099,27 @@ def close_task(ctx, state, phase, task, intent_basis=None):
     route, _none = _close_plan("route", {
         "writerPath": lambda: writer_path_on(ctx),
         "session": lambda: recorded_session(state, task)})
-    # THE RECORD COMMIT IS TIMED HERE, around the verb: no record of it holds a
-    # length, and the close below is the write that carries it.
-    began, clock = _utc_stamp(), time.monotonic()
+    # THE RECORD COMMIT IS TIMED HERE, as the commit verb's own runs added up
+    # (`commit_verb`): no record of it holds a length, and the close below is
+    # the write that carries it. Not around the whole step - a set-aside
+    # proves and gates again between two runs, and that gate is a stage of
+    # its own, so a span around both counted it twice.
+    began, ctx[COMMIT_MS] = _utc_stamp(), []
     if route == "writer-commit":
         sha, stop = writer_commit(ctx, state, phase, task)
-        if stop is not None:
-            return stop
     else:
+        clock = time.monotonic()
         out, stop = _verb_or_stop(ctx, "commit-task-work.py", commit_args(ctx, task))
-        if stop is not None:
-            return stop
-        sha = committed_sha(out)
+        ctx[COMMIT_MS].append((time.monotonic() - clock) * 1000.0)
+        sha = committed_sha(out) if stop is None else None
+    runs = ctx.pop(COMMIT_MS)
+    if stop is not None:
+        return stop
     if sha:
         queue_stage(state, task, "commit:%s" % (sha,), _timing.make_stage(
-            "commit", began, int((time.monotonic() - clock) * 1000),
-            "commit-task-work.py timed around by the drive, commit %s" % (sha[:12],)))
+            "commit", began, int(round(sum(runs))),
+            "commit-task-work.py's own %d run(s), timed by the drive and added "
+            "up, commit %s" % (len(runs), sha[:12])))
         write_state(ctx, state)
     # A close refused after the commit landed leaves the work committed: close
     # on that commit through the same verb and checks, rather than offer
@@ -6010,18 +6129,16 @@ def close_task(ctx, state, phase, task, intent_basis=None):
                                           "own": lambda: own_commit(ctx, task)})
     if closing == "no-change":
         return decision(ctx, state, "no-change", task, "")
-    extra = ["--commit", sha, "--from-return"] + stage_args(state, task)
-    done_args = _task_args(ctx, "done", task["id"], *extra)
+    extra = ["--commit", sha, "--from-return"]
     if intent_basis is None:
-        _out, stop = _verb_or_stop(ctx, "audit-task.py", done_args)
+        stop = close_carrying(ctx, state, task, extra)
     else:
-        _out, stop = _verb_with_text(
-            ctx, "audit-task.py", done_args + ["--intent", "not-asked"],
-            "--intent-basis", intent_basis)
+        stop = close_carrying(
+            ctx, state, task, extra + ["--intent", "not-asked"],
+            lambda argv: _verb_with_text(ctx, "audit-task.py", argv,
+                                         "--intent-basis", intent_basis))
     if stop is not None:
         return stop
-    stages_carried(state, task, closed=True)
-    write_state(ctx, state)
     ctx["did"].append("%s %s at %s" % (CLOSED, task["id"], sha[:7]))
     stop = ci_after_close(ctx, state, phase)
     if stop is not None:
@@ -6194,14 +6311,14 @@ def gate_step(ctx, state, manifest, phase, task, tree=None):
     code, out, err = measured
     # The run that measured the verdict, a repeat's included (`gate_row`
     # reads through to it), queued once per run whatever reads it again.
-    queue_row(ctx, state, task, gate_row(ctx, out + err))
+    queue_row(ctx, state, task, gate_row_read(ctx, out + err))
     if code == 1:
         followed, again = follow_red_gate(ctx, state, phase, task, out + err, tree)
         if followed is not None:
             return followed
         if again is not None:
             code, out, err = again
-            queue_row(ctx, state, task, gate_row(ctx, out + err))
+            queue_row(ctx, state, task, gate_row_read(ctx, out + err))
     if code == 1:
         return gate_red_decision(ctx, state, manifest, phase, task, out + err,
                                  tree)
@@ -9292,9 +9409,9 @@ def apply_answer(ctx, state, manifest, phase, pending, answer, reason,
         write_state(ctx, state)
         return None
     if answer == "no-change":
-        _out, stop = _verb_with_text(
-            ctx, "audit-task.py",
-            _task_args(ctx, "done", task["id"], "--no-change"), "--reason", reason)
+        stop = close_carrying(
+            ctx, state, task, ["--no-change"],
+            lambda argv: _verb_with_text(ctx, "audit-task.py", argv, "--reason", reason))
         if stop is None:
             ctx["did"].append("%s %s (no change)" % (CLOSED, task["id"]))
         return stop

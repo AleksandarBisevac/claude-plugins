@@ -19181,6 +19181,334 @@ def _timing_red_cases(check, M, bindir, log):
           and bases[0]["runId"] not in [g.get("runId") for g in gates])
 
 
+# --- a task's timing across the commit's set-aside and every close ----------------
+# A gate entry that takes a whole second, so a commit stage that held the gate
+# run between the commit verb's two calls is longer than both calls by at
+# least that second, whatever the machine's speed.
+_TM_SLOW = '"%s" -c "import time; time.sleep(1)"' % (
+    sys.executable.replace("\\", "/"),)
+# What the ledger read raises in `tm12`, so the line the step says can be told
+# to carry the reason rather than a fixed phrase.
+_TM_UNREAD = "the ledger is unreadable for tm12"
+
+
+def _tm_timed_verb(M, script):
+    """Wrap `M.run_verb` so each run of `script` is timed from outside it.
+    Returns `(lengths, put_back)`: the milliseconds of each run, in order, and
+    the function that restores the verb runner."""
+    real, lengths = M.run_verb, []
+
+    def timed(ctx, name, args, *rest, **kw):
+        if name != script:
+            return real(ctx, name, args, *rest, **kw)
+        began = time.monotonic()
+        try:
+            return real(ctx, name, args, *rest, **kw)
+        finally:
+            lengths.append((time.monotonic() - began) * 1000.0)
+    M.run_verb = timed
+
+    def put_back():
+        M.run_verb = real
+    return lengths, put_back
+
+
+def _tm_refusing(M, verb, times=None):
+    """Wrap `M.run_verb` so `audit-task.py <verb>` is refused - every time, or
+    the first `times` - the way the verb refuses, with nothing written.
+    Returns `(refused, put_back)`: how many it refused."""
+    real, refused = M.run_verb, []
+
+    def refusing(ctx, name, args, *rest, **kw):
+        if name == "audit-task.py" and list(args)[:1] == [verb] \
+                and (times is None or len(refused) < times):
+            refused.append(list(args)[:2])
+            return 2, "", "%s refused by the fixture\n" % (verb,)
+        return real(ctx, name, args, *rest, **kw)
+    M.run_verb = refusing
+
+    def put_back():
+        M.run_verb = real
+    return refused, put_back
+
+
+def _tm_once_each(stages):
+    """Whether no stage is written twice: a second carrying of the same queue
+    repeats every field, the basis naming its record included."""
+    keys = [(s.get("kind"), s.get("startedAt"), s.get("ms"), s.get("runId"),
+             s.get("round"), s.get("basis")) for s in stages]
+    return len(keys) == len(set(keys))
+
+
+def _timing_close_cases(check):
+    """The commit stage is the commit verb's own time, a close by any route
+    carries the stages queued for it, and a stage whose source cannot be read
+    is said rather than dropped in silence."""
+    M, why = _load("drive_phase_timing_close")
+    if M is None:
+        check("tm10 the driver loads", False, why)
+        return
+    import _task_timing
+    stubs = os.path.realpath(_harness.fixture_root("drive-tmc-stub-"))
+    bindir = _writer_stub(stubs)
+    log = os.path.join(stubs, "runs.jsonl")
+
+    # (a) THE SET-ASIDE PATH: the first commit is refused over a document no
+    # task declares, the drive sets it aside, proves and gates again, then
+    # commits. The gate in between takes a second of its own, so a commit stage
+    # timed around the whole step is longer than the verb's own calls by it -
+    # the refused commit, the re-read of its refusal and the commit made.
+    root, mpath = _tdd_writer_repo("tm-aside", (_wf_gate(), _TM_SLOW))
+    _xs_with_aside(root)
+    _signal_next(M, root, mpath)
+    _writer_round(M, root, mpath, bindir, log, "0.41",
+                  edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST,
+                        _XS_ASIDE: _XS_EDIT}, result=_WF_CLAIM)
+    _file_reviewer(root, mpath, "P1.1")
+    lengths, put_back = _tm_timed_verb(M, "commit-task-work.py")
+    try:
+        code, line = _signal_next(M, root, mpath)
+    finally:
+        put_back()
+    task = _tm_task(mpath)
+    commits, gates = _tm_stages(mpath, "commit"), _tm_stages(mpath, "gate")
+    rows = _tm_rows(root, mpath)
+    runs = sorted(r["runId"] for r in rows.values()
+                  if r.get("taskId") == "P1.1"
+                  and r.get(_evio.VERDICT_SOURCE) != _evio.REUSED)
+    summary = _task_timing.summarize(task)
+    verb_ms = sum(lengths)
+    # The drive times inside the wrapper's own window, so its figure is at
+    # least the wrapper's sum less a millisecond a call for the drive's whole
+    # milliseconds, and at most that sum plus a margin far under the second
+    # the gate between the calls takes.
+    check("tm10 on the set-aside path the commit stage is the commit verb's own "
+          "calls - not the proof and the gate run between them - the gate "
+          "run again is one gate stage of its own, and the task's stages do not "
+          "overrun its window: %r"
+          % ((code, line[-300:], lengths, commits, [(g.get("runId"), g["ms"])
+                                                    for g in gates], runs,
+              summary),),
+          code == 0 and task.get("status") == "done" and len(lengths) >= 2
+          and len(commits) == 1
+          and verb_ms - len(lengths) <= commits[0]["ms"] <= verb_ms + 250
+          and "commit-task-work.py" in commits[0]["basis"]
+          and len(runs) == 2 and sorted(g.get("runId") for g in gates) == runs
+          and all(g["ms"] >= 1000 for g in gates)
+          and summary.get("overrunMs") == 0 and _tm_parts_add_up(summary))
+
+    # (b) THE NO-CHANGE ANSWER: the commit finds nothing to commit, the drive
+    # asks, and the answer closes the task through `done --no-change`. On the
+    # Agent route nothing writes the task between the hand-outs and the close,
+    # so every stage queued rides the close or is lost.
+    # HEAD already holds the bytes the executor writes, so its edit changes
+    # nothing and the gate's verdict is of a tree the close finds clean; the
+    # commit step answers as the writer path's verb does over such a tree.
+    root_n, mpath_n = _repo("tm-nochange", task_ids=TASKS[:1])
+    _edit(root_n, "P1.1", "changed by P1.1\n")
+    _harness.git(root_n, "commit", "-qam", "the work, already there")
+    _to_close(M, root_n, mpath_n)
+    real = M.run_verb
+
+    def no_commit(ctx, name, args, *rest, **kw):
+        if name == "commit-task-work.py":
+            return 0, "nothing to commit\n", ""
+        return real(ctx, name, args, *rest, **kw)
+    M.run_verb = no_commit
+    try:
+        code_a, text_a = _next_text(M, root_n, mpath_n)
+    finally:
+        M.run_verb = real
+    queued = list(((_drive_state(root_n).get(M.TIMING_KEY) or {}).get("P1.1")
+                   or {}).get("pending") or [])
+    code_b, text_b = _next(M, root_n, mpath_n, "--answer", "no-change",
+                           "--reason", "the work was already there")
+    task_n = _tm_task(mpath_n)
+    check("tm11 a task closed by the no-change answer carries every stage queued "
+          "for it - the writer's and the reviewer's among them - once each, and "
+          "the drive's state keeps no queue for it: %r"
+          % ((code_a, text_a[-400:], code_b, text_b[-300:], queued,
+              task_n.get("status"), task_n.get("timing"),
+              (_drive_state(root_n).get(M.TIMING_KEY) or {}).get("P1.1")),),
+          instruction(text_a) == ("decide", "no-change", None)
+          and code_b == 0 and task_n.get("status") == "done"
+          and not task_n.get("commit")
+          and set(s.get("kind") for s in queued) >= {"writer", "reviewer"}
+          and _tm_stages(mpath_n) == queued
+          and not (_drive_state(root_n).get(M.TIMING_KEY) or {}).get("P1.1"))
+
+    # (c) THE LEDGER UNREADABLE AT READ-BACK: the gate's verdict is read as it
+    # always is, and only the timing's reads of the row fail. Both reads of the
+    # one run - the launch's and the repeat's - fail on one source, so the line
+    # is said once.
+    _timing_unread_cases(check)
+    _timing_gap_cases(check, M)
+
+    # (d) THE FALLBACK BASES, each saying what was read and why.
+    root_f, mpath_f = _repo("tm-basis", task_ids=TASKS[:1])
+    _to_close(M, root_f, mpath_f)
+    ns = argparse.Namespace(project_dir=root_f, manifest=mpath_f, verbose=False,
+                            phase=PHASE, task_only=False)
+    real_read = M._journal_io.read_all
+
+    def unreadable(project, config=None):
+        raise OSError("the journal is unreadable for tm13")
+    with _Env(root_f):
+        ctx_f = M.context(ns)
+        task_f = _tm_task(mpath_f)
+        row_exec = M.filed_moment(ctx_f, task_f, "executor")
+        try:
+            M._journal_io.read_all = unreadable
+            unread_exec = M.filed_moment(ctx_f, task_f, "executor")
+            M._journal_io.read_all = lambda project, config=None: []
+            rowless_exec = M.filed_moment(ctx_f, task_f, "executor")
+        finally:
+            M._journal_io.read_all = real_read
+        rev = M.filed_moment(ctx_f, task_f, "reviewer")
+    check("tm13 each fallback basis says what was read and why: an executor's "
+          "filing read off its journal row; with the journal unreadable, the "
+          "file's modification time and the reason the row was not read; with "
+          "no row, the modification time and that no row names the file; a "
+          "reviewer's, a modification time that moves later and never earlier: "
+          "%r" % ((row_exec, unread_exec, rowless_exec, rev),),
+          "journal row" in str(row_exec[1]) and "modification" not in str(row_exec[1])
+          and "modification time" in str(unread_exec[1])
+          and "could not be read" in str(unread_exec[1])
+          and "unreadable for tm13" in str(unread_exec[1])
+          and "modification time" in str(rowless_exec[1])
+          and "could not be read" not in str(rowless_exec[1])
+          and "no journal row" in str(rowless_exec[1])
+          and "modification time" in str(rev[1])
+          and "never earlier" in str(rev[1]) and "later" in str(rev[1]))
+
+    # (6) A REFUSED NOTE: every session note is refused, so the stages each
+    # note would have carried stay queued, and the close carries them, once.
+    root_r, mpath_r = _tdd_writer_repo("tm-refused", (_wf_gate(),))
+    refused, put_back = _tm_refusing(M, "note")
+    try:
+        _signal_next(M, root_r, mpath_r)
+        _writer_round(M, root_r, mpath_r, bindir, log, "0.31",
+                      duration=TM_WRITER_MS,
+                      edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST},
+                      result=_WF_CLAIM)
+        _c, block = _explain_of(M, root_r, mpath_r, "P1.1")
+        _play_session(root_r, _run_argv(block) or [], bindir, log, "0.21",
+                      session=RV_SESSIONS[2], duration=TM_REVIEWER_MS,
+                      result=_review_json(mpath_r), tools=3)
+        code_r, line_r = _signal_next(M, root_r, mpath_r)
+    finally:
+        put_back()
+    stages_r = _tm_stages(mpath_r)
+    check("tm14 with every session note refused, the close carries the stages "
+          "those notes would have: one writer, one reviewer, every gate run once, "
+          "none written twice: %r"
+          % ((code_r, line_r[-300:], len(refused), stages_r),),
+          code_r == 0 and _tm_task(mpath_r).get("status") == "done"
+          and len(refused) >= 2
+          and [s["ms"] for s in stages_r if s.get("kind") == "writer"]
+          == [TM_WRITER_MS]
+          and [s["ms"] for s in stages_r if s.get("kind") == "reviewer"]
+          == [TM_REVIEWER_MS]
+          and len(_tm_stages(mpath_r, "commit")) == 1
+          and _tm_stages(mpath_r, "gate") and _tm_once_each(stages_r))
+
+    # A CLOSE REFUSED, THEN TAKEN: the first `done` is refused after the commit
+    # landed, and the next step closes on that commit. The queue stays until a
+    # close takes it, so each stage is written once.
+    root_c, mpath_c = _repo("tm-reclose", task_ids=TASKS[:1])
+    _to_close(M, root_c, mpath_c)
+    refused_c, put_back = _tm_refusing(M, "done", times=1)
+    try:
+        code_c1, _t1 = _next_text(M, root_c, mpath_c)
+        code_c2, text_c2 = _next_text(M, root_c, mpath_c)
+    finally:
+        put_back()
+    stages_c = _tm_stages(mpath_c)
+    check("tm15 a close refused once and then taken writes each queued stage "
+          "once - the writer's, the reviewer's and the commit's: %r"
+          % ((code_c1, code_c2, text_c2[-300:], refused_c, stages_c),),
+          code_c1 != 0 and code_c2 == 0 and len(refused_c) == 1
+          and _tm_task(mpath_c).get("status") == "done"
+          and [k for k in ("writer", "reviewer", "commit")
+               if len(_tm_stages(mpath_c, k)) == 1] == ["writer", "reviewer", "commit"]
+          and _tm_stages(mpath_c, "gate") and _tm_once_each(stages_c))
+
+
+def _timing_gap_cases(check, M):
+    """The reasons a stage is not built, each its own: a row with no start, a
+    row with no length, a hand-out with no stamp - and a whole row none."""
+    started = "2026-11-18T03:00:00Z"
+    whole = {"runId": "r-whole", _evio.STARTED_KEY: started, "durationMs": 1200,
+             "selectionMs": 300}
+    no_start = dict(whole, runId="r-nostart")
+    no_start.pop(_evio.STARTED_KEY)
+    no_length = dict(whole, runId="r-nolength")
+    no_length.pop("durationMs")
+    # A reading of another shape - a driver whose readers say no reason - is
+    # a failed case naming what it got, never a raise that ends the block.
+    try:
+        got = dict((row["runId"], M.row_stages(row))
+                   for row in (whole, no_start, no_length))
+        kinds = dict((k, [s["kind"] for _src, s in v[0]]) for k, v in got.items())
+        stamp = tuple(M.agent_stage({}, {"id": "P1.1"}, "executor", None) or ())
+    except (TypeError, ValueError, KeyError, IndexError) as exc:
+        check("tm16 the readers say why a stage was not built: %r"
+              % ("%s: %s" % (type(exc).__name__, exc),), False)
+        return
+    # OVER-FIRE: the whole row is the case a gap said on every row would fail.
+    check("tm16 a row with no start builds no stage and says so, one with no "
+          "length builds its selection and says the gate stage is missing, a "
+          "whole row says nothing, and a hand-out with no stamp says why no "
+          "writer stage was built: %r" % ((got, stamp),),
+          len(stamp) == 2
+          and kinds == {"r-whole": ["selection", "gate"], "r-nostart": [],
+                        "r-nolength": ["selection"]}
+          and got["r-whole"][1] == []
+          and len(got["r-nostart"][1]) == 1
+          and _evio.STARTED_KEY in got["r-nostart"][1][0]
+          and "r-nostart" in got["r-nostart"][1][0]
+          and len(got["r-nolength"][1]) == 1
+          and "durationMs" in got["r-nolength"][1][0]
+          and stamp[0] is None and "hand-out" in str(stamp[1]))
+
+
+def _timing_unread_cases(check):
+    """The background gate's read-back with the ledger unreadable to the
+    timing's reads alone: no gate or selection stage, and one line naming the
+    stage and the reason."""
+    M, why = _load("drive_phase_timing_unread", real_gate_choice=True)
+    if M is None:
+        check("tm12 the driver loads", False, why)
+        return
+    root, mpath = _repo("tm-unread", task_ids=TASKS[:1], per_task="phase")
+    _signal_raw(M, root, mpath)
+    _file_executor(root, mpath, "P1.1")
+    _signal_raw(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    _play_gate(root, _run_argv(block) or [])
+    real = M._evio.read_rows
+    timing_reads = ("ledger_row", "gate_row_read")
+
+    def read_rows(*args, **kw):
+        # Only the reads a stage is built from fail; the verdict's read stands.
+        if sys._getframe(1).f_code.co_name in timing_reads:
+            raise OSError(_TM_UNREAD)
+        return real(*args, **kw)
+    M._evio.read_rows = read_rows
+    try:
+        code, text = _next(M, root, mpath)
+    finally:
+        M._evio.read_rows = real
+    said = [ln for ln in text.splitlines() if "not recorded" in ln]
+    check("tm12 a ledger unreadable at the gate's read-back leaves no gate and no "
+          "selection stage, and the step says so once, naming the stage and the "
+          "reason: %r" % ((code, text[-600:], said, _tm_task(mpath).get("timing")),),
+          code == 0 and not _tm_stages(mpath, "gate")
+          and not _tm_stages(mpath, "selection")
+          and len(said) == 1 and "gate" in said[0] and _TM_UNREAD in said[0]
+          and text.count(_TM_UNREAD) == 1)
+
+
 STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("ws-block", "_writer_session_cases"),
           ("bg-block", "_background_gate_cases"),
@@ -19269,7 +19597,8 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("rf-block", "_ready_first_cases"),
           ("sd-block", "_scope_declared_cases"),
           ("sb-block", "_stage_cases"),
-          ("tm-block", "_timing_cases"))
+          ("tm-block", "_timing_cases"),
+          ("tm10-block", "_timing_close_cases"))
 
 
 CI_CADENCE_CLAUSE = ("tests/test_drive_phase.py: with ci.cadence "

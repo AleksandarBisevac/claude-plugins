@@ -5494,25 +5494,34 @@ drive's state under the record it was read from (`queue_stage`, once per source)
 reviewer session from the `startedAt` and `durationMs` its session record carries
 (`session_stages`, the writer's round counted from one); a gate run, and the time it spent
 choosing what to run, from its evidence row's `startedAt`, `durationMs` and `selectionMs`
-(`row_stages`, read through `gate_row` to the run that measured a repeated verdict); the base run
-a red's measurement took, when its reading is decided on; and the record commit, timed around
-`commit-task-work.py` or the writer's commit, since no record holds that length. A writer or
+(`row_stages`, read through `gate_row_read` to the run that measured a repeated verdict); the
+base run a red's measurement took, when its reading is decided on; and the record commit, since
+no record holds that length: the commit verb's own runs, each timed by `commit_verb` and added
+up, so a set-aside's proof and second gate between two runs - a gate stage of their own - are
+not counted inside it as well. A writer or
 reviewer dispatch is stamped when it is handed out (`at` on its entry), as a gate's launch is,
 and the gap to the step's own start is a `wait` stage (`wait_stage`; a start floored into the
 hand-out's own second is a wait of 0 that says so). An executor or reviewer dispatched as an
 Agent has no session record, so its hand-out is stamped under the same key
 (`agent_handed_out`, leaving the `dispatched-<role>` marks as they were) and its writer or
 reviewer stage runs from that stamp to the filing (`agent_stage`, `filed_moment`): the journal
-row that filed an executor's return, or - since no row files a reviewer's - the filed file's own
-modification time. That route writes no wait stage, because no record says when the agent began,
-and the stage's basis says its length holds the wait too. The queue rides writes the drive already
-makes - each session's note and the close, through `audit-task.py`'s `--stage` - and never a
-write or a commit of its own; a refused note leaves it queued for the next one. A wave member's
+row that filed an executor's return, or the filed file's own modification time - for an executor
+when the journal could not be read or names no row for the file, and for a reviewer always,
+since no row files one. The basis says which, and for a modification time that it moves later
+when the file is written again and never earlier. That route writes no wait stage, because no
+record says when the agent began, and the stage's basis says its length holds the wait too. The
+queue rides writes the drive already makes - each session's note and the close, through
+`audit-task.py`'s `--stage` - and never a write or a commit of its own; a refused note leaves it
+queued for the next one. Every close the drive makes goes through `close_carrying`, the commit's
+and the no-change answer's alike, so no route of a close leaves the queue behind. A wave member's
 notes and close are the phase tree's writes, so its stages land in the phase tree's shard. A
 source that cannot be read queues nothing, and `_task_timing.summarize` then carries that time
-as unattributed. The `tm` cases drive each stage from its source, `tm3` compares the
+as unattributed; the step says so on its did-line (`stage_unread`) - the ledger or a row
+unreadable, a row with no start or length, a hand-out with no stamp - once per stage and reason,
+never as a warning or a stop. The `tm` cases drive each stage from its source, `tm3` compares the
 journal's actions and the commit count with a drive whose stages are never queued, `tm8` holds
-the Agent route and `tm9` a wave member's stages in the phase tree's shard.
+the Agent route, `tm9` a wave member's stages in the phase tree's shard, and `tm10` to `tm16` the
+set-aside's commit stage, the no-change close, the unread lines and the fallback bases.
 
 ### `plugins/audit/scripts/governance/propose-gates.py`
 A plan proposal that reads what previous runs in THIS repository actually ran and what they
