@@ -8840,6 +8840,13 @@ def _group_cases(check):
                 fh.write("".join(ln for ln in _v2_lines
                                  if not (_v2_origin and _v2_origin in ln
                                          and '"reusedFrom"' not in ln)))
+        # ...and from the plan's record of the repeat, which carries the run it
+        # repeated whole: gone means gone from both places the reader looks.
+        _v2m = _mio.load_manifest(v2_mp)
+        for _v2p in _v2m["phases"]:
+            (_v2p.get(_ve_evidence.RECORD_KEY) or {}).pop(
+                _ve_evidence.REPEATED_RUN_KEY, None)
+        _panel_write._atomic_write_json(v2_mp, _v2m)
         code, txt = run(["signoff", "P1", "--verdict", "passed", "--summary", "s",
                          "--project-dir", v2_proj])
         check("ve2 SECOND DIRECTION: a repeated verdict whose source run is gone from "
@@ -23794,6 +23801,83 @@ def _stale_wide_gate_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _record_run_cases(check):
+    """(rr) `--failing-from` and `couple --basis-run` resolve a run the plan
+    holds only as a record - no evidence directory at all - and refuse an
+    unknown id naming BOTH places they looked."""
+    import _evidence_io as _rr_ev
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, _run_on_stdin, _base_manifest, mk, _mk_empty, task_in, _pin, _unpin,
+     _PD_SHA, _pd_fixture, _pd_repo, _git) = _at_kit(tmp)
+    try:
+        record = _rr_ev.run_record({
+            "v": 1, "runId": "RUN-REC", "ts": "2026-09-01T00:00:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "failed",
+            "failed": ["test"],
+            "steps": [{"name": "test", "exit": 1,
+                       "failingSuites": ["src/cart.test.ts"],
+                       "failingSuitesBasis": ("the 1 suite file(s) vitest "
+                                              "named as failing, read from "
+                                              "vitest's FAIL <file> line(s)")}]})
+        manifest = {
+            "meta": {"version": 2,
+                     "buildCommands": {"lint": "eslint .", "test": "vitest run"}},
+            "phases": [
+                {"id": "P1", "title": "Cart", "status": "in_progress",
+                 "testGate": ["lint", "test"],
+                 _rr_ev.RECORD_KEY: record,
+                 _rr_ev.POINTER_KEY: _rr_ev.pointer_from_record(record),
+                 "tasks": [{
+                     "id": "P1.1", "title": "seed", "status": "done",
+                     "files": ["src/a.ts"],
+                     "tests": {"mode": "gate-only", "add": [],
+                               "expectRedFirst": False,
+                               "gate": ["lint", "vitest run src/a.test.ts"]}}]}],
+            "fileIndex": {"src/a.ts": ["P1.1"]}, "bugs": []}
+        proj, mpath = mk("rr-record-only", manifest)
+        os.makedirs(os.path.join(proj, "src"), exist_ok=True)
+        with open(os.path.join(proj, "src", "cart.test.ts"), "w") as fh:
+            fh.write("// a fixture suite\n")
+        ledger = _rr_ev.evidence_dir(proj)
+        tests_of = lambda tid: (task_in(mpath, tid) or {}).get("tests") or {}  # noqa: E731
+        code, text = run(["add", "Fix the cart total", "--phase", "P1",
+                          "--project-dir", proj, "--failing-from", "RUN-REC"])
+        check("rrd1 --failing-from a run held ONLY as the phase's record, with no "
+              "evidence directory, gates the new task on the suite that run "
+              "named as failing, as the same run's ledger row does (ff1): %r"
+              % ((code, text[-300:], tests_of("P1.2")),),
+              not os.path.isdir(ledger) and code == 0
+              and tests_of("P1.2").get("gate")
+              == ["lint", "vitest run src/cart.test.ts"]
+              and tests_of("P1.2").get("gateBasis") == "failing-from-run:RUN-REC")
+        code, text = run(["couple", "--test", "src/cart.test.ts",
+                          "--sources", "src/a.ts", "--basis-run", "RUN-REC",
+                          "--basis-head", "deadbeef", "--project-dir", proj])
+        coupled = (_mio.load_manifest(mpath).get("meta") or {}).get("coupling")
+        check("rrd2 couple --basis-run a run held only as a record is accepted "
+              "and taught by it: %r" % ((code, text[-300:], coupled),),
+              code == 0 and isinstance(coupled, list) and len(coupled) == 1
+              and (coupled[0].get("basis") or {}).get("runId") == "RUN-REC")
+        refusals = [run(["add", "Fix a run nobody recorded", "--phase", "P1",
+                         "--project-dir", proj, "--failing-from", "NO-SUCH"]),
+                    run(["couple", "--test", "src/cart.test.ts",
+                         "--sources", "src/b.ts", "--basis-run", "NO-SUCH",
+                         "--basis-head", "deadbeef", "--project-dir", proj])]
+        check("rrd3 an unknown id is refused exit 2 by both verbs, each refusal "
+              "naming BOTH places it looked - the evidence ledger (here: no "
+              "such directory) and the records the plan holds - and nothing "
+              "is written: %r" % ([t[-400:] for _c, t in refusals],),
+              all(c == 2 for c, _t in refusals)
+              and all("docs/audit/evidence" in t and "record" in t
+                      and "docs/audit/audit-plan.json" in t
+                      for _c, t in refusals)
+              and task_in(mpath, "P1.3") is None
+              and len((_mio.load_manifest(mpath).get("meta") or {}).get(
+                  "coupling") or []) == 1)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("at3-block", "_flag_cases"), ("at4-block", "_start_cases"),
           ("at5-block", "_close_cases"), ("at6-block", "_group_cases"),
@@ -23829,6 +23913,7 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("lr-block", "_list_flag_cases"),
           ("grt-block", "_gate_reach_cases"),
           ("tmg-block", "_timing_cases"),
+          ("rr-block", "_record_run_cases"),
           ("wg-block", "_stale_wide_gate_cases"))
 
 

@@ -2081,13 +2081,19 @@
         },
         "testedState": {
           "type": "object",
-          "description": "What was tested: `head`, the `dirtyDigest` of what was dirty beside it, and `treeKey` when the run was measured in a tree that is not the project.",
+          "description": "What was tested: `head`, the `dirtyDigest` of what was dirty beside it, the declared-work digests `scopeDigest` and `scopeListDigest` the verdict binding compares with the declared files now, and `treeKey` when the run was measured in a tree that is not the project.",
           "properties": {
             "head": {
               "type": "string"
             },
             "dirtyDigest": {
               "type": "string"
+            },
+            "scopeDigest": {
+              "description": "The digest of the declared files' contents the run was measured on, as its ledger row's `testedState.scopeDigest`; null when it could not be taken. `_verdict_binding.digest_binding` compares it with the declared files now."
+            },
+            "scopeListDigest": {
+              "description": "The digest of the declared file LIST the run was measured on, as its ledger row's; it tells a changed list from changed contents when `scopeDigest` has moved."
             },
             "treeKey": {
               "type": "string"
@@ -2111,11 +2117,23 @@
         },
         "launch": {
           "type": "string",
-          "description": "The token a caller that started the run in the background passed with `--launch`, so it finds the record of exactly that run."
+          "description": "The token a caller that started the run in the background passed with `--launch`, so it finds the record of exactly that run - the step driver reads its background gate's run back by this token (`_evidence_io.run_by_launch`)."
         },
         "gradedBy": {
           "type": "string",
           "description": "Set only on a phase that took another member's record at a group sign-off, as `testEvidence.gradedBy` is."
+        },
+        "muted": {
+          "description": "The steps a quarantine excused in this run, as its ledger row's `muted` names them: a verdict a mute excused is never repeated by a later run (`_evidence_io.reusable_run`)."
+        },
+        "groupWith": {
+          "description": "On a run that measured a group of phases as one, the members it owned, as its ledger row's `groupWith`."
+        },
+        "baseRed": {
+          "description": "On a red run, its reading against the base - whether the red predates the task - as its ledger row's `baseRed` (`_evidence_io.BASE_RED_KEY`); the step driver reads it back when it decides the red (`base_red_why`)."
+        },
+        "repeatedRun": {
+          "description": "On a run whose verdict was repeated in whole or in part (`verdictSource` `reused` or `part-reused`), the record of the run it repeated, whole and in this same shape but carrying no `repeatedRun` of its own (`_evidence_io.REPEATED_RUN_KEY`). The subject's record is replaced by every run, so this is where the measured run a repeat stands on is still held: the verdict binding grades a repeat by that run's gate and declared-work digests, and a later run copies a step only from a run that measured it. Absent on a measured run, and on a repeat whose source the recorder could not read."
         },
         "steps": {
           "type": "array",
@@ -2156,6 +2174,27 @@
               },
               "reusedFrom": {
                 "type": "object"
+              },
+              "measured": {
+                "description": "The three-way word beside `ran` - checks were counted, none ran, or the runner reports no count (`run-test-gate.py`'s `measured_state`) - as its ledger row's step carries it."
+              },
+              "failingBasis": {
+                "description": "Where the step's `failing` lines were read from, as its ledger row's step says it."
+              },
+              "failingSuites": {
+                "description": "The suite files the runner named as failing - what `/audit:task add --failing-from` gates a fix task on (`_evidence_io.named_failing_suites`)."
+              },
+              "failingSuitesBasis": {
+                "description": "Where `failingSuites` was read from - the runner and the line it printed."
+              },
+              "suiteReader": {
+                "description": "Which runner's summary the step's tally was read with, as its ledger row's step names it - `none` when no reader recognised one; a phase gate's suite keys are read off it (`_evidence_io.suite_keys`)."
+              },
+              "muted": {
+                "description": "Set when a quarantine excused this step's failure in this run."
+              },
+              "command": {
+                "description": "The command the step ran, as `meta.buildCommands` resolved the entry - what a tally of that command matches."
               }
             }
           }

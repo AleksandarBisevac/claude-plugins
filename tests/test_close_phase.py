@@ -2650,6 +2650,91 @@ def _landing_fixture(name, rows, files=(), reason=None, verdict_hour=None,
     return root, mpath, git
 
 
+def _record_landing_fixture(name, rows, files=(), sharded=True):
+    """`_landing_fixture`'s branch with NO ledger: P1's newest run of `rows` is
+    the record the branch's plan holds (`run_record` over that run's row), in
+    the phase's shard when `sharded`, else on the phase in the one file - the
+    branch commits the record and no evidence directory at all."""
+    import _evidence_io as E
+    import _tree_stamp as T
+    root = _harness.fixture_root(name)
+    git = _fixture_git(root)
+    _init_fixture_repo(git)
+    phase = _signed_phase("P1", "audit/p1-demo")
+    phase["testGate"] = ["test"]
+    phase["tasks"][0]["files"] = list(files)
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    shard = os.path.join(root, "docs", "audit", "phases", "P1.json")
+
+    def write(body):
+        os.makedirs(os.path.dirname(shard), exist_ok=True)
+        if sharded:
+            with open(shard, "w") as fh:
+                json.dump(body, fh)
+            with open(mpath, "w") as fh:
+                json.dump({"meta": {"developmentBranch": "main"}, "phases": [
+                    {"id": "P1", "title": "One", "shard": "phases/P1.json"}]},
+                    fh)
+        else:
+            with open(mpath, "w") as fh:
+                json.dump({"meta": {"developmentBranch": "main"},
+                           "phases": [body]}, fh)
+    write(phase)
+    git("add", "-A")
+    git("commit", "-q", "-m", "base")
+    git("checkout", "-q", "-b", "audit/p1-demo")
+    for rel in ("work.txt",) + tuple(files):
+        with open(os.path.join(root, rel), "w") as fh:
+            fh.write("work\n")
+    digest = T.scope_digest(root, list(files))[0] if files else None
+    hour, status = rows[-1]
+    phase[E.RECORD_KEY] = E.run_record({
+        "runId": "cr-%d" % hour, "ts": "2026-09-01T0%d:00:00Z" % hour,
+        "scope": "phase", "phaseId": "P1", "status": status,
+        "gateSource": "phase", "steps": [{"name": "test"}],
+        "testedState": {"scopeDigest": digest}})
+    phase[E.POINTER_KEY] = E.pointer_from_record(phase[E.RECORD_KEY])
+    write(phase)
+    git("add", "-A")
+    git("commit", "-q", "-m", "work")
+    return root, mpath, git
+
+
+def _record_landing_cases(check):
+    """(cr33) A branch's runs are read from the branch's shards as they were
+    from its ledger texts: run from the parent's tree, whose plan holds no
+    record and whose tree holds no ledger, a landing reads the record the
+    branch tip commits - a red refuses naming it, a green binds to it."""
+    for name, rows, files, sharded, refused in (
+            ("closephase-record-red", [(0, "passed"), (1, "failed")], (), True,
+             True),
+            ("closephase-record-green", [(0, "failed"), (1, "passed")],
+             ("src.txt",), False, False)):
+        root = None
+        try:
+            root, mpath, git = _record_landing_fixture(name, rows, files=files,
+                                                       sharded=sharded)
+            git("checkout", "-q", "main")
+            code, text = _close(mpath, root, "--keep-branch")
+            if refused:
+                check("cr33 RED-FIRST: a branch whose SHARD records a red as its "
+                      "newest run, with no ledger anywhere, refuses from the "
+                      "parent's tree naming that run, and lands nothing: exit %r, "
+                      "landed %r, %r" % (code, _landed(git), text[:400]),
+                      code == 1 and not _landed(git) and "cr-1" in text)
+            else:
+                check("cr34 ALLOW: a branch whose one-file plan records a green "
+                      "as its newest run, with no ledger anywhere, lands BOUND to "
+                      "it from the parent's tree - the digest over the tip's "
+                      "declared files: exit %r, landed %r, %r"
+                      % (code, _landed(git), text[:400]),
+                      code == 0 and _landed(git)
+                      and "gate: bound to run cr-1" in text)
+        finally:
+            if root:
+                _harness.remove_tree(root)
+
+
 def _landing_cases(check):
     """THE HEAD IT WOULD MERGE, not the tree `--project` names; and a sign-off
     that chose to stand on no run, honoured for the green it set aside and not
@@ -5229,7 +5314,9 @@ STAGES = (("tk-block", "_takeover_cases"), ("lk-block", "_lock_cases"),
           ("sc-block", "_same_checkout_reach_cases"),
           ("fc-block", "_fail_closed_verdict_cases"),
           ("rs-block", "_read_set_reach_cases"), ("ov-block", "_override_cases"),
-          ("la-block", "_landing_cases"), ("co-block", "_checked_out_cases"),
+          ("la-block", "_landing_cases"),
+          ("lr-block", "_record_landing_cases"),
+          ("co-block", "_checked_out_cases"),
           ("sy-block", "_symlink_cases"), ("cm-block", "_composed_cases"),
           ("sd-block", "_same_dir_cases"),
           ("sv-block", "_surviving_copy_cases"),

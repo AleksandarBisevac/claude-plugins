@@ -982,6 +982,47 @@ def _cases(check):
               code43 == 0 and answer43.get("undated") == ["run-undated"]
               and any("run-undated" in line and "no moment" in line
                       for line in told43))
+        # --- a run the plan holds only as a record, arriving in a shard -----
+        # The same rule as a run held as a row (i13-i16): one run, one entry,
+        # wherever the reader finds it - refused, naming the plan file that
+        # holds the record, with nothing written.
+        d45, mp45 = project()
+        with io.open(mp45, encoding="utf-8") as fh:
+            plan45 = json.load(fh)
+        record45 = _ev.run_record({"runId": "run-rec1", "v": 1,
+                                   "ts": "2026-01-02T00:00:00Z", "scope": "task",
+                                   "taskId": "P1.1", "phaseId": "P1",
+                                   "status": "passed", "steps": []})
+        plan45["phases"][0]["tasks"][0][_ev.RECORD_KEY] = record45
+        with io.open(mp45, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(plan45, indent=2))
+        name45 = "2026-01.ci-rec.jsonl"
+        data45, _ = _shard_bytes(
+            name45, [{"runId": "run-rec1", "v": 1, "status": "passed"},
+                     {"runId": "run-rec2", "v": 1, "status": "passed"}])
+        src45 = write_shard(name45, data45)
+        code45, out45 = run([mp45, src45, "--project-dir", d45])
+        json45 = json.loads(run([mp45, src45, "--project-dir", d45,
+                                 "--json"])[1])
+        ev45 = _ev.evidence_dir(d45)
+        check("i45 a shard carrying a runId the plan holds ONLY as a record - no "
+              "evidence directory at all - is refused exit 1 as a held row is "
+              "(i13), naming the plan file that holds it and not the new id, "
+              "and nothing is written: %r / %r / %r"
+              % (code45, out45, json45.get("duplicates")),
+              code45 == 1 and "run-rec2" not in out45
+              and json45.get("duplicates")
+              == [{"runId": "run-rec1", "file": "docs/audit/audit-plan.json"}]
+              and not (os.path.isdir(ev45) and os.listdir(ev45)))
+        name46 = "2026-01.ci-rec-new.jsonl"
+        data46, _ = _shard_bytes(
+            name46, [{"runId": "run-rec3", "v": 1, "status": "passed"}])
+        code46, out46 = run([mp45, write_shard(name46, data46),
+                             "--project-dir", d45])
+        check("i46 ALLOW: the same plan imports a shard whose runs its record "
+              "does not hold - a record refuses only the run it is: %r (%s)"
+              % (code46, out46),
+              code46 == 0 and sorted(os.listdir(ev45)) == [name46])
         check("i44 SECOND DIRECTION: a row stamped with an offset names a "
               "moment and is not listed as undated - a note that fired on every "
               "spelling but the Z form would be read past: %r"

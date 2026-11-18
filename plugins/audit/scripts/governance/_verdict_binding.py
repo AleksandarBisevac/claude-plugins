@@ -19,8 +19,9 @@ ledger and `_tree_stamp` for the digest, which are peers and cannot hold it.
 THE RULE, arm by arm, each with its sentence:
 
   * The subject's rows are the ones carrying its ids (`_evidence_io._same_subject`),
-    and the NEWEST by `ts` is the verdict - never the plan's pointer, which is a
-    cache that a refused write leaves behind the record.
+    read from the ledger and from the records the plan holds, one per run
+    (`subject_runs`), and the NEWEST by `ts` is the verdict - never the plan's
+    pointer, which is a cache that a refused write leaves behind the record.
   * A ledger line that will not parse and could be the subject's row blocks: the
     verdict is then not established. A line that names another task is passed
     over and said.
@@ -385,15 +386,35 @@ def red_after_green(rows):
     return reds[-1] if reds else None
 
 
+def plan_records(project, manifest_path):
+    """`[(row, label)]` - the records the plan at `manifest_path` holds, each
+    in its run's row shape (`_evidence_io.records_of_bodies`)."""
+    return _evidence_io.records_of_bodies(
+        _evidence_io.plan_bodies(manifest_path, project)[0])
+
+
+def subject_runs(texts, records):
+    """Every run `texts` (`ledger_texts`' shape) and `records` (`plan_records`'
+    shape) hold, one entry per run: the ledger's row where both hold it."""
+    return _evidence_io.with_records(rows_of(texts), records)[0]
+
+
 def binding(project, ids, entries, source, owns, manifest_path, record,
-            no_gate, config=None, build=None, texts=None, digest_root=None):
+            no_gate, config=None, build=None, texts=None, digest_root=None,
+            records=None):
     """`{"state", "sentence", "row", "measured", "notes"}` - whether the subject's
     newest recorded verdict binds the declared work `owns` as it stands now.
 
     `texts` is the ledger to read (`ledger_texts`' shape) when it is not the
     one under `project` - a landing reads the branch it would merge - and
     `digest_root` the tree whose declared files the digest is taken over when
-    that is not `project` either.
+    that is not `project` either. `records` is the plan's records to read
+    beside it (`plan_records`' shape) when they are not the ones the plan at
+    `manifest_path` holds - the branch's, for a landing.
+
+    THE RECORDS ARE RUNS AS THE ROWS ARE: the newest run of the subject is
+    read from the union, so a plan whose ledger holds no row of a run its
+    record holds binds exactly as the row would have.
 
     `ids` is `{"taskId", "phaseId"}` for a task, `{"phaseId"}` for a phase;
     `entries`/`source` are `_manifest_io.gate_entries`' answer; `record` is the
@@ -419,7 +440,9 @@ def binding(project, ids, entries, source, owns, manifest_path, record,
         out["sentence"] = blocking_sentence(who, blocking)
         out["arm"] = ARM_UNREADABLE
         return out
-    ledger = {"rows": rows_of(texts)}
+    if records is None:
+        records = plan_records(project, manifest_path)
+    ledger = {"rows": subject_runs(texts, records)}
     rows = [r for r in ledger["rows"]
             if isinstance(r, dict) and _evidence_io._same_subject(r, ids)]
     # A SUBJECT ROW WHOSE ts NAMES NO MOMENT BLOCKS, as an unparseable line
@@ -486,9 +509,9 @@ def binding(project, ids, entries, source, owns, manifest_path, record,
                     if origin else None)
         if measured is None:
             out["sentence"] = ("%s's newest verdict (%s) repeats run %s, which is "
-                               "not in the ledger, so the tree it was measured on "
-                               "is not established - %s" % (who, run, origin,
-                                                            record))
+                               "not in the ledger nor in any record the plan "
+                               "holds, so the tree it was measured on is not "
+                               "established - %s" % (who, run, origin, record))
             out["arm"] = ARM_REPEAT_GONE
             return out
     out["measured"] = measured
@@ -605,16 +628,18 @@ def task_binding(project, manifest_path, manifest, phase, task, record, no_gate,
 
 
 def phase_binding(project, manifest_path, manifest, phase, files, record,
-                  no_gate, config=None, texts=None, digest_root=None):
+                  no_gate, config=None, texts=None, digest_root=None,
+                  records=None):
     """`binding` for `phase`'s own gate over `files` - its task files, or a
-    group's union when `phase` carries a group's one run. `texts` and
-    `digest_root` are `binding`'s: the ledger and the tree being judged when
-    they are not the ones under `project`."""
+    group's union when `phase` carries a group's one run. `texts`, `records`
+    and `digest_root` are `binding`'s: the ledger, the plan's records and the
+    tree being judged when they are not the ones under `project`."""
     entries, source = _mio.gate_entries(phase, None)
     build = ((manifest or {}).get("meta") or {}).get("buildCommands")
     return binding(project, {"phaseId": str(phase.get("id"))}, entries, source,
                    files, manifest_path, record, no_gate, config=config,
-                   build=build, texts=texts, digest_root=digest_root)
+                   build=build, texts=texts, digest_root=digest_root,
+                   records=records)
 
 
 # The arms a sign-off recorded with `--no-evidence-reason` answers: a green that
@@ -653,16 +678,16 @@ def close_refusal(answer, signed_without_run=None):
     return answer.get("sentence")
 
 
-def member_red(texts, member_id, carrier_answer, record):
+def member_red(texts, member_id, carrier_answer, record, records=()):
     """A refusal in `binding`'s shape when a group member's own newest red - the
     newest after its last green - is newer than the carrier's run that grades the
-    group, else None.
+    group, else None. `records` (`plan_records`' shape) are read beside `texts`.
 
     The carrier's run is the group's verdict, and a member's own rows are not
     asked by it; a red recorded on the member alone afterwards is newer evidence
     about the branch every member lands. A red whose moment cannot be placed
     refuses, the side that cannot land over it unanswered."""
-    rows = [r for r in rows_of(texts)
+    rows = [r for r in subject_runs(texts, records)
             if _evidence_io._same_subject(r, {"phaseId": str(member_id)})]
     red = red_after_green(rows)
     if red is None:

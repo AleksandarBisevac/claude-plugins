@@ -13958,9 +13958,112 @@ def _last_run_record_cases(check):
           and "GATE GREEN" not in h_text)
 
 
+def _record_part_reuse_cases(check):
+    """(rpr) The part repeat answered from the plan's records alone: before
+    every ask the evidence directory is removed whole, so the only run a repeat
+    could find is the one the phase's record holds. Each step appends its name
+    to an ignored log, so how often a step RAN is counted from the commands."""
+    root = _harness.fixture_root("run-test-gate-record-reuse-")
+    try:
+        for rel in (os.path.join("docs", "audit", "phases"), ".claude", "src"):
+            os.makedirs(os.path.join(root, rel))
+        with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+        sources = {
+            ".gitignore": "runs.log\n",
+            "src/a.py": "declared = 1\n",
+            "tree.py": ("with open('runs.log', 'a') as fh:\n"
+                        "    fh.write('tree\\n')\n"),
+            "plan.py": ("import json\nimport sys\n"
+                        "with open('runs.log', 'a') as fh:\n"
+                        "    fh.write('plan\\n')\n"
+                        "with open(sys.argv[1]) as fh:\n"
+                        "    json.load(fh)\n"),
+        }
+        for rel, body in sources.items():
+            with open(os.path.join(root, rel), "w") as fh:
+                fh.write(body)
+        mp = os.path.join(root, "docs", "audit", "audit-plan.json")
+        with open(mp, "w") as fh:
+            json.dump({"meta": {"version": 3, "buildCommands": {
+                "tree": "python3 tree.py",
+                "plan": "python3 plan.py docs/audit/audit-plan.json"}},
+                "phases": [{"id": "P1", "title": "one",
+                            "shard": "phases/P1.json"}]}, fh)
+        shard = os.path.join(root, "docs", "audit", "phases", "P1.json")
+        with open(shard, "w") as fh:
+            json.dump({"id": "P1", "title": "one", "status": "in_progress",
+                       "testGate": ["tree", "plan"], "tasks": [
+                           {"id": "P1.1", "title": "t", "status": "in_progress",
+                            "files": ["src/a.py"]}]}, fh)
+        _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
+        for arg in (["add", "--", ".gitignore", "docs", ".claude", "src",
+                     "tree.py", "plan.py"],
+                    ["-c", "user.email=fixture@example.com",
+                     "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                     "commit", "-qm", "fixture"]):
+            _harness.git(root, *arg, prefix=_PLAIN_GIT)
+        evdir = os.path.join(root, "docs", "audit", "evidence")
+
+        def runs():
+            path = os.path.join(root, "runs.log")
+            if not os.path.exists(path):
+                return 0, 0
+            with open(path) as fh:
+                said = fh.read().split()
+            return said.count("tree"), said.count("plan")
+
+        def ask():
+            """One recorded ask with no ledger to read: the evidence directory
+            goes first, so the row this run writes is the only one in it."""
+            _harness.remove_tree(evdir)
+            lines = []
+            code = M.main([mp, "P1", "--project-dir", root, "--record"],
+                          out=lines.append)
+            rows = _recorded_rows(evdir) if os.path.isdir(evdir) else []
+            return code, "\n".join(lines), (rows[-1] if rows else {})
+
+        def source(row, name):
+            step = next((s for s in row.get("steps") or []
+                         if s.get("name") == name), {})
+            return (step.get("reusedFrom") or {}).get("runId")
+
+        _c1, _t1, first = ask()
+        code2, text2, second = ask()
+        code3, text3, third = ask()
+        check("rpr1 WITH RECORDS ONLY, a second ask on an unchanged tree "
+              "measures exactly the step the left-out reading names (the plan "
+              "step) and copies the tree step from the run that measured it - "
+              "and so does a third, whose copy still names that FIRST run, "
+              "not the second that only copied it: runs=%r exit=%r/%r "
+              "sources=%r/%r first=%r %r"
+              % (runs(), code2, code3, source(second, "tree"),
+                 source(third, "tree"), first.get("runId"), text3[-400:]),
+              runs() == (1, 3) and code2 == M.E_OK and code3 == M.E_OK
+              and second.get("verdictSource") == "part-reused"
+              and third.get("verdictSource") == "part-reused"
+              and bool(first.get("runId"))
+              and source(second, "tree") == first.get("runId")
+              and source(third, "tree") == first.get("runId")
+              and source(third, "plan") is None)
+        with open(os.path.join(root, "src", "a.py"), "w") as fh:
+            fh.write("declared = 2\n")
+        code4, _t4, fourth = ask()
+        check("rpr2 a record under another key repeats nothing: once a declared "
+              "file moves the identity, the next ask from records alone "
+              "measures BOTH steps and copies none: runs=%r exit=%r source=%r"
+              % (runs(), code4, fourth.get("verdictSource")),
+              runs() == (2, 4) and code4 == M.E_OK
+              and fourth.get("verdictSource") is None
+              and not any("reusedFrom" in s for s in fourth.get("steps") or []))
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
         _harness.stage(check, "lr-block", _last_run_record_cases)
+        _harness.stage(check, "rpr-block", _record_part_reuse_cases)
         _harness.stage(check, "gte-block", _gate_task_env_cases)
         _harness.stage(check, "gtf-block", _foreign_status_cases)
         _harness.stage(check, "gtd-block", _task_bug_definition_cases)

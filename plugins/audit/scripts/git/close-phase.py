@@ -45,7 +45,8 @@ the phase's newest recorded gate verdict is asked at the head it would merge
 files of the phase - or, for a phase signed off in a group, of the carrier whose
 run grades it, over every member's files). The ledger is read as committed at the
 branch tip and, unioned with it, as it stands in the worktree holding the branch
-(`branch_texts`); the digest is always taken over the tip's committed declared
+(`branch_texts`), and the plan's records the same two ways (`branch_records`);
+the digest is always taken over the tip's committed declared
 files, checked out as a checkout of the branch writes them (`tip_scope`) - never
 over a worktree, whatever tree `--project` names. Neither readable is
 unreadable, never no run. A sign-off recorded with `--no-evidence-reason` is honoured: a
@@ -1887,6 +1888,60 @@ def branch_texts(git_root, project, branch, phase_tree, directory):
     return (tip or []) + (local or []), notes
 
 
+def _tip_json(git_root, branch, rel):
+    """The JSON file at `rel` (root-relative, posix) as committed at `branch`'s
+    tip, or None when git holds none there or it will not parse."""
+    code, raw = _git_bytes(git_root, ["cat-file", "blob",
+                                      "refs/heads/%s:%s" % (branch, rel)])
+    if code != 0:
+        return None
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except Exception:
+        return None
+
+
+def tip_bodies(git_root, branch, manifest_path):
+    """`(bodies, why)` - every phase body of the plan as committed at `branch`'s
+    tip, in `_evidence_io.plan_bodies`' shape - the index's own phases, or each
+    shard it names - or `([], why)` when git holds no such plan there."""
+    rel = os.path.relpath(manifest_path, git_root).replace(os.sep, "/")
+    if rel.startswith(".."):
+        return [], "%s is outside the repository" % (manifest_path,)
+    index = _tip_json(git_root, branch, rel)
+    if not isinstance(index, dict):
+        return [], "git holds no readable %s at %s" % (rel, branch)
+    base = posixpath.dirname(rel)
+    bodies = []
+    for stub in index.get("phases") or []:
+        if not isinstance(stub, dict):
+            continue
+        if not stub.get("shard"):
+            bodies.append(("%s:%s" % (branch, rel), stub))
+            continue
+        path = posixpath.normpath(posixpath.join(base, str(stub["shard"])))
+        body = _tip_json(git_root, branch, path)
+        if isinstance(body, dict):
+            bodies.append(("%s:%s" % (branch, path), body))
+    return bodies, ""
+
+
+def branch_records(git_root, project, branch, phase_tree, manifest_path):
+    """`(records, notes)` - the records the plan holds as the landing judges it,
+    in `_verdict_binding.plan_records`' shape: at the branch tip, unioned with
+    the worktree holding the branch when there is one - `branch_texts`' rule
+    for the ledger, asked of the plan's shards."""
+    bodies, why = tip_bodies(git_root, branch, manifest_path)
+    tree = _phase_project(git_root, project, phase_tree)
+    if tree:
+        local, _lost = _evidence_io.plan_bodies(
+            os.path.join(tree, os.path.relpath(manifest_path, project)), tree)
+        bodies = bodies + local
+    notes = (["the plan's records could not be read at the branch tip (%s)"
+              % (why,)] if why and not tree else [])
+    return _evidence_io.records_of_bodies(bodies), notes
+
+
 def _phase_project(git_root, project, phase_tree):
     """The project directory inside the worktree that holds the branch, or None."""
     if not phase_tree or phase_tree.get("prunable") or not phase_tree.get("path"):
@@ -2153,7 +2208,8 @@ def gate_answer(project, manifest_path, manifest, phase, git_root=None,
     refuses (`_verdict_binding.member_red`).
 
     READ AT THE HEAD IT WOULD MERGE when `branch` is given: the ledger and the
-    journal through `branch_texts`, and the digest over the tip's own declared
+    journal through `branch_texts`, the plan's records through
+    `branch_records`, and the digest over the tip's own declared
     files (`tip_scope`) - never a worktree's working files, whose uncommitted
     bytes are not what lands. A tip that cannot be written out answers
     unanswerable. Without a branch, the ledger and the files under `project`.
@@ -2171,11 +2227,17 @@ def gate_answer(project, manifest_path, manifest, phase, git_root=None,
     files = _vb.phase_files(members)
     config = _journal_io.load_config(project)
     texts, digest_root, scratch, notes = None, None, None, []
+    records = None
     journal = None
     tip_lost = False
     if branch and git_root:
         texts, notes = branch_texts(git_root, project, branch, phase_tree,
                                     _evidence_io.evidence_dir(project, config))
+        # THE BRANCH'S RECORDS, as its ledger is read: a run the branch's
+        # shards hold and no ledger row does is still the run that lands.
+        records, record_notes = branch_records(git_root, project, branch,
+                                               phase_tree, manifest_path)
+        notes = notes + record_notes
         journal, journal_notes = branch_texts(
             git_root, project, branch, phase_tree,
             _journal_io.journal_dir(project, config))
@@ -2199,7 +2261,8 @@ def gate_answer(project, manifest_path, manifest, phase, git_root=None,
         answer = _vb.phase_binding(
             project, manifest_path, manifest, carrier, files, record,
             "phase %s declares no gate, so its landing rests on its sign-off alone"
-            % (cid,), config=config, texts=texts, digest_root=digest_root)
+            % (cid,), config=config, texts=texts, digest_root=digest_root,
+            records=records)
     finally:
         if scratch:
             _output.remove_tree(scratch)
@@ -2218,7 +2281,9 @@ def gate_answer(project, manifest_path, manifest, phase, git_root=None,
     if str((phase or {}).get("id")) != cid and _vb.close_refusal(answer) is None:
         own = _vb.member_red(
             texts if texts is not None else _vb.ledger_texts(project, config),
-            (phase or {}).get("id"), answer, record)
+            (phase or {}).get("id"), answer, record,
+            records=(records if records is not None
+                     else _vb.plan_records(project, manifest_path)))
         if own is not None:
             answer = own
     return answer, signed, notes

@@ -1290,7 +1290,11 @@ committing it, since sign-off refuses again (`vr8`). A return any hand put where
 it before the verdict is in the read set, the filing verb's or not. A
 digest-moved refusal whose declared files hold uncommitted changes in the worktree holding the
 branch names them (`uncommitted_declared`) and says to commit or revert them before recording,
-since a run recorded over them is refused again (`cr19b`, `cr19c`). A re-run
+since a run recorded over them is refused again (`cr19b`, `cr19c`). The runs that verdict is
+read from are the branch's ledger (`branch_texts`) and the records its plan holds, read the same
+two ways (`branch_records`: the index and the shards it names as committed at the tip, through
+`tip_bodies`, and the worktree holding the branch), so a branch whose run lives only in a shard
+refuses or binds as its ledger row would (`cr22`, `cr23`). A re-run
 over a landed phase - its branch gone or not - commits a stamp an earlier landing left as an
 edit, and commits nothing when there is none. `lt` in `tests/test_close_phase.py`
 and `g17`/`g17b` in `tools/check-git-pipeline.py` hold it against real git. Each of the three plan writes here — the stamp, the
@@ -3982,6 +3986,25 @@ different things. `rowFiles` names, at each row's own index, the basename of the
 from, so a caller that must say *which* file holds a run reads it from this one read instead of
 walking the directory again with a decode of its own.
 
+**One reader, two places: the ledger rows and the plan's records.** `read_rows()` returns the
+union of the ledger's rows and every `lastRun` record the plan holds (`plan_bodies()` reads the
+index and its shards as written, `records_of_bodies()` reads each record in the row's shape
+through `record_row()`), one entry per `runId` — a run both hold stays the ledger's row, with the
+record's `launch` token merged onto it (`with_records()`). The entries a record supplied come
+after every row; `rowSources[i]` says which place answered (`ROW_FROM_LEDGER` or
+`ROW_FROM_RECORD`), and for a record `rowFiles[i]` is the plan file that holds it, relative to
+the project — so a caller naming where a run lives names that file. `files`, `unreadable` and
+`unreadableFiles` stay the ledger's; `records` counts the entries the plan added and
+`unreadablePlanFiles` names a plan file that would not read. An absent evidence directory is
+said, never counted: `ledgerAbsent` carries the sentence naming the directory and that the runs
+read are the records, and is None when the directory exists. A repeat's record carries the run
+it repeated whole (`REPEATED_RUN_KEY`, written by `run_record()` from its `source`), so a reader
+following `reusedFrom` reaches the measured run from the record alone; that run is read before
+the record repeating it, because `oldest_first` gives a tie of moments to the entry read later.
+A group member's copy (`gradedBy`) is read under its carrier, as the ledger holds it. The drive
+finds the run it launched by that token (`run_by_launch()`), and `_verdict_binding` and
+`close-phase.py` read the same union — the latter at the branch's tip.
+
 **Every row is hash-chained, with the trail's chain and not a second one.** `append_row()` links
 each row onto the file's tail — `prev`, then `hash` over the canonical row, seeded from the file's
 own basename by `genesis_prev()` — and `verify()` reads the links back. All of it is spelled with
@@ -4973,7 +4996,8 @@ counts rows, so a run arriving twice is counted twice. The import is refused, ex
 duplicated `runId` and the file already holding it, when the shard carries a `runId` the ledger
 already holds under another file, or repeats a `runId` among its own rows (the shard itself is
 then the holder). The holders come from `_evidence_io.read_rows`'s `rowFiles`, the same read every
-consumer trusts. A ledger that cannot be read in full refuses the import too, saying the check
+consumer trusts, so a run the plan holds only as a `lastRun` record is held as a row is and refused
+the same way, the plan file named as its holder (`i45`; `i46` is the allow twin). A ledger that cannot be read in full refuses the import too, saying the check
 could not be made rather than reading as empty — an unread row may be the duplicate — and names the
 file with the step that clears each cause it cannot tell apart — make a file that would not open
 readable; truncate a torn tail's partial line on purpose; restore a file with a corrupted line from
@@ -5160,8 +5184,15 @@ not already carry its phase's
 wide gate (`_affected_tests.already_wide`) is joined by the affected suites the runner gathers
 itself, which nothing knows before it runs, so it is weighed as unmeasured. The step prints
 `dispatch-gate`, whose `run:` line is the command `gate_args` (or `phase_gate_args`) spells for the
-inline run too, under `WRITER_RULE`, with the reason on the line below it, and marks the launch
-with the subject's ledger rows as they stood. A `next` before a new row exists is `wait-gate`,
+inline run too, under `WRITER_RULE`, with the reason on the line below it, and a fresh launch
+token (`launch_token()`) on it as `--launch` (`with_launch()`), and marks the launch with that
+token. The run it started is the subject's run carrying the token, found through
+`_evidence_io.run_by_launch` over `read_rows` - the records the plan holds as well as the
+ledger's rows - never "a run the drive had not seen before", which a sibling's run of the same
+subject also is; a relaunch prints the command again under a new token, and a mark holding no
+token, from a drive that handed out none, is never read back - a task's gate is launched again
+and a phase gate's launch is forgotten and its gate chosen again. A `next`
+before the launched run exists is `wait-gate`,
 printing the same `run:` line and the moment the dispatch was handed out - which is all the drive
 saw, since it never sees the gate process start; a new `cancelled` row - a gate stopped mid-run - launches it again;
 a `failed` row is the verdict acted on as the row holds it, with no gate asked again
@@ -5785,8 +5816,14 @@ recorder took with its own writes left out against one taken with them in, and a
 first layer above `_evidence_io` (the ledger) and `_tree_stamp` (the digest), which are peers and
 cannot hold it. `binding()` takes the subject's ids, the gate entries that measure it and their
 source, its declared files and the caller's own sentences, and answers `bound`, `no-gate` or
-`refused` with a sentence naming the run: the newest row for the subject, never the plan's
-pointer; a repeat graded through `reusedFrom`, while a `part-reused` row binds as measured and its
+`refused` with a sentence naming the run: the newest row for the subject, read from the ledger
+and the records the plan holds as one entry per run (`subject_runs`, over `plan_records` unless
+the caller hands the branch's), never the plan's
+pointer; a repeat graded through `reusedFrom` against the run it copied - found as a ledger row or
+as the `repeatedRun` the repeat's record carries, which holds every field this grades (the steps'
+names and the count dropped, `gateSource`, `gateDigest`, `leftToPhaseGate`, and the tested
+state's `scopeDigest` and `scopeListDigest`), and refused when neither place holds it
+(`ctw64`, `ctw64b`, `ctw64c` in `tests/test_commit_task_work.py`) - while a `part-reused` row binds as measured and its
 sentence names the steps it copied and their run (`repeated_clause()`); a row listing declared
 entries under `leftToPhaseGate` (`_evidence_io.left_to_phase_gate_names`) compared against the
 declaration less those entries, so it binds one step short for that reason and for no other
@@ -6742,7 +6779,11 @@ writes it under the lock, where a task's phase is fixed before its id is asked f
 past what an importer listing alone would find. `couple` appends a new entry, or unions
 `--sources` into an existing one for the same `test` and keeps that entry's first `learnedAt`
 rather than overwriting it, because the couple is a fact learned once and re-confirmed, not
-re-dated on every call. `uncouple` drops the one entry naming `--test` and refuses, exit 2, when
+re-dated on every call. The run `--basis-run` names - and the one `add --failing-from` names - is
+looked for through `_evidence_io.read_rows`, so a run the plan holds only as a record resolves as
+its ledger row would, and an id neither holds is refused, exit 2, naming both places looked: the
+evidence directory (and that it does not exist, when it does not) and the plan file
+(`_ledger_run`). `uncouple` drops the one entry naming `--test` and refuses, exit 2, when
 no entry names it - the same "an operation on something that is not there is an error, never a
 silent no-op" rule every other verb here holds. `couple --test <path> --caught <runId>` is the
 narrowest door onto the same key: it refreshes an EXISTING entry's `lastCaught`

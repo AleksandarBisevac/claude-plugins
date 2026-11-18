@@ -1991,8 +1991,9 @@ def ledger_decode(raw):
     return raw.decode("utf-8")
 
 
-def read_rows(project, config=None):
-    """`{"rows", "rowFiles", "files", "unreadable", "unreadableFiles"}` - every
+def read_rows(project, config=None, manifest_path=None):
+    """`{"rows", "rowFiles", "rowSources", "files", "records", "unreadable",
+    "unreadableFiles", "unreadablePlanFiles", "ledgerAbsent"}` - every
     recorded run, and what was lost.
 
     A TORN LINE IS COUNTED, not merely skipped. `usage_ledger.read_ledger` drops
@@ -2022,6 +2023,22 @@ def read_rows(project, config=None):
     WHICH file holds a run reads it here rather than walking the directory a
     second time - a second walk is a second decode, and one stricter than the
     read above would find a row here that it cannot find there.
+
+    THE PLAN'S RECORDS ARE READ BESIDE THE ROWS (`RECORD_KEY`, through
+    `record_row`), one entry per run: a run the ledger holds is its row, and a
+    run only a record holds - the newest run of a subject, or the run a repeat
+    copied - is appended after every row. `rowSources[i]` says which
+    (`ROW_FROM_LEDGER` or `ROW_FROM_RECORD`); for a record `rowFiles[i]` is the
+    plan file holding it, relative to `project`, where for a row it is the
+    ledger file's basename. `files`, `unreadable` and `unreadableFiles` stay
+    the LEDGER's; `records` counts the entries a record gave and
+    `unreadablePlanFiles` names a plan file that would not read.
+    `manifest_path` is the plan to read; None reads the one the config names.
+
+    A DIRECTORY THAT IS NOT THERE IS SAID, NEVER COUNTED: `ledgerAbsent` is the
+    sentence naming where the ledger was looked for when no such directory
+    exists, so `files == 0` beside it reads as "no ledger", never as a ledger
+    holding no file; None when the directory exists.
     """
     config = _journal_io.load_config(project) if config is None else config
     rows, row_files, unreadable, files = [], [], 0, 0
@@ -2048,8 +2065,21 @@ def read_rows(project, config=None):
             lost_here = True
         if lost_here:
             unreadable_files.append(path)
+    directory = evidence_dir(project, config)
+    absent = None if os.path.isdir(directory) else (
+        "no evidence directory at %s, so no older row was read - the runs "
+        "here are the records the plan holds" % (
+            repo_relative_or_token(project, directory),))
+    bodies, lost_plan = plan_bodies(
+        manifest_path or plan_file_of(project, config), project)
+    sources = [ROW_FROM_LEDGER] * len(rows)
+    rows, added = with_records(rows, records_of_bodies(bodies))
+    row_files.extend(label for _row, label in added)
+    sources.extend(ROW_FROM_RECORD for _pair in added)
     return {"rows": rows, "rowFiles": row_files, "files": files,
-           "unreadable": unreadable, "unreadableFiles": unreadable_files}
+            "unreadable": unreadable, "unreadableFiles": unreadable_files,
+            "rowSources": sources, "records": len(added),
+            "unreadablePlanFiles": lost_plan, "ledgerAbsent": absent}
 
 
 # --- folding history into a tally, never into a verdict ------------------------
@@ -2632,17 +2662,38 @@ def _say_moved(project, path, scope, ids, previous, pointer, session_id, config)
 RECORD_KEY = "lastRun"
 # The top-level fields a record carries, read off the run's ledger row under
 # the row's own names. `ts` crosses as `at`, the pointer's word for it.
+# `muted`, `groupWith` and `BASE_RED_KEY` cross because a reader of the run
+# reads them off its row: a repeat is never taken from a verdict a mute excused
+# (`reusable_run`), a group's run names the members it owned, and the drive
+# reads a red's base reading back (`base_red_why`).
 RECORD_ROW_KEYS = ("runId", STARTED_KEY, "durationMs", SELECTION_KEY, "status",
                    "failed", VERDICT_SOURCE, "reusedFrom", REUSE_KEY,
                    GATE_DIGEST_KEY, "gateSource", LEFT_TO_PHASE_GATE_KEY,
-                   BANNERS_KEY, "stepsDropped")
+                   BANNERS_KEY, "stepsDropped", "muted", "groupWith",
+                   BASE_RED_KEY)
 # Per step: what it was, what it answered, what it wrote about a failure, the
-# time it took when it ran here, and the run it was copied from when it did not.
-RECORD_STEP_KEYS = ("name", "exit", "ran", "outcome", "failing", "durationMs",
+# time it took when it ran here, and the run it was copied from when it did not
+# - and the step fields a reader of the run asks: the suites the runner named
+# (`step_runs_suite`, `named_failing_suites`), whose summary it was read from
+# (`suite_keys`), whether a mute excused it (`_step_failed`), the command a
+# tally matches (`command_tally`), and the reading `measured` caches.
+RECORD_STEP_KEYS = ("name", "exit", "ran", "measured", "outcome", "failing",
+                    "failingBasis", "failingSuites", "failingSuitesBasis",
+                    "suiteReader", "muted", "command", "durationMs",
                     STEP_REUSED_KEY)
 # What the tested state is named by: the commit, the digest of what was dirty
-# beside it, and the measured tree's key when the run was measured elsewhere.
-RECORD_STATE_KEYS = ("head", "dirtyDigest")
+# beside it, the declared work's digests a verdict is bound by
+# (`_verdict_binding.digest_binding`), and the measured tree's key when the run
+# was measured elsewhere.
+RECORD_STATE_KEYS = ("head", "dirtyDigest", "scopeDigest", "scopeListDigest")
+# THE RUN A REPEAT COPIED, WHOLE, on the record of a run that repeated another's
+# verdict in whole or in part: that run's own record (`run_record` of its row,
+# carrying none of its own). One record per subject replaces the run it
+# repeated, so without it a reader of records alone could not follow a repeat
+# to the run that measured the tree - the binding's arm, and the next part
+# repeat's source. Never nested: the run a repeat copies measured what it
+# gives, so its own copy of an older run is not carried.
+REPEATED_RUN_KEY = "repeatedRun"
 # The lines the recorder prints beside a recorded run and keeps on its record.
 RECORD_LINE_KEYS = ("machine", "attribution")
 # How long a record write waits for the phase lock another verb holds before it
@@ -2686,7 +2737,11 @@ def run_record(row, lines=None, launch=None, source=None):
     another's verdict ran no step, so its row holds none - and a record holding
     none could only be read through the older one. `source`, the record or row of
     the run repeated, gives the steps, each naming the run it came from, so the
-    record is the newest measurement of each current step on its own."""
+    record is the newest measurement of each current step on its own.
+
+    ...AND A REPEAT, WHOLE OR IN PART, CARRIES THE RUN IT COPIED: `source`'s own
+    record under `REPEATED_RUN_KEY`, which `record_rows` reads back as that
+    run's entry when no ledger row holds it."""
     row = row if isinstance(row, dict) else {}
     record = dict((key, row[key]) for key in RECORD_ROW_KEYS
                   if row.get(key) is not None)
@@ -2716,6 +2771,10 @@ def run_record(row, lines=None, launch=None, source=None):
             record[key] = _journal_io._clip(str(said), limit=400)
     if launch:
         record["launch"] = str(launch)
+    if row.get(VERDICT_SOURCE) in (REUSED, PART_REUSED) \
+            and isinstance(source, dict) and source.get("runId"):
+        # Built with no `source` of its own, so it carries no older run.
+        record[REPEATED_RUN_KEY] = run_record(source)
     return record
 
 
@@ -2864,6 +2923,163 @@ def subject_records(manifest_path):
             if isinstance(task, dict) and isinstance(task.get(RECORD_KEY), dict):
                 found[("task", str(task.get("id")))] = (task[RECORD_KEY], pid)
     return found
+
+
+# --- one reader: the plan's records beside the older rows -----------------------
+# A RECORD IS READ AS THE ROW OF ITS RUN. Every reader of recorded runs asks a
+# row's questions - its subject, its moment, its identity, its steps - so a
+# record is handed to them in the row's shape (`record_row`) and `read_rows`
+# returns the union of the ledger's rows and the plan's records, one entry per
+# run: a run both hold is the ledger's row, which carries every field the
+# record does and more. Where each entry came from is `ROW_FROM_LEDGER` or
+# `ROW_FROM_RECORD`, at the entry's index in `rowSources`.
+ROW_FROM_LEDGER = "ledger"
+ROW_FROM_RECORD = "record"
+
+
+def record_row(record, scope, subject, phase_id):
+    """`record`, the record of the subject `(scope, subject)` in phase
+    `phase_id`, in the shape of its run's ledger row - a NEW dict: the fields
+    the record kept under the row's names, `at` as `ts`, the subject's ids
+    where the row carries them, and the tested state's tree key as the row's
+    `tree`. What the record does not keep (the chain, the observations) is
+    absent, as it is on a row written before the field existed."""
+    record = record if isinstance(record, dict) else {}
+    row = dict((key, record[key]) for key in RECORD_ROW_KEYS
+               if record.get(key) is not None)
+    row["runId"] = str(record.get("runId") or "")
+    row["ts"] = record.get("at")
+    row["scope"] = str(scope)
+    if scope == "task":
+        row["taskId"] = str(subject)
+    row["phaseId"] = str(phase_id)
+    state = record.get("testedState") if isinstance(
+        record.get("testedState"), dict) else {}
+    tested = dict((k, state[k]) for k in RECORD_STATE_KEYS
+                  if state.get(k) is not None)
+    if state.get("treeKey"):
+        tested["tree"] = {"key": state["treeKey"]}
+    row["testedState"] = tested
+    row["steps"] = [dict(s) for s in record.get("steps") or []
+                    if isinstance(s, dict)]
+    for key in RECORD_LINE_KEYS + ("launch",):
+        if record.get(key):
+            row[key] = record[key]
+    return row
+
+
+def records_of_bodies(bodies):
+    """`[(row, label)]` - every record the phase bodies `bodies` (`[(label,
+    phase body)]`, a body as its file holds it) carry, each as `record_row`
+    reads it, with the run it repeated (`REPEATED_RUN_KEY`) beside it, once per
+    run.
+
+    A GROUP MEMBER'S COPY IS ITS CARRIER'S RUN. Group sign-off copies the
+    carrier's record onto each member naming the carrier in `gradedBy`; the
+    ledger holds that run once, under the carrier, so the copy is read under
+    the carrier too, and only where the carrier's own record no longer holds
+    it."""
+    carried, copies = [], []
+    for label, phase in bodies or []:
+        if not isinstance(phase, dict):
+            continue
+        pid = str(phase.get("id"))
+        held = [("phase", pid, phase.get(RECORD_KEY))] + [
+            ("task", str(t.get("id")), t.get(RECORD_KEY))
+            for t in phase.get("tasks") or [] if isinstance(t, dict)]
+        for scope, subject, record in held:
+            if not isinstance(record, dict) or not record.get("runId"):
+                continue
+            graded = record.get("gradedBy") if scope == "phase" else None
+            owner = str(graded) if graded else subject
+            owner_phase = owner if scope == "phase" else pid
+            # THE RUN REPEATED IS READ FIRST, as the ledger appended it first:
+            # `oldest_first` gives a tie of moments to the row read later, and
+            # a repeat made within the second of its source must still be the
+            # newer of the two.
+            runs = []
+            repeated = record.get(REPEATED_RUN_KEY)
+            if isinstance(repeated, dict) and repeated.get("runId"):
+                runs.append(record_row(repeated, scope, owner, owner_phase))
+            runs.append(record_row(record, scope, owner, owner_phase))
+            (copies if graded else carried).extend((r, label) for r in runs)
+    seen, out = set(), []
+    for row, label in carried + copies:
+        if row["runId"] not in seen:
+            seen.add(row["runId"])
+            out.append((row, label))
+    return out
+
+
+def plan_bodies(manifest_path, project=None):
+    """`(bodies, unreadable)` - every phase body of the plan at `manifest_path`
+    as `[(label, body)]`, read off the raw files so a shard is read as it is
+    written, and the label of each plan file that would not read. A label is
+    the file's path relative to `project`, or the path itself with none."""
+    def label(path):
+        return (repo_relative_or_token(project, path) if project
+                else str(path))
+    try:
+        index = _mio.read_json(manifest_path)
+    except Exception:
+        return [], ([label(manifest_path)] if os.path.exists(manifest_path)
+                    else [])
+    base = os.path.dirname(os.path.abspath(manifest_path))
+    bodies, lost = [], []
+    for stub in (index.get("phases") or []) if isinstance(index, dict) else []:
+        if not isinstance(stub, dict):
+            continue
+        if not stub.get("shard"):
+            bodies.append((label(manifest_path), stub))
+            continue
+        path = os.path.join(base, str(stub["shard"]))
+        try:
+            bodies.append((label(path), _mio.read_json(path)))
+        except Exception:
+            lost.append(label(path))
+    return bodies, lost
+
+
+def plan_file_of(project, config=None):
+    """The plan file `project`'s config names - `plan_aliases`' resolution."""
+    config = _journal_io.load_config(project) if config is None else config
+    rel = (config or {}).get("manifestPath") or _journal_io.DEFAULT_MANIFEST
+    return os.path.join(project, str(rel))
+
+
+def with_records(rows, entries):
+    """`(rows, added)` - `rows`, then every entry of `entries` (`[(row,
+    label)]`, `records_of_bodies`' shape) whose run no row of `rows` carries,
+    and the `(row, label)` pairs that were added. A run both hold is the row
+    already in `rows`, given the launch token its record carries when the row
+    has none - a NEW dict, so the caller's list is untouched."""
+    out = list(rows or [])
+    at = dict((str(r.get("runId")), i) for i, r in enumerate(out)
+              if isinstance(r, dict) and r.get("runId"))
+    added = []
+    for row, label in entries or []:
+        run = str(row.get("runId") or "")
+        if not run:
+            continue
+        if run in at:
+            mine = out[at[run]]
+            if row.get("launch") and not mine.get("launch"):
+                out[at[run]] = dict(mine, launch=row["launch"])
+            continue
+        at[run] = len(out)
+        out.append(row)
+        added.append((row, label))
+    return out, added
+
+
+def run_by_launch(rows, token):
+    """The run whose record carries the launch token `token`, newest by its
+    moment, or None - how a caller that started a run in the background finds
+    exactly that run (`run-test-gate.py --launch`)."""
+    if not token:
+        return None
+    return newest_row([r for r in rows or [] if isinstance(r, dict)
+                       and str(r.get("launch") or "") == str(token)])
 
 
 # --- who ran it, when, and who else was running --------------------------------

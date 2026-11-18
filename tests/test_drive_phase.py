@@ -1564,6 +1564,147 @@ def _background_gate_cases(check):
     _background_doc_case(check, M)
 
 
+def _put_phase_record(mpath, record, task_id=None):
+    """`record` as phase P1's record - or task `task_id`'s - with its pointer,
+    in whichever file of the plan holds the phase: its shard, or the one file."""
+    with open(mpath, encoding="utf-8") as fh:
+        index = json.load(fh)
+    stub = [p for p in index["phases"] if p.get("id") == PHASE][0]
+    path = (os.path.join(os.path.dirname(mpath), stub["shard"])
+            if stub.get("shard") else mpath)
+    with open(path, encoding="utf-8") as fh:
+        body = json.load(fh)
+    phase = body if stub.get("shard") else [
+        p for p in body["phases"] if p.get("id") == PHASE][0]
+    holder = phase if task_id is None else [
+        t for t in phase["tasks"] if t.get("id") == task_id][0]
+    holder[_evio.RECORD_KEY] = record
+    holder[_evio.POINTER_KEY] = _evio.pointer_from_record(record)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(body, fh)
+
+
+def _lt_mark(M, root):
+    """The launch mark the drive holds for P1.1's gate, or {}."""
+    marks = _drive_state(root).get(getattr(M, "GATE_LAUNCH_KEY", "")) or {}
+    entry = (marks.get("P1.1") or {}) if isinstance(marks, dict) else {}
+    return entry.get("value") or {}
+
+
+def _lt_drop_ledger(root, mpath):
+    """Remove the evidence directory whole, so a read-back can only come from
+    the plan's record of the run."""
+    project, config = _evio.project_config_for(mpath, root)
+    _harness.remove_tree(_evio.evidence_dir(project, config))
+
+
+def _lt_json(said):
+    """The run's own `--json` verdict out of what the gate printed."""
+    start = (said or "").find("{")
+    try:
+        return json.loads(said[start:]) if start >= 0 else {}
+    except ValueError:
+        return {}
+
+
+def _lt_gate_asks(calls):
+    """How often the drive asked the task's gate itself - a run at the base
+    (`--base-of`) answers another question, so it is not one."""
+    return len([a for a, _o in _task_gate_runs(calls) if "--base-of" not in a])
+
+
+def _lt_run_id(said):
+    """The run id the gate printed it recorded, or None."""
+    found = re.search(r"evidence: recorded (\S+)", said or "")
+    return found.group(1) if found else None
+
+
+def _launch_token_cases(check):
+    """(lt) The drive finds the run it launched by the launch token the run
+    carries on its record - not by comparing the subject's run ids against a
+    list kept in its own state - and reads green and red back from that record
+    with no ledger at all: a red is decided as the run's own `--json` said,
+    running no gate step and making no commit."""
+    M, why = _load("drive_phase_launch", real_gate_choice=True)
+    if M is None:
+        check("lt1 the driver loads", False, why)
+        return
+    root, mpath, calls = _bg_writer_exited(M, "lt-red", ("false",))
+    _code, line = _signal_raw(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    argv = _run_argv(block) or []
+    token = _flag(argv, "--launch")
+    mark = _lt_mark(M, root)
+    check("lt1 the gate's dispatch carries a launch token on its run: line, "
+          "and the drive's mark holds that token and no list of run ids: %r"
+          % ((token, mark),),
+          _signal_head(line) == ("dispatch", "P1.1") and bool(token)
+          and mark.get("launch") == token and "known" not in mark)
+    # A run of the same task that is NOT the launched one: the same command
+    # under another token. A drive that took any run it had not seen before
+    # would read this one as its own.
+    other = [w for w in argv if w not in ("--launch", token)] + [
+        "--launch", "another-%s" % (token,)]
+    _play_gate(root, other)
+    _lt_drop_ledger(root, mpath)
+    code, waited = _signal_raw(M, root, mpath)
+    check("lt2 SECOND DIRECTION: a recorded run of the task under another "
+          "launch token is not the run the drive launched - the next call "
+          "still waits on its own: %r" % ((code, waited),),
+          code == 0 and _signal_head(waited) == ("wait", "P1.1"))
+    head = _head_of(root)
+    ran, said = _play_gate(root, argv + ["--json"])
+    own = _lt_json(said)
+    _lt_drop_ledger(root, mpath)
+    before = _lt_gate_asks(calls)
+    code, decided = _signal_raw(M, root, mpath)
+    project, config = _evio.project_config_for(mpath, root)
+    read = _evio.read_rows(project, config)
+    sources = dict(zip([r.get("runId") for r in read["rows"]],
+                       read.get("rowSources") or []))
+    own_run = _lt_run_id(said)
+    # The drive measures the base of a red it decides (`measure_base`), on
+    # the rows path as here, and that run lands in a fresh ledger: every row
+    # the ledger holds after the drop is such a base run, never the task's.
+    ledger_gate = [r.get("runId") for r in read["rows"]
+                   if sources.get(r.get("runId")) == _evio.ROW_FROM_LEDGER
+                   and not r.get(_evio.BASE_OF_KEY)]
+    check("lt3 the launched run, read back from its RECORD with the ledger "
+          "gone, is decided as its own --json said - red, the same run - "
+          "asking the task's gate nothing again and making no commit: %r"
+          % ((ran, own_run, own.get("status"), code, decided,
+              sources.get(own_run), ledger_gate, before,
+              _lt_gate_asks(calls)),),
+          ran == 1 and own.get("status") == "failed" and code == 0
+          and "gate-red-writer" in decided
+          and own_run is not None
+          and sources.get(own_run) == _evio.ROW_FROM_RECORD
+          and ledger_gate == []
+          and _lt_gate_asks(calls) == before
+          and _head_of(root) == head)
+    groot, gmpath, gcalls = _bg_writer_exited(M, "lt-green", ("true",))
+    _signal_raw(M, groot, gmpath)
+    _c, gblock = _explain_of(M, groot, gmpath, "P1.1")
+    gargv = _run_argv(gblock) or []
+    ghead = _head_of(groot)
+    gran, gsaid = _play_gate(groot, gargv + ["--json"])
+    gown = _lt_json(gsaid)
+    _lt_drop_ledger(groot, gmpath)
+    gcode, gdecided = _signal_raw(M, groot, gmpath)
+    gated = (_drive_state(groot).get("gated") or {}).get("P1.1") or {}
+    asked = _task_gate_runs(gcalls)
+    check("lt4 THE GREEN TWIN: a green launched run read back from its record "
+          "alone goes on past the gate, its green marked, as its own --json "
+          "said - the one ask again repeats that record's verdict and measures "
+          "nothing, and no commit is made by the reading: %r"
+          % ((gran, gown.get("status"), gcode, gdecided, gated,
+              [o[-200:] for _a, o in asked]),),
+          gran == 0 and gown.get("status") == "passed" and gcode == 0
+          and _signal_head(gdecided) != ("wait", "P1.1") and bool(gated)
+          and [("GATE VERDICT REUSED" in o) for _a, o in asked] == [True]
+          and _head_of(groot) == ghead)
+
+
 # --- a background gate read back, with a step that grades the plan ------------------
 # The other gate fixtures here are `true` and `false`, which name no path, so the
 # drive never met a gate whose read-back measures part of it again. These gates
@@ -2370,10 +2511,14 @@ def _empty_row_cases(check, M):
     root, mpath, calls = _bg_writer_exited(M, "ge-row", ("true",))
     _code, first = _signal_raw(M, root, mpath)
     project, config = _evio.project_config_for(mpath, root)
-    _evio.append_row(project, {
+    ge_task_row = {
         "runId": "ge-row-task", "ts": "2026-11-05T12:00:00Z", "scope": "task",
-        "taskId": "P1.1", "phaseId": PHASE, "status": "empty-gate", "steps": []},
-        writer="ge-rows", config=config)
+        "taskId": "P1.1", "phaseId": PHASE, "status": "empty-gate", "steps": []}
+    _evio.append_row(project, ge_task_row, writer="ge-rows", config=config)
+    # ...with its record, carrying the token the drive's launch handed out:
+    # the run `--record --launch` would have written beside the row.
+    _put_phase_record(mpath, _evio.run_record(
+        ge_task_row, launch=_lt_mark(M, root).get("launch")), task_id="P1.1")
     code, line = _signal_raw(M, root, mpath)
     gated = (_drive_state(root).get("gated") or {}).get("P1.1") or {}
     check("ge4 a task gate whose background row recorded empty-gate is read back "
@@ -2392,11 +2537,15 @@ def _empty_row_cases(check, M):
         head = _head_of(root)
         state = {M.PHASE_GATE_LAUNCH_KEY: {"head": head, "at": "2026-11-05T12:00:00Z",
                                            "argv": ["python3", "run-test-gate.py"],
-                                           "known": []}}
-        _evio.append_row(ctx["project"], {
-            "runId": "ge-row-phase", "ts": "2026-11-05T12:00:00Z",
-            "scope": "phase", "phaseId": PHASE, "status": "empty-gate",
-            "steps": []}, writer="ge-rows", config=ctx["config"])
+                                           "launch": "ge-launch"}}
+        ge_row = {"runId": "ge-row-phase", "ts": "2026-11-05T12:00:00Z",
+                  "scope": "phase", "phaseId": PHASE, "status": "empty-gate",
+                  "steps": []}
+        _evio.append_row(ctx["project"], ge_row, writer="ge-rows",
+                         config=ctx["config"])
+        # The run's record, as `run-test-gate.py --record --launch` writes it
+        # beside the row: the token is what the drive reads the run back by.
+        _put_phase_record(mpath, _evio.run_record(ge_row, launch="ge-launch"))
         said, measured = _caught(M.chosen_phase_gate, ctx, state,
                                  _mio.load_manifest(mpath)["phases"][0], head)
     check("ge5 sign-off's phase gate whose background row recorded empty-gate is "
@@ -2547,11 +2696,15 @@ def _gate_status_cases(check):
         root, mpath, calls = _bg_writer_exited(M, "gs-%s" % (label,), ("true",))
         code, first = _signal_raw(M, root, mpath)
         project, config = _evio.project_config_for(mpath, root)
-        _evio.append_row(project, {
+        gs_row = {
             "runId": "gs-run-%s" % (label,), "ts": "2026-11-05T12:00:00Z",
             "scope": "task", "taskId": "P1.1", "phaseId": PHASE,
-            "status": status, "steps": [{"name": "true", "exit": 0}]},
-            writer="gs-rows", config=config)
+            "status": status, "steps": [{"name": "true", "exit": 0}]}
+        _evio.append_row(project, gs_row, writer="gs-rows", config=config)
+        # ...with the record the launched run writes beside its row, carrying
+        # the token the drive's launch handed it.
+        _put_phase_record(mpath, _evio.run_record(
+            gs_row, launch=_lt_mark(M, root).get("launch")), task_id="P1.1")
         code, line = _signal_raw(M, root, mpath)
         _c, block = _explain_of(M, root, mpath, "P1.1")
         check("%s a background gate whose row records %s is decided from that "
@@ -20175,6 +20328,7 @@ def _timing_unread_cases(check):
 STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("ws-block", "_writer_session_cases"),
           ("bg-block", "_background_gate_cases"),
+          ("lt-block", "_launch_token_cases"),
           ("gc-block", "_gate_choice_cases"),
           ("gc6-block", "_gate_choice_follow_cases"),
           ("gc8-block", "_gate_choice_signoff_cases"),

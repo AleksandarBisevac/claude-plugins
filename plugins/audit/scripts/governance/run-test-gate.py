@@ -5702,13 +5702,17 @@ def _run_record_of(project, args, ids, row, lines):
     write that records the run. The stage is appended there and nowhere else, so
     the drive that launched the run does not queue it a second time.
 
-    A run that repeated another's verdict copies that run's steps forward
-    (`_evidence_io.run_record`), read from the ledger row it names."""
+    A run that repeated another's verdict, in whole or in part, carries that
+    run forward (`_evidence_io.run_record`), read from the ledger row or the
+    record that holds it (`_evidence_io.read_rows`)."""
     source_row = None
-    if row.get(_ev.VERDICT_SOURCE) == _ev.REUSED:
+    if row.get(_ev.VERDICT_SOURCE) in (_ev.REUSED, _ev.PART_REUSED):
         try:
-            source_row = _ev.row_by_run(_ev.read_rows(project)["rows"],
-                                        (row.get("reusedFrom") or {}).get("runId"))
+            # The read the repeat was found by (`reusable_run` over
+            # `read_rows(project)`), so the run carried is the one it copied.
+            source_row = _ev.row_by_run(
+                _ev.read_rows(project)["rows"],
+                (row.get("reusedFrom") or {}).get("runId"))
         except Exception:                                      # noqa: BLE001
             source_row = None
     record = _ev.run_record(row, lines=lines,

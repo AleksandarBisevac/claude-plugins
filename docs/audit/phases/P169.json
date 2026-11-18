@@ -137,9 +137,57 @@
         "issue": "A stale phase lock is refused at once, with no wait (probe: dead holder, wait=5, returned in 0.00s), so every recorded gate of that phase exits 3 until a human runs `audit-lock --takeover`; that is the designed rule, but the sentence it prints is garbled by the hint: \"...use audit-lock --takeover, then nothing was written to the plan\". It names no repair, and the gate's own closing line says \"re-run once the phase lock is free\" for a run that may have taken minutes.",
         "resolution": "Pass a hint that names the repair (\"then re-run this gate; nothing was written to the plan\") so both the stale and the held sentences read, and say in `unrecorded_line` that the ledger row stands, so `--reconcile` is not mistaken for the repair of a missing record.",
         "fixTask": "P169.15-6l3"
+      },
+      {
+        "id": "P169-R16",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py (new_gate_row) and plugins/audit/scripts/governance/_evidence_io.py (run_by_launch)",
+        "issue": "The drive finds the run it launched by a launch token that exists only on the plan's record; the ledger row never carries it, and the union adds it to a row only while the record still holds that same run. When another run of the same subject is recorded after the launched one (a hand-run /audit:run, a sibling session, /audit:review during a background phase gate), or the launched run's record write was refused on the lock, run_by_launch returns None for good and the drive keeps answering wait-gate with 'no gate row ... since', which is false: the ledger holds the row. The code this replaced found it. Established by reading and a function-level probe (a ledger row without a token plus a newer record carrying another token gives None); case lt2 covers only the other order.",
+        "resolution": "Put the launch token on the ledger row as well (an identity key of the row), and when the subject's newest run is later than the launch and carries another token, say the launched run was replaced and by which run instead of waiting.",
+        "fixTask": "P169.16-6l3"
+      },
+      {
+        "id": "P169-R17",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py (RECORD_ROW_KEYS, RECORD_STEP_KEYS, RECORD_STATE_KEYS)",
+        "issue": "A record still lacks fields readers of the one seam take from a row, so a run held only as a record gives them None or an empty list with nothing saying so: followersOwed (the drive's run_followers returns [], and a red that owes regenerated followers is decided as a plain red), gateReach and its not-asked twin (a repeated verdict prints that the source run recorded no reach reading, which is false), observations, treeMutated and coverage (the panel and the report would say no comparison was made). Masked today because ledger rows are still written. Established by a probe: run_record of a row carrying these kept only at, runId and steps.",
+        "resolution": "Derive the record's keys from what the readers of the seam read rather than from a hand list: carry these fields, and hold the list to the readers with a case that fails when a reader takes a row key the record does not carry.",
+        "fixTask": "P169.16-6l3"
+      },
+      {
+        "id": "P169-R18",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py, plugins/audit/scripts/manifest/audit-task.py (_ledger_run, _runs_under), plugins/audit/scripts/governance/import-evidence.py (held_runs)",
+        "issue": "Several callers of read_rows pass no manifest path, so the records they read are those of the plan the project's config names, while write_record writes to the plan the command was handed. For a command run against another plan in the same project (the examples' plans; task ids such as P1.1 collide), reuse and the lookup of a repeat's source read a foreign plan's records: the repeat's source is not found, or another plan's record is read as this plan's subject. Established by reading; the drive is not affected (its config comes from project_config_for).",
+        "resolution": "Every caller hands the seam the plan it was handed; make the plan a required argument of the seam so a caller that forgets it is an error rather than a silent default.",
+        "fixTask": "P169.16-6l3"
+      },
+      {
+        "id": "P169-R19",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/import-evidence.py (held_runs, duplicates_of)",
+        "issue": "The importer refuses a whole ledger file when any of its runs is held as a record in the plan. For a project whose plan travels with git and whose evidence files do not, a run recorded on another machine arrives in the committed shard first, and importing that machine's ledger file is then refused with 'already in <plan file>', losing every other row of the file and the fuller row of that run. The stated reason (a run counted twice) does not apply: the union keeps one entry per run id and the ledger row wins.",
+        "resolution": "Only a run held as a ledger row is a duplicate; a run held only as a record is imported, and the union's own rule decides which copy a reader sees. Cases for both.",
+        "fixTask": "P169.16-6l3"
+      },
+      {
+        "id": "P169-R20",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py (--base-of), plugins/audit/scripts/governance/drive-phase.py (ledger_row), plugins/audit/scripts/governance/_verdict_binding.py (binding), plugins/audit/scripts/ui/panel/overview.js:519",
+        "issue": "Messages still name the ledger alone or print a figure nobody counted: '--base-of' says no run is recorded in the ledger, the drive says the evidence ledger holds no row, the panel's dangling sentence prints '0 files read' and never reads ledgerAbsent (the task's fifth acceptance point), and the binding says no gate verdict is recorded when the subject's shard could not be read.",
+        "resolution": "Each message names both places it looked, and an unreadable shard is said as unreadable with the file.",
+        "fixTask": "P169.16-6l3"
+      },
+      {
+        "id": "P169-R21",
+        "severity": "low",
+        "file": "plugins/audit/scripts/git/close-phase.py (tip_bodies, branch_records), plugins/audit/scripts/governance/import-evidence.py, plugins/audit/scripts/governance/_evidence_io.py (plan_bodies, subject_records)",
+        "issue": "Plan files that will not read go unreported in three places (close-phase skips an unreadable shard at the tip silently and gives no note when the tip is unreadable but a worktree exists; the importer ignores unreadablePlanFiles), and there are three walkers of a plan's shards with three error rules (plan_bodies, subject_records, close-phase's tip_bodies).",
+        "resolution": "One walker with one rule for a shard that will not read, used by all three, which reports the file.",
+        "fixTask": "P169.16-6l3"
       }
     ],
-    "outcome": "[findings: 15 - 0 high, 5 med, 10 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 21 - 0 high, 9 med, 12 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -766,7 +814,14 @@
         "tests/test_close_phase.py",
         "tests/test_audit_task.py",
         "CHANGELOG.md",
-        "PLUGIN-BUILD-GUIDE.md"
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/commit-task-work.py",
+        "tests/test_commit_task_work.py",
+        "plugins/audit/scripts/governance/import-evidence.py",
+        "tests/test_import_evidence.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "tools/demo/gen-demo-manifest.py",
+        "tests/test_gen_demo_manifest.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -796,14 +851,14 @@
         "P169.3",
         "P169.2"
       ],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-11-18T21:01:37Z",
+      "startedAt": "2026-11-18T21:56:43Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -816,13 +871,82 @@
           "at": "2026-11-18T17:39:27Z",
           "text": "it quotes one refusal sentence of the gate runner ('the work under test declares no files'); this task leaves that sentence as it is",
           "waives": "tools/check-example-ledgers.py"
+        },
+        {
+          "at": "2026-11-18T21:56:42Z",
+          "text": "one of its rows quotes the guide's passage on a fixed literal in the scope position; this task edits the guide's evidence-reading sections and leaves that passage as it is",
+          "waives": "tools/prove-gates.py"
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-18T21:47:37Z",
+            "ms": 33439,
+            "basis": "selectionMs in run 2026-11-18T21:55:18Z.a7959f's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-18T21:55:18Z.a7959f"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-18T21:48:11Z",
+            "ms": 426756,
+            "basis": "durationMs in run 2026-11-18T21:55:18Z.a7959f's record (run-test-gate --record)",
+            "runId": "2026-11-18T21:55:18Z.a7959f"
+          },
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-18T22:09:52Z",
+            "ms": 29960,
+            "basis": "selectionMs in run 2026-11-18T22:16:11Z.832da8's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-18T22:16:11Z.832da8"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-18T22:10:22Z",
+            "ms": 349179,
+            "basis": "durationMs in run 2026-11-18T22:16:11Z.832da8's record (run-test-gate --record)",
+            "runId": "2026-11-18T22:16:11Z.832da8"
+          }
+        ],
         "firstStartedAt": "2026-11-18T21:01:37Z"
       },
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-18T22:16:28Z.7db7df",
+        "durationMs": 133,
+        "selectionMs": 15132,
+        "status": "passed",
+        "failed": [],
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-18T22:16:11Z.832da8",
+          "ts": "2026-11-18T22:16:11Z",
+          "status": "passed"
+        },
+        "reuseKey": "1:sha256:09919143cdef818348ddace9a69123c85ec450eb667f3d050debafaca44812a9",
+        "gateDigest": "sha256:1f6a82b173bde047e98f72b6c0dea2686ccb97a8eb5fe7fbec3d0c5b02decf4e",
+        "gateSource": "task",
+        "banners": [],
+        "at": "2026-11-18T22:16:28Z",
+        "steps": [
+          {
+            "name": "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test__verdict_binding.py tests/test_run_test_gate.py tests/test_drive_phase.py tests/test_close_phase.py tests/test_audit_task.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_import_evidence.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_outside_run.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/gate-parity.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+            "exit": 0,
+            "ran": null,
+            "reusedFrom": {
+              "runId": "2026-11-18T22:16:11Z.832da8",
+              "ts": "2026-11-18T22:16:11Z"
+            }
+          }
+        ],
+        "machine": "this run had the machine to itself"
+      },
+      "testEvidence": {
+        "runId": "2026-11-18T22:16:28Z.7db7df",
+        "status": "passed",
+        "at": "2026-11-18T22:16:28Z"
+      }
     },
     {
       "id": "P169.5",
@@ -864,7 +988,8 @@
       "blockedBy": [],
       "dependsOn": [
         "P169.4",
-        "P169.15-6l3"
+        "P169.15-6l3",
+        "P169.16-6l3"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -941,7 +1066,8 @@
       "blockedBy": [],
       "dependsOn": [
         "P169.4",
-        "P169.15-6l3"
+        "P169.15-6l3",
+        "P169.16-6l3"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -1030,7 +1156,8 @@
       "blockedBy": [],
       "dependsOn": [
         "P169.4",
-        "P169.15-6l3"
+        "P169.15-6l3",
+        "P169.16-6l3"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -1144,7 +1271,8 @@
         "P169.5",
         "P169.6",
         "P169.7",
-        "P169.15-6l3"
+        "P169.15-6l3",
+        "P169.16-6l3"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -1520,7 +1648,7 @@
     {
       "id": "P169.12-6l3",
       "title": "The proving tables break the empty-pathspec reading both ways and see its two cases go red",
-      "status": "in_progress",
+      "status": "done",
       "description": "The lint that holds git path listings to the plan/git path pair (git_path_base_violations in tools/lints/_deps.py) changed what it reads: a `--` with nothing after it is no longer a pathspec listing, because an empty pathspec hands git no path and is the guard that keeps a revision from being read as a path. Two cases in tests/test__deps.py hold both directions (gb8: the bare trailing `--` is not reported while a `--` followed by a literal, a variable, a starred list or a concatenated list is; gb9: the real reader in _commit_trail.py is clean with no exemption row). The proving tables in tools/prove-gates.py do not yet break that reading and confirm the cases go red.\n\nAdd the two rows the change's author proved in a scratch copy and handed back; they are written out in docs/audit/evidence/returns/P169.2/20261118T182730Z.executor.json, in the outcome's PROVE-GATES paragraph (one row for the red table, mutating the reading so a word after `--` is no longer collected, expected to fail gb8; one for the allow table, mutating the condition back to any `--`, expected to fail gb9). Read them from that file rather than retyping from this description, check each anchor occurs exactly once in tools/lints/_deps.py as it stands now, and run only those two rows to confirm each mutation lands and its case goes red (the tool's help says how to run a named row; if it cannot run less than the whole table, say so and run the whole table once).\n\nACCEPTANCE.\n1. Both rows are in their tables and each, run, reports its case red with the mutation applied and the tree restored.\n2. `python3 tools/prove-gates.py --list` shows them, and the tool's own suite is green.\n3. Nothing else in the tables moves.",
       "files": [
         "tools/prove-gates.py"
@@ -1541,13 +1669,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "70f42d277c8c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Edited only tools/prove-gates.py in the member tree <home>/dev/audit-plugin/claude-plugins-P169.12-6l3 (git diff --stat: 1 file, 15 insertions, 1 deletion). I copied the two rows verbatim from the PROVE-GATES paragraph of docs/audit/evidence/returns/P169.2/20261118T182730Z.executor.json. Before adding them I counted each anchor in tools/lints/_deps.py: the red anchor `        else:\\n            out.append(None)\\n    return out\\n` occurs 1 time (line 2139-2141) and the allow anchor `    if \"--\" in tail and tail.index(\"--\") < len(tail) - 1:\\n` occurs 1 time (line 2168). (1) RED table: a row after gb4 that drops the unreadable-word branch of the argv reader. It expects gb8. (2) ALLOW table: a row after gb3 that widens the condition back to any `--`. It expects gb9. Each row has a comment saying what the mutation breaks. (3) The dk2b comment now names `_ev.write_record(...)`. This matches the tree: plugins/audit/scripts/governance/run-test-gate.py:5650 reads `pointer = _ev.write_record(...)` and :5666 reads `pointer.get(\"releaseRefused\")`. No anchor or expected case moved, only the comment. RUNS. The tool has no single-row selector: main() takes `--only <substring of the lint name>` plus --red/--allow, so the narrowest run covers every row of a lint. I made two narrowed runs, concurrently, each once, and did not run the whole table. (a) `python3 tools/prove-gates.py --only git_path_base_violations` exited 0 with '3 of 3 gates proven red' and '3 of 3 guards proven to stay quiet'. The new red row reported `RED gb1, gb8`, so gb8 went red with the mutation applied. The new allow row reported `RED gb1, gb8, gb9`. The four existing rows still reported their cases (gb2/gb4/gb1/gb3). (b) `python3 tools/prove-gates.py --only dict_key_violations` exited 0. dk2b reported `RED dk2b` and its allow row reported `RED dk2b, dk3, dk4, dk5`. After both runs `git status --short` in the member tree showed only ` M tools/prove-gates.py`, so the worker trees did not write the checkout. `python3 tools/prove-gates.py --list --only git_path_base_violations` shows six rows (3 red, 3 allow), all `anchored`, exit 0. The table-row openers (`^ (\"`) went from 203 at HEAD to 205, i.e. only the two added rows. NOT RUN: the task gate `python3 tools/sweep-selftests.py tools/prove-gates.py tests/test__deps.py`. executor.runsGate is own-tests and the brief says this task has nothing of its own to run, so acceptance item 2's 'the tool's own suite is green' rests on the orchestrator's recorded run. A slip: a stray `--list` redirect wrote a file at $TMPDIR/x. I deleted it, and it was outside every tree. DEPENDANTS. Nothing a dependant imports or names changed: no function, constant or row shape moved, only two tuples appended and one comment word fixed. .github/sweep-costs.json: still correct, since the suite's cost per row is unaffected and no suite was added. hooks/guard-bash-writes.py, tests/test_guard_bash_writes.py: still correct, they name the file by path only. tests/_harness.py: still correct, its _CASE_ID convention accepts gb8/gb9. tests/test__deps.py: still correct, it holds gb8 and gb9, which these rows now prove. tests/test__gate_feed.py, tests/test_drive_phase.py, tools/affected.py: still correct, they reach the file by path or through its unchanged helpers (_first_line, _git, _under, selector_text are untouched). tests/test_render_report.py: still correct, it is a prose mention only.",
+        "descriptive": "The proving tables now break the empty-pathspec reading in both directions and watch gb8 and gb9 go red, and the dk2b comment names the call it actually guards."
       },
       "startedAt": "2026-11-18T21:01:45Z",
-      "completedAt": null,
+      "completedAt": "2026-11-18T21:16:26Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -1575,6 +1703,30 @@
             "ms": 340594,
             "basis": "durationMs in run 2026-11-18T21:13:31Z.e7200e's record (run-test-gate --record)",
             "runId": "2026-11-18T21:13:31Z.e7200e"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T21:07:23Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 335000,
+            "startedAt": "2026-11-18T21:01:48Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T21:13:31Z.e7200e",
+            "kind": "wait",
+            "ms": 0,
+            "startedAt": "2026-11-18T21:07:37Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-18T21:16:07Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 138000,
+            "startedAt": "2026-11-18T21:13:49Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 70f42d277c8c",
+            "kind": "commit",
+            "ms": 1725,
+            "startedAt": "2026-11-18T21:16:23Z"
           }
         ],
         "firstStartedAt": "2026-11-18T21:01:45Z"
@@ -1614,6 +1766,17 @@
         "runId": "2026-11-18T21:13:48Z.ef1076",
         "status": "passed",
         "at": "2026-11-18T21:13:48Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "70f42d277c8c",
+        "at": "2026-11-18T21:16:26Z",
+        "return": "docs/audit/evidence/returns/P169.12-6l3/20261118T210145Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.mode is gate-only with expectRedFirst false and tests.add is empty: the task adds proving rows, not test cases, so no red-first was owed. The rows' own red runs are recorded in outcome.technical.",
+        "at": ""
       }
     },
     {
@@ -1751,6 +1914,10 @@
           "at": "2026-11-18T20:51:22Z",
           "text": "it quotes 'refuses to start' from CONTRIBUTING.md; this task adds to that document and leaves the quoted text as it is",
           "waives": "tools/sweep-selftests.py"
+        },
+        {
+          "at": "2026-11-18T21:20:14Z",
+          "text": "A longer run than the workflow's longest line for browser-report now exists: run 44397426313 on ci/P169-mid (head 1638013d, the first run of a new branch, so both caches missed), job browser (report) 21:03:19 to 21:19:28 = 16m09s; the install took 21:03:50 to 21:08:01 on a slow mirror ('Fetched 13.2 MB in 29s (462 kB/s)', 'Fetched 21.1 MB in 3min 12s (110 kB/s)'), the slice 21:08:01 to 21:19:24. The file's rule is the longest finished run measured after the change, so the browser-report line and its bound's basis are owed this run (read it yourself before writing it down). It is also the measured case the seed exists for: a branch's first run on a slow-mirror day."
         }
       ],
       "fixes": [
@@ -1896,6 +2063,10 @@
           "at": "2026-11-18T21:02:35Z",
           "text": "it quotes the generated module map's heading in the guide; the map's body may be regenerated by its own tool if an import moves, the heading stays",
           "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-18T21:47:34Z",
+          "text": "The readers task that ran before this one changed run_record: a reused or part-reused record now carries its source run whole under repeatedRun (see the commit of the task 'one reader over records' and its return). Read that before deciding where a repeated verdict's steps come from: the field this task asks for (where the steps came from, and an explicit marker when nothing holds them) must be one design with repeatedRun, not a second one beside it; say which of the two a reader asks, and remove what is then redundant. The schema's lastRun definition does not yet describe repeatedRun, muted, groupWith, the base-red key or the wider testedState keys (it accepts them only because additional properties are allowed): describe what the record really carries."
         }
       ],
       "fixes": [
@@ -1904,6 +2075,172 @@
         "P169-R13",
         "P169-R14",
         "P169-R15"
+      ]
+    },
+    {
+      "id": "P169.16-6l3",
+      "title": "The record is sufficient for every reader of the one seam: the drive finds its run after a replacement, readers read the plan they were handed, the importer takes a run held only as a record, and an unreadable shard is said as that",
+      "status": "pending",
+      "description": "Readers of a test-gate run now go through one seam (`_evidence_io.read_rows`) that finds a run in the plan's record as well as in the ledger. An independent review of that change found no case where a record-only run makes the commit binding accept what the ledger would have refused, and four things that are wrong or will be the moment ledger rows stop being written, which a later task of this phase does. They are fixed here, before that task.\n\n1. The drive loses the run it launched. The launch token is only on the record; the ledger row never carries it and the union adds it to a row only while the record still holds that same run. When another run of the same subject is recorded after the launched one, or the launched run's record write was refused, the drive answers wait-gate with \"no gate row ... since\" for good, though the ledger holds the row. Put the token on the ledger row too, and for the time when no row is written: when the subject's newest run is later than the launch and carries another token, the drive says the launched run was replaced, by which run, and what to do, instead of waiting. Cases for both orders (the existing case covers only the foreign run landing first).\n\n2. The record is not yet sufficient for the seam's readers. A run held only as a record gives `followersOwed`, `gateReach` and its not-asked twin, `observations`, `treeMutated` and `coverage` as None or empty with nothing saying so: the drive decides a red that owes regenerated followers as a plain red, a repeated verdict prints that its source recorded no reach reading, the panel and the report say no comparison was made. The record's keys are a hand list beside the readers. Make sufficiency a mechanism: the record carries what the seam's readers read, and a case fails when a reader of the seam takes a row key the record does not carry (derive the readers' keys by reading the code that consumes the seam, or hold an explicit table that a case compares with a real row written by the gate; say which and why). Mind the record's size bound: say what each added field costs on this repository's own task gate, and what is cut first when a run is over the bound.\n\n3. Callers read the wrong plan. `run-test-gate.py` (several call sites), `audit-task.py`'s `_ledger_run` and `_runs_under`, and the importer's `held_runs` call the seam with no plan path, so the records read are those of the plan the project's config names while the record is written to the plan the command was handed; in a project holding more than one plan (this repository's examples), reuse and a repeat's source are looked up in a foreign plan whose task ids collide. Make the plan a REQUIRED argument of the seam, so a caller that forgets it is an error, and hand every caller the plan it was handed. A case with two plans in one project whose task ids collide: a run recorded for one is not reused for, bound to, or found from the other.\n\n4. The importer refuses too much. It refuses a whole ledger file when any of its runs is held as a record, which is the ordinary state of a project whose plan travels with git and whose evidence files do not: the run recorded on another machine arrives in the committed shard first, and that machine's ledger file can then never be imported. Only a run held as a ledger ROW is a duplicate; a run held only as a record is imported and the union's rule decides which copy a reader sees. Rewrite the two cases the earlier change added (they pin the refusal) and say in COMPATIBILITY.md or the CHANGELOG, whichever states the importer's behaviour, what it does.\n\n5. Messages and unreadable shards. `--base-of`, the drive's `ledger_row`, the binding and the panel's dangling sentence (plugins/audit/scripts/ui/panel/overview.js) name the ledger alone or print a zero nobody counted; a shard that will not read is skipped silently by close-phase's `tip_bodies` and `branch_records` and ignored by the importer, and three functions walk a plan's shards with three error rules (`plan_bodies`, `subject_records`, `tip_bodies`). One walker, one rule for a shard that will not read (it is reported with its file, and a reader that cannot tell \"no run\" from \"could not read\" says could not read), and each message names both places it looked. For the panel's sentence read the `refactoring-the-assembled-ui` skill and run `python3 tools/count-ui-pins.py` BEFORE editing; the change there is the sentence and what it reads, nothing else; you cannot run the browser gates, so say which pins and which non-browser suites cover it.\n\nACCEPTANCE.\n1. Each of points 1 to 4 has a case red at HEAD and green after; the mutations that prove them are run in a scratch copy outside every checkout, restored in the same command, __pycache__ purged, each confirmed landed.\n2. With a fixture plan whose ledger directory is REMOVED after the runs are recorded, every reader of the seam answers as it does with the ledger present, or says what it could not read: the commit binding (accept and refuse), the gate's reuse, the drive's read-back and its followers, `--failing-from`, `couple --basis-run`, close-phase, status, the report's and the panel's evidence facts. One case per reader, or one table-driven case that names each.\n3. The previous release's plan (no record anywhere; examples/acme-store as committed) gives byte-identical status, `--gate` and report output before and after, as the earlier change showed for itself.\n4. `python3 tools/check-rendered-artifacts.py --before-commit` and `python3 tools/check-example-ledgers.py` exit 0; a committed page your change makes stale is handed back BEFORE filing.\n5. The record's bytes on this repository's own widest task gate, before and after, measured twice.\n\nDEPENDANTS to answer for by name: the commit verb and `_verdict_binding`; the gate's reuse and `--base-of`; the drive (read-back, followers, timing queue, wave members' trees: which plan does a member's gate read and write?); close-phase and integrate; `audit-task.py` `--failing-from`, `couple`, group sign-off; the importer and docs/examples' CI pipelines that call it; status, the report and the panel's evidence view; the doctor's evidence and trail checks; the demo generator's schema exemptions and the schema's `lastRun` description (a field added to the record is described there); reconcile.\n\nIf a file you need is outside your list, STOP BEFORE FILING and hand back the exact change: a return is filed once per start.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/_verdict_binding.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/import-evidence.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/ui/panel/overview.js",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "tools/demo/gen-demo-manifest.py",
+        "tests/test__evidence_io.py",
+        "tests/test__verdict_binding.py",
+        "tests/test_run_test_gate.py",
+        "tests/test_drive_phase.py",
+        "tests/test_import_evidence.py",
+        "tests/test_close_phase.py",
+        "tests/test_audit_task.py",
+        "tests/test_commit_task_work.py",
+        "tests/test_gen_demo_manifest.py",
+        "CHANGELOG.md",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/governance/import-evidence.py",
+        "plugins/audit/scripts/governance/_verdict_binding.py",
+        "plugins/audit/scripts/ui/panel/overview.js",
+        "plugins/audit/scripts/git/close-phase.py",
+        "tests/test_drive_phase.py",
+        "tests/test__evidence_io.py",
+        "tests/test_run_test_gate.py",
+        "tests/test_audit_task.py",
+        "tests/test_import_evidence.py",
+        "tests/test__verdict_binding.py",
+        "tests/test__panel_page.py",
+        "tests/test_close_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: Put the launch token on the ledger row as well (an identity key of the row), and when the subject's newest run is later than the launch and carries another ...",
+          "tests/test__evidence_io.py: Derive the record's keys from what the readers of the seam read rather than from a hand list: carry these fields, and hold the list to the readers with a case ...",
+          "tests/test_run_test_gate.py: Every caller hands the seam the plan it was handed",
+          "tests/test_import_evidence.py: Only a run held as a ledger row is a duplicate",
+          "tests/test_run_test_gate.py: Each message names both places it looked, and an unreadable shard is said as unreadable with the file",
+          "tests/test_close_phase.py: One walker with one rule for a shard that will not read, used by all three, which reports the file"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test__verdict_binding.py tests/test_run_test_gate.py tests/test_drive_phase.py tests/test_import_evidence.py tests/test_close_phase.py tests/test_audit_task.py tests/test_commit_task_work.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P169.4",
+        "P169.15-6l3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T22:24:30Z",
+          "text": "scope: plugins/audit/scripts/governance/drive-phase.py, plugins/audit/scripts/governance/_evidence_io.py, plugins/audit/scripts/governance/run-test-gate.py, plugins/audit/scripts/manifest/audit-task.py, plugins/audit/scripts/governance/import-evidence.py, plugins/audit/scripts/governance/_verdict_binding.py, plugins/audit/scripts/ui/panel/overview.js, plugins/audit/scripts/git/close-phase.py, every path the finding(s) P169-R16, P169-R17, P169-R18, P169-R19, P169-R20, P169-R21 name"
+        },
+        {
+          "at": "2026-11-18T22:24:30Z",
+          "text": "scope: tests/test_drive_phase.py, the suite that tests plugins/audit/scripts/governance/drive-phase.py (python: it hands drive-phase.py to a loader through a module constant)"
+        },
+        {
+          "at": "2026-11-18T22:24:30Z",
+          "text": "scope: tests/test__evidence_io.py, the suite that tests plugins/audit/scripts/governance/_evidence_io.py (python: its import closure reaches plugins/audit/scripts/governance/_evidence_io.py)"
+        },
+        {
+          "at": "2026-11-18T22:24:30Z",
+          "text": "scope: tests/test_run_test_gate.py, the suite that tests plugins/audit/scripts/governance/run-test-gate.py (python: its import closure reaches plugins/audit/scripts/governance/run-test-gate.py)"
+        },
+        {
+          "at": "2026-11-18T22:24:30Z",
+          "text": "scope: tests/test_audit_task.py, the suite that tests plugins/audit/scripts/manifest/audit-task.py (python: its import closure reaches plugins/audit/scripts/manifest/audit-task.py)"
+        },
+        {
+          "at": "2026-11-18T22:24:30Z",
+          "text": "scope: tests/test_import_evidence.py, the suite that tests plugins/audit/scripts/governance/import-evidence.py (python: its import closure reaches plugins/audit/scripts/governance/import-evidence.py)"
+        },
+        {
+          "at": "2026-11-18T22:24:30Z",
+          "text": "scope: tests/test__verdict_binding.py, the suite that tests plugins/audit/scripts/governance/_verdict_binding.py (python: its import closure reaches plugins/audit/scripts/governance/_verdict_binding.py)"
+        },
+        {
+          "at": "2026-11-18T22:24:30Z",
+          "text": "scope: tests/test__panel_page.py, the suite that tests plugins/audit/scripts/ui/panel/overview.js (the test file that names overview.js)"
+        },
+        {
+          "at": "2026-11-18T22:24:30Z",
+          "text": "scope: tests/test_close_phase.py, the suite that tests plugins/audit/scripts/git/close-phase.py (python: its import closure reaches plugins/audit/scripts/git/close-phase.py)"
+        },
+        {
+          "at": "2026-11-18T22:24:59Z",
+          "text": "it quotes the gate runner's refusal 'the work under test declares no files'; this task changes which plan the runner's readers are handed and its --base-of message, and leaves that refusal as it is",
+          "waives": "tools/check-example-ledgers.py"
+        },
+        {
+          "at": "2026-11-18T22:24:59Z",
+          "text": "it quotes the red-first enum of the schema; this task describes fields of the lastRun record and leaves that enum as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T22:24:59Z",
+          "text": "it quotes the '## [Unreleased]' heading; this task edits entries under that heading and leaves the heading as it is",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T22:24:59Z",
+          "text": "its comments name COMPATIBILITY.md for two config-key decisions and share four ordinary words with the trailers section; this task edits the evidence and importer text only",
+          "waives": "plugins/audit/hooks/_config.py"
+        },
+        {
+          "at": "2026-11-18T22:24:59Z",
+          "text": "it quotes 'beside the manifest' from COMPATIBILITY.md's config section; this task edits the evidence and importer text only",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        },
+        {
+          "at": "2026-11-18T22:24:59Z",
+          "text": "it quotes 'which one wins' from COMPATIBILITY.md's key-precedence text; this task edits the evidence and importer text only",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-18T22:24:59Z",
+          "text": "it quotes 'Validation stays additive' from COMPATIBILITY.md; this task adds no plan key to the vocabulary and leaves that sentence as it is",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-18T22:24:59Z",
+          "text": "it quotes 'names no file' from COMPATIBILITY.md; this task edits the evidence and importer text only",
+          "waives": "tests/test__manifest_phases.py"
+        }
+      ],
+      "fixes": [
+        "P169-R16",
+        "P169-R17",
+        "P169-R18",
+        "P169-R19",
+        "P169-R20",
+        "P169-R21"
       ]
     }
   ],

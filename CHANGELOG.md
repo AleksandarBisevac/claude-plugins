@@ -76,6 +76,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   reads as before.
 
 ### Changed
+- **Every reader of recorded runs reads the plan's records beside the ledger, and answers the
+  same from either.** The run a task's or a phase's `lastRun` record holds is read as its ledger
+  row would be, one entry per run, the ledger's row winning where both hold it: the verdict a
+  task commit, a sign-off, `/audit:task done` and a phase landing stand on - the landing reading
+  the branch's own shards at its tip - the repeat a gate run may make of an earlier run, the base
+  reading and the gate's recorded mean, `/audit:task add --failing-from` and `couple
+  --basis-run`, which now refuse an unknown run naming both places they looked. A record that
+  repeated another run carries that run with it (`lastRun.repeatedRun`), so a repeat is followed
+  to the run that measured it with no ledger row at all; a task commit binds to such a repeat
+  from the record only while that carried run is there, and refuses as before when it is in
+  neither place. `import-evidence.py` refuses a run the plan holds only as a record as it refuses
+  a run the ledger holds, naming the plan file. The published schema describes every field a
+  record carries, `repeatedRun` included; nothing it accepted is refused. A missing evidence directory is said in a sentence naming it,
+  never as a count of zero files, and the two refusals above name it so. The step driver hands
+  each background gate a launch token (`--launch`) and reads back the run carrying it, never the
+  newest run it had not seen - a sibling's run of the same task is not its own; a launch marked
+  by an earlier drive, with no token, is not read back but launched or chosen again.
 - **A recorded run the plan holds no record of exits 3, red or green.** The record write
   waits for the phase lock behind another verb's write rather than skipping it, and a record
   it still cannot write is exit 3 with a `record:` line naming the ledger file the run's row

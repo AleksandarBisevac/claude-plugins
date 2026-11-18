@@ -27,6 +27,9 @@ ONE RUN, ONE ROW. A shard under a NEW name whose runIds the ledger already
 holds is refused too, naming each id and the file holding it, and so is a
 shard repeating a runId among its own rows, naming the shard itself: every
 reader of the directory counts rows, so the same run twice is counted twice.
+A run the plan holds only as a `lastRun` record is held in the same sense -
+`_evidence_io.read_rows` reads the records beside the rows, one entry per
+run - and is refused the same way, the holder named being the plan file.
 A ledger that cannot be read in full refuses the import rather than reading as
 empty - the check could not be made, and that is what the refusal says.
 
@@ -174,8 +177,9 @@ def learn_from_commands(rows, manifest_path, project):
 
 
 def held_runs(project, config):
-    """`(heldBy, unreadable)` - which ledger file already holds each runId, and
-    which files could not be read in full.
+    """`(heldBy, unreadable)` - which file already holds each runId - a ledger
+    file, or for a run the plan holds only as a record the plan file holding
+    it - and which ledger files could not be read in full.
 
     ONE READ, `_evidence_io.read_rows`, the reader every consumer of this
     directory trusts: its `rowFiles` names the file each row came from, and its

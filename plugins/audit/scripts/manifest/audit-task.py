@@ -14372,6 +14372,9 @@ def _ledger_run(project, flag, run_id, why):
     """`(row, refusal)` for the evidence row `run_id` names -- exactly one is
     not None. `why` ends the refusal for a run the ledger does not hold.
 
+    The run is looked for in the ledger AND in the records the plan holds
+    (`read_rows` reads both), so a refusal names both places it looked.
+
     A LOST LINE IS NAMED, NEVER READ AS ABSENCE. `read_rows` skips a line it
     cannot parse and counts it; a run not found among the readable rows may
     be on exactly that line, so the refusal says which file could not be
@@ -14384,16 +14387,30 @@ def _ledger_run(project, flag, run_id, why):
     row = _evidence_io.row_by_run(ledger.get("rows") or [], run_id)
     if row is not None:
         return row, None
-    if ledger.get("unreadable"):
+    if ledger.get("unreadable") or ledger.get("unreadablePlanFiles"):
         lost = [_output.posix_rel(p, project) if os.path.isabs(p) else p
-                for p in (ledger.get("unreadableFiles") or [])]
+                for p in (list(ledger.get("unreadableFiles") or [])
+                          + list(ledger.get("unreadablePlanFiles") or []))]
         return None, ("[audit-task] %s %s: no run with this id is among the "
-                      "readable rows of the evidence ledger, and some of it "
-                      "could not be read (%s) -- the run may be on a line "
-                      "that read lost, so repair it before asking again"
+                      "readable rows of the evidence ledger or the records "
+                      "the plan holds, and some of them could not be read "
+                      "(%s) -- the run may be in what that read lost, so "
+                      "repair it before asking again"
                       % (flag, run_id, ", ".join(lost) or "file unnamed"))
     return None, ("[audit-task] %s %s: no run with this id is in the "
-                  "evidence ledger -- %s" % (flag, run_id, why))
+                  "evidence ledger (%s) or in any record the plan (%s) holds "
+                  "-- %s" % (flag, run_id, _ledger_where(project, ledger),
+                             _output.posix_rel(
+                                 _evidence_io.plan_file_of(project), project),
+                             why))
+
+
+def _ledger_where(project, ledger):
+    """Where the evidence ledger was looked for: its directory, and that it
+    does not exist when `read_rows` said so - never a count over nothing."""
+    where = _output.posix_rel(_evidence_io.evidence_dir(project), project)
+    return ("%s, which does not exist" % (where,)
+            if ledger.get("ledgerAbsent") else where)
 
 
 def _caught_refusal(row, run_id, test, listing):

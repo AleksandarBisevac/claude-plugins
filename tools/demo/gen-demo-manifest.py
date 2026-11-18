@@ -1384,6 +1384,18 @@ SCHEMA_EXEMPTIONS = {
     "lastRun.stepsDropped":
         "counted only when a run has more steps than the record keeps "
         "(`_evidence_io.MAX_STEPS`); no demo gate is that wide.",
+    "lastRun.muted":
+        "the steps a quarantine excused in a run; the demo's config mutes no "
+        "suite (meta.muted is exempt above), so no run carries one.",
+    "lastRun.groupWith":
+        "written only on a run that measured a group of phases as one, for "
+        "lastRun.gradedBy's reason: the demo signs no group off.",
+    "lastRun.baseRed":
+        "a red run's reading against its base; the demo measures no base, so "
+        "no run carries one.",
+    "lastRun.repeatedRun":
+        "the run a repeated verdict copied, carried whole; for "
+        "lastRun.reusedFrom's reason, no demo run repeats another run's verdict.",
     "review.preExistingNotCharged":
         "defined by the schema and by nothing else - no reader, no writer, and not "
         "even a `_manifest_vocab` entry. A fixture value would demonstrate nothing.",

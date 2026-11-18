@@ -6597,35 +6597,51 @@ def background_wait(step, subject, lines, basis, nxt, argv):
                                                 runs=[command]))
 
 
-def subject_run_ids(ctx, key):
-    """`(ids, None)` - `(runId, status)` of every ledger row filed under the
-    subject `key` (`_evidence_io.subject_key`: `("task", id)` or `("phase",
-    id)`), oldest first - or `(None, why)` when the ledger cannot be read: a
-    ledger nobody read is not one holding no run."""
+# THE RUN A LAUNCH STARTED IS FOUND BY ITS TOKEN. The drive hands each
+# background gate a fresh `--launch` token, which the run keeps on its record
+# (`_evidence_io.run_record`), and reads back the run of the subject carrying
+# that token (`_evidence_io.run_by_launch`) - never "a run it had not seen
+# before", which a sibling's run of the same subject also is. A relaunch mints
+# a new token, so a cancelled run's token never answers for its successor.
+LAUNCH_FLAG = "--launch"
+
+
+def launch_token():
+    """A token no other launch carries: the moment, and four random bytes."""
+    return "%s-%s" % (_utc_stamp(), os.urandom(4).hex())
+
+
+def with_launch(argv, token):
+    """`argv` with its `--launch` value, if any, replaced by `token` - a NEW
+    list, so a relaunch printed again from a mark carries its own token."""
+    out, skip = [], False
+    for word in argv or []:
+        if skip:
+            skip = False
+            continue
+        if word == LAUNCH_FLAG:
+            skip = True
+            continue
+        out.append(word)
+    return out + [LAUNCH_FLAG, token]
+
+
+def new_gate_row(ctx, launched, key):
+    """`((runId, status), None)` - the run of the subject `key` that carries the
+    launch token of `launched` - `(None, None)` while no run carries it (or the
+    mark holds no token), `(None, why)` when the runs cannot be read."""
+    token = launched.get("launch") if isinstance(launched, dict) else None
+    if not token:
+        return None, None
     try:
         rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
     except Exception as exc:                                   # noqa: BLE001
         return None, "the evidence ledger could not be read (%s: %s)" % (
             type(exc).__name__, exc)
-    return [(r.get("runId"), r.get("status")) for r in _evio.oldest_first(rows)
-            if _evio.subject_key(r) == key and r.get("runId")], None
-
-
-def task_run_ids(ctx, task):
-    """`subject_run_ids` for `task`'s own rows."""
-    return subject_run_ids(ctx, ("task", task["id"]))
-
-
-def new_gate_row(ctx, launched, key):
-    """`((runId, status), None)` - the newest row of the subject `key` the
-    launch `launched` did not know of - `(None, None)` while there is none,
-    `(None, why)` when the ledger cannot be read."""
-    runs, why = subject_run_ids(ctx, key)
-    if why is not None:
-        return None, why
-    known = set(launched.get("known") or [])
-    new = [(i, status) for i, status in runs if i not in known]
-    return (new[-1] if new else None), None
+    found = _evio.run_by_launch(
+        [r for r in rows if _evio.subject_key(r) == key], token)
+    return ((found.get("runId"), found.get("status"))
+            if found and found.get("runId") else None), None
 
 
 def unrepeatable_red(run_id, status):
@@ -6817,19 +6833,19 @@ def read_back(ctx, run_id, status, repeat, label):
 
 
 def launch_gate(ctx, state, phase, task, tree, argv=None, why=None):
-    """Mark the launch of `task`'s gate - the moment, the command and the rows
-    the ledger held for it then - and print its dispatch with `why` it goes to
-    the background. `argv` is a launch printed again; a first one spends a
-    `rerun` mark into `--no-reuse`."""
-    known, failed = task_run_ids(ctx, task)
-    if failed is not None:
-        return _stopped(ctx, failed)
+    """Mark the launch of `task`'s gate - the moment, the command and the
+    launch token the command carries (`LAUNCH_FLAG`) - and print its dispatch
+    with `why` it goes to the background. `argv` is a launch printed again,
+    under a token of its own; a first one spends a `rerun` mark into
+    `--no-reuse`."""
     if argv is None:
         argv = ["python3", _loader.script_path("run-test-gate.py")] + gate_args(
             ctx, phase, task, tree, no_reuse=bool(_spend(state, "rerun", task)),
             absolute=True)
+    token = launch_token()
+    argv = with_launch(argv, token)
     _mark(state, GATE_LAUNCH_KEY, task, {
-        "at": _utc_stamp(), "argv": list(argv), "known": [i for i, _s in known]})
+        "at": _utc_stamp(), "argv": list(argv), "launch": token})
     write_state(ctx, state)
     return gate_said(ctx, task["id"], argv, why=why)
 
@@ -6844,6 +6860,14 @@ def background_gate(ctx, state, phase, task, tree):
     launched = _marked(state, GATE_LAUNCH_KEY, task)
     if not isinstance(launched, dict):
         return launch_gate(ctx, state, phase, task, tree), None
+    if not launched.get("launch"):
+        # A mark from a drive that handed out no token: its run cannot be told
+        # from any other run of the task, so it is launched again, the command
+        # it printed now under a token.
+        warn(ctx, "gate %s was launched with no launch token, so the run it "
+                  "started cannot be named; launched again" % (task["id"],))
+        return launch_gate(ctx, state, phase, task, tree,
+                           launched.get("argv") or None), None
     found, why = new_gate_row(ctx, launched, ("task", task["id"]))
     if why is not None:
         return _stopped(ctx, why), None
@@ -11405,16 +11429,14 @@ def phase_gate(ctx, phase, verbose=False):
 
 def launch_phase_gate(ctx, state, phase, head, argv=None, why=None):
     """Mark the launch of the phase's gate at `head` - the moment, the command
-    and the phase rows the ledger held then - and print its dispatch."""
-    known, failed = subject_run_ids(ctx, ("phase", phase["id"]))
-    if failed is not None:
-        return _stopped(ctx, failed)
+    and the launch token it carries (`LAUNCH_FLAG`) - and print its dispatch."""
     if argv is None:
         argv = ["python3", _loader.script_path("run-test-gate.py")] + \
             phase_gate_args(ctx, phase, absolute=True)
+    token = launch_token()
+    argv = with_launch(argv, token)
     state[PHASE_GATE_LAUNCH_KEY] = {"head": head, "at": _utc_stamp(),
-                                    "argv": list(argv),
-                                    "known": [i for i, _s in known]}
+                                    "argv": list(argv), "launch": token}
     write_state(ctx, state)
     return gate_said(ctx, phase["id"], argv, phase_gate=True, why=why)
 
@@ -11425,9 +11447,11 @@ def chosen_phase_gate(ctx, state, phase, head):
     measured inline when the derived gate's recorded mean is under the
     foreground bound, or read back from the row its background run recorded,
     as `chosen_task_gate` reads a task's. A launch at another head is
-    forgotten: its run measured a tree the phase no longer is."""
+    forgotten: its run measured a tree the phase no longer is - and so is a
+    launch marked with no launch token, whose run cannot be named."""
     launched = state.get(PHASE_GATE_LAUNCH_KEY)
-    if not isinstance(launched, dict) or launched.get("head") != head:
+    if not isinstance(launched, dict) or launched.get("head") != head \
+            or not launched.get("launch"):
         if state.pop(PHASE_GATE_LAUNCH_KEY, None) is not None:
             write_state(ctx, state)
         failed = derive_phase_gate(ctx, phase)

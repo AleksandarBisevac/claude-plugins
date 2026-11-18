@@ -581,10 +581,121 @@ def _tree_binding_cases(check):
         _harness.remove_tree(root)
 
 
+def _records_only(root, rows, files=None):
+    """The project `_project` builds, with NO ledger: the plan holds phase P1's
+    newest run as its record, `run_record` over that row with the run it
+    repeats as `source` - what `run-test-gate.py --record` writes."""
+    mpath = _project(root, [], files=files)
+    os.remove(os.path.join(_evidence_io.evidence_dir(root), "2026-09.t.jsonl"))
+    os.rmdir(_evidence_io.evidence_dir(root))
+    newest = _evidence_io.latest_by_subject(rows).get(("phase", "P1"))
+    by_id = dict((r["runId"], r) for r in rows)
+    phase = {"id": "P1", "title": "one", "status": "in_progress",
+             "testGate": ["test"], "tasks": []}
+    if newest is not None:
+        phase[_evidence_io.RECORD_KEY] = _evidence_io.run_record(
+            newest, source=by_id.get((newest.get("reusedFrom") or {}).get(
+                "runId")))
+        phase[_evidence_io.POINTER_KEY] = _evidence_io.pointer_from_record(
+            phase[_evidence_io.RECORD_KEY])
+    os.makedirs(os.path.join(root, "docs", "audit", "phases"), exist_ok=True)
+    with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
+              "w") as fh:
+        json.dump(phase, fh)
+    with open(mpath, "w") as fh:
+        json.dump({"meta": {"version": 3}, "phases": [
+            {"id": "P1", "title": "one", "shard": "phases/P1.json"}]}, fh)
+    return mpath
+
+
+def _said(got):
+    """What a binding answer decides: its state, its arm, the run it names and
+    the run that measured the tree."""
+    return (got.get("state"), got.get("arm"),
+            (got.get("row") or {}).get("runId"),
+            (got.get("measured") or {}).get("runId"))
+
+
+def _record_binding_cases(check):
+    """(vb43) The binding answers the same from a record as from the row it
+    replaces, over the fixtures `_cases` reaches each arm with that a record can
+    hold - a subject's newest run. The ledger-file arms (a torn line, a byte
+    that is not text, a row naming no moment) are about the ledger file and
+    have no record to compare."""
+    root = _harness.fixture_root("verdict-binding-records")
+    try:
+        probe = os.path.join(root, "probe")
+        os.makedirs(probe)
+        _project(probe, [])
+        row = _measured(probe, "R1", "2026-09-01T00:00:00Z")
+        reused = {"runId": "R2", "ts": "2026-09-02T00:00:00Z", "scope": "phase",
+                  "phaseId": "P1", "status": "passed", "testedState": {},
+                  "gateSource": "phase",
+                  _evidence_io.VERDICT_SOURCE: _evidence_io.REUSED,
+                  "reusedFrom": {"runId": "R1", "ts": "2026-09-01T00:00:00Z",
+                                 "status": "passed"}}
+        two = _measured(probe, "R1", "2026-09-01T00:00:00Z",
+                        steps=("tree", "plan"))
+        part = dict(_measured(probe, "R5", "2026-09-05T00:00:00Z",
+                              steps=("tree", "plan")),
+                    reusedFrom={"runId": "R1"})
+        part[_evidence_io.VERDICT_SOURCE] = _evidence_io.PART_REUSED
+        part["steps"][0]["reusedFrom"] = {"runId": "R1",
+                                          "ts": "2026-09-01T00:00:00Z"}
+        empty = _measured(probe, "R3", "2026-09-03T00:00:00Z",
+                          status="empty-gate", steps=())
+        red = _measured(probe, "R4", "2026-09-04T00:00:00Z", status="failed")
+        other = _measured(probe, "R7", "2026-09-07T00:00:00Z", steps=("lint",))
+        table = [
+            ("bound", [row], ("test",), None),
+            ("repeat followed to its source", [row, reused], ("test",), None),
+            ("part repeat", [two, part], ("tree", "plan"), None),
+            ("files moved", [row], ("test",), "a = 2\n"),
+            ("empty gate under entries", [empty], ("test",), None),
+            ("empty gate under none", [empty], (), None),
+            ("red after green, gate emptied", [row, red], (), None),
+            ("red newest", [row, red], ("test",), None),
+            ("another gate", [other], ("test",), None),
+            ("nothing recorded", [], ("test",), None),
+        ]
+        differ, seen = [], {}
+        for at, (name, rows, entries, files) in enumerate(table):
+            rbase = os.path.join(root, "rows-%d" % (at,))
+            cbase = os.path.join(root, "records-%d" % (at,))
+            os.makedirs(rbase)
+            os.makedirs(cbase)
+            rpath = _project(rbase, rows, files=files)
+            cpath = _records_only(cbase, rows, files=files)
+            from_rows = _said(_bind(rbase, rpath, entries=entries))
+            from_records = _said(_bind(cbase, cpath, entries=entries))
+            seen[name] = from_records
+            if from_rows != from_records:
+                differ.append((name, from_rows, from_records))
+        check("vb43 THE BINDING FROM A RECORD: each fixture, held as its "
+              "newest run's record with no ledger at all, binds or refuses on "
+              "the same arm, naming the same run and the same measuring run, as "
+              "the same fixture held as ledger rows - differing: %r; from "
+              "records: %r" % (differ, seen),
+              differ == [] and len(seen) == len(table))
+        check("vb44 ...and not because every answer is the same: from records "
+              "alone a repeated verdict is followed to the run that measured "
+              "it and BINDS there, a moved file refuses on the digest, and a "
+              "red newest run refuses as red: %r"
+              % ((seen.get("repeat followed to its source"),
+                  seen.get("files moved"), seen.get("red newest")),),
+              seen.get("repeat followed to its source") == ("bound", None, "R2",
+                                                            "R1")
+              and seen.get("files moved", ("",))[1] == M.ARM_DIGEST_MOVED
+              and seen.get("red newest", ("",))[1] == M.ARM_RED)
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _harness.stage(check, "vb-tree-block", _tree_binding_cases)
+        _harness.stage(check, "vb-record-block", _record_binding_cases)
     return _harness.run(body)
 
 

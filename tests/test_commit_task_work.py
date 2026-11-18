@@ -1881,6 +1881,42 @@ def _rewrite_row(fx, run_id, edit):
     _write(path, "\n".join(out) + "\n")
 
 
+def _task_record(shard, tid=TASK):
+    """The fixture task's `lastRun` record in the phase body `shard`."""
+    task = [t for t in shard["tasks"] if t.get("id") == tid][0]
+    return task.get(_evidence_io.RECORD_KEY) or {}
+
+
+def _repeated_run_row(fx, tid=TASK):
+    """The run the task's record says it repeated, in the row's shape - or {}."""
+    shard = _mio.read_json(fx["shard"])
+    carried = _task_record(shard, tid).get(_evidence_io.REPEATED_RUN_KEY)
+    if not isinstance(carried, dict):
+        return {}
+    return _evidence_io.record_row(carried, "task", tid, PHASE)
+
+
+def _drop_repeated_run(fx, tid=TASK):
+    """Remove the run the task's record carries as the one it repeated."""
+    shard = _mio.read_json(fx["shard"])
+    _task_record(shard, tid).pop(_evidence_io.REPEATED_RUN_KEY, None)
+    TI._write_json(fx["shard"], shard)
+
+
+def _compared_fields(row):
+    """What `_verdict_binding` compares on a measured run: its steps' names and
+    the count dropped, the gate's source and digest, the entries left to the
+    phase gate, and the declared-work digests of the tree it ran on."""
+    state = row.get("testedState") or {}
+    return {"steps": [s.get("name") for s in row.get("steps") or []],
+            "stepsDropped": row.get("stepsDropped"),
+            "gateSource": row.get("gateSource"),
+            "gateDigest": row.get(_evidence_io.GATE_DIGEST_KEY),
+            "left": row.get(_evidence_io.LEFT_TO_PHASE_GATE_KEY),
+            "scopeDigest": state.get("scopeDigest"),
+            "scopeListDigest": state.get("scopeListDigest")}
+
+
 def _append_ledger(fx, text):
     """Append raw `text` to the newest ledger file."""
     directory = os.path.join(fx["root"], "docs", "audit", "evidence")
@@ -2124,18 +2160,60 @@ def _branch_cases(check, repos):
           "because it could be this task's newest verdict: %r" % (code,),
           code == 1 and _const("VERIFY_COMMAND") in text)
 
-    # A REPEATED VERDICT WHOSE SOURCE IS GONE.
+    # A REPEATED VERDICT WHOSE SOURCE IS GONE. The run a repeat copied is held
+    # in two places: its ledger row, and the repeat's record, which carries it
+    # whole (`REPEATED_RUN_KEY`). Gone means gone from both.
     fx = repos.make()
     _dirty_work(fx)
     _gate(fx)
     measured = _newest_row(fx)
     _gate(fx, reuse=True)
     _rewrite_row(fx, measured.get("runId"), lambda row: None)
+    _drop_repeated_run(fx)
     code, text = _run(fx)
-    check("ctw64 a repeated verdict whose measured run is no longer in the "
-          "ledger is refused - there is no tree state left to grade it against: "
-          "%r / %r" % (code, text),
-          code == 1 and "not in the ledger" in text)
+    check("ctw64 a repeated verdict whose measured run is in neither the ledger "
+          "nor the repeat's record is refused - there is no tree state left to "
+          "grade it against: %r / %r" % (code, text),
+          code == 1 and "not in the ledger nor in any record" in text)
+    # ...AND THE SAME REPEAT WHOSE RECORD STILL CARRIES IT binds from the record
+    # alone, because the record holds every field the binding compares on the
+    # measured run - the same values the ledger row held.
+    fx = repos.make()
+    _dirty_work(fx)
+    _gate(fx)
+    measured = _newest_row(fx)
+    _gate(fx, reuse=True)
+    carried = _repeated_run_row(fx)
+    _rewrite_row(fx, measured.get("runId"), lambda row: None)
+    before = _head(fx)
+    code, text = _run(fx)
+    check("ctw64b ...while a repeat whose record still carries the run it "
+          "copied binds from the record alone, with the ledger row gone: the "
+          "fields the binding compares (step names, stepsDropped, gateSource, "
+          "gateDigest, leftToPhaseGate, scopeDigest, scopeListDigest) are the "
+          "ledger row's, and the commit is made: %r / %r / %r"
+          % (_compared_fields(carried), code, text),
+          carried.get("runId") == measured.get("runId")
+          and _compared_fields(carried) == _compared_fields(measured)
+          and _compared_fields(measured)["scopeDigest"] is not None
+          and code == 0 and "bound to run" in text and _head(fx) != before)
+    # ...AND IT IS GRADED ON THAT RECORD, not waved through: the declared file
+    # edited after the run moves the digest the record carries, and the same
+    # read refuses.
+    fx = repos.make()
+    _dirty_work(fx)
+    _gate(fx)
+    measured = _newest_row(fx)
+    _gate(fx, reuse=True)
+    _rewrite_row(fx, measured.get("runId"), lambda row: None)
+    _write(os.path.join(fx["root"], OWNED), "a = 3  # edited after the run\n")
+    code, text = _run(fx)
+    check("ctw64c SECOND DIRECTION: the same record-alone repeat refuses once "
+          "the declared file has moved since the run it carries was measured - "
+          "the record's scopeDigest is what was compared: %r / %r"
+          % (code, text),
+          code == 1 and "changed since it was measured" in text
+          and str(measured.get("testedState", {}).get("scopeDigest")) in text)
 
     # A ROW WHOSE DIGEST COULD NOT BE TAKEN.
     fx = repos.make()

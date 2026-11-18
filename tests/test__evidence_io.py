@@ -5074,10 +5074,328 @@ def _last_run_cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# --- one reader over the shard records and the older rows ---------------------
+# The runs both fixtures hold, oldest first. Each result is `run_gate`'s shape
+# as `row_for` reads it, so the rows are the writer's own and the records are
+# `run_record` over those rows - never a hand-written copy of either.
+RI_H0 = "0" * 40
+RI_H1 = "1" * 40
+
+
+def _ri_step(name, exit_code=0, ms=1000, reader="house", **extra):
+    step = {"name": name, "exit": exit_code, "ran": 3, "measured": "measured",
+            "durationMs": ms, "suiteReader": reader}
+    if exit_code:
+        step.update(failing=["FAIL a1 the case"], failingBasis="named")
+    step.update(extra)
+    return step
+
+
+def _ri_state(head, clean, scope):
+    return {"head": head, "headBasis": "git rev-parse HEAD",
+            "dirtyDigest": (M.CLEAN_DIRTY_DIGEST if clean
+                            else "sha256:" + "d" * 64),
+            "scopeDigest": scope, "scopeListDigest": "sha256:list-" + scope[-4:]}
+
+
+def _ri_result(status, steps, state, key, verdict=None, reused=None):
+    out = {"status": status, "durationMs": sum(
+        s.get("durationMs") or 0 for s in steps if "reusedFrom" not in s),
+           "failed": [s["name"] for s in steps if s.get("exit")],
+           "steps": steps, "testedState": state, M.REUSE_KEY: key,
+           "gateSource": "task", M.GATE_DIGEST_KEY: "sha256:gate",
+           "banners": []}
+    if verdict is not None:
+        out[M.VERDICT_SOURCE] = verdict
+    if reused is not None:
+        out["reusedFrom"] = reused
+    return out
+
+
+# The joined step a phase run records: its declared entry and an affected
+# step over one suite, as one call (`joined_step_name`).
+RI_JOINED = M.joined_step_name("sweep", ["affected/narrow: tests/test_b.py"])
+
+
+def ri_runs():
+    """The fixture, as `(runId, ts, scope, ids, result)` oldest first: a task
+    whose second run repeated its first whole (R2 of R1), a red task run on a
+    clean base commit (R3), a task whose second run repeated one step of its
+    first and measured the other (R6 of R5), and a phase run over a joined
+    step on that base (R7)."""
+    t11 = {"taskId": "P1.1", "phaseId": "P1"}
+    t12 = {"taskId": "P1.2", "phaseId": "P1"}
+    t13 = {"taskId": "P1.3", "phaseId": "P1"}
+    return [
+        ("R1", "2026-11-18T10:00:00Z", "task", t11, _ri_result(
+            "passed", [_ri_step("lint", ms=1000, reader="none"),
+                       _ri_step("sweep", ms=3000)],
+            _ri_state(RI_H1, False, "sha256:scope-p111"), "sha256:k1")),
+        ("R2", "2026-11-18T10:05:00Z", "task", t11, _ri_result(
+            "passed", [], {}, "sha256:k1", verdict=M.REUSED,
+            reused={"runId": "R1", "ts": "2026-11-18T10:00:00Z",
+                    "status": "passed"})),
+        ("R3", "2026-11-18T10:10:00Z", "task", t12, _ri_result(
+            "failed", [_ri_step("sweep", exit_code=1, ms=2500,
+                                failingSuites=["tests/test_a.py"],
+                                failingSuitesBasis=M.NAMED_FAILING + " by the "
+                                "runner's summary")],
+            _ri_state(RI_H0, True, "sha256:scope-p112"), "sha256:k2")),
+        ("R5", "2026-11-18T10:15:00Z", "task", t13, _ri_result(
+            "passed", [_ri_step("lint", ms=2000), _ri_step("plan", ms=500)],
+            _ri_state(RI_H1, False, "sha256:scope-p113"), "sha256:k3")),
+        ("R6", "2026-11-18T10:20:00Z", "task", t13, _ri_result(
+            "passed", [dict(_ri_step("lint"), reusedFrom={
+                "runId": "R5", "ts": "2026-11-18T10:15:00Z"}),
+                _ri_step("plan", ms=600)],
+            _ri_state(RI_H1, False, "sha256:scope-p113"), "sha256:k3",
+            verdict=M.PART_REUSED,
+            reused={"runId": "R5", "ts": "2026-11-18T10:15:00Z",
+                    "status": "passed"})),
+        ("R7", "2026-11-18T10:25:00Z", "phase", {"phaseId": "P1"}, _ri_result(
+            "passed", [_ri_step(RI_JOINED, ms=4000)],
+            _ri_state(RI_H0, True, "sha256:scope-p1"), "sha256:k7")),
+    ]
+
+
+def ri_plan(root, tasks=4):
+    """A sharded plan under `root`: one phase P1 of tasks P1.1-P1.<tasks>,
+    gated on `sweep`; `(manifest path, {phase id: shard path})`."""
+    _project(root, {"manifestPath": "docs/audit/audit-plan.json"})
+    os.makedirs(os.path.join(root, "docs", "audit", "phases"), exist_ok=True)
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    shard = os.path.join(root, "docs", "audit", "phases", "P1.json")
+    with io.open(shard, "w", encoding="utf-8") as fh:
+        json.dump({"id": "P1", "title": "one", "status": "in_progress",
+                   "testGate": ["sweep"],
+                   "tasks": [{"id": "P1.%d" % (i,), "title": "t",
+                              "status": "in_progress"}
+                             for i in range(1, tasks + 1)]}, fh)
+    with io.open(mpath, "w", encoding="utf-8") as fh:
+        json.dump({"meta": {"version": 3}, "phases": [
+            {"id": "P1", "title": "one", "shard": "phases/P1.json"}]}, fh)
+    return mpath, {"P1": shard}
+
+
+def ri_rows(root, runs=None):
+    """Every run of `runs` (`ri_runs()`) as the ledger row `row_for` builds."""
+    return [M.row_for(root, result, scope, ids, {
+        "runId": run, "ts": ts, "startedAt": ts})
+        for run, ts, scope, ids, result in (runs or ri_runs())]
+
+
+def ri_put_record(shard, subject, record):
+    """`record` onto `subject` (a task id, or None for the phase) of the shard
+    at `shard`, its pointer beside it - the two keys `write_record` writes."""
+    with io.open(shard, encoding="utf-8") as fh:
+        body = json.load(fh)
+    holder = body if subject is None else [
+        t for t in body["tasks"] if t["id"] == subject][0]
+    holder[M.RECORD_KEY] = record
+    holder[M.POINTER_KEY] = M.pointer_from_record(record)
+    with io.open(shard, "w", encoding="utf-8") as fh:
+        json.dump(body, fh)
+
+
+def ri_records_of(rows):
+    """`{(scope, subject): record}` - each subject's NEWEST run as the record
+    `run-test-gate.py --record` writes: `run_record` over its row, with the row
+    of the run it repeats as `source`."""
+    by_id = dict((r["runId"], r) for r in rows)
+    return dict(
+        (key, M.run_record(row, source=by_id.get(
+            (row.get("reusedFrom") or {}).get("runId"))))
+        for key, row in M.latest_by_subject(rows).items())
+
+
+def ri_fixture(tmp, name, rows=True, records=True, runs=None):
+    """`(project, manifest path, shards)` holding `runs` (`ri_runs()`) as ledger
+    rows, as records, or as both."""
+    root = os.path.join(tmp, name)
+    mpath, shards = ri_plan(root)
+    built = ri_rows(root, runs)
+    if rows:
+        for row in built:
+            M.append_row(root, row, session_id="ri-fixture")
+    if records:
+        for (scope, subject), record in sorted(ri_records_of(built).items()):
+            ri_put_record(shards["P1"], subject if scope == "task" else None,
+                          record)
+    return root, mpath, shards
+
+
+def ri_answers(rows):
+    """Every reader the task names, asked of `rows`: one dict, so a fixture of
+    records and a fixture of rows are compared whole."""
+    rows = list(rows or [])
+
+    def run_of(row):
+        return None if row is None else row.get("runId")
+
+    def seen(row):
+        return None if row is None else (
+            row.get("status"), row.get(M.VERDICT_SOURCE),
+            [s.get("name") for s in row.get("steps") or []
+             if not M.step_repeated(s)],
+            (row.get("testedState") or {}).get("scopeDigest"))
+    return {
+        "entries": sorted(str(r.get("runId")) for r in rows),
+        "latest": dict(("%s %s" % k, run_of(v))
+                       for k, v in M.latest_by_subject(rows).items()),
+        "byRun": dict((rid, seen(M.row_by_run(rows, rid)))
+                      for rid in ("R1", "R2", "R3", "R5", "R6", "R7", "R9")),
+        "reuseWhole": run_of(M.reusable_run(
+            rows, "task", {"taskId": "P1.1", "phaseId": "P1"}, "sha256:k1",
+            ("passed",))),
+        "reusePart": run_of(M.reusable_run(
+            rows, "task", {"taskId": "P1.3", "phaseId": "P1"}, "sha256:k3",
+            ("passed",), steps=["lint"])),
+        "reuseOtherKey": run_of(M.reusable_run(
+            rows, "task", {"taskId": "P1.1", "phaseId": "P1"}, "sha256:moved",
+            ("passed",))),
+        "partSources": M.repeated_step_sources(M.row_by_run(rows, "R6")),
+        "parts": sorted(repr(M.step_parts(s.get("name")))
+                        for r in rows for s in r.get("steps") or []
+                        if not M.step_repeated(s)),
+        "baseByName": run_of(M.base_run(rows, RI_H0[:12],
+                                        exclude_tasks=["P1.1"],
+                                        names=["sweep"])),
+        "baseBySuite": run_of(M.base_run(rows, RI_H0, names=[],
+                                         suites=["tests/test_b.py"])),
+        "meanLint": M.gate_mean_ms(rows, ["lint"]),
+        "meanGate": M.gate_mean_ms(rows, ["lint", "plan"]),
+        "suiteKeys": M.suite_keys(rows),
+    }
+
+
+def _one_reader_cases(check):
+    """(ri) Every reader of recorded runs answers the same from the shard
+    records as from the older ledger rows they replace."""
+    tmp = _harness.fixture_root("audit-evidence-onereader-")
+    try:
+        rroot, _rm, _rs = ri_fixture(tmp, "rows", rows=True, records=False)
+        croot, _cm, _cs = ri_fixture(tmp, "records", rows=False, records=True)
+        broot, _bm, bshards = ri_fixture(tmp, "both", rows=True, records=True)
+        from_rows = M.read_rows(rroot)
+        from_records = M.read_rows(croot)
+        a_rows = ri_answers(from_rows["rows"])
+        a_records = ri_answers(from_records["rows"])
+        differ = sorted(k for k in a_rows if a_rows[k] != a_records.get(k))
+        check("ri1 THE TABLE: a plan holding each subject's newest run as its "
+              "record and no ledger, and the same runs as ledger rows and no "
+              "record, give the same latest-by-subject, by-run lookup, whole "
+              "and part repeat, step parts, base reading, gate mean and suite "
+              "keys - differing: %r; from records: %r" % (differ, a_records),
+              differ == [] and a_rows["entries"] == ["R1", "R2", "R3", "R5",
+                                                     "R6", "R7"])
+        check("ri2 ...and the table is not vacuous: the whole repeat follows "
+              "R2 back to the run that MEASURED it, the part repeat finds R5 "
+              "for the step R6 only copied, R6 names R5 as that step's source, "
+              "the base is R3 by name and R7 by suite, and the mean of lint is "
+              "over R1 and R5's own measurements (R6's copy is no run of it): "
+              "%r" % ((a_records["reuseWhole"], a_records["reusePart"],
+                       a_records["partSources"], a_records["baseByName"],
+                       a_records["baseBySuite"], a_records["meanLint"]),),
+              a_records["reuseWhole"] == "R1" and a_records["reusePart"] == "R5"
+              and a_records["partSources"] == [("lint", "R5")]
+              and a_records["baseByName"] == "R3"
+              and a_records["baseBySuite"] == "R7"
+              and a_records["meanLint"] == (1500.0, 2)
+              and a_records["latest"] == {"task P1.1": "R2", "task P1.2": "R3",
+                                          "task P1.3": "R6", "phase P1": "R7"})
+        check("ri3 a record whose reuse key is not the current key repeats "
+              "nothing, from records as from rows: %r"
+              % ((a_records["reuseOtherKey"], a_rows["reuseOtherKey"]),),
+              a_records["reuseOtherKey"] is None
+              and a_rows["reuseOtherKey"] is None)
+        # --- one entry per run, and where each lives ----------------------
+        ri_put_record(bshards["P1"], "P1.4", M.run_record(M.row_for(
+            broot, _ri_result("passed", [_ri_step("lint", ms=700)],
+                              _ri_state(RI_H1, False, "sha256:scope-p114"),
+                              "sha256:k9"),
+            "task", {"taskId": "P1.4", "phaseId": "P1"},
+            {"runId": "R9", "ts": "2026-11-18T10:30:00Z"})))
+        both = M.read_rows(broot)
+        ids = [str(r.get("runId")) for r in both["rows"]]
+        where = dict((str(r.get("runId")), (src, f)) for r, src, f in zip(
+            both["rows"], both.get("rowSources") or [], both["rowFiles"]))
+        check("ri4 a run held as a ledger row AND as a record is ONE entry, "
+              "and a run held only as a record is read too: each entry says "
+              "where it came from, and `rowFiles` names the shard for a record "
+              "where it names the ledger file for a row: %r" % (where,),
+              sorted(ids) == ["R1", "R2", "R3", "R5", "R6", "R7", "R9"]
+              and len(ids) == len(set(ids))
+              and where.get("R9") == ("record", "docs/audit/phases/P1.json")
+              and (where.get("R2") or ("",))[0] == "ledger"
+              and str((where.get("R2") or ("", ""))[1]).endswith(".jsonl")
+              and both.get("records") == 1 and both["files"] == 1)
+        # --- the older directory, absent and present ----------------------
+        check("ri5 a reader that finds NO evidence directory says so with a "
+              "basis naming where it looked, and its rows are the records "
+              "alone - never a zero counted over a directory that is not "
+              "there: %r" % ((from_records.get("ledgerAbsent"),
+                              from_records["files"]),),
+              isinstance(from_records.get("ledgerAbsent"), str)
+              and "docs/audit/evidence" in from_records["ledgerAbsent"]
+              and from_records["files"] == 0
+              and len(from_records["rows"]) == 6)
+        check("ri6 SECOND DIRECTION: a project whose evidence directory exists "
+              "carries no absence sentence - the case that fails if every "
+              "reading said the directory was missing: %r"
+              % (from_rows.get("ledgerAbsent", "<key missing>"),),
+              "ledgerAbsent" in from_rows
+              and from_rows["ledgerAbsent"] is None and from_rows["files"] == 1)
+        # --- a group member's copy of the carrier's record ----------------
+        groot, gmpath, gshards = ri_fixture(tmp, "group", rows=False)
+        with io.open(gmpath, encoding="utf-8") as fh:
+            index = json.load(fh)
+        index["phases"].append({"id": "P2", "title": "two",
+                                "shard": "phases/P2.json"})
+        with io.open(gmpath, "w", encoding="utf-8") as fh:
+            json.dump(index, fh)
+        with io.open(gshards["P1"], encoding="utf-8") as fh:
+            carried = json.load(fh)[M.RECORD_KEY]
+        with io.open(os.path.join(os.path.dirname(gshards["P1"]), "P2.json"),
+                     "w", encoding="utf-8") as fh:
+            json.dump({"id": "P2", "title": "two", "status": "done",
+                       "tasks": [], M.RECORD_KEY: dict(carried, gradedBy="P1"),
+                       M.POINTER_KEY: dict(M.pointer_from_record(carried),
+                                           gradedBy="P1")}, fh)
+        sevens = [r for r in M.read_rows(groot)["rows"]
+                  if r.get("runId") == "R7"]
+        check("ri7 a group member's copy of its carrier's record is the SAME "
+              "run, read once and under the carrier - as the ledger holds it "
+              "once, under the phase that ran it: %r"
+              % ([(r.get("scope"), r.get("phaseId")) for r in sevens],),
+              len(sevens) == 1 and sevens[0].get("phaseId") == "P1"
+              and sevens[0].get("scope") == "phase")
+        # --- a repeat whose source the record does not hold ---------------
+        nroot, _nm, nshards = ri_fixture(tmp, "bare-repeat", rows=False)
+        with io.open(nshards["P1"], encoding="utf-8") as fh:
+            bare = dict(json.load(fh)["tasks"][0][M.RECORD_KEY], steps=[])
+        bare.pop(getattr(M, "REPEATED_RUN_KEY", "repeatedRun"), None)
+        ri_put_record(nshards["P1"], "P1.1", bare)
+        lone = M.read_rows(nroot)["rows"]
+        repeat = M.row_by_run(lone, "R2") or {}
+        check("ri8 a repeat whose record holds neither its source run nor its "
+              "steps is read as the repeat it is - never as a measurement a "
+              "later run could repeat, and the run it names is not invented: "
+              "%r" % ([(r.get("runId"), r.get(M.VERDICT_SOURCE)) for r in lone
+                       if r.get("taskId") == "P1.1"],),
+              repeat.get(M.VERDICT_SOURCE) == M.REUSED
+              and M.row_by_run(lone, "R1") is None
+              and M.reusable_run(lone, "task", {"taskId": "P1.1",
+                                                "phaseId": "P1"},
+                                 "sha256:k1", ("passed",)) is None)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _harness.stage(check, "lr-block", _last_run_cases)
+        _harness.stage(check, "ri-block", _one_reader_cases)
         _foreground_bound_cases(check)
         _part_repeat_cases(check)
         _left_to_phase_gate_cases(check)
