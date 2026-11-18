@@ -1070,7 +1070,7 @@
     {
       "id": "P167",
       "title": "Wall time per task is recorded by stage and printed",
-      "status": "in_progress",
+      "status": "done",
       "shard": "phases/P167.json"
     }
   ],

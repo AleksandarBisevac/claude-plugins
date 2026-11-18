@@ -1,7 +1,7 @@
 {
   "id": "P167",
   "title": "Wall time per task is recorded by stage and printed",
-  "status": "in_progress",
+  "status": "done",
   "description": "Users reported that development through the plugin is slow, and a paired measurement put the plugin near three times a plain session's wall time per task while the writer alone was faster than plain. The plugin cannot say where the rest goes: a gate run records its duration, and nothing else does. A writer or reviewer session's own duration is dropped when its cost is read, the time spent selecting affected suites runs before the gate's clock starts, a dispatch for a writer or a reviewer carries no time at all, and the drive's launch stamps die with its state file when the phase ends. This phase records each stage where the plan keeps it (the task in its shard), because the evidence ledger and the drive state are due to be removed and the plan and git are what remains. Nothing here makes a task faster; it makes the next phase's choices measurable. Exit: on a task driven end to end in a fixture, the stage figures and the unattributed remainder add up to the task's whole window, and a stage with no source says so instead of printing zero.",
   "desiredOutcome": "Every task the drive runs leaves in its shard how long each stage took: each writer round, each recorded gate run with the time spent choosing what to run, a base measurement, the review, the record commit, and the time a handed-out step waited before it started. /audit:status prints the figures and their JSON form carries them, each with the record it was read from, so wall time per task can be measured beside cost and quality.",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "1892634fc66963fc987f8167a7b87339bdbe5325",
   "branch": "audit/p167-wall-time-per-task-is-recorded",
-  "mergedAt": null,
+  "mergedAt": "2026-11-18T06:44:42Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -1053,5 +1053,6 @@
     "runId": "2026-11-18T06:36:14Z.d0681b",
     "status": "passed",
     "at": "2026-11-18T06:36:14Z"
-  }
+  },
+  "mergedHead": "641c6b97aa5758ef40bd9c3d23b6edc2dae74a0f"
 }
