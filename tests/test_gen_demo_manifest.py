@@ -28,8 +28,9 @@ import sys
 import tempfile
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
-from _output import REPO_ROOT, safe_stdio          # noqa: E402
+from _output import PLUGIN_ROOT, REPO_ROOT, safe_stdio  # noqa: E402
 import _evidence_view                              # noqa: E402
+import _json_schema                                # noqa: E402  (the repo's reader of the published schema)
 import _loader                                     # noqa: E402
 import _manifest_vocab                             # noqa: E402
 import _priority                                   # noqa: E402
@@ -1543,13 +1544,40 @@ def _timing_cases(check):
           "pointer names, and a task no run measured carries none "
           "(%d gated of %d timed): %r" % (len(gated), len(timed), bad[:2]),
           not bad and 0 < len(gated) < len(timed))
-    sums = [tt.summarize(t) for t in timed]
-    check("tmd3 every record leaves part of its window unattributed, and the "
-          "parts add up to the window",
-          bool(sums) and all(not s["missing"] and s["unattributedMs"] > 0
-              and s["attributedMs"] + s["unattributedMs"] == s["windowMs"]
-              for s in sums),
-          repr(sums[:1]))
+    # The summary's window and attributed share against figures read off the
+    # record here by other means - the stamps through `datetime`, the stages
+    # by their own lengths - since its parts adding up to its window holds by
+    # construction and can say nothing.
+    def _stamp(value):
+        return datetime.datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+
+    off = []
+    for t in timed:
+        s = tt.summarize(t)
+        window = int((_stamp(t["completedAt"])
+                      - _stamp(t["timing"]["firstStartedAt"])).total_seconds()
+                     * 1000)
+        staged = sum(st["ms"] for st in t["timing"]["stages"])
+        if not (s["missing"] == [] and s["windowMs"] == window
+                and s["attributedMs"] == staged
+                and s["unattributedMs"] == window - staged > 0):
+            off.append((t["id"], s["windowMs"], window, s["attributedMs"],
+                        staged))
+    check("tmd3 every record's window is its completion less its first start, "
+          "its attributed share is its stages' lengths, and part of the window "
+          "is left unattributed (%d records): %r" % (len(timed), off[:2]),
+          bool(timed) and not off)
+    schema_path = os.path.join(PLUGIN_ROOT, "schema", "audit-plan.schema.json")
+    doc = _json_schema.load_document(schema_path)
+    refused = [(t["id"], f, u) for t in timed
+               for f, u in [_json_schema.check_findings(
+                   doc["$defs"]["timing"], t["timing"], doc, t["id"])]
+               if f or u]
+    check("tmd4 every record the generator writes validates under the "
+          "published schema's `timing` definition, stamp patterns included, "
+          "with nothing left unread (%d records): %r"
+          % (len(timed), refused[:2]),
+          bool(timed) and not refused)
 
 
 def _all_cases(check):

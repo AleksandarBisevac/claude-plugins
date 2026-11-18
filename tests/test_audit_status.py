@@ -5002,16 +5002,16 @@ def _timing_render_cases(check):
           [_column_cell(timed_txt, t, "time") for t in ("PT.2", "PT.3", "PU.1")]
           == ["-", "-", "-"])
     pt_head = _head_line(timed_txt, "PT")
-    want = ["writer %s" % _fmt.human_duration(300000),
-            "gate %s" % _fmt.human_duration(120000),
-            "reviewer %s" % _fmt.human_duration(60000),
-            "wait %s" % _fmt.human_duration(45000),
-            "unattributed %s" % _fmt.human_duration(75000),
-            "median %s" % _fmt.human_duration(600000)]
-    check("tc6 the phase head gives the median window and the split by stage, "
-          "the unattributed share named, so the figures add up to the window: "
-          "%r" % (pt_head,),
-          all(w in pt_head for w in want))
+    # The whole clause, written out: the order is the stages' order in the
+    # work (writer, gate, reviewer, wait) and then the unattributed share, so
+    # a split printed in any other order is red - a substring test is not.
+    clause = ("  time median 10 m 00 s per task over 1 finished task: "
+              "writer 5 m 00 s, gate 2 m 00 s, reviewer 1 m 00 s, wait 45.0 s, "
+              "unattributed 1 m 15 s")
+    check("tc6 the phase head ends with the median window and the split by "
+          "stage in the work's order, the unattributed share last, so the "
+          "figures add up to the window: %r" % (pt_head,),
+          pt_head.endswith(clause) and pt_head.count(" time median ") == 1)
     check("tc7 SECOND DIRECTION: a phase with no timed task gets no time "
           "clause on its head line: %r" % (_head_line(timed_txt, "PU"),),
           _head_line(timed_txt, "PU") != ""
@@ -5050,9 +5050,9 @@ def _timing_render_cases(check):
             g_bare = _main_out([paths["bare"], "--gate"])
             s_code, s_out, _ = _main_out([paths["timed"], "--json",
                                           "--section", "timing"])
-        check("tc11 --gate output and exit are unchanged on a plan carrying "
-              "timing - the gate reads none of it: %r vs %r"
-              % (g_timed, g_bare),
+        check("tc11 --gate output and exit are unchanged on a plan carrying a "
+              "well-formed timing record - the gate reads no timing figure: "
+              "%r vs %r" % (g_timed, g_bare),
               g_timed == g_bare)
         section = json.loads(s_out) if s_code == 0 and s_out.strip() else {}
         check("tc12 --json --section timing carries the per-task summary and "
@@ -5061,8 +5061,108 @@ def _timing_render_cases(check):
               sorted(section.get("tasks") or {}) == ["PT.1"]
               and sorted(section.get("phases") or {}) == ["PT"]
               and (section["tasks"]["PT.1"].get("windowMs") == 600000))
+        malformed = _timing_render_plan()
+        malformed["phases"][0]["tasks"][0]["timing"]["stages"][0]["kind"] = \
+            "lunch"
+        paths["malformed"] = os.path.join(tmp, "malformed.json")
+        with open(paths["malformed"], "w", encoding="utf-8") as fh:
+            json.dump(malformed, fh)
+        with _own_project(tmp):
+            g_bad = _main_out([paths["malformed"], "--gate"])
+        check("tc13 what the gate DOES read of a record is the validator's "
+              "verdict on it: a stage of a kind outside the closed list is a "
+              "finding, so the default gate trips `invalid` where the "
+              "well-formed record passed: %r" % (g_bad[:2],),
+              g_timed[0] == 0 and g_bad[0] == 1
+              and "invalid" in (g_bad[1] + g_bad[2]))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+    _timing_cell_cases(check)
+
+
+def _one_phase(tasks):
+    return {"meta": {"version": 2},
+            "phases": [{"id": "PX", "title": "Timed", "status": "in_progress",
+                        "tasks": tasks}]}
+
+
+def _cell_task(tid, first, completed, stages, status="done"):
+    """A task with a record: `first` None leaves `firstStartedAt` out, and
+    `stages` is put in as given, so a fixture can hand it a non-list."""
+    timing = {"stages": stages}
+    if first is not None:
+        timing["firstStartedAt"] = first
+    return {"id": tid, "title": "t", "status": status,
+            "completedAt": completed, "timing": timing}
+
+
+def _timing_cell_cases(check):
+    """The cell values no other case renders, the overrun clause, and the
+    long-window units - each from a fixture, each against text written here."""
+    import _fmt
+    import _task_timing as _tt
+    writer = [_tt.make_stage("writer", "2026-03-01T00:00:00Z", 60000, "w")]
+    tasks = [
+        _cell_task("PX.1", None, "2026-03-01T00:10:00Z", writer),
+        _cell_task("PX.2", "2026-03-01T00:10:00Z", "2026-03-01T00:05:00Z", writer),
+        _cell_task("PX.3", "2026-03-01T00:00:00Z", "2026-03-01T00:10:00Z",
+                   {"writer": 60000}),
+        _cell_task("PX.4", "2026-03-01T00:00:00Z", "2026-03-01T00:10:00Z",
+                   writer + [dict(writer[0], ms=-1)]),
+    ]
+    with _own_project():
+        plan = _one_phase(tasks)
+        txt = M.render_status(plan, M.rollup(plan, [], []), view="all")
+    cells = [_column_cell(txt, t, "time") for t in ("PX.1", "PX.2", "PX.3", "PX.4")]
+    check("tc14 a record with no first start, and one completed before its "
+          "first start, each print `no window`; a `stages` value that is not "
+          "a list, and a stage that fails its check, each print `not "
+          "readable` - none of the four prints a window figure: %r" % (cells,),
+          cells == ["no window", "no window", "not readable", "not readable"])
+    check("tc15 SECOND DIRECTION: a phase whose only timed tasks have no "
+          "readable window gets no time clause on its head: %r"
+          % (_head_line(txt, "PX"),),
+          _head_line(txt, "PX") != "" and " time median " not in txt)
+
+    over = _one_phase([_cell_task(
+        "PX.1", "2026-03-01T00:00:00Z", "2026-03-01T00:02:00Z",
+        [_tt.make_stage("writer", "2026-03-01T00:00:00Z", 150000,
+                        "hand-out to the filed return")])])
+    with _own_project():
+        over_txt = M.render_status(over, M.rollup(over, [], []), view="all")
+    check("tc16 stages summing past the window print the overrun clause last, "
+          "so the figures less the overrun add up to the window: %r"
+          % (_head_line(over_txt, "PX"),),
+          _head_line(over_txt, "PX").endswith(
+              "  time median 2 m 00 s per task over 1 finished task: "
+              "writer 2 m 30 s, unattributed 0 ms, overrun -30.0 s"))
+
+    # A day and a quarter, plus forty minutes: 1840 minutes in all, which the
+    # shared formatter prints as a count of minutes.
+    long_ = _one_phase([
+        _cell_task("PX.1", "2026-03-01T00:00:00Z", "2026-03-02T06:40:00Z",
+                   [_tt.make_stage("writer", "2026-03-01T00:00:00Z",
+                                   3930000, "w")]),
+        _cell_task("PX.2", "2026-03-03T00:00:00Z", "2026-03-03T01:05:30Z",
+                   [_tt.make_stage("writer", "2026-03-03T00:00:00Z",
+                                   65000, "w")])])
+    with _own_project():
+        long_txt = M.render_status(long_, M.rollup(long_, [], []), view="all")
+    long_cells = [_column_cell(long_txt, t, "time") for t in ("PX.1", "PX.2")]
+    check("tc17 a window past an hour prints hours, and past a day days, in "
+          "the time column: %r" % (long_cells,),
+          long_cells == ["1 d 06 h", "1 h 05 m"])
+    check("tc18 ...and on the phase line, the median and every figure of the "
+          "split alike, a figure under an hour keeping the shared formatter's "
+          "units: %r" % (_head_line(long_txt, "PX"),),
+          _head_line(long_txt, "PX").endswith(
+              "  time median 15 h 52 m per task over 2 finished tasks: "
+              "writer 1 h 06 m, unattributed 1 d 06 h"))
+    check("tc19 SECOND DIRECTION: the shared duration formatter keeps its "
+          "output for every other caller, byte for byte - 1840 minutes is "
+          "still a count of minutes there: %r" % (_fmt.human_duration(110400000),),
+          _fmt.human_duration(110400000) == "1840 m 00 s"
+          and _fmt.human_duration(3930000) == "65 m 30 s")
 
 
 def _selftest():

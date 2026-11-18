@@ -435,7 +435,7 @@ L9:
   audit-lock -> _claude_home, _locks, _output
   audit-logs -> _claude_home, _gate_feed, _output
   audit-lookup -> _areas, _claude_home, _clause_coverage, _config_rules, _evidence_io, _excerpt, _filed_returns, _gate_feed, _impact, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _scoped_commit
-  audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _filed_returns, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme, _worktrees
+  audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _filed_returns, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _task_timing, _ui_theme, _worktrees
   audit-task -> _affected_tests, _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _impact, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _task_timing, _tree_stamp, _utc_stamp, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
@@ -2477,10 +2477,23 @@ the stamp the start verb writes; `timing_problems` is what `_manifest_phases._wa
 reports as a finding naming the task and the stage; `summarize` gives the per-kind totals,
 the window from `firstStartedAt` to `completedAt`, and the remainder no stage accounts for.
 
-**A missing source is named, never read as zero.** With no record, no first start, a stage it
-cannot read or no `completedAt`, `summarize` lists what it lacked under `missing` and gives no
-window and no total; a kind no stage recorded is absent from the totals rather than present
-at zero.
+**A missing source is named, never read as zero.** With no record, no first start, a `stages`
+value that is not a list, a stage that fails `stage_problems` or no `completedAt`,
+`summarize` lists what it lacked under `missing` and gives no window and no total; a
+completion before the first start is named as no window the same way, and `is_unreadable`
+tells a record whose stages could not be read from one that is readable and has no window. A
+kind no stage recorded is absent from the totals rather than present at zero.
+
+**The window runs from the first start, whatever happened between.** The first start never
+moves, so a reopened task's window runs from it to the new completion, and the time the task
+sat closed is inside it as unattributed time: a median of windows is time on the plan, not
+time worked, for a task that was reopened.
+
+**The schema is never looser than the Python check.** `$defs/timingStamp` is the stamp
+`_usage_core.parse_ts` reads, `basis` and `runId` refuse a blank string, and `tests/test__task_timing.py`
+holds each looseness refused by both readers. An integral float length (`7.0`) is the one
+value no schema can refuse — JSON gives it the value of `7` — so `stage_problems` admits it
+too and `summarize` sums it as an int.
 
 ### `plugins/audit/scripts/manifest/_manifest_phases.py`
 The **one walk** over every phase and every task, and the three checks it makes on
@@ -3153,9 +3166,12 @@ stayed with the command. `live_view`, `row_copies` and `ready_counts` are the pu
 reading a phase in flight elsewhere: `_live_copy` reads the copies, and these lay them over the
 plan and name each row's copy, the same way for every surface that shows one.
 `task_timing`, `phase_timing` and `timing_rollup` read a task's `timing` record through
-`_task_timing.summarize` and sum it per phase over the tasks that have a window, so the stage
-figures less the overrun plus the unattributed share are the summed windows; `rollup` carries
-the result under `timing` only when a task holds a record.
+`_task_timing.summarize` and sum it per phase over the DONE tasks that have a window, so the
+stage figures less the overrun plus the unattributed share are the summed windows. Cancelling
+stamps `completedAt`, so a cancelled task that was started has a window; it is left out with
+every other unsummed task, each named under `leftOut` with its reason (cancelled, not
+finished, no window). `rollup` carries the result under `timing` only when a task holds a
+record.
 
 ### `plugins/audit/scripts/status/_live_copy.py`
 Which copy holds a phase in flight live: a phase run under a lock, or worked on in
@@ -3181,9 +3197,15 @@ plan that has never recorded a run must not start failing builds on upgrade, and
 read phases as well as tasks). The human render carries the same words in a `tests`
 column, which — like the report's optional columns — is drawn only when a task in view
 has recorded a run, so an unchanged plan renders exactly as it did before. A `time` column
-follows the same rule for a task's timing record: its window, `-` for no record, `open` for
-a record with no completion; the phase head adds the median window and the split by stage
-with the unattributed share. `--gate` reads none of it.
+follows the same rule for a task's timing record: its window, in hours or days once past an
+hour (`_wall_duration`; the shared `_fmt.human_duration` keeps its output for every other
+caller), `-` for no record, `open` for a record with no completion, `no window` for a record
+with no first start or a completion before it, `not readable` for stages that cannot be read
+(`_task_timing.is_unreadable`); the phase head adds the median window and the split by stage
+over the phase's done tasks with the unattributed share, and the JSON names every task it
+left out under `leftOut` (cancelled, not finished, no window). `--gate` reads no timing
+figure, only the validator's verdict on the record: a malformed record is a finding, so the
+default `invalid` condition can trip on it.
 `--submodules <.gitmodules> [--git-root
 <prefix>]` (v0.6.2) is the submodule preflight guard — exit 1 when any `task.files` entry lives
 inside a git submodule (which the parent repo cannot stage/commit). Exit 0/1/2. `--selftest`

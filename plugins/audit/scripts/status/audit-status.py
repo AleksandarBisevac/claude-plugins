@@ -93,6 +93,7 @@ import _areas  # noqa: E402  (meta.areas registry + the resolution every surface
 import _ui_theme as _theme  # noqa: E402  (the words a person reads for a machine value)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 import _fmt  # noqa: E402  (the one token/cost formatter, since P10.6 — no indirection needed)
+import _task_timing  # noqa: E402  (is_unreadable: which records the time cell cannot read)
 import _cli_fmt  # noqa: E402  (the one place CLI color lives - mode resolution + paint)
 import _proposals  # noqa: E402  (the proposal READ side: one derivation of the rows
 #                                  and of the "reserved phase (N tasks)" cell that this
@@ -952,33 +953,53 @@ def _time_cell(summary):
 
     `-` is no record, the same mark `tests` and `commit` use. A record with no
     window is never a number: `open` when the one thing it lacks is a
-    completion, `no window` when the record itself could not give one - the
-    JSON's `missing` names which source."""
+    completion; `not readable` when its stages could not be read - the list or
+    a stage in it - so no figure from it is printed; `no window` when it is
+    readable and still gives none, which is a record with no first start or a
+    completion before its first start. The JSON's `missing` names which
+    source."""
     if summary is None:
         return "-"
     if summary.get("windowMs") is not None:
-        return _fmt.human_duration(summary["windowMs"]) or "-"
+        return _wall_duration(summary["windowMs"]) or "-"
     if summary.get("missing") == ["completedAt"]:
         return "open"
+    if _task_timing.is_unreadable(summary):
+        return "not readable"
     return "no window"
+
+
+def _wall_duration(ms):
+    """A task window or a phase-line figure, in hours past an hour and days past
+    a day; under an hour, `_fmt.human_duration`'s own text. Kept here rather
+    than in the shared formatter, whose every other caller compares step
+    lengths and keeps its output byte for byte - a window spans days, and a
+    count of minutes past an hour reads as a different number."""
+    if not isinstance(ms, int) or isinstance(ms, bool) or ms < 3600000:
+        return _fmt.human_duration(ms)
+    minutes = ms // 60000
+    if minutes < 24 * 60:
+        return "%d h %02d m" % (minutes // 60, minutes % 60)
+    return "%d d %02d h" % (minutes // (24 * 60), (minutes // 60) % 24)
 
 
 def _time_clause(aggregate):
     """The phase head's clause: the median task window and the split by stage
-    over the phase's finished tasks, kinds in `_task_timing.KINDS` order as the
-    aggregate holds them, then the unattributed share and any overrun - so the
-    figures, less the overrun, add up to the summed windows. Empty when no task
-    of the phase has a window."""
+    over the phase's done tasks with a window (`_status_facts.phase_timing`
+    leaves a cancelled or unfinished task out, and names it under the JSON's
+    `leftOut`), kinds in `_task_timing.KINDS` order as the aggregate holds them,
+    then the unattributed share and any overrun - so the figures, less the
+    overrun, add up to the summed windows. Empty when no task of the phase is
+    summed."""
     if not aggregate or not aggregate.get("tasks"):
         return ""
-    parts = ["%s %s" % (kind, _fmt.human_duration(row["ms"]))
+    parts = ["%s %s" % (kind, _wall_duration(row["ms"]))
              for kind, row in (aggregate.get("byKind") or {}).items()]
-    parts.append("unattributed %s"
-                 % _fmt.human_duration(aggregate["unattributedMs"]))
+    parts.append("unattributed %s" % _wall_duration(aggregate["unattributedMs"]))
     if aggregate.get("overrunMs"):
-        parts.append("overrun -%s" % _fmt.human_duration(aggregate["overrunMs"]))
+        parts.append("overrun -%s" % _wall_duration(aggregate["overrunMs"]))
     return "  time median %s per task over %s: %s" % (
-        _fmt.human_duration(aggregate["medianWindowMs"]),
+        _wall_duration(aggregate["medianWindowMs"]),
         _fmt.plural(aggregate["tasks"], "finished task"), ", ".join(parts))
 
 

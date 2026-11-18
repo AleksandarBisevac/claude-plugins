@@ -30,10 +30,14 @@ on, a `tests` column carrying the verdict of the run that last exercised each ta
 exactly as the manifest recorded it — shown only when a task in view has recorded
 one, so a plan that has never run a gate renders exactly as it did before the column
 existed, and `-` inside it means no run was recorded, which is not a failure — a `time`
-column under the same rule for a task's timing record (its whole window; `-` not
-recorded, `open` not finished), the phase head then giving the median window and the
-split by stage with the unattributed share, each figure's basis under `--json
---section timing` — the
+column under the same rule for a task's timing record (its whole window, first start
+to completion, in hours or days once past an hour — a reopened task's window keeps its
+first start, so the time it sat closed is inside it; `-` not recorded, `open` not
+finished, `no window` for a record with no first start or a completion before it, `not
+readable` for stages that cannot be read), the phase head then giving the median window
+and the split by stage over the phase's done tasks — a cancelled or unfinished one is left
+out and named under `leftOut` — with the unattributed share, each figure's basis under
+`--json --section timing` — the
 ready-now list with a copy-pasteable `/audit:run <id>`, open bugs, parked
 proposals when `/audit:init` parked any (plus a one-line footer counting free-form
 legacy proposals, which `/audit:propose list` still reads), a `BY AREA` rollup when the

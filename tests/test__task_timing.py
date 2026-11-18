@@ -23,6 +23,7 @@ import sys
 import _harness                                    # sets sys.path for scripts/ + hooks/
 import _output                                     # noqa: E402  (PLUGIN_ROOT, to read the schema)
 from _output import safe_stdio                     # noqa: E402
+import _json_schema                                # noqa: E402  (the repo's reader of the published schema)
 import _task_timing as T                           # noqa: E402
 
 
@@ -183,8 +184,141 @@ def _cases(check):
           and born == {"firstStartedAt": "2026-02-02T00:00:00Z", "stages": []})
 
 
+def _unreadable_cases(check):
+    """A record the summary cannot read is NAMED, and gives no figure.
+
+    Every fixture keeps a valid first start and completion, so a summary that
+    read past the unreadable part would still have a window to report - which
+    is exactly the figure these cases say must not appear."""
+    shapes = {"object": {"writer": {"ms": 1000}}, "string": "writer 1000"}
+    for name, value in sorted(shapes.items()):
+        task = _timed_task()
+        task["timing"] = {"firstStartedAt": "2026-01-01T00:00:00Z",
+                          "stages": value}
+        s = T.summarize(task)
+        check("tt14 a `stages` value that is not a list (%s) is named under "
+              "missing as `timing.stages`, and the summary gives no window, no "
+              "attributed and no unattributed figure - it is not read as a "
+              "record of no stages, whose whole window would print as "
+              "unattributed time: %r" % (name, s),
+              s.get("missing") == ["timing.stages"]
+              and s.get("windowMs") is None and s.get("attributedMs") is None
+              and s.get("unattributedMs") is None
+              and s.get("overrunMs") is None and s.get("byKind") == {}
+              and T.is_unreadable(s))
+    bad = _timed_task()
+    bad["timing"]["stages"][1] = dict(bad["timing"]["stages"][1], ms=-5)
+    sb = T.summarize(bad)
+    check("tt15 a stage that fails its own check is named by its index under "
+          "missing, and the summary gives no attributed or unattributed figure "
+          "rather than summing the other stages: %r" % (sb,),
+          sb.get("missing") == ["timing.stages[1]"]
+          and sb.get("windowMs") is None and sb.get("attributedMs") is None
+          and sb.get("unattributedMs") is None and T.is_unreadable(sb))
+    back = _timed_task(completedAt="2025-12-31T23:59:00Z")
+    sk = T.summarize(back)
+    check("tt16 a completion BEFORE the first start is named as no window - a "
+          "negative window is not a length - and it is not an unreadable "
+          "record, which a reader prints differently: %r" % (sk,),
+          sk.get("missing") == ["a window: completedAt precedes "
+                                "timing.firstStartedAt"]
+          and sk.get("windowMs") is None and sk.get("unattributedMs") is None
+          and not T.is_unreadable(sk))
+    check("tt17 SECOND DIRECTION: a readable record, and one lacking only its "
+          "completion, are not unreadable - the case that fails if every "
+          "summary naming something missing were read as unreadable",
+          not T.is_unreadable(T.summarize(_timed_task()))
+          and not T.is_unreadable(T.summarize(_timed_task(completedAt=None))))
+    whole = _timed_task()
+    whole["timing"]["stages"][0] = dict(whole["timing"]["stages"][0], ms=200000.0)
+    sw = T.summarize(whole)
+    check("tt18 an integral float length (`200000.0`) is the integer it equals, "
+          "as the schema's `integer` and draft 2020-12 read it - no problem, "
+          "and summed as an int - so a plan the schema passes is one the "
+          "plugin passes: %r" % (sw,),
+          T.stage_problems(whole["timing"]["stages"][0]) == []
+          and sw.get("attributedMs") == 410000
+          and type(sw.get("attributedMs")) is int
+          and type((sw.get("byKind") or {}).get("writer", {}).get("ms")) is int
+          and T.stage_problems(dict(whole["timing"]["stages"][0], ms=1.5))
+          != [])
+
+
+def _schema_findings(name, value):
+    """`(findings, unread)` of `value` against `$defs/<name>`, by the repo's own
+    reader of the published schema."""
+    path = os.path.join(_output.PLUGIN_ROOT, "schema", "audit-plan.schema.json")
+    doc = _json_schema.load_document(path)
+    return _json_schema.check_findings(doc["$defs"][name], value, doc, name)
+
+
+def _schema_cases(check):
+    """The schema refuses what the Python check refuses, so a plan an external
+    validator passes is one the plugin passes.
+
+    Each looseness is written as a value the Python check refuses, and the case
+    asks both readers: the schema's answer alone could pass for a schema that
+    refuses everything."""
+    good = _stage("gate", "2026-01-01T00:03:20Z", 100000, run_id="r1")
+    loose = {
+        "runId empty": dict(good, runId=""),
+        "runId blank": dict(good, runId="   "),
+        "basis blank": dict(good, basis="   "),
+        "startedAt not a stamp": dict(good, startedAt="yesterday"),
+        "startedAt month 13": dict(good, startedAt="2026-13-01T00:00:00Z"),
+    }
+    verdicts = {}
+    for name, stage in sorted(loose.items()):
+        found, unread = _schema_findings("timingStage", stage)
+        verdicts[name] = (bool(found), bool(T.stage_problems(stage)),
+                          sorted(unread))
+    check("tt19 each looseness the schema had is refused by it AND by the "
+          "Python check, with nothing the schema reader left unread: %r"
+          % (verdicts,),
+          verdicts == dict((n, (True, True, [])) for n in loose))
+    first, unread_first = _schema_findings(
+        "timing", {"firstStartedAt": "not a stamp", "stages": []})
+    check("tt20 ...and `firstStartedAt` carries the same stamp pattern: %r"
+          % (first,),
+          bool(first) and not unread_first
+          and bool(T.timing_problems({"firstStartedAt": "not a stamp",
+                                      "stages": []})))
+    # The shapes the writers produce: the drive's own stamp format, a session
+    # record's fractional stamp with an offset, the demo's, and a zero wait.
+    written = [
+        _stage("writer", "2026-11-18T04:17:24Z", 1200, round=1),
+        _stage("gate", "2026-11-18T04:17:24.123456+00:00", 5000, run_id="R-1"),
+        _stage("wait", "2026-11-18T04:17:24Z", 0,
+               basis="hand-out stamped by the drive; under a second: 0"),
+        _stage("selection", "2026-11-18 04:17:24+0100", 30, run_id="R-2"),
+    ]
+    taken = [_schema_findings("timingStage", s) for s in written]
+    record = T.first_start({"timing": {"stages": written}}, "2026-11-18T04:17:24Z")
+    rec_found, rec_unread = _schema_findings("timing", record)
+    check("tt21 SECOND DIRECTION: every stage shape the writers produce passes "
+          "the tightened schema and the Python check alike - the case that "
+          "fails if a pattern refuses a stamp the drive writes: %r"
+          % (([f for f, _u in taken], rec_found),),
+          all(not f and not u for f, u in taken)
+          and all(T.stage_problems(s) == [] for s in written)
+          and not rec_found and not rec_unread
+          and T.timing_problems(record) == [])
+    ms_float, ms_unread = _schema_findings("timingStage", dict(good, ms=1.0))
+    check("tt22 a length of `1.0` is one both readers ACCEPT, as the integer it "
+          "equals - no schema can tell it from `1`, since JSON gives the two "
+          "one value - and both refuse `1.5`: %r" % (ms_float,),
+          not ms_float and not ms_unread
+          and T.stage_problems(dict(good, ms=1.0)) == []
+          and bool(_schema_findings("timingStage", dict(good, ms=1.5))[0])
+          and bool(T.stage_problems(dict(good, ms=1.5))))
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _unreadable_cases(check)
+        _schema_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

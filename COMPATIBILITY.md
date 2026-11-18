@@ -313,7 +313,10 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   "nothing measured", never zero. `/audit:task start` writes `timing.firstStartedAt` once
   and no later start moves it; `move`, `reopen` and `cancel` carry the record unchanged. A
   stage's `kind` **may gain members** under the standing enum exclusion below, so a reader
-  switching on it needs a default arm.
+  switching on it needs a default arm. The `timing` block of `/audit:status --json` **may gain
+  keys** and keeps the ones it has. `--gate` reads no timing figure, only the validator's
+  verdict on the record: a malformed record is a finding, so the default `invalid` condition
+  can trip on it, as on any other malformed key.
 - **A ledger written before the evidence rows were hash-chained keeps verifying.**
   Rows now carry `prev` and `hash`; rows written by an earlier release carry neither,
   and `audit-journal.py verify` reports those as a **counted warning naming what is

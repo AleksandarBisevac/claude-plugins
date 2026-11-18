@@ -2277,10 +2277,20 @@ def _timing_cases(check):
           % (sorted(tasks),),
           sorted(tasks) == ["TT.1", "TT.2", "TT.3"]
           and M.task_timing(plan["phases"][0]["tasks"][3]) is None)
-    check("tt2 each task's entry IS the shared helper's summary, not a "
-          "re-derivation of it",
-          all(tasks.get(t["id"]) == _timing_tf.summarize(t)
-              for t in plan["phases"][0]["tasks"][:3]))
+    # The figures each entry must hold, written here rather than asked of the
+    # function that computes them: TT.1's six stages sum to 525 s of a 600 s
+    # window, TT.2's single stage overruns its 120 s window by 30 s, and TT.3
+    # has no completion.
+    want = {"TT.1": (600000, 525000, 75000, 0, []),
+            "TT.2": (120000, 150000, 0, 30000, []),
+            "TT.3": (None, None, None, None, ["completedAt"])}
+    got = dict((tid, tuple((tasks.get(tid) or {}).get(k) for k in
+                           ("windowMs", "attributedMs", "unattributedMs",
+                            "overrunMs", "missing")))
+               for tid in want)
+    check("tt2 each task's entry carries the window, the attributed and "
+          "unattributed shares, the overrun and what it lacked, as written in "
+          "the case: %r" % (got,), got == want)
     kinds_ms = sum(row["ms"] for row in (agg.get("byKind") or {}).values())
     check("tt3 the phase's stage figures add up to its tasks' windows: "
           "%r - %r + %r == %r, over the finished tasks only"
@@ -2307,8 +2317,11 @@ def _timing_cases(check):
           agg.get("withoutWindow") == {"TT.3": ["completedAt"]})
     check("tt7 the aggregate states its basis: the window's own and the "
           "sentence saying what was summed",
-          agg.get("windowBasis") == _timing_tf.WINDOW_BASIS
-          and isinstance(agg.get("basis"), str) and agg.get("basis"))
+          agg.get("windowBasis") == "timing.firstStartedAt -> completedAt"
+          and agg.get("basis")
+          == "the sum of _task_timing.summarize over this phase's done tasks "
+             "that have a window; every other task carrying a record is named "
+             "under leftOut with the reason it is left out, and summed nowhere")
     check("tt8 a phase none of whose tasks carries a record has no aggregate "
           "entry: %r" % (sorted((roll or {}).get("phases") or {}),),
           sorted((roll or {}).get("phases") or {}) == ["TT"])
@@ -2317,11 +2330,63 @@ def _timing_cases(check):
           full.get("timing") == roll and roll is not None)
     bare = _fixture()
     bare_roll = M.rollup(bare, [], [])
+    # Byte for byte is test_audit_status.py's tc1 (the golden table) and tc2
+    # (the JSON's whole key list); this case carries the absence alone.
     check("tt10 SECOND DIRECTION: a plan with no record anywhere has no "
-          "`timing` key at all and no timing text in its JSON - the payload "
-          "serializes byte for byte as it did before the block existed",
+          "`timing` key at all and no timing text in its JSON",
           M.timing_rollup(bare) is None and "timing" not in bare_roll
           and '"timing"' not in json.dumps(bare_roll))
+    check("tt11 a task with a record that is not done is LEFT OUT of the "
+          "phase's figures and named with the reason: %r"
+          % (agg.get("leftOut"),),
+          agg.get("leftOut") == {"TT.3": "not finished"})
+    _cancelled_cases(check)
+
+
+def _cancelled_plan():
+    """One phase: TC.1 done, TC.2 cancelled after it was started - cancelling
+    stamps `completedAt`, so it HAS a window, and a longer one than TC.1's -
+    and TC.3 done with a record that has no first start. Only TC.1 is a
+    finished task with a window."""
+    done = _timed_task("TC.1", "2026-04-01T00:00:00Z", "2026-04-01T00:10:00Z",
+                       [("writer", "2026-04-01T00:00:00Z", 400000, "w1")])
+    cancelled = _timed_task("TC.2", "2026-04-01T01:00:00Z",
+                            "2026-04-01T01:20:00Z",
+                            [("writer", "2026-04-01T01:00:00Z", 900000, "w2")],
+                            status="cancelled")
+    no_first = {"id": "TC.3", "title": "t", "status": "done",
+                "completedAt": "2026-04-01T02:00:00Z",
+                "timing": {"stages": [_timing_tf.make_stage(
+                    "writer", "2026-04-01T01:59:00Z", 1000, "w3")]}}
+    return {"meta": {"version": 2},
+            "phases": [{"id": "TC", "title": "Cancelled", "status": "in_progress",
+                        "tasks": [done, cancelled, no_first]}]}
+
+
+def _cancelled_cases(check):
+    """The phase's line is taken over DONE tasks: a cancelled task carries a
+    window (cancel stamps `completedAt`) that no work finished."""
+    roll = M.timing_rollup(_cancelled_plan()) or {}
+    agg = (roll.get("phases") or {}).get("TC") or {}
+    writer = (agg.get("byKind") or {}).get("writer") or {}
+    figures = (agg.get("tasks"), agg.get("windowMs"), agg.get("medianWindowMs"),
+               writer.get("ms"), writer.get("stages"), agg.get("unattributedMs"))
+    check("tt12 a phase of one done and one cancelled timed task counts ONE "
+          "finished task: the median, the window total, the stage split and "
+          "the unattributed share are the done task's alone (600 s, writer "
+          "400 s, 200 s unattributed), where counting the cancelled one gives "
+          "two tasks, a 1800 s total and a 900 s median: %r" % (figures,),
+          figures == (1, 600000, 600000, 400000, 1, 200000))
+    check("tt13 ...and every task left out is named with the reason - the "
+          "cancelled one as cancelled, the done one with no first start as "
+          "having no window: %r" % (agg.get("leftOut"),),
+          agg.get("leftOut") == {"TC.2": "cancelled", "TC.3": "no window"})
+    check("tt14 SECOND DIRECTION: the cancelled task keeps its own per-task "
+          "entry with its window - it is left out of the PHASE's line, not "
+          "unrecorded: %r" % (((roll.get("tasks") or {}).get("TC.2") or {})
+                              .get("windowMs"),),
+          ((roll.get("tasks") or {}).get("TC.2") or {}).get("windowMs")
+          == 1200000)
 
 
 def _selftest():

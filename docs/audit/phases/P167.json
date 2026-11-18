@@ -508,7 +508,7 @@
     {
       "id": "P167.6-fge",
       "title": "A session's recorded duration covers every stretch of the session, an oversized figure cannot crash the runner, and a repeated gate's selection time holds none of its duration",
-      "status": "in_progress",
+      "status": "done",
       "description": "Findings of the phase review, fixed before sign-off. (a) run-agent-session.py reads the time figures of the LAST result event alone. A headless session woken by a background task writes one init and one result per stretch, and duration_ms and num_turns are per stretch (tools/stream-cost.py states this and sums them; only the cost is a whole-session figure on the last result). So a ten-minute session whose last stretch took five seconds is recorded as five seconds, with nothing saying one stretch was read. Record the whole session: sum the per-stretch figures the way tools/stream-cost.py pairs init and result events, and when the stretches cannot be paired, leave the figure out and name it in timingAbsent with that reason. A shipped script cannot import a repository tool, so the pairing rule is written in the runner and both copies are pinned to one fixture stream by a case; say so in the docstring. (b) A JSON integer too large for a float makes the finiteness test raise, and nothing catches it: the runner dies after the session ran and was paid for, with no printed line and no record. Such a figure is not a usable number: record it as absent with the reason, and make the timing reading unable to take the runner down whatever the stream holds, with the failure named in timingAbsent rather than swallowed. (c) On a repeated gate run, durationMs is measured from the identity lookup and selectionMs from the earlier start of gathering, both to the same end, so the repeat's duration lies inside its selection and a reader adding the two counts it twice; the key's own comment says beside, never inside. Make the two disjoint on every path. (d) On a measured run the selection figure also holds the reading of the tree taken before the first step; say so where the key is defined instead of listing only the gathering, the lookup and the reach reading. (e) The start stamp is when the runner named the stream file, before it prepares and launches the session; the docstrings that call it the session's start say what it is. (f) The case that holds gate_mean_ms unchanged by the key cannot fail against the defect it is named for, and the case that only checks the key's spelling asserts nothing: replace each with a case that fails when selection time is folded into a step's duration, or remove it and say which case carries the claim. Dependants you answer for: the drive's read_sessions, session_note and session_stages, which read durationMs and startedAt from the record; the printed result line, unchanged; the ledger row's hash, taken after the key is set; tests/test_stream_cost.py if a shared fixture stream is added there. Acceptance: (1) a stream of two paired stretches records the sums of duration and turns; (2) stretches that cannot be paired leave the figures out with the reason; (3) an integer too large for a float is absent with the reason, and the runner prints its line and writes its record; (4) a repeated run's selectionMs plus durationMs equals the time from the start of gathering to the end, with no overlap; (5) every docstring this task touches states what the code does; (6) no case added or kept by this task passes with its feature removed.",
       "files": [
         "plugins/audit/scripts/governance/run-agent-session.py",
@@ -539,14 +539,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d83a77385457",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "run-agent-session.py: read_stream now keeps every result event ('results') and counts init events ('inits'), and skips JSON that is not an object. session_timing sums duration_ms and num_turns (STRETCH_FIELDS) over the stretches when the inits pair one to one with the results (_stretch_figure). duration_api_ms, a whole-session figure, is still read from the last result: in the recorded streams cm-measure/raw/k11n/streams/P123.19.writer.20261112T095825Z.89676.jsonl and k03r/.../BF4.2.writer.*.jsonl it only grew from result to result, while duration_ms and num_turns are per stretch. When the stretches do not pair, the per-stretch figures are named in timingAbsent with both counts. _value_problem catches the OverflowError from math.isfinite and names an integer too large for a float as absent. session_timing wraps the reading in one except that names the exception type and text in timingAbsent for all three figures and still reads startedAt. A comment above STRETCH_FIELDS says the pairing rule is written twice, where it is stricter than tools/stream-cost.py, and that ras74 reads one stream through both copies. The started_at, session_timing and module docstrings now say startedAt is the stamp taken when the runner named the stream, before it prepared and launched the session. run-test-gate.py: the repeat branch takes one end reading and splits it at `started`. selectionMs is the gathering up to the identity; durationMs is the identity plus the lookup, computed as the total minus the selection so the two add up exactly. The selection-clock comment and run_gate's docstring now name run_gate's reading of the tree before the first command as part of the selection. _evidence_io.py: the SELECTION_KEY comment describes both paths and the tree reading. Tests: test_run_agent_session.py has a stub with paired, unpaired, dangling and single stretch shapes, a configurable decoy and raw lines. ras69 is now one stretch, ras27, ras71 and ras73 expect the sums, and ras74-ras78 are new. test_run_test_gate.py has the new ag7. test__evidence_io.py drops sel1 (sel3 carries the key's spelling, as its docstring now says) and replaces sel5 with a case over rows built by row_for. Runs: the task gate exited 0 with 3/3 files ok and 1063 cases. A dependant sweep (test__config_rules, test__doctor_policy, test_drive_phase, test_commit_task_work, test_drive_without_model, test_audit_status, test__doctor_trail, test__affected_tests) exited 0 with 8/8 files ok and 2180 cases. ruff and vermin -t=3.8- exited 0 over the six files. prose_number_claims, house_style_violations, path_preamble_violations, depth_sensitive_paths and _deps.doc_prose_numbers each reported 0. Mutations were run in a git-archive export of HEAD with my six files over it, never in the shared tree. Removing the non-object filter turned ras77 red; removing the except turned ras78 red; disabling the pairing check turned ras75 x2 red; folding selectionMs into steps[0].durationMs in row_for turned sel5 red. After each restore the suites were back at 96/96 and 341/341. Dependants: (1) The drive's read_sessions, session_note and session_stages read durationMs and startedAt under the same keys and types. durationMs is now the whole-session sum, or absent with a reason. startedAt's value is unchanged and only its description changed. ras73 drives read_sessions and session_note over the new record and passed. (2) The printed result line is unchanged: ras69b parses it with the drive's regex and passed. (3) The ledger row's hash: selectionMs is still set on res before row_for and append_row hash the row (sel6 and sel7 pass). A repeat's result carries no startedAt, so the drive's row_stages and run_start yield nothing for a repeat row, and the repeat's new split cannot move a drive stage. (4) tests/test_stream_cost.py does not exist and no shared fixture was added there; the pin loads tools/stream-cost.py from the session suite. (5) The tools/affected.py and .github/sweep-costs.json path references, and the helper names other suites import (_read_text, _cli, _fs_row, ...), are unchanged. (6) PLUGIN-BUILD-GUIDE.md and CHANGELOG.md, declared by P167.8-fge, were not edited. The guide's run-agent-session section, around its line 6078, still says the record takes 'the last result event's duration_ms ... num_turns' and describes startedAt only as the file-name stamp, so it is now stale. P167.8 owes the per-stretch sums, the pairing absence, the too-large integer, the catch-all and the meaning of startedAt; the selectionMs sentence near line 5474 may also want the repeat split.",
+        "descriptive": "A session's recorded duration and turns now cover every stretch, a huge or unreadable figure is named as absent instead of crashing the runner, and a repeated gate run's selection and duration no longer overlap."
       },
       "startedAt": "2026-11-18T03:43:15Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T04:17:22Z",
+      "verifiedBy": [
+        "ras74: a stream of two paired stretches records the summed duration_ms and num_turns and the last duration_api_ms, and tools/stream-cost.py reads the same stream file to the same sums",
+        "ras75: unpaired (1 init, 2 results) and dangling (2 inits, 1 result) streams leave durationMs and numTurns absent, naming both counts, and keep durationApiMs; stream-cost also reads the unpaired stream as unpaired",
+        "ras76: an integer too large for a float, in the last stretch or in an earlier one, is absent with that reason while the runner exits 0, prints its line and writes its record",
+        "ras77: JSON lines that are not event objects are skipped and the sums stand",
+        "ras78: a timing reading that raises comes back from session_timing as every figure named absent with the exception, startedAt kept",
+        "ag7: a repeated gate run's selectionMs plus durationMs is no more than the wall time of the call, with a slowed gathering and a slowed identity",
+        "sel5 (replaced): rows built by row_for from results carrying a 50 s selection keep each step's own duration, so gate_mean_ms is the steps' mean"
+      ],
       "notes": [
         {
           "at": "2026-11-18T03:43:11Z",
@@ -560,7 +568,54 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T04:04:52Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1295000,
+            "startedAt": "2026-11-18T03:43:17Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T04:11:19Z.d1d521",
+            "kind": "wait",
+            "ms": 2000,
+            "startedAt": "2026-11-18T04:05:07Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T04:11:19Z.d1d521, ending at its startedAt",
+            "kind": "selection",
+            "ms": 21040,
+            "runId": "2026-11-18T04:11:19Z.d1d521",
+            "startedAt": "2026-11-18T04:05:09Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T04:11:19Z.d1d521",
+            "kind": "gate",
+            "ms": 347572,
+            "runId": "2026-11-18T04:11:19Z.d1d521",
+            "startedAt": "2026-11-18T04:05:31Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T04:17:18Z.dffc51, ending at its startedAt",
+            "kind": "selection",
+            "ms": 20884,
+            "runId": "2026-11-18T04:17:18Z.dffc51",
+            "startedAt": "2026-11-18T04:11:24Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T04:17:18Z.dffc51",
+            "kind": "gate",
+            "ms": 333284,
+            "runId": "2026-11-18T04:17:18Z.dffc51",
+            "startedAt": "2026-11-18T04:11:45Z"
+          },
+          {
+            "basis": "commit-task-work.py timed around by the drive, commit d83a77385457",
+            "kind": "commit",
+            "ms": 1585,
+            "startedAt": "2026-11-18T04:17:19Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T03:43:15Z"
       },
       "reviewPerTask": "signals",
@@ -568,12 +623,24 @@
         "runId": "2026-11-18T04:17:18Z.dffc51",
         "status": "passed",
         "at": "2026-11-18T04:17:18Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "d83a77385457",
+        "at": "2026-11-18T04:17:22Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T04:04:50Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test_run_test_gate.py tests/test__evidence_io.py` in a throwaway tree at HEAD exited 1 with 13 of 626 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ras27 (house FAIL), ras71 (house FAIL), ras71 (house FAIL), ras71 (house FAIL), ras73 (house FAIL), ras74 (house FAIL), ras75 (house FAIL), ras75 (house FAIL) and 5 more: SELFTEST FAILED: 625/626 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P167.7-fge",
       "title": "The phase's time line counts finished tasks only, a record that cannot be read is named instead of shown as unattributed time, and long windows print in hours",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Findings of the phase review, fixed before sign-off. (a) The phase's time line says it is taken over finished tasks, and takes every task that has a window. Cancelling a task stamps its completedAt, so a cancelled task that was once started enters the median, the totals and the count: a phase with one task done and one cancelled reads as two finished tasks, beside a progress bar that says one. Take the line over tasks whose status is done; name the tasks left out and why (cancelled, not finished, no window) in the JSON aggregate, and say cancelled tasks are left out where the line is documented. (b) summarize reads a stages value that is not a list as no stages, so the whole window is returned and printed as unattributed time with nothing named missing, against the module's own rule that an unreadable source is named. Name it under missing and give no attributed or unattributed figure; the same for a stage that fails stage_problems, which today is summed or skipped without a word. Status then prints the cell as not readable rather than as a measured window. (c) The documents say the gate reads none of the record. A malformed record is a validator finding, and invalid is a default gate condition, so it can turn the gate red. Say what is true: the gate reads no timing figure, only the validator's verdict on the record. (d) The time cell has a third value, no window, that no document lists and no case renders; neither does any case render the overrun clause. Document the value and what produces it (a record whose first start is absent, or a completion before the first start) and add a case for each. (e) A reopened task's window runs from its first start to its new completion, so the time it sat closed is unattributed and enters the median. That follows the rule that the first start never moves; state it where the window is documented, since the median is read as time worked. (f) The schema is looser than the Python check: runId may be empty, basis may be blank, ms may be 1.0, and the two stamps carry no pattern. Tighten the schema to what the Python check accepts, so a plan an external validator passes is one the plugin passes. (g) A window past an hour prints as a count of minutes (a day and a quarter reads 1840 m 00 s). Print hours, and days past a day, in the time column and the phase line only: the shared duration formatter keeps its output for every other caller, byte for byte. (h) Cases that cannot fail on their claim: the per-task entry compared with the same function's output, a basis accepted when merely non-empty, a byte-for-byte case that asserts only an absent key, a stage order checked by substring, and the demo's sum identity that holds by construction. Give each a value written in the case, or remove it and name the case that carries the claim. Dependants you answer for: a plan with no timing renders and serializes byte for byte as before in every view and mode (the golden case); the JSON timing key's shape, which gains keys and loses none; commands/status.md's size ceiling; the panel and the report, which call into _status_facts and must not change output; every committed example plan and rendered artifact; the drive, which builds stages through make_stage and must still pass the tightened schema. Acceptance: (1) a phase of one done and one cancelled timed task reports one finished task, with the cancelled one named as left out; (2) a non-list stages value and a failing stage are named under missing, and status prints no window figure for that task; (3) the corrected sentence about the gate is the only claim the documents make about it; (4) the no-window cell and the overrun clause each have a case that renders them; (5) the reopen rule is stated beside the window's definition; (6) every record the drive and the demo generator write validates under the tightened schema, and each of the four loosenesses is refused by it; (7) a window past an hour prints hours in the time column and nowhere else changes; (8) no case added or kept by this task passes with its feature removed.",
       "files": [
         "plugins/audit/scripts/manifest/_task_timing.py",
@@ -607,14 +674,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T04:17:24Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -648,7 +715,17 @@
           "text": "it quotes a manifest sentence of COMPATIBILITY.md, which this task does not edit",
           "waives": "tests/test__manifest_phases.py"
         }
-      ]
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T04:17:24Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T04:49:44Z.399e55",
+        "status": "passed",
+        "at": "2026-11-18T04:49:44Z"
+      }
     },
     {
       "id": "P167.8-fge",

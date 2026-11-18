@@ -15,10 +15,16 @@ the keys are this module's tables; the published schema states the same lists,
 and `tests/test__task_timing.py` holds the two to agreeing item for item.
 
 A MISSING SOURCE IS NAMED, NEVER READ AS ZERO. A summary of a task with no
-`completedAt`, no record, no first start or a stage it cannot read gives no
-window and no total, and says which of those it lacked: a zero there would be a
-measurement nobody made. A kind no stage recorded is absent from the totals for
-the same reason.
+`completedAt`, no record, no first start, a `stages` value that is not a list
+or a stage it cannot read gives no window and no total, and says which of
+those it lacked: a zero there would be a measurement nobody made. A kind no
+stage recorded is absent from the totals for the same reason.
+
+THE WINDOW RUNS FROM THE FIRST START, WHATEVER HAPPENED BETWEEN. The first
+start never moves, so a task reopened after it was done has a window from that
+first start to its NEW completion, and the time it sat closed is inside it as
+unattributed time. A median of windows is therefore time on the plan, not
+time worked, for any task that was reopened.
 
 This module carries no `--selftest` of its own; its cases live in
 `tests/test__task_timing.py` - see `tests/_harness.py`.
@@ -62,12 +68,23 @@ KINDS = ("writer", "gate", "selection", "base", "reviewer", "commit", "wait")
 TIMING_KEYS = frozenset(["firstStartedAt", "stages"])
 STAGE_KEYS = frozenset(["kind", "startedAt", "ms", "basis", "round", "runId"])
 WINDOW_BASIS = "timing.firstStartedAt -> completedAt"
+# How `summarize` names the stages under `missing`: alone for a value that is
+# not a list, with `[i]` for a stage that fails `stage_problems`.
+STAGES_FIELD = "timing.stages"
 
 
 def _is_count(value):
     """An int that is not a bool - `True` is an int to Python and a length to
     nobody."""
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _is_whole(value):
+    """A count, or a float with no fractional part (`7.0`): the schema's
+    `integer` admits one, as draft 2020-12 does, and no schema can refuse it -
+    JSON gives `7.0` and `7` one value, and `ajv` reads both as `7`. So the
+    Python check admits it too, and the summary sums it as the int it is."""
+    return _is_count(value) or (isinstance(value, float) and value.is_integer())
 
 
 # --- building a stage, and the record it joins --------------------------------
@@ -126,13 +143,13 @@ def stage_problems(stage):
         out.append("startedAt %r is not an ISO timestamp"
                    % (stage.get("startedAt"),))
     ms = stage.get("ms")
-    if not _is_count(ms) or ms < 0:
+    if not _is_whole(ms) or ms < 0:
         out.append("ms %r is not a non-negative integer" % (ms,))
     basis = stage.get("basis")
     if not (isinstance(basis, str) and basis.strip()):
         out.append("basis is missing - a length with no record it was read "
                    "from cannot be checked")
-    if "round" in stage and not (_is_count(stage["round"]) and stage["round"] >= 1):
+    if "round" in stage and not (_is_whole(stage["round"]) and stage["round"] >= 1):
         out.append("round %r is not a positive integer" % (stage["round"],))
     if "runId" in stage and not (isinstance(stage["runId"], str)
                                  and stage["runId"].strip()):
@@ -169,7 +186,7 @@ def _by_kind(stages):
     for kind in KINDS:
         mine = [s for s in stages if s.get("kind") == kind]
         if mine:
-            rows[kind] = {"ms": sum(s["ms"] for s in mine), "stages": len(mine),
+            rows[kind] = {"ms": sum(int(s["ms"]) for s in mine), "stages": len(mine),
                           "basis": sorted(set(s["basis"] for s in mine))}
     return rows
 
@@ -180,12 +197,17 @@ def summarize(task):
     stage accounts for.
 
     `missing` names every source the figures needed and did not find - `timing`,
-    `timing.firstStartedAt`, a `timing.stages[i]` that cannot be read, or
-    `completedAt` - and while it names any, `windowMs`, `attributedMs` and
-    `unattributedMs` are None rather than a number nobody measured. When stages
-    overlap and sum past the window, `unattributedMs` is 0 and `overrunMs` says
-    by how much, so `attributedMs - overrunMs + unattributedMs` is the window
-    either way."""
+    `timing.firstStartedAt`, a `timing.stages` that is not a list, a
+    `timing.stages[i]` that fails `stage_problems`, or `completedAt` - and while
+    it names any, `windowMs`, `attributedMs` and `unattributedMs` are None
+    rather than a number nobody measured. A completion before the first start
+    is named the same way, as no window. When stages overlap and sum past the
+    window, `unattributedMs` is 0 and `overrunMs` says by how much, so
+    `attributedMs - overrunMs + unattributedMs` is the window either way.
+
+    The window is first start to completion even across a reopen: the time the
+    task sat closed is inside it, unattributed (the module docstring says
+    why)."""
     timing = _timing_of(task)
     missing = []
     stages = []
@@ -194,11 +216,13 @@ def summarize(task):
     else:
         if _usage_core.parse_ts(timing.get("firstStartedAt")) is None:
             missing.append("timing.firstStartedAt")
-        raw = timing.get("stages")
-        raw = raw if isinstance(raw, list) else []
+        raw = timing.get("stages", [])
+        if not isinstance(raw, list):
+            missing.append(STAGES_FIELD)
+            raw = []
         for i, stage in enumerate(raw):
             if stage_problems(stage):
-                missing.append("timing.stages[%d]" % (i,))
+                missing.append("%s[%d]" % (STAGES_FIELD, i))
             else:
                 stages.append(stage)
     completed = _usage_core.parse_ts(task.get("completedAt")) \
@@ -221,3 +245,14 @@ def summarize(task):
                    unattributedMs=max(0, window - attributed),
                    overrunMs=max(0, attributed - window))
     return summary
+
+
+def is_unreadable(summary):
+    """Whether `summarize` withheld its figures because the record's stages
+    could not be read - the list itself, or a stage in it - as against a
+    record that is readable and simply has no window (no first start, no
+    completion, a completion before the start). A reader prints the two
+    differently: one is a record to repair, the other a window not yet
+    there."""
+    return any(m == STAGES_FIELD or m.startswith(STAGES_FIELD + "[")
+               for m in (summary or {}).get("missing") or [])

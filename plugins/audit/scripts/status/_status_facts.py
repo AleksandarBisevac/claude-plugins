@@ -1179,9 +1179,29 @@ def bugs_fixed_elsewhere(own, live, copies):
 # What a task's `timing` record says, summed per phase. Every figure is
 # `_task_timing.summarize`'s, so the status render, its JSON and the record's own
 # validator read one record one way.
-PHASE_TIMING_BASIS = ("the sum of _task_timing.summarize over this phase's tasks "
-                      "that have a window; a task with a record and no window "
-                      "is named under withoutWindow and summed nowhere")
+PHASE_TIMING_BASIS = ("the sum of _task_timing.summarize over this phase's done "
+                      "tasks that have a window; every other task carrying a "
+                      "record is named under leftOut with the reason it is "
+                      "left out, and summed nowhere")
+# Why a task carrying a record is not in its phase's figures, in the order they
+# are asked: cancelling stamps `completedAt`, so a cancelled task that was once
+# started HAS a window - one no work finished - and must be told apart from a
+# finished task before its window is looked at.
+LEFT_OUT_CANCELLED = "cancelled"
+LEFT_OUT_NOT_FINISHED = "not finished"
+LEFT_OUT_NO_WINDOW = "no window"
+
+
+def _left_out(status, summary):
+    """Why a task with this status and summary is not summed into its phase's
+    line, or None when it is."""
+    if status == "cancelled":
+        return LEFT_OUT_CANCELLED
+    if status != "done":
+        return LEFT_OUT_NOT_FINISHED
+    if summary.get("windowMs") is None:
+        return LEFT_OUT_NO_WINDOW
+    return None
 
 
 def task_timing(task):
@@ -1203,19 +1223,25 @@ def _median(values):
     return int(round((ordered[mid - 1] + ordered[mid]) / 2.0))
 
 
-def phase_timing(summaries):
+def phase_timing(summaries, statuses):
     """The aggregate of `{task id: task_timing summary}` for one phase, or None
-    when the mapping is empty.
+    when the mapping is empty; `statuses` is `{task id: status}`.
 
-    Summed over the tasks that HAVE a window only, so the arithmetic holds:
-    `byKind` totals less `overrunMs` plus `unattributedMs` is `windowMs`, as it is
-    per task. A task whose record gives no window is listed in `withoutWindow`
-    with what it lacked; with no windowed task at all, the window figures are
+    Summed over the DONE tasks that have a window only, so the line counts
+    finished tasks and its arithmetic holds: `byKind` totals less `overrunMs`
+    plus `unattributedMs` is `windowMs`, as it is per task. Every other task is
+    named in `leftOut` with the reason - cancelled, not finished, no window -
+    and a task whose record gives no window is still listed in `withoutWindow`
+    with what it lacked; with no task summed at all, the window figures are
     None rather than zero."""
     if not summaries:
         return None
-    windowed = [(tid, s) for tid, s in summaries.items()
-                if s.get("windowMs") is not None]
+    left_out = {}
+    for tid, s in summaries.items():
+        why = _left_out(statuses.get(tid), s)
+        if why is not None:
+            left_out[tid] = why
+    windowed = [(tid, s) for tid, s in summaries.items() if tid not in left_out]
     by_kind = {}
     for kind in _task_timing.KINDS:
         rows = [s["byKind"][kind] for _tid, s in windowed if kind in s["byKind"]]
@@ -1237,7 +1263,8 @@ def phase_timing(summaries):
             "windowBasis": _task_timing.WINDOW_BASIS,
             "basis": PHASE_TIMING_BASIS,
             "withoutWindow": {tid: list(s["missing"]) for tid, s in summaries.items()
-                              if s.get("windowMs") is None}}
+                              if s.get("windowMs") is None},
+            "leftOut": left_out}
 
 
 def timing_rollup(manifest):
@@ -1248,14 +1275,15 @@ def timing_rollup(manifest):
     for phase in (manifest.get("phases") or []) if isinstance(manifest, dict) else []:
         if not isinstance(phase, dict):
             continue
-        mine = {}
+        mine, statuses = {}, {}
         for task in phase.get("tasks") or []:
             summary = task_timing(task)
             if summary is not None:
                 mine[str(task.get("id"))] = summary
+                statuses[str(task.get("id"))] = task.get("status")
         if mine:
             tasks.update(mine)
-            phases[str(phase.get("id"))] = phase_timing(mine)
+            phases[str(phase.get("id"))] = phase_timing(mine, statuses)
     if not tasks:
         return None
     return {"tasks": tasks, "phases": phases}

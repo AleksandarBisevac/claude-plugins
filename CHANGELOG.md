@@ -12,7 +12,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   reviewer, commit or wait), a start, a length in milliseconds and the record the length was
   read from. `/audit:task start` sets `firstStartedAt` once and a restart no longer loses it;
   `move`, `reopen` and `cancel` keep the record. A stage with an unknown kind, a negative length
-  or no basis is a validation finding naming the task and the stage. A plan without the key
+  or no basis is a validation finding naming the task and the stage. The published schema
+  refuses what that check refuses - a malformed stamp, an empty or blank `basis` or `runId` -
+  so a record an external validator passes is one the plugin passes. A plan without the key
   validates and behaves exactly as before.
 - **The step driver fills a task's timing as it runs it.** Each writer and reviewer session,
   each recorded gate run with the time it spent choosing what to run, a red's base
@@ -25,12 +27,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `/audit:task note` and `done` take the stages on a repeatable `--stage`.
 - **`/audit:status` prints where a task's wall time went.** When a task in view carries a
   timing record, the table grows a `time` column holding the task's whole window from its
-  first start to its completion - `-` for no record, `open` for one not finished - and the
-  phase head gives the median window and the split by stage over its finished tasks, with the
-  unattributed share named. `--json` carries the same figures under `timing`: per task the
-  summary, per phase the aggregate, each with the record it was read from; a task without a
-  record has no entry. A plan that never recorded a stage renders and serializes exactly as
-  before, and `--gate` reads none of it.
+  first start to its completion, in hours or days once past an hour - `-` for no record, `open`
+  for one not finished, `no window` for a record with no first start or a completion before
+  it, `not readable` for stages that cannot be read. A reopened task's window keeps its first
+  start, so the time it sat closed is inside it. The phase head gives the median window and the
+  split by stage over its done tasks, with the unattributed share named; a cancelled or
+  unfinished task is left out and named. `--json` carries the same figures under `timing`: per
+  task the summary, per phase the aggregate, each with the record it was read from; a task
+  without a record has no entry. A plan that never recorded a stage renders and serializes
+  exactly as before. `--gate` reads no timing figure, only the validator's verdict on the
+  record, so a malformed record can trip the default `invalid` condition.
 
 ## [3.9.0]
 
