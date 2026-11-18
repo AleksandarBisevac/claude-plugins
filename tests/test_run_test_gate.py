@@ -7828,6 +7828,112 @@ def _unrecorded_cases(check):
           "banners not recorded" in text and "NO OVERLAP" not in text)
 
 
+def _left_word_cases(check):
+    """An entry names a left-out path through its WORDS, never through a substring.
+
+    The over-fire these exist for was driven: a sweep step listing the suites
+    named after the evidence and journal modules read as grading the evidence
+    and the journal, because the directory's last component sat inside a test's
+    file name - so a green sweep was measured again on every unchanged tree.
+    Each repair case has its keep case beside it, because the cheap repair (stop
+    reading the command at all) passes every over-fire case and repeats a
+    verdict over a plan nobody validated.
+    """
+    excluded = ["docs/audit/audit-plan.json", "docs/audit/phases/P1.json",
+                "docs/audit/evidence", "docs/audit/journal"]
+    sweep = ("python3 tools/sweep-selftests.py tests/test__evidence_io.py "
+             "tests/test__journal_io.py")
+    got = M.grades_left_out([("sweep", sweep)], excluded)
+    check("lw1 a sweep step listing the suites named after the evidence and "
+          "journal modules names no left-out path - a word that only CONTAINS a "
+          "left-out name inside a longer file name is not that path: %r" % (got,),
+          got == [])
+    shell = [("sh", "sh -c 'cd tools && python3 sweep-selftests.py "
+                    "../tests/test__evidence_io.py | tee run.log'"),
+             ("near", "cat docs/audit/evidence-old/x.jsonl docs/audit/journal.md "
+                      "src/check-audit-plan.json")]
+    got = M.grades_left_out(shell, excluded)
+    check("lw2 ...nor does the same suite inside a quoted shell body with a "
+          "pipe, nor a sibling whose name only begins with a left-out "
+          "directory's or ends with the manifest's: %r" % (got,),
+          got == [])
+
+    named = [("path", "python3 v.py docs/audit/audit-plan.json"),
+             ("cd", "cd docs/audit && python3 v.py audit-plan.json"),
+             ("body", "sh -c \"cd docs/audit && python3 v.py ./audit-plan.json -q\""),
+             ("pipe", "cat docs/audit/audit-plan.json|python3 -m json.tool"),
+             ("opt", "python3 v.py --manifest=docs/audit/audit-plan.json"),
+             ("shard", "python3 v.py docs/audit/phases/../phases/P1.json")]
+    got = M.grades_left_out(named, excluded)
+    check("lw3 THE KEEP CASE: an entry reading the manifest by its path, by its "
+          "base name after a cd, inside a quoted shell body, before a pipe, as "
+          "an option's value, or a shard through a dotted path, still names "
+          "it: %r" % (got,),
+          got == [("path", "docs/audit/audit-plan.json"),
+                  ("cd", "docs/audit/audit-plan.json"),
+                  ("body", "docs/audit/audit-plan.json"),
+                  ("pipe", "docs/audit/audit-plan.json"),
+                  ("opt", "docs/audit/audit-plan.json"),
+                  ("shard", "docs/audit/phases/P1.json")])
+
+    under = [("row", "python3 read.py docs/audit/evidence/2026-11.jsonl"),
+             ("dir", "ls docs/audit/journal/"),
+             ("same", "python3 r.py ./docs/audit/evidence"),
+             ("opt", "python3 r.py --ledger=docs/audit/evidence/x.jsonl")]
+    got = M.grades_left_out(under, excluded)
+    check("lw4 ...and a file under a left-out directory, or the directory "
+          "itself, or one given as an option's value, is that directory: %r"
+          % (got,),
+          got == [("row", "docs/audit/evidence"),
+                  ("dir", "docs/audit/journal"),
+                  ("same", "docs/audit/evidence"),
+                  ("opt", "docs/audit/evidence")])
+
+    unsplit = M.grades_left_out([("v", "python3 v.py \"unterminated")], excluded)
+    check("lw5 a command that cannot be split into words is treated as naming "
+          "a left-out path, and says that is why - a guess the other way would "
+          "repeat a verdict nobody measured: %r" % (unsplit,),
+          len(unsplit) == 1 and unsplit[0][0] == "v"
+          and "cannot be split into words" in unsplit[0][1])
+    body = M.grades_left_out([("v", "sh -c 'python3 v.py \"unterminated'")],
+                             excluded)
+    check("lw6 ...and so is a quoted shell body that cannot: %r" % (body,),
+          len(body) == 1 and body[0][0] == "v"
+          and "cannot be split into words" in body[0][1])
+
+    # A DIRECTORY IS NOT ITS BASE NAME. Given the directories, a bare selector
+    # word spelled like one (`-k journal`) is not the journal, while the same
+    # word still names a FILE by its base name. Without `directories` every
+    # path is read as a file - the conservative reading, a run measured.
+    sel = [("k", "pytest -k journal tests/")]
+    as_dir = M.grades_left_out(sel, excluded, directories=["docs/audit/journal"])
+    as_file = M.grades_left_out(sel, excluded)
+    check("lw7 a bare word spelled like a left-out DIRECTORY's last component "
+          "names nothing once the directory is known to be one, and names it "
+          "while it is not: %r" % ((as_dir, as_file),),
+          as_dir == [] and as_file == [("k", "docs/audit/journal")])
+
+    root = os.path.realpath(_harness.fixture_root("run-test-gate-leftword-"))
+    absw = M.grades_left_out(
+        [("abs", "cat %s" % shlex.quote(os.path.join(root, "docs", "audit",
+                                                     "evidence", "x.jsonl")))],
+        excluded, roots=[root])
+    check("lw8 an absolute word under the project is read against it, so a row "
+          "file spelled from the root still names the evidence: %r" % (absw,),
+          absw == [("abs", "docs/audit/evidence")])
+
+    path_line = M.left_out_line("validate", "docs/audit/audit-plan.json")
+    why_line = M.left_out_line("v", unsplit[0][1] if unsplit else "")
+    check("lw9 the line saying why the run is MEASURED still names the entry "
+          "and the path, and an unsplittable entry's line names the entry and "
+          "the reason instead: %r" % ((path_line, why_line),),
+          "validate names docs/audit/audit-plan.json" in path_line
+          and "MEASURED and not repeated" in path_line
+          and "v cannot be read" in why_line
+          and "cannot be split into words" in why_line
+          and "MEASURED and not repeated" in why_line)
+
+
 def _reuse_cases(check):
     """A verdict already measured on these bytes, and everything that must stop it.
 
@@ -7882,6 +7988,8 @@ def _reuse_cases(check):
           M.grades_left_out([("v", "validate ./audit-plan.json")],
                             ["docs/audit/audit-plan.json"])
           == [("v", "docs/audit/audit-plan.json")])
+
+    _left_word_cases(check)
 
     root = _harness.fixture_root("run-test-gate-reuse-")
     os.makedirs(os.path.join(root, "docs", "audit", "phases"))

@@ -104,6 +104,7 @@ import argparse
 import ast
 import json
 import os
+import posixpath
 import re
 import shlex
 import signal
@@ -3043,7 +3044,107 @@ def subject_ids(phase_id, task_id, source):
     return ids
 
 
-def grades_left_out(gate, excluded):
+# The reason an entry is reported for when its command has no words to read.
+# `left_out_line` keys its sentence on this prefix, so the two cannot drift.
+UNSPLITTABLE = "its command cannot be split into words"
+
+# Inside one shell word, the characters that start a second path: an option's
+# value (`--manifest=docs/audit/audit-plan.json`, `VAR=path`) and a backquoted
+# substitution, neither of which the lexer separates from what precedes it.
+_WORD_PIECES = re.compile(r"[=`]")
+
+
+def _command_words(command):
+    """`(words, problem)`: every word a POSIX shell would read in `command`,
+    quoted bodies read through their own words as well, or `(None, why)`.
+
+    THE LEXER IS `gate_entry_commands`' OWN SETTINGS, and that function is not
+    called because of its fallback: an unbalanced quote is answered there with
+    the whitespace split, a guess, and its redirections drop the word they name
+    - so `< docs/audit/audit-plan.json` would read nothing. Here the guess is
+    refused and said, and an operator token is just a word that names no path.
+
+    A WORD STILL CARRYING WHITESPACE OR A QUOTE came out of a quoted body - `sh
+    -c '...'`, a nested quote - and is read again, so a path inside the body is
+    a word too. Every re-read strips a quote pair or splits on whitespace, so
+    the recursion ends.
+    """
+    if not isinstance(command, str):
+        return None, "%s: it is %s, not text" % (UNSPLITTABLE,
+                                                 type(command).__name__)
+    words = []
+    for line in command.splitlines():
+        lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        lexer.escape = ""
+        try:
+            tokens = list(lexer)
+        except ValueError as exc:
+            return None, "%s (%s)" % (UNSPLITTABLE, exc)
+        for token in tokens:
+            if re.search(r"[\s'\"]", token):
+                inner, problem = _command_words(token)
+                if inner is None:
+                    return None, problem
+                words.extend(inner)
+            else:
+                words.append(token)
+    return words, None
+
+
+def _word_rels(word, roots):
+    """Each project-relative path one word can stand for, normalised.
+
+    An absolute word under one of `roots` is taken relative to it; any other
+    word is already relative to the project, which is the directory a gate
+    entry runs in. Backslashes are read as separators, as the lexer kept them.
+    """
+    rels = []
+    for piece in _WORD_PIECES.split(word.replace("\\", "/")):
+        if not piece.strip():
+            continue
+        if os.path.isabs(piece):
+            for root in roots:
+                try:
+                    rel = _output.posix_rel(os.path.realpath(piece),
+                                            os.path.realpath(root))
+                except ValueError:
+                    continue
+                if not (rel == ".." or rel.startswith("../")):
+                    piece = rel
+                    break
+        rels.append(posixpath.normpath(piece))
+    return rels
+
+
+def _names_path(rel, path, is_dir):
+    """True when the word `rel` is `path`: the path itself, a path under it,
+    or - for a file - any path whose own last component is `path`'s base name,
+    which is how an entry names the plan after a `cd`. A directory is not
+    matched by its base name, because a bare `-k journal` is a selector, not
+    the journal."""
+    if rel == path or rel.startswith(path + "/"):
+        return True
+    return not is_dir and posixpath.basename(rel) == posixpath.basename(path)
+
+
+def left_out_line(name, what):
+    """The line saying why a run naming a left-out path is measured, not
+    repeated: the entry, and the path it names or the reason it was read as
+    naming one."""
+    if what.startswith(UNSPLITTABLE):
+        return ("[run-test-gate] %s cannot be read for the paths it names - %s - "
+                "so it is treated as naming a path this identity leaves out, and "
+                "this run is MEASURED and not repeated. A guess the other way "
+                "would repeat a verdict nobody measured" % (name, what))
+    return ("[run-test-gate] %s names %s, which this identity leaves out, so "
+            "this run is MEASURED and not repeated. Whether the command reads "
+            "that path is not established here; naming it is enough, because "
+            "the other way round is a verdict that no longer describes the "
+            "thing it graded" % (name, what))
+
+
+def grades_left_out(gate, excluded, roots=(), directories=()):
     """The gate entries whose command NAMES a path this identity leaves out.
 
     WHY AN ENTRY CAN BE ITS OWN COUNTER-EXAMPLE. The content identity drops the
@@ -3063,19 +3164,31 @@ def grades_left_out(gate, excluded):
     wrong in the other direction is a stale pass, which is the failure the rest of
     this module is written against.
 
-    The basename is matched as well as the path, because a gate entry commonly
-    names the plan the way the operator types it rather than the way the manifest
-    resolves it.
+    THE COMMAND IS READ AS WORDS, NEVER AS TEXT. A substring of the command
+    matched a suite named after the module that writes a left-out directory -
+    `tests/test__evidence_io.py` contains that directory's last component - so
+    a sweep listing it was measured again on every unchanged tree. A word names
+    a left-out path when, taken against the project (`_word_rels`), it is that
+    path or lies under it, or - for a file - ends in its base name, because a
+    gate entry commonly names the plan the way the operator types it after a
+    `cd`. `directories` are the left-out paths that are directories on disk,
+    which are not matched by base name (`_names_path`). A command with no words
+    to read is reported with `UNSPLITTABLE` in place of a path.
     """
+    paths = [p for p in (excluded or []) if isinstance(p, str) and p.strip()]
+    dirs = set(directories or ())
     named = []
     for name, command in gate or []:
-        text = command if isinstance(command, str) else ""
-        for path in excluded or []:
-            if not (isinstance(path, str) and path.strip()):
-                continue
-            if path in text or os.path.basename(path) in text:
-                named.append((name, path))
-                break
+        words, problem = _command_words(command)
+        if words is None:
+            named.append((name, problem))
+            continue
+        rels = [rel for word in words for rel in _word_rels(word, roots)]
+        hit = next((path for path in paths
+                    if any(_names_path(rel, path, path in dirs) for rel in rels)),
+                   None)
+        if hit is not None:
+            named.append((name, hit))
     return named
 
 
@@ -3117,7 +3230,11 @@ def reuse_identity(project, manifest_path, manifest, commands, owns, group=None,
     gate = [[name, command] for name, command
             in declared_gate([n for n, _c in (commands or [])], build)]
     scope = _tree_stamp.declared_scope(owns)
-    grading = grades_left_out(gate, excluded)
+    roots = [project] if tree is None else [project, tree]
+    grading = grades_left_out(
+        gate, excluded, roots=roots,
+        directories=[p for p in excluded
+                     if os.path.isdir(os.path.join(project, p))])
     if content is None:
         return {"key": None, "basis": cbasis, "limit": REUSE_LIMIT,
                 "grading": grading, "unexcluded": unexcluded}
@@ -6090,11 +6207,7 @@ def main(argv, out=print):
             # silent, and it names the entry - an operator who sees a gate measure
             # every time is owed the reason, or the next reader removes the cache.
             for name, path in identity["grading"]:
-                out("[run-test-gate] %s names %s, which this identity leaves out, so "
-                    "this run is MEASURED and not repeated. Whether the command reads "
-                    "that path is not established here; naming it is enough, because "
-                    "the other way round is a verdict that no longer describes the "
-                    "thing it graded" % (name, path))
+                out(left_out_line(name, path))
         elif not args.no_reuse:
             ledger = _ev.read_rows(project)["rows"]
             prior = _ev.reusable_run(ledger, source,

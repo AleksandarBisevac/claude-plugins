@@ -45,6 +45,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   exactly as before. `--gate` reads no timing figure, only the validator's verdict on the
   record, so a malformed record can trip the default `invalid` condition.
 
+### Fixed
+- **A gate step listing a suite named after the evidence or journal module is repeated again.**
+  The test-gate runner decided that a step graded a path its verdict identity leaves out (the
+  manifest, its shards, the evidence and journal directories) by finding that path's name
+  anywhere in the command, so `tests/test__evidence_io.py` read as the evidence directory and a
+  green sweep was measured again on every unchanged tree. The command is now read as shell
+  words, a quoted `sh -c` body included: a word names a left-out file when it is that file or
+  ends in its base name, and a left-out directory when it is that directory or a path under it.
+  A step naming the plan by path, or by base name after a `cd`, is still measured every time, and
+  a command that cannot be split into words is treated as naming one, with that reason printed.
+
 ## [3.9.0]
 
 ### Fixed

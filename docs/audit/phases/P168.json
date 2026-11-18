@@ -1,0 +1,612 @@
+{
+  "id": "P168",
+  "title": "A task's gate is measured once and runs what the task can break",
+  "status": "in_progress",
+  "description": "A paired measurement put the plugin near four times a plain session's wall time per task, with the task gate carrying almost all of the difference and the writer none of it. More than half of the gate time was a second full measurement of a tree the first run had just called green: the drive reads a background gate back by asking the recorded gate again, and that ask is refused a repeat whenever any entry names the plan, an evidence file or a journal file, or merely a test file whose name contains one of those words. Beyond the repeat, a task's recorded gate runs entries the project's own configuration says belong to the phase gate, tasks minted before a subset spelling was recorded keep the whole phase gate, and the declared suites and the affected suites run as two calls one after the other. Entry: the stage record of the previous phase is on main, so each change here is read from a task's own timing rather than from a ledger query. Exit: replaying the recorded gate of the measured tasks on the phase's head shows no second measurement of a tree-grading step, and the per-task gate time printed by status is at or under a third of what it was on the same tasks.",
+  "desiredOutcome": "A green task gate is not measured a second time when nothing it graded has changed, an entry the project leaves to the phase gate is not run by a task's recorded gate, a task whose wide gate was stored before the project recorded how to run a subset gets the narrow one, and the suites a task declares and the suites its change can break run as one call. On the recorded pairs the task gate's share of the gap to a plain session falls to what one narrow run costs.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "5ab35ff3038963392e8891f457c5a522705fede9",
+  "branch": "audit/p168-a-task-s-gate-is-measured-once",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P168.1",
+      "title": "A gate entry names a path the identity leaves out only when one of its path words resolves to it, never when a word sits inside a file name",
+      "status": "in_progress",
+      "description": "run-test-gate.py decides that an entry grades a path the reuse identity leaves out (the manifest, its shards, the evidence and journal directories) by looking for that path, or its base name, anywhere in the command text. A sweep step that lists tests/test__evidence_io.py or tests/test__journal_io.py therefore reads as grading the evidence or the journal, and is never repeated. Read the command as words: an entry names a left-out file when one of its words, taken as a path against the project, is that file or has its base name as its own last component; it names a left-out directory when a word is that directory or a path under it. A word that only contains the name inside a longer file name does not match. Dependants you answer for: the three pinned cases about an entry naming the manifest, the allow case, and the base-name case in tests/test_run_test_gate.py keep their verdicts; the message that says why a run is measured and not repeated still names the entry and the path; an entry whose command is a shell line (sh -c with a quoted body, a pipe, a cd before the command) is read through its words inside the quoted body as well, and when the command cannot be split into words at all the entry is treated as naming a left-out path, since a guess the other way would repeat a verdict nobody measured. Acceptance: (1) a step listing tests/test__evidence_io.py and tests/test__journal_io.py names no left-out path; (2) a step whose command reads docs/audit/audit-plan.json, the same file by base name after a cd, or a file under docs/audit/evidence still does; (3) a command that cannot be split into words is reported as naming one, with that reason; (4) the existing three cases keep their verdicts unchanged.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "tests/test_run_test_gate.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_test_gate.py: a sweep step listing suites named after the evidence and journal modules names no left-out path, an entry reading the manifest by path or by base name still does, and an unsplittable command is treated as naming one"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-18T06:46:41Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T06:46:33Z",
+          "text": "it quotes the Unreleased heading of CHANGELOG.md, and this task adds an entry under that heading and leaves the heading alone",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T06:46:33Z",
+          "text": "it quotes one refusal sentence of the gate runner, which this task does not edit",
+          "waives": "tools/check-example-ledgers.py"
+        }
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T06:46:41Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T07:28:12Z.e728f9",
+        "status": "passed",
+        "at": "2026-11-18T07:28:12Z"
+      }
+    },
+    {
+      "id": "P168.2",
+      "title": "A recorded gate repeats the steps that grade the tree and measures again only the steps that grade the plan",
+      "status": "pending",
+      "description": "Today one entry that names a left-out path makes the whole run measured again, so a gate holding the manifest validator beside a sweep and a browser check pays for all three twice. Decide the repeat per step. A step that names no left-out path repeats from the newest measured row with the same identity, exactly as a whole run does now; a step that names one is run again, because what it reads (the plan) is not in the identity and may have moved. The row such a run writes says, step by step, which were repeated and from which run and which were measured, and its verdict is the worst of the two kinds. When every step repeats the run prints the existing reuse banner unchanged; when some were measured it prints a line of its own naming them and their seconds, and the row's verdictSource says so with a third word rather than reusing either existing one. The statuses that may be repeated stay the ones allowed today, a muted row is still not a source, and --no-reuse still measures everything. A red run repeats as red: the statuses that may be repeated already include failed, and that matters, because the drive reads a background run back by asking again, and a second measurement that comes out green replaces a red verdict nobody was shown (seen on this repository: one task's background run failed on one case and the read-back's own run on the same identity passed, and the task closed green). Dependants you answer for: _evidence_io.reusable_run and its callers; _verdict_binding and stamp-verification, which bind a commit and a stamp to a run and must accept a row whose steps are part repeated; the drive's stored_green and verdict_basis; gate_mean_ms and the gate budget, which must not count a repeated step's old duration as time spent now; audit-usage's reused-against-measured comparison; the report's and the panel's rendering of a reused row, which read verdictSource and must show an unknown word as itself; verify-invariants; COMPATIBILITY.md's list of evidence row keys and verdictSource words. Acceptance: (1) a gate of one tree-grading step and one plan-grading step, asked twice with no change, runs the tree step once and the plan step twice, and the second row names the first run as the source of the repeated step; (2) the same gate after an edit to a declared file measures both steps; (3) the same gate after the manifest alone changed in a way that turns the plan step red records a red verdict, with the tree step repeated; (4) a gate with no plan-grading step behaves byte for byte as before; (5) --no-reuse measures every step; (6) a repeated step's duration is not added to the time the row says the run took; (7) a red run asked again with no change repeats as red, with no second measurement of its tree-grading steps; (8) a commit is bound and a stamp verified against a part-repeated row exactly as against a measured one.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/_verdict_binding.py",
+        "tests/test_run_test_gate.py",
+        "tests/test__evidence_io.py",
+        "tests/test__verdict_binding.py",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_test_gate.py: a gate of a tree-grading and a plan-grading step asked twice runs the tree step once and the plan step twice; an edit to a declared file measures both; a manifest change that reddens the plan step records red with the tree step repeated; a gate with no plan-grading step is unchanged; a red run asked again repeats as red",
+          "tests/test__evidence_io.py: a repeated step's duration is not counted as time spent by the run that repeated it, and a part-repeated row is a valid source for a later repeat of its measured steps only",
+          "tests/test__verdict_binding.py: a commit binds to a part-repeated row as it binds to a measured one"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__evidence_io.py tests/test__verdict_binding.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P168.1"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T06:46:34Z",
+          "text": "it quotes the Unreleased heading of CHANGELOG.md, and this task adds an entry under that heading and leaves the heading alone",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T06:46:34Z",
+          "text": "it quotes one refusal sentence of the gate runner, which this task does not edit",
+          "waives": "tools/check-example-ledgers.py"
+        },
+        {
+          "at": "2026-11-18T06:46:34Z",
+          "text": "it quotes the two-keys sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-18T06:46:34Z",
+          "text": "it quotes the validation-stays-additive sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-18T06:46:34Z",
+          "text": "it quotes a manifest sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "tests/test__manifest_phases.py"
+        },
+        {
+          "at": "2026-11-18T06:46:34Z",
+          "text": "it quotes a config sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        }
+      ]
+    },
+    {
+      "id": "P168.3",
+      "title": "The drive reads a background gate's own verdict back, says what was measured again and why, and its fixtures drive a gate that grades the plan",
+      "status": "pending",
+      "description": "The drive reads a background gate back by asking the recorded gate again, and prints that the run did not repeat on this tree whenever the reuse banner is missing, whatever the reason; its comments say a second ask on the same content measures nothing, which was false for every gate holding a plan-grading entry. The same happens to the phase gate at sign-off, which was measured whole a second time. Worse than the time, a read-back that measures again can replace the verdict the drive handed out: a background run that came back red was followed by a green second run on the same identity, and the task closed with the red never shown. The verdict of the run the drive launched is the one it acts on: a red background run goes to the base measurement and the decision exactly as an inline red does, for a task gate and for the phase gate alike. With repeats decided per step, the read-back line names what was repeated and what was measured again, with the measured steps' names and seconds, and says did not repeat only when a tree-grading step was measured again, with the reason the gate printed. The comments state what the code now does. The drive's gate fixtures use true and false as the gate, so the drive never met a plan-grading entry: add fixtures whose gate holds one. Dependants you answer for: the decision table and every step text in tests/test_drive_phase.py; the cases that require exactly one task-gate call carrying the reuse banner after a background run; the prompt hook and the orchestrator, which read the signal line and the did lines; the stage record the previous phase added, where a read-back that measured steps is a gate stage of its own with its real length and a fully repeated one adds none. Do not edit plugins/audit/reference/orchestrator.md. Acceptance: (1) a background gate holding a sweep and the manifest validator, read back with no change, leaves one measured sweep in the ledger and a read-back line naming the validator as measured again with its seconds; (2) the same after an edit to a declared file says the tree did not repeat and names the gate's own reason; (3) a gate of true alone reads back with the existing banner and the existing line; (4) a background run that came back red is read back as red and reaches the gate-red decision, with no second measurement between; (5) the phase gate at sign-off is read back the same way, with its tree-grading steps not measured again; (6) the task's timing holds one gate stage for the background run and one short one for the read-back in case (1), and one in case (3).",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a background gate holding a sweep and a plan-grading entry is read back with the sweep measured once and the entry named as measured again; an edit between the two says the tree did not repeat with the gate's reason; a gate with no such entry reads back as before; a red background run is read back as red and reaches the decision; the phase gate at sign-off is not measured whole a second time"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P168.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T06:46:35Z",
+          "text": "it quotes the Unreleased heading of CHANGELOG.md, and this task adds an entry under that heading and leaves the heading alone",
+          "waives": "tools/release.py"
+        }
+      ]
+    },
+    {
+      "id": "P168.4",
+      "title": "An entry the project leaves to the phase gate is not run by a task's recorded gate, and the row says which were left and why",
+      "status": "pending",
+      "description": "executor.phaseGateOnly names gate commands that belong to the phase gate. It reaches only the writer's prompt today: the recorded task gate still runs them, and on this repository's own tasks the two browser checks it names were about two thirds of a task gate's time. Make one reading of the setting serve both: an entry of a task's gate that matches it, and that the phase's own gate also holds, is left out of the task's recorded run; the row lists each entry left out with the setting as its basis, the run prints them, and the gate's identity is taken over the entries that ran. An entry that matches but is absent from the phase's gate is run, with a line saying it would otherwise run nowhere. A task whose every entry is left out is not an empty gate that passes: it records the existing no-checks outcome with the reason. The phase gate itself ignores the setting. The setting's schema description, the config reference and COMPATIBILITY.md state the wider meaning; this is a change to what a read key does, so it goes into the major section. Dependants you answer for: the writer brief's existing reading of the setting in audit-lookup.py, which must come from the same function; the drive's own view of a task's gate steps, which must agree with the recorder's or the background decision and the step text name entries that will not run; the affected selection, whose already-wide test compares a task's entries with the phase's; the reuse identity; the panel's settings page and the doctor, which describe the key; verify-invariants' check that a done task's gate ran. Acceptance: (1) a task gate of a sweep and a browser check, with the browser check named by the setting and present in the phase gate, runs the sweep alone and its row lists the browser check as left to the phase gate; (2) the same with the browser check absent from the phase gate runs both and says why; (3) a task gate holding only left-out entries records no-checks, never passed; (4) with the setting absent or empty every row and every printed line is byte for byte as before; (5) the phase gate runs every entry whatever the setting says; (6) the writer's brief and the recorded run name the same entries as left out.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/status/audit-lookup.py",
+        "plugins/audit/scripts/config/_config_rules.py",
+        "plugins/audit/schema/audit-config.schema.json",
+        "tests/test_run_test_gate.py",
+        "tests/test_drive_phase.py",
+        "tests/test_audit_lookup.py",
+        "tests/test__config_rules.py",
+        "COMPATIBILITY.md",
+        "README.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_test_gate.py: an entry the setting names and the phase gate holds is left out of the task's run and listed in the row; one the phase gate lacks is run; a task of only left-out entries records no-checks; an absent setting changes nothing",
+          "tests/test_drive_phase.py: the drive's view of a task's gate steps leaves out the same entries the recorder leaves out",
+          "tests/test_audit_lookup.py: the writer's brief names the same entries as left to the phase gate as the recorded run does"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_drive_phase.py tests/test_audit_lookup.py tests/test__config_rules.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P168.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T06:46:36Z",
+          "text": "it quotes the Unreleased heading of CHANGELOG.md, and this task adds an entry under that heading and leaves the heading alone",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T06:46:36Z",
+          "text": "it quotes one refusal sentence of the gate runner, which this task does not edit",
+          "waives": "tools/check-example-ledgers.py"
+        },
+        {
+          "at": "2026-11-18T06:46:36Z",
+          "text": "it quotes the two-keys sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-18T06:46:36Z",
+          "text": "it quotes the validation-stays-additive sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-18T06:46:36Z",
+          "text": "it quotes a manifest sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "tests/test__manifest_phases.py"
+        }
+      ]
+    },
+    {
+      "id": "P168.5",
+      "title": "A task that has not started and carries the phase's wide gate for want of a subset spelling gets the narrow gate once the spelling is recorded",
+      "status": "pending",
+      "description": "A task added before the project recorded how to run a subset of its suites stores the whole phase gate, with a basis word saying no spelling was known. Recording the spelling later changes nothing for it: only a scope edit re-derives a gate, so the task runs the whole gate when its turn comes. The settle verb is the one writer of a plan's stale derived values; make a derived wide gate one of them. For a task that has not started, whose basis is one of the derivation's own wide words and whose derivation now gives a narrower gate, settle writes the narrow gate and its basis, the validator warns about each such task and names the verb, and record-listing prints how many tasks the new spelling leaves stale. A gate somebody declared or cleared is never touched, and a started task keeps the gate its attempt is graded against. Dependants you answer for: the existing rule that a scope edit re-derives a derived gate, which must share the one derivation function; settle's revalidate-or-roll-back and its journal row; the validator's warning groups and their counts in the doctor and the panel; every committed example plan, which must still validate with no new warning. Acceptance: (1) after record-listing stores a spelling, a pending task whose basis says no spelling was known is warned about by the validator, and settle rewrites its gate to the narrow one with the basis the derivation gives; (2) a task whose gate was declared or cleared is untouched and unwarned; (3) a started task, and one put back to pending after an attempt, is untouched; (4) a task whose derivation still gives the wide gate is untouched and unwarned; (5) settle on a plan with nothing stale writes nothing.",
+      "files": [
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "tests/test_audit_task.py",
+        "tests/test__manifest_phases.py",
+        "plugins/audit/commands/task.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_task.py: settle rewrites a pending task's wide gate to the narrow one once a spelling is recorded, and leaves a declared, cleared or started task's gate alone",
+          "tests/test__manifest_phases.py: the validator warns about a pending task whose derived wide gate is now stale and names the verb, and warns about nothing else"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T06:46:37Z",
+          "text": "it quotes the Unreleased heading of CHANGELOG.md, and this task adds an entry under that heading and leaves the heading alone",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T06:46:37Z",
+          "text": "it quotes the operator's-words sentence of the task command page, and this task adds a sentence about settle and leaves that one alone",
+          "waives": "tools/prove-gates.py"
+        }
+      ]
+    },
+    {
+      "id": "P168.6",
+      "title": "The suites a task declares and the suites its change can break run as one call when both use the project's subset spelling",
+      "status": "pending",
+      "description": "A task gate runs the declared suites as one step and the affected suites as a second, one after the other, each a separate call of the same runner over a different list. The two lists never overlap, so nothing is run twice, but the wall time is the sum of the two calls' longest suites instead of the longest of all. When a declared entry is exactly the project's recorded subset spelling over a list of paths, and the affected step is that spelling over another list, run one step over the union, in the declared order first. The row keeps both facts: the step's name says which paths were declared and which were added as affected, so the breadth clause, the usage comparison of narrow against wide gates and the report's step list lose nothing. A declared entry in any other spelling stays its own step, and with no affected suites nothing changes. Dependants you answer for: the gate identity, which is taken over the commands that ran and must be the same for the same two lists whichever way they were split; the affected selection's own step naming, which the usage comparison and the doctor read by prefix; the per-step repeat rule; the selection time the previous phase records; the already-wide test. Acceptance: (1) a task with a declared entry in the recorded spelling and a non-empty affected list runs one step over the union and its name carries both lists; (2) a declared entry in another spelling stays a separate step beside the affected one; (3) an empty affected list leaves the run byte for byte as before; (4) the usage comparison still counts the run as a narrowed gate; (5) a suite present in both lists is passed once.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_affected_tests.py",
+        "tests/test_run_test_gate.py",
+        "tests/test__affected_tests.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_test_gate.py: a declared entry in the recorded spelling and the affected list run as one step over the union with both lists named; another spelling stays separate; an empty affected list changes nothing",
+          "tests/test__affected_tests.py: the union passes a suite present in both lists once and keeps the declared order first"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__affected_tests.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P168.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T06:46:38Z",
+          "text": "it quotes the Unreleased heading of CHANGELOG.md, and this task adds an entry under that heading and leaves the heading alone",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T06:46:38Z",
+          "text": "it quotes one refusal sentence of the gate runner, which this task does not edit",
+          "waives": "tools/check-example-ledgers.py"
+        }
+      ]
+    },
+    {
+      "id": "P168.7",
+      "title": "This repository's related listing says which edge pulls in each suite, and stops listing the whole tree for a file whose change cannot reach it",
+      "status": "cancelled",
+      "description": "For most files under the plugin's scripts, this repository's own selector (tools/affected.py --list-related) lists nearly every suite, so the affected step of a task gate here is close to the whole sweep and was half of a month's task-gate time. For other files it lists a few dozen. Nothing prints why a suite is in the list. First make the selector answer that: a flag that prints, for each listed suite, the chain of imports or runs that reaches it from the changed path. Then act on what it shows. Where the chain is a real one (the suite runs the changed file) it stays. Where every suite is reached through one shared helper that imports a product module only to locate it, or through a rule that fires on any Python change, narrow that edge only if a replay shows no miss: take the last twenty task commits on main that touched a file under the scripts directory, run the narrowed list and the full sweep on each, and require that no suite the full sweep turns red is absent from the narrowed list. If the replay shows a miss, or the chain is real, leave the selector as it is and record the measurement and the edge in the tool's docstring as the reason. The gathering itself is not free either: the stage record of the previous phase shows about twenty seconds of selection before every task gate here; say where those seconds go (the listing command, the import graph scan) and whether one scan can serve both listings. This is the repository's tool, not the plugin's rule; nothing under plugins/audit changes. Dependants you answer for: tools/verify.sh and CI, which call the selector for the affected slices; the gate-parity check on the checks the selector may name; the plan's recorded listing commands, whose output shape (one path per token) must not change; the selector's own suite. Acceptance: (1) the new flag prints one chain per listed suite and a suite with no chain is an error, not an omission; (2) the replay's table (commit, suites red in the full sweep, suites missing from the list) is produced by a script kept beside the selector and its result is quoted in the task's outcome with the command; (3) either the list for a governance script is shorter than the whole tree with zero misses over the replay, or it is unchanged and the docstring carries the edge and the measurement; (4) the output of the two listing commands the plan records keeps its shape.",
+      "files": [
+        "tools/affected.py",
+        "tools/replay-affected.py",
+        "tests/test_affected.py",
+        "tests/test_replay_affected.py",
+        "tools/lints/_deps.py",
+        "CONTRIBUTING.md",
+        "tests/test__deps.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_affected.py: the why flag prints the chain that reaches each listed suite, and a listed suite with no chain is an error",
+          "tests/test_replay_affected.py: the replay reports a suite the full sweep turns red and the list lacks as a miss, and reports none when the list holds it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_affected.py tests/test_replay_affected.py tests/test__deps.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": "Cancelled: Replaced before any edit: the task named two new suites under tests/ for tools whose house rule is a suite of their own, and a replay tool that tools/measure-affected-miss.py already is. A started task takes no narrower scope, so the same work is re-added with the right files and tests. The member tree was untouched (git status empty)."
+      },
+      "startedAt": "2026-11-18T06:46:48Z",
+      "completedAt": "2026-11-18T06:49:40Z",
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T06:46:39Z",
+          "text": "it quotes the refuses-to-start sentence of CONTRIBUTING.md, and this task adds a paragraph about the selector's why flag and leaves that sentence alone",
+          "waives": "tools/sweep-selftests.py"
+        },
+        {
+          "at": "2026-11-18T06:46:39Z",
+          "reader": "tests/test__deps.py",
+          "reads": "tools/lints/_deps.py",
+          "text": "declared to answer a reading: tests/test__deps.py reads tools/lints/_deps.py - its own suite"
+        },
+        {
+          "at": "2026-11-18T06:46:39Z",
+          "reader": "PLUGIN-BUILD-GUIDE.md",
+          "reads": "tools/lints/_deps.py",
+          "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads tools/lints/_deps.py - a section headed by its path"
+        }
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T06:46:48Z"
+      },
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "P168.8-icj",
+      "title": "This repository's related listing says which edge pulls in each suite, and stops listing the whole tree for a file whose change cannot reach it",
+      "status": "pending",
+      "description": "For most files under the plugin's scripts, this repository's own selector (tools/affected.py --list-related) lists nearly every suite, so the affected step of a task gate here is close to the whole sweep and was half of a month's task-gate time. For other files it lists a few dozen. Nothing prints why a suite is in the list. First make the selector answer that: a flag that prints, for each listed suite, the chain of imports or runs that reaches it from the changed path. Then act on what it shows. Where the chain is a real one (the suite runs the changed file) it stays. Where every suite is reached through one shared helper that imports a product module only to locate it, or through a rule that fires on any Python change, narrow that edge only if a replay shows no miss: use the replay that already exists. tools/measure-affected-miss.py replays recent task commits, plants faults, and counts the suites the selection left out, and it takes another selector by path. Do not write a second tool: put the narrowed rule behind a variant of the selector the tool can be pointed at, run both over the same commits, and require zero misses from the narrowed one before it becomes the default; extend the tool only where it cannot yet answer that. If the replay shows a miss, or the chain is real, leave the selector as it is and record the measurement and the edge in the selector's docstring as the reason, with the command that re-derives it. The gathering itself is not free either: the stage record of the previous phase shows about twenty seconds of selection before every task gate here; say where those seconds go (the listing command, the import graph scan) and whether one scan can serve both listings. This is the repository's tool, not the plugin's rule; nothing under plugins/audit changes. Dependants you answer for: tools/verify.sh and CI, which call the selector for the affected slices; the gate-parity check on the checks the selector may name; the plan's recorded listing commands, whose output shape (one path per token) must not change; the selector's own cases; tests/test__affected_tests.py and tools/prove-gates.py, which use the selector's graph; the recorded miss table inside the selector, which a new measurement replaces with its date and command. Both tools carry their own cases, as every tool under tools/ does, so the new cases go into each tool's own suite and no file under tests/ is added. The replay runs whole sweeps: run it in scratch worktrees outside every checkout, as the tool already does, and never a browser gate. Acceptance: (1) the new flag prints one chain per listed suite and a suite with no chain is an error, not an omission; (2) the measurement's table for both selectors is quoted in the task's outcome with the command that produced it; (3) either the list for a governance script is shorter than the whole tree with zero misses over the replay, or it is unchanged and the docstring carries the edge and the measurement; (4) the output of the two listing commands the plan records keeps its shape.",
+      "files": [
+        "tools/affected.py",
+        "tools/measure-affected-miss.py",
+        "tools/lints/_deps.py",
+        "tests/test__deps.py",
+        "CONTRIBUTING.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/affected.py: the why flag prints the chain that reaches each listed suite, and a listed suite with no chain is an error",
+          "tools/measure-affected-miss.py: a selector passed by path is replayed over the same commits as the default one and its misses are counted apart"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/affected.py tools/measure-affected-miss.py tests/test__deps.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T06:49:54Z",
+          "text": "tdd as asked: tools/affected.py, tools/measure-affected-miss.py are the task's only test files and are their own implementation (an inline suite), so a red run at HEAD would lay the fix over with the cases; the red-first helper may answer could-not-prove or not red for it, and --tests-mode regression files without a red-first proof"
+        },
+        {
+          "at": "2026-11-18T06:50:09Z",
+          "text": "it quotes the refuses-to-start sentence of CONTRIBUTING.md, and this task adds a paragraph about the selector's why flag and leaves that sentence alone",
+          "waives": "tools/sweep-selftests.py"
+        },
+        {
+          "at": "2026-11-18T06:50:24Z",
+          "text": "it quotes the summary-line wording of the miss-measuring tool's output, and this task adds a second selector's count beside that line and leaves its wording alone",
+          "waives": "tests/test__output_lints.py"
+        },
+        {
+          "at": "2026-11-18T06:50:46Z",
+          "text": "Correction to the waiver for tests/test__output_lints.py: that suite does not quote the tool's output. It pins, by the tool's path, the prose-scan exemption row the lints keep for the tool's fixtures. The waiver holds for that reason instead: this task keeps the tool at its path and keeps its fixtures, so the row and its reason stay true. If the task removes or renames those fixtures, the row in tools/lints/_output_lints.py is owed and is outside the declared files - hand that back."
+        }
+      ]
+    },
+    {
+      "id": "P168.9-icj",
+      "title": "Wave members in the drive's suite each write a mark file of their own, so a case cannot lose a line to two children appending at once",
+      "status": "pending",
+      "description": "A CI run on Windows went red on one case of the drive's suite: a wave whose two members each run a command expects both members' marks and found one. The loop's own answer was right (it finished, and asked for the next step twice). The fixture is what lost the line: every wave member's child opens one shared file in append mode and the members run at the same time, and on Windows an append is a seek followed by a write, so two children can write at the same offset and one line replaces the other. That reading comes from the fixture's code, not from a probe; if you can show it on this machine (two processes appending in a tight loop will not show it on a POSIX system, so say so if you cannot), do; otherwise fix the shape, which is wrong either way. Give each member that runs concurrently a mark file of its own and read them together: the helper that reads the marks takes the directory or the list of files and returns the same list of lines the cases compare today, so the cases' expectations do not change. Apply it to every case in this suite that hands one mark file to commands that run at the same time, and leave alone the cases whose commands run one after another, where one file is right and its order is what the case asserts. Say in the helper's docstring which cases need which. This changes a test fixture only; nothing under plugins/ changes. Dependants you answer for: every case in the suite that reads marks (they must keep asserting what they assert, by value); the staged table of the suite, since the sweep runs its blocks apart and a helper moved between blocks must still be reachable from each. Acceptance: (1) no case hands one file to two commands that run at the same time; (2) the case that failed asserts both marks from two files; (3) every case that read marks before still passes with unchanged expectations; (4) the suite's case count does not drop.",
+      "files": [
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_drive_phase.py: a wave of two members that run at the same time leaves both marks, read from one file per member"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P168.10-icj",
+      "title": "The panel gate's moved-manifest leg stops the page's own refresh for its duration instead of trying to outwait it",
+      "status": "pending",
+      "description": "The panel browser gate has a leg that makes a form stale on purpose: it edits a field, writes a different value to the same field through the API, saves, and requires the save to report that what was applied disagrees with what the dialog listed. The page also refreshes itself when the plan on disk moves, and a refresh landing inside the leg dissolves the staleness the leg exists to produce, so the leg goes red with nothing wrong. The comment above the leg records two faces of that race and two patches (the run-status endpoint is frozen; the poll hand-off is drained first). A CI run has now gone red on that leg a third time, on a tree with no change to the page, the server or this tool. A third patch that waits a little longer is not the answer: make the refresh impossible while the leg runs. For the leg's duration stop the page's poll and replace the function that adopts a refresh from disk with one that records it was asked, then restore both and let one refresh run, and assert after the leg that the page is clean again. If a refresh was asked for during the leg, say so in the leg's note, since that is the event the old patches were racing. Keep the leg's two assertions exactly as they are; this changes how the stage is set, not what is checked. Then prove the leg can still fail: with the comparison of applied values disabled in a scratch copy of the page script, the leg must go red with its present message; say how you checked, and do not leave the mutation anywhere. Rewrite the comment to state the rule the leg now follows and why, in place of the history of patches. Do not run the browser gate yourself: the capture lock is machine-wide and the task's gate runs it. Read the tool and the page's poll and refresh code, make the change, and hand back; if the change cannot be made without editing a file under plugins/audit/scripts/ui, stop and hand that back instead. Dependants you answer for: every later leg of the same run, which starts from the state this leg leaves (the poll running, the form clean); the selftest of the tool, if it pins this leg's text. Acceptance: (1) no refresh from disk can be adopted between the edit and the save in this leg, by construction and not by a wait; (2) the poll and the refresh function are restored after the leg, in a finally; (3) the leg's two failure messages and its pass note are unchanged; (4) the gate is green.",
+      "files": [
+        "tools/capture-screenshots.mjs"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "node tools/capture-screenshots.mjs --check"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ],
+  "request": "Brzina razvoja postaje merena metrika: task gate pokrece samo pogodjene testove, ceo suite ide na sign-off-u faze. Izmereno: task gate je 93% razlike prema obicnoj sesiji, a polovina toga je ponovljeno merenje vec zelenog stabla.",
+  "openChoices": [
+    "The reviewer still waits for a green gate. Running the two side by side was weighed and declined with a number: the reviewer was 1.1% of the measured gap, and a reviewer started beside a gate that then goes red is paid for nothing. Reopen it when the reviewer's share of a task's wall time passes a tenth.",
+    "Narrowing what the related listing selects is held to the miss-rate rule the selection was introduced under: zero misses over twenty replayed changes, measured again here. A narrowing that cannot show it is not made."
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "2b3b3ad6-53c7-447e-9ceb-53c614bccbc5",
+    "branch": "audit/p168-a-task-s-gate-is-measured-once",
+    "at": "2026-11-18T06:46:41Z"
+  },
+  "startedAt": "2026-11-18T06:46:41Z"
+}

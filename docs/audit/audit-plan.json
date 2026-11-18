@@ -1072,6 +1072,12 @@
       "title": "Wall time per task is recorded by stage and printed",
       "status": "done",
       "shard": "phases/P167.json"
+    },
+    {
+      "id": "P168",
+      "title": "A task's gate is measured once and runs what the task can break",
+      "status": "in_progress",
+      "shard": "phases/P168.json"
     }
   ],
   "fileIndex": {
@@ -1411,7 +1417,13 @@
       "P167.5",
       "P167.6-fge",
       "P167.7-fge",
-      "P167.8-fge"
+      "P167.8-fge",
+      "P168.1",
+      "P168.2",
+      "P168.3",
+      "P168.4",
+      "P168.5",
+      "P168.6"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1517,7 +1529,9 @@
       "P156.20-3st",
       "P167.2",
       "P167.3",
-      "P167.7-fge"
+      "P167.7-fge",
+      "P168.2",
+      "P168.4"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -1607,7 +1621,9 @@
       "P155.30-gfj",
       "P157.7-mwz",
       "P163.12-d6t",
-      "P164.1"
+      "P164.1",
+      "P168.7",
+      "P168.8-icj"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -2061,7 +2077,15 @@
       "P167.6-fge",
       "P167.7-fge",
       "P167.8-fge",
-      "P167.9-fge"
+      "P167.9-fge",
+      "P168.1",
+      "P168.2",
+      "P168.3",
+      "P168.4",
+      "P168.5",
+      "P168.6",
+      "P168.7",
+      "P168.8-icj"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2093,7 +2117,8 @@
       "P128.34-0h5",
       "P148.15-xpz",
       "P155.6",
-      "P167.5"
+      "P167.5",
+      "P168.4"
     ],
     "SECURITY.md": [
       "P2.2",
@@ -3058,7 +3083,8 @@
       "P153.6",
       "P153.10-34e",
       "P155.6",
-      "P156.4"
+      "P156.4",
+      "P168.5"
     ],
     "plugins/audit/commands/usage.md": [
       "P26.2",
@@ -3810,7 +3836,8 @@
       "P128.41-izt",
       "P131.5",
       "P132.4",
-      "P159.2"
+      "P159.2",
+      "P168.4"
     ],
     "plugins/audit/schema/audit-plan.schema.json": [
       "P1.5",
@@ -4117,7 +4144,8 @@
       "P155.35-gfj",
       "P156.18-3st",
       "P156.20-3st",
-      "P159.2"
+      "P159.2",
+      "P168.4"
     ],
     "plugins/audit/scripts/config/_help.py": [
       "P10.2",
@@ -4427,7 +4455,8 @@
       "P157.8-mwz",
       "P157.11-mwz",
       "P167.3",
-      "P167.6-fge"
+      "P167.6-fge",
+      "P168.2"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -4906,7 +4935,11 @@
       "P161.3-toy",
       "P161.4-toy",
       "P167.3",
-      "P167.6-fge"
+      "P167.6-fge",
+      "P168.1",
+      "P168.2",
+      "P168.4",
+      "P168.6"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -5208,7 +5241,8 @@
       "P156.14-3st",
       "P156.21-3st",
       "P156.22-3st",
-      "P167.2"
+      "P167.2",
+      "P168.5"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -5560,7 +5594,8 @@
       "P165.3",
       "P167.2",
       "P167.4",
-      "P167.8-fge"
+      "P167.8-fge",
+      "P168.5"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -6337,7 +6372,8 @@
       "P158.2-7vi",
       "P166.1",
       "P166.2",
-      "P166.3-b8m"
+      "P166.3-b8m",
+      "P168.4"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -8710,7 +8746,8 @@
       "P131.2",
       "P163.17-d6t",
       "P164.1",
-      "P165.4"
+      "P165.4",
+      "P168.10-icj"
     ],
     "tools/check-committed-pii.py": [
       "P51.4",
@@ -9548,7 +9585,8 @@
       "P130.10-ywo",
       "P130.28-ywo",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P168.2"
     ],
     "plugins/audit/tests/test__verdict_binding.py": [
       "P74.3-qq5",
@@ -10397,7 +10435,9 @@
       "P153.5",
       "P155.25-gfj",
       "P155.30-gfj",
-      "P156.6"
+      "P156.6",
+      "P168.7",
+      "P168.8-icj"
     ],
     "docs/audit/phases/P85.json": [
       "P91.1"
@@ -11160,7 +11200,9 @@
       "P166.2",
       "P166.3-b8m",
       "P167.4",
-      "P167.8-fge"
+      "P167.8-fge",
+      "P168.3",
+      "P168.4"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -11882,7 +11924,8 @@
       "P155.15",
       "P156.12-3st",
       "P156.19-3st",
-      "P156.20-3st"
+      "P156.20-3st",
+      "P168.6"
     ],
     "plugins/audit/tests/test__affected_tests.py": [
       "P125.8",
@@ -12174,7 +12217,9 @@
       "P156.15-3st",
       "P156.20-3st",
       "P159.2",
-      "P167.2"
+      "P167.2",
+      "P168.7",
+      "P168.8-icj"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -12433,7 +12478,8 @@
       "P165.2",
       "P166.1",
       "P166.2",
-      "P166.3-b8m"
+      "P166.3-b8m",
+      "P168.6"
     ],
     "tests/test__areas.py": [
       "P131.1",
@@ -12497,7 +12543,8 @@
       "P155.18-gfj",
       "P155.35-gfj",
       "P156.18-3st",
-      "P156.20-3st"
+      "P156.20-3st",
+      "P168.4"
     ],
     "tests/test__demo_cast.py": [
       "P131.1",
@@ -12533,7 +12580,9 @@
       "P156.15-3st",
       "P156.12-3st",
       "P159.2",
-      "P167.2"
+      "P167.2",
+      "P168.7",
+      "P168.8-icj"
     ],
     "tests/test__doctor_ado.py": [
       "P131.1"
@@ -12605,7 +12654,8 @@
       "P157.8-mwz",
       "P157.11-mwz",
       "P167.3",
-      "P167.6-fge"
+      "P167.6-fge",
+      "P168.2"
     ],
     "tests/test__evidence_view.py": [
       "P131.1"
@@ -12718,7 +12768,8 @@
       "P156.20-3st",
       "P156.21-3st",
       "P156.22-3st",
-      "P167.2"
+      "P167.2",
+      "P168.5"
     ],
     "tests/test__manifest_rules.py": [
       "P131.1",
@@ -13001,7 +13052,8 @@
       "P131.1"
     ],
     "tests/test__verdict_binding.py": [
-      "P131.1"
+      "P131.1",
+      "P168.2"
     ],
     "tests/test__warning_groups.py": [
       "P131.1",
@@ -13073,7 +13125,8 @@
       "P158.2-7vi",
       "P166.1",
       "P166.2",
-      "P166.3-b8m"
+      "P166.3-b8m",
+      "P168.4"
     ],
     "tests/test_audit_status.py": [
       "P131.1",
@@ -13152,7 +13205,8 @@
       "P165.3",
       "P167.2",
       "P167.4",
-      "P167.8-fge"
+      "P167.8-fge",
+      "P168.5"
     ],
     "tests/test_audit_usage.py": [
       "P131.1",
@@ -13335,7 +13389,10 @@
       "P166.2",
       "P166.3-b8m",
       "P167.4",
-      "P167.8-fge"
+      "P167.8-fge",
+      "P168.3",
+      "P168.4",
+      "P168.9-icj"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -13536,7 +13593,11 @@
       "P161.3-toy",
       "P161.4-toy",
       "P167.3",
-      "P167.6-fge"
+      "P167.6-fge",
+      "P168.1",
+      "P168.2",
+      "P168.4",
+      "P168.6"
     ],
     "tests/test_set_priority.py": [
       "P131.1"
@@ -13736,7 +13797,8 @@
       "P142.10-6yq",
       "P143.4-6yq",
       "P142.36-6yq",
-      "P148.4"
+      "P148.4",
+      "P168.8-icj"
     ],
     "plugins/audit/scripts/status/_impact.py": [
       "P131.18-dau",
@@ -13962,6 +14024,15 @@
     "tests/test__task_timing.py": [
       "P167.2",
       "P167.7-fge"
+    ],
+    "tools/replay-affected.py": [
+      "P168.7"
+    ],
+    "tests/test_affected.py": [
+      "P168.7"
+    ],
+    "tests/test_replay_affected.py": [
+      "P168.7"
     ]
   },
   "bugs": [

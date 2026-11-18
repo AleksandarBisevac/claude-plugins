@@ -4575,6 +4575,17 @@ the reuse path prints them again under their own literals — the ones `drive-ph
 `gate-coverage` decision on. A row written before the key holds none, which is *not recorded*
 and not *none*, and the reuse path says so.
 
+**An entry that names a path the identity leaves out is measured, never repeated, and "names" is
+read off its words.** `grades_left_out` reads each command the way a POSIX shell splits it —
+operators, pipes and a quoted `sh -c` body included (`_command_words`) — and a word names a
+left-out path when, taken against the project, it is that path, lies under it, or, for a file,
+ends in its base name (`_names_path`). A word only containing the name inside a longer file name
+does not, so a sweep listing `tests/test__evidence_io.py` stays repeatable; a left-out path that
+is a directory on disk is not matched by its base name, so `-k journal` is no reading of the
+journal. A command that cannot be split into words is reported as naming one, with
+`UNSPLITTABLE` as the reason (`left_out_line`), because the other guess repeats a verdict nobody
+measured.
+
 **`observations.countsBasis` is written here for the first time.** It has been copied into every
 evidence row by `_evidence_io.row_for` and rendered by the report and the panel since the ledger
 existed, while nothing ever set it — a three-valued count shipping without the basis that
