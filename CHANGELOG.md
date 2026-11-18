@@ -69,8 +69,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   reads that step as the entry and binds it, the base measurement of a red reads each failing
   suite against the part that ran it, and the reuse identity is the one the two calls would
   have had. Anything left to the phase gate by `executor.phaseGateOnly` is left out before the
-  join. A gate entry in any other spelling, a build key, the same runner with an option, or a
-  run with no affected suite runs exactly as before. A gate entry spelled the way such a step
+  join. A gate entry in any other spelling, a build key, the same runner with an option, a step
+  the selection widened onto the phase gate, or a run with no affected suite runs exactly as
+  before. A gate entry spelled the way such a step
   is named cannot bind, and the binding says so.
 
 ### Fixed
@@ -85,25 +86,54 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 - **A derived phase gate whose `meta.phaseGate.derived.runner` is blank once trimmed shows the
   default `gate` entry** instead of printing and recording the blank, the way the validator
   already read that value.
-- **A gate step listing a suite named after the evidence or journal module is repeated again.**
-  The test-gate runner decided that a step graded a path its verdict identity leaves out (the
-  manifest, its shards, the evidence and journal directories) by finding that path's name
-  anywhere in the command, so `tests/test__evidence_io.py` read as the evidence directory and a
-  green sweep was measured again on every unchanged tree. The command is now read as shell
-  words, a quoted `sh -c` body included: a word names a left-out file when it is that file or
-  ends in its base name, and a left-out directory when it is that directory or a path under it.
-  A step naming the plan by path, or by base name after a `cd`, is still measured every time, and
-  a command that cannot be split into words is treated as naming one, with that reason printed.
+- **A gate step listing a suite named after the evidence or journal module is repeated again,
+  and a step that names the plan is measured however its command spells it.** The test-gate
+  runner leaves the plan, its shards, the evidence ledger and the journal out of the identity a
+  repeat must match, because a recorded run rewrites them, so a step whose command names one of
+  them is measured on every run rather than repeated. It found that name anywhere in the
+  command, so `tests/test__evidence_io.py` read as the evidence directory and a green sweep was
+  measured again on every unchanged tree. Now a step names a left-out path when its command's
+  text holds the path's last component as a whole name - anywhere in the text, in any letter
+  case, whatever quotes or backslashes surround it. A letter or digit running on into it through
+  `.`, `_`, `-`, `+`, `@` or `~` makes it part of a longer name, and a directory counts only with
+  a path separator beside its name, so `-k journal` is not the journal directory. The same
+  search measures a step naming the directory that holds the plan's shards, either spelling of a
+  plan that is a symlink, or any script this plugin ships, because the plugin's own readers find
+  the plan through the project's config with no path given (`audit-status.py --gate`). Each step
+  is read under the command its entry declares and under the command that runs, so a step the
+  change widened onto the phase gate is read by the command it runs, not by its name. A gate
+  command that is not a string is measured, with that reason printed. What the reading cannot
+  see is listed once, beside `UNREADABLE` in `run-test-gate.py` and in `PLUGIN-BUILD-GUIDE.md`'s
+  `run-test-gate.py` section; a step relying on one of those can still repeat a green.
+- **A step that reads the plan's meta without naming the plan is measured again once that meta
+  changes.** The identity a repeat must match now holds the plan's `meta` as it stands when the
+  gate is asked, so an edit to any meta block measures every step, whether the gate would have
+  repeated whole or in part. Before, a suite reading the live plan's meta, run by a sweep that
+  names no plan, repeated its green over a meta it no longer described. The evidence boundary a
+  recorded run stamps into meta itself is left out, so the run after a plan's first recorded run
+  still repeats. A run recorded by an earlier build was keyed without the meta, so it is measured
+  once more rather than repeated. The plan's phases, tasks and bugs stay outside the key, because
+  a recorded run rewrites them.
 - **A recorded gate measures again only the steps that grade the plan.** A gate holding an entry
-  that names the manifest, a shard or the ledger was measured whole on every run, so a validator
-  beside a sweep paid for the sweep twice. Now only the entries naming such a path run; every
-  other entry repeats from the newest run that measured it on the same tree and gate, as a whole
-  gate already did. The row says which steps were repeated and from which run (`reusedFrom` on
-  each copied step, `verdictSource: part-reused` on the row), keeps no duration for a copied
-  step, and its verdict is the worse of the two halves - so a red step is repeated as red rather
-  than measured again until it comes back green. The run prints a line naming the repeated and
-  the measured steps with their times; a gate naming no such path, and `--no-reuse`, behave as
-  before.
+  that names the plan or one of its records (above) was measured whole on every run, so a
+  validator beside a sweep paid for the sweep twice. Now only those entries run; every other
+  entry repeats from the newest run that measured it under the same identity - the tree's
+  content, the declared gate and files, and the plan's meta - as a whole gate already did. The
+  row says which steps were repeated and from which run (`reusedFrom` on each copied step,
+  `verdictSource: part-reused` on the row), keeps no duration for a copied step, and its verdict
+  is the worse of the two halves - so a red step is repeated as red rather than measured again
+  until it comes back green. The run prints a line naming the repeated steps and the run they
+  came from, and the measured steps with their times. A gate in which no entry names such a path
+  repeats whole as before, and `--no-reuse` measures every step.
+- **A base tree left by a killed background base run is removed once, and the drive's record
+  stops naming it.** The drive's sweep asked whether the run that measured the tree was still
+  alive twice - once to fold the run's own record into the drive's state, once to decide the
+  removal - and a reading that flipped between the two (a process exiting between the probes, or
+  a `ps` that timed out, which reads as alive) kept the run's record while clearing the tree from
+  the state alone, so the next drive laid the removed tree back on its record and swept it
+  again. One reading per run per sweep now decides both: a run read alive leaves its tree and its
+  record as they are and says so, and the sweep that reads it dead removes the tree once and
+  clears it from the record.
 - **The drive acts on the verdict its background gate recorded, and says what the read-back
   measured.** A gate the drive sent to the background was read back by asking the recorded gate
   again, and the drive printed that the run did not repeat on this tree whenever the reuse banner
@@ -112,9 +142,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   with the red never shown. Now a red background run - a task's gate or the phase gate at
   sign-off - is the verdict acted on as its row records it, with nothing asked again, and goes to
   the base measurement and the decision as an inline red does. A green one is still asked again,
-  and the did-line names the steps repeated and the steps measured again with their seconds,
-  saying `did not repeat on this tree` only when a step grading the tree was measured again, with
-  the reason read off the identities the gate recorded.
+  for the gate's long output, since its one-line green keeps none of the lines that say why a
+  step was measured. The did-line names the steps repeated and the steps measured again with
+  their seconds, saying `did not repeat on this tree` only when a measured step is one the gate
+  did not say names a path its identity leaves out - a joined step read by its declared entry -
+  with the reason read off the identities the gate recorded.
 
 ## [3.9.0]
 
