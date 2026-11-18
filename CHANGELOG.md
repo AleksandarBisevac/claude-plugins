@@ -57,7 +57,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   a rise never says which ran, and one deselected or skipped is taken out beside it. Both runs
   are laid from one list of the declared paths, a test file the task deleted - a renamed or split
   one's old path - deleted in both, and the verb compares the two laid trees, refusing as
-  `could-not-prove`, naming the path, a difference outside the files it altered on purpose. A file
+  `could-not-prove`, naming the path, a declared path that differs outside the files it altered
+  on purpose, or a file something was taken out of that does not differ - it compares the
+  declared paths alone; a declared path neither tree holds is called absent from both. A file
   HEAD holds gets that baseline too, never HEAD's own copy, against which a subclass of HEAD's
   class added beside the task's cases raises the count with nothing of the task's run. A method
   in a class the runner never collects, a case the command deselects, a file its pattern does
@@ -67,11 +69,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   is taken out. What is left of a file must pass on the base, or the baseline is not green and
   the basis names the module or the case and what was taken out: a helper the task changed in a
   file HEAD holds so that HEAD's cases fail there gives `could-not-prove`, unless the task's run
-  fails a case too, which is `not-green` first. Where the baseline fails in a file the task laid
-  - a new file importing the new code at module level, say - the basis says that file did not
-  load or fails on HEAD's code, with the runner's line, so its cases cannot pass before the
-  change; the sentence that HEAD's own tests are red, and the advice to narrow the command, are
-  printed only for a failure elsewhere. `red` keeps its empty-file baseline and its words. Two limits
+  fails a case too, which is `not-green` first. **Why a baseline is not green is measured, not
+  read off where it failed**: only then, the verb runs the command once more on HEAD's own tree
+  with nothing of the task's laid, under the same deadline. Red there, the basis says the command
+  is red at HEAD, with that run's line, and advises narrowing it to the task's cases; green there,
+  it says the command is green at HEAD and stops being green once the declared files are laid with
+  the task's own definitions taken out, naming each file something was taken out of; a run that
+  cannot be read leaves the cause not measured, and says why. No basis says what the task's cases
+  can or cannot do before the change, the status never reads that run, and a green baseline makes
+  no third run. `red` keeps its empty-file baseline and its words. Two limits
   are `could-not-prove` although a case ran: a case overriding an inherited test of the same
   name, which leaves the count flat, and a case generated at import (`setattr`, `type()`,
   `load_tests`), which is no definition to take out; both hold for a file HEAD holds as for a new

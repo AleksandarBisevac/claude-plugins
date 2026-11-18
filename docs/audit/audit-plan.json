@@ -1411,7 +1411,8 @@
       "SG1.37-ukq",
       "SG1.38-ukq",
       "SG1.39-ukq",
-      "SG1.40-ukq"
+      "SG1.40-ukq",
+      "SG1.41-ukq"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -2085,7 +2086,8 @@
       "SG1.37-ukq",
       "SG1.38-ukq",
       "SG1.39-ukq",
-      "SG1.40-ukq"
+      "SG1.40-ukq",
+      "SG1.41-ukq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -3673,7 +3675,8 @@
       "SG1.24-ukq",
       "SG1.29-ukq",
       "SG1.33-ukq",
-      "SG1.39-ukq"
+      "SG1.39-ukq",
+      "SG1.41-ukq"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -13729,7 +13732,8 @@
       "SG1.24-ukq",
       "SG1.29-ukq",
       "SG1.33-ukq",
-      "SG1.39-ukq"
+      "SG1.39-ukq",
+      "SG1.41-ukq"
     ],
     "tests/test__clause_coverage.py": [
       "P131.7",
@@ -13737,7 +13741,8 @@
       "SG1.24-ukq",
       "SG1.29-ukq",
       "SG1.33-ukq",
-      "SG1.39-ukq"
+      "SG1.39-ukq",
+      "SG1.41-ukq"
     ],
     "tests/test__config_rules_lints.py": [
       "P131.2"

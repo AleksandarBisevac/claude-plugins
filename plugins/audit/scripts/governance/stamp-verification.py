@@ -1748,8 +1748,10 @@ def unresolved_name(text):
 # in an isolated clean throwaway, must pass. With that, every failure of the
 # task's run comes from the task's change to the tests, and all of them are its
 # own; the fix run then shows each one passes with the working tree's code.
-NARROW = ("the command is already red (or unreadable) at HEAD - narrow it to the "
-          "task's cases")
+# The advice alone is `green`'s where a run of HEAD's own tree measured the
+# command red there (`_baseline_cause`); `red` gives it with its hedge.
+NARROW_ADVICE = "narrow it to the task's cases"
+NARROW = "the command is already red (or unreadable) at HEAD - " + NARROW_ADVICE
 # What jest (`No tests found, ...`) and vitest (`No test files found, ...`) print
 # when no test file matched - the sentence the design note's (3) records them
 # printing, exit 1, for a command naming only a file that is not there.
@@ -1895,10 +1897,9 @@ def baseline_problem(head, cmd, stages=(), stubbed=(), said="HEAD's own tests"):
     contract (`new_suite_baseline`): the sweep's counterpart of that exit 5.
 
     `said` names what HEAD's own run held, in the sentence for a run that is
-    not green: `green` passes its own (`_baseline_said`) where it laid a file
-    HEAD holds over as the task's copy, which is then no longer HEAD's own.
-    `green` then replaces the sentence where every failure lies in a file the
-    task laid over (`_baseline_sentence`); `red`'s words are these."""
+    not green; `red`'s words are these. `green` reads only whether this is
+    None, and words a baseline that is not green by one more run of HEAD's own
+    tree (`_baseline_cause`)."""
     if new_stage_baseline(head, cmd, stages) is not None:
         return None
     if new_suite_baseline(head, cmd, stubbed) is not None:
@@ -3963,7 +3964,7 @@ def red_verdict(run, ctx):
 # task changed in a file HEAD holds beside its own definitions runs at HEAD's
 # own run on HEAD's code, so a change that breaks HEAD's cases there leaves the
 # baseline not green and the answer `could-not-prove` with the runner's line and
-# what was taken out (`_baseline_held_clause`) - unless the task's run of the
+# what was taken out (`_baseline_cause`) - unless the task's run of the
 # same files fails a case too, which is `not-green` first, as a green baseline
 # would have answered. Proved
 # is exit 0 with a case of the task's own shown to RUN AND PASS: by its case id
@@ -4002,18 +4003,22 @@ def red_verdict(run, ctx):
 # read off the runner's own report block by `_runner_output.failure_kind`,
 # never off a line quoted inside a case's block - is no case and is
 # `could-not-prove` with the runner's line. A baseline that is not green is
-# said by where it failed (`_baseline_sentence`): in a file the task laid over,
-# that file did not load or fails on HEAD's code and its cases cannot pass
-# before the change; elsewhere, HEAD's own tests are not green and the command
-# is to be narrowed. Zero collected, a compile or import error, a run
-# that could not start, output no reader reads, two runners' tallies and a
+# explained by a THIRD run, of HEAD's own tree with nothing of the task's laid,
+# made only then (`_green_cause_run`, `_baseline_cause`): red there, the
+# command is red at HEAD and is to be narrowed; green there, it stops being
+# green once the declared files are laid with the task's own definitions taken
+# out, naming those files; unreadable, the cause was not measured. Its answer
+# words the basis and never the status. Zero collected, a compile or import
+# error, a run that could not start, output no reader reads, two runners' tallies and a
 # refusal are `could-not-prove` with the reason verbatim.
 # The words are the schema's `greenFirst.status` enum less the one no run gives
 # (`not-attempted`); `_refs.green_first_vocabulary_drift` holds the three equal.
 GREEN_WORDS = ("proved", "not-green", "could-not-prove")
 GREEN_PROVED, GREEN_NOT, GREEN_CANNOT = GREEN_WORDS
 E_NOT_GREEN = 1
-# What a green proof runs: HEAD's own tests, then the task's - no fix run.
+# What a green proof runs: HEAD's own tests, then the task's - no fix run. The
+# deadline is sized for these; the run that explains a baseline that is not
+# green (`_green_cause_run`) takes what is left of it.
 GREEN_RUNS = ("baseline", "task")
 
 
@@ -4430,8 +4435,11 @@ def _loads_clause(loads):
 def green_verdict(run, ctx):
     """`(exit, verdict, block)` - what the task's tests did on HEAD's code.
 
-    `run` is `{"cmd", "code", "text", "problem", "head"}`: the task's run in the
-    throwaway and `head`, HEAD's own tests run first on the same tree, each
+    `run` is `{"cmd", "code", "text", "problem", "head", "cause"}`: the task's
+    run in the throwaway; `cause`, the run `_green_cause_run` made of HEAD's own
+    tree when the baseline is not green, which words that baseline's sentence
+    and nothing else (`_baseline_cause`); and `head`, HEAD's own tests run first
+    on the same tree, each
     declared Python test file - new at HEAD, or held by it and changed by the
     task - laid over as the task's copy with the task's own definitions taken
     out (named in `ctx["taken"]`, and the ones HEAD holds in
@@ -4446,9 +4454,10 @@ def green_verdict(run, ctx):
     definitions could not be taken out), which `_difference_proof` and the
     baseline's sentences read; `"laid_problem"`, why the two laid trees are
     not of the same files (`laid_difference_problem`), refused before any
-    count is read; `"deleted"`, the declared test files the task deleted;
-    `"roots"` and `"path"`, which locate a baseline's failure
-    (`_baseline_placed`); and `"wt"` (`{rel: text}` of
+    count is read; `"deleted"`, the declared test files HEAD holds and the
+    task deleted, and `"nowhere"`, the declared paths neither tree holds;
+    `"cause_stubbed"`, the files `cause` laid over as empty stubs; and `"wt"`
+    (`{rel: text}` of
     the declared test files the task's run laid over), `"head_defs"` and
     `"head_js"` (`head_tree`'s), which a passed count's rise is weighed
     against where nothing was taken out (`_count_proof`) - absent, that rise is
@@ -4478,8 +4487,7 @@ def green_verdict(run, ctx):
         return cannot(V_NOT_RUN, "`%s` in a throwaway tree at HEAD: %s"
                       % (shown, run["problem"]))
     stages = ctx.get("stages") or ()
-    baseline = baseline_problem(run.get("head"), cmd, stages, ctx.get("new") or [],
-                                said=_baseline_said(ctx))
+    baseline = baseline_problem(run.get("head"), cmd, stages, ctx.get("new") or [])
     where = "`%s` in a throwaway tree at HEAD exited %d" % (shown, run["code"])
     verdict, tally = classify_run(run["code"], run["text"], cmd)
     line = _decisive_line(run["text"], tally)
@@ -4501,17 +4509,16 @@ def green_verdict(run, ctx):
                   if read["loads"] else "")
                if read["first"] == "case" else None)
     if baseline is not None:
-        baseline = _baseline_sentence(baseline, run, ctx)
-        held = _baseline_held_clause(run, ctx)
+        said = _baseline_cause(run, ctx)
         # A file HEAD holds, laid over as the task's copy, can carry into HEAD's
         # own run what the task changed there beside its own definitions - a
         # helper, a fixture. Where the task's run of the same files fails too,
         # that failure is the task's tests failing on the base: not-green, as a
         # green baseline would have answered. A new file keeps its answer.
-        if held and failing is not None:
+        if ctx.get("taken_held") and failing is not None:
             return not_green(V_RED, failing, against="a baseline not green either - "
-                             "%s%s" % (baseline, held))
-        return cannot(verdict, "%s, but %s%s - %s" % (where, baseline, held, line))
+                             "%s" % (said,))
+        return cannot(verdict, "%s, but %s - %s" % (where, said, line))
     if ctx.get("inline"):
         return cannot(verdict, "%s, but an inline suite's test hunks are told from "
                       "its implementation only by the definitions they lie in, so "
@@ -4552,97 +4559,94 @@ def green_verdict(run, ctx):
                     line, env)}
 
 
-# --- green: where a baseline that is not green failed ---
-# A baseline fails in one of two places, and they mean different things. In a
-# declared test file the task laid over at HEAD's own run - with its own
-# definitions taken out - the failure is the task's file on HEAD's code: a new
-# file importing the new code at module level does not load there, trimmed or
-# not, and narrowing the command changes nothing. Anywhere else the command is
-# red at HEAD on its own, and the advice to narrow it is what helps. Which file
-# a failure lies in is read off the runner's report as the task's run is read
-# (`_read_failures`, through `_runner_output.failure_kind`, the one reading of
-# a module that did not load), and located as `red` locates a case
-# (`case_site`); the sentence about HEAD's own tests is printed whenever a
-# failure lies elsewhere, cannot be located, or none was read at all.
-def _load_site(load, runner, tests, cmd, roots=(), others=()):
-    """The declared test file a module the runner could not load is, or None:
-    unittest names it by its dotted module, read as `case_site` reads a case's
-    location, and pytest by its path."""
-    module = load.get("module") or ""
-    if runner == "pytest":
-        return _one_declared(_as_rel(module, roots), tests, others, real_path=True)
-    if runner == "unittest":
-        site = case_site({"id": "", "qual": module.split(".")}, runner, tests, cmd,
-                         roots, others)
-        return site[0] if site else None
-    return None
+# --- green: why a baseline that is not green is not, measured by one more run ---
+# A failure in the baseline is never one of the task's own cases - those were
+# taken out - so the file it lies in cannot say whose it is: HEAD's own failing
+# case sits in a file the task adds to, and a new file fails to load because the
+# take-out removed a helper it imports. So the cause is MEASURED: when the
+# baseline is not green, `run_green` makes one run more (`_green_cause_run`) of
+# HEAD's own tree with nothing of the task's laid - `red`'s baseline, a new
+# declared test file an empty stub and one HEAD holds at HEAD's copy - under
+# the same deadline and isolation, and words the cause by that run alone
+# (`_cause_answer`): red there, the command is red at HEAD and is to be
+# narrowed; green there, it is green at HEAD and stops being green once the
+# declared files are laid with the task's own definitions taken out, naming
+# those files; unreadable or out of time, the cause was not measured, and why.
+# The status never reads that run: it is decided before it, as it was.
+# A green baseline makes no third run.
+CAUSE_RUN = "a run of HEAD's own tree with nothing of the task's laid"
 
 
-def _baseline_placed(run, ctx):
-    """`{"files", "loads", "cases", "elsewhere", "other"}` - where HEAD's own
-    run failed: the modules that did not load (`loads`) and the cases that
-    failed (`cases`) in a declared test file the task laid over at that run
-    (a key of `ctx["taken"]`, each such file in `files`); the modules that did
-    not load anywhere else (`elsewhere`); and `other`, True when a failure lies
-    outside those files, cannot be located, or none was read at all."""
-    out = {"files": [], "loads": [], "cases": [], "elsewhere": [], "other": True}
-    head, cmd = run.get("head") or {}, run["cmd"]
-    if head.get("problem") or head.get("code") is None:
-        return out
+def _green_cause_run(setup, cmd, present, until):
+    """`(head, stubbed)` - the run that says why `green`'s baseline is not
+    green: `red`'s baseline (`_baseline_files` taking nothing out), run on the
+    throwaway already built, tagged `"head"`; and the files it laid over as
+    empty stubs, which `baseline_problem` reads it with. A run that does not fit
+    what is left of the deadline is not started, and the record says why."""
+    files = _baseline_files(setup, cmd, present)
+    problem = start_problem(["head"], setup["budget"], _left(until))
+    if problem is not None:
+        return {"code": None, "text": "", "problem": problem, "seconds": 0.0,
+                "absent": files["absent"]}, files["stubs"]
+    return _head_run(setup, cmd, files, until, tag="head"), files["stubs"]
+
+
+def _failed_clause(head, cmd):
+    """What a run that is not green failed, for a basis: the cases that failed,
+    the modules the runner could not load, each with the runner's own line
+    (`_read_failures`), and its decisive line."""
     text = head.get("text") or ""
     tally = _runner_output.read_run_tally(text, cmd)
-    read = _read_failures({"cmd": cmd, "code": head["code"], "text": text}, tally)
-    if not (read["loads"] or read["cases"]):
-        return out
-    runner, tests = tally["runner"], ctx.get("tests") or []
-    laid, roots = set(ctx.get("taken") or {}), ctx.get("roots") or ()
-    others = (sorted(set(_throwaway_files(ctx["path"])) - set(tests))
-              if ctx.get("path") else ())
-    files, stray = [], tally["failed"] > len(read["loads"]) + len(read["cases"])
-    for load in read["loads"]:
-        rel = _load_site(load, runner, tests, cmd, roots, others)
-        if rel in laid:
-            out["loads"].append(load)
-            files.append(rel)
-        else:
-            out["elsewhere"].append(load)
-            stray = True
-    for case in read["cases"]:
-        site = case_site(case, runner, tests, cmd, roots, others)
-        if site is not None and site[0] in laid:
-            out["cases"].append(case)
-            files.append(site[0])
-        else:
-            stray = True
-    out["files"], out["other"] = sorted(set(files)), stray
-    return out
+    read = _read_failures({"cmd": cmd, "code": head.get("code"), "text": text}, tally)
+    parts = (["failing %s" % (_ids(read["cases"]),)] if read["cases"] else []) + (
+        ["not loading %s" % (_loads_clause(read["loads"]),)] if read["loads"] else [])
+    return "; ".join(parts + [_decisive_line(text, tally)])
 
 
-def _baseline_sentence(said, run, ctx):
-    """What a baseline that is not green is said to be, `said` being
-    `baseline_problem`'s sentence about HEAD's own tests and the advice to
-    narrow the command. Where every failure lies in a file the task laid over
-    (`_baseline_placed`), that sentence is not true and is replaced: the task's
-    own file did not load or fails on HEAD's code, with the runner's line, so
-    its cases cannot pass before the change. Where failures lie in both, both
-    are said; elsewhere alone, `said` stands, with any module that did not load
-    named by the runner's line."""
-    placed = _baseline_placed(run, ctx)
-    if placed["elsewhere"]:
-        said += "; HEAD's own run could not load %s" % (_loads_clause(placed["elsewhere"]),)
-    if not placed["files"]:
-        return said
-    files, taken = placed["files"], ctx.get("taken") or {}
-    what = (["did not load on HEAD's code (%s)" % (_loads_clause(placed["loads"]),)]
-            if placed["loads"] else []) + (
-        ["fails on HEAD's code: %s" % (_ids(placed["cases"]),)] if placed["cases"] else [])
-    told = ("the task's own test file%s %s, laid over at HEAD's own run with the task's "
-            "own definitions taken out (%s), %s - so the cases in %s cannot pass "
-            "before the change"
-            % ("" if len(files) == 1 else "s", ", ".join(files),
-               _taken_clause(dict((rel, taken.get(rel) or []) for rel in files)),
-               " and ".join(what), "it" if len(files) == 1 else "them"))
-    return "%s; and %s" % (said, told) if placed["other"] else told
+def _cause_answer(cause, cmd, stages, stubbed):
+    """`(answer, said)` - what `_green_cause_run`'s run showed: `"red"` with
+    what it failed, `"green"` with its line, or `"unmeasured"` with why it
+    cannot be read - not made, no exit code, or output carrying no tally a
+    reader reads. Green and red are `baseline_problem`'s own reading, the one
+    `red` gives its baseline."""
+    if cause is None:
+        return "unmeasured", "%s was not made" % (CAUSE_RUN,)
+    if cause.get("problem") or cause.get("code") is None:
+        return "unmeasured", "%s could not be made or read (%s)" % (
+            CAUSE_RUN, cause.get("problem") or "it gave no exit code")
+    text = cause.get("text") or ""
+    tally = _runner_output.read_run_tally(text, cmd)
+    if (tally is None or tally["runner"] is None) and not _js_none_found(cause, tally):
+        return "unmeasured", "%s exited %d with output carrying no tally a reader reads (%s)" % (
+            CAUSE_RUN, cause["code"], _decisive_line(text, tally))
+    if baseline_problem(cause, cmd, stages, stubbed) is None:
+        return "green", _decisive_line(text, tally)
+    return "red", _failed_clause(cause, cmd)
+
+
+def _baseline_cause(run, ctx):
+    """What a baseline that is not green is said to be: what HEAD's own run
+    failed, then the cause as `_cause_answer` reads the run made to measure it.
+    Nothing here says what the task's own cases can or cannot do before the
+    change - no run measures that."""
+    cmd = run["cmd"]
+    told = "HEAD's own run is not green on HEAD's code (%s)" % (
+        _failed_clause(run.get("head") or {}, cmd),)
+    answer, said = _cause_answer(run.get("cause"), cmd, ctx.get("stages") or (),
+                                 ctx.get("cause_stubbed") or [])
+    if answer == "red":
+        return ("%s, and neither is %s (%s): the command is red at HEAD without "
+                "anything of the task's - %s" % (told, CAUSE_RUN, said, NARROW_ADVICE))
+    if answer == "unmeasured":
+        return "%s; the cause was not measured: %s" % (told, said)
+    cut = dict((rel, names) for rel, names in (ctx.get("taken") or {}).items() if names)
+    left = ("what is left of the files something was taken out of (%s)"
+            % (_taken_clause(cut),) if cut else
+            "the declared files as laid there (%s)" % (", ".join(ctx.get("tests") or []),))
+    return ("%s, while %s is green (%s): the command is green at HEAD and stops being "
+            "green once the declared files are laid with the task's own definitions "
+            "taken out - %s fails or does not load on HEAD's code"
+            % (told, CAUSE_RUN, said, left))
 
 
 def _baseline_said(ctx):
@@ -4657,37 +4661,14 @@ def _baseline_said(ctx):
             "copy with the task's own definitions taken out)" % (", ".join(held),))
 
 
-def _baseline_held_clause(run, ctx):
-    """`; HEAD's own run had ... failing X` when HEAD's own run is not green and
-    was handed declared test files HEAD holds as the task's copy with the
-    task's own definitions taken out: what else the task changed there - a
-    helper, a fixture - ran in it on HEAD's code, so its failure may be the
-    task's change rather than the command or the environment. Names what was
-    taken out and the cases HEAD's own run failed. '' otherwise."""
-    held = ctx.get("taken_held") or []
-    if not held:
-        return ""
-    head = run.get("head") or {}
-    text = head.get("text") or ""
-    tally = _runner_output.read_run_tally(text, run["cmd"])
-    failed = _read_failures({"cmd": run["cmd"], "code": head.get("code"),
-                             "text": text}, tally)["cases"]
-    taken = ctx.get("taken") or {}
-    return ("; HEAD's own run had %s as the task's copy with the task's own "
-            "definitions taken out (%s), so what else the task changed there - a "
-            "helper, a fixture - ran on HEAD's code%s" % (
-                ", ".join(held), _taken_clause(dict((rel, taken.get(rel) or [])
-                                                    for rel in held)),
-                ", and it failed %s" % (_ids(failed),) if failed else ""))
-
-
 def _green_baseline_clause(head, cmd, ctx):
     """What made HEAD's own run a green baseline, for a proved basis: green on
     HEAD's code, or failing only the unknown-stage check of a stage the task's
     files add; which files HEAD holds it ran as the task's copy
     (`_baseline_said`); which new test files it ran as empty stubs, with
-    the task's own definitions taken out, or without; and which declared test
-    files the task deleted, deleted there as in the task's run."""
+    the task's own definitions taken out, or without; which declared test
+    files the task deleted - HEAD holds them - deleted there as in the task's
+    run; and which declared paths neither tree holds, absent from both."""
     absent = (head or {}).get("absent") or []
     stubbed = [rel for rel in ctx.get("new") or [] if rel not in absent]
     fresh = new_stage_baseline(head, cmd, ctx.get("stages") or ())
@@ -4710,6 +4691,10 @@ def _green_baseline_clause(head, cmd, ctx):
     if deleted:
         said += (", the declared test files the task deleted (%s) deleted there as in "
                  "the task's run" % (", ".join(deleted),))
+    nowhere = ctx.get("nowhere") or []
+    if nowhere:
+        said += (", the declared paths absent from both HEAD and the working tree (%s) "
+                 "in neither run" % (", ".join(nowhere),))
     return said
 
 
@@ -5569,7 +5554,10 @@ def _held_candidate(rel, head_texts, wt_texts):
 # the working tree alone kept HEAD's copy of a test file the task deleted - a
 # renamed file's cases counted twice - so the verb does not trust the list: it
 # reads both laid trees at every declared path (`_isolated_run`'s `snap`) and
-# refuses a difference outside those files (`laid_difference_problem`).
+# refuses a declared path that differs outside those files, or a file something
+# was taken out of that does not differ (`laid_difference_problem`). It reads
+# the declared paths and nothing else: a path no task declares is laid in
+# neither run and is not compared.
 def _green_baseline_rels(laid, files):
     """The declared paths `green`'s baseline lays from the working tree: all of
     `laid`, as its task run lays them, less those `files` (`_baseline_files`')
@@ -5593,11 +5581,12 @@ def laid_difference_problem(base, task, taken, altered=()):
     two laid trees held it (`_laid_digest`); `taken` is `{rel: names}`, the
     definitions taken out for HEAD's own run; `altered` the files the baseline
     lays otherwise on purpose - an empty stub, a file left absent or kept at
-    HEAD's copy. The paths that differ must be exactly the files something was
-    taken out of, beside `altered`: a difference anywhere else, or a file
-    something was taken out of that does not differ, is no difference made by
-    the task's own definitions. A tree that was not read is said, never passed
-    as the same."""
+    HEAD's copy. The declared paths that differ must be exactly the files
+    something was taken out of, beside `altered`: a difference at any other
+    declared path, or a file something was taken out of that does not differ,
+    is no difference made by the task's own definitions. Only the paths `base`
+    and `task` hold are compared. A tree that was not read is said, never
+    passed as the same."""
     if base is None or task is None:
         return ("the files %s laid were not read once laid, so the two runs are not "
                 "shown to hold the same files" % (
@@ -5636,8 +5625,7 @@ def _baseline_run(setup, cmd, files, owed, until, rels=(), snap=None):
     before `until`: each is started only with the wall time it needs left, since
     one started short would time out for want of time and that timeout would
     read as the run's own."""
-    root, path = setup["root"], setup["path"]
-    _copied, problem = _build_throwaway(root, path, [],
+    _copied, problem = _build_throwaway(setup["root"], setup["path"], [],
                                         timeout=max(1, _left(setup["deadline"])))
     if problem is None and _left(setup["deadline"]) < 1:
         problem = ("the run timed out: building the throwaway spent the "
@@ -5646,14 +5634,22 @@ def _baseline_run(setup, cmd, files, owed, until, rels=(), snap=None):
         problem = start_problem(list(owed), setup["budget"], _left(until))
     if problem is not None:
         return None, problem
+    return _head_run(setup, cmd, files, until, rels, snap), None
+
+
+def _head_run(setup, cmd, files, until, rels=(), snap=None, tag="baseline"):
+    """HEAD's own tests run in the throwaway `_baseline_run` built, as it lays
+    them - `rels`, the stubs and texts of `files`, its absent files named on
+    the record - under `tag`. `green` calls it once more, on the same built
+    tree, with `red`'s baseline (`_green_cause_run`)."""
     # `snap` is passed only when asked for, so `red`'s call is the one it was.
-    head, _c = _isolated_run(root, path, list(rels), cmd, until, setup["sized"]["seconds"],
-                             setup["env"], setup["holder"], "baseline",
-                             stubs=files["stubs"], deps=setup["deps"],
+    head, _c = _isolated_run(setup["root"], setup["path"], list(rels), cmd, until,
+                             setup["sized"]["seconds"], setup["env"], setup["holder"],
+                             tag, stubs=files["stubs"], deps=setup["deps"],
                              texts=files.get("texts") or None,
                              **({} if snap is None else {"snap": snap}))
     head["absent"] = files["absent"]
-    return head, None
+    return head
 
 
 def _proof_teardown(setup):
@@ -5868,7 +5864,8 @@ def run_green(args, cmd, out):
     print the `greenFirst` block. The set-up, the baseline step and the teardown
     are `red`'s own functions (`_proof_setup`, `_baseline_files`,
     `_baseline_run`, `_proof_teardown`); what differs is the two runs it makes
-    and the verdict (`green_verdict`)."""
+    and the verdict (`green_verdict`) - and, only when the baseline is not
+    green, a third run of HEAD's own tree that words why (`_green_cause_run`)."""
     setup, refused = _proof_setup(args, cmd, GREEN_RUNS)
     if refused is not None:
         return refused
@@ -5876,10 +5873,11 @@ def run_green(args, cmd, out):
     sized, deps, overlays = setup["sized"], setup["deps"], setup["overlays"]
     env, dropped, naming = setup["env"], setup["dropped"], setup["naming"]
     holder, path, head = setup["holder"], setup["path"], setup["head"]
-    run = {"cmd": cmd, "code": None, "text": "", "problem": None, "head": None}
+    run = {"cmd": cmd, "code": None, "text": "", "problem": None, "head": None,
+           "cause": None}
     files = {"new": [], "absent": [], "stubs": [], "stages": [], "texts": {},
              "taken": {}, "held": [], "kept": [], "problem": None}
-    support, copied, laid_problem = [], [], None
+    support, copied, laid_problem, present, cause_stubbed = [], [], None, set(), []
     head_defs = head_js = None
     try:
         try:
@@ -5917,6 +5915,12 @@ def run_green(args, cmd, out):
                 laid_problem = laid_difference_problem(
                     run["head"].get("laid"), task.get("laid"), files["taken"],
                     files["stubs"] + files["absent"] + files["kept"])
+            # Only a baseline that is not green - read as `green_verdict` reads
+            # it, where that reading is reached - gets the run that says why.
+            if run["problem"] is None and laid_problem is None and baseline_problem(
+                    run["head"], cmd, files["stages"], files["stubs"]) is not None:
+                run["cause"], cause_stubbed = _green_cause_run(setup, cmd, present,
+                                                               deadline)
         except KeyboardInterrupt as exc:
             run["problem"] = ("interrupted by %s before the run finished; the "
                               "run's process group was torn down"
@@ -5925,8 +5929,13 @@ def run_green(args, cmd, out):
             "tests": scope["tests"], "new": files["stubs"], "cases": args.case,
             "taken": files["taken"], "taken_problem": files["problem"],
             "taken_held": files["held"], "laid_problem": laid_problem,
-            "deleted": [rel for rel in scope["declared"] if rel not in scope["tests"]],
-            "roots": _roots(root, path), "path": path,
+            # HEAD's files unlisted leave `present` None; the run problem
+            # that comes with it is the answer, and neither list is read.
+            "deleted": [rel for rel in scope["declared"]
+                        if rel not in scope["tests"] and rel in (present or ())],
+            "nowhere": [rel for rel in scope["declared"]
+                        if rel not in scope["tests"] and rel not in (present or ())],
+            "cause_stubbed": cause_stubbed,
             "stages": files["stages"], "dropped": dropped, "naming": naming,
             "deps": deps, "sized": sized, "support": support,
             "inline": setup["inline"],

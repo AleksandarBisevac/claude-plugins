@@ -128,15 +128,18 @@ verb writes and refuses, and what the run commands leave behind, is
        take out (one that only imports or subclasses HEAD's TestCase, or only loses a case) is
        `could-not-prove` saying so; a case the task edited is its own and is taken out. Both
        runs are laid from one list of the declared paths, a deleted one deleted in both, and
-       the verb refuses, naming the path, two laid trees that differ anywhere else
-       (`laid_difference_problem`). A proved basis names the definitions taken out and the
+       the verb refuses, naming the path, two laid trees that differ at any other declared
+       path (`laid_difference_problem`, which compares the declared paths alone). A declared
+       path neither tree holds is called absent from both. A proved basis names the definitions taken out and the
        rise - at least one of them ran and passed - and calls none of them seen. What
        is left of a file must pass on the base, or the baseline is not green: a helper the task
        changed in a file HEAD holds so that HEAD's cases fail there is `could-not-prove` with
        the runner's line, unless the task's run fails a case too, which is `not-green` first.
-       Where the baseline failed in a file the task laid, the basis says that file did not
-       load or fails on HEAD's code; only a failure elsewhere says HEAD's own tests are red
-       and advises narrowing the command (`_baseline_sentence`).
+       A baseline that is not green is explained by one more run, made only then, of HEAD's
+       own tree with nothing of the task's laid (`_green_cause_run`): red there, the command
+       is red at HEAD and the basis advises narrowing it; green there, the declared files as
+       laid fail or do not load on HEAD's code, naming each file something was taken out of;
+       unreadable, the cause was not measured. That run words the basis, never the status.
        Two limits are `could-not-prove`, for a file HEAD holds as for a new one,
        although a case of the task's own ran: one overriding an inherited test of the same
        name, and one generated at import (`setattr`, `type()`, `load_tests`). Under jest,

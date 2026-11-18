@@ -1,0 +1,94 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_stamp_verification.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T09:22:48Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 with 7 of 420 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - gs5 (house FAIL), gs6 (house FAIL), gc1 (house FAIL), gc2 (house FAIL), gc3 (house FAIL), gc4 (house FAIL), gc5 (house FAIL): SELFTEST FAILED: 412/420 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "stamp-verification.py: (1) `_baseline_run` split; its run half is now `_head_run(setup, cmd, files, until, rels, snap, tag)` - the same `_isolated_run` call, `red`'s call unchanged in effect. (2) New section `green: why a baseline that is not green is not, measured by one more run`: `_green_cause_run` makes the extra run by calling `_baseline_files(setup, cmd, present)` (red's baseline, nothing taken out: a new declared test file an empty stub, a held one at HEAD's copy) and `_head_run(..., tag=\"head\")` on the throwaway already built, under the same deadline (`start_problem` first; a run that does not fit is recorded as not started). `run_green` makes it only when `run[\"problem\"]` is None, `laid_problem` is None and `baseline_problem(head, cmd, stages, stubs)` is not None - the exact reading `green_verdict` reaches. `_cause_answer` reads it: no run / a problem / no exit code / no tally a reader reads -> unmeasured; `baseline_problem` None -> green; else red. `_baseline_cause` words the three answers (red: the measured run's failing cases and line plus `NARROW_ADVICE`; green: green at HEAD, stops being green once the declared files are laid with the task's own definitions taken out, `_taken_clause` of the files something was taken out of; unmeasured: `the cause was not measured: <why>`). Removed `_load_site`, `_baseline_placed`, `_baseline_sentence`, `_baseline_held_clause`; the status branch keeps the same predicate (`ctx.get(\"taken_held\") and failing is not None` is what `held and failing` was). `NARROW` is now built from `NARROW_ADVICE` and is byte-identical (checked: `M.NARROW == <old literal>` True; probe_red4 output identical). (3) Rule 2: ctx `deleted` = declared, not in the working tree, and in HEAD (`present`); `nowhere` = in neither, said `absent from both HEAD and the working tree ... in neither run` by `_green_baseline_clause`. (4) Rule 3: `laid_difference_problem` docstring and section comment say it compares the declared paths alone; its second half (a taken-out file that does not differ) IS reachable through gs3's seam and now has gc6. tests: new stage `sg-green-cause` gc1-gc6. Existing cases changed on purpose: gs5 asserted a new-file load failure / held-file failure was said to be the task's own file failing with `cannot pass before the change` and no advice - now asserts `is green at HEAD`, the taken-out clause (`tests/test_new.py: N.test_a`, `tests/test_mine.py: T.test_a_prime`), no advice, no word on what the cases can do; gs6 asserted HEAD's-own sentence + NARROW, and for `both` the task-file sentence too - now asserts `is red at HEAD`, the advice, the measured run's `test_u`, never green; jd1's text anchor moved from the old `_isolated_run` call layout to `tag, stubs=files[\"stubs\"], ` (same mutation, same assertion); `_GS_HEAD_RED` removed. Runs: new stage red first 0/5 (exit 1), then sg-green-same+sg-green-cause 12/12; all sg-green* stages 55 cases green except gs5/gs6 before their rewrite; whole file `python3 tools/sweep-selftests.py --jobs 4 tests/test_stamp_verification.py` 1/1 files ok, 425 cases (exit 0, before the advice split; stages re-run after it 12/12); test_drive_phase gfw-block+gfs-block+us-block 90/90; test__filed_returns 146, test__status_facts 199, test_audit_lookup 207 (3/3 ok); test__deps + test__output_lints + test__refs 3/3 ok 792 cases; prove-gates --list exit 0; measure-context --gate OK; ruff and vermin clean; orchestrator gate (run-test-gate SG1 --task, unrecorded) GATE GREEN exit 0. Orchestrator's judge: WRONG 0 (exit 0). Probes vs the 60e88d76 runs: every `got :` line of probe_y5 (25), probe_verb4 (27), review3 probe_verb (17) unchanged; probe_red4, probe_takeout, sg1.37-mine outputs identical; sg1.27-mine exit 0, statuses unchanged, I3 and I9 basis reworded as intended, I10 differs by a timing figure only. Mutation probe (scratch sg1.40/mutations.py, from the worktree root): 6 rows all CAUGHT - cause-by-placement (gc1), skipped-assumed-green (gc1, gc4), skipped-assumed-red (gc2, gc4), nowhere-called-deleted (gc5), ALLOW extra-run-on-every-baseline (gc4), rule-3-same-half-removed (gc6). DEPENDANTS: greenFirst block keys unchanged (status, at, basis); the third run is not recorded in the block or the payload (payload keys unchanged), so no reader of a run list sees it - grep found no reader of the reworded basis text outside the two files. tests/test__claude_home, test__proc_group, test_audit_task import the module for unchanged names (_arm, _baseline_files, _binds, _build_throwaway keep their signatures) - covered by the gate; tools/affected.py and sweep-selftests.py read the test file by path, still valid; .github/sweep-costs.json has no figure for the new block, which the sweep weighs by the suite's figure; test__filed_returns imports _green_block, _green_first_cases, _crlf_cases, unchanged; _filed_returns.py names the module in prose only; CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, execute-task.md readers (_deps, _output_lints, _refs, test_run_test_gate) green. One deviation from the orchestrator's wording: the extra run is red's baseline, not HEAD's tree bare - a command naming a new test file by path (L2) fails on a tree without the file, which would read red at HEAD for no failure of HEAD's; red's baseline route already makes the run that carries nothing of the task's content, so it is called rather than a second way of making a run.",
+    "descriptive": "Green-first now says why a baseline is not green from one more run of HEAD's own tree, made only then: red there, the command is red at HEAD and the advice is to narrow; green there, the declared files as laid fail on HEAD's code, naming each file something was taken out of; unreadable, the cause was not measured - and a declared path in neither tree is called absent from both."
+  },
+  "testsAdded": [
+    "gc1: through the real green verb, HEAD's own case red at HEAD in the file the task adds a passing case to (not-green) and a file of HEAD's already failing to load at HEAD (could-not-prove) keep their status, say the command is red at HEAD with that run's failing line and the advice to narrow, never call the file the task's own, and carry red's hedged NARROW sentence nowhere; the same fixture narrowed to the added case is proved",
+    "gc2: a new file importing the change's new code at module level, one importing a helper the take-out removed (tests/helpers.py named), and one importing an untouched module that raises are could-not-prove, said green at HEAD and not green once the declared files are laid, naming each file something was taken out of with what went, with no advice and no word on what the cases can do",
+    "gc3: the extra run made unreadable through the _isolated_run seam - timed out, and exit 0 with no tally - keeps the status and says the cause was not measured and why, neither green nor red at HEAD, no advice",
+    "gc4: a green baseline makes exactly the runs tagged baseline and green; a baseline that is not green makes one more, tagged head, under the same deadline (the counter's positive twin)",
+    "gc5: a declared path in neither tree is called absent from both and never deleted; its allow twin, a declared path HEAD holds and the task deletes, is still called deleted",
+    "gc6: a baseline handed the task's whole copy of a file something was taken out of (texts dropped through the seam gs3 uses) is refused as the same in both trees before any count is read",
+    "gs5 and gs6 rewritten to the measured rule (see technical)"
+  ],
+  "casesAdded": [
+    "gc1",
+    "gc2",
+    [
+      "gc3",
+      "gc4"
+    ],
+    "gc5"
+  ],
+  "claims": "claims:\n1 stamp-verification.py _green_cause_run (the extra run, red's baseline via _baseline_files + _head_run tag head), _cause_answer (red/green/unmeasured), _baseline_cause (the three sentences), run_green's guard before the call (only a baseline not green), _green_baseline_clause's nowhere clause; docs (module comments, PLUGIN-BUILD-GUIDE, CHANGELOG, execute-task.md) rewritten to say these and that laid_difference_problem compares declared paths alone\n2 sg1.40/mutations.py: 6 mutations on a copy, each anchor once, __pycache__ purged - placement, assumed green, assumed red, ghost called deleted, ALLOW eager third run (gc4 red), same-half removed (gc6 red): all CAUGHT; first red 0/5 on HEAD's code before the change\n3 grep for the reworded phrases (cannot pass before the change, the task's own test file, deleted there as in, HEAD's own tests on HEAD's code are not green, _baseline_sentence/_held_clause/_placed/_load_site) over tests, plugins/audit, tools, CHANGELOG, PLUGIN-BUILD-GUIDE: every hit outside red's own swn3/sr cases fixed or rewritten; red's sentence kept, byte-identical\n4 n/a - no rule to an agent\n5 probe comparisons ran twice on this tree with a gap (before and after the advice split); identical got lines both times; only a timing figure moved in sg1.27-mine I10\n6 n/a - no guard\n7 no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:e8063da63d707ec6be4b67e10e60d3c9618bdd035289ffd130e4c373056facfb\",\"dirtyDigest\":\"sha256:c9c7f9c4359ad86e3687b6ab9f28fdb34eca65de507916464f05bbc267ac75e1\",\"dirtyPaths\":{\"CHANGELOG.md\":\"693c8a8453c8bb64\",\"PLUGIN-BUILD-GUIDE.md\":\"9c0079ea62c8f6e5\",\"plugins/audit/reference/execute-task.md\":\"5d71a042caaa14b4\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"0e5c2a2656a1e026\",\"tests/test_stamp_verification.py\":\"5a32f4335e0b5665\"},\"head\":\"f53a554d\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:73642039e2cd9a669ea0d3f0ec977d1020471faf2b748e1427062a01cd1eeb22\",\"v\":2}",
+  "floorGuard": {
+    "answer": "findings",
+    "basis": "2 move(s) that lower the bar across 5 file(s) of the diff; 3 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/reference/execute-task.md; 1 file(s) that could hold a move not compared: tests/test_stamp_verification.py",
+    "findings": [
+      {
+        "move": "definition-changed",
+        "path": "tests/test_stamp_verification.py",
+        "line": 10830,
+        "side": "base",
+        "what": "labelled check `gs5 a baseline failing in a file the TASK LAID - a new file importi...` is gone from the tree copy"
+      },
+      {
+        "move": "definition-changed",
+        "path": "tests/test_stamp_verification.py",
+        "line": 10847,
+        "side": "base",
+        "what": "labelled check `gs6 THE ALLOW TWIN of gs5: a command red at HEAD in a file the task...` is gone from the tree copy"
+      }
+    ],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/reference/execute-task.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test_stamp_verification.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 3463 (`emptied = _mutated_module(`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "f53a554d1d4999f1e6e2896df98aec36ffbc1c74"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-18T09:22:53Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

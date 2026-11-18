@@ -3460,9 +3460,7 @@ def _every_run_cases(check):
     # with `green`, and its own fix-run predicate - in a fresh copy of the
     # module, and the judged case must see it - a copy of those lines in
     # `_judged` would not.
-    emptied = _mutated_module(
-        '"baseline",\n                             stubs=files["stubs"], ',
-        '"baseline",\n                             stubs=[], ', "sv_jd1")
+    emptied = _mutated_module('tag, stubs=files["stubs"], ', 'tag, stubs=[], ', "sv_jd1")
     code_m, got_m = _judged(root_o, man_o, cmd_o, "sr138", module=emptied)
     check("jd1 with `run_red`'s stub list for HEAD's run emptied, sr138's judged "
           "run sees it: HEAD's run is handed no stub, and sr138's own check "
@@ -6985,6 +6983,7 @@ STAGES = (
     ("sg-green-diff", "_green_diff_cases"),
     ("sg-green-held", "_green_held_cases"),
     ("sg-green-same", "_green_same_cases"),
+    ("sg-green-cause", "_green_cause_cases"),
 )
 
 
@@ -10707,9 +10706,6 @@ def _green_held_cases(check):
 # `committed`; the task deletes each declared path in `gone` and writes `extra`.
 _GS_TWO = _G_HEAD + "    def test_other(self):\n        self.assertTrue(mine.v)\n"
 _GS_ADDED = "    def test_added(self):\n        self.assertTrue(mine.v)\n"
-# What HEAD's own run is said to be when the command is red there for a file
-# the task did not lay, and the advice that goes with it.
-_GS_HEAD_RED = "HEAD's own tests on HEAD's code are not green"
 _GS_NEW_API = (_GD_HEADER + "from mine import new_api\n\n\nclass N(unittest.TestCase):\n"
                "    def test_a(self):\n        self.assertTrue(new_api())\n")
 _GS_UNTOUCHED = ("tests/test_untouched.py", _GD_HEADER + "class U(unittest.TestCase):\n"
@@ -10827,33 +10823,196 @@ def _green_same_cases(check):
         "class T(unittest.TestCase):\n", "class T(unittest.TestCase):\n"
         "    def test_a_prime(self):\n        CACHE['v'] = mine.v\n"
         "        self.assertEqual(CACHE['v'], 1)\n"), head_test=primed_head)
-    check("gs5 a baseline failing in a file the TASK LAID - a new file importing new "
-          "code at module level, and a held file whose own case is taken out - says "
-          "the task's own file did not load or fails on HEAD's code, with the "
-          "runner's line and that its cases cannot pass before the change, and "
-          "carries neither the sentence about HEAD's own tests nor the advice to "
-          "narrow: loads %s; primed %s" % (_gd_short(loads), _gd_short(primed)),
+    check("gs5 a baseline failing only once the TASK'S FILES ARE LAID - a new file "
+          "importing new code at module level, and a held file whose own case is "
+          "taken out - is said green at HEAD by the run of HEAD's own tree, with the "
+          "baseline's line and each file something was taken out of, and carries "
+          "neither the advice to narrow nor a word on what the task's cases can do: "
+          "loads %s; primed %s" % (_gd_short(loads), _gd_short(primed)),
           all(g[:2] == (M.E_CANNOT_PROVE, "could-not-prove") for g in (loads, primed))
           and "cannot import name 'new_api'" in loads[2]
-          and "tests/test_new.py" in loads[2] and "did not load on HEAD's code" in loads[2]
-          and "tests/test_mine.py" in primed[2] and "fails on HEAD's code" in primed[2]
-          and "test_old" in primed[2]
-          and all("cannot pass before the change" in g[2] and _GS_HEAD_RED not in g[2]
-                  and M.NARROW not in g[2] for g in (loads, primed)))
+          and "tests/test_new.py: N.test_a" in loads[2]
+          and "tests/test_mine.py: T.test_a_prime" in primed[2] and "test_old" in primed[2]
+          and all(_GC_GREEN in g[2] and _GC_RED not in g[2]
+                  and _GC_ADVICE not in g[2]
+                  and _gc_silent_on_what_cases_do(g[2]) for g in (loads, primed)))
     untouched = _gs_verb("stamp-gs-untouched-", {_U_NEW: _GD_HEADER + (
         "class N(unittest.TestCase):\n    def test_a(self):\n"
         "        self.assertTrue(mine.v)\n")}, committed=(_GS_UNTOUCHED,))
     both = _gs_verb("stamp-gs-both-", {_U_NEW: _GS_NEW_API}, committed=(_GS_UNTOUCHED,))
     check("gs6 THE ALLOW TWIN of gs5: a command red at HEAD in a file the task did not "
-          "touch still says HEAD's own tests are not green and advises narrowing, "
-          "and says nothing of the task's own file; where the baseline fails in "
-          "both, both are said: untouched %s; both %s"
+          "touch is said red at HEAD by the run of HEAD's own tree, naming that run's "
+          "failing case, and advises narrowing; where the baseline also fails in the "
+          "task's new file, that run is still red and the same answer is given, never "
+          "green at HEAD: untouched %s; both %s"
           % (_gd_short(untouched), _gd_short(both)),
           all(g[:2] == (M.E_CANNOT_PROVE, "could-not-prove") for g in (untouched, both))
-          and all(_GS_HEAD_RED in g[2] and M.NARROW in g[2] for g in (untouched, both))
-          and "did not load on HEAD's code" not in untouched[2]
-          and "fails on HEAD's code" not in untouched[2]
-          and "did not load on HEAD's code" in both[2] and "tests/test_new.py" in both[2])
+          and all(_GC_RED in g[2] and _GC_ADVICE in g[2] and "test_u" in g[2]
+                  and _GC_GREEN not in g[2] and _gc_silent_on_what_cases_do(g[2])
+                  for g in (untouched, both))
+          and "cannot import name 'new_api'" in both[2])
+
+
+# --- green: why a baseline is not green, measured by a run of HEAD's own tree ---
+# Every case below runs the REAL `green` verb on a git fixture. A failing case in
+# the baseline is never one of the task's own - those were taken out - so the
+# file it lies in cannot say whose it is; a third run of HEAD's own tree with
+# nothing of the task's laid (`red`'s baseline: a new declared test file an empty
+# stub) can, and is made only when the baseline is not green.
+_GC_RED = "is red at HEAD"
+_GC_GREEN = "is green at HEAD"
+_GC_UNMEASURED = "the cause was not measured"
+# The advice alone, which `red`'s hedged sentence (`NARROW`) ends with too - so
+# a case holding it reads the same words in either verb.
+_GC_ADVICE = "narrow it to the task's cases"
+# Words that say what the task's cases can or cannot do before the change: no
+# run measures that, so no basis may carry them.
+_GC_CAN = ("cannot pass", "can pass", "cases in it")
+_GC_BAD = _G_HEAD + "    def test_bad(self):\n        self.assertEqual(mine.v, 9)\n"
+_GC_GONE = _G_HEAD.replace("import mine\n", "import mine\nfrom mine import gone\n")
+
+
+def _gc_silent_on_what_cases_do(basis):
+    return not any(text in basis for text in _GC_CAN)
+
+
+def _gc_tagged(fn, *args, **kw):
+    """`(result, [(tag, deadline), ...])` - `fn(*args, **kw)` with every
+    `_isolated_run` recorded in call order."""
+    real, seen = M._isolated_run, []
+
+    def spy(*a, **k):
+        seen.append((a[8], a[4]))
+        return real(*a, **k)
+    M._isolated_run = spy
+    try:
+        return fn(*args, **kw), seen
+    finally:
+        M._isolated_run = real
+
+
+def _green_cause_cases(check):
+    head_red = _gh_verb("stamp-gc-headred-", _GC_BAD + _GS_ADDED, head_test=_GC_BAD)
+    head_gone = _gh_verb("stamp-gc-headgone-", _GC_GONE + _GS_ADDED, head_test=_GC_GONE)
+    narrowed = _gh_verb("stamp-gc-narrowed-", _GC_BAD + _GS_ADDED, head_test=_GC_BAD,
+                        tail=["-k", "test_added"])
+    check("gc1 a case of HEAD's own red at HEAD in the file the task adds a passing case "
+          "to, and a file of HEAD's that already fails to load at HEAD, keep their "
+          "status and are said to be red at HEAD - that run's own line named - with "
+          "the advice to narrow, never as the task's own file failing; the command "
+          "narrowed to the added case is `proved`: red %s; gone %s; narrowed %s"
+          % (_gd_short(head_red), _gd_short(head_gone), _gd_short(narrowed)),
+          head_red[:2] == (M.E_NOT_GREEN, "not-green")
+          and head_gone[:2] == (M.E_CANNOT_PROVE, "could-not-prove")
+          and all(_GC_RED in g[2] and _GC_ADVICE in g[2] and M.NARROW not in g[2]
+                  and _gc_silent_on_what_cases_do(g[2])
+                  and "the task's own test file" not in g[2] and _GC_GREEN not in g[2]
+                  for g in (head_red, head_gone))
+          and "test_bad" in head_red[2] and "gone" in head_gone[2]
+          and narrowed[:2] == (M.E_PROVED, "proved") and M.NARROW.endswith(_GC_ADVICE))
+    loads = _gs_verb("stamp-gc-loads-", {_U_NEW: _GS_NEW_API})
+    helper = _gs_verb("stamp-gc-helper-", {
+        "tests/helpers.py": "def test_something():\n    return 1\n",
+        _U_NEW: _GD_HEADER + "from helpers import test_something\n"
+                "class N(unittest.TestCase):\n    def test_pos(self):\n"
+                "        self.assertEqual(test_something(), 1)\n"})
+    raising = _gs_verb("stamp-gc-raising-", {_U_NEW: _GD_HEADER + "import brokenhelp\n"
+                                             "class N(unittest.TestCase):\n"
+                                             "    def test_pos(self):\n"
+                                             "        self.assertTrue(mine.v)\n"},
+                       committed=(("tests/brokenhelp.py",
+                                   "raise RuntimeError('broken at HEAD')\n"),))
+    three = (loads, helper, raising)
+    check("gc2 a new file that does not load on HEAD's code - importing the change's "
+          "new code, a helper the take-out removed, an untouched module that raises - "
+          "is `could-not-prove`, said green at HEAD and not green once the declared "
+          "files are laid, naming each file something was taken out of with what was "
+          "taken out, with no advice to narrow and nothing on what its cases can do: "
+          "loads %s; helper %s; raising %s" % tuple(_gd_short(g) for g in three),
+          all(g[:2] == (M.E_CANNOT_PROVE, "could-not-prove") for g in three)
+          and all(_GC_GREEN in g[2] and _GC_RED not in g[2]
+                  and _GC_ADVICE not in g[2]
+                  and _gc_silent_on_what_cases_do(g[2]) and _U_NEW in g[2]
+                  and "N.test_" in g[2] and "taken out" in g[2] for g in three)
+          and "cannot import name 'new_api'" in loads[2]
+          and "tests/helpers.py" in helper[2] and "test_something" in helper[2]
+          and "broken at HEAD" in raising[2])
+
+    def unreadable(prefix, answer):
+        real = M._isolated_run
+
+        def spy(*a, **k):
+            if a[8] in ("baseline", "green"):
+                return real(*a, **k)
+            return answer, []
+        M._isolated_run = spy
+        try:
+            return _gs_verb(prefix, {_U_NEW: _GS_NEW_API})
+        finally:
+            M._isolated_run = real
+    late = unreadable("stamp-gc-late-", {
+        "code": None, "text": "", "seconds": 0.0,
+        "problem": "the run timed out: no time was left of the 9-second deadline"})
+    garbled = unreadable("stamp-gc-garbled-", {"code": 0, "text": "no tally here\n",
+                                               "seconds": 0.1, "problem": None})
+    check("gc3 HEAD's own run made unreadable through the seam - past its deadline, "
+          "and with no tally in what it printed - leaves the status as it was and says "
+          "the cause was not measured and why, neither green nor red at HEAD and no "
+          "advice: late %s; garbled %s" % (_gd_short(late), _gd_short(garbled)),
+          all(g[:2] == (M.E_CANNOT_PROVE, "could-not-prove") for g in (late, garbled))
+          and all(_GC_UNMEASURED in g[2] and _GC_GREEN not in g[2] and _GC_RED not in g[2]
+                  and _GC_ADVICE not in g[2] and _gc_silent_on_what_cases_do(g[2])
+                  for g in (late, garbled))
+          and "timed out" in late[2])
+    proved, two = _gc_tagged(_gs_verb, "stamp-gc-two-", {_U_NEW: _GD_HEADER + (
+        "class N(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(mine.v)\n")})
+    failing, more = _gc_tagged(_gs_verb, "stamp-gc-three-", {_U_NEW: _GS_NEW_API})
+    deadlines = set(d for _t, d in more)
+    check("gc4 a green baseline makes two runs and no third; one that is not green "
+          "makes one more, under the same deadline as the other two - the counter's "
+          "positive twin: proved %s, runs %r; failing %s, runs %r"
+          % (_gd_short(proved), [t for t, _d in two], _gd_short(failing),
+             [t for t, _d in more]),
+          proved[:2] == (M.E_PROVED, "proved")
+          and sorted(t for t, _d in two) == ["baseline", "green"]
+          and failing[:2] == (M.E_CANNOT_PROVE, "could-not-prove")
+          and len(deadlines) == 1
+          and sorted(t for t, _d in more) == ["baseline", "green", "head"])
+    real = M._isolated_run
+
+    def whole_copy(*a, **k):
+        # HEAD's own run handed the task's whole copy of every file something was
+        # taken out of - the take-out's text dropped, as gs3 drops a path.
+        if a[8] == "baseline":
+            k = dict(k, texts=None)
+        return real(*a, **k)
+    M._isolated_run = whole_copy
+    try:
+        same = _gs_verb("stamp-gc-same-", {_U_NEW: _GD_HEADER + (
+            "class N(unittest.TestCase):\n    def test_a(self):\n"
+            "        self.assertTrue(mine.v)\n")})
+    finally:
+        M._isolated_run = real
+    check("gc6 a baseline laid with the task's whole copy of a file the task's own "
+          "definitions were taken out of is refused by the comparison of the two laid "
+          "trees, naming that file as the same in both, before any count is read; "
+          "the same fixture laid as the verb lays it is `proved` (gc4): same %s"
+          % (_gd_short(same),),
+          same[:2] == (M.E_CANNOT_PROVE, "could-not-prove")
+          and "is the same in both trees" in same[2] and _U_NEW in same[2]
+          and _gd_counts(same[2]) is None and proved[:2] == (M.E_PROVED, "proved"))
+    ghost = _gs_verb("stamp-gc-ghost-", {_U_NEW: _GD_HEADER + (
+        "class N(unittest.TestCase):\n    def test_a(self):\n        self.assertTrue(mine.v)\n")},
+                     declared=("tests/test_ghost.py",))
+    moved = _gs_verb("stamp-gc-moved-", {"tests/test_renamed.py": _G_HEAD + _GS_ADDED},
+                     gone=("tests/test_mine.py",))
+    check("gc5 a declared path in neither tree is called absent from both, never "
+          "deleted; the ALLOW TWIN, a declared path HEAD holds and the task deletes, is "
+          "still called deleted: ghost %s; moved %s" % (_gd_short(ghost), _gd_short(moved)),
+          ghost[:2] == (M.E_PROVED, "proved") and moved[:2] == (M.E_PROVED, "proved")
+          and "absent from both" in ghost[2] and "tests/test_ghost.py" in ghost[2]
+          and "deleted" not in ghost[2]
+          and "deleted" in moved[2] and "absent from both" not in moved[2])
 
 
 def _reached(source, name):

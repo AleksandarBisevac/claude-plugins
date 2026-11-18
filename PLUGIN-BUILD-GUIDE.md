@@ -6046,17 +6046,26 @@ split test file's old path is gone from HEAD's run as from the task's, and HEAD'
 counted in neither. HEAD's run differs on purpose only where `_baseline_files` says: the task's own
 definitions taken out, an empty stub, a file left absent, a changed file kept at HEAD's copy. The
 verb does not trust the list: `_isolated_run` reads each declared path once laid in both runs, and
-`laid_difference_problem` refuses, naming the path, a difference anywhere else, or a file
-something was taken out of that does not differ (`gs3`). **A baseline that is not green is said by
-where it failed** (`_baseline_sentence`), each failure located off the runner's report
-(`_read_failures`, then `case_site`): in a file the task laid over, that the task's own file did
-not load or fails on HEAD's code, with the runner's line, so its cases cannot pass before the
-change; anywhere else, or where a failure cannot be located, the sentence that HEAD's own tests
-are not green and the advice to narrow the command, which `red` prints unchanged; both, where it
-failed in both. **What follows for a file HEAD holds:** a
+`laid_difference_problem` refuses, naming the path, a declared path that differs outside the files
+the baseline alters on purpose (`gs3`), or a file something was taken out of that does not differ
+(`gc6`). It compares the declared paths and nothing else. A declared path the task deleted is
+called deleted in a proved basis; one neither tree holds is called absent from both. **A baseline
+that is not green is explained by one more run, made only then** (`_green_cause_run`): HEAD's own
+tree with nothing of the task's laid - `red`'s baseline, a new declared test file an empty stub and
+one HEAD holds at HEAD's copy - under the same deadline and isolation, tagged `head`. Where a
+failure lies cannot say whose it is, since a failing case in the baseline is never one of the
+task's own: HEAD's own red case sits in a file the task adds to, and a new file fails to load
+because the take-out removed a helper it imports. So `_baseline_cause` words the cause by that run
+alone: red there, the command is red at HEAD without anything of the task's, with that run's
+failing cases and line, and the advice to narrow it to the task's cases; green there, the command
+is green at HEAD and stops being green once the declared files are laid with the task's own
+definitions taken out, naming each file something was taken out of with what went, and no advice;
+not readable or out of time, the cause was not measured, and why. No basis says what the task's
+cases can or cannot do before the change. The status is decided before that run and never reads
+it, and a green baseline makes no third run (`gc4`). **What follows for a file HEAD holds:** a
 helper or fixture the task changed there runs at HEAD's own run on HEAD's code, so a change that
 breaks HEAD's cases leaves the baseline not green and the answer `could-not-prove`, the basis
-naming what was taken out and the cases HEAD's run failed (`_baseline_held_clause`) - unless the
+naming what was taken out and the cases HEAD's run failed (`_baseline_cause`) - unless the
 task's run fails a case too, which is `not-green` first, as a green baseline would have answered;
 a new file keeps the baseline-first order. Three new files stay empty stubs, and a file HEAD holds
 stays HEAD's copy, for the same reasons: one that does not

@@ -3961,7 +3961,7 @@
     {
       "id": "SG1.39-ukq",
       "title": "The wider Acceptance reading takes a bare word as a marker only where a list opens under it, and its line quotes text",
-      "status": "in_progress",
+      "status": "done",
       "description": "A fresh review of the task that made the Acceptance reading silent only when a wider reading agrees found the strict reading untouched - no item differs over every committed description and a large generated set - time linear, and the measured departures now said. It found three defects in the wider reading itself; each was run by the reviewer and again by the orchestrator.\n\nMEASURED on the tree as it stands.\n(a) A PLAIN DESCRIPTION NOW PRINTS A LINE. In the wider reading the marker word at a line start counts as a marker with or without its colon. So an item that wraps onto a line beginning with the word, or a closing paragraph beginning with it, opens a second marker, cuts the list short, and the write says a wider reading finds FEWER items; a description with no marker at all and one prose line beginning with the word is told a wider reading finds an item. None of these printed before that task. Over generated plain parenthesised lists hard-wrapped at a fixed width, about a quarter print once the word is in the vocabulary; none did before.\n(b) THE LINE POINTS AT A BLANK LINE AND QUOTES NOTHING. Where a blank line, or a line of blanks, sits between the list and the place the readings part, the line names the blank line and quotes an empty string - for the measured shape itself, a parenthesised list continued by another numbering after a blank line.\n(c) NOTHING PINS THE SECOND HALF OF THE COMPARISON. The write is silent only when the wider reading finds the same count AND the same text. With the text half removed - silent whenever the counts are equal - every case of the suite passes, and the one committed description that the task made print, whose two readings both count six, goes quiet.\n\nTHE RULE TO BUILD.\n1. A BARE WORD IS A MARKER ONLY WHERE A LIST OPENS UNDER IT. In the wider reading the marker word with its colon counts as today. Without a colon it counts only when a list opens directly under it: the first text after the word - on the rest of its line or on the next line holding text - is an item opener numbered one, in any form the wider reading knows. A line that merely begins with the word is prose. This is one row of the table of choices, not a second scanner.\n2. THE PARTING LINE HOLDS TEXT. The line named is the first line HOLDING TEXT that the two readings place differently, numbered in the description as written, and its quote is never empty.\n3. EQUAL COUNTS ARE SAID AS THAT. When the two readings find the same number of items with different text, the line says so in those words - the same number, placed differently - and does not report the count as if it were a difference.\n\nWHAT STAYS. The strict reading, to the character. Every line that printed before the previous task. Every measured departure that task made print still prints. The two older detectors. Time linear in the text.\n\nHOW TO PROVE. Cases, red before: a list item wrapping onto a line that begins with the word, in both cases of its first letter and with emphasis around it, is silent; a closing paragraph beginning with the word, after a blank line and after none, is silent; a description with no marker and a prose line beginning with the word is silent; a heading or a label holding the word with no colon and a list numbered from one under it still prints; a parenthesised list continued by each other numbering after one blank line, after two, after a line of blanks, and with carriage-return line ends, names the continuing line and quotes its text; a description whose two readings count the same and differ in text prints, in the words of rule 3. The generated case gains a plain half: plain lists built from parts, their prose drawn from a vocabulary that holds the word in both cases and wrapped at several widths, with the expectation computed from the construction - silent unless a wrapped line begins with a number and its opener, which the construction knows. A mutation probe the orchestrator can run: the bare word counted at any line start (the plain half and the wrap cases go red); the parting line taken from blank lines too; the text half of the comparison removed; and an allow row (the bare word never counted turns the heading and label cases red).\n\nNOT in this task: openers and markers the wider reading does not hold; the reading's JSON form; the lows of the same review.\n\nAcceptance:\n(1) A line that only begins with the marker word - in an item, after the list, or in a description with no marker - prints nothing, and generated plain lists holding the word print nothing.\n(2) A bare word with a list numbered from one opening under it is still read as a marker by the wider reading.\n(3) The parting line named holds text and the quote is that text, with blank lines and carriage returns between.\n(4) Readings that count the same and differ in text print a line that says so, and a case fails when the text half of the comparison is removed.\n(5) The strict reading and every line printed before the previous task are unchanged over the committed descriptions.\n(6) The module, the conventions document, the build guide and the changelog say when a bare word is a marker and are true of the code.",
       "files": [
         "plugins/audit/scripts/governance/_clause_coverage.py",
@@ -3991,14 +3991,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "f53a554d1d49",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/scripts/governance/_clause_coverage.py: (1) a new READING_CHOICES row ('bare', False, True). _markers skips a line-start marker-word match that has no colon unless choices['bare'] is set and _list_opens_under() finds an opener numbered one in the column's forms, either on the rest of the word's line (past blanks and closing emphasis, read through a window of _OPENER_REACH characters) or at the start of the next line holding text that is outside a fence. The strict column is unchanged to the character (its marker always holds the colon), and so is the colon-only rule away from a line start. (2) _item_lines records no line whose folded text is empty, so the parting line always holds text. Line numbers are unchanged for CRLF, folding and dropped format characters (d4_line.py: every row matches its expected line). (3) _departures says 'finds the same number of items, placed differently' when the counts are equal and keeps the old sentence otherwise. Docs: the module docstrings, manifest-conventions.md, the PLUGIN-BUILD-GUIDE.md section, and the Unreleased CHANGELOG entry of the previous task, corrected in place because it said that any line-start word is a marker. Tests: cw9, cw10, cw11, cw12, cw13 and cw13b in four new stages (cw-bare, cw-plain, cw-part, cw-equal). The suite is 85/85. No existing case was changed. Measurements: sg1.39-mine/mine.py exits 0 (WRONG 0, 11 before). sg1.29-mine exits 0. p2_plans finds 0 silent readings. p2_silent: only the two excepted AFTER rows (CJK glued, a number glued after ']') read SILENT-WRONG. d1_strict against the tree before the previous task: 100000 generated, strict diffs 0, lines lost 0; 1789 committed, print 39 before and 40 after, SG1.17-ukq the one new. The walk (walk33 against export-ef60e43): 40 print before and 40 after, ITEMS CHANGED 0, none went quiet, none newly prints. It exits 1 only because SG1.17-ukq's clause is reworded by rule 3. d2b_rate after: base 0.00%, +acceptance 1.23%, +Acceptance 1.14%, numbers 0.00%, '2.'/'3.' 4.04% (before: 26.3/26.0/4.0). Every word-pool print is the word at a line start followed directly by '[1]', which is in d2b's own word list, on its line or opening the next (sg1.39/classify_d2b.out). Rule 1 makes those markers. The longest committed description (P75.2-j5h) takes 0.68 ms before and after, in two runs minutes apart. d5_time is linear in every kind at 100k/200k/1M, the five kinds this change touches included, in two runs. Dependants: test_audit_task ar-block 11/11, test_drive_phase wl/rw/uy blocks 88/88, test_audit_lookup 207/207. No shape a caller reads changed: reading_line and reading_summary are still strings and dicts of the same keys, and task_clauses, check, gap_summary and resume_text are untouched. Dependants answered: drive-phase.py, audit-task.py and audit-lookup.py are still correct (same keys, strict items unchanged, their suites green). tests/test__refs.py and CHANGELOG/PLUGIN-BUILD-GUIDE basename and path references still resolve (the lint sweep is green). COMPATIBILITY.md and commands/init.md describe the strict reading only and are still true. The mutation probe is sg1.39/mutations.py with five rows, every row caught. The review's d6_mut row (vi) now turns cw13 red.",
+        "descriptive": "The wider Acceptance reading no longer takes a line that merely begins with 'acceptance' for a marker, names a parting line that holds text, and says equal counts as equal."
       },
       "startedAt": "2026-11-18T08:01:39Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T08:46:32Z",
+      "verifiedBy": [
+        "cw9: lines that only begin with the marker word stay silent with the built count (an item wrapping onto it in both cases and with emphasis, the last item, a closing paragraph after a blank line and after none, a list under it opening at three, no marker). cw10: a heading or label holding the bare word over a list from one still prints the wide clause, quoting its line",
+        "cw11: 960 generated plain lists (4 word pools, 4 widths, 5 layouts) whose prose holds the word in both cases and in emphasis. Each one whose wrapped lines begin with no number-and-opener prints nothing and reads the built count. The expectation comes from the construction",
+        "cw12: a parenthesised list continued by 3., 3), [3] or full-width (3) after one blank line, two, a line of blanks or CRLF. The line names the continuing line as written and quotes its text",
+        "cw13: equal counts with different text print 'the same number of items, placed differently' and no count. cw13b: the twin, where unequal counts keep the old sentence"
+      ],
       "notes": [
         {
           "at": "2026-11-18T08:01:36Z",
@@ -4016,12 +4021,24 @@
         "runId": "2026-11-18T08:46:29Z.14e653",
         "status": "passed",
         "at": "2026-11-18T08:46:29Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "f53a554d1d49",
+        "at": "2026-11-18T08:46:32Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T08:29:22Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__clause_coverage.py` in a throwaway tree at HEAD exited 1 with 4 of 85 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cw9 (house FAIL), cw11 (house FAIL), cw12 (house FAIL), cw13 (house FAIL): SELFTEST FAILED: 81/85 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "SG1.40-ukq",
       "title": "Green-first says why its baseline is not green from a run of HEAD's own tree, not from where the failure lies",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A narrow review of the task that made green-first's two runs hold the same files found no honest task refused, every status right, the check refusing what it says it refuses, and the red verb unchanged. It found the sentence about a baseline that is not green wrong in two ways; each was run by the reviewer and again by the orchestrator through the real green verb on git fixtures. The statuses are right in every one; only the words are wrong.\n\nMEASURED on the tree as it stands. The verb decides what to say about a baseline that is not green from the FILE the failure lies in: in a file the task laid, it says the task's own file fails or did not load on HEAD's code, so the cases in it cannot pass before the change; elsewhere, that the command is red at HEAD and to narrow it.\n(a) A case of HEAD's own, red at HEAD, in a test file the task adds a passing case to: the basis says the task's own file fails on HEAD's code and that its cases cannot pass before the change, and the advice to narrow is gone. Both halves are false - the failing case is HEAD's and unchanged, and the same task with the command narrowed to its case is proved. Before the previous task the basis said the command was red at HEAD and to narrow it. The same for a file of HEAD's that already fails to load at HEAD.\n(b) A new test file that imports, at module level, a helper the task also adds under a test-like name: taking the task's definitions out removes the helper, the file does not load, and the basis says its cases cannot pass before the change - with the import moved into the case, the same case is proved. The sentence no longer names the helper's file as one something was taken out of.\n(c) A new test file importing an untouched module that raises: the basis says its cases cannot pass before the change; they cannot pass after it either.\n(d) A declared path that is in neither tree is said to be deleted by the task.\nBy construction a case that fails in the baseline is never one of the task's own - those were taken out - so where a failure lies cannot tell whose it is.\n\nTHE RULE TO BUILD.\n1. THE CAUSE IS MEASURED. When the baseline is not green - a case failed or a module did not load - the verb runs the same command once more on HEAD's own tree with nothing of the task's laid, and words the cause by that run's answer:\n- red there too: the command is red at HEAD without anything of the task's, with that run's line, and the advice to narrow the command to the task's cases;\n- green there: the command is green at HEAD and stops being green once the declared files are laid with the task's own definitions taken out, with the baseline's line and the files something was taken out of - what is left of them fails or does not load on HEAD's code. No sentence says what the task's cases can or cannot do before the change, and there is no advice to narrow;\n- not readable, or past its deadline: the basis says the cause was not measured and why.\nThe extra run happens only on this path, under the same isolation and deadline as the other two, and the basis names it as a run. The status does not depend on it.\n2. A PATH IS CALLED DELETED ONLY WHEN HEAD HOLDS IT. A declared path in neither tree is said to be absent from both.\n3. THE CHECK OF THE TWO LAID TREES SAYS WHAT IT READS. The documents say the check compares the declared paths of the two trees - which is what it does - and not a difference anywhere. The half of the check that refuses a file something was taken out of yet does not differ either gets a case that fails without it, through the seam the other half is tested by, or is removed with the reason stated.\n\nWHAT STAYS. Every status of every earlier probe (the orchestrator's brief says where). The red verb, to the character. The payload's shape and keys. The two runs of a green baseline, and the number of runs when the baseline is green.\n\nHOW TO PROVE. Through the real green verb on git fixtures, red before: for each of (a), both shapes - the basis says the command is red at HEAD and advises narrowing, and does not call the file the task's own failure; for (b) and (c) and for a new file importing the change's new code at module level - the basis says green at HEAD, not green with the declared files laid, names the files something was taken out of, and carries neither the advice nor a sentence on what the cases can do; for (d) - absent from both. One case for the third answer of rule 1, with the extra run made unreadable through the seam. One case that a green baseline makes exactly two runs. A mutation probe the orchestrator can run: the cause decided by where the failure lies again; the extra run skipped and its answer assumed green; assumed red; a path in neither tree called deleted; and an allow row - the extra run made on every baseline turns the two-runs case red.\n\nNOT in this task: the other lows of the same review; other runners; whether could-not-prove stops a sign-off.\n\nAcceptance:\n(1) A baseline that is not green is explained by a run of HEAD's own tree: red there says the command is red at HEAD and advises narrowing; green there says the declared files as laid fail or do not load on HEAD's code and names the files something was taken out of.\n(2) No basis says what the task's cases can or cannot do before the change.\n(3) When the extra run cannot be read the basis says the cause was not measured.\n(4) A green baseline makes two runs and no third.\n(5) A declared path in neither tree is called absent from both.\n(6) The documents say the check of the two laid trees reads the declared paths, and each half of that check either has a case that fails without it or is gone.\n(7) Every status of the earlier probes and the red verb's output are unchanged.\n(8) The module, the build guide, the changelog and the reference document say how the cause is found and are true of the code.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -4041,6 +4058,65 @@
         "expectRedFirst": true,
         "gate": [
           "python3 tools/sweep-selftests.py tests/test_stamp_verification.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-18T08:46:44Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T08:46:41Z",
+          "text": "it reads the Unreleased heading of CHANGELOG.md; this task rewords the green-first entry under that heading and leaves the heading as it is",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T08:46:41Z",
+          "text": "it quotes the sentence of execute-task.md on the gates each return lists; this task edits only the passage on the green-first proof and leaves that sentence as it is",
+          "waives": "tools/prove-gates.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T09:40:06Z.7281ba",
+        "status": "passed",
+        "at": "2026-11-18T09:40:06Z"
+      }
+    },
+    {
+      "id": "SG1.41-ukq",
+      "title": "A colon-less Acceptance label is read the same way whether its list opens on its own line or the next",
+      "status": "pending",
+      "description": "A narrow review of the task that made the wider Acceptance reading take a bare marker word only where a list opens under it found the strict reading untouched, every line printed before the wider reading existed still printed, plain prose quiet, the parting line always holding text, and time linear. It found one asymmetry, run by the reviewer and again by the orchestrator.\n\nMEASURED on the tree as it stands. Under a colon-less label of more than one word, a list on the NEXT line is read by the wider reading and the write says so; the same list on the label's OWN line is read by neither reading and nothing is printed - the task is held to no clause in silence. `Acceptance criteria` followed by a line-break and a two-item list prints; the same label followed by a blank and the same list does not, in every numbering form. The function that decides whether a list opens under the bare word accepts, on the word's own line, an opener only as the first thing after the word, and across a line break allows label words before it. The commit before that task said the same-line shape.\n\nTHE RULE TO BUILD. One rule for both places. After the bare word, words of a label may stand before the opener numbered one, on the word's own line as across the line break. On the word's own line, where a reference in prose and a list look alike, label words are allowed only when the list goes on: an opener numbered two, in the same form, follows the opener numbered one. An opener numbered one directly after the word stays a list as today.\nStated in the module and the conventions document as limits, not built: a bare label is read only over a list numbered from one - a colon-less heading over a list that starts at another number or is quoted or emphasised is not read and nothing is said; and a reference numbered one directly after the word in prose is read as a list.\n\nWHAT STAYS. The strict reading, to the character. Every line that printed before the wider reading existed. Prose stays quiet: the share of generated plain lists that print does not rise for the vocabularies that hold the word. Time linear.\n\nHOW TO PROVE. Cases, red before: each multi-word colon-less label the review used, with a two-item list on its own line in each numbering form, prints; the allow side, silent before and after - a prose line that begins with the word and holds one bracketed reference numbered one later in the line; a prose line beginning with the word and holding a version number; the word followed by an opener numbered one inside a code fence on the next line (no case pins that fence check today: removing it leaves the suite green). A mutation probe the orchestrator can run: label words refused on the word's own line again; the going-on condition dropped (the single-reference allow case goes red); the fence check on the next-line path removed.\n\nNOT in this task: lists under a bare label that do not start at one; other openers and markers the wider reading does not hold.\n\nAcceptance:\n(1) A colon-less label of several words with a list of two or more items on its own line is read by the wider reading and the write says so, in every numbering form the wider reading knows.\n(2) A prose line beginning with the marker word and holding a single reference numbered one later in the line prints nothing.\n(3) The fence check on the next-line path has a case that fails without it.\n(4) The strict reading and every line printed before the wider reading existed are unchanged over the committed descriptions, and the share of generated plain lists that print has not risen.\n(5) The module and the conventions document state the rule and its two limits and are true of the code.",
+      "files": [
+        "plugins/audit/scripts/governance/_clause_coverage.py",
+        "tests/test__clause_coverage.py",
+        "plugins/audit/reference/manifest-conventions.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__clause_coverage.py: a colon-less label of several words with a two-item list on its own line is read by the wider reading in every numbering form",
+          "tests/test__clause_coverage.py: a prose line beginning with the marker word and holding one reference numbered one, or a version number, prints nothing",
+          "tests/test__clause_coverage.py: the marker word followed on the next line by an opener numbered one inside a code fence prints nothing"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__clause_coverage.py"
         ],
         "gateBasis": "tests.add"
       },
