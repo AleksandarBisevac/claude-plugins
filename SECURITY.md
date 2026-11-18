@@ -898,7 +898,13 @@ point:
   **reordered** (the chain breaks at that point), a file **renamed** into another
   writer's slot (the first row's anchor is derived from the file's own name), a
   **torn tail** from an interrupted write, and **out-of-band drift** — a manifest
-  or config that changed with no row to explain it. Against git it holds one rule:
+  or config that changed with no row to explain it. A config row is anchored on
+  the file it names, asked of the hooks' own question (`_journal_io.drift_anchor`):
+  the tree's own config is one anchor whatever spelling a row records, rows
+  written before the journal named it by its own path included, and a row for
+  another tree's config is a record and not an anchor — that tree's own trail
+  anchors it, so its later edits and its removal are not this trail's to warn
+  about (`cr1`–`cr4b` in `tests/test__journal_io.py`). Against git it holds one rule:
   every row the **committed** copy carries must still be in the working copy, with
   its content unchanged and in the same order. A **committed row that is gone, or
   whose content moved**, is a finding. A file whose *links* were recomputed while
@@ -1509,12 +1515,15 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    under another name; the config of a repository that is no tree of this one;
    and the shell route, which is journalled and not refused (the residuals
    below). **The journal writes its config row for exactly the edit-tool writes
-   the guard holds**, its target the path as placed — spelled from the project
-   for a path that resolves out of every tree (`oq1`–`oq4c` in
-   `tests/test_journal_writes.py`, the hook run as a process over real linked
-   worktrees and symlinked folders, and tables through both hooks). It asks after
-   the write, so the one exception is a hold made without regard to case whose
-   write turned out to create another file: that is no config row.
+   the guard holds** (`oq1`–`oq4d` in `tests/test_journal_writes.py`, the hook
+   run as a process over real linked worktrees and symlinked folders, and tables
+   through both hooks). The row's target is `.claude/audit.config.json` when the
+   file is the config of the tree whose trail the row goes into, whatever
+   spelling, letter case or link the write went through, and the writer's
+   pre-image slot follows that name (`oq6`); a row for another tree's config —
+   a nested worktree's, written from the project — keeps the path as placed. It
+   asks after the write, so the one exception is a hold made without regard to
+   case whose write turned out to create another file: that is no config row.
 
    Where the written path and the config both exist, they are compared as files.
    Where neither exists — the write would create the config — the config's folder

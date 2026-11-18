@@ -4380,7 +4380,7 @@
     {
       "id": "SG1.43-ukq",
       "title": "The config hold names the file a session would load, also when the config's folder is a symlink",
-      "status": "in_progress",
+      "status": "done",
       "description": "A narrow review of the task that gave the edit guard and the journal one question found every verdict and every word unchanged over a large table of writes, the per-directory case rule right on real volumes, and no crash. It also found a hole that is older than that task and lives in the function it moved; the reviewer ran it and the orchestrator ran it again, the hook as a process over a real repository.\n\nMEASURED on the tree as it stands.\n(a) The project's config folder is a symlink to a directory OUTSIDE the repository and no config exists yet. A subagent writes the config, plainly spelled, with the plan gate switched off. The guard allows it, the journal writes no row, and the loader then reads the switch as off. The same write again, the file now existing, is allowed too. The question which tree a path belongs to places the resolved path outside the project before the config question is asked at all.\n(b) The same with the folder a symlink to a directory INSIDE the project: allowed, where the commit before the task that made the question one of identity held it. The branch for a write that would create the file compares the resolved path of the write with a config path that was never resolved.\nThe documents say the config is matched through a symlink.\n\nTHE RULE TO BUILD. The property, stated as what can be tested by doing: the guard holds a write exactly when, once the write is made, the loader - asked for the project, for the tree the session stands in, or for the tree the path as written lies in - would read the written file as that tree's audit config. Built so:\n1. THE CANDIDATE TREES do not depend on where the path resolves to: the project, the session's tree, the tree the path lies in as written, and the tree it lies in once resolved.\n2. FOR EACH CANDIDATE the write's file and the tree's config are compared resolved against resolved. Where the tree's config exists, by identity, as today. Where it does not, the directory the write would create the file in and the tree's config folder are the same directory by identity once both are resolved, and the name is the config's by that directory's own rule on letter case, as the per-directory rule already says; where the folder itself does not exist, the walk of the previous task applies to the resolved path.\n3. The journal asks the same function, so the row follows.\n\nWHAT STAYS. Every verdict and every word on every write the review's table and the orchestrator's inputs hold today (the brief says where), except the measured inputs, which become holds. A file merely named like the config in a plain folder, an ordinary source file, and a write outside every tree to a file no tree loads are allowed as today. No directory listing on an ordinary write. The fail-mode table. The hook import budget.\nThe disk calls of an ordinary write may rise by what resolving each candidate tree's config path costs and by nothing else; the case that counts them is re-pinned to the new sequence and the outcome carries the count before and after.\n\nHOW TO PROVE. One case that states the property by doing: over a table of arrangements - the config folder a real directory, a symlink inside the project, a symlink outside the repository, a symlink to another tree's config folder, a dangling symlink; the config present and absent; the write spelled through the link and spelled at the link's destination; main session and subagent - the hook's verdict is a hold exactly when, with the write made in the fixture, the loader reads the written content for one of the candidate trees. Red before for (a) and (b), each as the hook run as a process. Allow twins: a write into a symlinked folder that is NOT any tree's config folder; a file beside the config in the symlinked folder under another name. The journal's agreement case gains the symlinked arrangements. A mutation probe the orchestrator can run: the candidates narrowed to the tree the resolved path lies in; the creating comparison put back to an unresolved config path; and an allow row - any write into a symlinked folder held - turns the twins red.\n\nNOT in this task: a symlink FILE in the project that points at the config of a worktree outside it; a hard link to the project's config placed in an outside worktree; the shell route. Each is stated in the documents as not matched.\n\nAcceptance:\n(1) With the config folder a symlink, inside the project or outside the repository, a subagent's write of the config is refused and the main session's is asked, whether or not the config exists yet and whether the write is spelled through the link or at its destination.\n(2) Over the table of arrangements the guard holds a write exactly when the loader would then read the written file for the project, the session's tree or the tree the path lies in.\n(3) The journal writes its config row for each of those writes.\n(4) Every other verdict and word is unchanged, the allow twins are allowed, and an ordinary write lists no directory; the disk calls of an ordinary write are reported before and after.\n(5) SECURITY.md, the README, the changelog and the build guide say what is matched through a symlink and what is not, and are true of the code.\n(6) The hook import budget gate is green and the fail-mode table is unchanged.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -4414,14 +4414,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6eeecab53771",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(1) plugins/audit/hooks/_config.py: audit_config_way now asks a list of candidate trees that does not depend on where the path resolves to: the tree tree_for placed the path in (when inside), the project, the session's tree (_session_tree: a walk up to the project for a repository when the session stands under it elsewhere, path_tree's linked worktree when outside), and the config-shaped directory off the path once resolved (only inside the placed tree) and as written (only inside the placed tree or spelled under the project). Each is asked once by resolved directory (_candidate_word), an error costing that candidate only. config_question(tree, written, data) carries the written path and the session's cwd beside tree_for's answer; a relative path is also joined with the session's cwd. _names_audit_config compares resolved against resolved: identity where both exist, as before; for a creating write the config's folder and file are resolved first (_config_resolved, each followed where it is a link) and the resolved write is walked from the directory the folder resolves into, against the resolved names (_case_walk gains an owns parameter, default CONFIG_REL's parts). tree_for is NOT touched. (2) guard-edits.py rule 7 and the MCP lane ask the question of a path outside every tree too, the verdict naming the written path when there is no rel. (3) journal-writes.py: a write placed outside every tree that the question names is a config.edit row, target rel_path(project, path); the inside branch passes the written path too; no existing target changes. (4) SECURITY.md, plugins/audit/README.md, CHANGELOG.md, PLUGIN-BUILD-GUIDE.md say what is matched through a symlink and what is not; no row of SECURITY.md's fail-mode table changed. (5) Tests: the property table (39 arrangements) is red before (18 of 38 agree on HEAD's hooks with the final table before ln39 was added; 15 of 31 at first) and 39 of 39 after. Verdicts of the orchestrator's probes, run on copies under the scratchpad: probe_j both writes block (the probe writes the file itself whatever the verdict, so its load line reads planGate off either way) and the journal row now exists; probe_g all three rows block/ask; probe_a 1960 runs, 0 differing verdicts or words; probe_c one changed step and 2/2 trail rows, the same as an export-vs-export control run (a fixture-name artifact in a tmp-alias target), 0 guard/journal disagreements; probe_f every change is allow to block/ask where the write creates the config, none the other way, 0 images attached after; the orchestrator's mine.py, mine2.py, probe_hold.py, probe5.py print identical output on the export and the tree. Disk calls of an ordinary write per kind (cf29 prints them), before the change and after: existing source file lstat 21 stat 2 -> lstat 21 stat 2; new source file lstat 21 stat 1 -> lstat 23 stat 1; config-named file in a plain folder lstat 21 stat 2 -> lstat 23 stat 2; no listing (cf29b). A session standing elsewhere than the project adds a walk up to the project, or outside it the path_tree git question. bench-hooks --gate exit 0 on 3.14.7 and on 3.9.6 (11 hooks within budget each). Unresolvable link: a dangling link resolves to the place it names and is matched there; a link that cannot be followed (a loop) resolves to the same unresolved spelling as the config's and is held as before, fail-closed (ln32 pins it; the mutation reading it as no file is caught). Deviation from the description: the project being always a candidate, a hard link to the project's config placed in an outside worktree is now held by identity (it IS the project's config); the documents say it is matched rather than listing it as not matched. The symlink FILE residual stays unmatched (ln38 pins it) and the shell route is unchanged. Mutation probe: 14 rows, MUTATIONS ALL CAUGHT, exit 0. Dependants: every hook importing _config keeps its behaviour except guard-edits and journal-writes as above (test_hooks 247, test_require_plan 245, test_guard_bash_writes 239, test__journal_io 276, test__config 413 cases all ok); the scripts reaching _config's loader do not call the changed functions; the documents listed are updated where they spoke of the config question and otherwise untouched.",
+        "descriptive": "A subagent can no longer create or rewrite the audit config through a symlinked .claude folder, and the journal records the write."
       },
       "startedAt": "2026-11-18T13:41:27Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T14:41:07Z",
+      "verifiedBy": [
+        "cf33: the hook as a process refuses a subagent's and asks the main session's write of the config with .claude linked inside the project or outside the repository, present or absent, through the link or at its destination; cf33b the same for an MCP write, a file beside it allowed",
+        "cf34: the property by doing over a table of arrangements (real folder, links inside, outside, into another tree's folder, a chain, relative, dangling, a loop, a dangling config-file link, a nested worktree under the link, a session in a linked worktree, relative paths, a hard link into a sibling worktree, the symlink-file residual): hold exactly when the loader of the project, the session's tree or this repository's tree the path lies in then reads the written content; cf34b the allow twins; cf35/cf35b an error asking one candidate costs that candidate only",
+        "cf29 re-pinned to the new disk-call sequence and printing the calls by kind; cf29b no directory listing on an ordinary write, as its own case",
+        "oq4: the journal hook as a process writes one config row for the config written through a symlinked folder; oq4b no row for the twins; oq4c guard and journal agree over a symlinked folder"
+      ],
       "notes": [
         {
           "at": "2026-11-18T13:41:25Z",
@@ -4479,12 +4484,24 @@
         "runId": "2026-11-18T14:41:03Z.d45f14",
         "status": "passed",
         "at": "2026-11-18T14:41:03Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "6eeecab53771",
+        "at": "2026-11-18T14:41:07Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T14:23:44Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_guard_edits.py tests/test_journal_writes.py tests/test__config.py` in a throwaway tree at HEAD exited 1 with 7 of 166 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cf29 (house FAIL), cf33 (house FAIL), cf34 (house FAIL), cf33b (house FAIL), cf35 (house FAIL), oq4 (house FAIL), oq4c (house FAIL): SELFTEST FAILED: 164/166 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "SG1.44-ukq",
       "title": "A config row names the file it recorded, so the trail check does not warn about an edit the journal saw",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A narrow review of the task that made the journal write a config row for every write the edit guard holds found the guard and the journal in agreement over every write it made, and two false warnings that task introduced in the trail check. Each was run by the reviewer and again by the orchestrator: the hooks as processes, then the trail check.\n\nMEASURED on the tree as it stands. The journal records a config row with its target spelled as the write placed it; the trail check anchors its drift warning on the target's spelling.\n(a) The project's config is written plainly, then through its folder's name in another letter case on a volume that folds case, then plainly again. After the last write the trail check warns that the other-case spelling has changed since the last row that recorded it - an edit the journal never saw - though every one of the three writes has its row. The warning clears only when someone writes through the other spelling again. The doctor prints it as drift from outside: a checkout, a script, a shell write.\n(b) The main session writes the config of a worktree nested under the project; the row goes into the project's trail. A session inside that worktree then edits its own config, recorded in that worktree's own trail - and the project's trail check warns of an edit the journal never saw. After the worktree is removed, the project warns that the file no longer exists and nothing clears it. Before that task there was no warning at any of these steps. Nested worktrees are where agent worktrees live, and removing them is routine.\nThe documents say nothing of either.\n\nTHE RULE TO BUILD.\n1. THE TARGET IS THE FILE, NOT THE SPELLING. When the written file is the audit config of the tree whose trail the row goes into, the row's target is that config's own path as the journal has always written it, whatever spelling, letter case or symlink the write went through. The slot the journal keeps per target follows the same name, so a write through one spelling and the next through another are one file to it.\n2. ANOTHER TREE'S CONFIG IS RECORDED AND IS NOT AN ANCHOR. A write to the config of a tree other than the one whose trail the row goes into is still a config row - the record that this session wrote there - with its target as placed. The trail check does not anchor drift on it: that file's own trail is its own tree's, so its later changes and its removal are not this trail's to warn about. The check decides this from the row and the tree, by the function that answers which file a path names - not from the spelling.\n3. The warning for the tree's own config changed with no row is unchanged, and still fires when the config really is edited behind the journal.\n\nWHAT STAYS. The row's shape and keys; a key may be added, none renamed or removed. The row for the project's own config written plainly, byte for byte apart from time and chain fields. Every other finding and warning of the trail check. The guard.\n\nHOW TO PROVE. The hooks run as processes over a real repository with a nested worktree, then the trail check, red before: the three writes of (a) end with no warning; the three steps of (b) end with no warning at each step. Deny twins that must still warn: the project's own config edited with no hook run (a shell write) after a row; the same after a row recorded through the other-case spelling; the project's own config deleted after a row. One case that the slot follows the file: a write through the other spelling and then a plain one each record the state before as the other left it. A mutation probe the orchestrator can run: the target as placed again for the tree's own config; another tree's row anchored again; and an allow row - no config row anchored at all - turns the deny twins red.\n\nNOT in this task: a write of a nested tree's config through an MCP tool, which leaves no row, as the documents state; the long relative target recorded for a write through an alias of the temp directory.\n\nAcceptance:\n(1) A config row for the trail's own tree names the config's own path whatever spelling or link the write went through, and the per-target slot follows it.\n(2) After writes of the project's config through two spellings the trail check prints no warning.\n(3) A row for another tree's config is recorded and is not a drift anchor: no warning when that tree's own session edits it or when the tree is removed.\n(4) The project's own config edited or deleted behind the journal still warns, also after a row recorded through another spelling.\n(5) The plain row is unchanged apart from time and chain fields, and no key is renamed or removed.\n(6) SECURITY.md, the README, the changelog and the build guide say what a config row's target is and which rows the trail check anchors on, and are true of the code.",
       "files": [
         "plugins/audit/hooks/journal-writes.py",
@@ -4516,16 +4533,74 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T14:41:30Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T14:41:28Z",
+          "text": "it quotes the name of the security contact section of SECURITY.md; this task edits only the passage on what a config row names as its target and which rows the trail check anchors on",
+          "waives": ".github/ISSUE_TEMPLATE/config.yml"
+        },
+        {
+          "at": "2026-11-18T14:41:28Z",
+          "text": "it quotes the sentence of SECURITY.md that the policy denies the tool, not the knowledge; this task edits only the passage on what a config row names as its target and which rows the trail check anchors on",
+          "waives": "tests/test__panel_page.py"
+        },
+        {
+          "at": "2026-11-18T14:41:28Z",
+          "text": "it quotes the heading of SECURITY.md on the name-based secret-read guard; this task edits only the passage on what a config row names as its target and which rows the trail check anchors on",
+          "waives": "tests/test_guard_secrets_read.py"
+        },
+        {
+          "at": "2026-11-18T14:41:28Z",
+          "text": "it quotes the phrase of SECURITY.md on a write journalled after the fact; this task edits only the passage on what a config row names as its target and which rows the trail check anchors on and leaves that phrase as it is",
+          "waives": "tests/test_hooks.py"
+        },
+        {
+          "at": "2026-11-18T14:41:28Z",
+          "text": "it quotes a phrase of SECURITY.md's passage on committed paths; this task edits only the passage on what a config row names as its target and which rows the trail check anchors on",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-18T14:41:28Z",
+          "text": "it quotes the phrase of SECURITY.md on a deliberately loud failure; this task edits only the passage on what a config row names as its target and which rows the trail check anchors on",
+          "waives": "tools/check-git-pipeline.py"
+        },
+        {
+          "at": "2026-11-18T14:41:28Z",
+          "text": "it reads the fail-mode table of SECURITY.md by its heading; this task changes no row of that table - the hooks' events and fail modes stay as they are",
+          "waives": "tools/gate-parity.py"
+        },
+        {
+          "at": "2026-11-18T14:41:28Z",
+          "text": "it quotes the fail-mode row of guard-edits in SECURITY.md; this task changes what the journal row names and what the trail check anchors on, not the guard, so the row stays as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T14:41:28Z",
+          "text": "a dated design note with a section on SECURITY.md as it stood; this task edits only the passage on what a config row names as its target and which rows the trail check anchors on and the note records history",
+          "waives": "docs/research/guard-ownership-design.md"
+        },
+        {
+          "at": "2026-11-18T14:41:28Z",
+          "text": "it reads the Unreleased heading of CHANGELOG.md; this task adds an entry on the config row and the trail check under that heading and leaves the heading as it is",
+          "waives": "tools/release.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T15:37:36Z.168fbf",
+        "status": "passed",
+        "at": "2026-11-18T15:37:36Z"
+      }
     },
     {
       "id": "SG1.45-ukq",
@@ -4549,6 +4624,96 @@
         "expectRedFirst": true,
         "gate": [
           "python3 tools/sweep-selftests.py tests/test__floor_guard.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "SG1.46-ukq",
+      "title": "The config hold compares directories by identity, asks the tree a path is written in wherever it lies, and starts no process on an ordinary write",
+      "status": "pending",
+      "description": "A narrow review of the task that made the config hold follow what the loader would read found the measured hole closed, every earlier verdict unchanged, the errors handled and most of a wide table of arrangements right in both directions. It found four things in the guard's question; each was run by the reviewer and again by the orchestrator, the hook as a process, the write made, the loader asked.\n\nMEASURED on the tree as it stands.\n(a) A LINKED WORKTREE OUTSIDE THE PROJECT whose config folder is a symlink out of the repository: a session standing in the project writes that worktree's config, spelled through the link, config absent or present, by an edit tool or an MCP tool. Allowed, no journal row, and the loader asked for that worktree reads the written file. The tree a path lies in as written is taken as a candidate only when the path is spelled under the project. The documents say such a worktree's config is matched.\n(b) A LETTER-CASE VARIANT ABOVE THE LINK'S DESTINATION: the project's config folder is a symlink; the write is spelled at the destination with a directory above it in another letter case, on a volume that folds case. Allowed, the loader reads the write - and the journal writes a config row for it, so the guard and the journal disagree. The same variant one component lower is held. The written path is matched against the resolved folder by its spelling.\n(c) COST: a session standing in a linked worktree outside the project pays more git processes on every ordinary write than before that task - none before and some now for an edit in the project, and one more for an edit in that worktree - and tens of milliseconds with them, the same with no nested worktree and with many. The case that counts disk calls counts them with the session standing in the project and counts no process, so it cannot see this.\n(d) THE PROPERTY CASE CANNOT FAIL when the candidate taken from the path as written is removed: every case stays green. An arrangement that needs it - a nested repository reached through a symlinked folder under the project - is held by the code and pinned by nothing.\nAlso measured, smaller: a linked worktree's config written at its link's outside destination is not held, which is outside the stated property, while the README's words read as if it were.\n\nTHE RULE TO BUILD.\n1. THE SAME DIRECTORY IS DECIDED BY IDENTITY, NOT BY SPELLING. Wherever the question is whether the directory a write lands in is a candidate tree's config folder and both exist, it is answered by the two directories being one on disk. Spelling is read only below the nearest existing directory, by the per-directory rule on letter case that is already there.\n2. THE TREE A PATH LIES IN AS WRITTEN is a candidate wherever the path lies - under the project or not - found from the path as spelled without resolving it.\n3. AN ORDINARY WRITE STARTS NO PROCESS IT DID NOT START BEFORE THE HOLD FOLLOWED THE LOADER, from wherever the session stands, and lists no directory. Where the session's tree cannot be known without a process, it is found another way or asked only for a write that could be a config by what is already known; which, and why it loses no hold, is stated in the outcome.\n4. THE PROPERTY CASE IS GENERATED, NOT LISTED: its arrangements are the product of named dimensions - whose config (the project's, the session's tree's, a linked worktree's outside the project, a nested worktree's, a nested repository's reached through a symlinked folder), the config folder (a real directory, a symlink inside, a symlink outside, a chain), the config present or absent, the spelling (through the link, at the destination, a letter-case variant at each directory level), where the session stands, the tool - with the impossible combinations named and skipped. For each it runs the hook, makes the write and asks the loader for the project, the session's tree and the tree as written; the verdict is a hold exactly when one of them reads the written file. The journal's agreement case runs over the same product.\n5. THE DOCUMENTS say which trees are asked, and that a config written at a link's destination is held when one of those trees loads it and not otherwise.\n\nWHAT STAYS. Every verdict and every word on every write of the earlier probes (the brief says where), except the measured inputs of (a) and (b), which become holds. The allow side: a file named like the config in a plain folder or in a symlinked folder that is no asked tree's config folder, a sibling of the config, a source file, a write outside every tree. The fail-mode table. The hook import budget.\n\nHOW TO PROVE. Red before, each as the hook run as a process with the write made and the loader asked: (a) in its three forms; (b); the generated case red on the families of (a) and (b) before the change and green after. A case that counts processes as well as disk calls for an ordinary write with the session standing in the project, in a nested worktree and in a linked worktree outside it - no more than the tree before the hold followed the loader. Time per hook run before and after over thirty runs, twice with a gap, reported. A mutation probe the orchestrator can run from the worktree root: identity put back to spelling; the as-written candidate dropped; the as-written candidate limited to under the project; the session's tree asked by a process on every write; and an allow row - every write spelled under any tree's config-named folder held - turns an allow twin red.\n\nNOT in this task: the journal row for a config created through the shell or an MCP tool; a symlink FILE in the project pointing at an outside worktree's config; an exception of an unexpected kind inside the question, which stays the guard's fail-open row.\n\nAcceptance:\n(1) A linked worktree's config outside the project, its config folder a symlink, written through the link from a session standing in the project is refused for a subagent and asked of the main session, by an edit tool and by an MCP tool, config present or absent.\n(2) A write spelled at a link's destination with a letter-case variant at any directory level is held where the loader then reads it, and the guard and the journal agree on it.\n(3) An ordinary write starts no more processes than before the hold followed the loader from each of the three places a session stands, and lists no directory; the counts and the timing are reported before and after.\n(4) The property case is generated from named dimensions, is red before on the measured families, and fails when the as-written candidate is removed.\n(5) Every other verdict and word is unchanged and the allow twins are allowed.\n(6) SECURITY.md, the README, the changelog and the build guide say which trees are asked and what a write at a link's destination gets, and are true of the code; the hook import budget gate is green.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/guard-edits.py",
+        "plugins/audit/hooks/journal-writes.py",
+        "tests/test_guard_edits.py",
+        "tests/test_journal_writes.py",
+        "tests/test__config.py",
+        "SECURITY.md",
+        "plugins/audit/README.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_guard_edits.py: over arrangements generated from named dimensions - whose config, the config folder's kind, present or absent, the spelling with a letter-case variant at each level, where the session stands, the tool - the hook holds a write exactly when the loader then reads the written file for the project, the session's tree or the tree as written",
+          "tests/test_guard_edits.py: an ordinary write starts no more processes and lists no directory with the session standing in the project, in a nested worktree and in a linked worktree outside it",
+          "tests/test_journal_writes.py: over the same generated arrangements the journal writes a config row exactly for the writes the guard holds"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_guard_edits.py tests/test_journal_writes.py tests/test__config.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "SG1.47-ukq",
+      "title": "A config created through the shell or an MCP tool leaves its journal row",
+      "status": "pending",
+      "description": "A narrow review of the config hold ran the route the documents call journalled and found the first write of it unrecorded. It was run by the reviewer and again by the orchestrator: the journal hook's two passes as processes around a real write.\n\nMEASURED on the tree as it stands. No config exists - the default a project starts with. A shell command writes one, with the plan gate switched off; the journal hook runs before and after it. No row is written, and the loader then reads the switch as off. The same with the config folder a symlink, and the same for an MCP tool that creates the config - which the guard asks the main session about and the journal then does not record. With a config already present the row is written in every one of those forms. The pass after the write finds no record of the file as it stood before the call - there was no file - and takes that as nothing to compare with. SECURITY.md says the shell route is journalled.\n\nTHE RULE TO BUILD.\n1. ABSENT IS A STATE THE PASS BEFORE THE CALL RECORDS. For each path the sweep records, the pass before a call notes that the file was absent, as it notes the bytes of one that is present. The pass after writes the row when the file exists and the note says it did not: a creation, said as one in the row's summary, with the state after.\n2. THE SAME FOR EVERY PATH THE SWEEP RECORDS - the config, the plan's index and its phase files - since the same pass reads them all; a plan file created by a command is a row too, unless the trail already holds a row for that state, as today.\n3. WITH THE JOURNAL SWITCHED OFF IN THE CONFIG THAT IS CREATED, the row is still written: the creation is the write that turned it off, as the flip of an existing config already is.\n4. A PASS AFTER WITH NO PASS BEFORE - no note at all - writes nothing, as today: absence was not observed.\n\nWHAT STAYS. Every row written today, byte for byte apart from time and chain fields. No row for a call that created nothing. The list of paths the sweep records - it is not widened. A row's shape and keys; a key may be added, none renamed or removed. The trail check's findings on every fixture of its suite.\n\nHOW TO PROVE. The hook's two passes as processes around a real write in a real repository, red before: a shell redirect creating the config - a row; the same through a symlinked config folder; an MCP tool creating it - a row; a command creating a phase file - a row. Quiet twins: a command that creates nothing writes no row; a file absent before and absent after writes none; a file created and removed inside one call writes none; a pass after with no pass before writes none; a creation the trail already holds a row for is not written twice. One case that the trail check reads a creation row without a finding and anchors the next drift warning on it. A mutation probe the orchestrator can run from the worktree root: absence not noted; the row withheld when the created config switches the journal off; and an allow row - a row whenever the file is present after - turns a quiet twin red.\n\nNOT in this task: a file outside the sweep's list; a write of a nested tree's config through an MCP tool; reading the command's text to find what it wrote.\n\nAcceptance:\n(1) A config created by a shell command, also through a symlinked config folder, and by an MCP tool leaves a config row that says it was created.\n(2) A plan file created by a command leaves its row unless the trail already records that state.\n(3) A created config that switches the journal off still leaves its row.\n(4) No row is written for a call that created nothing, for a file created and removed inside one call, or with no pass before.\n(5) Every row written today is unchanged apart from time and chain fields, and the trail check reads a creation row without a finding.\n(6) SECURITY.md, the README, the changelog and the build guide say what the shell and MCP routes leave in the journal, creation included, and are true of the code.",
+      "files": [
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "tests/test_journal_writes.py",
+        "tests/test__journal_io.py",
+        "SECURITY.md",
+        "plugins/audit/README.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_journal_writes.py: the hook's two passes around a shell redirect or an MCP tool creating the config, also through a symlinked config folder, and around a command creating a phase file, each leave a row that says the file was created",
+          "tests/test_journal_writes.py: a call that created nothing, a file created and removed inside one call, a pass after with no pass before, and a creation the trail already records leave no row",
+          "tests/test__journal_io.py: the trail check reads a creation row without a finding and anchors drift on it"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_journal_writes.py tests/test__journal_io.py"
         ],
         "gateBasis": "tests.add"
       },

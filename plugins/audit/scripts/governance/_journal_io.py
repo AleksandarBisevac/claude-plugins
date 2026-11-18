@@ -2971,6 +2971,47 @@ def newest_anchor(candidates):
     return (str(row.get("ts") or ""), row.get("stateHash"), where)
 
 
+def drift_anchor(project, config, row, names):
+    """The name `verify`'s drift check anchors `row` on, or None when the row
+    anchors nothing - a row with no target, or a config row for another tree's
+    config.
+
+    A CONFIG ROW (an action under `config.`) IS ANCHORED BY THE FILE IT NAMES,
+    NOT BY ITS SPELLING, asked of the hooks' own question
+    (`_config.config_of_tree`) for this project's tree. The config a session
+    here loads is anchored under `CONFIG_REL`, whatever spelling, letter case
+    or link the row's target went through - so rows written before the journal
+    named that file by its own path read as one file too. Another tree's
+    config - a nested worktree's, written from here - is that tree's file and
+    its own trail's anchor: its later edits and its removal are not this
+    trail's to warn about, so it is no anchor here. The question is asked once
+    per target (`names`). Every other row anchors on its target as written, and
+    so does a config row when `_config` cannot be loaded or the question
+    raises, which is what this check did before it asked."""
+    target = row.get("target")
+    if not target:
+        return None
+    if not str(row.get("action") or "").startswith("config."):
+        return target
+    if target not in names:
+        names[target] = _config_anchor(project, config, target)
+    return names[target]
+
+
+def _config_anchor(project, config, target):
+    mod = _config_mod()
+    if mod is None:
+        return target
+    try:
+        question = {"inside": True, "root": project, "project": project,
+                    "rel": target, "written": target, "cwd": "",
+                    "cfg": config or {}}
+        word, own = mod.config_of_tree(question, project)
+    except Exception:
+        return target
+    return mod.CONFIG_REL if word and own else None
+
+
 def verify(project, config=None):
     """Does the chain hold, and does the world still match its last row?
 
@@ -2982,7 +3023,8 @@ def verify(project, config=None):
     working tree at all. WARNINGS are the honest maybes: a
     torn tail (a crash, not a cover-up), out-of-band drift (the document moved
     with no row to say why -- which is normal for anything the plugin did not
-    write), and a file whose LINKS were recomputed while every committed row's
+    write; a config row is anchored by the file it names, `drift_anchor`), and
+    a file whose LINKS were recomputed while every committed row's
     content survived, which is what resolving a divergence does.
 
     THE GIT ANCHOR ASKS ABOUT ROWS AND NOT ABOUT BYTES, and the two
@@ -3028,6 +3070,7 @@ def verify(project, config=None):
     # basename, so a live and an archived twin never answer for one another.
     status_sets = _git_status_sets(directory)
     anchors = {}                   # target -> [(file, index, row)]
+    anchor_names = {}              # config target -> its anchor, or None
     seen_names = {}                # basename -> [journal-relative paths]
     for path in journal_files(directory):
         name = os.path.basename(path)
@@ -3061,7 +3104,7 @@ def verify(project, config=None):
                     "deleted, reordered, or this file was renamed"
                     % (where, i + 1, row.get("action") or "?"))
             prev = stored if isinstance(stored, str) else None
-            tgt = row.get("target")
+            tgt = drift_anchor(project, config, row, anchor_names)
             if tgt:
                 anchors.setdefault(tgt, []).append((where, i, row))
         if torn:

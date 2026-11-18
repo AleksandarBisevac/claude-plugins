@@ -1,0 +1,107 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_journal_writes.py tests/test__journal_io.py tests/test__config.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T15:19:58Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_journal_writes.py tests/test__journal_io.py tests/test__config.py` in a throwaway tree at HEAD exited 1 with 9 of 169 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cr1 (house FAIL), cr2 (house FAIL), cr3 (house FAIL), cr4 (house FAIL), cr4b (house FAIL), oq1 (house FAIL), oq1e (house FAIL), oq4d (house FAIL) and 1 more: SELFTEST FAILED: 165/169 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "(1) RULE 1, the target is the file. plugins/audit/hooks/_config.py: audit_config_way(tree, which=False) with which=True returns (word, resolved directory of the tree that answered) or (None, None). Without which it returns what it always did, and the guard's two callers pass no which. New config_of_tree(tree, root) -> (word, own): own is whether the tree that answered is root, by identity (_one_directory: samestat, and resolved spellings when a stat fails). journal-writes.py _classify_placed asks config_of_tree(question, troot), or (question, root) on the outside-every-tree branch, and names the row with _config_target(own, placed): CONFIG_REL for the trail tree's own config, the path as placed otherwise. The pre-image slot is keyed by sha256(rel), so the slot follows that name. (2) RULE 2, shape chosen: the trail check asks, not an added key. _journal_io.drift_anchor(project, config, row, names): for a row whose action is under config., it asks _config.config_of_tree for the project's tree, cached per target. Own config -> anchor CONFIG_REL. Another tree's config, or a target naming no config now -> no anchor. Any other row -> its target, as before; and when _config cannot be loaded or the question raises, the target as before. Chosen because it reads old rows right with no key: cr4 builds a trail from literal row dicts (targets .claude/audit.config.json, cr-link.json, .Claude/audit.config.json where the volume folds, and a nested worktree's config). No warning after that tree's own edit or its removal, and cr4b shows a real edit of the project config still warns exactly once. No key added to the row, so the row normaliser, the chain hash and COMPATIBILITY.md are untouched. verify() changed only at the anchor line plus a docstring clause. (3) RULE 3 kept: cr3 and cr4b are the deny twins (shell write after a plain row; shell write after a row through another case and through a hard link; config deleted), each exactly one warning naming .claude/audit.config.json. (4) probe_e after the change (orchestrator's probe, copied to <SP>/sg1.44/probe_e.after.out). a0 rows [CONFIG_REL], findings [] warnings []. a1 rows [CONFIG_REL x2], no warning. a2 rows [CONFIG_REL x3], no warning. b1 adds .claude/worktrees/w1/.claude/audit.config.json (recorded, as placed), no warning. b2: w1's own trail [CONFIG_REL], project no warning. b3 after git worktree remove: no warning. (5) probe_c BEFORE=HEAD export AFTER=this tree: plain project row identical once masked; 59 = 59 rows, the same (trail, session, action) keys, none lost. 24 pairs differ. 23 are ext s024-s027 s040 s044 s045, ext3 s162-s165, proj s001-s004 s016-s022 s186: target and the summary that spells it became .claude/audit.config.json in the trail of the tree whose config it is (case variants, ../PROJ, ld_/lr_ symlinked folders, lf_ symlink file, src/hl_proj.json hard link, the tmp alias). That is rule 1 and nothing else. The 24th, proj s068 (w1's config through the tmp alias in another case, another tree's), is identical once the fixture directory name is masked; it is kept as placed (rule 2). Pairing in <SP>/sg1.44/probe_c.pairs.out. (6) probe_d variant: the doctor still printed one drift line. Cause measured: two rows for the config in the same second in two sessions' files (MCP m2, Edit e1), where newest_anchor's tie rule takes the greater row content and so the older m2. HEAD shows the same with plain spellings only (<SP>/sg1.44/tie_probe.py, 4 runs: 3 same-second runs warn, 1 straddling run clean). The changed tree with the variant spelling behaves the same (3 of 4). With a 1.1 s gap before step 2 the doctor prints 'journal ... chain intact' and no drift line (<SP>/sg1.44/probe_d_gap.after.out). This is a pre-existing fault in the same-second tie rule, outside this task. cr1 and cr3 use one session so chain order decides. (7) Every other finding and warning: every verify() result recorded through HEAD's own test__journal_io.py (35 calls) and test_audit_journal.py (85 calls), HEAD code vs this code, machine paths masked. Identical except one writer-token file name, which also differs between two HEAD runs (random per run). (8) Swept targets and MCP: _swept_targets lists CONFIG_REL per swept tree and its rows go into that tree's trail, so it already names each tree's own config by its own path. The edit lane now keys its config slot under the same name the sweep reads. An MCP write of a nested tree's config still leaves no row (documented, not in this task). (9) A second pre-existing fault, found by oq6: the last-will row (journal.enabled true->false) that post_rows computes never lands when the hooks run as processes. _journal_io._append raises 'journal disabled' because the config on disk is already off. k1 only reads post_entries, so oq6 reads the owed row the same way. Not fixed here. (10) Documents: SECURITY.md (verify bullet, hold section), plugins/audit/README.md (table row, verify paragraph), CHANGELOG.md (new [Unreleased] entry; the earlier SG1.43 entry's 'its target the path as placed' amended), PLUGIN-BUILD-GUIDE.md (journal-writes, _config, _journal_io sections). No number added to prose. (11) Runs, each exit 0: task gate 3/3 files 863 cases; dependants 8/8 files 1745 cases (test_journal_writes 169, test__journal_io 281, test_audit_journal 186, test__config 413, test_guard_edits 121, test_hooks 247, test_audit_doctor 173, test__doctor_trail 155); tools/bench-hooks.py --gate (3.14.7 only, 11 hooks within budget, other interpreters not measured); lint sweep test__deps/test__output_lints/test__refs 3/3 files 792 cases; gate-parity.py; prove-gates.py --list; ruff and vermin on the changed files; the unrecorded run-test-gate.py SG1 --task SG1.44-ukq: GATE GREEN. After a last docstring reflow, a re-run of the task's suites plus _refs and _output_lints: 5/5 files 1371 cases. (12) Mutation probe <SP>/sg1.44/mutations.py (output mutations.out): 7 rows, all CAUGHT, exit 0. Target as placed again -> oq1 oq1e oq4d oq6 cr1. Slot read by spelling -> oq6. Own never matched -> oq1 oq1e oq4d oq6 cr1 cr3 cr4b. Another tree's row anchored again -> cr2 cr4. Every tree taken for own -> oq1b oq1c cr2 cr4. Check on spelling again -> cr2 cr4 cr4b. ALLOW no config row anchored -> cr3 cr4b (the deny twins). (13) Existing tests changed: oq1's expected target is now CONFIG_REL. The oq3b stub accepts which=, returning (word, placed root). The oq4 block comment no longer says the target is unpinned. Dependants: _journal_io importers (audit-journal, the doctor through _doctor_trail, status/report readers, drive-phase, the hooks' sweep) read verify's output unchanged apart from the drift anchor, shown by the recorded comparison and their suites. journal-writes.py stays registered Pre and Post unchanged. _config.py: no existing caller's return changed (default which=False), and the hook import budget is green. SECURITY.md, README, CHANGELOG and PLUGIN-BUILD-GUIDE were edited and are true of the code (claims 1).",
+    "descriptive": "A config row for the trail's own tree now names .claude/audit.config.json whatever spelling reached it, and the trail check anchors drift only on that tree's own config, old rows included. The false warnings of probe_e are gone, and a real edit or deletion still warns."
+  },
+  "testsAdded": [
+    "oq1/oq1e/oq4d: the journal hook as a process names the project's config by its own path when written through another letter case, a hard link, or a symlinked folder at its destination; oq1b/oq1c keep a nested tree's config as placed",
+    "oq6: after a write through one spelling, a Post with no Pre of its own through the other spelling reads the state the first left (one slot per writer) and owes the journal.enabled true->false row naming the config's own path, in both directions",
+    "cr1: plain, other spelling (case where it folds, hard link), plain again - the hook as a process per write - the trail check has no finding and no warning at any step",
+    "cr2: the main session writes a nested worktree's config, that tree's own session edits it, the tree is removed - no finding and no warning at any step, the row still recorded",
+    "cr4: a trail of literal old rows (spelled targets and a nested config, no added key) reads with no warning after that tree's edit and removal",
+    "cr3/cr4b: the project's own config edited behind the journal after a plain row, after a row through another spelling, and deleted - each exactly one warning naming .claude/audit.config.json, also over the old trail"
+  ],
+  "casesAdded": [
+    [
+      "oq1",
+      "oq1e",
+      "oq4d",
+      "oq6"
+    ],
+    [
+      "cr1",
+      "cr2",
+      "cr4"
+    ],
+    [
+      "cr3",
+      "cr4b"
+    ]
+  ],
+  "claims": "claims:\n1 _config.py config_of_tree/_one_directory and audit_config_way's which= return; journal-writes.py _config_target and the two config_of_tree calls in _classify_placed; _journal_io.py drift_anchor/_config_anchor and the one changed line in verify. Each document sentence names one of these.\n2 seven mutations in <SP>/sg1.44/mutations.py, all red as listed (incl. the allow row: no config row anchored -> cr3, cr4b red), restored byte for byte, __pycache__ purged; new cases red on HEAD code (165/169, 276/281) and green after (169/169, 281/281)\n3 git grep 'as placed|spelled from the project|target the path' over *.md *.py *.json: every hit on this topic rewritten (journal-writes docstring, README row, SECURITY hold section, build guide, CHANGELOG SG1.43 entry, test comment). Left: hits about other subjects (manifest spelling, evidence paths, ADO ranks) and docs/audit/** records, which are history. Class: the sweep lane already names CONFIG_REL; the same-second tie and the refused last-will row were found and are reported, not fixed\n4 n/a - no rule addressed to an agent\n5 the tie cause measured over 4 runs per arrangement on HEAD and on this tree, plus a 1.1 s gap run; verify comparison run twice on HEAD to separate the random writer token\n6 the trail check decides from the row and the tree by _config.config_of_tree (identity of files and trees), not from the target's spelling; allow side shown quiet first (cr1/cr2/cr4 pass, the deny twins still fire) and the allow mutation turns the twins red\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:10d0523c4fa78376ff4c9b709434f4ba3392884fda0c7abb3ba0d014350d3a76\",\"dirtyDigest\":\"sha256:5777fa3d08ec98345d782bca6305ead413c4387979f95d9bf2a4c3b0bd284174\",\"dirtyPaths\":{\"CHANGELOG.md\":\"fefcac7addb3f2b8\",\"PLUGIN-BUILD-GUIDE.md\":\"ee11a1c658361bc0\",\"SECURITY.md\":\"bba55afff54c900f\",\"plugins/audit/README.md\":\"8262f336dfd087a9\",\"plugins/audit/hooks/_config.py\":\"5060b1f5dc1301cc\",\"plugins/audit/hooks/journal-writes.py\":\"e96a4a366788816b\",\"plugins/audit/scripts/governance/_journal_io.py\":\"d88b8690ed6285c7\",\"tests/test__journal_io.py\":\"db29bd9f4414e263\",\"tests/test_journal_writes.py\":\"05019d0070898386\"},\"head\":\"6eeecab5\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/README.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/journal-writes.py\",\"plugins/audit/scripts/governance/_journal_io.py\",\"tests/test__config.py\",\"tests/test__journal_io.py\",\"tests/test_journal_writes.py\"],\"scopeDigest\":\"sha256:1c8861d5d1ef8d29fcea89c2d07c8f506f30a3a6331d5acaaa012baaeefe4bc1\",\"v\":2}",
+  "floorGuard": {
+    "answer": "findings",
+    "basis": "1 move(s) that lower the bar across 9 file(s) of the diff; 4 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, SECURITY.md, plugins/audit/README.md; 2 file(s) that could hold a move not compared: tests/test__journal_io.py, tests/test_journal_writes.py",
+    "findings": [
+      {
+        "move": "definition-changed",
+        "path": "tests/test_journal_writes.py",
+        "line": 2178,
+        "side": "base",
+        "what": "labelled check `%s the journal hook, run as a process, writes %s for %s - its targe...` is gone from the tree copy",
+        "part": "gone"
+      }
+    ],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "SECURITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test__journal_io.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was only added: every statement of the base copy outside them stands in the tree copy, in order and in place, and the first added one is at tree line 2878 (`_harness.stage(check, \"cr-block\", _config_row_cases)`); what it runs is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test_journal_writes.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 2168 (`for cid, label, path, held in (`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "6eeecab53771a13c8d0138e67f6dce6a117bd010"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-18T15:20:00Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

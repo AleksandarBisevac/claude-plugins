@@ -18,10 +18,11 @@ Appends one row to the tamper-evident journal for every write to the MANIFEST
 (index or phase shard) or to `.claude/audit.config.json`, whatever made it. An
 edit-tool write is a config write by `_config.audit_config_way`'s answer, the
 one guard-edits holds it by - so that config in another letter case, or a
-nested worktree's, is a config row too, its target the path as placed (spelled
-from the project when a symlinked `.claude` resolves it out of every tree).
-Nothing else is recorded: the journal is the audit trail of the plan and the
-rules, not a log of the repository.
+nested worktree's, is a config row too. Its target is `CONFIG_REL` when the
+file is the config of the tree whose trail the row goes into, whatever
+spelling, case or link reached it (`_config_target`); another tree's config
+keeps the path as placed. Nothing else is recorded: the journal is the audit
+trail of the plan and the rules, not a log of the repository.
 
 WHICH TOOL WROTE IT IS NO LONGER THE QUESTION. The derived rows below used
 to exist only for a write that arrived through an edit tool, because
@@ -238,10 +239,12 @@ def _classify_placed(data, cfg, root):
     if not tree["inside"]:
         # A symlinked `.claude` resolves out of the repository while the
         # project still loads its config through it: the guard holds that
-        # write, so it is a config row here, placed from the project.
-        if _config.audit_config_way(_config.config_question(tree, path, data)):
-            return ("config.edit", _config.rel_path(root, path), tool, ti,
-                    root)
+        # write, so it is a config row here, in the project's trail.
+        word, own = _config.config_of_tree(
+            _config.config_question(tree, path, data), root)
+        if word:
+            return ("config.edit", _config_target(own, _config.rel_path(
+                root, path)), tool, ti, root)
         return (None, "outside this project (%s)" % tree["basis"], tool, ti,
                 root)
     rel, troot = tree["rel"], tree["root"]
@@ -258,11 +261,22 @@ def _classify_placed(data, cfg, root):
     # The file a session of some tree of this repository loads as its config,
     # by the answer guard-edits holds the write by and by nothing else: so a
     # config write the guard asks about - the config in another letter case, a
-    # nested worktree's - is a config row here, and no other write is. `rel`
-    # stays the path as placed.
-    if _config.audit_config_way(_config.config_question(tree, path, data)):
-        return ("config.edit", rel, tool, ti, troot)
+    # nested worktree's - is a config row here, and no other write is.
+    word, own = _config.config_of_tree(
+        _config.config_question(tree, path, data), troot)
+    if word:
+        return ("config.edit", _config_target(own, rel), tool, ti, troot)
     return (None, "not a manifest or config path", tool, ti, troot)
+
+
+def _config_target(own, placed):
+    """A config row's target. The config of the tree whose trail the row goes
+    into is named `CONFIG_REL` - the target the plain write and the sweep lane
+    have always recorded - whatever spelling, letter case or link the write
+    went through, so its slot and the trail check's drift anchor follow the
+    file. Another tree's config keeps the path as placed: the row records that
+    this session wrote there, and that tree's own trail is its anchor."""
+    return _config.CONFIG_REL if own else placed
 
 
 def _actor(data, root, cfg):

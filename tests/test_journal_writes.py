@@ -2081,6 +2081,7 @@ def _cases(check):
     _call_mark_cases(check)
     _one_question_cases(check)
     _link_question_cases(check)
+    _slot_follows_file_cases(check)
 
 
 # --- oq: the guard and the journal ask one function which file is the config ------
@@ -2163,21 +2164,30 @@ def _one_question_cases(check):
     def placed(path):
         return _output.posix_rel(path, main)
 
+    hard = os.path.join(main, "oq1e-link.json")
+    hard_made = _harness.attempt(os.link, pconf, hard)[0]
+
     # (1) the hook as a process: a config row for each of the writes it missed,
-    # and none for the twins.
-    for cid, label, path, held in (
+    # and none for the twins. The project's own config is named by its own
+    # path whatever spelling reached it; another tree's by the path as placed.
+    for cid, label, path, held, own in (
             ("oq1", "the project's config spelled in another case",
-             os.path.join(main, up, rel[1]), folds),
-            ("oq1b", "a nested worktree's config", nconf, True),
+             os.path.join(main, up, rel[1]), folds, True),
+            ("oq1b", "a nested worktree's config", nconf, True, False),
             ("oq1c", "a nested worktree's config spelled in another case",
-             os.path.join(nested, up, rel[1].upper()), folds),
+             os.path.join(nested, up, rel[1].upper()), folds, False),
             ("oq1d", "the project's config spelled plainly, as before", pconf,
-             True)):
+             True, True),
+            ("oq1e", "the project's config through a hard link to it", hard,
+             hard_made, True)):
         rows, codes = _oq_write(path, main, "sess-" + cid)
-        want = [("config.edit", placed(path))] if held else []
+        target = _config.CONFIG_REL if own else placed(path)
+        want = [("config.edit", target)] if held else []
         check("%s the journal hook, run as a process, writes %s for %s - its "
-              "target the path as placed (%s)" % (
-                  cid, "one config row" if held else "no row", label, vol),
+              "target %s (%s, hard link: %s)" % (
+                  cid, "one config row" if held else "no row", label,
+                  "the config's own path" if own else "the path as placed",
+                  vol, hard_made),
               rows == want and codes == (0, 0),
               "rows %r, exit codes %r" % (rows, codes))
     for cid, label, path in (
@@ -2242,8 +2252,12 @@ def _one_question_cases(check):
         asked = []
 
         def _answer(word):
-            def way(tree):
+            # The journal also asks which tree's config it is (`which`), and
+            # is told the placed tree's, so a held source file is its tree's.
+            def way(tree, which=False):
                 asked.append(tree["rel"])
+                if which:
+                    return (word, str(tree["root"]) if word else None)
                 return word
             return way
         quiet = (pconf, nconf, os.path.join(main, "src", "app.ts"),
@@ -2288,8 +2302,7 @@ def _with_cfg(name, value, fn):
 # A project whose `.claude` is a symlink - to a directory inside the project, or
 # out of the repository - loads its config through the link, so a write of it
 # there is a config edit and the journal records its row, by the same question
-# the guard asks. Which target the row names is not pinned here: only that the
-# row exists, and that the twins leave none.
+# the guard asks, naming the config's own path (oq4d); the twins leave none.
 _OQ_PLAN = {"meta": {"version": 3, "developmentBranch": "main"}, "phases": []}
 
 
@@ -2330,7 +2343,7 @@ def _link_question_cases(check):
         return
     os.remove(probe)
     rel = _config.CONFIG_REL.split("/")
-    missing, n = [], 0
+    missing, named, n = [], [], 0
     for where in ("in-project", "outside"):
         for present in (False, True):
             for spelling in ("link", "dest"):
@@ -2343,11 +2356,16 @@ def _link_question_cases(check):
                 edits = [r for r in rows if r[0] == "config.edit"]
                 if len(edits) != 1 or codes != (0, 0):
                     missing.append((where, present, spelling, rows, codes))
+                elif edits[0][1] != _config.CONFIG_REL:
+                    named.append((where, present, spelling, edits[0][1]))
     check("oq4 the journal hook, run as a process, writes one config row for the "
           "config written through a symlinked config folder - the folder a link "
           "into the project or out of the repository, the config present or "
           "absent, the write spelled through the link or at its destination; "
           "without one: %r" % (missing,), n == 8 and not missing)
+    check("oq4d ...and each of those rows names the config's own path, the one "
+          "a plain write records, whichever spelling the write went through; "
+          "named otherwise: %r" % (named,), n == 8 and not missing and not named)
 
     proj, dest = _oq_link_repo(os.path.join(base, "twins"), "outside", True)
     notes = os.path.join(base, "twins", "store", "notes")
@@ -2397,6 +2415,95 @@ def _link_question_cases(check):
           % (seen,),
           all(s[1] == s[2] for s in seen) and seen[0][1] and seen[1][1]
           and not any(s[1] for s in seen[2:]))
+
+
+# --- oq: the pre-image slot follows the file, not the spelling ----------------------
+# The Post pass reads the state before a write from the writer's slot for the
+# row's target. A write of the project's config through another spelling and a
+# plain one name one target, so each reads the state the other left. Seen on a
+# Post whose own Pre never ran (a hook timeout): it can only know the state
+# before from the slot the previous write refreshed, and the switch flipped off
+# is the row it owes only when it does. The first write runs as a process; the
+# second's rows are read off `post_entries`, as k1 reads the flip, because the
+# append that follows refuses a row while the config on disk says the journal
+# is off.
+_OQ_ON = '{\n  "journal": {"enabled": true},\n  "n": %d\n}\n'
+_OQ_OFF = '{\n  "journal": {"enabled": false}\n}\n'
+
+
+def _oq_put(path, body):
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(body)
+
+
+def _slot_follows_file_cases(check):
+    label = "oq6 the pre-image slot follows the file"
+    ok, tf = _harness.attempt(_harness.worktree_pair, "journal-oq-slot-")
+    if not ok:
+        check("oq6 the worktree fixture builds (%s)" % (tf,), False)
+        return
+    main = tf["main"]
+    rel = _config.CONFIG_REL.split("/")
+    pconf = os.path.join(main, *rel)
+    os.makedirs(os.path.dirname(pconf))
+    _oq_put(pconf, _OQ_ON % 0)
+    others = []
+    if _oq_folds(os.path.dirname(pconf)):
+        others.append(os.path.join(main, rel[0][0] + rel[0][1].upper()
+                                   + rel[0][2:], rel[1]))
+    hard = os.path.join(main, "oq6-link.json")
+    if _harness.attempt(os.link, pconf, hard)[0]:
+        others.append(hard)
+    if not others:
+        _harness.skip(check, label, "this volume tells case apart and no hard "
+                      "link can be made, so the config has one spelling",
+                      not hasattr(os, "link"))
+        return
+    state = os.path.join(main, ".claude", "state")
+    seen, n = [], 0
+    prev = dict((k, os.environ.get(k)) for k in ("CLAUDE_PROJECT_DIR", _OQ_MARK))
+    os.environ["CLAUDE_PROJECT_DIR"] = main
+    os.environ.pop(_OQ_MARK, None)
+    try:
+        for other in others:
+            for first, second in ((other, pconf), (pconf, other)):
+                n += 1
+                sid = "sess-oq6-%d" % n
+                # The switch on, written through the first spelling with both
+                # passes; then the second spelling turns it off, its Pre lost.
+                _oq_put(pconf, _OQ_ON % n)
+                _oq_hook("PreToolUse", first, main, sid)
+                _oq_put(first, _OQ_ON % (n + 100))
+                post1 = _oq_hook("PostToolUse", first, main, sid)
+                _oq_put(second, _OQ_OFF)
+                data = {"hook_event_name": "PostToolUse", "tool_name": "Write",
+                        "session_id": sid, "tool_use_id": "call-2-" + sid,
+                        "cwd": main,
+                        "tool_input": {"file_path": second,
+                                       "content": _OQ_OFF}}
+                got_ok, got = _harness.attempt(M.post_entries, data, root=main)
+                rows = ([(e.get("target"), e.get("summary")) for e in got]
+                        if got_ok else got)
+                slots = [s for s in os.listdir(state)
+                         if s.startswith("journal-preimage-%s." % (sid,))]
+                seen.append((_output.posix_rel(first, main),
+                             _output.posix_rel(second, main), rows, len(slots),
+                             post1.returncode))
+    finally:
+        for k, v in prev.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    want = [(_config.CONFIG_REL, "journal.enabled true->false")]
+    wrong = [s for s in seen if s[2] != want or s[3] != 1 or s[4] != 0]
+    check("oq6 the pre-image slot follows the file: a write of the project's "
+          "config through another spelling, then one spelled plainly whose own "
+          "Pre never ran, and the same the other way round, keep one slot per "
+          "writer and each reads the state before as the other left it - the "
+          "row the Post owes is the switch turned off, naming the config's "
+          "own path; otherwise: %r" % (wrong,),
+          len(seen) == 2 * len(others) and not wrong, repr(seen))
 
 
 # --- cm: a status row says when its call's baseline stood ----------------------

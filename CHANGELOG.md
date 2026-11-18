@@ -341,8 +341,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   config write by comparing the placed path with the config's spelling, so the project's config
   in another letter case and a nested worktree's config - writes the guard asks the owner about -
   left no config row. Both hooks now ask one function, `_config.audit_config_way`, and the row
-  keeps its shape, its target the path as placed. What is matched and what is not, symlinked
-  folders included, is the next entry's list. The journal writes its
+  keeps its shape; which target it names is the entry below on config row targets. What is
+  matched and what is not, symlinked folders included, is the next entry's list.
+- **A config row names the file it recorded, so the trail check no longer warns about an edit
+  the journal saw.** The journal named a config row by the path as the write placed it, and the
+  trail check anchored drift on that spelling. So after a write of the project's config through
+  its folder's name in another letter case and a plain write after it, the check warned that the
+  other spelling had changed with no row, and the warning stayed. A row the project's trail held
+  for a nested worktree's config made the project warn when that worktree's own session edited
+  it, and again, for good, when the worktree was removed. A row for the config of the tree whose
+  trail it goes into now names `.claude/audit.config.json`, whatever spelling, letter case or
+  link the write went through, and the writer's pre-image slot follows it. A row for another
+  tree's config keeps the path as placed and is a record, not a drift anchor. The trail check
+  asks the hooks' own question which file a config row names, so rows written before this
+  change read the same way, and the tree's own config edited or deleted behind the journal still
+  warns. No row key was added, renamed or removed. The journal writes its
   config row for exactly the edit-tool writes the guard holds, apart from a hold made without
   regard to case whose write created another file; an MCP write of a nested tree's config is
   held and leaves no config row. A write that would create the config is now walked one

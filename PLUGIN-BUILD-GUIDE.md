@@ -622,7 +622,11 @@ ordinary write makes the disk calls it made before, plus a link question for the
 and one for its file when it would create its file (`cf29`, `cf29b`, `cf30` in
 `tests/test_guard_edits.py`). An error asking one candidate costs that candidate only (`cf35`).
 What it matches and does not is the list under
-`guard-edits.py` below. Also hosts the shared path/manifest helpers
+`guard-edits.py` below. `audit_config_way(tree, which=True)` also hands back the resolved
+directory of the tree that answered, read only by `config_of_tree(tree, root)`: the word, and
+whether that tree is `root` by identity — the question the journal names a config row by and
+the trail check anchors drift on (`_journal_io.drift_anchor`); the guard asks without `which`
+and reads the word alone. Also hosts the shared path/manifest helpers
 (`rel_path`, `within_root`, `matches_exempt`, `strip_line_suffix`, `in_progress_files`,
 `in_progress_task_map` — the latter exposes each covering task's `tests.mode` for remind-tdd).
 `declared_task_map` is the `files` half of the one reading of "declared" behind that map: the
@@ -979,12 +983,15 @@ PostToolUse (Edit|Write|MultiEdit|NotebookEdit, **Bash and `mcp__.*`**) recorder
 to the manifest (index or phase shard) or to `.claude/audit.config.json` appends one row to the
 audit trail via `scripts/governance/audit-journal.py`. An edit-tool write is a config row by
 `_config.audit_config_way`'s answer and nothing else — the answer `guard-edits.py` holds the
-write by — so the config in another letter case and a nested worktree's config are config rows,
-their target the path as placed, and the row for the config spelled plainly is the one it always
-was (`oq1`–`oq3b` in `tests/test_journal_writes.py`); a config written through a symlinked
-`.claude` that resolves out of every tree is a config row too, its target spelled from the
-project (`oq4`–`oq4c`); the one exception is a hold made without
-regard to case whose write created another file. An MCP write of a nested tree's config is held
+write by — so the config in another letter case and a nested worktree's config are config rows
+(`oq1`–`oq3b` in `tests/test_journal_writes.py`), and so is a config written through a symlinked
+`.claude`, also one that resolves out of every tree (`oq4`–`oq4c`); the one exception is a hold
+made without regard to case whose write created another file. **The target is the file, not the
+spelling** (`_config_target`, from `_config.config_of_tree`): the config of the tree whose trail
+the row goes into is named `.claude/audit.config.json` whatever spelling, letter case or link
+reached it — the plain row is the one it always was — so the per-(session, agent, target) slot
+and the trail check's drift anchor follow the file (`oq1`, `oq1e`, `oq4d`, `oq6`); another
+tree's config keeps the path as placed, a record of the write and not an anchor. An MCP write of a nested tree's config is held
 and leaves no config row, since the sweep lane reads the project's config and the session's own
 tree's. Bash and MCP share the **sweep lane**
 (`_swept_rows`), which needs no rule about which operations write: it compares each recorded
@@ -2260,7 +2267,11 @@ contents (edited after it was written), a row that does not follow the one befor
 (deleted, reordered, or the file renamed), a corrupted line that is not the last line, and a
 committed row that is no longer in the working copy with its content intact. WARNINGS are
 the honest maybes: a torn tail (a crash, not a cover-up), out-of-band drift — the document
-moved with no row to say why, which is normal for anything the plugin did not write — the
+moved with no row to say why, which is normal for anything the plugin did not write; a config
+row is anchored on the file it names (`drift_anchor`, asking `_config.config_of_tree` for the
+trail's own tree), so the tree's own config is one anchor whatever spelling a row records, old
+rows included, and a row for another tree's config anchors nothing (`cr1`–`cr4b` in
+`tests/test__journal_io.py`) — the
 same basename existing both live and archived (both chains verify off the same genesis seed,
 so its rows double-count), and a file whose LINKS were recomputed while every committed
 row's content survived.

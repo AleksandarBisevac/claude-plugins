@@ -2875,6 +2875,246 @@ def _gone_cases(check):
     _free_text_cases(check)
     _stale_lock_cases(check)
     _harness.stage(check, "nl-block", _line_ending_cases)
+    _harness.stage(check, "cr-block", _config_row_cases)
+
+
+# --- cr: a config row names the file, and only the trail's own config anchors ----
+# The write journal records a config row for every write the edit guard holds as
+# a config write. Its target is the trail's own config path when the file
+# written is the config of the tree whose trail the row goes into, whatever
+# spelling reached it, and the path as placed when it is another tree's config;
+# the trail check anchors drift on the first and not on the second. Run as the
+# host runs them: the journal hook as a process for each write, over a real
+# repository with a nested worktree, then the trail check.
+_CR_MARK = "AUDIT_DRIVE_SESSION"
+
+
+def _cr_hook(event, path, session_dir, sid):
+    """journal-writes.py as a process, for a Write of `path` by a session whose
+    project directory is `session_dir`."""
+    payload = {"hook_event_name": event, "tool_name": "Write",
+               "session_id": sid, "tool_use_id": "call-" + sid,
+               "cwd": session_dir,
+               "tool_input": {"file_path": path, "content": "{}"}}
+    env = dict(os.environ)
+    env["CLAUDE_PROJECT_DIR"] = session_dir
+    env.pop(_CR_MARK, None)
+    return subprocess.run(
+        [sys.executable, os.path.join(_harness.HOOKS_DIR, "journal-writes.py")],
+        input=json.dumps(payload).encode("utf-8"), capture_output=True,
+        env=env, cwd=session_dir, timeout=60)
+
+
+def _cr_body(n):
+    return '{\n  "journal": {"enabled": true},\n  "n": %d\n}\n' % (n,)
+
+
+def _cr_write(path, session_dir, sid, n):
+    """Pre, the write itself, Post - the edit an edit tool makes. -> the two
+    exit codes."""
+    pre = _cr_hook("PreToolUse", path, session_dir, sid)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(_cr_body(n))
+    post = _cr_hook("PostToolUse", path, session_dir, sid)
+    return (pre.returncode, post.returncode)
+
+
+def _cr_shell(path, n):
+    """A write no hook sees: a shell, a script, a checkout."""
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(_cr_body(n))
+
+
+def _cr_seen(root):
+    """(findings, warnings) of the trail check over `root`'s trail."""
+    got = M.verify(root)
+    return (list(got["findings"]), list(got["warnings"]))
+
+
+def _cr_config_warnings(root):
+    return [w for w in _cr_seen(root)[1] if "audit.config.json" in w]
+
+
+def _cr_targets(root):
+    return [r.get("target") for r in M.read_all(root)
+            if r.get("action") == "config.edit"]
+
+
+def _cr_folds(directory):
+    head, name = os.path.split(directory)
+    other = os.path.join(head, name.swapcase())
+    return os.path.exists(other) and os.path.samefile(other, directory)
+
+
+def _cr_repo(prefix):
+    """A repository with a config, a hard link to that config, and a nested
+    worktree under `.claude/worktrees/` holding its own config.
+    -> (main, config, hard link or None, nested, nested config)"""
+    import _config
+    tf = _harness.worktree_pair(prefix)
+    main = tf["main"]
+    rel = _config.CONFIG_REL.split("/")
+    conf = os.path.join(main, *rel)
+    os.makedirs(os.path.dirname(conf))
+    _cr_shell(conf, 0)
+    nested = os.path.join(main, ".claude", "worktrees", "cr-w1")
+    _harness.git(main, "worktree", "add", "-q", nested, "-b", "nested/cr-w1",
+                 prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+    nconf = os.path.join(nested, *rel)
+    os.makedirs(os.path.dirname(nconf))
+    _cr_shell(nconf, 0)
+    link = os.path.join(main, "cr-link.json")
+    linked = _harness.attempt(os.link, conf, link)[0]
+    return main, conf, (link if linked else None), nested, nconf
+
+
+def _config_row_cases(check):
+    import _config
+    ok, built = _harness.attempt(_cr_repo, "journal-cr-")
+    if not ok:
+        _harness.could_not_run(check, "cr0 the nested-worktree fixture",
+                               "it did not build: %s" % (built,))
+        return
+    main, conf, link, nested, nconf = built
+    rel = _config.CONFIG_REL.split("/")
+    folds = _cr_folds(os.path.dirname(conf))
+    up = os.path.join(main, rel[0][0] + rel[0][1].upper() + rel[0][2:], rel[1])
+    # The other spellings of the project's own config this volume has: the
+    # folder's name in another letter case where names fold, and a hard link
+    # wherever one can be made.
+    others = [p for p, present in ((up, folds), (link, link is not None))
+              if present]
+    vol = "volume folds case: %s, hard link: %s" % (folds, link is not None)
+
+    # (1) the project's config written plainly, then through each other
+    # spelling, then plainly again: the trail check speaks at no step. One
+    # session, so the rows are one file's chain and its order is the order of
+    # the writes: rows of two files stamped in one second are ordered by what
+    # they say (`newest_anchor`), which is not what this case is about.
+    steps, codes, n = [], [], 0
+    for path in [conf] + [p for other in others for p in (other, conf)]:
+        n += 1
+        codes.append(_cr_write(path, main, "sess-cr1", n))
+        steps.append((_output.posix_rel(path, main), _cr_seen(main)))
+    loud = [s for s in steps if s[1] != ([], [])]
+    check("cr1 the project's config written plainly, through another spelling "
+          "of the same file and plainly again - each write's row recorded by "
+          "the journal hook run as a process - leaves the trail check with no "
+          "finding and no warning at any step (%s): %r" % (vol, loud),
+          len(steps) == 1 + 2 * len(others) and not loud
+          and all(c == (0, 0) for c in codes)
+          and _cr_targets(main) == [_config.CONFIG_REL] * len(steps),
+          "targets %r, exit codes %r" % (_cr_targets(main), codes))
+
+    # (2) the main session writes the nested worktree's config; a session in
+    # that worktree then edits its own; the worktree is removed.
+    b_steps = []
+    b_codes = [_cr_write(nconf, main, "sess-cr2-main", 101)]
+    b_steps.append(("main session writes the nested config", _cr_seen(main)))
+    recorded = [t for t in _cr_targets(main)
+                if t == _output.posix_rel(nconf, main)]
+    b_codes.append(_cr_write(nconf, nested, "sess-cr2-own", 102))
+    b_steps.append(("its own session writes it", _cr_seen(main)))
+    own = _cr_targets(nested)
+    rm_ok, rm_why = _harness.attempt(
+        _harness.git, main, "worktree", "remove", "--force", nested,
+        prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+    b_steps.append(("the worktree is removed", _cr_seen(main)))
+    b_loud = [s for s in b_steps if s[1] != ([], [])]
+    check("cr2 a row the project's trail holds for a nested worktree's config "
+          "is a record and not an anchor: no finding and no warning after the "
+          "main session writes it, after that worktree's own session edits it, "
+          "or after the worktree is removed: %r" % (b_loud,),
+          rm_ok and not b_loud and len(recorded) == 1
+          and own == [_config.CONFIG_REL] and not os.path.exists(nested)
+          and all(c == (0, 0) for c in b_codes),
+          "removed %r (%s), project rows naming it %r, its own rows %r, exit "
+          "codes %r" % (rm_ok, rm_why, recorded, own, b_codes))
+
+    # (3) the deny twins: the project's own config edited behind the journal
+    # after a plain row, and after a row recorded through each other spelling,
+    # then deleted - each warns, once, naming the config's own path.
+    changed = "%s has changed since the last row" % (_config.CONFIG_REL,)
+    gone = "%s no longer exists" % (_config.CONFIG_REL,)
+    twins = []
+    _cr_write(conf, main, "sess-cr1", 201)
+    _cr_shell(conf, 202)
+    twins.append(("plain row, then a shell write", changed,
+                  _cr_config_warnings(main)))
+    for i, other in enumerate(others):
+        _cr_write(other, main, "sess-cr1", 210 + i)
+        _cr_shell(conf, 220 + i)
+        twins.append(("row through %s, then a shell write"
+                      % (_output.posix_rel(other, main),), changed,
+                      _cr_config_warnings(main)))
+    if link is not None:
+        os.remove(link)
+    os.remove(conf)
+    twins.append(("the config deleted", gone, _cr_config_warnings(main)))
+    quiet = [t for t in twins
+             if len(t[2]) != 1 or not t[2][0].startswith(t[1])]
+    check("cr3 the project's own config edited behind the journal after a "
+          "plain row, and after a row recorded through another spelling, then "
+          "deleted, each warns exactly once and names the config's own path "
+          "(%s): %r" % (vol, quiet),
+          len(twins) == 2 + len(others) and not quiet, repr(twins))
+
+    _old_row_cases(check)
+
+
+def _old_row_cases(check):
+    """Rows written before the target named the file: their targets as the
+    write placed them, no added key. Built as literal rows and appended the
+    way any writer appends."""
+    import _config
+    ok, built = _harness.attempt(_cr_repo, "journal-cr-old-")
+    if not ok:
+        _harness.could_not_run(check, "cr4 the old-row fixture",
+                               "it did not build: %s" % (built,))
+        return
+    main, conf, link, nested, nconf = built
+    rel = _config.CONFIG_REL.split("/")
+    folds = _cr_folds(os.path.dirname(conf))
+    up = rel[0][0] + rel[0][1].upper() + rel[0][2:] + "/" + rel[1]
+    spelled = [("plain", _config.CONFIG_REL, conf)]
+    if link is not None:
+        spelled.append(("hard link", "cr-link.json", link))
+    if folds:
+        spelled.append(("other case", up, os.path.join(main, *up.split("/"))))
+    spelled.append(("plain", _config.CONFIG_REL, conf))
+    for i, (_how, target, path) in enumerate(spelled):
+        _cr_shell(path, 300 + i)
+        M.append(main, {"action": "config.edit", "target": target,
+                        "ts": "2026-10-01T00:00:%02dZ" % (i,),
+                        "summary": "Write wrote %s" % (target,),
+                        "actor": {"sessionId": "old-%d" % (i,), "via": "hook"}})
+    # The row a write of the nested config left, then that tree's own edit.
+    ntarget = _output.posix_rel(nconf, main)
+    M.append(main, {"action": "config.edit", "target": ntarget,
+                    "ts": "2026-10-01T00:01:00Z",
+                    "summary": "Write wrote %s" % (ntarget,),
+                    "actor": {"sessionId": "old-n", "via": "hook"}})
+    _cr_shell(nconf, 399)
+    after_edit = _cr_seen(main)
+    rm_ok = _harness.attempt(
+        _harness.git, main, "worktree", "remove", "--force", nested,
+        prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)[0]
+    after_rm = _cr_seen(main)
+    targets = [s[1] for s in spelled]
+    check("cr4 a trail written before a config row named the file - its "
+          "targets the spellings the writes went through (%s) and a nested "
+          "worktree's config, with no added key - reads with no finding and no "
+          "warning, after that tree's own edit and after the tree is removed: "
+          "%r / %r" % (sorted(set(targets)), after_edit, after_rm),
+          rm_ok and after_edit == ([], []) and after_rm == ([], []))
+
+    _cr_shell(conf, 400)
+    edited = _cr_config_warnings(main)
+    check("cr4b ...and the same old trail still warns, exactly once and naming "
+          "the config's own path, when the project's own config is edited "
+          "behind the journal: %r" % (edited,),
+          len(edited) == 1 and edited[0].startswith(
+              "%s has changed since the last row" % (_config.CONFIG_REL,)))
 
 
 # --- nl: every trail and ledger writer writes LF, whatever the platform ---------

@@ -1720,12 +1720,14 @@ def _session_tree(tree):
     return None
 
 
-def audit_config_way(tree):
+def audit_config_way(tree, which=False):
     """Which way the path the config question is about (`config_question`, or
     `tree_for`'s answer alone) names the audit config of a tree - the first
     `_names_audit_config` word a candidate tree answers - or None. The one
     answer the edit guard holds a write by and the write journal records a
-    config row by.
+    config row by. With `which`, the pair (word, the resolved directory of the
+    tree that answered it), or (None, None): what `config_of_tree` reads, and
+    only it.
 
     THE CANDIDATE TREES do not depend on where the path resolves to, since a
     symlinked `.claude` resolves out of every tree while the project's loader
@@ -1757,9 +1759,10 @@ def audit_config_way(tree):
     places in no tree; and the config of a repository that is no tree of this
     one. An OSError or a ValueError asking one candidate, or resolving one
     spelling, answers None for that one and the rest are still asked."""
+    miss = (None, None) if which else None
     spellings = _written_spellings(tree)
     if not spellings:
-        return None
+        return miss
     project = str(tree.get("project") or tree["root"])
     fixed = [str(tree["root"])] if tree["inside"] else []
     fixed.append(project)
@@ -1795,8 +1798,33 @@ def audit_config_way(tree):
             except (OSError, ValueError):
                 found = None
             if found:
-                return found
-    return None
+                return (found, resolved[top]) if which else found
+    return miss
+
+
+def config_of_tree(tree, root):
+    """(word, own) for the config question `tree`: `audit_config_way`'s word,
+    or None, and whether the config it names is the one a session in the tree
+    `root` loads - the tree that answered being `root` itself, by identity.
+
+    WHAT A CONFIG ROW IS NAMED BY. The write journal files a row in one tree's
+    trail and the trail check reads it back there: a row for that tree's own
+    config is named `CONFIG_REL` whatever spelling, letter case or link the
+    write went through, so one file is one target to both; a row for another
+    tree's config is that tree's file, which its own trail records."""
+    word, top = audit_config_way(tree, which=True)
+    if not word:
+        return (None, False)
+    return (word, _one_directory(top, root))
+
+
+def _one_directory(a, b):
+    """Whether two existing directories are one, by identity; resolved
+    spellings compared when either cannot be stated."""
+    st_a, st_b = _stat_or_none(a), _stat_or_none(b)
+    if st_a is None or st_b is None:
+        return _same_dir(a, b)
+    return os.path.samestat(st_a, st_b)
 
 
 def _candidate_word(real, top, done, shaped, asked, resolved):
