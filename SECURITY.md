@@ -1490,25 +1490,48 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    every tree whose own loader could read the written file, and which trees those
    are does not depend on where the path resolves to — a `.claude` that is a
    symlink resolves out of every tree while the project still loads its config
-   through it: the tree the path was placed in, the project, the tree of this
-   repository the session stands in, and a repository the path's last components
-   hang off, as written under the project or once resolved inside the placed
-   tree. Each tree's config and the written path are compared resolved against
-   resolved, so a `.claude` linked to a directory inside the project, out of the
-   repository, into another tree's `.claude`, through a chain of links or to a
-   directory that does not exist yet is matched at its destination, whether the
-   write is spelled through the link or at that destination and whether or not
-   the config exists yet. A link that cannot be followed (a loop) is held as the
+   through it. The trees asked are: the project; the tree of this repository the
+   session stands in; the tree of this repository the path lies in **as
+   written** — under the project or outside it, through a link or not, for a
+   file named as the config is; and the tree the path was placed in, with a
+   repository the resolved path's last components hang off inside it. The
+   session's tree and the tree as written are each found by walking up the
+   spelled path for the directory holding a repository and reading its `.git`
+   entry, with no process (`_config._tree_as_spelled` says where that can differ
+   from git's own answer and why no hold is lost by it). Each tree's config and
+   the written path are compared resolved against resolved, and the directories
+   they hang off by identity, never by spelling — so a directory above a link's
+   destination spelled in another letter case is that directory. A `.claude`
+   linked to a directory inside the project, out of the repository, into another
+   tree's `.claude`, through a chain of links or to a directory that does not
+   exist yet is matched through the link, whether or not the config exists yet.
+   **A config written at its link's destination is held when one of those trees
+   loads it, and not otherwise**: the project's own at any destination, since the
+   project is always asked; another tree's when the session stands in that tree,
+   or when the destination itself lies in a tree of this repository that loads it.
+   A link that cannot be followed (a loop) is held as the
    config's spelling, as it was before; no tool can make that write. `cf33`–`cf34b`
    in `tests/test_guard_edits.py` state this by doing: over a table of such
    arrangements the hook runs as a process, the write is then made, and the hook
    held it exactly when the loader of the project, of the session's tree or of
    the tree of this repository the path lies in as written reads what was
-   written. **Matched:** the project's config and the config of a linked or
-   nested worktree of it, through a symlinked folder as above; a hard link to the
+   written. `cf36`–`cf36c` hold the same property over arrangements generated as
+   the product of named dimensions — whose config, the folder's kind, present or
+   absent, the spelling with a letter-case variant at each directory level,
+   where the session stands, the tool — each impossible combination skipped by a
+   named predicate and counted, the bulk asked in process and a representative
+   of each family run as the hook process. **Matched:** the project's config and
+   the config of a linked or nested worktree of it, through a symlinked folder
+   as above — a linked worktree outside the project whose `.claude` links out of
+   the repository included, written through that link from a session standing
+   in the project — and a nested repository's reached through a symlinked folder
+   under the project; a hard link to the
    project's config under any name, wherever it is placed;
-   and a spelling that differs from the config's only in letter case, where the
-   directory that name is looked up in folds case. **Not matched, stated:** a
+   and a spelling that differs from the config's only in letter case, at any
+   directory level, where the directory that name is looked up in folds case.
+   **Not matched, stated:** a linked worktree's config written at the outside
+   destination of its `.claude` link from a session standing elsewhere, which no
+   tree asked loads; a
    symlink FILE in the project pointing at the existing config of a worktree
    outside it (`ln38` in that table pins it); a hard link placed in the project to
    the config of a tree outside it, and a hard link to a nested tree's config
@@ -1517,7 +1540,8 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    below). **The journal writes its config row for exactly the edit-tool writes
    the guard holds** (`oq1`–`oq4d` in `tests/test_journal_writes.py`, the hook
    run as a process over real linked worktrees and symlinked folders, and tables
-   through both hooks). The row's target is `.claude/audit.config.json` when the
+   through both hooks; `oq5` over the generated arrangements, `oq5b` the hook run
+   as a process on the measured ones). The row's target is `.claude/audit.config.json` when the
    file is the config of the tree whose trail the row goes into, whatever
    spelling, letter case or link the write went through, and the writer's
    pre-image slot follows that name (`oq6`); a row for another tree's config —
@@ -1527,10 +1551,11 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
 
    Where the written path and the config both exist, they are compared as files.
    Where neither exists — the write would create the config — the config's folder
-   and file are resolved first, each followed where it is a link, and the
-   resolved path is walked from the directory that folder resolves into, one
-   component at a time against the names the folder and file resolve to; each
-   name is judged in the
+   and file are resolved first, each followed where it is a link; the folder the
+   write lands in and the config's folder are then compared by identity where
+   both exist, and otherwise the nearest existing directory above each, and only
+   the names below that directory are walked, one component at a time against
+   the names the folder and file resolve to; each name is judged in the
    directory it is looked up in: a name spelled as the config's is followed; one
    differing in case only is the config's name where both lookups reach one entry
    (where the config's own name exists in that directory), or by that directory's
@@ -1543,21 +1568,24 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    volume, a per-directory setting — answers for the names it holds, and only for
    them. Where nothing can be asked (no name with a letter whose case swaps back,
    or the lookup errors), the spelling is compared without regard to case and the
-   refusal says so. A tree nested under the project is a candidate only when the
-   path's last components are the config's relative path compared without regard
-   to case and the directory they hang off holds a repository; that string test
-   comes first, and the walk only after it, so an ordinary write — a source file,
-   or a file merely named like the config in a plain folder — makes the
+   refusal says so. The tree the path lies in as written is walked for only when
+   the file is named as the config is, compared without regard to case; that
+   string test comes first, so an ordinary write of a source file makes the
    question's disk calls it made before the walk existed, call for call, plus,
    for a write that would create its file, a link question for the config's
    folder and one for its file, which is what resolving the project's config
-   path costs; it lists no directory, and makes no more in
+   path costs. A file merely named like the config in a plain folder also walks
+   the directories it is written in up for a repository and reads the config
+   and the two folders. Neither lists a directory, and neither makes more in
    total than before identity was asked (`cf29` counts every call that asks the
    disk and prints them by kind, `cf29b` holds the listing at none, and `cf30`
    holds the counted table complete against the source of both files). A session
-   standing elsewhere than the project costs a walk from its directory up to the
-   project for a repository, or, outside the project, the git question that
-   names a linked worktree. The journal used to compare
+   standing elsewhere than the project costs a walk from its directory up for a
+   repository and a read of that repository's `.git` entry, and starts no git
+   process for it: an ordinary write starts no more processes than it did before
+   the hold followed the loader, from the project, a nested worktree or a linked
+   worktree outside it (`cf37`, a `git` shim on PATH counting each call, `cf37b`
+   holding the listing at none). The journal used to compare
    spellings and asked the disk nothing for this; it now pays the identity
    question on every edit-tool write — resolving the path and its tree's root and
    reading the file and the config. `cf23`–`cf28e` in

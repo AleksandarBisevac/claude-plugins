@@ -606,21 +606,28 @@ rules). Typed getters: `state_dir`, `logs_dir`, `token_vars`, `custom_rules`,
 once, by `audit_config_way(tree)`, for `guard-edits.py`'s hold and `journal-writes.py`'s config
 row alike, over `config_question(tree, written, data)` — `tree_for`'s answer with the path as
 written and the session's directory beside it; `tree_for` itself is unchanged. The candidate
-trees do not depend on where the path resolves to: the tree it was placed in, the project, the
-session's tree (`_session_tree`), and a repository the config's components hang off as written
-or once resolved. Per candidate: file identity where the path and the config both exist; for a
-write that would create the config, the config's folder and file resolved first
-(`_config_resolved`, each followed where it is a link), then a walk from the directory that
-folder resolves into, one component at a time against the resolved names (`_case_walk`), each name
-differing in case only judged in the directory that holds it — by whether both names reach one
-entry where the config's own name exists there (`_one_entry`), else by that directory's own rule,
-an existing name looked up under its case swapped (`_volume_folds`), a directory the write would
-create taking the rule of the one it would be created in. A nested tree is asked only when the
-path's last components are the config's case aside (`_config_shaped_top`, strings only) and the
-directory they hang off holds a repository, and the walk only after that string test, so an
-ordinary write makes the disk calls it made before, plus a link question for the config's folder
-and one for its file when it would create its file (`cf29`, `cf29b`, `cf30` in
-`tests/test_guard_edits.py`). An error asking one candidate costs that candidate only (`cf35`).
+trees do not depend on where the path resolves to: the project, the tree the session stands in
+(`_session_tree`), the tree the path lies in as written, under the project or outside it
+(`_tree_as_spelled`, for a file named as the config is), the tree it was placed in, and a
+repository the resolved path's config components hang off inside that tree. The session's tree
+and the tree as written are found by one walk up the spelled path for a directory holding a
+repository, judged this repository's by identity with the project or by the common git
+directory its `.git` entry names (`_common_of`) — no process; its docstring states where that
+can differ from git's answer and why no hold is lost. Per candidate: file identity where the
+path and the config both exist; for a write that would create the config, the config's folder
+and file resolved first (`_config_resolved`, each followed where it is a link), then the
+directories the write and the config hang off compared by identity (`_one_place`) — the folders
+where both exist, else the nearest existing directory above each — and only the names below
+that directory walked, one component at a time against the resolved names (`_case_walk`), each
+name differing in case only judged in the directory that holds it — by whether both names
+reach one entry where the config's own name exists there (`_one_entry`), else by that
+directory's own rule, an existing name looked up under its case swapped (`_volume_folds`), a
+directory the write would create taking the rule of the one it would be created in. The tree as
+written is walked for only after a string test on the file's name, so an ordinary write of a
+source file makes the disk calls it made before, plus a link question for the config's folder
+and one for its file when it would create its file, lists no directory and starts no process
+(`cf29`, `cf29b`, `cf30`, `cf37`, `cf37b` in `tests/test_guard_edits.py`). An error asking one
+candidate costs that candidate only (`cf35`).
 What it matches and does not is the list under
 `guard-edits.py` below. `audit_config_way(tree, which=True)` also hands back the resolved
 directory of the tree that answered, read only by `config_of_tree(tree, root)`: the word, and
@@ -941,17 +948,23 @@ the residual SECURITY.md names. Which file a path names is one function's answer
 `_config.audit_config_way` (see `_config.py`), which `journal-writes.py` asks too; this hook
 keeps only the verdict and its words, and asks it of a path outside every tree too (rule 7 and
 the MCP lane alike), handing it the path as written and the session's directory
-(`_config.config_question`). **Matched:** the project's config and a linked or nested
-worktree's config, also when `.claude` is a symlink — inside the project, out of the repository,
-into another tree's `.claude`, through a chain, or dangling — spelled through the link or at its
-destination, the config present or not; a hard link to the project's config under any name,
-wherever it is placed; and a spelling differing only in letter case, where the directory that
-name is looked up in folds case. **Not matched:** a symlink file in the project pointing at the
-existing config of a worktree outside it, a hard link placed in the project to the config of a
-tree outside it, a hard link to a nested tree's config under another name, the config of a
-repository that is no tree of this one, and the shell route, which is journalled and not
-refused. `cf33`–`cf34b` in `tests/test_guard_edits.py` hold the verdict to what the loader then
-reads, over a table of symlinked arrangements, the hook run as a process. The journal writes its config row for exactly
+(`_config.config_question`). The trees asked are the project, the tree the session stands in,
+the tree the path lies in as written and the tree it was placed in. **Matched:** the project's
+config and a linked or nested worktree's config, also when `.claude` is a symlink — inside the
+project, out of the repository, into another tree's `.claude`, through a chain, or dangling —
+spelled through the link, the config present or not, a linked worktree outside the project
+included; a nested repository's reached through a symlinked folder under the project; a hard
+link to the project's config under any name, wherever it is placed; and a spelling differing
+only in letter case, at any directory level, where the directory that name is looked up in
+folds case. A config written at its link's destination is held when one of the trees asked
+loads it, and not otherwise. **Not matched:** a linked worktree's config written at the outside
+destination of its `.claude` link from a session standing elsewhere, a symlink file in the
+project pointing at the existing config of a worktree outside it, a hard link placed in the
+project to the config of a tree outside it, a hard link to a nested tree's config under another
+name, the config of a repository that is no tree of this one, and the shell route, which is
+journalled and not refused. `cf33`–`cf34b` in `tests/test_guard_edits.py` hold the verdict to
+what the loader then reads, over a table of symlinked arrangements, the hook run as a process;
+`cf36`–`cf36c` over arrangements generated from named dimensions. The journal writes its config row for exactly
 the edit-tool writes this hook holds, apart from a hold made without regard to case whose write
 created another file. (2) `guardEdits.customRules` (config) — each
 `{pathPrefix, bannedPattern, message}` blocks its regex under its path prefix; ships EMPTY (the

@@ -1,0 +1,93 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_guard_edits.py tests/test_journal_writes.py tests/test__config.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T16:36:48Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_guard_edits.py tests/test_journal_writes.py tests/test__config.py` in a throwaway tree at HEAD exited 1 with 5 of 171 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cf29 (house FAIL), cf36 (house FAIL), cf36b (house FAIL), cf37 (house FAIL), oq5b (house FAIL): SELFTEST FAILED: 170/171 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "(1) IDENTITY. plugins/audit/hooks/_config.py: _parts_below (a normcase string prefix) and _spelled_under are removed. In their place: _existing_head(path) gives the nearest existing directory and the names below it; _one_place(real, resolved) compares the write's folder parent and the config's folder parent with os.path.samestat. Where both parents exist, a folder name that differs only in case is judged by _case_walk from the folder's parent, so _one_entry and _volume_folds decide as before. Where a folder is missing, the heads are compared by samestat and only the tail below them is read as spelling. _names_audit_config's absent-config branch now calls _one_place. (2) THE TREE AS WRITTEN. _tree_as_spelled(directory, project) walks up from the written path's directory with lstat (_holds_repository) to the nearest ancestor holding .git. It returns that ancestor when it lies under the project (_under_directory, by samestat) or when its common git dir (_common_of: the .git dir, or a .git file's admin dir plus commondir, read with no process) is the project's. It returns None for another repository's .git and walks on past a .git that is no repository. audit_config_way adds that tree as a candidate for every config-named write (_config_named), wherever it lies. _session_tree also uses _tree_as_spelled(cwd, project) now, so path_tree no longer runs per write for the session. tree_for and path_tree are NOT touched. (3) NO PROCESS, NO LISTING. Measured by cf37/cf37b, which put a git shim on PATH and run the hook as a process. Git processes per hook run: in-project 0, in-project-new 0, in-nested 0, in-linked 2, in-linked-new 2, linked-on-project 0. These equal the aa4f320 tree's pinned ceilings; HEAD gives 0,0,0,3,3,2. The remaining 2 come from tree_for placing the path, which cf37 measures as its own column. Listings are 0 on every row. (4) THE GENERATED CASE. cf36 is built with itertools.product over named dimensions: whose 5 (project, session-tree, linked-out, nested-worktree, nested-repo), folder 5 (real, link-in, link-out, chain, dangling), present 2, form 2 (link, dest), level 8 (none, 0-6), session 2, tool 2 (Write, mcp). Seven named skip predicates. It ran 1430 arrangements, 1214 of them read by a loader. Per family: project 166, session-tree 166, linked-out 166, nested-worktree 456, nested-repo 476. Skipped: owner-is-project 320, session-tree-elsewhere 320, linked-out-standing-there 320, dangling-holds-nothing 224, dest-is-link 160, level-above-fixture 426, nothing-to-swap 0. It fails if any family ran none. Its oracle is the loader reading the written body for the project, the session's tree or the as-written tree; the guard is asked in process. cf36b runs the four measured arrangements as the hook process. cf36c is the agreement between process and in-process for one representative per family. On HEAD's code with these test files: cf36 has 174 disagreeing; cf36b, cf37 and cf29 fail; guard suite 122/126 and journal suite 170/171 (oq5b). After the change: guard 126/126 and journal 171/171. In tests/test_journal_writes.py, oq5 runs G.decide's hold against M.decide's config.edit over the same TGE.gen_sweep product. MCP arrangements are counted out by name (mcp-not-this-hooks-decide). oq5b runs the journal hook as a process over the measured Write arrangements. (5) EXISTING CASES CHANGED ON PURPOSE. cf29's reference sequence (_today) now models the lstat walk that a config-named write makes. Its plain-folder row costs 32 disk calls against the 35 ceiling, and the walk adds no listing. The comment above cf29 says so. No other existing case was edited; cf31 stays as written because a folder case variant still reaches the stubbed _one_entry. (6) DOCUMENTS. SECURITY.md, plugins/audit/README.md, CHANGELOG.md (Unreleased Security) and PLUGIN-BUILD-GUIDE.md now name the trees asked (project, session's tree, as-written tree, placed tree, found with no process) and state that a config written at a link's destination is held when one of those trees loads it and not otherwise. The u3b statement is NOT matched, worded as: a linked worktree's config written at the outside destination of its .claude link from a session standing elsewhere, which no tree asked loads. The three earlier not-matched statements are kept. No row of the fail-mode table changed; gate-parity exits 0. (7) PROBES (scratch, run from SP). mutations.py: 10 rows, MUTATIONS ALL CAUGHT, exit 0, output in SP/sg1.46/mutations.out. Rows and the cases they turned red: identity of the folder parents back to strings -> cf36, cf36b (+cf10m, cf10s); identity of the heads back to strings -> cf36; as-written candidate dropped -> cf36, cf36b; as-written candidate limited to under the project -> cf36, cf36b (+cf29); session tree via a git process on every write -> cf37; listing in _session_tree -> cf37b; session tree not asked -> cf36 (+cf34); journal row suppressed -> oq5b (+oq4, oq4c, oq4d, oq5); ALLOW every config-named folder held -> cf18, cf34b (+12 others); ALLOW the as-written tree of any repository -> cf28e, cf34b (+cf34, cf36). probe_u: u1, u2, u6 and u21 change allow/allow -> block/ask; u3b stays allow/allow; no BAD row. probe_j: all ok except u20b and u21, where the guard asks and the journal writes no row. Both are MCP-created configs, the stated MCP residual that the M5 task owns. probe_m3 (my copy, mutating my own tree copy, not review8's): the clone rows read BEFORE allow, AFTER block/ask, and with the as-written candidate removed allow/allow when cwd=proj. The worktree rows hold in all three. review8's mut.py M3 anchor no longer exists in this code; mutations.py row 3 is its replacement. probe_e: error rows as before (e2c, e3b, e3c and e5 BEFORE allow, AFTER block); forced-error rows identical to the reviewed commit. probe_d: d1-d6 unchanged against the stated matched and not-matched lists; the shell route is journalled with no rows, as stated. review6 probe_a: 1960 runs, 0 differing in verdict or words, 0 with stderr (HEAD export vs this tree). sg1.44 twins.py: WRONG 0, exit 0. review6 probe_e: every warnings list empty, output identical to HEAD's. probe_f (hdiutil images, detached in finally, none left attached): flagged [], every verdict equal to HEAD's. (8) TIMING, probe_t, 30 runs per row, two rounds with a gap, 0 and 30 nested worktrees. HEAD -> this tree, both without bytecode caches. git per run: T1, T3, T6 and T7 0 -> 0; T4 and T4b 3 -> 2; T5 2 -> 0. Median ms: T1 104.0/99.0 -> 100.4/99.0 (n0), T3 99.2/98.5 -> 104.1/99.1, T4 141.6/134.5 -> 129.3/123.8, T4b 142.3/134.6 -> 125.1/124.5, T5 129.8/123.7 -> 105.8/102.1, T7 100.7/98.8 -> 99.3/99.2; at nested 30, T6 104.3/103.1 -> 105.4/99.3. Rows with unchanged git counts sit within about 5 ms, inside each row's spread; rows with fewer processes are 10-25 ms faster. Against aa4f320 the git counts are equal on every row. That run's timings carried a bytecode-cache bias of about 15 ms, so only its counts are quoted. (9) WHERE THE LSTAT WALK CAN DIFFER FROM GIT. GIT_DIR and GIT_COMMON_DIR are not read. A .git that is no repository is passed over and the walk goes on. A .git FILE is followed the way git follows it, so a submodule counts as another repository. None of these loses a hold. The as-written tree is an added candidate; the project, the session's tree and the placed tree are still asked. Each difference either adds a candidate or names a repository whose config this project's sessions do not load. GIT_DIR does not move the tree whose .claude a session loads. (10) GATES. The brief's gate command with --jobs 4: exit 0, 3/3 files ok, 710 cases. The unrecorded run-test-gate.py SG1 --task SG1.46-ukq: GATE GREEN, exit 0. Dependants, --jobs 4: test__deps, test__output_lints, test__refs, test_hooks, test_guard_bash_writes, test_require_plan, test__journal_io and test_audit_journal: 8/8 files ok, 1990 cases. bench-hooks --gate exit 0; gate-parity exit 0; ruff and vermin clean. DEPENDANTS. SECURITY.md (guard-release, guard-uncommitted, require-claim-block, evals.json, ISSUE_TEMPLATE, .gitignore, _config, guard-bash-writes; prose guard-history-rewrite :121, guard-uncommitted :151, check-prohibitions :152, test_guard_history_rewrite :230): still correct. Only the guard-edits config-hold section and its cost paragraph changed; no section those files name moved and no fail-mode row changed. _config.py importers (guard-release, detect-plan-skip, drive-without-model, guard-bash-writes, guard-capabilities, guard-edits, guard-history-rewrite, guard-secrets-read): still correct. Only audit_config_way's answer changed (and config_question/config_of_tree, which call it); tree_for, path_tree and load are untouched. The removed privates _parts_below and _spelled_under have no caller outside _config. scripts/_machine_paths.py has an unrelated _spelled_under of its own. _ask_rev_parse, _call_start_path, _command_facts and _config_shaped_top are unchanged. guard-edits.py (test__doctor_setup, hooks.json, schema, run-agent-session): not edited; it calls audit_config_way at its two sites, so the new holds flow through. journal-writes.py: not edited; config_of_tree carries the change, pinned by oq5 and oq5b. tests/test_guard_edits.py -> .github/sweep-costs.json: the recorded figure for this suite was already stale at HEAD. The suite now takes about 27-34 s, under the sweep's 300 s floor; it is not re-recorded because that file is not in my scope. It also needs PLUGIN-BUILD-GUIDE and SECURITY.md to name cf36-cf37b, and both do. tests/test_journal_writes.py: now imports test_guard_edits inside _generated_question_cases; under the sweep it runs in about 19 s against 29.9 s recorded; the _cases/_selftest names used by test__output and test_guard_secrets_read keep their shape. tests/test__config.py: not edited, 413 ok. README, CHANGELOG and PLUGIN-BUILD-GUIDE dependants (_deps, _output_lints, _refs, affected.py README:444, _doctor_hygiene PLUGIN-BUILD-GUIDE:97, _deps CHANGELOG:4004): still correct, because the lines they name are untouched and their suites are green. SG1.47-ukq (pending) is the next task to declare these three documents and starts from these edits.",
+    "descriptive": "The config hold now compares directories by identity, asks the tree a config-named path is written in wherever it lies, and finds the session's tree with no git process. On every T row, git processes are back to or below aa4f320's count."
+  },
+  "testsAdded": [
+    "cf36/cf36b/cf36c: a property case generated from named dimensions (itertools.product, named skip predicates, counts printed, red if a family ran none). The guard holds a write exactly when a loader then reads the written body for the project, the session's tree or the as-written tree. It runs in process, then as the hook process for the measured arrangements, then checks process and in-process agree for one representative per family.",
+    "cf37/cf37b: an ordinary write from the project, a nested worktree and a linked worktree outside it starts no more git processes than aa4f320's pinned ceiling, and none beyond placement (git shim on PATH, hook as a process), and lists no directory.",
+    "oq5/oq5b: over the same generated product, the journal writes a config row exactly for the writes the guard holds (in process, MCP counted out by name); for the measured Write arrangements, the journal hook as a process writes one row where the loader reads the write and none otherwise."
+  ],
+  "casesAdded": [
+    [
+      "cf36",
+      "cf36b",
+      "cf36c"
+    ],
+    [
+      "cf37",
+      "cf37b"
+    ],
+    [
+      "oq5",
+      "oq5b"
+    ]
+  ],
+  "claims": "claims:\n1 _config.py:1498 _one_place compares by samestat; _config.py:1768 _tree_as_spelled does the lstat walk and the common-dir read; _config.py:1919 appends the as-written candidate; _config.py:1814 _session_tree calls _tree_as_spelled and no path_tree. SECURITY.md:1532 carries the u3b not-matched sentence that cf36 pins.\n2 mutations.py: 10 rows CAUGHT, exit 0. Deny rows: identity->strings turns cf36/cf36b red; as-written dropped or limited to the project turns cf36/cf36b red; git process per write turns cf37 red; listing turns cf37b red; session tree not asked turns cf36 red; journal row suppressed turns oq5b red. Allow rows: every config-named folder held turns cf18/cf34b red; the as-written tree of any repository turns cf28e/cf34b red. Every restore was verified byte for byte, with __pycache__ purged between rows. HEAD with my tests: guard 122/126, journal 170/171.\n3 grep for _parts_below|_spelled_under over py/md/json: hits only in _config's removed code, an unrelated _machine_paths._spelled_under (left, because it is another module with another meaning), and docs/audit evidence (left, because it is history). The class is a string compare of directories: both sites in _one_place now use samestat, and the session-tree/as-written question uses one walk.\n4 n/a - no rule addressed to an agent\n5 probe_t: two rounds with a gap, 30 runs each, at 0 and 30 nested worktrees. Ranges were printed per row. The first run's 15 ms offset was traced to bytecode caches and re-measured cache-free.\n6 the decision reads the resolved path, directory identity (samestat), the lstat .git walk and the common dir. It reads neither spelling nor tool name. Allow twins (cf18, cf28e, cf34b) were green at baseline and went red only under the over-fire rows.\n7 the documents carry no new number; the counts here are quoted beside the probe that printed them",
+  "stamp": "audit-stamp: {\"content\":\"sha256:c5ec24f7be8dcf41802dc9fd8dd22b96995cededd0c94bca33790f9e7df2fc4e\",\"dirtyDigest\":\"sha256:e878b807d664fd372a5abb0359fa750107e27432d88cd3409213d673df063d16\",\"dirtyPaths\":{\"CHANGELOG.md\":\"a25cbaba87aff90a\",\"PLUGIN-BUILD-GUIDE.md\":\"0abb668085936b94\",\"SECURITY.md\":\"014a30152126c9cb\",\"plugins/audit/README.md\":\"410c66088c8958cc\",\"plugins/audit/hooks/_config.py\":\"52d7d19ff538dcbc\",\"tests/test_guard_edits.py\":\"afb1a8594fa599de\",\"tests/test_journal_writes.py\":\"9b81929cd3349337\"},\"head\":\"786167e4\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/README.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/guard-edits.py\",\"plugins/audit/hooks/journal-writes.py\",\"tests/test__config.py\",\"tests/test_guard_edits.py\",\"tests/test_journal_writes.py\"],\"scopeDigest\":\"sha256:cd3d4a636f9c42151f1c32f90ddfc879c0de54a6bc9e79f834890bb9ccbf005e\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 1 of the diff's 7 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 4 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, SECURITY.md, plugins/audit/README.md; 2 file(s) that could hold a move not compared: tests/test_guard_edits.py, tests/test_journal_writes.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "SECURITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test_guard_edits.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 36 (`from _output import safe_stdio                     # noqa: E402`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test_journal_writes.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was only added: every statement of the base copy outside them stands in the tree copy, in order and in place, and the first added one is at tree line 2084 (`_generated_question_cases(check)`); what it runs is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "786167e480da252635bce508223efbca1f2ce8f2"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-18T16:36:50Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

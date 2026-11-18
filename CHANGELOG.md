@@ -389,6 +389,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   which is journalled and not refused. A link that cannot be followed is held as before. An
   ordinary write that would create its file now also asks whether the config's folder and file
   are links.
+- **The config hold compares directories by identity, asks the tree a path is written in
+  wherever it lies, and starts no process on an ordinary write.** A linked worktree outside the
+  project whose `.claude` linked out of the repository had its config written through that link
+  from a session standing in the project, by an edit tool or an MCP write, allowed and with no
+  journal row, because the tree a path lies in as written was asked only for a path spelled under
+  the project. A write spelled at the destination of the project's linked-out `.claude` with a
+  directory above that destination in another letter case was allowed while the loader read it,
+  and the journal recorded a config row for it, because the written path was matched against the
+  resolved folder by its spelling. And a session standing in a linked worktree outside the
+  project started git processes on every write to find its own tree. Now the trees asked are the
+  project, the tree the session stands in and the tree the path lies in as written, under the
+  project or outside it, the last two found by walking up the spelled path for a repository and
+  reading its `.git` entry, with no process; the directories a write and a config hang off are
+  compared by identity, and only the names below the nearest existing directory by the
+  per-directory rule on letter case. Both writes are now refused to a subagent and asked of the
+  main session, and the journal's row agrees with the guard on each. A config written at its
+  link's destination is held when one of those trees loads it and not otherwise: a linked
+  worktree's config written at the outside destination of its `.claude` link from a session
+  standing elsewhere is not matched. The property case is now generated as the product of named
+  dimensions, each impossible combination skipped by a named predicate and counted, and a case
+  counts the git processes of an ordinary write through a shim on PATH from the project, a
+  nested worktree and a linked worktree outside it.
 
 ## [3.8.0]
 

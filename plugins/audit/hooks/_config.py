@@ -1481,13 +1481,59 @@ def _config_shaped_top(real):
     return head if tuple(reversed(names)) == _CONFIG_FOLDED else None
 
 
-def _parts_below(real, top):
-    """The components of `real` below the directory `top`, or None when `real`
-    does not lie under it."""
-    prefix = top.rstrip(os.sep) + os.sep
-    if not os.path.normcase(real).startswith(os.path.normcase(prefix)):
+def _existing_head(path):
+    """(the nearest directory at or above `path` that exists, the components
+    of `path` below it). The head is where identity can answer; below it only
+    names are left to compare. (None, ()) when nothing on the way exists."""
+    head, below = path, []
+    while not os.path.isdir(head):
+        up, name = os.path.split(head)
+        if up == head:
+            return None, ()
+        below.append(name)
+        head = up
+    return head, tuple(reversed(below))
+
+
+def _one_place(real, resolved):
+    """Which way the resolved written path `real` names the resolved config
+    path `resolved`, neither existing, their file names already equal without
+    regard to case: "spelling", "folded", "case-blind" or None.
+
+    The directories are compared by identity, never by spelling: a directory
+    above them reached in another letter case, or under another name, is the
+    same directory when `os.stat` says so. Where the config's folder exists on
+    both sides, that folder is the one compared and the file name is judged in
+    it; where it does not, the nearest existing directory above each, with the
+    names below it judged one directory at a time (`_case_walk`). A folder
+    whose name differs from the config folder's in letter case alone is
+    judged as one more component in the directory holding both names
+    (`_one_entry`, identity again), so the word stays the one the folder's and
+    the file's names give: "folded" for letter case alone, "spelling"
+    otherwise."""
+    w_dir, c_dir = os.path.dirname(real), os.path.dirname(resolved)
+    st_w, st_c = _stat_or_none(w_dir), _stat_or_none(c_dir)
+    if st_w is not None and st_c is not None:
+        if not os.path.samestat(st_w, st_c):
+            return None
+        name, own = os.path.basename(real), os.path.basename(resolved)
+        folder, own_folder = os.path.basename(w_dir), os.path.basename(c_dir)
+        if folder != own_folder and folder.casefold() == own_folder.casefold():
+            return _case_walk(os.path.dirname(c_dir), (folder, name),
+                              (own_folder, own))
+        if name != own:
+            return _case_walk(c_dir, (name,), (own,))
+        return "spelling"
+    w_head, parts = _existing_head(real)
+    c_head, owns = _existing_head(resolved)
+    if w_head is None or c_head is None or len(parts) != len(owns):
         return None
-    return tuple(real[len(prefix):].split(os.sep))
+    if tuple(p.casefold() for p in parts) != tuple(o.casefold() for o in owns):
+        return None
+    st_w, st_c = _stat_or_none(w_head), _stat_or_none(c_head)
+    if st_w is None or st_c is None or not os.path.samestat(st_w, st_c):
+        return None
+    return "spelling" if parts == owns else _case_walk(c_head, parts, owns)
 
 
 def _volume_folds(directory):
@@ -1622,9 +1668,12 @@ def _names_audit_config(real, top):
     One function for every tree asked. Where exactly one of the two exists,
     they are different files: a lookup that reached the config under any
     spelling would have found it. Where neither does, the write and the config
-    are compared resolved against resolved: the directory the config's folder
-    resolves into, and the names the folder and the file resolve to, are what
-    the written path is walked against."""
+    are compared resolved against resolved (`_config_resolved`): the file names
+    first, as strings, which is all an ordinary write pays; then the
+    directories they hang off, by identity (`_one_place`) - so a directory
+    above a link's destination spelled in another letter case is that
+    directory - and only the names below the nearest existing directory by the
+    per-directory rule on letter case."""
     own = os.path.join(top, *_CONFIG_PARTS)
     st_real = _stat_or_none(real)
     if st_real is not None:
@@ -1633,20 +1682,12 @@ def _names_audit_config(real, top):
             return None
         return "same-file" if os.path.samestat(st_real, st_own) else None
     resolved = _config_resolved(top)
-    base, owns = resolved, []
-    for _ in _CONFIG_PARTS:
-        base, name = os.path.split(base)
-        owns.append(name)
-    owns = tuple(reversed(owns))
-    parts = _parts_below(real, base)
-    if parts is None or tuple(p.casefold() for p in parts) != tuple(
-            o.casefold() for o in owns):
+    if os.path.basename(real).casefold() != os.path.basename(
+            resolved).casefold():
         return None
     if _stat_or_none(own) is not None:
         return None
-    if parts == owns:
-        return "spelling"
-    return _case_walk(base, parts, owns)
+    return _one_place(real, resolved)
 
 
 def config_question(tree, written, data):
@@ -1685,39 +1726,111 @@ def _written_spellings(tree):
     return out
 
 
-def _spelled_under(path, top):
-    """Does `path`, as spelled, lie at or under the directory `top` - strings
-    only, in either letter case, as `within_root` compares."""
-    p, t = os.path.normpath(path), os.path.normpath(top).rstrip(os.sep)
-    return any(a == b or a.startswith(b + os.sep)
-               for a, b in ((p, t), (p.lower(), t.lower())))
+def _under_directory(path, top):
+    """Does `path`, walked up as spelled, reach the existing directory `top` -
+    by identity at each step, so another letter case or another link's
+    spelling of `top` is `top`."""
+    st_top = _stat_or_none(top)
+    if st_top is None:
+        return False
+    at = os.path.normpath(path)
+    while True:
+        st = _stat_or_none(at)
+        if st is not None and os.path.samestat(st, st_top):
+            return True
+        parent = os.path.dirname(at)
+        if parent == at:
+            return False
+        at = parent
 
 
-def _session_tree(tree):
-    """The tree of this repository the session's directory stands in, when it
-    is not the project itself (which is asked anyway): under the project, the
-    nearest directory from the session's directory up that holds a repository
-    (`_holds_repository`, no git process), as a nested tree's config is matched
-    by its spelling; outside it, the linked worktree of this repository git
-    names there (`path_tree`), the only place outside the project whose own
-    hooks are this project's. None otherwise."""
-    cwd = tree.get("cwd") or ""
-    project = str(tree.get("project") or tree["root"])
-    if not os.path.isabs(cwd) or os.path.normpath(cwd) == os.path.normpath(
-            project):
-        return None
-    if not _spelled_under(cwd, project):
-        placed = path_tree(cwd, project, tree.get("cfg") or {})
-        return placed["root"] if placed["basis"] == LINKED_WORKTREE else None
-    at, stop = os.path.normpath(cwd), os.path.normpath(project)
+def _common_of(at):
+    """The common git directory of the tree at `at`, read from its `.git`
+    entry with no process - the directory itself, or a linked worktree's
+    admin directory and the `commondir` it names - or "" when that entry names
+    no git directory. Git's own reading also honours `GIT_DIR` and
+    `GIT_COMMON_DIR`; `_tree_as_spelled` says why that loses no hold."""
+    dotgit = os.path.join(at, ".git")
+    gitdir = dotgit if os.path.isdir(dotgit) else _admin_of_tree(at)
+    if not gitdir:
+        return ""
+    try:
+        with open(os.path.join(gitdir, "commondir"), "r",
+                  encoding="utf-8") as fh:
+            common = fh.readline().strip()
+    except (OSError, ValueError):
+        common = ""
+    if common:
+        gitdir = os.path.normpath(os.path.join(gitdir, common))
+    return gitdir if _git_dir_shaped(gitdir) else ""
+
+
+def _tree_as_spelled(directory, project):
+    """The tree of this repository the directory `directory` lies in AS
+    SPELLED - made absolute by the caller, `..` folded lexically, no link
+    resolved - or None: the project itself (asked anyway), a directory in no
+    repository, or one in another repository outside the project.
+
+    Walked up with no process and no listing: the first directory holding a
+    repository (`_holds_repository`, the stop git's discovery makes) is the
+    tree. It is this repository's when it lies at or under the project by
+    identity (`_under_directory`) - a nested worktree, or a nested repository
+    of any kind, whose config its own hooks read when a session runs there -
+    or when its `.git` names the project's common git directory
+    (`_common_of`), as a linked worktree's does wherever it lies.
+
+    WHERE THIS CAN DIFFER FROM GIT'S ANSWER, and why no hold is lost by it:
+    a `.git` FILE is read as git reads it (a linked worktree's admin directory
+    and its `commondir`; a submodule's, which names no common directory of the
+    project's, so it is another repository either way); `GIT_DIR` or
+    `GIT_COMMON_DIR` in the environment are not read, and the tree here is the
+    one a session standing in that directory loads its config from, which
+    those variables do not move; a `.git` naming no git directory, outside the
+    project, is passed over and the walk goes on up as git's discovery does
+    for a directory that is no repository, so a tree above it is still found
+    - where git would stop with an error instead, this answers a tree and the
+    write is asked about one more config, never one fewer."""
+    stop = os.path.normpath(project)
+    ours = None
+    at = os.path.normpath(directory)
     while at != stop:
         if _holds_repository(at):
-            return at
+            if _under_directory(at, project):
+                return at
+            if ours is None:
+                ours = _common_of(project)
+            theirs = _common_of(at)
+            if ours and theirs and _one_directory(ours, theirs):
+                return at
+            if theirs:
+                return None
         parent = os.path.dirname(at)
         if parent == at:
             return None
         at = parent
     return None
+
+
+def _session_tree(tree):
+    """The tree of this repository the session's directory stands in, when it
+    is not the project itself (which is asked anyway): `_tree_as_spelled` from
+    the session's directory - a nested tree under the project, or a linked
+    worktree of this repository outside it - found with no process."""
+    cwd = tree.get("cwd") or ""
+    project = str(tree.get("project") or tree["root"])
+    if not os.path.isabs(cwd) or os.path.normpath(cwd) == os.path.normpath(
+            project):
+        return None
+    return _tree_as_spelled(cwd, project)
+
+
+def _config_named(spelled, real):
+    """Is the file a path names - as spelled, or resolved - called as the
+    config is, without regard to case? Strings only: the as-written tree is
+    walked for no other write, which keeps an ordinary write from paying for
+    it."""
+    want = _CONFIG_FOLDED[-1]
+    return any(os.path.basename(p).casefold() == want for p in (spelled, real))
 
 
 def audit_config_way(tree, which=False):
@@ -1733,32 +1846,42 @@ def audit_config_way(tree, which=False):
     symlinked `.claude` resolves out of every tree while the project's loader
     still reads through it. Asked, each once by its resolved directory: the
     tree `tree_for` placed the path in, when it did; the project; the tree the
-    session stands in (`_session_tree`); and the directory the path's last
-    components hang off, as written and once resolved, when they are
-    `CONFIG_REL`'s without regard to case and that directory holds a repository
-    - the resolved one where `tree_for` placed the path in a tree, the written
-    one there or where the path is spelled under the project. That is how a
-    linked worktree placed under the project, or reached through a link, is
-    seen, since the placement answers by containment first. A plain
-    folder holding a `.claude/audit.config.json` holds no repository and is
-    not matched; a nested repository of any kind is, since its config is the
-    one its own hooks read when a session runs there.
+    session stands in (`_session_tree`); the directory the resolved path's
+    last components hang off, when they are `CONFIG_REL`'s without regard to
+    case, that directory holds a repository and `tree_for` placed the path in
+    a tree; and, for a file named as the config is, the tree the path lies in
+    AS WRITTEN (`_tree_as_spelled`), wherever it lies - under the project or
+    outside it, through a link or not. That is how a linked worktree placed
+    under the project, one outside it whose `.claude` links out of the
+    repository, or a nested repository reached through a symlinked folder, is
+    seen, since the placement answers by where the path resolves. The trees
+    the session's directory and the written path stand in are found with no
+    process. A plain folder holding a `.claude/audit.config.json` holds no
+    repository and is not matched; a nested repository of any kind under the
+    project is, since its config is the one its own hooks read when a session
+    runs there.
 
     Each candidate's config and the written file are compared resolved against
-    resolved and, where both exist, by identity - so a symlinked `.claude`
-    (inside the project, out of the repository, into another tree's folder,
-    through a chain, or dangling), a case variant and a hard link of an
-    existing config are all the config; the project being always asked, a hard
-    link to its config is matched wherever it is placed. NOT matched, stated: a
-    hard link to a NESTED tree's config under a name that is not the config's,
-    and one placed in the project to the config of a tree outside it, since a
-    tree other than the placed one, the project and the session's is a
-    candidate only for a path whose last components match - which is what
-    keeps an ordinary write from asking about one; a symlink FILE in the
-    project pointing at an outside tree's existing config, which `tree_for`
-    places in no tree; and the config of a repository that is no tree of this
-    one. An OSError or a ValueError asking one candidate, or resolving one
-    spelling, answers None for that one and the rest are still asked."""
+    resolved and, where both exist, by identity; neither existing, the
+    directories they hang off by identity too (`_one_place`) - so a symlinked
+    `.claude` (inside the project, out of the repository, into another tree's
+    folder, through a chain, or dangling), a case variant at any directory
+    level, and a hard link of an existing config are all the config; the
+    project being always asked, a hard link to its config is matched wherever
+    it is placed. A config written at its link's destination is matched when
+    one of the trees asked loads it, and not otherwise: a linked worktree's
+    config written at the outside destination of its `.claude` link, from a
+    session standing elsewhere, is no asked tree's and is not matched. NOT
+    matched either, stated: a hard link to a NESTED tree's config under a name
+    that is not the config's, and one placed in the project to the config of a
+    tree outside it, since a tree other than the placed one, the project and
+    the session's is a candidate only for a file named as the config is -
+    which is what keeps an ordinary write from asking about one; a symlink
+    FILE in the project pointing at an outside tree's existing config, which
+    `tree_for` places in no tree; and the config of a repository that is no
+    tree of this one. An OSError or a ValueError asking one candidate, or
+    resolving one spelling, answers None for that one and the rest are still
+    asked."""
     miss = (None, None) if which else None
     spellings = _written_spellings(tree)
     if not spellings:
@@ -1778,17 +1901,22 @@ def audit_config_way(tree, which=False):
             real = os.path.realpath(spelled)
         except (OSError, ValueError):
             continue
-        # (directory, already resolved, config-shaped). A config-shaped
-        # directory is a tree of this repository only where the path lies in
-        # one: the resolved path inside the tree `tree_for` placed it in, or
-        # the path as written under the project. The one off the resolved path
-        # is a prefix of it, so resolved already.
+        # (directory, already resolved, config-shaped). The config-shaped
+        # directory off the resolved path is a tree of this repository only
+        # inside the tree `tree_for` placed the path in, and is a prefix of
+        # the resolved path, so resolved already. The tree the path lies in
+        # as written is found wherever it lies (`_tree_as_spelled`), for a
+        # file named as the config is.
         candidates = [(top, False, False) for top in fixed]
         if tree["inside"]:
             candidates.append((_config_shaped_top(real), True, True))
-        if tree["inside"] or _spelled_under(spelled, project):
-            candidates.append((_config_shaped_top(os.path.normpath(spelled)),
-                               False, True))
+        if _config_named(spelled, real):
+            try:
+                written = _tree_as_spelled(
+                    os.path.dirname(os.path.normpath(spelled)), project)
+            except (OSError, ValueError):
+                written = None
+            candidates.append((written, False, False))
         candidates = [c for c in candidates if c[0] is not None]
         asked = set()
         for top, done, shaped in candidates:

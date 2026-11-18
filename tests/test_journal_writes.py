@@ -2081,6 +2081,7 @@ def _cases(check):
     _call_mark_cases(check)
     _one_question_cases(check)
     _link_question_cases(check)
+    _generated_question_cases(check)
     _slot_follows_file_cases(check)
 
 
@@ -2415,6 +2416,102 @@ def _link_question_cases(check):
           % (seen,),
           all(s[1] == s[2] for s in seen) and seen[0][1] and seen[1][1]
           and not any(s[1] for s in seen[2:]))
+
+
+# --- oq: the same question over the guard suite's generated arrangements -----------
+# The arrangements are the edit guard's suite's product of named dimensions, built
+# by its own builder, so the two suites cannot drift onto different tables: for
+# each, the guard's verdict for the main session and the journal's classification
+# in this process, and for the measured arrangements the journal hook as a process
+# with the write made.
+def _generated_question_cases(check):
+    """oq5, oq5b: one answer over the generated arrangements."""
+    import test_guard_edits as TGE
+    label = "oq5 the journal over the guard suite's generated arrangements"
+    base = os.path.realpath(_harness.fixture_root("journal-oq-gen-"))
+    probe = os.path.join(base, "probe-link")
+    made, why = _harness.attempt(os.symlink, base, probe)
+    if not made:
+        _harness.skip(check, label, "no symlink can be made here (%s)" % (why,),
+                      os.name == "nt" or not hasattr(os, "symlink"))
+        return
+    os.remove(probe)
+    G = TGE.M
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+
+    def visit(world, arr, path, cwd):
+        data = {"tool_name": arr.tool, "session_id": "sess-oq5", "cwd": cwd,
+                "tool_input": TGE._tool_input(arr.tool, path, _OQ_BODY)}
+        prev = dict((k, os.environ.get(k))
+                    for k in ("CLAUDE_PROJECT_DIR", _OQ_MARK))
+        os.environ["CLAUDE_PROJECT_DIR"] = world["proj"]
+        os.environ.pop(_OQ_MARK, None)
+        try:
+            g_ok, g = _harness.attempt(G.decide, data, cfg=cfg)
+            j_ok, j = _harness.attempt(M.decide, data, cfg=cfg,
+                                       root=world["proj"])
+        finally:
+            for k, v in prev.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        hold = g_ok and g[0] == "ask" and "audit config" in str(g[1])
+        edit = (j_ok and j[0] == "journal"
+                and j[1].get("action") == "config.edit")
+        return arr, hold, edit
+
+    def visit_edit_tool(world, arr, path, cwd):
+        # An MCP write is not this hook's `decide` to classify: its row comes
+        # from the sweep after the call, and a config CREATED that way leaves
+        # none today - a gap of its own, outside this question. So the MCP
+        # arrangements are counted out here, by name, not compared.
+        if arr.tool.startswith("mcp__"):
+            return arr, None, None
+        return visit(world, arr, path, cwd)
+
+    every, skipped, ran, _worlds = TGE.gen_sweep(base, visit_edit_tool)
+    seen = [s for s in every if s[1] is not None]
+    skipped["mcp-not-this-hooks-decide"] = len(every) - len(seen)
+    families = dict((w, sum(1 for s in seen if s[0].whose == w)) for w in ran)
+    apart = [(TGE._gen_label(s[0]), s[1], s[2]) for s in seen if s[1] != s[2]]
+    held = sum(1 for s in seen if s[1])
+    check("oq5 over the guard suite's generated arrangements the journal "
+          "classifies a write as a config edit exactly when the guard holds it: "
+          "ran %d (%d held) per family %r, skipped %r; apart %d: [%s]"
+          % (len(seen), held, families, skipped, len(apart),
+             _output.some_of(apart, render=repr)),
+          not apart and all(families.values()) and 0 < held < len(seen))
+
+    rows_seen = []
+    for name, arr in TGE._GEN_MEASURED:
+        if arr.tool != "Write" or arr.session != "project":
+            continue
+        world = TGE._gen_world(os.path.join(base, "p-" + name), arr.whose,
+                               arr.folder, arr.present)
+        path, _cwd = TGE._gen_spell(world, arr)
+        rows, codes = _oq_write(path, world["proj"], "sess-oq5b-" + name)
+        # Read by the owner's loader exactly when the file its config folder
+        # resolves to now holds the write - not so for the case variant where
+        # names do not fold, which then names another file.
+        dest = TGE._gen_dest_path(world)
+        loaded = False
+        if os.path.exists(dest):
+            with open(dest, "r", encoding="utf-8") as fh:
+                loaded = fh.read() == _OQ_BODY
+        rows_seen.append((name, loaded, rows, codes))
+    check("oq5b ...and for the measured arrangements written by an edit tool - "
+          "a linked worktree's config outside the project through its linked-out "
+          "folder, absent and present, and the project's config at its folder's "
+          "destination with the directory above it in another case - the "
+          "journal hook run as a process writes one config row where the write "
+          "is the config a loader reads, and none where it is not: %r"
+          % (rows_seen,),
+          len(rows_seen) == 3 and all(
+              codes == (0, 0)
+              and [r[0] for r in rows if r[0] == "config.edit"]
+              == (["config.edit"] if loaded else [])
+              for _n, loaded, rows, codes in rows_seen))
 
 
 # --- oq: the pre-image slot follows the file, not the spelling ----------------------
