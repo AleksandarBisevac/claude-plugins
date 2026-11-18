@@ -47,6 +47,9 @@ import _locks as _lockmod                          # noqa: E402
 # The exemption's end is graded against a bug the PRODUCT's derivation still
 # calls open, not one this file decides is open.
 import _manifest_io as _mio_sf                     # noqa: E402
+# The `tt` block's records are built by the module the drive writes them with,
+# and its per-task entries are compared against that module's own summary.
+import _task_timing as _timing_tf                  # noqa: E402
 
 _CMD = _loader.load_script("audit-status.py", modname="audit_status_boundary")
 
@@ -2209,8 +2212,121 @@ def _gate_exemption_cases(check):
                               unknown) == ["open-high-bugs"])
 
 
+def _timed_task(tid, first, completed, stages, status="done"):
+    """A task carrying a timing record built by the module that builds one in
+    production, so the stages here have the shape the drive writes."""
+    timing = _timing_tf.first_start({}, first)
+    task = {"id": tid, "title": "t", "status": status, "timing": timing}
+    for kind, at, ms, basis in stages:
+        task["timing"] = _timing_tf.append_stage(
+            task, _timing_tf.make_stage(kind, at, ms, basis))
+    if completed is not None:
+        task["completedAt"] = completed
+    return task
+
+
+def _timing_plan():
+    """One phase holding the two routes' shapes side by side and the two ways a
+    task has no window.
+
+    TT.1 is the session route: every kind, summing short of its window, so the
+    unattributed share is real (75 s). TT.2 is the Agent route: a writer stage
+    alone, from hand-out to the filed return, longer than the task's own window,
+    so the overrun is real too (30 s) - with BOTH non-zero, an aggregate that
+    dropped either term could not add up to the windows. TT.3 carries a record
+    and no `completedAt`; TT.4 carries no record at all."""
+    session = [("writer", "2026-03-01T00:00:05Z", 300000, "durationMs in session record w.json"),
+               ("selection", "2026-03-01T00:05:05Z", 30000, "selectionMs in evidence row R-1"),
+               ("gate", "2026-03-01T00:05:35Z", 120000, "durationMs in evidence row R-1"),
+               ("reviewer", "2026-03-01T00:07:35Z", 60000, "durationMs in session record r.json"),
+               ("commit", "2026-03-01T00:08:35Z", 10000, "commit-task-work.py timed around by the drive"),
+               ("wait", "2026-03-01T00:00:00Z", 5000, "hand-out stamped by the drive -> startedAt")]
+    agent = [("writer", "2026-03-01T01:00:00Z", 150000,
+              "hand-out to the filed return (journal row); the agent's own start "
+              "is not recorded, so any wait before it is inside this length")]
+    tasks = [
+        _timed_task("TT.1", "2026-03-01T00:00:00Z", "2026-03-01T00:10:00Z", session),
+        _timed_task("TT.2", "2026-03-01T01:00:00Z", "2026-03-01T01:02:00Z", agent),
+        _timed_task("TT.3", "2026-03-01T02:00:00Z", None,
+                    [("writer", "2026-03-01T02:00:00Z", 1000, "durationMs in x")],
+                    status="in_progress"),
+        {"id": "TT.4", "title": "t", "status": "done",
+         "completedAt": "2026-03-01T03:00:00Z"},
+    ]
+    return {"meta": {"version": 2},
+            "phases": [{"id": "TT", "title": "Timed", "status": "in_progress",
+                        "tasks": tasks},
+                       {"id": "TU", "title": "Untimed", "status": "pending",
+                        "tasks": [{"id": "TU.1", "title": "t",
+                                   "status": "pending"}]}]}
+
+
+def _timing_cases(check):
+    """The per-task summary and the per-phase aggregate the JSON rollup carries.
+
+    The aggregate's promise is arithmetic: its stage figures, less the overrun,
+    plus the unattributed share, ARE the sum of its tasks' windows. The fixture
+    makes both correction terms non-zero, so a sum that forgot either is red.
+    """
+    plan = _timing_plan()
+    roll = M.timing_rollup(plan)
+    tasks = (roll or {}).get("tasks") or {}
+    agg = ((roll or {}).get("phases") or {}).get("TT") or {}
+    check("tt1 a task with no record has NO timing entry - not a summary of "
+          "zeros, which would be a measurement nobody made: %r"
+          % (sorted(tasks),),
+          sorted(tasks) == ["TT.1", "TT.2", "TT.3"]
+          and M.task_timing(plan["phases"][0]["tasks"][3]) is None)
+    check("tt2 each task's entry IS the shared helper's summary, not a "
+          "re-derivation of it",
+          all(tasks.get(t["id"]) == _timing_tf.summarize(t)
+              for t in plan["phases"][0]["tasks"][:3]))
+    kinds_ms = sum(row["ms"] for row in (agg.get("byKind") or {}).values())
+    check("tt3 the phase's stage figures add up to its tasks' windows: "
+          "%r - %r + %r == %r, over the finished tasks only"
+          % (kinds_ms, agg.get("overrunMs"), agg.get("unattributedMs"),
+             agg.get("windowMs")),
+          agg.get("windowMs") == 720000
+          and agg.get("unattributedMs") == 75000
+          and agg.get("overrunMs") == 30000
+          and kinds_ms - agg["overrunMs"] + agg["unattributedMs"]
+          == agg["windowMs"])
+    check("tt4 the median task window, over the tasks that HAVE one (two of "
+          "them here): %r" % (agg.get("medianWindowMs"),),
+          agg.get("medianWindowMs") == 360000 and agg.get("tasks") == 2)
+    check("tt5 the Agent route's basis is carried AS GIVEN beside the session "
+          "route's, so a writer figure says which record each part came from: "
+          "%r" % ((agg.get("byKind") or {}).get("writer"),),
+          ((agg.get("byKind") or {}).get("writer") or {}).get("basis")
+          == sorted([plan["phases"][0]["tasks"][0]["timing"]["stages"][0]["basis"],
+                     plan["phases"][0]["tasks"][1]["timing"]["stages"][0]["basis"]])
+          and ((agg.get("byKind") or {}).get("writer") or {}).get("ms") == 450000)
+    check("tt6 a recorded task with no window is NAMED with what it lacked, "
+          "never folded into the figures as zero: %r"
+          % (agg.get("withoutWindow"),),
+          agg.get("withoutWindow") == {"TT.3": ["completedAt"]})
+    check("tt7 the aggregate states its basis: the window's own and the "
+          "sentence saying what was summed",
+          agg.get("windowBasis") == _timing_tf.WINDOW_BASIS
+          and isinstance(agg.get("basis"), str) and agg.get("basis"))
+    check("tt8 a phase none of whose tasks carries a record has no aggregate "
+          "entry: %r" % (sorted((roll or {}).get("phases") or {}),),
+          sorted((roll or {}).get("phases") or {}) == ["TT"])
+    full = M.rollup(plan, [], [])
+    check("tt9 the rollup carries the same block under `timing`",
+          full.get("timing") == roll and roll is not None)
+    bare = _fixture()
+    bare_roll = M.rollup(bare, [], [])
+    check("tt10 SECOND DIRECTION: a plan with no record anywhere has no "
+          "`timing` key at all and no timing text in its JSON - the payload "
+          "serializes byte for byte as it did before the block existed",
+          M.timing_rollup(bare) is None and "timing" not in bare_roll
+          and '"timing"' not in json.dumps(bare_roll))
+
+
 def _selftest():
     def body(check):
+        _harness.stage(check, "tt", _timing_cases)
         _harness.stage(check, "gx", _gate_exemption_cases)
         _harness.stage(check, "iu", _intent_unanswered_cases)
         _harness.stage(check, "lf", _left_open_cases)

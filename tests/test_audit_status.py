@@ -4876,8 +4876,198 @@ def _standing_approval_cases(check):
     _harness.remove_tree(root)
 
 
+def _timing_render_plan(timed=True, agent_only=False, open_task=False):
+    """Two phases; with `timed`, PT.1 carries a timing record the drive's own
+    builder made - by default the session route's kinds, with `agent_only` the
+    Agent route's single writer stage - and with `open_task` PT.3 carries one
+    and no `completedAt`. Every other task carries none."""
+    import _task_timing as _tt
+    tasks = [
+        {"id": "PT.1", "title": "t", "status": "done",
+         "completedAt": "2026-03-01T00:10:00Z"},
+        {"id": "PT.2", "title": "t", "status": "done",
+         "completedAt": "2026-03-01T01:02:00Z"},
+        {"id": "PT.3", "title": "t", "status": "pending"},
+    ]
+    if timed:
+        stages = [("writer", 300000, "durationMs in session record w.json")] \
+            if not agent_only else [
+                ("writer", 450000, "hand-out to the filed return (journal row)")]
+        if not agent_only:
+            stages += [("gate", 120000, "durationMs in evidence row R-1"),
+                       ("reviewer", 60000, "durationMs in session record r.json"),
+                       ("wait", 45000, "hand-out stamped by the drive")]
+        timing = _tt.first_start({}, "2026-03-01T00:00:00Z")
+        for kind, ms, basis in stages:
+            timing = _tt.append_stage({"timing": timing}, _tt.make_stage(
+                kind, "2026-03-01T00:00:00Z", ms, basis))
+        tasks[0]["timing"] = timing
+    if open_task:
+        tasks[2]["timing"] = _tt.first_start({}, "2026-03-01T02:00:00Z")
+    return {"meta": {"version": 2},
+            "phases": [{"id": "PT", "title": "Timed", "status": "in_progress",
+                        "tasks": tasks},
+                       {"id": "PU", "title": "Untimed", "status": "pending",
+                        "tasks": [{"id": "PU.1", "title": "t",
+                                   "status": "pending"}]}]}
+
+
+def _table_block(text):
+    """The phase table: from its header line down to READY NOW."""
+    lines = text.splitlines()
+    start = [i for i, ln in enumerate(lines) if ln.strip().startswith("task ")]
+    end = [i for i, ln in enumerate(lines) if ln.startswith("  READY NOW")]
+    if not start or not end:
+        return []
+    return lines[start[0]:end[0]]
+
+
+def _column_cell(text, tid, name):
+    """The cell of `tid`'s row under header word `name`, sliced at the columns
+    the HEADER puts it between - positional, because the cell that matters
+    most is the dash, and its row carries other dashes beside it. `""` for a
+    missing header, column or row, so a column that went away fails by name."""
+    block = _table_block(text)
+    if not block or (" %s " % name) not in block[0] + " ":
+        return ""
+    head = block[0] + " "
+    start = head.index(" %s " % name) + 1
+    rest = head[start + len(name):]
+    nxt = len(rest) - len(rest.lstrip())
+    end = start + len(name) + nxt if rest.strip() else None
+    rows = [ln for ln in block if re.match(r"\s+\[.\] %s\b" % re.escape(tid), ln)]
+    if len(rows) != 1:
+        return ""
+    return rows[0][start:end].strip()
+
+
+def _head_line(text, pid):
+    hits = [ln for ln in text.splitlines() if ln.startswith("  %s " % pid)]
+    return hits[0] if len(hits) == 1 else ""
+
+
+# The phase table of the untimed plan, as this command printed it before a
+# time column existed. A golden on purpose: the acceptance is "byte for byte
+# as before", and only the bytes from before can say so.
+_UNTIMED_TABLE = [
+    "     task      title  status   model  waiting on  commit",
+    "",
+    "  PT   Timed                      In progress [########....] 2/3",
+    "     [x] PT.1  t      Done     -      -           -",
+    "     [x] PT.2  t      Done     -      -           -",
+    "     [ ] PT.3  t      Pending  -      -           -       READY",
+    "",
+    "  PU   Untimed                    Pending     [............] 0/1",
+    "     [ ] PU.1  t      Pending  -      -           -       READY",
+    "",
+]
+
+
+def _timing_render_cases(check):
+    """The time column and the phase head's split, and what must NOT move."""
+    import _fmt
+    import io as _io_tc
+    import contextlib as _ctx_tc
+    with _own_project():
+        bare = _timing_render_plan(timed=False)
+        bare_sum = M.rollup(bare, [], [])
+        bare_txt = M.render_status(bare, bare_sum, view="all")
+        timed = _timing_render_plan()
+        timed_sum = M.rollup(timed, [], [])
+        timed_txt = M.render_status(timed, timed_sum, view="all")
+        agent = _timing_render_plan(agent_only=True)
+        agent_txt = M.render_status(agent, M.rollup(agent, [], []), view="all")
+        open_ = _timing_render_plan(open_task=True)
+        open_txt = M.render_status(open_, M.rollup(open_, [], []), view="all")
+        only_pu = M.render_status(timed, timed_sum, only_phase="PU", view="all")
+        only_pt = M.render_status(timed, timed_sum, only_phase="PT", view="all")
+    check("tc1 a plan that never recorded a stage renders its phase table BYTE "
+          "FOR BYTE as before the column existed: %r" % (_table_block(bare_txt),),
+          _table_block(bare_txt) == _UNTIMED_TABLE)
+    check("tc2 ...and its JSON carries no `timing` key anywhere: %r"
+          % (sorted(bare_sum),),
+          sorted(bare_sum) == ["areas", "areasRegistered", "bugs", "findings",
+                               "phases", "priorityNote", "proposals", "ready",
+                               "tasks", "testEvidence", "valid", "warnings"]
+          and '"timing"' not in json.dumps(bare_sum))
+    head = (_table_block(timed_txt) or [""])[0]
+    check("tc3 one timed task grows ONE `time` column: %r" % (head,),
+          head.split().count("time") == 1)
+    check("tc4 the timed task's cell is its whole window, first start to "
+          "completion: %r" % (_column_cell(timed_txt, "PT.1", "time"),),
+          _column_cell(timed_txt, "PT.1", "time") == _fmt.human_duration(600000))
+    check("tc5 every other task's cell is a dash - not recorded, never a zero: "
+          "%r" % ([_column_cell(timed_txt, t, "time")
+                   for t in ("PT.2", "PT.3", "PU.1")],),
+          [_column_cell(timed_txt, t, "time") for t in ("PT.2", "PT.3", "PU.1")]
+          == ["-", "-", "-"])
+    pt_head = _head_line(timed_txt, "PT")
+    want = ["writer %s" % _fmt.human_duration(300000),
+            "gate %s" % _fmt.human_duration(120000),
+            "reviewer %s" % _fmt.human_duration(60000),
+            "wait %s" % _fmt.human_duration(45000),
+            "unattributed %s" % _fmt.human_duration(75000),
+            "median %s" % _fmt.human_duration(600000)]
+    check("tc6 the phase head gives the median window and the split by stage, "
+          "the unattributed share named, so the figures add up to the window: "
+          "%r" % (pt_head,),
+          all(w in pt_head for w in want))
+    check("tc7 SECOND DIRECTION: a phase with no timed task gets no time "
+          "clause on its head line: %r" % (_head_line(timed_txt, "PU"),),
+          _head_line(timed_txt, "PU") != ""
+          and "median" not in _head_line(timed_txt, "PU")
+          and "unattributed" not in _head_line(timed_txt, "PU"))
+    agent_head = _head_line(agent_txt, "PT")
+    check("tc8 the Agent route's shape - one writer stage, no wait - prints the "
+          "kinds it recorded and none it did not: %r" % (agent_head,),
+          "writer %s" % _fmt.human_duration(450000) in agent_head
+          and "wait" not in agent_head and "gate" not in agent_head
+          and "unattributed %s" % _fmt.human_duration(150000) in agent_head)
+    check("tc9 a task carrying a record and no completion is `open`, not a "
+          "dash (it HAS a record) and not a number (it has no window): %r"
+          % (_column_cell(open_txt, "PT.3", "time"),),
+          _column_cell(open_txt, "PT.3", "time") == "open")
+    check("tc10 --phase scopes the column with the table: a view holding no "
+          "timed task has none, a view holding one has it",
+          "time" not in (_table_block(only_pu) or [""])[0].split()
+          and "time" in (_table_block(only_pt) or [""])[0].split())
+
+    def _main_out(argv):
+        out, err = _io_tc.StringIO(), _io_tc.StringIO()
+        with _ctx_tc.redirect_stdout(out), _ctx_tc.redirect_stderr(err):
+            code = M.main(argv)
+        return code, out.getvalue(), err.getvalue()
+
+    tmp = _tf_own.mkdtemp(prefix="audit-status-timing-")
+    try:
+        paths = {}
+        for name, plan in (("timed", timed), ("bare", bare)):
+            paths[name] = os.path.join(tmp, "%s.json" % name)
+            with open(paths[name], "w", encoding="utf-8") as fh:
+                json.dump(plan, fh)
+        with _own_project(tmp):
+            g_timed = _main_out([paths["timed"], "--gate"])
+            g_bare = _main_out([paths["bare"], "--gate"])
+            s_code, s_out, _ = _main_out([paths["timed"], "--json",
+                                          "--section", "timing"])
+        check("tc11 --gate output and exit are unchanged on a plan carrying "
+              "timing - the gate reads none of it: %r vs %r"
+              % (g_timed, g_bare),
+              g_timed == g_bare)
+        section = json.loads(s_out) if s_code == 0 and s_out.strip() else {}
+        check("tc12 --json --section timing carries the per-task summary and "
+              "the per-phase aggregate, and no entry for an unrecorded task: %r"
+              % (sorted((section.get("tasks") or {})),),
+              sorted(section.get("tasks") or {}) == ["PT.1"]
+              and sorted(section.get("phases") or {}) == ["PT"]
+              and (section["tasks"]["PT.1"].get("windowMs") == 600000))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _selftest():
     def body(record):
+        _harness.stage(record, "tc", _timing_render_cases)
         _cases(record)
         _resolve_cases(record)
         _other_checkout_cases(record)

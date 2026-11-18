@@ -29,7 +29,11 @@ line when metering is on, one aligned table across every phase (markers `[x]` do
 on, a `tests` column carrying the verdict of the run that last exercised each task
 exactly as the manifest recorded it — shown only when a task in view has recorded
 one, so a plan that has never run a gate renders exactly as it did before the column
-existed, and `-` inside it means no run was recorded, which is not a failure — the
+existed, and `-` inside it means no run was recorded, which is not a failure — a `time`
+column under the same rule for a task's timing record (its whole window; `-` not
+recorded, `open` not finished), the phase head then giving the median window and the
+split by stage with the unattributed share, each figure's basis under `--json
+--section timing` — the
 ready-now list with a copy-pasteable `/audit:run <id>`, open bugs, parked
 proposals when `/audit:init` parked any (plus a one-line footer counting free-form
 legacy proposals, which `/audit:propose list` still reads), a `BY AREA` rollup when the

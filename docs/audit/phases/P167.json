@@ -304,7 +304,7 @@
     {
       "id": "P167.4",
       "title": "The drive writes a task's stages as it reads each step back, and stamps a writer or reviewer dispatch when it hands it out",
-      "status": "in_progress",
+      "status": "done",
       "description": "When the drive reads a finished step back it appends one stage to the task's timing through the shared helper: a writer round from the session record (start, length, round), a recorded gate run from its ledger row (runId, start, length) with its selection time as a stage of its own, a base measurement from its row, the reviewer session from its record, and the record commit timed around the commit verb. A dispatch for a writer or a reviewer is stamped when it is handed out, the way a gate's is, and the gap between a hand-out and the step's own start is a wait stage, so time the orchestrator spent not calling next is counted rather than lost. The stages go into the shard in a write the drive already makes for that step (the session note, the verdict pointer, the close): this change adds no commit and no locked write of its own, because a metric that slows the thing it measures is wrong by construction. A source that is missing (a session record with no duration, a row that could not be read) appends nothing for that stage and the summary then reports the time as unattributed. A wave member writes its stages in its own tree's shard and integration carries them. Dependants you answer for: the drive's state file and its one-use launch marks (gateLaunched, baseMeasured, phaseGateLaunched) keep their meaning; the wait and dispatch step texts the orchestrator and the prompt hook read keep their wording apart from a since clause where one is added; commit-task-work's refusal on an unexpected shard change must not fire on a timing append; verify-invariants' commit-scope check reads what a task commit staged; tests/test_drive_phase.py holds fixtures of every step and its decision table. Do not edit plugins/audit/reference/orchestrator.md (it sits at its context ceiling); put any text the orchestrator needs into the step the drive prints. Acceptance: (1) a fixture task driven from start to done through a writer round, a green gate, a review and the commit leaves writer, selection, gate, reviewer and commit stages whose figures match their sources, and the summary's parts add up to the window; (2) a red gate followed by a base measurement and a second writer round leaves two writer stages with their rounds, two gate stages and a base stage; (3) a hand-out read back after a delay leaves a wait stage of that length; (4) a session record with no duration leaves no writer stage and the summary reports that time as unattributed; (5) the number of commits and of locked manifest writes the drive makes for the fixture task is the same as before the change; (6) a wave member's stages reach the phase tree's shard at integration.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -337,14 +337,17 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d84b02a670b2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: a per-task timing queue in the drive state (TIMING_KEY; queue_stage once per source, stage_args, stages_carried) whose stages ride writes the drive already makes - the session note's `audit-task.py note --stage` and the close's `audit-task.py done --stage` - so no new commit and no new locked write (tm3 compares journal actions and commit count with a drive whose stages are never queued: equal). Sources: writer/reviewer session records (startedAt, durationMs; a record with no duration writes no stage), gate evidence rows (selection ending at startedAt, gate durationMs, runId), the base run's row, the commit timed around commit-task-work by the drive, and the wait from a session dispatch's or background gate's stamped hand-out to the step's start (wait_stage: a floored start one second early is a wait of 0 that says so, further back is none). NEW THIS ROUND, per the coordinator's three gaps: (1) audit-task.py `--stage` on note and done - not-JSON and stage_problems-graded values are refused before the lock; tmg6 asserts exit E_USAGE, the flag named in the refusal (stdout for note, stderr for done via _refuse_on_stderr) and the plan's and journal's bytes unchanged, on both verbs; tmg7 is the accepted twin. (2) The Agent route: dispatch() now stamps an executor or reviewer Agent's hand-out (agent_handed_out, under TIMING_KEY so the dispatched-<role> marks keep their values); once advance reads the return filed, queue_agent_stage writes a writer/reviewer stage from that stamp to the filing (filed_moment): the task.return.filed journal row for an executor, and - because no journal row files a reviewer's return, which the fixture showed - the filed file's modification time to the whole second, each named in the basis, with 'the agent's own start is not recorded, so any wait before it is inside this length'. No wait stage on that route. tm8 pins it. (3) Wave member: tm9 drives a waveWidth-2 fixture to integration and close and finds each member's writer, gate (the run measured in its own tree, runId and durationMs matching its evidence row) and commit stage in the phase tree's shard, and none in a member tree's plan - the argument held, no code change was needed. Mutation probes in a HEAD export with the working files overlaid (never the shared tree): 13 mutations, each red on its case (hand-out never stamped -> tm8,tm9; reviewer file time not read -> tm8; a wait written on the agent route -> tm8; stage not graded -> tmg6; not-JSON skipped -> tmg6,tmg7; wait never queued, absent duration read as zero, no selection stage, stages ride a note of their own, source dedupe dropped, same-second start dropped, moved clock read as a wait, base run not queued -> the tm cases named in the probe output), restored blocks 9/9 and 7/7. Commands: `python3 tools/sweep-selftests.py tests/test_drive_phase.py` exit 0, '1/1 files ok, 1001 cases'; a wider sweep over test_drive_phase, test_audit_task, test_run_agent_session, test__refs, test_run_test_gate, test_drive_without_model, test__worktrees, test__task_timing, test_commit_task_work exit 0, '9/9 files ok, 3777 cases'; ruff exit 0; vermin -t=3.8- exit 0; house_style_violations, prose_number_claims and doc_prose_numbers report nothing on the changed files. Docs: PLUGIN-BUILD-GUIDE.md drive-phase.py section and a CHANGELOG Unreleased bullet. NOTES: (a) earlier in this run I fed hooks/require-plan.py a hypothetical edit of audit-task.py as a probe, which spent the session's one free file; I did not do it again and will not. (b) lr3's case label in tests/test_audit_task.py was changed with `sed -i` from Bash rather than the Edit tool - a label-text change only. (c) test_run_agent_session.py ras73 now compares the session readings minus the new startedAt/durationMs keys and asserts those two separately. NOT COVERED: the reviewer's Agent-route end is a file modification time, so a reviewer return touched after filing moves it, and no digest row guards it as one does the executor's; review_fix_dispatch and the phase-scope reviewer are not stamped, so a review-fix Agent round and a phase review leave no Agent stage; Agent-route stages carry no round; all stamps are whole seconds, so sub-second wait and Agent lengths are 0 or rounded; the mtime reading is exercised on macOS only, not Windows; plugins/audit/reference/orchestrator.md untouched as ordered.",
+        "descriptive": "The step driver now fills each task's timing - writer, selection, gate, base, reviewer, commit and wait stages - from their own records on writes it already makes, including Agent-dispatched executors and reviewers and wave members."
       },
       "startedAt": "2026-11-18T01:49:46Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T03:03:57Z",
+      "verifiedBy": [
+        "tm1-tm9 in tests/test_drive_phase.py: stages match their sources and the summary adds up; a delayed read-back leaves a wait; no added commit or locked write; a duration-less session leaves no writer stage and unattributed time; red gate, base, second round give two writer, two gate and one base stage; a background gate is one stage however often read; the wait clamp; the Agent route; a wave member's stages in the phase shard",
+        "tmg6 and tmg7 in tests/test_audit_task.py: --stage refusals on note and done with bytes unchanged, and the accepted twin"
+      ],
       "notes": [
         {
           "at": "2026-11-18T01:20:35Z",
@@ -365,12 +368,24 @@
         "runId": "2026-11-18T03:03:33Z.3b1b3e",
         "status": "passed",
         "at": "2026-11-18T03:03:33Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "d84b02a670b2",
+        "at": "2026-11-18T03:03:57Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T02:41:32Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with 6 of 999 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - tm1 (house FAIL), tm2 (house FAIL), tm3 (house FAIL), tm4 (house FAIL), tm5 (house FAIL), tm6 (house FAIL): SELFTEST FAILED: 992/999 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P167.5",
       "title": "/audit:status prints wall time per task and per stage, and its JSON carries the same figures with their basis",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The status render gains a time column, shown only when a task in view carries a timing record, exactly as the tests column appears only when a task has recorded a run: a plan that never recorded a stage renders byte for byte as before. A task's cell is its whole window; the phase's head line gives the median task window and the split by stage over the phase's finished tasks, with the unattributed share named. The JSON rollup carries, per task, the summary the shared helper returns, and per phase the same aggregate, each with its basis; a task with no record carries no timing key rather than zeros. commands/status.md states the column in the fewest words that are true, since the main loop reads that page on every call and tools/measure-context.py holds it to a ceiling. Dependants you answer for: the three views and the fold of finished phases; --phase and --view scoping, which scope the table and never the totals; --section, which projects one top-level key of the JSON and refuses an unknown one; the gate mode, which must not read timing at all; the report and the panel, which call into _status_facts and must be unaffected. Acceptance: (1) a plan with no timing anywhere renders and serializes byte for byte as before; (2) a plan where one task carries a record shows the column, that task's window, and a dash for the others, and the dash means not recorded; (3) the phase line's stage figures add up to its tasks' windows, with the unattributed share printed; (4) the JSON carries the per-task summary and the per-phase aggregate with their basis, and a task without a record has no timing key; (5) --gate output is unchanged on a plan that carries timing.",
       "files": [
         "plugins/audit/scripts/status/_status_facts.py",
@@ -401,14 +416,14 @@
       "dependsOn": [
         "P167.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T03:03:59Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -422,7 +437,17 @@
           "text": "it quotes the Unreleased heading of CHANGELOG.md, and this task adds an entry under that heading and leaves the heading alone",
           "waives": "tools/release.py"
         }
-      ]
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T03:03:59Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T03:31:00Z.c8f984",
+        "status": "passed",
+        "at": "2026-11-18T03:31:00Z"
+      }
     }
   ],
   "request": "Brzina razvoja postaje merena metrika uz Q1 i Q2: metrika vremena po tasku. Izmereno je oko 3.3x vremena obicne sesije, pisac oko 0.9x, a razlika su gate-ovi.",

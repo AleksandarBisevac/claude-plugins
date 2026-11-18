@@ -23,6 +23,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   and the close the driver already writes, so a task costs no extra commit and no extra write.
   A session whose record holds no duration adds no stage, and that time shows as unattributed.
   `/audit:task note` and `done` take the stages on a repeatable `--stage`.
+- **`/audit:status` prints where a task's wall time went.** When a task in view carries a
+  timing record, the table grows a `time` column holding the task's whole window from its
+  first start to its completion - `-` for no record, `open` for one not finished - and the
+  phase head gives the median window and the split by stage over its finished tasks, with the
+  unattributed share named. `--json` carries the same figures under `timing`: per task the
+  summary, per phase the aggregate, each with the record it was read from; a task without a
+  record has no entry. A plan that never recorded a stage renders and serializes exactly as
+  before, and `--gate` reads none of it.
 
 ## [3.9.0]
 

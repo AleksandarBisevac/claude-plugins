@@ -946,6 +946,42 @@ def _evidence_cell(holder):
     return _clip(status, EVIDENCE_CELL_MAX) if status else "-"
 
 
+def _time_cell(summary):
+    """The `time` cell: a task's whole window, `timing.firstStartedAt` to
+    `completedAt`, read off `_status_facts.task_timing`'s summary.
+
+    `-` is no record, the same mark `tests` and `commit` use. A record with no
+    window is never a number: `open` when the one thing it lacks is a
+    completion, `no window` when the record itself could not give one - the
+    JSON's `missing` names which source."""
+    if summary is None:
+        return "-"
+    if summary.get("windowMs") is not None:
+        return _fmt.human_duration(summary["windowMs"]) or "-"
+    if summary.get("missing") == ["completedAt"]:
+        return "open"
+    return "no window"
+
+
+def _time_clause(aggregate):
+    """The phase head's clause: the median task window and the split by stage
+    over the phase's finished tasks, kinds in `_task_timing.KINDS` order as the
+    aggregate holds them, then the unattributed share and any overrun - so the
+    figures, less the overrun, add up to the summed windows. Empty when no task
+    of the phase has a window."""
+    if not aggregate or not aggregate.get("tasks"):
+        return ""
+    parts = ["%s %s" % (kind, _fmt.human_duration(row["ms"]))
+             for kind, row in (aggregate.get("byKind") or {}).items()]
+    parts.append("unattributed %s"
+                 % _fmt.human_duration(aggregate["unattributedMs"]))
+    if aggregate.get("overrunMs"):
+        parts.append("overrun -%s" % _fmt.human_duration(aggregate["overrunMs"]))
+    return "  time median %s per task over %s: %s" % (
+        _fmt.human_duration(aggregate["medianWindowMs"]),
+        _fmt.plural(aggregate["tasks"], "finished task"), ", ".join(parts))
+
+
 def render_status(manifest, summary, width=18, only_phase=None, pt=None,
                   view=None, own=None, manifest_path=None):
     """Plain-ASCII status report. Printed verbatim by /audit:status.
@@ -1163,6 +1199,15 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None):
                      for pe in shown_phases
                      for t in ((by_id.get(pe.get("id")) or {}).get("tasks") or [])
                      if isinstance(t, dict))
+    # The `time` column is earned the same way, off the rollup's `timing` block
+    # rather than a second reading of the records: a task in the rendered scope
+    # has to carry one.
+    timing = summary.get("timing") or {}
+    timed = timing.get("tasks") or {}
+    show_time = any(str(t.get("id")) in timed
+                    for pe in shown_phases
+                    for t in ((by_id.get(pe.get("id")) or {}).get("tasks") or [])
+                    if isinstance(t, dict))
 
     all_rows = {}
     for pe in shown_phases:
@@ -1181,6 +1226,8 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None):
             ]
             if show_tests:
                 cells.append(_evidence_cell(t))
+            if show_time:
+                cells.append(_time_cell(timed.get(str(tid))))
             cells += [_short(t.get("commit")),
                       "READY" if tid in ready else ""]
             rows.append(cells)
@@ -1191,6 +1238,7 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None):
     # The column is as wide as the longest word actually present.
     cols = (("task", "title", "status", "model", "waiting on")
             + (("tests",) if show_tests else ())
+            + (("time",) if show_time else ())
             + ("commit", ""))
     widths = [len(c) for c in cols]
     for rows in all_rows.values():
@@ -1270,6 +1318,8 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None):
                 word = None
             if word:
                 head += "  full %s" % _clip(word, 88)
+        head += _time_clause(
+            (timing.get("phases") or {}).get(str(pe.get("id"))))
         out.append(head)
         # WHICH COPY THIS ROW IS, whenever it is not this checkout's own live
         # one: a phase in flight elsewhere is shown as that copy holds it, and

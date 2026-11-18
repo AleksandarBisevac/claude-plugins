@@ -374,7 +374,7 @@ L4:
   _report_html -> _areas, _fmt, _manifest_io, _manifest_vocab, _output, _priority, _ui_theme
   _report_ui -> _output, _ui_theme
   _scope_companions -> _output, _runner_collects
-  _status_facts -> _areas, _filed_returns, _manifest_io, _manifest_vocab, _output, _priority, _usage_core
+  _status_facts -> _areas, _filed_returns, _manifest_io, _manifest_vocab, _output, _priority, _task_timing, _usage_core
   _tree_stamp -> _journal_io, _loader, _manifest_vocab, _output
   _usage_coverage -> _manifest_io, _output, _usage_core
   _usage_economics -> _fmt, _manifest_io, _output, _usage_core
@@ -3152,6 +3152,10 @@ share it — `_panel_state` (rollup), `audit-doctor` (submodules) and `render-re
 stayed with the command. `live_view`, `row_copies` and `ready_counts` are the pure half of
 reading a phase in flight elsewhere: `_live_copy` reads the copies, and these lay them over the
 plan and name each row's copy, the same way for every surface that shows one.
+`task_timing`, `phase_timing` and `timing_rollup` read a task's `timing` record through
+`_task_timing.summarize` and sum it per phase over the tasks that have a window, so the stage
+figures less the overrun plus the unattributed share are the summed windows; `rollup` carries
+the result under `timing` only when a task holds a record.
 
 ### `plugins/audit/scripts/status/_live_copy.py`
 Which copy holds a phase in flight live: a phase run under a lock, or worked on in
@@ -3176,7 +3180,10 @@ conditions — default `invalid,open-high-bugs,blocked-tasks`, tunable with `--f
 plan that has never recorded a run must not start failing builds on upgrade, and both
 read phases as well as tasks). The human render carries the same words in a `tests`
 column, which — like the report's optional columns — is drawn only when a task in view
-has recorded a run, so an unchanged plan renders exactly as it did before.
+has recorded a run, so an unchanged plan renders exactly as it did before. A `time` column
+follows the same rule for a task's timing record: its window, `-` for no record, `open` for
+a record with no completion; the phase head adds the median window and the split by stage
+with the unattributed share. `--gate` reads none of it.
 `--submodules <.gitmodules> [--git-root
 <prefix>]` (v0.6.2) is the submodule preflight guard — exit 1 when any `task.files` entry lives
 inside a git submodule (which the parent repo cannot stage/commit). Exit 0/1/2. `--selftest`
