@@ -1408,7 +1408,8 @@
       "SG1.34-ukq",
       "SG1.35-ukq",
       "SG1.36-ukq",
-      "SG1.37-ukq"
+      "SG1.37-ukq",
+      "SG1.38-ukq"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -2079,7 +2080,8 @@
       "SG1.34-ukq",
       "SG1.35-ukq",
       "SG1.36-ukq",
-      "SG1.37-ukq"
+      "SG1.37-ukq",
+      "SG1.38-ukq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -3621,7 +3623,8 @@
       "SG1.31-ukq",
       "SG1.32-ukq",
       "SG1.35-ukq",
-      "SG1.37-ukq"
+      "SG1.37-ukq",
+      "SG1.38-ukq"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -5057,7 +5060,8 @@
       "SG1.20-ukq",
       "SG1.27-ukq",
       "SG1.32-ukq",
-      "SG1.37-ukq"
+      "SG1.37-ukq",
+      "SG1.38-ukq"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -13613,7 +13617,8 @@
       "SG1.20-ukq",
       "SG1.27-ukq",
       "SG1.32-ukq",
-      "SG1.37-ukq"
+      "SG1.37-ukq",
+      "SG1.38-ukq"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",

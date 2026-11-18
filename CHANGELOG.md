@@ -244,6 +244,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   unread owes an answer per clause the next time the drive files its writer's work; the executor
   subagent route reads no clause, before or after. A `done` task is not re-read, and nothing a
   plan holds stops validating (`COMPATIBILITY.md` names the change).
+- **The `acceptance:` line is silent only when a wider reading of the same text finds the same
+  items.** A list of departures names only the shapes someone thought of, and a review found
+  descriptions read short with nothing printed: a parenthesised list continued by `3.`, `3)` or
+  `[3]` at a line start (one committed plan's fifth item took a whole later block this way), the
+  marker as `**Acceptance**:`, `## Acceptance`, `Acceptance criteria:`, `Acceptance -` or with a
+  no-break space before its colon, and a number in full-width brackets or a zero-width character
+  in the marker word. The reader's choices are now one table, `READING_CHOICES` in
+  `_clause_coverage.py`, and the description is read twice by the same reader: with the strict
+  column, which is what a task is held to and is unchanged, and with every choice at its widest -
+  the text folded to Unicode's compatibility form with its format characters dropped, a marker
+  wherever a line's first word is the marker word in any case once Markdown's marks are set aside
+  or wherever the word stands with its colon, and an item opened by a number in any of the forms
+  either list style knows or in square brackets, at a line start after an indent and a bullet,
+  the forms mixed. When the two find different items the line adds how many the wider reading
+  finds and the first line where they part, its text quoted. The scans for a mention of the
+  marker word and for a list number inside an item stay: a marker word inside a code fence and a
+  skipped or repeated number read the same both ways, so only the scans see them. A quoted part is
+  now cut where it is taken, so a line holding thousands of list numbers, mentions or markers no
+  longer holds a copy of the rest of the line for each - the bound the entry above claimed for
+  markers did not hold until this change, and `tests/test__clause_coverage.py`'s `cw8` now times
+  all three at doubling lengths in a child killed at a deadline.
 
 ### Security
 - **An agent can no longer switch its own governance off with an edit tool.** `.claude/**` is

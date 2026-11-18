@@ -931,7 +931,320 @@ def _hostile_cases(check):
           "%r" % ([r for r in results if not r[1] or r[2] > 10.0] or results,))
 
 
+# --- the wide reading: silent only on agreement -----------------------------------
+# The words the wide reading's clause carries, as the line prints them. A case
+# asserts the count and the parting line through these, so a clause printed for
+# every description is told apart from one printed never.
+_WIDE = "a wider reading of the same text finds"
+_PART = "the two readings first part on line"
+
+
+def _wide_said(line, count, at, quote):
+    """Whether `line` carries the wide clause with this count, this parting line
+    and this quoted text."""
+    return ("%s %d item%s" % (_WIDE, count, "" if count == 1 else "s") in line
+            and "%s %d: %s" % (_PART, at, quote) in line)
+
+
+def _wide_measured_cases(check):
+    """The shapes a third review measured as read short with nothing printed:
+    each now prints a line giving what a wider reading finds and where the two
+    readings part - while what the task is held to does not move."""
+    continued = [
+        ("Acceptance:\n(1) a holds\n(2) b holds\n3. c holds\n4. d holds", 4,
+         '"3. c holds"'),
+        ("Acceptance:\n(1) a holds\n(2) b holds\n3) c holds", 3, '"3) c holds"'),
+        ("Acceptance:\n(1) a holds\n(2) b holds\n[3] c holds", 3, '"[3] c holds"'),
+    ]
+    got = [(len(_items(d)), M.reading_line(d)) for d, _n, _q in continued]
+    check("cw1 (a) a parenthesised list continued by `3.`, `3)` or `[3]` at a line "
+          "start still reads two items, and the line says a wider reading finds "
+          "the count written and that the two part on line 4, quoted",
+          all(n == 2 and _wide_said(ln, want, 4, quote)
+              for (n, ln), (_d, want, quote) in zip(got, continued)), "%r" % (got,))
+
+    body = "\n(1) a holds\n(2) b holds"
+    spellings = ["**Acceptance**:", "## Acceptance", "Acceptance criteria:",
+                 "**Acceptance criteria:**", "Acceptance -", "Acceptance" + chr(0xA0) + ":"]
+    got = [(_items("Do it.\n\n" + s + body), M.reading_line("Do it.\n\n" + s + body))
+           for s in spellings]
+    check("cw2 (b) the marker with emphasis around the word, as a heading, with a "
+          "second word before the colon, followed by a dash, or with a no-break "
+          "space before the colon reads no item, and the line says no clause was "
+          "read, that a wider reading finds two, and that they part on line 4",
+          all(items == [] and _NONE_READ in ln
+              and _wide_said(ln, 2, 4, '"(1) a holds"') for items, ln in got),
+          "%r" % (got,))
+
+    folded = [
+        ("Acceptance:\n(1) a holds\n" + chr(0xFF08) + "2" + chr(0xFF09) + " b holds",
+         1, 2, 3, '"' + chr(0xFF08) + "2" + chr(0xFF09) + ' b holds"'),
+        ("Do it.\n\nAccep" + chr(0x200B) + "tance:\n(1) a holds\n(2) b holds",
+         0, 2, 4, '"(1) a holds"'),
+    ]
+    got = [(len(_items(d)), M.reading_line(d)) for d, _s, _w, _l, _q in folded]
+    # Full-width DIGITS in plain brackets are a digit run to the strict reading
+    # already, so the two readings agree and nothing is printed: the twin that
+    # tells a fold of the text from a line printed for every non-ASCII list.
+    digits = "Acceptance:\n(1) a holds\n(" + chr(0xFF12) + ") b holds"
+    check("cw3 (c) a number in full-width brackets and a character without width "
+          "inside the marker word read short as before, and the line gives the "
+          "wide count and the parting line quoted as written; full-width digits, "
+          "which the strict reading reads, print nothing",
+          all(n == strict and _wide_said(ln, wide, at, quote)
+              for (n, ln), (_d, strict, wide, at, quote) in zip(got, folded))
+          and len(_items(digits)) == 2 and M.reading_line(digits) == "",
+          "%r / %r" % (got, M.reading_line(digits)))
+
+
+def _wide_allow_cases(check):
+    """The twins that stay silent - a wide reading that over-reads a plain list
+    goes red here."""
+    quiet = [
+        ("parenthesised, own lines", "Do it.\n\nAcceptance:\n(1) a holds\n(2) b holds"),
+        ("parenthesised, one paragraph", "Do it. Acceptance: (1) a holds (2) b holds"),
+        ("wrapped item lines",
+         "Acceptance:\n(1) a holds, and it keeps\n  holding on the next line\n(2) b"),
+        ("calls inside an item",
+         "Acceptance:\n(1) the tool calls sys.exit(1) and f(2) on error\n(2) b"),
+        ("an index before a number", "Acceptance:\n(1) rows[0](2) is read\n(2) b"),
+        ("sub-steps in an item", "Acceptance: (1) do:\n1. x\n2. y\n(2) b"),
+        ("no marker word", "Do it.\n(1) a holds\n(2) b holds"),
+        ("the word without a colon in prose",
+         "The acceptance tests run nightly.\n\nAcceptance:\n(1) a\n(2) b"),
+        # Away from a line's start the wide reading's marker holds its colon;
+        # a sentence opening with the bare word is prose, and no list is there.
+        ("the word opening a sentence with no colon",
+         "Ship it. Acceptance is checked by the nightly job."),
+    ]
+    got = [(label, M.reading_line(d)) for label, d in quiet]
+    numbered = ["Acceptance:\n1. a holds\n2. b holds",
+                "Acceptance:\n1. the build:\n   1. compiles\n   2. links\n2. green"]
+    lines = [M.reading_line(d) for d in numbered]
+    check("cw4 ALLOW: a plain parenthesised list on its own lines and in one "
+          "paragraph, wrapped item lines, `exit(1)` and `f(2)` in an item, an index "
+          "glued before a number, sub-steps in an item and a description with no "
+          "marker word print nothing; a plain list numbered at line starts, nested "
+          "or not, prints its line with no wide clause",
+          [ln for _l, ln in got] == [""] * len(quiet)
+          and all(ln and _WIDE not in ln for ln in lines),
+          "%r / %r" % ([g for g in got if g[1]], lines))
+
+
+# The generated descriptions. Each marker spelling and each numbering form is a
+# part the case places, so the count of items written is known from the
+# construction and never from the reader.
+_GEN_MARKERS = (
+    # (spelling, strict) - strict: the reader holds a task to the list under it
+    ("Acceptance:", True), ("**Acceptance:**", True), ("## Acceptance:", True),
+    ("> Acceptance:", True),
+    ("**Acceptance**:", False), ("## Acceptance", False),
+    ("Acceptance criteria:", False), ("**Acceptance criteria:**", False),
+    ("Acceptance -", False), ("Acceptance" + chr(0xA0) + ":", False),
+    ("Accep" + chr(0x200B) + "tance:", False), ("ACCEPTANCE:", False),
+    ("acceptance:", False), ("Acceptance :", False),
+    (chr(0xFF21) + "cceptance:", False),
+)
+
+
+def _fullwidth(n):
+    return "".join(chr(0xFF10 + int(d)) for d in str(n))
+
+
+_GEN_FORMS = (
+    # (name, opener for item n)
+    ("paren", lambda n: "(%d)" % n),
+    ("dot", lambda n: "%d." % n),
+    ("close", lambda n: "%d)" % n),
+    ("bracket", lambda n: "[%d]" % n),
+    ("full-width brackets", lambda n: chr(0xFF08) + str(n) + chr(0xFF09)),
+    ("full-width digits", lambda n: "(%s)" % (_fullwidth(n),)),
+)
+_GEN_WRITTEN = ("a holds", "b holds", "c holds")
+
+
+def _gen_numberings():
+    """`[(name, [form index per item])]`: every form alone, and every ordered
+    pair of forms split after the first and after the second item."""
+    alone = [(_GEN_FORMS[f][0], [f] * len(_GEN_WRITTEN)) for f in range(len(_GEN_FORMS))]
+    mixed = [("%s then %s" % (_GEN_FORMS[a][0], _GEN_FORMS[b][0]),
+              [a] * k + [b] * (len(_GEN_WRITTEN) - k))
+             for a in range(len(_GEN_FORMS)) for b in range(len(_GEN_FORMS)) if a != b
+             for k in (1, 2)]
+    return alone + mixed
+
+
+def _gen_wide(marker, numbering):
+    """One generated description, its item lines at line starts."""
+    lines = ["%s %s" % (_GEN_FORMS[f][1](n), item)
+             for n, (f, item) in enumerate(zip(numbering, _GEN_WRITTEN), 1)]
+    return "Do it.\n\n%s\n%s" % (marker, "\n".join(lines))
+
+
+def _wide_generated_cases(check):
+    """The rule itself, as a property over descriptions whose item count the
+    case wrote: whenever the strict reading's count differs from it, a line is
+    printed, and it says the wider reading finds the count written."""
+    written = len(_GEN_WRITTEN)
+    built = [(m, strict, name, _gen_wide(m, numbering))
+             for m, strict in _GEN_MARKERS for name, numbering in _gen_numberings()]
+    built += [(m, strict, "paragraph", "Do it. %s %s" % (m, " ".join(
+        "(%d) %s" % (n, item) for n, item in enumerate(_GEN_WRITTEN, 1))))
+        for m, strict in _GEN_MARKERS if strict and not m.startswith(("#", ">"))]
+    silent_short, unsaid, plain_loud = [], [], []
+    for marker, strict, name, text in built:
+        count, line = len(_items(text)), M.reading_line(text)
+        if count != written and not line:
+            silent_short.append((marker, name, count))
+        elif count != written and "%s %d items" % (_WIDE, written) not in line:
+            unsaid.append((marker, name, count, line))
+        if strict and name in ("paren", "paragraph") and (count != written or line):
+            plain_loud.append((marker, name, count, line))
+    check("cw5 over %d generated descriptions (%d marker spellings crossed with "
+          "every numbering form alone and every ordered pair of forms mixed), none "
+          "whose strict count differs from the count written is silent, each such "
+          "line says the wider reading finds the count written, and a strict "
+          "marker over a plain parenthesised list reads every item and prints "
+          "nothing" % (len(built), len(_GEN_MARKERS)),
+          not silent_short and not unsaid and not plain_loud,
+          "silent %r / unsaid %r / plain printed %r"
+          % (silent_short[:5], unsaid[:3], plain_loud[:3]))
+
+
+def _conservation_check_cases(check):
+    """The check that no text after the first marker is left outside every item
+    and every named part - called directly on spans the case builds, and shown
+    to be what turns a forgetful reading's line red."""
+    text = "head words lost words here tail words"
+    gap = (text.index("lost"), text.index(" tail"))
+    covered = [(0, text.index(" lost")), (text.index("tail"), len(text))]
+    found = M._unaccounted(text, (0, len(text)), covered)
+    whole = M._unaccounted(text, (0, len(text)), covered + [gap])
+    check("cw6 the conservation check, given spans that leave a gap, names exactly "
+          "that gap, and given spans that cover everything names none (the twin)",
+          found == [gap] and whole == [], "%r / %r" % (found, whole))
+
+    description = "Acceptance: the lead text, then\n(1) a\n(2) b"
+    keep_left, keep_check = M._left_part, M._unaccounted
+
+    def forgetful(*_args):
+        return []
+
+    def answered():
+        reading = M.acceptance_reading(description)
+        line = M.reading_line(description)
+        return (bool(reading["unaccounted"])
+                and reading["unaccounted"][0]["text"].startswith("the lead text")
+                and '1 stretch of text after the first marker in no item and in no '
+                    'part named here, first "the lead text, then"' in line), line
+    try:
+        M._left_part = forgetful
+        named, line = answered()
+        M._unaccounted = lambda *_args: []
+        silenced, quiet_line = answered()
+    finally:
+        M._left_part, M._unaccounted = keep_left, keep_check
+    check("cw7 a reading whose shapes forget a part (the left-out parts made to "
+          "name nothing) has the forgotten stretch named by the check and quoted "
+          "by the line; with the check answering nothing the same assertion is "
+          "red, so silencing it cannot pass",
+          named and not silenced, "%r / %r" % (line, quiet_line))
+
+
+# The timing. A kind fails when its time grows by more than 2 ** WIDE_POWER from
+# one length to the next (a time under WIDE_FLOOR read as the floor), when the
+# longest takes more than WIDE_CEILING seconds or holds more than WIDE_BYTES per
+# character of input at its peak, or when its child is still running at
+# WIDE_DEADLINE - a kill is a failure, never a skip. The time is the child's
+# processor time, the least of its rounds: a loaded machine stretches the wall
+# clock of one length and not the next, while the work a reading does is what
+# grows with its length.
+WIDE_UNITS = tuple(1250 * 2 ** k for k in range(4))
+WIDE_POWER = 1.5
+WIDE_FLOOR = 1e-3
+WIDE_CEILING = 1.0
+WIDE_BYTES = 2000
+WIDE_DEADLINE = 60.0
+_WIDE_TIMER = r'''
+import json, sys, time, tracemalloc
+sys.path.insert(0, sys.argv[1])
+import _clause_coverage as M
+KINDS = (
+    ("list numbers on one line", lambda n: "Acceptance: (1) a" + " (1)" * n),
+    ("line-start numbers after one line", lambda n: "Acceptance:\n(1) a" + " 3." * n),
+    ("mentions on one line", lambda n: "Acceptance:\n(1) a " + "acceptance : " * n),
+    ("markers on one line", lambda n: "Do it. Acceptance: " * n),
+)
+units = json.loads(sys.argv[2])
+out = []
+for label, make in KINDS:
+    best = []
+    for n in units:
+        text = make(n)
+        least = None
+        for _round in range(3):
+            began = time.process_time()
+            M.reading_line(text)
+            took = time.process_time() - began
+            least = took if least is None else min(least, took)
+        best.append(least)
+    text = make(units[-1])
+    tracemalloc.start()
+    M.reading_line(text)
+    peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+    out.append({"kind": label, "seconds": best, "peak": peak, "chars": len(text)})
+print(json.dumps(out))
+'''
+
+
+def _wide_timing_cases(check):
+    """The reading's time at doubling lengths, in a child killed at a deadline."""
+    import subprocess
+    argv = [sys.executable, "-c", _WIDE_TIMER, os.path.dirname(M.__file__),
+            json.dumps(list(WIDE_UNITS))]
+    try:
+        done = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, timeout=WIDE_DEADLINE)
+        killed, out, err = False, done.stdout, done.stderr
+    except subprocess.TimeoutExpired as exc:
+        killed, out, err = True, exc.stdout or b"", exc.stderr or b""
+    try:
+        runs = json.loads(out.decode("utf-8", "replace").strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        runs = None
+    faults = []
+    if killed:
+        faults.append("killed at the %gs deadline" % (WIDE_DEADLINE,))
+    elif not isinstance(runs, list) or not runs:
+        faults.append("no answer: %s" % (" ".join(err.decode("utf-8", "replace")
+                                                    .split())[-300:],))
+    else:
+        for run in runs:
+            secs = run["seconds"]
+            growth = [b / max(a, WIDE_FLOOR) for a, b in zip(secs, secs[1:])]
+            if max(growth) > 2 ** WIDE_POWER:
+                faults.append("%s grew %s per doubling" % (
+                    run["kind"], ", ".join("%.2fx" % g for g in growth)))
+            if secs[-1] > WIDE_CEILING:
+                faults.append("%s took %.3fs at the longest" % (run["kind"], secs[-1]))
+            if run["peak"] > WIDE_BYTES * run["chars"]:
+                faults.append("%s held %d bytes for %d characters" % (
+                    run["kind"], run["peak"], run["chars"]))
+    check("cw8 the reading's processor time over list numbers, line-start numbers, mentions "
+          "and markers on one line at %d doubling lengths grows by at most 2 ** "
+          "WIDE_POWER per doubling, stays under WIDE_CEILING seconds and WIDE_BYTES "
+          "per character at the longest, in a child killed at WIDE_DEADLINE"
+          % (len(WIDE_UNITS),),
+          not faults, "%s" % ("; ".join(faults),))
+
+
 def _cases(check):
+    _harness.stage(check, "cw-measured", _wide_measured_cases)
+    _harness.stage(check, "cw-allow", _wide_allow_cases)
+    _harness.stage(check, "cw-generated", _wide_generated_cases)
+    _harness.stage(check, "cw-conserve", _conservation_check_cases)
+    _harness.stage(check, "cw-timing", _wide_timing_cases)
     _harness.stage(check, "cc-shape", _shape_cases)
     _harness.stage(check, "cc-marker", _marker_cases)
     _harness.stage(check, "cc-two", _two_marker_cases)

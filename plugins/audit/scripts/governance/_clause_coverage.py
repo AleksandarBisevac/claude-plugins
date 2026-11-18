@@ -23,6 +23,19 @@ was not counted, a fence never closed - is scanned off the description itself,
 not off the reading. `reading_line` names each, so the one line `add` and
 `scope` print is empty only for a plain parenthesised list with nothing found.
 
+SILENT ONLY ON AGREEMENT. A list of departures only names the shapes someone
+thought of, so the silence is also a comparison: the reader's choices - what
+spells the marker, what may stand before it, what opens an item, whether the
+text is folded first - are one table, `READING_CHOICES`, and the description is
+read twice by the same reader, once with the strict column (what a task is held
+to) and once with the wide one. The line is empty only when the strict reading
+is the plain one, nothing is scanned as above, and the wide reading finds the
+same items; otherwise it adds what the wide reading finds and the first line
+where the two part. The scans stay beside the comparison because the wide
+reading does not answer them: it reads a fenced marker word as an example and
+opens items by sequence, so a mention inside a fence and a skipped or repeated
+list number would read the same both ways.
+
 WHO IS HELD. `check` is called only where the drive files a headless writer's
 work (`executor.writerModel` set). The executor subagent filing through `submit`
 is asked for no clause and checked against none; the line `reading_line` prints
@@ -53,6 +66,7 @@ import posixpath
 import re
 import sys
 import textwrap
+import unicodedata
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -86,24 +100,42 @@ SHAPE_PARENTHESISED = "parenthesised"
 SHAPE_LINE_NUMBERED = "line-numbered"
 SHAPE_UNNUMBERED = "unnumbered"
 NUMBERED_SHAPES = (SHAPE_PARENTHESISED, SHAPE_LINE_NUMBERED)
+# The wide reading's one shape: every opener form at once (`_ANY_FORM`).
+SHAPE_ANY_NUMBERED = "any-numbered"
 
 # The digit runs are bounded: `int()` of a run past the interpreter's
 # integer-string limit raises, and a reader that raises takes `add`, `scope`
-# and the drive's filing down with it. No list numbers past six digits.
+# and the drive's filing down with it. No list numbers past six digits. Every
+# opener pattern names its number's group last, so `m.lastgroup` finds it in
+# each, and the indent before a line-start number `indent`.
 #
 # A parenthesised number opens an item unless the character before it is a
 # letter, a digit, an underscore or a closing bracket: `sys.exit(1)` and
 # `rows[0](2)` stay inside their item, while the `(2)` of `a;(2) b` - after a
 # semicolon, a comma, a quote or a dash - opens one.
-_PAREN_NUMBER = re.compile(r"(?<![\w)\]}])\((\d{1,6})\)")
+_PAREN_NUMBER = re.compile(r"(?<![\w)\]}])\((?P<n>\d{1,6})\)")
 # A number closed by a full stop or a parenthesis, at the start of a line (or of
 # the text right after the marker, which ends a label rather than a sentence),
-# after an indent kept in group 1, and followed by whitespace: `version 2. then`
-# sits mid-line and `1.5` has no space after its stop, so neither opens anything.
-_LINE_NUMBER = re.compile(r"(?m)^([ \t]*)(\d{1,6})[.)](?=\s|\Z)")
+# after an indent, and followed by whitespace: `version 2. then` sits mid-line
+# and `1.5` has no space after its stop, so neither opens anything.
+_LINE_NUMBER = re.compile(r"(?m)^(?P<indent>[ \t]*)(?P<n>\d{1,6})[.)](?=\s|\Z)")
+# The wide reading's one opener: either form above, and a number in square
+# brackets, at a line start after an indent and a bullet; or the parenthesised
+# form after a blank or punctuation, as above.
+_ANY_NUMBER = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)(?:[-*+][ \t]+)?"
+    r"(?:\((?P<pn>\d{1,6})\)|\[(?P<bn>\d{1,6})\]|(?P<dn>\d{1,6})[.)])(?=\s|\Z)"
+    r"|(?<![\w)\]}])\((?P<mn>\d{1,6})\)")
 # What may stand before the marker on its line for it to open the line: an
-# indent and Markdown's heading, quote, list and emphasis marks.
+# indent and Markdown's heading, quote, list and emphasis marks - and, for the
+# wide reading, a backtick too.
 _LINE_OPENER = re.compile(r"[ \t#>*_+-]*")
+_ANY_LINE_OPENER = re.compile(r"[ \t#>*_+`-]*")
+# The marker as a task is held to it, and the marker word as the wide reading
+# takes it: any case, whole, with whatever emphasis, blanks and colon follow it
+# taken into the marker so they open no item.
+_MARK_EXACT = re.compile(re.escape(ACCEPTANCE_MARK))
+_MARK_ANY = re.compile(r"(?i)(?<![^\W_])acceptance(?![^\W_])(?:[ \t*_`]*:)?")
 _INDENT = re.compile(r"[ \t]*")
 # What may stand before the marker for it to open a sentence part-way along a
 # line, read backwards from the marker: emphasis, whitespace (at least one),
@@ -125,6 +157,45 @@ _FENCE_OPEN = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
 _FENCE_CLOSE = re.compile(r" {0,3}(`{3,}|~{3,})[ \t]*\Z")
 _HEADING = re.compile(r"(?m)^[ \t]{0,3}#{1,6}(?:[ \t]|$)")
 _CLOSING_EMPHASIS = re.compile(r"[*_]+")
+
+# The forms a numbered list is opened in - see `_opens`. `bind`: items open
+# only at the indent of the first; `restart`: a 1 opens a new item; `nest`: a 1
+# written another way than the list's openers (another form, another indent)
+# starts a nested list, and that way opens nothing until the list's own does.
+_PAREN_FORM = {"shape": SHAPE_PARENTHESISED, "pattern": _PAREN_NUMBER,
+               "bind": False, "restart": False, "nest": False}
+_LINE_FORM = {"shape": SHAPE_LINE_NUMBERED, "pattern": _LINE_NUMBER,
+              "bind": True, "restart": True, "nest": False}
+_ANY_FORM = {"shape": SHAPE_ANY_NUMBERED, "pattern": _ANY_NUMBER,
+             "bind": False, "restart": True, "nest": True}
+
+# THE READER'S CHOICES, one row each: the STRICT reading is what a task is held
+# to; the WIDE reading takes every choice at its widest. Both are `_read` called
+# with one column, so the wide reading is the same reader and never a second
+# parser, and the line is silent only when the two find the same items.
+READING_CHOICES = (
+    # (choice, strict, wide)
+    # the text is read as written, or folded to Unicode's compatibility form
+    # with its format characters dropped (`_fold`)
+    ("fold", False, True),
+    # what spells the marker
+    ("marker", _MARK_EXACT, _MARK_ANY),
+    # what may stand before it on its line for it to open the line
+    ("opener", _LINE_OPENER, _ANY_LINE_OPENER),
+    # whether a marker ending in a colon counts anywhere, not only where it
+    # opens a line or, the first, a sentence
+    ("colonAnywhere", False, True),
+    # the opener forms, each tried alone, the earliest-opening one read
+    ("forms", (_PAREN_FORM, _LINE_FORM), (_ANY_FORM,)),
+)
+STRICT = dict((name, strict) for name, strict, _wide in READING_CHOICES)
+WIDE = dict((name, wide) for name, _strict, wide in READING_CHOICES)
+
+# A quoted part is cut to this many characters where it is taken, so a reading
+# holds no copy of the rest of a line per place it names; `_quoted` reads no
+# further than this either.
+_QUOTE_WIDTH = 60
+_TAKE = _QUOTE_WIDTH * 4
 
 # The kinds of text the reading leaves out of every item; each is named by the
 # reading line with its start quoted.
@@ -193,32 +264,39 @@ def _sentence_cut(text, line_start, at):
     return cut
 
 
-def _markers(text, layout):
-    """`[{"at", "cut", "indent", "line"}]` of each marker that counts, outside
-    a code fence: one opening a line (after an indent and Markdown marks), and
-    - for the first only - one opening a sentence, so a description written as
-    one paragraph still has its list. Inside a body a marker ends the body
-    before it only when it opens a line; one that opens a sentence there, or
-    sits inside a sentence, behind a backtick or a quotation mark, is a mention
-    of the word, never the list's start. `cut` is where the text before it ends
-    - its line's start, or the end of the sentence it follows - and `indent`
-    its line's indent."""
+def _markers(text, layout, choices):
+    """`[{"at", "end", "cut", "indent", "line"}]` of each marker that counts,
+    outside a code fence: one opening a line (after an indent and the marks
+    `choices["opener"]` allows), and - for the first only - one opening a
+    sentence, so a description written as one paragraph still has its list.
+    Away from a line's start the marker holds its colon. Strictly, inside a
+    body a marker ends the body before it only when it opens a line; one that
+    opens a sentence there, or sits inside a sentence, behind a backtick or a
+    quotation mark, is a mention of the word, never the list's start - the wide
+    reading (`colonAnywhere`) counts the word with its colon there too. `end`
+    is where the marker's text ends, `cut` where the text
+    before it ends - its line's start, the end of the sentence it follows, or
+    the marker itself - and `indent` its line's indent."""
     found, opener_end = [], {}
-    for m in re.finditer(re.escape(ACCEPTANCE_MARK), text):
+    for m in choices["marker"].finditer(text):
         at = m.start()
         if _inside(at, layout):
             continue
         line = _line_of(at, layout)
         line_start = layout["lines"][line - 1]
         if line_start not in opener_end:
-            opener_end[line_start] = _LINE_OPENER.match(text, line_start).end()
+            opener_end[line_start] = choices["opener"].match(text, line_start).end()
         if opener_end[line_start] >= at:
             cut = line_start
+        elif not m.group(0).endswith(":"):
+            continue
         else:
             cut = None if found else _sentence_cut(text, line_start, at)
+            if cut is None and choices["colonAnywhere"]:
+                cut = at
             if cut is None:
                 continue
-        found.append({"at": at, "cut": cut, "line": line,
+        found.append({"at": at, "end": m.end(), "cut": cut, "line": line,
                       "indent": _INDENT.match(text, line_start, at).group(0)})
     return found
 
@@ -236,7 +314,7 @@ def _body(text, layout, marker, end):
     it (closing emphasis of a bold marker dropped), to `stop`: the first
     heading line after the marker's own line that sits outside a fence, or
     `end` when there is none. Text from `stop` to `end` is left out."""
-    start = marker["at"] + len(ACCEPTANCE_MARK)
+    start = marker["end"]
     closing = _CLOSING_EMPHASIS.match(text, start)
     if closing is not None:
         start = closing.end()
@@ -255,55 +333,55 @@ def _stripped(text, start, end):
     return start, end
 
 
-def _paren_opens(body, offset, layout):
-    """The `(start, end)` of each `(n)` that opens an item, by sequence: `(2)`
-    opens the second item only once `(1)` has opened the first, so a number
-    that is not the next stays inside the item it sits in."""
-    opens, want = [], 1
-    for m in _PAREN_NUMBER.finditer(body):
-        if int(m.group(1)) == want and not _inside(offset + m.start(), layout):
-            opens.append((m.start(), m.end()))
-            want += 1
-    return {"opens": opens, "restart": False, "indent": None}
+def _opens(body, offset, layout, marker_indent, form):
+    """The `(start, end)` of each number that opens an item in one `form`, the
+    indent the list opened at, and whether the numbering restarted.
 
-
-def _line_opens(body, offset, layout, marker_indent):
-    """The `(start, end)` of each line-start number that opens an item, and
-    whether the numbering restarted. Items open only at the indent of the first
-    `1.` - a nested sub-step opens nothing - and by sequence, except that a `1.`
-    at that indent opens a new item and is reported as a restart: Markdown
-    numbers `1. 1. 1.` as three items, and folding them into one would hold the
-    writer to a single clause holding three. A number on the marker's own line
-    sits at the marker line's indent."""
+    Items open by sequence: the first at a 1, and each later one only as the
+    next number, so a number that is not the next stays inside the item it
+    sits in - `(2)` opens the second item only once `(1)` has opened the first.
+    A form that `bind`s opens items only at the indent of its first opener, so
+    a nested sub-step opens nothing; one that may `restart` opens a new item at
+    a 1, reported as a restart: Markdown numbers `1. 1. 1.` as three items, and
+    folding them into one would hold the writer to a single clause holding
+    three. A form that may `nest` reads a 1 written another way than the list's
+    last opener - another form, another indent - as a nested list, whose way
+    of numbering opens nothing until the list's own opens again. A number on
+    the marker's own line sits at the marker line's indent."""
     opens, want, indent, restart = [], 1, None, False
-    for m in _LINE_NUMBER.finditer(body):
+    current, nested = None, None
+    for m in form["pattern"].finditer(body):
         if _inside(offset + m.start(), layout):
             continue
-        n = int(m.group(2))
-        here = marker_indent if m.start() == 0 else m.group(1)
-        if indent is None:
+        n = int(m.group(m.lastgroup))
+        here = marker_indent if m.start() == 0 else m.groupdict().get("indent")
+        way = (m.lastgroup, m.group(0)[-1], here)
+        if not opens:
             if n == 1:
                 opens.append((m.start(), m.end()))
-                indent, want = here, 2
+                indent, want, current = here, 2, way
             continue
-        if here != indent:
+        if form["bind"] and here != indent:
             continue
-        if n == want or n == 1:
+        if form["nest"] and (way == nested or (n == 1 and way != current)):
+            nested = way
+            continue
+        if n == want or (form["restart"] and n == 1):
             restart = restart or n == 1
             opens.append((m.start(), m.end()))
-            want = n + 1
+            want, current, nested = n + 1, way, None
     return {"opens": opens, "restart": restart, "indent": indent}
 
 
-def _read_body(text, start, stop, layout, marker_indent):
+def _read_body(text, start, stop, layout, marker_indent, forms):
     """One marker's reading of `text[start:stop]`: the numbered shape whose
     first item opens earlier, the other shape's item count when it yielded
     items too, the text before the first item, and the unnumbered reading when
     no number opened one - each item, opener and lead-in also as a `(start,
     end)` span of `text`."""
     body = text[start:stop]
-    tried = [(SHAPE_PARENTHESISED, _paren_opens(body, start, layout)),
-             (SHAPE_LINE_NUMBERED, _line_opens(body, start, layout, marker_indent))]
+    tried = [(form["shape"], _opens(body, start, layout, marker_indent, form))
+             for form in forms]
     yielded = sorted((t for t in tried if t[1]["opens"]),
                      key=lambda t: t[1]["opens"][0][0])
     if not yielded:
@@ -346,8 +424,8 @@ def _stray_numbers(text, shape, spans, indent, layout):
         if shape != SHAPE_LINE_NUMBERED:
             found.extend(m.start() for m in _PAREN_NUMBER.finditer(text, start, end))
         if shape != SHAPE_PARENTHESISED:
-            found.extend(m.start(2) for m in _LINE_NUMBER.finditer(text, start, end)
-                         if shape == SHAPE_UNNUMBERED or m.group(1) == indent)
+            found.extend(m.start("n") for m in _LINE_NUMBER.finditer(text, start, end)
+                         if shape == SHAPE_UNNUMBERED or m.group("indent") == indent)
     return sorted(at for at in found if not _inside(at, layout))
 
 
@@ -365,26 +443,103 @@ def _unaccounted(text, region, covered):
     return gaps
 
 
-def _empty_reading(text, layout, mentions):
+def _empty_reading(text, layout, mentions, wide):
     return {"shape": None, "items": [], "markers": 0, "markerLine": None,
             "why": None, "leadIn": "", "other": None, "restart": False,
             "leftOut": [], "itemSpans": [], "strayNumbers": [], "unaccounted": [],
             "mentions": [_tail(text, at) for at in mentions],
-            "openFence": layout["open"], "region": None}
+            "openFence": layout["open"], "region": None, "wide": wide}
 
 
 def _tail(text, at):
-    """`{"at", "text"}` - a place, and its line's text from there on, to quote."""
-    end = text.find("\n", at)
-    return {"at": at, "text": text[at:len(text) if end < 0 else end]}
+    """`{"at", "text"}` - a place, and its line's text from there on to quote,
+    cut at `_TAKE` characters here rather than when it is printed: a line
+    holding thousands of places would otherwise hold a copy of its rest per
+    place."""
+    end = text.find("\n", at, at + _TAKE)
+    return {"at": at, "text": text[at:at + _TAKE if end < 0 else end]}
 
 
-def acceptance_reading(description):
+def _fold(text):
+    """`text` in Unicode's compatibility form with its format characters
+    dropped - the one normalisation the wide reading reads through, so
+    full-width brackets and digits, a no-break space and a character without
+    width read as their plain twins. It keeps every line break, so a line
+    number of the folded text is a line number of the text as written."""
+    if text.isascii():
+        return text
+    folded = unicodedata.normalize("NFKC", text)
+    return "".join(ch for ch in folded if unicodedata.category(ch) != "Cf")
+
+
+def _is_numbered(shape):
+    return shape not in (None, SHAPE_UNNUMBERED)
+
+
+def _read(text, choices):
+    """`(text read, layout, markers, readings, chosen, why)` - one reading of a
+    description, its choices one column of `READING_CHOICES`. `readings` is
+    `(marker, (start, stop, end), body reading)` per marker; `chosen` the one
+    read (None with no marker): the one whose body holds a numbered list when
+    exactly one does, otherwise the last (`why`: `numbered` or `last`, None
+    with one marker)."""
+    if choices["fold"]:
+        text = _fold(text)
+    layout = _layout(text)
+    markers = _markers(text, layout, choices)
+    readings = []
+    for i, marker in enumerate(markers):
+        end = markers[i + 1]["cut"] if i + 1 < len(markers) else len(text)
+        start, stop, end = _body(text, layout, marker, end)
+        readings.append((marker, (start, stop, end),
+                         _read_body(text, start, stop, layout, marker["indent"],
+                                    choices["forms"])))
+    numbered = [r for r in readings if _is_numbered(r[2]["shape"])]
+    why = None
+    if len(readings) > 1:
+        why = "numbered" if len(numbered) == 1 else "last"
+    chosen = None
+    if readings:
+        chosen = numbered[0] if why == "numbered" else readings[-1]
+    return text, layout, markers, readings, chosen, why
+
+
+def _item_lines(text, spans, layout, fold):
+    """`{line: [(item index, folded text of the item on that line)]}` - where
+    each item sits, line by line, for finding where two readings part."""
+    parts = {}
+    for i, (start, end) in enumerate(spans):
+        first = _line_of(start, layout)
+        for j, piece in enumerate(text[start:end].split("\n")):
+            parts.setdefault(first + j, []).append((i, fold(piece).strip()))
+    return parts
+
+
+def _wide_reading(text, layout, chosen):
+    """None when the wide reading of `text` finds the items the strict reading
+    `chosen` found - the same count, each the same text once both are folded -
+    else `{"count", "line", "text"}`: how many items the wide reading finds, and
+    the first line where the two readings part, with its text as written."""
+    spans = chosen[2]["itemSpans"] if chosen else []
+    folded, wide_layout, _m, _r, wide, _why = _read(text, WIDE)
+    wide_spans = wide[2]["itemSpans"] if wide else []
+    if [folded[s:e] for s, e in wide_spans] == [_fold(text[s:e]) for s, e in spans]:
+        return None
+    strict_lines = _item_lines(text, spans, layout, _fold)
+    wide_lines = _item_lines(folded, wide_spans, wide_layout, lambda piece: piece)
+    parted = [n for n in sorted(set(strict_lines) | set(wide_lines))
+              if strict_lines.get(n) != wide_lines.get(n)]
+    line = parted[0] if parted else _line_of((spans or wide_spans)[0][0], layout)
+    return {"count": len(wide_spans), "line": line,
+            "text": _tail(text, layout["lines"][line - 1])["text"]}
+
+
+def acceptance_reading(description, wide=True):
     """How the description's Acceptance list reads: `{"shape", "items",
     "markers", "markerLine", "why", "leadIn", "other", "restart", "leftOut",
     "itemSpans", "strayNumbers", "mentions", "openFence", "unaccounted",
-    "region"}`. `shape` is None exactly when there are no items. Offsets index
-    the description with each `\\r\\n` read as one `\\n`.
+    "region", "wide"}`. `shape` is None exactly when there are no items.
+    Offsets index the description with each `\\r\\n` read as one `\\n`.
 
     THE MARKER counts where it opens a line - after an indent and Markdown's
     heading, quote, list or emphasis marks - and, when it is the first, where
@@ -404,7 +559,7 @@ def acceptance_reading(description):
       right before it, and only as the next in sequence, so `sys.exit(1)` and
       `the last of (7) lines` stay inside their item.
     - line-numbered, Markdown's own list (`1.` or `1)` starting a line), read
-      at the indent of its first `1.` - see `_line_opens`.
+      at the indent of its first `1.` - see `_opens`.
     - unnumbered: a marker followed by prose (`Acceptance: the sweep is green.`)
       is still acceptance, so the whole text, its surrounding whitespace
       removed, is ONE item.
@@ -423,25 +578,21 @@ def acceptance_reading(description):
     (a number inside an item that could have opened one by its position and
     did not - see `_stray_numbers`) and `openFence` (the line of a fence never
     closed). `reading_line` names each of these, and every part left out, so
-    nothing the reader departs from is unsaid at the write."""
+    nothing the reader departs from is unsaid at the write.
+
+    THE WIDE READING (`wide`; False skips it, for a caller that needs only the
+    items). The reading above is the STRICT one, and it is what a task is held
+    to; the wide reading is the same reader with every choice in
+    `READING_CHOICES` at its widest. `wide` is None when the two find the same
+    items, else what the wide reading finds and where the two first part - so a
+    departure no list of shapes names is still said."""
     text = description if isinstance(description, str) else ""
     text = text.replace("\r\n", "\n")
-    layout = _layout(text)
-    markers = _markers(text, layout)
+    _text, layout, markers, readings, chosen, why = _read(text, STRICT)
     mentions = _mentions(text, markers)
+    disagree = _wide_reading(text, layout, chosen) if wide else None
     if not markers:
-        return _empty_reading(text, layout, mentions)
-    readings = []
-    for i, marker in enumerate(markers):
-        end = markers[i + 1]["cut"] if i + 1 < len(markers) else len(text)
-        start, stop, end = _body(text, layout, marker, end)
-        readings.append((marker, (start, stop, end),
-                         _read_body(text, start, stop, layout, marker["indent"])))
-    numbered = [r for r in readings if r[2]["shape"] in NUMBERED_SHAPES]
-    why = None
-    if len(readings) > 1:
-        why = "numbered" if len(numbered) == 1 else "last"
-    chosen = numbered[0] if why == "numbered" else readings[-1]
+        return _empty_reading(text, layout, mentions, disagree)
     marker, (start, stop, end), reading = chosen
     left = []
     for other_marker, bounds, _other in readings:
@@ -466,15 +617,16 @@ def acceptance_reading(description):
             "leftOut": left, "itemSpans": reading["itemSpans"],
             "strayNumbers": [_tail(text, at) for at in strays],
             "mentions": [_tail(text, at) for at in mentions],
-            "openFence": layout["open"], "region": region,
+            "openFence": layout["open"], "region": region, "wide": disagree,
             "unaccounted": [_tail(text, s) for s, _e in
                             _unaccounted(text, region, covered)]}
 
 
 def acceptance_items(description):
     """The texts of the description's Acceptance items, in order - see
-    `acceptance_reading` for the shapes they are read in."""
-    return acceptance_reading(description)["items"]
+    `acceptance_reading` for the shapes they are read in. The strict reading
+    alone: the wide one changes what is said, never the items."""
+    return acceptance_reading(description, wide=False)["items"]
 
 
 def is_plain(reading):
@@ -487,10 +639,10 @@ def is_plain(reading):
             and not reading["unaccounted"])
 
 
-def _quoted(text, width=60):
+def _quoted(text, width=_QUOTE_WIDTH):
     """`text` on one line, quoted, shortened at a word with ` ...` marking the
     cut - or cut mid-word when it holds no break to shorten at."""
-    flat = " ".join(text[:width * 4].split())
+    flat = " ".join(text[:_TAKE].split())
     short = textwrap.shorten(flat, width, placeholder=" ...")
     if len(flat) > width and short == "...":
         short = flat[:width - 4] + " ..."
@@ -529,8 +681,15 @@ def _departures(reading):
     """The clauses saying what in the description could be read another way -
     each with its count and its first instance quoted, and each only when it is
     true. They are scans of the description, so they are said whether or not
-    the reading itself is the plain one."""
+    the reading itself is the plain one - the first of them the wide reading,
+    whenever it finds other items than the strict one."""
     notes = []
+    wide = reading.get("wide")
+    if wide:
+        notes.append("a wider reading of the same text finds %s, and the two "
+                     "readings first part on line %d: %s" % (
+                         _plural(wide["count"], "item"), wide["line"],
+                         _quoted(wide["text"])))
     if reading["strayNumbers"]:
         notes.append("%s inside an item, not its opener, first %s" % (
             _plural(len(reading["strayNumbers"]), "list number"),

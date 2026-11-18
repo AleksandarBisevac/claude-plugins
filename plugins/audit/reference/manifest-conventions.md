@@ -192,12 +192,22 @@ is no item.
 the end, every character is in an item or in a part the reading names as left out - the text
 before the first item, the body of a marker not read, the text from a heading that ended the
 list. `/audit:task add` (dry run included) and `scope --description` print one `acceptance:` line
-unless the reading is one parenthesised list covering the whole text AND nothing in the
-description could be read another way; the line carries the item count, the shape, each part
-left out (its start quoted), a second marker, the other shape's count, a restarted numbering,
-and - each with its count and first instance quoted - a list number inside an item that is not
-its opener, a mention of the marker word that was not counted (any case, a space before the
-colon, in backticks, in a fence) and a code fence never closed. A description whose marker word
+unless the reading is one parenthesised list covering the whole text, nothing in the
+description could be read another way, AND a wider reading of the same text finds the same
+items. The wider reading is the same reader with each of its choices widened (the table is
+`READING_CHOICES` in `_clause_coverage.py`): the text folded to Unicode's compatibility form with
+its format characters dropped, so full-width brackets and digits, a no-break space and a
+character without width read as their plain twins; a marker wherever a line's first word is
+`acceptance` in any case once Markdown's marks and backticks are set aside, whatever follows it,
+or wherever the word stands with its colon; and an item opened by a number written `(n)`, `n.`,
+`n)` or `[n]` at a line start after an indent and a bullet, the forms mixed, or by a `(n)`
+after a blank. What a task is held to is the strict reading alone. The line carries the item
+count, the shape, how many items the wider reading finds and the first line where the two
+part (its text quoted), each part left out (its start quoted), a second marker, the other
+shape's count, a restarted numbering, and - each with its count and first instance quoted - a
+list number inside an item that is not its opener, a mention of the marker word that was not
+counted (any case, a space before the colon, in backticks, in a fence) and a code fence never
+closed. A description whose marker word
 occurs and yields no item says no clause was read, and why; one where the word never occurs
 prints nothing. `--json` carries the same as
 `acceptanceReading` for a description holding an item.

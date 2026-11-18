@@ -1,0 +1,83 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__clause_coverage.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T07:00:15Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__clause_coverage.py` in a throwaway tree at HEAD exited 1 with 5 of 79 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cw1 (house FAIL), cw2 (house FAIL), cw3 (house FAIL), cw5 (house FAIL), cw8 (house FAIL): SELFTEST FAILED: 74/79 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "(1) _clause_coverage.py: the reader's choices are one table, READING_CHOICES (choice, strict, wide): fold (False | True: NFKC with format characters dropped, `_fold`), marker (_MARK_EXACT, the exact `Acceptance:` | _MARK_ANY, the word in any case with following emphasis/blanks/colon taken into the marker), opener (_LINE_OPENER `[ \\t#>*_+-]*` | _ANY_LINE_OPENER, the same plus a backtick), colonAnywhere (False | True), forms ((_PAREN_FORM, _LINE_FORM) tried alone, earliest read | (_ANY_FORM,): `(n)`, `n.`, `n)`, `[n]` at a line start after an indent and a bullet, mixed, or `(n)` after a blank). STRICT and WIDE are the two columns; `_read(text, choices)` is the one reader both go through (markers, bodies, `_read_body`, choice of marker), and `_opens(body, offset, layout, marker_indent, form)` replaces `_paren_opens`/`_line_opens` with per-form parameters bind/restart/nest (strict paren: F/F/F, strict line: T/T/F, wide: F/T/T - nest reads a 1 written another way than the list's last opener as a nested list, so sub-steps stay quiet). A marker away from a line's start must hold its colon in both columns (every strict match ends in one, so strict is unchanged). acceptance_reading(description, wide=True) reads strict, then `_wide_reading` compares: same count and each item equal once both are folded, else `wide` = {count, line, text} with the first line where the per-line item maps differ, quoted as written; acceptance_items passes wide=False so task_clauses does not pay for it. The line adds `a wider reading of the same text finds N items, and the two readings first part on line L: \"...\"` as the first departure. `_tail` cuts at _TAKE (= _QUOTE_WIDTH * 4) where it is taken, and finds the line end only inside that window. (2) Detectors: both stay, neither is fully answered by the comparison. Mentions: `Do it.` + a fenced `Acceptance: none` + a real list prints today and the wide reading (fences honoured) agrees, so without the scan it would go silent. Stray numbers: `(1) a (2) b (4) c`, `(2) c` repeated, `1. 2. 4.` - the wide reading opens by sequence too, so without the scan the first two go silent. Shown by stubbing both scans in-process: those inputs printed '' . (3) Tests (tests/test__clause_coverage.py, new stages cw-*): cw1 (a) `3.`/`3)`/`[3]` continuing a parenthesised list - 2 items read, line says 4/3 found and part on line 4, quoted; cw2 (b) `**Acceptance**:`, `## Acceptance`, `Acceptance criteria:`, `**Acceptance criteria:**`, `Acceptance -`, no-break space before the colon; cw3 (c) full-width brackets and a zero-width space in the word, with the twin that full-width digits (already a digit run to the strict reading) print nothing; cw4 ALLOW twins silent (both paragraph and own-line parenthesised lists, wrapped item lines, exit(1)/f(2), rows[0](2), sub-steps, no marker word, the word without a colon, a sentence opening with the bare word) and line-numbered lists printing no wide clause; cw5 the generated property over every marker spelling of a fixed strict/non-strict table crossed with every numbering form alone and every ordered pair mixed: no strict count differing from the count written is silent, each such line says the wide reading finds the count written, and strict markers over plain parenthesised lists are silent; cw6 `_unaccounted` names exactly a gap the case builds and none when covered; cw7 with `_left_part` stubbed to forget parts the stretch is named and quoted, and with `_unaccounted` silenced the same assertion is red; cw8 processor time at doubling lengths (WIDE_UNITS) for list numbers, line-start numbers, mentions and markers on one line in a child killed at WIDE_DEADLINE, growth <= 2 ** WIDE_POWER, longest under WIDE_CEILING, peak under WIDE_BYTES per character (tracemalloc). No existing case was changed. Before the change cw1, cw2, cw3, cw5, cw8 were red (74/79 on HEAD's module; HEAD's cw8: growth to 3.37x and up to 952748659 bytes for 190000 characters). Suite after: 79/79. (4) Two timing runs of the child 20 s apart: growth 1.92-2.09x past the floor-limited first step, longest 0.056 s processor time, at most 128 bytes per character. (5) Walk over every committed description (docs/ and examples/, HEAD's module against the tree's): 1783 descriptions; 116 hold a strict marker, 136 the marker word in any spelling; printing a line before 39, after 40; ITEMS CHANGED 0; printed before and quiet now 0; old clauses missing from a new line 0. Newly printing: one, docs/audit/phases/SG1.json:SG1.17-ukq - `acceptance: 6 items, read from a parenthesised list; a wider reading of the same text finds 6 items, and the two readings first part on line 28: \"6. THE SHELL GRANT. In the paid run both sessions wrote ...\" - held on the headless-writer route (executor.writerModel set): the writer answers each`. Longest committed description (P75.2-j5h): least of 7 processor-time runs 0.34 ms before, 0.66-0.69 ms after, two runs. The previous task's walk script, run from a copy: ITEMS CHANGED 0, one newly printing (the same), one existing line gaining the wide clause (P142.37-6yq). (6) Reviewer probes run on the tree: p2_silent - only the two orchestrator-excepted rows remain SILENT-WRONG (CJK glued numbering; `(2)` glued after `]`), every marker spelling, the `3.`/`3)`/`[3]` continuations and the full-width brackets now print; p2_readers - writer's closing line, check and add-time line use the same clause list; p2_tail - linear, 40000 numbers on one line 0.078 s and 9.6e6 characters held (was 0.42 s and 3.2e9); p2_robust - every kind about 4x per 4x length; p2_conserve 50000 - silent drops 0, identical to HEAD (the silent-wrong lists are all trailing prose after the last item, out of scope); p2_plans - 0 silent readings holding a line-start number (was 1, SG1.17-ukq). The orchestrator's mine.py exits 0; its plain lists print nothing. (7) Mutation probe (sg1.33/mutations.py, a throwaway copy): wide = strict, comparison dropped, normalisation dropped, conservation check answering nothing, quote cut removed, and three ALLOW rows (the wide paren opener's glued class widened, the nest rule dropped, a colon-less word counted mid-line) - every anchor matched once, every row caught, exit 0. (8) Docs: the module docstring (SILENT ONLY ON AGREEMENT), manifest-conventions.md's acceptance paragraph, PLUGIN-BUILD-GUIDE.md's _clause_coverage section and CHANGELOG.md (a new entry; it also says the earlier entry's bound for markers on one line did not hold until now). Dependants: drive-phase.py (task_clauses, check, gap_summary, resume_text: unchanged; acceptance_items reads strict only) - stages wl-block rw-block uy-block 15/15; audit-task.py (reading_line, reading_summary: same keys and shapes, the line may carry one more clause; acceptanceReading still only with items) - ar-block 11/11; audit-lookup.py (acceptance_items, task_clauses, acceptance_reading's shape/markers/markerLine/restart, SHAPE_* constants: unchanged) - test_audit_lookup.py 207/207; tests/test__refs.py 320/320, test__deps.py 284/284, test__output_lints.py 188/188; prove-gates --list exit 0; .github/sweep-costs.json - the suite is not staged and still runs in seconds; commands/init.md and COMPATIBILITY.md stay true (the strict reading, which they describe, is unchanged; the --json key is unchanged). The gate run of section 4 of the session notes is reported in the hand-back.",
+    "descriptive": "The Acceptance line is now silent only when a wider reading of the same text, by the same reader, finds the same items; otherwise it says what the wider reading finds and the line where they part."
+  },
+  "testsAdded": [
+    "cw1-cw3: each measured shape - a parenthesised list continued at line starts, the marker spelled with emphasis, as a heading, with a second word, a dash or a no-break space, full-width brackets and a zero-width character - prints the wide count and the parting line, with full-width digits as a silent twin",
+    "cw5: generated descriptions over a table of marker spellings and every numbering form alone or mixed, none read short in silence; cw4: the allow twins stay silent",
+    "cw6: the conservation check names a gap the case builds; cw7: a forgetful reading has the stretch named, and silencing the check turns the assertion red",
+    "cw8: processor time and peak memory at doubling lengths for numbers, mentions and markers on one line, in a child killed at a deadline"
+  ],
+  "casesAdded": [
+    [
+      "cw1",
+      "cw2",
+      "cw3"
+    ],
+    [
+      "cw5",
+      "cw4"
+    ],
+    [
+      "cw6",
+      "cw7"
+    ],
+    "cw8"
+  ],
+  "claims": "claims:\n1 _clause_coverage.py READING_CHOICES / STRICT / WIDE is the table; _read() is called with STRICT in acceptance_reading and with WIDE in _wide_reading; _departures() adds the wide clause; _tail() cuts at _TAKE; the docstring paragraph SILENT ONLY ON AGREEMENT, manifest-conventions.md and the guide say what those lines do\n2 sg1.33/mutations.py: 5 deny rows and 3 ALLOW rows, each anchor matched once on a throwaway copy, __pycache__ purged, every row caught (wide=strict -> cw1 cw2 cw3 cw5; comparison dropped -> same; fold dropped -> cw3 cw5; conservation silenced -> cw6 cw7; cut removed -> cw8; ALLOW widenings -> cw4), exit 0; HEAD's module under the new suite: 74/79, cw1 cw2 cw3 cw5 cw8 red\n3 the class is a silent reading that differs from what was written; fixed as a comparison, not by naming shapes. The reviewer's p2_silent rows: all but the two excepted glued rows now print; p2_plans: SG1.17-ukq was the one committed instance and now prints; p2_conserve 50000: no silent drop, same as HEAD; the remaining silent-wrong family (trailing prose after the last item) is out of this task's scope\n4 n/a - no rule addressed to an agent\n5 cw8 processor time measured twice 20 s apart: growth 1.92-2.09x, longest 0.056 s; longest committed description 0.34 ms before, 0.66-0.69 ms after over two runs; the documents carry no figure, the suite names the bound constants\n6 n/a - no guard; the reading is not a refusal\n7 no number written into prose; the constants are named (WIDE_UNITS, WIDE_POWER, WIDE_CEILING, WIDE_BYTES, WIDE_DEADLINE, _TAKE) and case labels print computed counts",
+  "stamp": "audit-stamp: {\"content\":\"sha256:5cc6e67a4933e59a5a8acaa9de3bc0024a512ef7886831d5e6cb76f2288284c6\",\"dirtyDigest\":\"sha256:4252304e7dc01cec96f3e91075bae20a6af550f65c2f1f073bd9557a2871c32f\",\"dirtyPaths\":{\"CHANGELOG.md\":\"c8084318b95eee6d\",\"PLUGIN-BUILD-GUIDE.md\":\"33bdc7b598d74ce5\",\"plugins/audit/reference/manifest-conventions.md\":\"e9eb93c8833b67a5\",\"plugins/audit/scripts/governance/_clause_coverage.py\":\"f98b52bf70b27059\",\"tests/test__clause_coverage.py\":\"d75b898d82c1f4ec\"},\"head\":\"dd5f9428\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/manifest-conventions.md\",\"plugins/audit/scripts/governance/_clause_coverage.py\",\"tests/test__clause_coverage.py\"],\"scopeDigest\":\"sha256:0f110270ab1e8339b2b71c52a07cd86ebff66bd9bbdd65a51fb2331112621ff7\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 1 of the diff's 5 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 3 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/reference/manifest-conventions.md; 1 file(s) that could hold a move not compared: tests/test__clause_coverage.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/reference/manifest-conventions.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test__clause_coverage.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was only added: every statement of the base copy outside them stands in the tree copy, in order and in place, and the first added one is at tree line 938 (`_WIDE = \"a wider reading of the same text finds\"`); what it runs is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "dd5f9428284ff30ac49d9bea8d0403a51af6158f"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-18T07:00:16Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

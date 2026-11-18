@@ -5698,11 +5698,25 @@ from the first marker to the end everything is in an item, a named part, a marke
 it, three scans of the description itself, independent of how the reading was built: `mentions`
 (the marker word, any case, a space before the colon, anywhere it was not counted), `strayNumbers`
 (a number inside an item that could have opened one by its position and did not) and `openFence`.
+**The wide reading:** the reader's choices - fold the text first, what spells the marker, what may
+stand before it, whether the word with its colon counts anywhere, which opener forms - are one
+table, `READING_CHOICES`, with a strict and a wide column, and `_read(text, choices)` is the one
+reader both columns go through. `acceptance_reading` reads with the strict column (what a task is
+held to) and, unless called with `wide=False` as `acceptance_items` is, again with the wide one:
+the text folded by `_fold` (NFKC, format characters dropped; line breaks kept, so its line numbers
+are the text's), the marker any line whose first word is the marker word once Markdown's marks are
+set aside or the word with its colon anywhere, and one opener form (`_ANY_FORM`) taking every
+number form either list style knows and a square-bracketed one, mixed, a 1 written another way than
+the list's openers starting a nested list. `wide` is None when both find the same items, else the
+wide count and the first line where they part. The scans stay beside it because the wide reading
+reads a fenced marker word as an example and opens items by sequence too.
 `reading_line(description)` is the line `audit-task.py`'s `add` (single or `--from-file`, dry run
 included) and `scope --description` print unless the reading is one parenthesised list covering the
-whole text and no scan found anything - a second marker, the other shape's count, each part left
+whole text, no scan found anything and the wide reading agrees - the wide count and the parting line
+quoted, a second marker, the other shape's count, each part left
 out with its start quoted, a restarted numbering, and each scan's count with its first instance
 quoted - and, when a marker word occurs but no item is read, it says no clause was read and why;
+every place it quotes is cut to a fixed length where it is taken;
 the tests pin each clause both ways. `reading_summary` is the same as the `acceptanceReading` key of
 their `--json` results, which a description holding no item does not carry. **The check runs on the headless-writer route alone** (`executor.writerModel`
 set): the executor subagent filing through `submit` reads no clause, and the line says which route it
