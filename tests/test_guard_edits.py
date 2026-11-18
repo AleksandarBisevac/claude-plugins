@@ -607,11 +607,272 @@ def _config_cases(check, cfg, tmp, tf):
             "this rule's", "allow", "Write",
             _w(os.path.join(nested, ".claude", "settings.json")),
             cwd=tf["main"])
+        _spelling_cases(check, cfg, tf, nested, _cf, _w)
     finally:
         if prev is None:
             os.environ.pop("CLAUDE_PROJECT_DIR", None)
         else:
             os.environ["CLAUDE_PROJECT_DIR"] = prev
+
+
+# --- cf: which file a path names, asked of the disk, not of the spelling ----------
+# The config of a tree nested under the project, written through a spelling that
+# differs from the plugin's in letter case. Whether that spelling names the config
+# is the volume's answer, so the cases that depend on it ask the volume they run
+# on - an existing directory reached under its case-swapped name, asked here
+# apart from the hook - and assert what that volume owes: held where names fold,
+# allowed where they do not. Each such label prints which volume it ran on, so a
+# run on one kind is never read as having held the other. The other kind is
+# driven through a stubbed answer as well, and those labels say STUBBED.
+def _swapped_exists(path):
+    """True when `path`'s last component, case-swapped, names the same entry -
+    the volume folds names there. Asked of the disk, independently of the hook."""
+    head, name = os.path.split(path)
+    other = os.path.join(head, name.swapcase())
+    return (other != path and os.path.exists(other)
+            and os.path.samefile(other, path))
+
+
+def _cap(name):
+    """`name` with its first letter upper-cased: `.Claude` for `.claude`."""
+    for i, ch in enumerate(name):
+        if ch.isalpha():
+            return name[:i] + ch.upper() + name[i + 1:]
+    return name
+
+
+def _with_attr(name, value, fn):
+    """`fn()` with `M.<name>` replaced by `value`, restored whatever happens.
+    A name the module does not define is set and then removed again, so a case
+    run against a hook without it fails on its assertion, not on a lookup."""
+    prev = getattr(M, name, _with_attr)
+    setattr(M, name, value)
+    try:
+        return fn()
+    finally:
+        if prev is _with_attr:
+            delattr(M, name)
+        else:
+            setattr(M, name, prev)
+
+
+def _os_calls(fn):
+    """(result of fn(), number of stat/lstat/readlink calls it made)."""
+    seen = []
+    saved = dict((n, getattr(os, n)) for n in ("stat", "lstat", "readlink"))
+
+    def counting(n):
+        real = saved[n]
+
+        def call(*a, **k):
+            seen.append(n)
+            return real(*a, **k)
+        return call
+    for n in saved:
+        setattr(os, n, counting(n))
+    try:
+        out = fn()
+    finally:
+        for n, real in saved.items():
+            setattr(os, n, real)
+    return out, len(seen)
+
+
+def _spelling_cases(check, cfg, tf, nested, _cf, _w):
+    main = tf["main"]
+    rel = _config.CONFIG_REL.split("/")
+    folds = _swapped_exists(nested)
+    vol = "volume folds case: %s" % (folds,)
+    held, asked = ("block", "ask") if folds else ("allow", "allow")
+    nconf = os.path.join(nested, *rel)
+    os.makedirs(os.path.dirname(nconf), exist_ok=True)
+    with open(nconf, "w", encoding="utf-8") as fh:
+        fh.write(_CF_BODY)
+    variants = (os.path.join(nested, _cap(rel[0]), rel[1]),
+                os.path.join(nested, rel[0], "Audit.Config.json"),
+                os.path.join(nested, rel[0].upper(), rel[1].upper()))
+    seen = [(v, agent is None,
+             _cf_decide(cfg, "Write", _w(v), main, agent)[0])
+            for v in variants for agent in ("agent-cf", None)]
+    want = [(v, m, asked if m else held) for v, m, _g in seen]
+    check("cf23 the EXISTING config of a nested worktree through a spelling in "
+          "another letter case - directory, file name, both - is refused to a "
+          "subagent and asked of the main session where names fold, and is "
+          "another file, allowed, where they do not (%s)" % (vol,),
+          seen == want and len(seen) == 6,
+          "got %r" % ([(os.path.relpath(v, main), m, g) for v, m, g in seen],))
+
+    # The creating write: a nested worktree whose config does not exist yet,
+    # first with no `.claude` directory at all, then with an empty one.
+    fresh = os.path.join(main, ".claude", "worktrees", "agent-cf2")
+    built, why = _harness.attempt(
+        _harness.git, main, "worktree", "add", "-q", fresh, "-b",
+        "nested/agent-cf2", prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+    check("cf24 the second nested worktree fixture builds, with no config and "
+          "no .claude directory (%s)" % (why if not built else "built",),
+          built and not os.path.exists(os.path.join(fresh, rel[0])))
+    if not built:
+        return
+    _config.forget_git_standing()
+    exact = os.path.join(fresh, *rel)
+    dir_case = os.path.join(fresh, _cap(rel[0]), rel[1])
+    _cf("cf24b a creating write of a nested worktree's config, spelled as the "
+        "plugin spells it, is refused - the twin every volume owes", "block",
+        "Write", _w(exact), cwd=main, words=_CF_ROUTES)
+    _cf("cf24c a creating write through a directory spelled in another case, "
+        "no .claude existing yet, is held as the config where names fold and "
+        "allowed where they do not (%s)" % (vol,), held, "Write", _w(dir_case),
+        cwd=main)
+    _cf("cf24d ...and the main session's is asked where names fold (%s)"
+        % (vol,), asked, "Write", _w(dir_case), cwd=main, agent=None)
+    os.makedirs(os.path.join(fresh, rel[0]))
+    _cf("cf24e a creating write of the file name in another case, its "
+        ".claude existing and empty, is held where names fold and allowed "
+        "where they do not (%s)" % (vol,), held, "Write",
+        _w(os.path.join(fresh, rel[0], "Audit.Config.JSON")), cwd=main)
+    os.rmdir(os.path.join(fresh, rel[0]))
+
+    # The volume's answer substituted: the half this volume cannot show.
+    v_no = _with_attr("_volume_folds", lambda d: False, lambda: _cf_decide(
+        cfg, "Write", _w(dir_case), main, "agent-cf")[0])
+    v_no_exact = _with_attr("_volume_folds", lambda d: False, lambda: _cf_decide(
+        cfg, "Write", _w(exact), main, "agent-cf")[0])
+    check("cf25 STUBBED - the volume's answer substituted, not asked: "
+          "told names do not fold, a creating write through a directory in "
+          "another case is another file and allowed (%s), while the exact "
+          "spelling is still refused (%s)" % (v_no, v_no_exact),
+          v_no == "allow" and v_no_exact == "block")
+    v_yes = _with_attr("_volume_folds", lambda d: True, lambda: _cf_decide(
+        cfg, "Write", _w(dir_case), main, "agent-cf")[0])
+    check("cf25b STUBBED: told names fold, the same creating write is refused "
+          "(%s)" % (v_yes,), v_yes == "block")
+    v_none = _with_attr("_volume_folds", lambda d: None, lambda: _cf_decide(
+        cfg, "Write", _w(dir_case), main, "agent-cf"))
+    v_none_exact = _with_attr("_volume_folds", lambda d: None,
+                              lambda: _cf_decide(cfg, "Write", _w(exact), main,
+                                                 "agent-cf"))
+    blind = "without regard to case"
+    check("cf25c STUBBED: where the volume cannot be asked, a creating write "
+          "in another case is refused and the refusal says the spelling was "
+          "matched without regard to case; the exact spelling's refusal does "
+          "not say it",
+          v_none[0] == "block" and blind in v_none[1]
+          and v_none_exact[0] == "block" and blind not in v_none_exact[1],
+          "got %r / %r" % (v_none, v_none_exact))
+
+    def _raises(d):
+        raise OSError("volume unreadable")
+    v_err = _with_attr("_volume_folds", _raises, lambda: _cf_decide(
+        cfg, "Write", _w(dir_case), main, "agent-cf")[0])
+    v_err_plain = _with_attr("_volume_folds", _raises, lambda: _cf_decide(
+        cfg, "Write", _w(os.path.join(fresh, "src", "app.ts")), main,
+        "agent-cf")[0])
+    check("cf25d an error asking the volume lands where the config's other "
+          "disk errors land - a case-variant config path is still refused "
+          "(%s) - while an ordinary write beside it is allowed (%s)"
+          % (v_err, v_err_plain),
+          v_err == "block" and v_err_plain == "allow")
+
+    # One question for every tree: the project's own config and a nested one
+    # are both answered by the same function, which is shown by answering it
+    # "not the config" and seeing both writes go through.
+    asked_of = []
+
+    def _never(path, top):
+        asked_of.append(top)
+        return None
+    pconf = os.path.join(main, *rel)
+    got = _with_attr("_names_audit_config", _never, lambda: [
+        _cf_decide(cfg, "Write", _w(p), main, "agent-cf")[0]
+        for p in (pconf, nconf)])
+    check("cf26 the project's config and a nested tree's are judged by one "
+          "function: answered 'not the config', both writes are allowed (%s) "
+          "and it was asked of both trees" % (got,),
+          got == ["allow", "allow"]
+          and os.path.realpath(main) in [os.path.realpath(t) for t in asked_of]
+          and os.path.realpath(nested) in [os.path.realpath(t)
+                                           for t in asked_of])
+
+    # A hard link is the same file under another name; a copy is another file.
+    with open(pconf, "w", encoding="utf-8") as fh:
+        fh.write(_CF_BODY)
+    link = os.path.join(main, "cf-notes.json")
+    copy = os.path.join(main, "cf-copy.json")
+    made, why = _harness.attempt(os.link, pconf, link)
+    if made:
+        _cf("cf27 a hard link to the project's config under another name is "
+            "the config and is refused", "block", "Write", _w(link), cwd=main)
+    else:
+        check("cf27 the hard link fixture builds (%s)" % (why,), False)
+    with open(copy, "w", encoding="utf-8") as fh:
+        fh.write(_CF_BODY)
+    _cf("cf27b ...while a copy of it under that kind of name is another file "
+        "and allowed", "allow", "Write", _w(copy), cwd=main)
+    if os.name != "nt":
+        alias = os.path.join(main, "cf-alias.json")
+        os.symlink(nconf, alias)
+        _cf("cf27c a symlink under another name pointing at a nested "
+            "worktree's config is that config and is refused", "block",
+            "Write", _w(alias), cwd=main)
+
+    # What must stay quiet, on every volume.
+    deep = os.path.join(nested, "src", "deep")
+    os.makedirs(os.path.join(deep, rel[0]))
+    for cid, label, path in (
+            ("cf28", "a deep plain folder named .claude inside the nested "
+             "worktree's source, which is not that tree's config",
+             os.path.join(deep, *rel)),
+            ("cf28b", "...the same through a case-variant spelling",
+             os.path.join(deep, _cap(rel[0]), "Audit.Config.json")),
+            ("cf28c", "a file whose name only starts like the config's",
+             os.path.join(nested, rel[0], rel[1] + ".bak")),
+            ("cf28d", "the config's name directly under the worktree root",
+             os.path.join(nested, rel[1]))):
+        _cf("%s %s is allowed (%s)" % (cid, label, vol), "allow", "Write",
+            _w(path), cwd=main)
+    other = main + "2"
+    os.makedirs(os.path.join(other, rel[0]))
+    _harness.git(other, "init", "-q", prefix=_harness.WORKTREE_PAIR_GIT)
+    _cf("cf28e an unrelated repository whose name has the project's as a "
+        "prefix keeps its answer: its config is not this project's", "allow",
+        "Write", _w(os.path.join(other, rel[0], _cap(rel[1]))),
+        cwd=main)
+
+    # An ordinary write costs the disk no more than it did before the identity
+    # question existed. Two measures over one existing and one new source file:
+    # the config question's stat/lstat/readlink calls against the sequence the
+    # hook made for it before (resolve the path, resolve the config, resolve the
+    # path again, and compare the two as files when both exist), and against the
+    # same question with the nested-tree half answered "no candidate" - so the
+    # identity question about a nested tree is asked of no ordinary path.
+    def _before(target, own):
+        os.path.realpath(target)
+        os.path.realpath(own)
+        os.path.realpath(target)
+        if os.path.exists(target) and os.path.exists(own):
+            os.path.samefile(target, own)
+
+    costs = []
+    for src in (os.path.join(nested, "src", "app.ts"),
+                os.path.join(nested, "src", "cf-new.ts")):
+        data = {"tool_name": "Write", "tool_input": _w(src), "cwd": main,
+                "agent_id": "agent-cf"}
+        tree = _config.tree_for(data, src, cfg)
+        target = os.path.join(str(tree["root"]), *str(tree["rel"]).split("/"))
+        own = os.path.join(str(tree["root"]), *rel)
+        _, n_before = _os_calls(lambda: _before(target, own))
+        verdict, n_now = _os_calls(lambda: M._is_audit_config(tree))
+        _, n_no_nested = _os_calls(lambda: _with_attr(
+            "_config_shaped_top", lambda real: None,
+            lambda: M._is_audit_config(tree)))
+        costs.append((os.path.basename(src), verdict, n_before, n_now,
+                      n_no_nested))
+    check("cf29 an ordinary source write - existing and new - costs the config "
+          "question no more disk calls than before, and none for the nested "
+          "tree's identity (name, verdict, before, now, nested half off): %r"
+          % (costs,),
+          all(not v and now <= before and now == off
+              for _n, v, before, now, off in costs) and len(costs) == 2)
 
 
 def _selftest():

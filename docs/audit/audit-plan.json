@@ -1401,7 +1401,9 @@
       "SG1.27-ukq",
       "SG1.28-ukq",
       "SG1.29-ukq",
-      "SG1.30-ukq"
+      "SG1.30-ukq",
+      "SG1.31-ukq",
+      "SG1.32-ukq"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -2064,7 +2066,10 @@
       "SG1.25-ukq",
       "SG1.26-ukq",
       "SG1.27-ukq",
-      "SG1.29-ukq"
+      "SG1.29-ukq",
+      "SG1.30-ukq",
+      "SG1.31-ukq",
+      "SG1.32-ukq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2567,7 +2572,8 @@
       "SG1.22-ukq",
       "SG1.25-ukq",
       "SG1.26-ukq",
-      "SG1.30-ukq"
+      "SG1.30-ukq",
+      "SG1.31-ukq"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -3594,7 +3600,9 @@
       "SG1.20-ukq",
       "SG1.22-ukq",
       "SG1.26-ukq",
-      "SG1.27-ukq"
+      "SG1.27-ukq",
+      "SG1.31-ukq",
+      "SG1.32-ukq"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -5027,7 +5035,8 @@
       "P156.8-3st",
       "SG1.6",
       "SG1.20-ukq",
-      "SG1.27-ukq"
+      "SG1.27-ukq",
+      "SG1.32-ukq"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -10517,7 +10526,8 @@
       "P157.2",
       "P157.10-mwz",
       "SG1.20-ukq",
-      "SG1.27-ukq"
+      "SG1.27-ukq",
+      "SG1.32-ukq"
     ],
     "plugins/audit/tests/test__runner_output.py": [
       "P102.3",
@@ -12892,7 +12902,8 @@
       "P157.2",
       "P157.10-mwz",
       "SG1.20-ukq",
-      "SG1.27-ukq"
+      "SG1.27-ukq",
+      "SG1.32-ukq"
     ],
     "tests/test__scope_companions.py": [
       "P131.1"
@@ -13576,7 +13587,8 @@
       "P156.8-3st",
       "SG1.6",
       "SG1.20-ukq",
-      "SG1.27-ukq"
+      "SG1.27-ukq",
+      "SG1.32-ukq"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",
@@ -13845,14 +13857,16 @@
       "SG1.12-ukq",
       "SG1.18-ukq",
       "SG1.19-ukq",
-      "SG1.26-ukq"
+      "SG1.26-ukq",
+      "SG1.31-ukq"
     ],
     "tests/test__floor_guard.py": [
       "SG1.4",
       "SG1.12-ukq",
       "SG1.18-ukq",
       "SG1.19-ukq",
-      "SG1.26-ukq"
+      "SG1.26-ukq",
+      "SG1.31-ukq"
     ],
     "plugins/audit/evals/bugfix/scaffold.sh": [
       "SG1.9",

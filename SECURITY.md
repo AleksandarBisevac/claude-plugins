@@ -1478,6 +1478,31 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    and a file merely named `audit.config.json` elsewhere — under a `.claude/` of a
    plain folder that holds no repository included — are untouched.
 
+   **What is compared is which file the path names, not how it is spelled.** One
+   function (`_names_audit_config` in `guard-edits.py`) answers it for the
+   project's tree and for a tree nested under it alike. Where the written path and
+   the config both exist, they are compared as files, so a case variant, a
+   symlinked directory and a hard link of an existing config are the config, and
+   a hard link to the project's config under any name inside the project is
+   held. Where neither
+   exists — the write would create the config — the path is compared with the
+   config's relative path as the volume holding it compares names, and the volume
+   is asked, never assumed from the platform: an existing name there, looked up
+   under its case swapped, reaches the same entry or it does not. On a volume that
+   folds case a spelling differing only in case is held; on one that tells case
+   apart it names another file and is allowed. Where nothing on the path can be
+   asked (no name with a letter whose case swaps back, or the lookup errors), the
+   spelling is compared without regard to case and the refusal says so. A tree
+   nested under the project is a candidate only when the path's last components
+   are the config's relative path compared without regard to case and the
+   directory they hang off holds a repository; that string test comes first, so
+   an ordinary write makes no more disk calls than it did before identity was
+   asked (`cf29` measures it). **Not matched, stated:** a hard link to a nested
+   tree's config under a name that is not the config's. `cf23`–`cf28e` in
+   `tests/test_guard_edits.py` assert each answer for the volume the suite runs
+   on and print which kind it was; the other kind is driven through a stubbed
+   volume answer (`cf25`–`cf25d`).
+
    **Residuals, stated rather than hidden:** a shell-form write of the config —
    `sed -i`, a redirect, an interpreter — never reaches `guard-edits`, and no
    other hook refuses it; it is recorded by the journal (`journal-writes` reads

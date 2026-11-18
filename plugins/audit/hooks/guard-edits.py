@@ -43,8 +43,9 @@ Inspects the *incoming* text (new content) and the target path, and blocks:
 
   7. The audit config — a write to the file `_config.load` reads
      (`<tree>/_config.CONFIG_REL`, for the project and for a linked worktree of
-     it wherever that worktree sits, one placed under the project included:
-     `_is_tree_config`) is REFUSED to a subagent (`_config.is_subagent`) and to
+     it wherever that worktree sits, one placed under the project included;
+     which file a path names is `_names_audit_config`'s answer, by identity
+     and by the volume's own rule on letter case, never by spelling) is REFUSED to a subagent (`_config.is_subagent`) and to
      a session the drive started (the launcher's mark, `_drive_started`), and
      ASKED of the main session. The plan gate exempts `.claude/**`, so without
      this an agent could switch the capability policy, the plan gate or the
@@ -338,55 +339,169 @@ def _drive_started():
     return bool(os.environ.get(_DRIVE_MARK, "").strip())
 
 
-def _is_tree_config(target):
-    """Whether `target` sits where `_config.load` would read a config for a tree
-    of its own: `_config.CONFIG_REL` under a directory holding a repository (a
-    `.git` file or directory, `_config._holds_repository`, no git process).
+_CONFIG_PARTS = tuple(_config.CONFIG_REL.split("/"))
+_CONFIG_FOLDED = tuple(p.casefold() for p in _CONFIG_PARTS)
 
-    This is how a linked worktree placed UNDER the project is seen: the tree
-    placement answers by containment first, so such a worktree's config arrives
-    as a long relative path inside the project. A plain folder holding a
-    `.claude/audit.config.json` holds no repository and is not matched. A nested
-    repository of any kind is matched, since its config is the one its own
-    hooks read when a session runs there. The string shape is checked before
-    the disk is asked, so an ordinary write costs no stat."""
-    parts = _config.CONFIG_REL.split("/")
-    real = os.path.realpath(target)
-    top = real
-    for _ in parts:
-        top = os.path.dirname(top)
-    shaped = os.path.join(top, *parts)
-    if os.path.normcase(shaped) != os.path.normcase(real):
-        return False
-    return _config._holds_repository(top)
+# The one clause a refusal or an ask gains, for a creating write whose spelling
+# matched the config's only once case was set aside, on a volume nothing on the
+# path could be asked about.
+_CASE_BLIND = (
+    "\nThe path's spelling was matched to the config's without regard to case: "
+    "no existing directory on it could say whether this volume tells case apart, "
+    "so it is held as the config would be.")
+
+
+def _stat_or_none(path):
+    """`os.stat(path)`, or None when nothing is there - the reading
+    `os.path.exists` gives, kept as a stat so a second call is not needed to
+    compare the file."""
+    try:
+        return os.stat(path)
+    except (OSError, ValueError):
+        return None
+
+
+def _config_shaped_top(real):
+    """The directory a config at the resolved path `real` would hang off, when
+    `real`'s last components are `_config.CONFIG_REL`'s compared without regard
+    to case; None otherwise. Strings only: this is what keeps an ordinary write
+    from paying for the identity question about a nested tree."""
+    head, names = real, []
+    for _ in _CONFIG_PARTS:
+        head, name = os.path.split(head)
+        names.append(name.casefold())
+    return head if tuple(reversed(names)) == _CONFIG_FOLDED else None
+
+
+def _parts_below(real, top):
+    """The components of `real` below the directory `top`, or None when `real`
+    does not lie under it."""
+    prefix = top.rstrip(os.sep) + os.sep
+    if not os.path.normcase(real).startswith(os.path.normcase(prefix)):
+        return None
+    return tuple(real[len(prefix):].split(os.sep))
+
+
+def _volume_folds(directory):
+    """Whether the volume holding the existing `directory` treats two names
+    differing only in letter case as one entry: True, False, or None when it
+    cannot be asked because no name it could ask about has a letter whose case
+    swaps back.
+
+    Asked of the disk, never of the platform's name: an entry of `directory`,
+    then `directory` itself and each directory above it, is looked up under its
+    name case-swapped, and the volume folds when that lookup reaches the same
+    entry. An entry of `directory` is asked first because the names a write
+    would create land there. A per-directory case setting is answered by the
+    directory the asked name sits in. An OSError other than "nothing there"
+    propagates: the caller reads it as a question that could not be asked."""
+    def answer(head, name):
+        swapped = name.swapcase()
+        if swapped == name or swapped.swapcase() != name:
+            return None
+        try:
+            other = os.lstat(os.path.join(head, swapped))
+        except (FileNotFoundError, NotADirectoryError):
+            return False
+        return os.path.samestat(other, os.lstat(os.path.join(head, name)))
+    for name in sorted(os.listdir(directory)):
+        found = answer(directory, name)
+        if found is not None:
+            return found
+    probe = directory
+    while True:
+        head, name = os.path.split(probe)
+        if not name:
+            return None
+        found = answer(head, name)
+        if found is not None:
+            return found
+        probe = head
+
+
+def _names_audit_config(real, top):
+    """Does the resolved path `real` name the file a session in the tree `top`
+    would load as its audit config (`top` joined with `_config.CONFIG_REL`)?
+
+    -> "same-file"  both exist and are one file, whatever the spelling: a
+                    case variant, a symlinked directory, a hard link
+       "spelling"   neither exists, and `real` spells the config's path
+       "folded"     neither exists, `real` differs from it in letter case only,
+                    and the volume that would hold it folds case
+       "case-blind" the same, where the volume could not be asked
+       None         another file - including, on a volume that tells case
+                    apart, a name differing from the config's in case only
+
+    One function for the project's own tree and for a tree nested under it.
+    Where exactly one of the two exists, they are different files: a lookup
+    that reached the config under any spelling would have found it."""
+    own = os.path.join(top, *_CONFIG_PARTS)
+    st_real = _stat_or_none(real)
+    if st_real is not None:
+        st_own = _stat_or_none(own)
+        if st_own is None:
+            return None
+        return "same-file" if os.path.samestat(st_real, st_own) else None
+    parts = _parts_below(real, top)
+    if parts is None or tuple(p.casefold() for p in parts) != _CONFIG_FOLDED:
+        return None
+    if _stat_or_none(own) is not None:
+        return None
+    if parts == _CONFIG_PARTS:
+        return "spelling"
+    holder = os.path.dirname(real)
+    while not os.path.isdir(holder) and os.path.dirname(holder) != holder:
+        holder = os.path.dirname(holder)
+    try:
+        folds = _volume_folds(holder)
+    except OSError:
+        folds = None
+    if folds is None:
+        return "case-blind"
+    return "folded" if folds else None
 
 
 def _is_audit_config(tree):
-    """Whether the path `tree` placed is the audit config of the tree it lands in.
+    """Which way the path `tree` placed names the audit config of a tree of
+    this repository - `_names_audit_config`'s word - or None.
 
-    The file is the one `_config.load` reads - the tree's root joined with
-    `_config.CONFIG_REL` - or the same file of a working tree nested inside it
-    (`_is_tree_config`); a file merely NAMED like it anywhere else, a nested
-    `.claude/` of a plain folder included, is not it. The comparison is over
-    resolved paths, so a symlinked `.claude/` names the same file; a spelling
-    differing only in case is matched by `samefile` when both exist. NOT
-    matched, stated: a case-variant spelling that CREATES the file on a
-    case-insensitive volume before any config exists.
-    """
+    Two trees are asked, by the one function: the tree the path lands in (its
+    root joined with `_config.CONFIG_REL` is the file `_config.load` reads), and
+    the directory the path's last components would hang off, when they are
+    `_config.CONFIG_REL`'s without regard to case and that directory holds a
+    repository (a `.git` entry or a git directory's shape,
+    `_config._holds_repository`, no git process). The second is how a linked
+    worktree placed UNDER the project is seen: the tree placement answers by
+    containment first, so its config arrives as a long relative path inside the
+    project. A plain folder holding a `.claude/audit.config.json` holds no
+    repository and is not matched; a nested repository of any kind is, since
+    its config is the one its own hooks read when a session runs there.
+
+    The comparison is over resolved paths and, where both exist, file identity,
+    so a symlinked `.claude/`, a case variant and a hard link of an existing
+    config are all the config. NOT matched, stated: a hard link to a NESTED
+    tree's config under a name that is not the config's, since the nested
+    tree's identity question is asked only of a path whose last components
+    match, which is what keeps an ordinary write at the disk calls it made
+    before."""
     if not tree["inside"] or not tree["rel"]:
-        return False
+        return None
     root = str(tree["root"])
-    own = os.path.join(root, *_config.CONFIG_REL.split("/"))
     target = os.path.join(root, *str(tree["rel"]).split("/"))
     try:
-        if os.path.realpath(target) == os.path.realpath(own):
-            return True
-        if _is_tree_config(target):
-            return True
-        return (os.path.exists(target) and os.path.exists(own)
-                and os.path.samefile(target, own))
+        real = os.path.realpath(target)
+        real_root = os.path.realpath(root)
+        found = _names_audit_config(real, real_root)
+        if found:
+            return found
+        top = _config_shaped_top(real)
+        if top is None or top == real_root:
+            return None
+        if not _config._holds_repository(top):
+            return None
+        return _names_audit_config(real, top)
     except (OSError, ValueError):
-        return False
+        return None
 
 
 def _config_verdict(data, rel, tail=""):
@@ -444,10 +559,12 @@ def _decide_mcp(data, cfg):
             return ("block", _MCP_BYPASS % (rel, basis, op))
         if _config.in_journal(tree["root"], cfg, loc):
             return ("block", _MCP_JOURNAL % (rel, basis, op))
-        if _is_audit_config(tree):
+        found = _is_audit_config(tree)
+        if found:
             return _config_verdict(
                 data, rel, "\nThis call carries %s, which is what makes it a "
-                "write; `%s` is the operation it asked for." % (basis, op))
+                "write; `%s` is the operation it asked for.%s"
+                % (basis, op, _CASE_BLIND if found == "case-blind" else ""))
     return ("allow", "mcp: names no path this guard holds")
 
 
@@ -521,8 +638,10 @@ def decide(data, *, cfg=None):
         # 7. the audit config: refused to a subagent and to a session the drive
         #    started, asked of the main session.
         #    The path alone decides, so an empty Write is held like any other.
-        if _is_audit_config(tree):
-            return _config_verdict(data, rel)
+        found = _is_audit_config(tree)
+        if found:
+            return _config_verdict(
+                data, rel, _CASE_BLIND if found == "case-blind" else "")
 
     if not text:
         return ("allow", "no text")

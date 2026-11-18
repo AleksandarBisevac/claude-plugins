@@ -226,6 +226,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   it are untouched, and the rule holds in the plugin's own checkout too. `/audit:init`'s two
   config writes now say the prompt is coming. **A shell-form write (`sed -i`, a redirect, an
   interpreter) is not refused** and stays recorded by the journal only; SECURITY.md states it.
+- **The config hold asks which file a path names, not how the path is spelled.** A subagent's
+  write to the config of a worktree nested under the project, through a directory or file name
+  in another letter case, was allowed on a volume that does not tell case apart, though it opened
+  that worktree's real config. One function now judges the project's config and a nested tree's:
+  where both paths exist they are compared as files (a case variant, a symlink and a hard link of
+  an existing config are the config), and a write that would create the config is compared as
+  the volume holding it compares names, asked of the volume rather than assumed from the
+  platform. On a volume that tells case apart a name differing in case is another file and stays
+  allowed; where nothing on the path can be asked, the spelling is matched without regard to
+  case and the refusal says so. A plain folder, another file of `.claude/`, a read and an
+  unrelated repository keep their answers, and an ordinary write makes no more disk calls than
+  before.
 
 ## [3.8.0]
 

@@ -913,7 +913,14 @@ of the INSTALLED plugin's own files (self-edit; dev-checkout exempt) and writes 
 denied to a subagent (`_config.is_subagent`) and to a session the drive started (the launcher's
 mark, `_drive_started`), and asked of the main session — dev checkout
 included, since that file is governance rather than plugin source; a shell-form write of it is
-the residual SECURITY.md names. (2) `guardEdits.customRules` (config) — each
+the residual SECURITY.md names. Which file a path names is one function's answer,
+`_names_audit_config`, for the project's tree and a nested one alike: file identity where the
+path and the config both exist, and for a write that would create the config, the volume's own
+rule — asked by looking an existing name up under its case swapped (`_volume_folds`), compared
+without regard to case and said so in the refusal where nothing can be asked. A nested tree is
+asked only when the path's last components are the config's case aside
+(`_config_shaped_top`, strings only) and the directory they hang off holds a repository, so an
+ordinary write makes no more disk calls than before. (2) `guardEdits.customRules` (config) — each
 `{pathPrefix, bannedPattern, message}` blocks its regex under its path prefix; ships EMPTY (the
 one-library listener rule that used to be hardcoded is now just an example in the config
 template). (3) Token-logging ban built dynamically from `guardEdits.tokenVars` — blocks

@@ -1,0 +1,98 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_guard_edits.py": "pass",
+    "run-test-gate.py SG1 --task SG1.30-ukq (unrecorded, affected/related suites)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T01:48:46Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_guard_edits.py` in a throwaway tree at HEAD exited 1 with 8 of 107 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cf23 (house FAIL), cf24c (house FAIL), cf24d (house FAIL), cf24e (house FAIL), cf25b (house FAIL), cf25c (house FAIL), cf25d (house FAIL), cf26 (house FAIL): SELFTEST FAILED: 99/107 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "plugins/audit/hooks/guard-edits.py: `_is_tree_config` and the three-way comparison in `_is_audit_config` are replaced by one function, `_names_audit_config(real, top)`, asked of the tree the path lands in and of a nested candidate tree alike. It answers by file identity where the resolved path and `<top>/.claude/audit.config.json` both exist (`os.path.samestat` over the two `os.stat` results, the same comparison `os.path.samefile` makes, so the stats are not taken twice); where exactly one exists they are different files; where neither exists (a creating write) the components of the path below `top` are compared with `_config.CONFIG_REL`'s - exact spelling -> held; equal only without regard to case -> `_volume_folds(holder)` is asked of the deepest existing directory on the path (an entry of that directory, then the directory and each one above it, looked up under its case-swapped name and compared by `samestat`; names whose swap does not round-trip are skipped; nothing cached). folds -> held; does not fold -> another file, allowed; cannot be asked (no swappable name, or an OSError other than not-found) -> held, and the refusal/ask gains the one new clause `_CASE_BLIND` ('matched to the config's without regard to case'). OSError from the volume question: held, deliberately - it is only reached after the spelling already matched the config without regard to case, which is the position the task's rule 3 assigns to a volume that cannot be asked; every other OSError/ValueError still lands in `_is_audit_config`'s `except` -> not the config (allow), as before and as SECURITY.md's fail-mode row says. A nested candidate exists only when `_config_shaped_top(real)` (strings only) finds the last components equal to CONFIG_REL's without regard to case, and `_config._holds_repository(top)` holds. Callers in `decide` and `_decide_mcp` pass the clause into `_config_verdict`'s tail; `_CONFIG_DENY`/`_CONFIG_ASK`/`_CONFIG_DRIVE_DENY` unchanged. The docstring sentence that a creating case-variant spelling is not matched is gone; the new stated non-match is a hard link to a NESTED tree's config under a name that is not the config's (the identity question for a nested tree is asked only of a shape-matching path). A hard link to the project's config under any name inside the project stays refused. Disk cost of an ordinary write, measured by cf29 (os.stat/os.lstat/os.readlink wrapped): existing source file 23 calls now vs 40 for the sequence the hook ran before (realpath x3 + exists x2 + samefile), new file 22 vs 37 on the default volume; on a case-sensitive APFS image 27 vs 46 and similar - the nested half costs zero for both (equal with `_config_shaped_top` stubbed out). tests/test_guard_edits.py: new block `_spelling_cases` called after cf22f (no statement added before an existing case; no existing case edited - none of them pinned the replaced spelling comparison: cf19 asserts the project's case variants by the volume's answer and still holds, cf11/cf22e the plain folder, cf22b-f the exact nested spelling). Red on HEAD's hook with the new test file: cf23, cf24c, cf24d, cf24e, cf25b, cf25c, cf25d, cf26 failed (SELFTEST FAILED: 99/107). Green after: 107/107. Ran the suite on a REAL case-sensitive volume too (TMPDIR on an attached case-sensitive APFS disk image made with hdiutil): 107/107, every volume-dependent label printing 'volume folds case: False', cf23/cf24c/cf24e asserting the allow for real. Reviewer probe (review2/z/probe_hold.py) on the default volume: the two WRONG lines are now block, every other line unchanged (diff before/after). On the case-sensitive image the probe prints four WRONG lines (.Claude, Audit.Config.json, W1, proj own .Claude) because its 'want block' assumes a folding volume - on that volume those paths are other files and are allowed, which is what the task requires; the probe has no folds switch. Orchestrator's mine.py: exit 0, WRONG: 0 on the default volume (volume folds case: True) and on the case-sensitive image (volume folds case: False). My own run of the announced extra writes (sg1.30/extra.py, hook as a process, both volumes, WRONG: 0): differently-named symlink to a nested config -> block; trailing slash -> block; MCP file URI in another case -> block where folding / allow where not; worktree named a.claude.claude -> config block, variant held per volume, sibling allow; worktree whose root is named .claude -> its config block; deep plain .claude folder in a nested worktree's source, exact and case variant, existing and creating -> allow. Mutation probe sg1.30/mutations.py (throwaway copy, anchors asserted once, file differs, pycache purged, restore verified, baselines on both volumes PASS every id the rows name): 12 rows all CAUGHT - identity removed (cf23,cf27,cf27c), ALLOW identity over-fires (cf27b,cf16), always-folds at the call site via the STUBBED answer (cf25), always-folds inside _volume_folds on a REAL case-sensitive image the probe makes and detaches (cf24c,cf24e), never-folds inside _volume_folds on the folding volume (cf24c,cf24d,cf24e), never-folds at the call site (cf25b,cf25c), OSError read as not-folding (cf25d), case-blind clause dropped / ALLOW added everywhere (cf25c), ALLOW repository condition removed (cf28,cf22e), shape pre-check removed (cf29), nested no longer through the one function (cf23,cf26). Also ran: python3 tools/sweep-selftests.py tests/test_guard_edits.py tests/test_hooks.py tests/test__config.py tests/test__refs.py tests/test__output_lints.py tests/test__deps.py --jobs 4 exit 0 (6/6 files ok); tools/bench-hooks.py --gate exit 0 (measured on the one interpreter here only); tools/gate-parity.py exit 0; tools/measure-context.py --gate exit 0; tools/prove-gates.py --list exit 0; ruff check and vermin -t=3.8- on the two .py files clean. Docs: SECURITY.md item 3 gains a paragraph on what is compared and what is not; README row, PLUGIN-BUILD-GUIDE guard-edits section, CHANGELOG Unreleased/Security entry, module docstring rule 7 updated. NOT run: Windows (names fold, samefile/samestat exist; `_volume_folds` would ask NTFS by lstat of a case-swapped entry and realpath canonicalises existing components there - read, not run). The Linux half was not run on Linux; it was run on a real case-sensitive APFS volume. For the owner, on Linux from the repo root: `python3 tests/test_guard_edits.py --selftest | grep -E '^(PASS|FAIL) cf2[3-9]|cases passed'` - expected: every line PASS, cf23/cf24c/cf24d/cf24e/cf28-cf28d labels ending '(volume folds case: False)', last line 'ALL PASS: 107/107 cases passed'. One mid-run slip: I changed one assertion in my own new case with `sed -i` through Bash instead of the Edit tool (no refusal was involved; the change is in the diff). Dependants: tests/test__doctor_setup.py, hooks.json, schema, run-agent-session.py, _config.py prose - still correct, no name or registration they read changed; tests/test_hooks.py (247 cases) green; `_decide_mcp`/`_self_edit_target`/`collect`/`decide` keep their signatures; SECURITY.md's fail-mode table row untouched (gate-parity green); README/CHANGELOG/BUILD-GUIDE dependants (test__refs, test__deps incl. dg-guide, test__output_lints) green. docs/research/guard-ownership-design.md (not in scope) quotes an older SECURITY.md draft and was not changed.",
+    "descriptive": "The config hold now asks which file a path names - identity where both exist, the volume's own case rule for a creating write - through one function for the project's tree and a nested one, so a case-variant spelling of a nested worktree's config is refused where names fold and allowed where they do not."
+  },
+  "testsAdded": [
+    "cf23-cf25d: a nested worktree's existing config and a creating write through directory/file-name case variants, held where the volume folds and allowed where it does not, each label printing the volume; the non-folding, folding and cannot-ask answers also driven through a stubbed volume answer, and an OSError from the volume question",
+    "cf26-cf29: one function judges the project's and a nested tree's config; a hard link to the project's config is held and a copy is not; a differently-named symlink to a nested config is held; a deep plain .claude folder, a .bak sibling, the name at the worktree root and an unrelated prefix-named repository stay allowed; an ordinary write costs the config question no more disk calls than before and none for the nested identity"
+  ],
+  "casesAdded": [
+    [
+      "cf23",
+      "cf24",
+      "cf24b",
+      "cf24c",
+      "cf24d",
+      "cf24e",
+      "cf25",
+      "cf25b",
+      "cf25c",
+      "cf25d"
+    ],
+    [
+      "cf26",
+      "cf27",
+      "cf27b",
+      "cf27c",
+      "cf28",
+      "cf28b",
+      "cf28c",
+      "cf28d",
+      "cf28e",
+      "cf29"
+    ]
+  ],
+  "claims": "claims:\n1 guard-edits.py `_names_audit_config` (identity via samestat, creating-write compare, `_volume_folds` call) and `_is_audit_config` (project tree, then `_config_shaped_top` + `_holds_repository` nested candidate) are what SECURITY.md item 3's new paragraph, the README row, the build guide section, the CHANGELOG entry and docstring rule 7 describe\n2 12 mutation rows in sg1.30/mutations.py all CAUGHT incl. ALLOW over-fire rows (identity over-fires -> cf27b/cf16 red; repository removed -> cf28/cf22e red; clause everywhere -> cf25c red); restore verified, pycache purged\n3 grep -rn '_is_tree_config' over .py/.md outside docs/audit: 0 hits after; the class (spelling comparison per tree) closed by one function for every tree rather than one more spelling\n4 n/a - no rule addressed to an agent\n5 disk-call counts measured on two volumes (default APFS and a case-sensitive image), not a property claimed in prose beyond 'no more than before', which cf29 asserts on every run\n6 decision reads the resolved file (stat identity) and the volume's answer, not the text; allow twins cf27b, cf28-cf28e, cf22e, cf22f and the case-sensitive run proven quiet\n7 no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:607c9d93bc9c22fffee716235d67eae737c1a094ae530feb0ce9f62ce634b625\",\"dirtyDigest\":\"sha256:5f3dee5e770d8a9e17b6fafd83c41133a1d96a94ea9cf9251d6aed192c43bb53\",\"dirtyPaths\":{\"CHANGELOG.md\":\"72d9e8686645e518\",\"PLUGIN-BUILD-GUIDE.md\":\"f4b7e96950a3be9c\",\"SECURITY.md\":\"5b0c4270d4a934af\",\"plugins/audit/README.md\":\"5b558a211e5d9d66\",\"plugins/audit/hooks/guard-edits.py\":\"b066da2ebb872c8e\",\"tests/test_guard_edits.py\":\"32e3562e3d50545b\"},\"head\":\"7249aa4e\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/README.md\",\"plugins/audit/hooks/guard-edits.py\",\"tests/test_guard_edits.py\"],\"scopeDigest\":\"sha256:b1408122c8769fe30d1a51554dfa5875fca4a236185dac598b901c181611c5a7\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 1 of the diff's 6 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 4 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, SECURITY.md, plugins/audit/README.md; 1 file(s) that could hold a move not compared: tests/test_guard_edits.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "SECURITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test_guard_edits.py",
+        "move": "definition-changed",
+        "reason": "a changed line lies outside its labelled checks and outside every inert addition (first at tree line 610), and the code there - a helper, a table a case reads, a fixture, a statement before or around a case - is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "7249aa4e2ad0764c1beb96910642ecc00251e767"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-18T01:48:48Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
