@@ -1416,8 +1416,9 @@ def _background_gate_cases(check):
     """On the writer path the drive runs no task gate inside `next`: it prints
     the gate as a dispatch whose `run:` line the orchestrator runs in the
     background, waits while no row has come of it, launches it again when the
-    row it left is a cancelled run, and decides from the row it recorded -
-    repeating that verdict, never measuring it a second time."""
+    row it left is a cancelled run, and decides from the row it recorded - a
+    red as that row holds it, asked nothing again, and a green repeated by
+    one more ask, never measured a second time."""
     M, why = _load("drive_phase_bggate", real_gate_choice=True)
     if M is None:
         check("bg1 the driver loads", False, why)
@@ -1452,12 +1453,13 @@ def _background_gate_cases(check):
     ran, said = _play_gate(root, argv)
     code, line = _signal_raw(M, root, mpath)
     check("bg3 the next call after the gate ran decides from its recorded row: "
-          "gate-red-writer, the drive's one gate call repeating that verdict, "
-          "and the ledger holding the one measurement the background run made: %r"
+          "gate-red-writer, with no task gate call at all - a red the background "
+          "run recorded is the verdict acted on, never asked again - and the "
+          "ledger holding the one measurement the background run made: %r"
           % ((ran, said[-300:], code, line, calls,
               len(_measured_rows(root, mpath, "P1.1"))),),
           ran == 1 and code == 0 and "gate-red-writer" in line
-          and [("GATE VERDICT REUSED" in o) for _a, o in _task_gate_runs(calls)] == [True]
+          and not [a for a, _o in _task_gate_runs(calls) if "--base-of" not in a]
           and len(_measured_rows(root, mpath, "P1.1")) == 1)
     green_root, green_mpath, green_calls = _bg_writer_exited(
         M, "bggate-green", ("true",))
@@ -1483,6 +1485,234 @@ def _background_gate_cases(check):
     else:
         _background_kill_case(check, M)
     _background_doc_case(check, M)
+
+
+# --- a background gate read back, with a step that grades the plan ------------------
+# The other gate fixtures here are `true` and `false`, which name no path, so the
+# drive never met a gate whose read-back measures part of it again. These gates
+# hold a sweep - it grades the tree, sleeps, and reads the task's file - and a
+# validator naming the manifest, which the runner's content identity leaves out
+# and so measures on every ask. Each step appends its word to an ignored log, so
+# how often each RAN is counted from the commands rather than read off the rows
+# the runner writes about them.
+_RB_LOG = "rb-runs.log"
+_RB_TREE_SRC = (
+    "import sys\nimport time\n"
+    "with open(%r, 'a') as fh:\n    fh.write('tree\\n')\n"
+    "time.sleep(0.4)\n"
+    "with open('src/f1.txt') as fh:\n    body = fh.read()\n"
+    "strict = sys.argv[1:] == ['strict']\n"
+    "sys.exit(1 if 'BROKEN' in body or (strict and body != 'v0\\n') else 0)\n"
+    % (_RB_LOG,))
+_RB_PLAN_SRC = (
+    "import json\nimport sys\n"
+    "with open(%r, 'a') as fh:\n    fh.write('plan\\n')\n"
+    "with open(sys.argv[1]) as fh:\n    json.load(fh)\n" % (_RB_LOG,))
+_RB_PY = '"%s"' % (sys.executable.replace("\\", "/"),)
+_RB_SWEEP = "%s rb_tree.py" % (_RB_PY,)
+# Red on any change to the task's file, green on the base's own bytes: the red
+# the task introduced, which the base measurement says it is.
+_RB_STRICT = "%s rb_tree.py strict" % (_RB_PY,)
+_RB_VALIDATE = "%s rb_plan.py docs/audit/audit-plan.json" % (_RB_PY,)
+
+
+def _rb_repo(prefix, gate, phase_gate=None):
+    """A one-task fixture whose gate is `gate`, with the two step scripts and an
+    ignore line for their log committed: `(root, mpath)`. No reviewer per task,
+    so a green gate closes the task in the same `next`."""
+    root, mpath = _repo(prefix, task_ids=TASKS[:1], gate=gate,
+                        phase_gate=phase_gate, per_task="phase")
+    _write_lf(os.path.join(root, "rb_tree.py"), _RB_TREE_SRC)
+    _write_lf(os.path.join(root, "rb_plan.py"), _RB_PLAN_SRC)
+    with open(os.path.join(root, ".gitignore"), "a", encoding="utf-8",
+              newline="\n") as fh:
+        fh.write("%s\n" % (_RB_LOG,))
+    for argv in (["add", "-A"], ["commit", "-qm", "the read-back steps"]):
+        _harness.git(root, *argv)
+    return root, mpath
+
+
+def _rb_runs(root):
+    """`(sweep, validator)` - how often each step's command ran in the
+    project's own directory."""
+    try:
+        with open(os.path.join(root, _RB_LOG), encoding="utf-8") as fh:
+            said = fh.read().split()
+    except OSError:
+        return 0, 0
+    return said.count("tree"), said.count("plan")
+
+
+def _rb_next(M, root, mpath):
+    """`(code, text)` of one plain `next`, whose did-line is printed whole."""
+    said = []
+    with _Env(root):
+        code = M.main(["next", PHASE, mpath, "--project-dir", root],
+                      out=said.append)
+    return code, "\n".join(said)
+
+
+def _rb_did(M, text):
+    """The did-line clauses of a plain `next`'s text."""
+    return [c for body in M.did_bodies(text) for c in body.split("; ")]
+
+
+def _rb_background(M, root, mpath, after=None):
+    """Play the Agent-path task to its background gate and run that gate to its
+    end, then `after(root)` - an edit between the run and its read-back - and
+    read the gate back with one plain `next`: `{code, text, did, calls, run}`,
+    `calls` the gate runs the drive made from the dispatch on, `run` the id
+    of the row the background run recorded."""
+    _signal_raw(M, root, mpath)
+    _file_executor(root, mpath, "P1.1")
+    calls = _gate_calls(M)
+    _code, line = _signal_raw(M, root, mpath)
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    ran, _said = _play_gate(root, _run_argv(block) or [])
+    rows = _rows_of(root, mpath, "P1.1")
+    if after is not None:
+        after(root)
+    code, text = _rb_next(M, root, mpath)
+    return {"code": code, "text": text, "did": _rb_did(M, text), "calls": calls,
+            "dispatch": line, "ran": ran,
+            "run": rows[-1].get("runId") if rows else None}
+
+
+def _rb_task_calls(calls):
+    """The drive's own task-gate runs - a base run (`--base-of`) left out."""
+    return [(a, o) for a, o in _task_gate_runs(calls) if "--base-of" not in a]
+
+
+def _rb_measured(root, mpath, name):
+    """How many ledger rows MEASURED the step `name`: a row repeating a whole
+    verdict holds no steps, and a step copied from another run is no run."""
+    return sum(1 for r in _tm_rows(root, mpath).values()
+               for s in r.get("steps") or []
+               if isinstance(s, dict) and s.get("name") == name
+               and not _evio.step_repeated(s))
+
+
+_RB_SECONDS = r" \(\d+\.\d s\)"
+
+
+def _readback_cases(check):
+    """A background gate is read back by asking the recorded gate again, and
+    what that second ask did is said: which steps it repeated, which it
+    measured again and what each took - `did not repeat` only when a step
+    grading the tree was measured again, with the gate's own reason. A red the
+    background run recorded is the verdict acted on, measured nothing more."""
+    M, why = _load("drive_phase_readback", real_gate_choice=True)
+    if M is None:
+        check("rd1 the driver loads", False, why)
+        return
+    gate = (_RB_SWEEP, _RB_VALIDATE)
+    root, mpath = _rb_repo("rb-same", gate)
+    got = _rb_background(M, root, mpath)
+    said = [c for c in got["did"] if _RB_VALIDATE in c]
+    check("rd1 a background gate holding a sweep and the manifest validator, read "
+          "back with no change, ran the sweep once and the validator twice, the "
+          "ledger holding one measured sweep, and the read-back line names the "
+          "validator as measured again with its seconds and the sweep as "
+          "repeated - never `did not repeat`: %r"
+          % ((_rb_runs(root), got["code"], got["text"][-900:],
+              _rb_measured(root, mpath, _RB_SWEEP)),),
+          got["ran"] == 0 and _signal_head(got["dispatch"]) == ("dispatch", "P1.1")
+          and _rb_runs(root) == (1, 2)
+          and _rb_measured(root, mpath, _RB_SWEEP) == 1
+          and len(_rb_task_calls(got["calls"])) == 1
+          and len(said) == 1
+          and re.search(re.escape(_RB_VALIDATE) + _RB_SECONDS, said[0])
+          and _RB_SWEEP + " repeated" in said[0]
+          and "measured again" in said[0]
+          and "did not repeat" not in got["text"]
+          and tasks_of(mpath)["P1.1"].get("status") == "done")
+    gates = _tm_stages(mpath, "gate")
+    rows = _tm_rows(root, mpath)
+    check("rd6 ...and the task's timing holds one gate stage for the background "
+          "run and one shorter one for the read-back that measured the "
+          "validator: %r" % ((gates, sorted(rows)),),
+          len(gates) == 2 and gates[0].get("runId") == got["run"]
+          and gates[1].get("runId") in rows and gates[1].get("runId") != got["run"]
+          and gates[1]["ms"] < gates[0]["ms"])
+
+    def edit(where):
+        _write_lf(os.path.join(where, "src", "f1.txt"), "edited after the gate\n")
+    root, mpath = _rb_repo("rb-moved", gate)
+    got = _rb_background(M, root, mpath, after=edit)
+    said = [c for c in got["did"] if "did not repeat" in c]
+    check("rd2 the same gate read back after an edit to the task's declared "
+          "file measured the sweep again, and the read-back line says run %s did "
+          "not repeat on this tree, names the sweep measured again with its "
+          "seconds and gives the gate's own reason - the identity it recorded "
+          "moved: %r" % (got["run"], (_rb_runs(root), got["text"][-900:]),),
+          _rb_runs(root) == (2, 2) and len(said) == 1
+          and ("run %s did not repeat" % (got["run"],)) in said[0]
+          and re.search(re.escape(_RB_SWEEP) + _RB_SECONDS, said[0])
+          and "identity" in said[0])
+    root, mpath = _rb_repo("rb-true", ("true",))
+    got = _rb_background(M, root, mpath)
+    calls = _rb_task_calls(got["calls"])
+    check("rd3 THE TWIN: a gate of `true` alone reads back as it always did - "
+          "one gate call carrying the reuse banner, the plain green did-line, no "
+          "read-back clause - and one gate stage: %r"
+          % ((got["text"][-600:], _tm_stages(mpath, "gate")),),
+          [("GATE VERDICT REUSED" in o) for _a, o in calls] == [True]
+          and "gate P1.1 green" in got["did"]
+          and not [c for c in got["did"] if "measured again" in c
+                   or "read back" in c]
+          and len(_tm_stages(mpath, "gate")) == 1)
+    root, mpath = _rb_repo("rb-red", (_RB_STRICT, _RB_VALIDATE))
+    got = _rb_background(M, root, mpath)
+    check("rd4 a background run that came back red is read back as red and "
+          "reaches the gate-red decision, with no task gate measured between - "
+          "the validator ran once, the sweep once - and the did-line says the "
+          "red was read back from run %s: %r"
+          % (got["run"], (_rb_runs(root), got["code"], got["text"][-900:],
+                          got["calls"]),),
+          got["code"] == 0 and instruction(got["text"])[:2] == ("decide", "gate-red")
+          and _rb_runs(root) == (1, 1) and not _rb_task_calls(got["calls"])
+          and [r.get("runId") for r in _rows_of(root, mpath, "P1.1")
+               if r.get("scope") == "task"] == [got["run"]]
+          and any(("red read back from run %s" % (got["run"],)) in c
+                  for c in got["did"]))
+    _readback_phase_cases(check, M)
+
+
+def _readback_phase_cases(check, M):
+    """Sign-off's phase gate is read back the way a task's is: its sweep is not
+    measured a second time, the read-back line says what was, and a red it
+    recorded is the stop, measured nothing more."""
+    for label, extra in (("rd5", ()), ("rd7", ("false",))):
+        root, mpath = _rb_repo("%s-phase" % (label,), ("true",),
+                               phase_gate=(_RB_SWEEP, _RB_VALIDATE) + extra)
+        _seed_gate_ms(root, mpath, ["true"], _GC_FAST_MS)
+        calls = _gate_calls(M)
+        run = drive(M, root, mpath, cap=16)
+        prints = "\n".join(t for _c, t in run["prints"])
+        phase_calls = _phase_gate_calls(calls)
+        launched = [s for s in run["steps"] if s == ("dispatch", "gate", PHASE)]
+        if label == "rd5":
+            said = [c for c in _rb_did(M, prints) if _RB_VALIDATE in c]
+            check("rd5 the phase gate at sign-off, run in the background, is read "
+                  "back with its sweep not measured again - the sweep ran once, "
+                  "the validator twice - the read-back line naming the validator "
+                  "measured again with its seconds, and the phase lands: %r"
+                  % ((_rb_runs(root), run["steps"], prints[-900:]),),
+                  len(launched) == 1 and len(phase_calls) == 1
+                  and _rb_runs(root) == (1, 2)
+                  and len(said) == 1
+                  and re.search(re.escape(_RB_VALIDATE) + _RB_SECONDS, said[0])
+                  and "did not repeat" not in prints
+                  and run["steps"][-1:] == [DONE])
+        else:
+            check("rd7 a phase gate whose background run came back red is the "
+                  "red stop, naming the red step, with no phase gate measured "
+                  "after it - the validator ran once: %r"
+                  % ((_rb_runs(root), run["steps"], prints[-900:]),),
+                  len(launched) == 1 and not phase_calls
+                  and _rb_runs(root) == (1, 1)
+                  and "GATE RED: false" in prints
+                  and run["steps"][-1:] != [DONE])
 
 
 def _handout_wait_case(check, M, root, wait_block):
@@ -19560,6 +19790,7 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("gc-block", "_gate_choice_cases"),
           ("gc6-block", "_gate_choice_follow_cases"),
           ("gc8-block", "_gate_choice_signoff_cases"),
+          ("rd-block", "_readback_cases"),
           ("gs-block", "_gate_status_cases"),
           ("ge-block", "_empty_gate_cases"),
           ("ga-block", "_gate_reach_cases"),
@@ -22352,12 +22583,13 @@ def _bi_read_back_cases(check, M, fold):
           "no gate run at all: %r" % ((said, measured, timed),),
           said is None and timed == []
           and measured == M.unrepeatable_red("r-to", "timed-out"))
-    check("bi7 THE TWIN: a red row a repeat may copy is repeated once through "
-          "the recorded gate's own call, never with --no-reuse - a rerun mark "
-          "left on the start does not turn the read-back into a fresh "
+    check("bi7 THE TWIN: a red row a repeat may copy is read back as the row's "
+          "own red, naming its run, with no gate call at all - so a rerun mark "
+          "left on the start cannot turn the read-back into a fresh "
           "measurement: %r" % ((said2, measured2, repeated),),
-          said2 is None and repeated == [("record_gate", False)]
-          and measured2 is not None and measured2[0] == 1)
+          said2 is None and repeated == []
+          and measured2 is not None and measured2[0] == 1
+          and "evidence: recorded r-red" in measured2[1])
 
 
 def _bi_reading_cases(check, M):

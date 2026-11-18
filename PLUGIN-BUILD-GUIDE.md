@@ -5040,10 +5040,21 @@ inline run too, under `WRITER_RULE`, with the reason on the line below it, and m
 with the subject's ledger rows as they stood. A `next` before a new row exists is `wait-gate`,
 printing the same `run:` line and the moment the dispatch was handed out - which is all the drive
 saw, since it never sees the gate process start; a new `cancelled` row - a gate stopped mid-run - launches it again;
-a `passed` or `failed` row is repeated through the same call, which on the same tree content
-measures nothing (`GATE VERDICT REUSED`), an `empty-gate` row - the runner's own green - is asked
-again the same way, and a row of any other word is decided from as recorded (`read_back`, one
-reading for the task gate and the phase gate). A red read back names its verdict line, never the
+a `failed` row is the verdict acted on as the row holds it, with no gate asked again
+(`recorded_red`: its failed steps on a `GATE RED` line and its run on the `evidence: recorded`
+line, so it reaches the base measurement and the decision - or the phase gate's stop - as an
+inline red does, and no second ask can come back green over a red nobody was shown); a `passed`
+row is asked again through the same call, which on unchanged content repeats every step grading
+the tree and measures again only an entry naming a path the runner's identity leaves out (the
+plan); an `empty-gate` row - the runner's own green - is asked again the same way; and a row of
+any other word is decided from as recorded (`read_back`, one reading for the task gate and the
+phase gate). What the second ask did is a did-line clause (`repeat_said`, off the row it
+recorded): nothing for a whole repeat (`GATE VERDICT REUSED`); else the steps it repeated and the
+ones it measured again with their seconds, and `did not repeat on this tree` only when a measured
+step is one the runner did not say names a left-out path (`GATE_LEFT_OUT`, its line mirrored),
+with the reason taken from the identities the runner recorded on the two rows. A read-back that
+measured steps is a gate stage of its own with its own length; a whole repeat adds none, since its
+row names the run already staged. A red read back names its verdict line, never the
 repeat's banner (`gate_red_lines`, read by the gate-red decision, the re-gate on the phase
 tree and the phase gate's stop). A phase gate launched by a sign-off answer resumes that sign-off
 at the same head and is forgotten at another. A wave print carries the rules of each member with a `run:` line once.
@@ -5076,10 +5087,12 @@ whose measurement raised; `lc9` and `lc10` hold the replaced launch's release an
 `lc11` the earlier start's, `lc12` the sweep after a kill, and `lc13` and `lc14` the claims it
 leaves - the current launch's, and one whose holder is not read as gone. The drive makes no exclusive file of its own, and `lc5` in the suite
 reads its source to hold that. Once the run has ended, the red's verdict is read back from the row it was launched
-for, through the same `read_back` the gate's background row goes through: a row no repeat may copy
-stands as recorded, and no rerun's `--no-reuse` is added; the dispatch and the wait are printed by the same builders as the gate's
-(`background_dispatch`, `background_wait`). The `bg`, `gc`, `gs`, `ge` and `ga` cases in
-`tests/test_drive_phase.py` drive each arm against the real `run-test-gate.py`, `bq1`-`bq5` the
+for, through the same `read_back` the gate's background row goes through: that red as its row
+records it, with no gate asked again, so no rerun's `--no-reuse` can reach it; the dispatch and the wait are printed by the same builders as the gate's
+(`background_dispatch`, `background_wait`). The `bg`, `gc`, `gs`, `ge`, `ga` and `rd` cases in
+`tests/test_drive_phase.py` drive each arm against the real `run-test-gate.py` - the `rd` cases
+with a gate holding a sweep beside an entry that names the plan, task and phase gate alike, read
+back unchanged, after an edit, and red - `bq1`-`bq5` the
 base's, the `bi` cases the base run and `next` interleaved in a chosen order (`bi13` the
 claim), and the `lc` cases the claim's holder killed, live, unreadable or empty.
 

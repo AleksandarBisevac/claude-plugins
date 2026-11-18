@@ -37,9 +37,30 @@
         "file": "tools/ui-checks/stage-tabs.mjs:978-979,1016-1017",
         "issue": "contradicts task clause: \"use it at every place in the tool that confirms a write and then reads its result, in the panel legs and anywhere else the same shape appears\" / acceptance (1) \"no place in the tool reads the result of a confirmed write after a fixed wait\". The policy Save confirm at 978 is followed by waitForTimeout(900) and then a read of /api/policy and the row verdict; the confirm at 1016 (the refused audit:* write) has the same click-then-900ms-then-read shape. capture-screenshots.mjs imports this file (line 117) and runs those legs in the same gate and in repro mode, so the timer-read the task set out to remove is still in the gate. The executor disclosed this and left it because the task's files list holds only capture-screenshots.mjs; the scope gap is real either way.",
         "resolution": "File a follow-up task with files tools/ui-checks/stage-tabs.mjs: export confirmWrite (or put it on stageCtx) and use it at 978 (PUT /api/config) and 1016, then add a page predicate after the 978 call because the policy save toasts before it re-reads /api/policy and repaints (e.g. waitForFunction on the row's data-verdict). Leave the Discard at 1035 as a literal."
+      },
+      {
+        "id": "P168-R3",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:4163-4170",
+        "issue": "contradicts task clause \"The comments state what the code now does\": gate_red_lines' docstring still says \"a background gate's red reaches its reader as a repeat every time, so a reader taking the first GATE line would name the banner as the red\". After this diff a background red is read back by recorded_red from its row and carries no GATE VERDICT REUSED banner at all, so the stated reason for the banner filter is no longer true of the path it names (the filter still serves a green-then-red second ask).",
+        "resolution": "Reword the docstring to say the banner can open a repeated verdict (a second ask that repeated a red) and that a background red is no longer one of those."
+      },
+      {
+        "id": "P168-R4",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:176-177",
+        "issue": "contradicts task clause \"The comments state what the code now does\": the module docstring still says of a background gate that \"the verdict is that row's, repeated rather than measured again\". After the diff a red is the row's own verdict with nothing asked, and a green is asked again and may measure the entries that name the plan, so \"repeated rather than measured again\" is the wording this task set out to correct.",
+        "resolution": "Say: a red is acted on as its row records it; a green is asked again, repeating each step that grades the tree and measuring an entry naming a path the identity leaves out."
+      },
+      {
+        "id": "P168-R5",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py:6620-6631",
+        "issue": "The read-back clause embeds each measured step's name, which is the gate entry's command text, unbounded and unsanitised. The outcome claims the did clauses hold no ` | ` and no `; `; that holds for the fixtures only. The signal line flattens ` | ` (_flat in did_word_clause), but a command containing `; ` is joined into a `; `-separated field, and a long command makes fit_rest drop the whole clause to `+N` in the signal line, so the detail acceptance (1)/(2) asks for survives only in the printed text.",
+        "resolution": "Clip each step name in step_seconds/repeated to a fixed width and replace `; ` in names, or state in the outcome that the clause is carried whole only in the printed text."
       }
     ],
-    "outcome": "[findings: 2 - 0 high, 2 med, 0 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 5 - 0 high, 4 med, 1 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -827,7 +848,7 @@
     {
       "id": "P168.11-icj",
       "title": "The panel gate reads a confirmed save's outcome when the save has answered, not after a fixed wait",
-      "status": "in_progress",
+      "status": "done",
       "description": "The panel browser gate went red twice in a row in CI on one leg, on a tree with no change to the page, the server or this tool, and stayed green on this machine. The leg confirms a save and then reads what the page reports. Between the two it waits a fixed time: after the click on the dialog's confirm button the tool sleeps for a fixed number of milliseconds and then reads the page, in this leg and in its neighbours. What was measured: the composition save on the gate's large fixture took about 0.24 s before the last phase and about 0.30 s after it on this machine (every finished task now carries a timing record, so the plan is larger and is checked for more), and a CI runner is several times slower. With this leg's wait shortened to 150 ms in a scratch copy the gate fails with the very message CI printed, and in the same run, under load, the neighbouring leg that still waited its full time failed too, reading the plan from disk before the save had landed. So the gate was reading an outcome on a timer. Make it read the outcome when there is one: one helper that performs the confirm and returns when the save has answered and the page has acted on the answer - built on something the page or the network shows (the response to the write request, registered before the click; or the page's own state that changes when the answer is handled), never on a duration - and use it at every place in the tool that confirms a write and then reads its result, in the panel legs and anywhere else the same shape appears. A timeout on that wait is a failure that names the save that never answered, not a silent pass. A fixed pause that only lets an animation finish is a different thing; leave those, and say in the helper's comment how to tell the two apart. Then make the gate prove it: one leg delays the write endpoint's response past the old fixed wait (route the request, hold it, then let it through) and requires the same outcome to be read correctly, so the gate goes red if someone puts the timer back. The comment above the moved-manifest leg records two earlier patches for a refresh race; leave that mechanism as it is and add nothing to it - nothing measured here points at it. Do not run the browser gate yourself: the capture lock is machine-wide and the task's gate runs it. If the change needs a file under plugins/audit/scripts/ui or the server, stop and hand that back. Dependants you answer for: every leg after a confirm, which starts from the state the helper leaves; the tool's repro mode, which shares these legs; any suite that pins this tool's text. Acceptance: (1) no place in the tool reads the result of a confirmed write after a fixed wait; (2) the helper's timeout fails by name; (3) a leg with the write's answer delayed past the old wait is green, and is red when the helper is replaced by the old fixed wait - say how you checked without running the browser, or say that the check is left to the gate; (4) every existing failure message and pass note of the touched legs is unchanged; (5) the gate is green.",
       "files": [
         "tools/capture-screenshots.mjs"
@@ -848,16 +869,51 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "a6025ce4e193",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tools/capture-screenshots.mjs only. Added confirmWrite(page, label, write): it arms page.waitForResponse for the write request (method + path) and a page-side MutationObserver on #toast (childList/characterData only, so the class change from the toast's own hide timer is not seen) BEFORE clicking dialog.confirm [data-cfgo]. It returns once the write has answered and the page has written its toast. Every confirmed save in the panel toasts once it has acted, and no panel toast fires on a timer (checked with grep -n 'toast(' plugins/audit/scripts/ui/panel/*.js; every hit is a user action or boot). If either wait runs out it throws, naming the save: '<label>: the confirmed PUT /api/composition got no answer within 30000 ms (...)' or '... was answered (HTTP n) and the page never acted on the answer ...'. A page with no #toast is refused before the click. The helper's comment says how to tell the two kinds of pause apart: a pause belongs to the helper when the next line reads something a request has to change; a pause after an action that sends no request (Discard, a dialog closing, a transition) stays a literal. New constants: COMPOSITION_URL, COMPOSITION_WRITE, CONFIG_WRITE, PROPOSAL_WRITE, CONFIRM_ANSWER_MS=30000, HELD_ANSWER_MS=2500. Replaced click+waitForTimeout with confirmWrite at nine sites: composition confirm (was 900), moved-manifest confirm (900), settings save (700), skills null save (900), skills clear save (900), settings restore at the end of the save-note lifecycle (400), proposals drop/revive (900 each) and materialize (1200). Proving leg: the skills clear-back save now routes **/api/composition, holds the PUT for HELD_ANSWER_MS before route.continue(), and counts the holds. The existing disk read must still see []; held !== 1 fails as a vacuous proof, and a new pass note records the hold. Under the old 900 ms wait the read runs while the file still holds null, so the existing 'did not write [] back' fail fires. That direction is reasoned here and left to the gate (no browser run, as instructed). Added one POLL_WAIT_ALLOWED row ('timeout: CONFIRM_ANSWER_MS', sites 1), because tools/ui-tests/gate-card-wait.test.mjs flags any wait of the poll interval or more. Left alone on purpose: sites 4520/4565 already wait on the PUT response plus the card paint, under the leg's own failure text; the Discards at ~3036, ~3531, ~4687 and the ADO card's two (no request; the revert and toast run inside the click's task). The moved-manifest refresh-race mechanism is unchanged, with nothing added to it. Checks run: (a) node --check tools/capture-screenshots.mjs -> exit 0. (b) Scratch probe running gate-card-wait.test.mjs's own scanner code over the edited file: 15 sites, unlisted/stale/broad all empty, exit 0. On a scratch copy with the helper's bound removed it reports my row stale+broad, exit 1. (c) Scratch fake-page probe of confirmWrite's text extracted from the file: h1 returns only after a late answer is acted on, h2 unanswered throws naming PUT /api/composition, h3 answered-but-not-acted throws, h4 no #toast refused: 4/4 passed, exit 0. A copy that returns straight after the click scored 1/4, exit 1. Git diff: only click/sleep lines and one comment removed. No fail() or note() string changed. NOT DONE, out of scope: tools/ui-checks/stage-tabs.mjs has the same shape (policy Save confirms at ~978 and ~1016, each followed by waitForTimeout(900), and a Discard at ~1035). It is not in this task's files, and the orchestrator said to hand such a file back rather than edit it. To fix it, put confirmWrite on stageCtx (main(): const stageCtx = {...}) and call it with {method:'PUT', path:'/api/config'}. The policy save toasts BEFORE it re-reads /api/policy and repaints, so the read at ~983 also needs a page predicate after the helper (e.g. waitForFunction on the row's data-verdict). Acceptance (1) therefore holds for capture-screenshots.mjs but not for the stage file it imports. Dependants: check-report-interactive.mjs and the ui-tests armed-reason, capture-provenance and gate-reasons import or read exports and text I did not change, so they still hold (capture-provenance: no new screenshot call). gate-card-wait.test.mjs gets one new allow-list row and the scanner probe (b) is green. captured-at.json is unchanged, since the proof leg sits in the writes-last block after every shot. _evidence_io.py and panel-server.py refer to the file by path only, so they still hold. tests/test__refs.py and tools/check-committed-pii.py mention the name in prose, so they still hold. Repro mode shares these legs: same helper, no mode-specific branch.",
+        "descriptive": "The panel gate now reads each confirmed save's result once the save has answered and the page has handled it, not after a fixed sleep. One leg holds a save's request 2.5 s to prove it, and a save that never answers fails by name."
       },
       "startedAt": "2026-11-18T08:08:24Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T08:47:57Z",
+      "verifiedBy": [
+        "skills clear-back save, request held HELD_ANSWER_MS before reaching the server: the same [] must be read from disk, the hold must catch exactly one request, and a new note records it (a gate leg inside assertSkillTriState, not a unit case)"
+      ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T08:16:27Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 477000,
+            "startedAt": "2026-11-18T08:08:30Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T08:22:44Z.f41539, ending at its startedAt",
+            "kind": "selection",
+            "ms": 392,
+            "runId": "2026-11-18T08:22:44Z.f41539",
+            "startedAt": "2026-11-18T08:16:43Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T08:22:44Z.f41539",
+            "kind": "gate",
+            "ms": 359311,
+            "runId": "2026-11-18T08:22:44Z.f41539",
+            "startedAt": "2026-11-18T08:16:44Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-18T08:47:03Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 84000,
+            "startedAt": "2026-11-18T08:45:39Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit a6025ce4e193",
+            "kind": "commit",
+            "ms": 1605,
+            "startedAt": "2026-11-18T08:47:54Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T08:08:24Z"
       },
       "reviewPerTask": "signals",
@@ -865,6 +921,17 @@
         "runId": "2026-11-18T08:45:38Z.593c3c",
         "status": "passed",
         "at": "2026-11-18T08:45:38Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "a6025ce4e193",
+        "at": "2026-11-18T08:47:57Z",
+        "return": "docs/audit/evidence/returns/P168.11-icj/20261118T080824Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only task with tests.expectRedFirst false and tests.add empty: no case of mine to prove red. The behaviour change was probed off-browser in scratch (see outcome.technical); the in-browser proof is the new held-answer leg, which the task's gate runs.",
+        "at": "n/a"
       }
     },
     {

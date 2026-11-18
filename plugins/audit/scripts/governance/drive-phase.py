@@ -3978,12 +3978,11 @@ def base_gate(ctx, state, phase, task, tree=None):
     """`(print, measured)` while a base measurement launched to the background
     is not decided on yet: the wait on it, or - once its run has ended - the
     verdict of the red run it was launched for, read back (`read_back`) as a
-    background gate's is: a verdict a repeat may copy is repeated by the
-    recorded gate's own call, which on the same tree measures nothing, and a
-    row of any other word stands as recorded (`unrepeatable_red`). Never a
-    rerun's `--no-reuse`: a verdict that does not repeat on this tree is
-    measured again by that call, as `read_back` says on its did-line, and
-    only then. `(None, None)` otherwise."""
+    background gate's is: that run's red as its row records it, asked nothing
+    again (`recorded_red`), and a row of a word no repeat copies as recorded
+    (`unrepeatable_red`). The record-gate call is handed over for a green, which
+    `read_back` asks again - never with a rerun's `--no-reuse`. `(None, None)`
+    otherwise."""
     held = base_mark(ctx, state, task)
     if not (isinstance(held, dict) and held.get("background")
             and not held.get("decided")):
@@ -6346,17 +6345,21 @@ def gate_step(ctx, state, manifest, phase, task, tree=None):
 # re-gate on the phase tree, and sign-off's phase gate). The first call prints it
 # as a dispatch whose `run:` line the orchestrator runs in the background, and
 # marks the launch with the subject's ledger rows as they stood; a call before a
-# new row exists waits; a call after one repeats its verdict through the same
-# run-test-gate call, which on the same tree content measures nothing (`GATE
-# VERDICT REUSED`). A gate measured under the bound runs inline and costs the
-# main loop no turn, and so does a gate of no steps, which runs nothing. The
-# words a row's `status` takes are `run-test-gate.py`'s, mirrored because an
-# entry point may not import another; `bg3`, `bg3g` and `bg4` drive the real
-# verb on each, `gs1`-`gs4` the words no repeat copies, and `ge4`-`ge5` the
-# empty gate's, which that verb exits 0 on - its green.
+# new row exists waits; a call after one reads it back (`read_back`): a red is
+# the row's own verdict, asked nothing again, and a green is asked again through
+# the same run-test-gate call, which on unchanged content repeats every step
+# that grades the tree and measures again only an entry naming a path its
+# identity leaves out, saying which on a did-line clause. A gate measured under
+# the bound runs inline and costs the main loop no turn, and so does a gate of no
+# steps, which runs nothing. The words a row's `status` takes are
+# `run-test-gate.py`'s, mirrored because an entry point may not import another;
+# `bg3`, `bg3g` and `bg4` drive the real verb on each, `rd1`-`rd7` a gate holding
+# an entry that names the plan, `gs1`-`gs4` the words no repeat copies, and
+# `ge4`-`ge5` the empty gate's, which that verb exits 0 on - its green.
 GATE_LAUNCH_KEY = "gateLaunched"
 PHASE_GATE_LAUNCH_KEY = "phaseGateLaunched"
 GATE_REPEATABLE = _evio.MEASURED_STATUSES
+GATE_PASSED = _evio.RUN_PASSED
 GATE_EMPTY = "empty-gate"
 GATE_CANCELLED = "cancelled"
 
@@ -6536,22 +6539,130 @@ def unrepeatable_red(run_id, status):
             "  evidence: recorded %s\n" % (run_id, status, run_id), "")
 
 
+def recorded_red(ctx, run_id, label):
+    """`(code, out, err)` for a background row that recorded a red verdict: the
+    red as that row holds it - its failed steps on a `GATE RED` line, each
+    step's failing lines under it, and the run on the `evidence: recorded`
+    line every reader of a red keys on - with nothing asked again. A did-line
+    clause says the red was read back from the row."""
+    row, why = ledger_row(ctx, run_id)
+    failed = list((row or {}).get("failed") or [])
+    lines = ["GATE RED: %s" % (", ".join(failed) if failed else
+                               "run %s recorded failed in the background%s"
+                               % (run_id, "" if why is None else " (%s)" % (why,)))]
+    for step in (row or {}).get("steps") or []:
+        if isinstance(step, dict) and step.get("failing"):
+            lines.append("  %s:" % (step.get("name"),))
+            lines.extend("      %s" % (ln,) for ln in step["failing"])
+    lines.append("  evidence: recorded %s" % (run_id,))
+    ctx["did"].append("%s red read back from run %s, not asked again"
+                      % (label, run_id))
+    return 1, "\n".join(lines) + "\n", ""
+
+
+# The lines `run-test-gate.py` prints for an entry naming a path its content
+# identity leaves out (`left_out_line`): such an entry is measured on every ask,
+# so measuring it again on a read-back is no failure to repeat. Mirrored because
+# an entry point may not import another; `rd1`, `rd2` and `rd5` drive the real
+# verb, which is what goes red if either drifts.
+GATE_LEFT_OUT = ("[run-test-gate] %s names ",
+                 "[run-test-gate] %s cannot be read for the paths it names")
+
+
+def grades_left_out(text, name):
+    """True when the gate's output `text` says the entry `name` names a path
+    its identity leaves out (`GATE_LEFT_OUT`)."""
+    return any(ln.startswith(form % (name,)) for ln in (text or "").splitlines()
+               for form in GATE_LEFT_OUT)
+
+
+def step_seconds(step):
+    """`"<name> (1.2 s)"` for a measured step, `not timed` when its row keeps
+    no duration."""
+    ms = step.get("durationMs")
+    took = ("%.1f s" % (ms / 1000.0,) if isinstance(ms, (int, float))
+            and not isinstance(ms, bool) else "not timed")
+    return "%s (%s)" % (step.get("name"), took)
+
+
+def repeat_reason(rows, run_id, row):
+    """Why the gate's second ask measured a step that grades the tree, off the
+    identities the gate itself recorded: the second row records none (its
+    `reuseBasis` says why), or it moved from what run `run_id` recorded, or -
+    the same identity - the gate kept the reason to itself."""
+    now = row.get(_evio.REUSE_KEY)
+    if not now:
+        return "the gate recorded no tree identity: %s" % (row.get("reuseBasis"),)
+    then = (_evio.row_by_run(rows, run_id) or {}).get(_evio.REUSE_KEY)
+    if then != now:
+        return ("the tree identity the gate recorded moved since run %s (%s -> %s)"
+                % (run_id, str(then)[-12:], str(now)[-12:]))
+    return ("the gate recorded the tree identity run %s did, and printed no "
+            "reason for measuring it again" % (run_id,))
+
+
+def repeat_said(ctx, run_id, text, label):
+    """The did-line clause for the second ask that read back the background row
+    `run_id`, from the row that ask recorded: None when it repeated the whole
+    verdict (`GATE_REUSED_BANNER`, the line the runner prints for it). Else
+    which steps it repeated and which it measured again, with their seconds;
+    `did not repeat on this tree` only when a measured step grades the tree -
+    one the gate did not say names a path its identity leaves out
+    (`grades_left_out`) - with the gate's reason (`repeat_reason`)."""
+    if GATE_REUSED_BANNER in text:
+        return None
+    found = _RUN_ID.search(text or "")
+    try:
+        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+    except Exception as exc:                                   # noqa: BLE001
+        rows, why = [], ledger_unread(exc)
+    else:
+        why = "the ledger holds no row of the run it names"
+    row = _evio.row_by_run(rows, found.group(1)) if found else None
+    if row is None:
+        return ("%s measured again inside next: run %s did not repeat on this "
+                "tree, and what the second ask measured is unknown - %s"
+                % (label, run_id, why if found else "it named no run"))
+    steps = [s for s in row.get("steps") or [] if isinstance(s, dict)]
+    repeated = [str(s.get("name")) for s in steps if _evio.step_repeated(s)]
+    measured = [s for s in steps if not _evio.step_repeated(s)]
+    timed = ", ".join(step_seconds(s) for s in measured) or "nothing"
+    if any(not grades_left_out(text, s.get("name")) for s in measured):
+        return ("%s measured again inside next: run %s did not repeat on this "
+                "tree - %s - measured again: %s"
+                % (label, run_id, repeat_reason(rows, run_id, row), timed))
+    return "%s read back from run %s: %smeasured again: %s" % (
+        label, run_id, "%s repeated, not run again - " % (", ".join(repeated),)
+        if repeated else "", timed)
+
+
 def read_back(ctx, run_id, status, repeat, label):
     """`(code, out, err)` for the background row `run_id` of `status`, the one
-    reading the task gate and the phase gate share: a verdict
-    (`GATE_REPEATABLE`) is repeated by `repeat()`, the run-test-gate call that
-    on the same tree measures nothing; an empty gate's row, the runner's own
+    reading the task gate and the phase gate share.
+
+    THE VERDICT ACTED ON IS THE ONE THE LAUNCHED RUN RECORDED. A red is that
+    row's red (`recorded_red`), asked nothing again, so it reaches the base
+    measurement and the decision as an inline red does: a second ask could
+    come back green and replace a red nobody was shown. A green is asked
+    again through `repeat()`, the recorded gate's own call, which repeats
+    what it can on this tree - every step grading the tree when nothing moved
+    - and measures the rest: an entry naming a path its identity leaves out
+    (the plan) is measured on every ask, so a second ask on the same content
+    is no free repeat. `repeat_said` puts what it repeated and what it measured
+    on a did-line clause naming `label`. An empty gate's row, the runner's own
     green, is asked again by the same call, which over a gate still empty runs
-    nothing and over one given steps since measures them; any other word is
-    the red the row carries (`unrepeatable_red`). `label` names the gate on
-    the did-line said when a verdict's repeat measured after all - a repeat
-    of an empty gate has no verdict to have repeated, so it says none."""
+    nothing and over one given steps since measures them; it has no verdict to
+    have repeated, so it says none. Any other word is the red the row carries
+    (`unrepeatable_red`)."""
     if status not in GATE_REPEATABLE and status != GATE_EMPTY:
         return unrepeatable_red(run_id, status)
+    if status != GATE_EMPTY and status != GATE_PASSED:
+        return recorded_red(ctx, run_id, label)
     code, out, err = repeat()
-    if status != GATE_EMPTY and GATE_REUSED_BANNER not in out + err:
-        ctx["did"].append("%s measured again inside next: run %s did not "
-                          "repeat on this tree" % (label, run_id))
+    said = None if status == GATE_EMPTY else repeat_said(ctx, run_id, out + err,
+                                                         label)
+    if said is not None:
+        ctx["did"].append(said)
     return code, out, err
 
 
@@ -6576,7 +6687,8 @@ def launch_gate(ctx, state, phase, task, tree, argv=None, why=None):
 def background_gate(ctx, state, phase, task, tree):
     """`(print, None)` while the gate is to be launched or waited on, else
     `(None, (code, out, err))` - the verdict of the row the launched run
-    recorded, repeated by `record_gate`. A cancelled row holds no verdict, so
+    recorded, read back by `read_back`: a red as the row holds it, a green
+    asked again through `record_gate`. A cancelled row holds no verdict, so
     the gate is launched again; a row of another word that no repeat may copy
     is decided from as it stands, never measured again here."""
     launched = _marked(state, GATE_LAUNCH_KEY, task)

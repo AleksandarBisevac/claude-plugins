@@ -65,6 +65,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   than measured again until it comes back green. The run prints a line naming the repeated and
   the measured steps with their times; a gate naming no such path, and `--no-reuse`, behave as
   before.
+- **The drive acts on the verdict its background gate recorded, and says what the read-back
+  measured.** A gate the drive sent to the background was read back by asking the recorded gate
+  again, and the drive printed that the run did not repeat on this tree whenever the reuse banner
+  was missing - true of no gate holding an entry that names the plan, which is measured on every
+  ask. Worse, a red background run could be followed by a green second ask, and the task closed
+  with the red never shown. Now a red background run - a task's gate or the phase gate at
+  sign-off - is the verdict acted on as its row records it, with nothing asked again, and goes to
+  the base measurement and the decision as an inline red does. A green one is still asked again,
+  and the did-line names the steps repeated and the steps measured again with their seconds,
+  saying `did not repeat on this tree` only when a step grading the tree was measured again, with
+  the reason read off the identities the gate recorded.
 
 ## [3.9.0]
 
