@@ -22,10 +22,11 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
-    "findings": []
+    "status": "passed",
+    "findings": [],
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "Wall time per task is recorded by stage in the task's shard and printed by /audit:status: a session record carries its whole duration, a gate row its selection time, the drive appends writer, gate, selection, base, reviewer, commit and wait stages in writes it already made (on the Agent route a writer stage from hand-out to the filed return), and status shows a time column, a per-phase split and a JSON timing section, each with its basis. Additive: a plan with no record renders byte for byte as before. A three-way code review found one runner crash on an oversized figure and four med findings (last-stretch duration, cancelled tasks counted as finished, an unreadable record shown as unattributed time, a commit stage that double-counted a gate); all fixed in four fix tasks and checked by a verification pass with mutations. Left for later, in the register: the read-back that measures a green gate again, two lows from the review, one case red once under load. Report and panel do not show the figures yet.",
   "tasks": [
     {
       "id": "P167.1",
@@ -920,7 +921,7 @@
     {
       "id": "P167.9-fge",
       "title": "What the session runner and the repository's stream reader each make of a stream is held by one table of streams, not by a sentence, and a line the runner cannot parse cannot end it",
-      "status": "in_progress",
+      "status": "done",
       "description": "Findings of the verification pass over the review fixes. (a) A comment in run-agent-session.py says the runner and tools/stream-cost.py share one pairing rule and differ in a single case. They differ in more: the tool sums duration and turns over any two or more results whatever the init count and drops a result repeated under one uuid, while the runner sums only when inits and results pair and counts a repeated result. The runner never records a wrong figure, since it leaves the figure absent, but the sentence is false, and this is the second sentence in this phase found claiming what the code does not do. So do not correct the sentence into another sentence: replace the claim with a table. One table of streams in the suite (paired stretches, one init with two results, a result repeated under one uuid, a single stretch, no result at all), each row holding what the runner records and what the tool reports, written as values in the case, both codes run over every row. The comment then names the case that holds the table and states only the rule the runner follows and why it is the stricter one. If a row shows the runner should follow the tool (a repeated uuid is the same event read twice, so dropping it is right), change the runner and let the table say so. (b) The runner's stream reader catches only a value error, so a deeply nested JSON line raises a recursion error and ends the runner after the session ran and was paid for, with no printed line and no record. It predates this phase and sits before the timing reading the phase hardened. A line that cannot be parsed for any reason is counted as unparsed, never fatal. (c) In the status JSON a done task whose timing record cannot be read is listed among the tasks left out of the phase line as having no window, while its cell prints not readable, and the documents define no window as a readable record with no first start or a completion before it. Use the cell's words for the same state in both. Dependants you answer for: the drive's reading of the session record; the printed result line, unchanged; tests/test_stream_cost.py, which must stay green untouched since the tool itself is not edited; the status JSON's leftOut values, which the phase added and no released reader depends on. Acceptance: (1) every row of the table states both readings and both are asserted; (2) the comment makes no claim the table does not hold; (3) a deeply nested line leaves the runner printing its line and writing its record, with the line counted as unparsed; (4) the JSON and the cell name an unreadable record with the same words; (5) no case added by this task passes with its feature removed.",
       "files": [
         "plugins/audit/scripts/governance/run-agent-session.py",
@@ -948,14 +949,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2a18adc8c445",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(a) tests/test_run_agent_session.py: STREAM_TABLE has five literal streams (two paired stretches; one init with two results; paired stretches with the last result repeated under one uuid; a single stretch; no result). Each row holds the runner's recorded figures, the names it records as absent, and tools/stream-cost.py's (duration_ms, num_turns, paired), all as values. _table_cases runs each row through the real runner (new stub switch STUB_STREAM writes a stream file verbatim) and through the tool, and asserts both (ras79). The repeated-uuid row showed the runner counting one event twice, so the runner now follows the tool there: read_stream skips an event whose string uuid it has already read. The comment in run-agent-session.py that claimed one shared pairing rule differing in one case is replaced: it states only the runner's rule (dedupe by uuid, a stretch told by its init, per-stretch sums only when inits and results pair) and why that is the stricter reading, and it names STREAM_TABLE / ras79 for how the tool reads the same streams. (b) A new _parse_line catches any exception json.loads raises. Both stream readers in the runner use it (read_stream counts the line as unparsed; invoked_skills skips it), since a RecursionError escaping either ended the runner after the session ran. The could-not-run tail now says 'could not be parsed as JSON', not 'were not JSON', because a too-deep line is JSON. The fixture _too_deep() steps the depth up until this interpreter really raises RecursionError: Python 3.14 parses a line 100000 deep, measured here, and fails at 1000000 with 'Stack overflow'. The line reaches the stub as a file because megabytes overflow an environment variable (E2BIG on the first try). (c) _status_facts._left_out returns LEFT_OUT_NOT_READABLE = 'not readable' for a done task whose record _task_timing.is_unreadable reports. tt15 compares it with audit-status.py's own _time_cell output for the same summary; tt16 keeps 'no window' for a readable record with no first start. PLUGIN-BUILD-GUIDE.md: the runner section is rewritten. It said the figures were 'the last result event's' (per-stretch figures are summed) and that read_sessions 'reads none of them' (drive-phase.py:2591-2592 reads startedAt and durationMs; ras73 asserts it). It now names STREAM_TABLE, _parse_line and ras79-ras81. Both leftOut lists gain 'not readable'. Runs: the task gate exits 0, 2/2 files ok (test__status_facts 204 cases, test_run_agent_session 103). Dependants: tests/test__config_rules.py, test__doctor_policy.py and test_drive_phase.py exit 0, 3/3 files ok, 1245 cases. tools/stream-cost.py's own suite exits 0 with 51 cases, and the tool has no diff. test__output_lints.py, test__deps.py and test_audit_status.py exit 0, 897 cases. ruff and vermin (3.8-) are clean on the four .py files. The task text names tests/test_stream_cost.py; no such file exists here, and the tool's suite is tools/stream-cost.py itself, run as above. Mutation probes ran in a scratch rsync copy, never the shared tree, and were read against that copy's baseline, where ras60-63 fail because the copy lacks .claude/skills. Dedupe off: ras79 dup row red. Parse catching ValueError only: ras80 and ras81 red. Pair check off: ras75 x2 and the ras79 unpaired row red. Tool's uuid dedupe off: the ras79 dup row red on the tool side (11000, 23, False). Not-readable branch off: tt15 red. Not-readable over-fired: tt13 and tt16 red. Dependants: the drive's reading of the session record is still correct, since the record keys and their shape are unchanged and test_drive_phase passes (1008 cases). The printed result line is unchanged: only the could-not-run tail's wording changed, and nothing in the tree matches the old phrase. tests/test_stream_cost.py does not exist; tools/stream-cost.py is untouched and green. The status JSON's leftOut gains the value 'not readable'; audit-status.py's render reads it unchanged and test_audit_status passes (430 cases). tools/affected.py and the remaining import, basename and prose dependants name the files or the functions _read_text, _usage, drop_session_tmp and exit_for, none of which changed. Left, not my file: plugins/audit/commands/status.md:39 says only that 'a cancelled or unfinished one is left out and named under leftOut' and lists no done-task reason; it is incomplete rather than contradicted.",
+        "descriptive": "The runner and the stream-cost tool are compared by a table of streams instead of a sentence. The runner drops a repeated uuid as the tool does and no longer dies on an unparseable line, and the status JSON calls an unreadable record 'not readable', as its cell does."
       },
       "startedAt": "2026-11-18T05:39:17Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T06:05:14Z",
+      "verifiedBy": [
+        "ras79 STREAM_TABLE: five streams, each through the runner and tools/stream-cost.py, both readings asserted against values in the row",
+        "ras80 a line nested too deep to parse (a RecursionError, confirmed on this interpreter) is read past: exit 0, line printed, record written with the paired sums",
+        "ras81 the deep line and a malformed line are both counted as unparsed in the could-not-run line, which is still printed and recorded",
+        "tt15 a done task whose stage list is not a list, and one with a stage that is not a stage, are named 'not readable' in leftOut, equal to audit-status.py's time cell",
+        "tt16 second direction: a readable record with no first start stays 'no window' in both"
+      ],
       "notes": [
         {
           "at": "2026-11-18T05:39:12Z",
@@ -965,7 +972,54 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T05:52:33Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 792000,
+            "startedAt": "2026-11-18T05:39:21Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T05:58:00Z.eb69a1",
+            "kind": "wait",
+            "ms": 0,
+            "startedAt": "2026-11-18T05:52:41Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T05:58:00Z.eb69a1, ending at its startedAt",
+            "kind": "selection",
+            "ms": 20534,
+            "runId": "2026-11-18T05:58:00Z.eb69a1",
+            "startedAt": "2026-11-18T05:52:41Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T05:58:00Z.eb69a1",
+            "kind": "gate",
+            "ms": 297116,
+            "runId": "2026-11-18T05:58:00Z.eb69a1",
+            "startedAt": "2026-11-18T05:53:02Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T06:05:09Z.f3c424, ending at its startedAt",
+            "kind": "selection",
+            "ms": 21334,
+            "runId": "2026-11-18T06:05:09Z.f3c424",
+            "startedAt": "2026-11-18T05:58:05Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T06:05:09Z.f3c424",
+            "kind": "gate",
+            "ms": 402763,
+            "runId": "2026-11-18T06:05:09Z.f3c424",
+            "startedAt": "2026-11-18T05:58:27Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 2a18adc8c445",
+            "kind": "commit",
+            "ms": 1894,
+            "startedAt": "2026-11-18T06:05:10Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T05:39:17Z"
       },
       "reviewPerTask": "signals",
@@ -973,6 +1027,18 @@
         "runId": "2026-11-18T06:05:09Z.f3c424",
         "status": "passed",
         "at": "2026-11-18T06:05:09Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "2a18adc8c445",
+        "at": "2026-11-18T06:05:14Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T05:52:32Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test__status_facts.py` in a throwaway tree at HEAD exited 1 with 4 of 103 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - tt15 (house FAIL), ras79 (house FAIL), ras80 (house FAIL), ras81 (house FAIL): SELFTEST FAILED: 100/103 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
@@ -982,10 +1048,10 @@
     "A gate row's durationMs keeps its meaning (the steps alone), because the background-gate decision, the gate budget grading and the usage comparisons all read it; the time spent choosing what to run is a new key beside it rather than added into it."
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "2b3b3ad6-53c7-447e-9ceb-53c614bccbc5",
-    "branch": "audit/p167-wall-time-per-task-is-recorded",
-    "at": "2026-11-17T23:58:28Z"
-  },
-  "startedAt": "2026-11-17T23:58:28Z"
+  "startedAt": "2026-11-17T23:58:28Z",
+  "testEvidence": {
+    "runId": "2026-11-18T06:36:14Z.d0681b",
+    "status": "passed",
+    "at": "2026-11-18T06:36:14Z"
+  }
 }
