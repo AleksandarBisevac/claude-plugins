@@ -5824,31 +5824,40 @@ that defines none outside a function (`_collected_tests`; a helper of that name 
 function is collected by no runner), a labelled check, a call of the one callable the base copy's
 labelled calls go to most. A unit is found wherever it stands, inside a loop, a conditional, a `with`, a `try` or
 another function, and compared by `ast.dump` (decorators included, skip reasons blanked, line
-numbers and a leading docstring not) together with its chain: each statement enclosing it from the
-module down, read by its head (`_head`, built from the node's own fields, so no statement kind is
-listed), and every `pytestmark` on the way. A unit whose own text is the same and whose chain
-differs is a finding saying a statement enclosing it changed; a check the tree calls through
-another name is gone. Other languages are read by the `ASSERTIONS` lines a test file lost, and a
-test file whose copies match no assertion row is listed under `notRead`.
+numbers and a leading docstring not), a check also by the name it is called through, together with
+its position: each statement enclosing it from the module down, read by its head (`_head`, built
+from the node's own fields, so no statement kind is listed) and by which part of it holds the unit
+(the body, the else, which handler, the finally), every `pytestmark` on the way, and how many
+statements that are not units stand before it in that part (`_statements`' `place`). A unit whose
+own text is the same and whose position differs is a finding saying it moved, from which line and
+place to which; a check the tree calls through another name is gone. A unit gone from one file is
+read as moved only to the same position in another file of the diff, the file apart, so a check
+placed in a new file under a dead condition is a finding on the first. Other languages are read by
+the `ASSERTIONS` lines a test file lost, and a test file whose copies match no assertion row is
+listed under `notRead`.
 
-Compared means every changed line is accounted for: in a Python test file, the changed lines of
-each copy, minus the lines of its units, minus the lines of the tree's inert additions, must come
-out empty, or the file is listed under `notRead` as one that could hold a move, at the first line
-left over (`_unaccounted`). The changed lines come from an ordered diff of the two copies'
-statements, each read by its depth and dump, so a comment, a layout change, a docstring or a skip
-reason is no change. An addition is inert only when it is a new unit; a new definition at module or
-class level whose name the base copy mentions nowhere, undecorated and not a name a framework calls
-by convention (`_HOOK`); a module-level import or assignment binding only such names; or a
-statement in a function body after the last unit the base had there - in a function holding none,
-after every statement it had. In a test file new to the diff everything but a hook-named
-definition or a decorated one that is not a test is inert. Everything else added - a statement
-before or between existing units, a module-level expression, a statement in a loop or a try, a
-hook, a decorator - runs before or around an existing case and is not inert. What one file cannot
-show is not read: data flow, so a statement after the last unit of a function that is itself
-called before other units counts as inert.
+Compared means the rest is the same and every unit has its twin, each a comparison of syntax trees
+and never of lines. S: with every unit taken out of each copy's tree, what is left (`_rest`) is
+identical - the same statements in the same order, each in the same part of the same enclosing
+statement; a comment, a layout change, a leading docstring or a skip reason is not in the tree read
+and so is never a difference. U: each base unit has one twin in the tree copy with the same own
+syntax, position and, for a check, callee; a tree unit with no twin is new - counted and named in the
+basis, never judged. When U fails it is a finding. When S fails the file is listed under `notRead`
+as one that could hold a move, and the reason says which of two things the rest is, computed by
+fitting the base copy's rest into the tree copy's in order and in place (`_fit`): only added -
+naming the first added statement at its tree line - or changed or removed - naming the first base
+statement with no place in the tree copy at its base line. A file new to the diff is read against an
+empty base, so its code outside the units is only added. The cost is stated rather than tuned away:
+a new helper, import or set-up line makes its file not compared, and a statement put before a unit
+in that unit's own part makes the unit a finding too. What the reading does not claim: it compares
+structure and never evaluates code, so a new test or check can itself do anything when it runs and
+is reported as new, not as harmless; code outside the diff's test files - a changed helper module, a
+conftest in another directory - is read by the other rules or not at all; and a position names each
+enclosing statement by its head, so a unit moved between sibling blocks with identical heads, its
+count unchanged, keeps its position.
 
 A FILE IS COMPARED ONLY WHOLE. Each `notRead` entry carries a `kind`: `could-hold-one` - a binary
-file, a test file with a changed line nothing accounts for, a test file with no assertion row known - or
+file, a Python test file whose rest is not the same, a test file with no assertion row known - or
 `cannot-hold-a-move`, a file with no syntax known here or a data file (`DATA_EXTENSIONS`). The
 answer has four values: `FINDINGS`, `COULD_NOT_TELL` with its reason, `PARTLY_READ` when nothing
 was found but a could-hold file was not compared, and `CLEAN` only when everything that could hold a

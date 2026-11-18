@@ -27,16 +27,19 @@ THE MOVES, NAMED IN `MOVES`:
     labelled calls go to most. A unit is found wherever it stands - inside a
     loop, a conditional, a `with`, a `try`, another function - and compared by
     `ast.dump` (line numbers excluded, decorators included, a leading
-    docstring dropped, every skip's reason text blanked) together with its
-    CHAIN: each statement enclosing it from the module down, read by its head
-    (an `if`'s test, a `for`'s target and iterable, a `with`'s items, a
-    `try`'s handler types and its else and finally, a def's or class's name,
-    arguments, bases and decorators), and every `pytestmark` on the way. A
-    unit whose text is the same and whose chain differs is a finding saying a
-    statement enclosing it changed. A unit that disappears is reported unless
-    one with the same body and chain appeared, in its own file (a rename) or in
-    another file of the diff (a move); a check the tree no longer calls through
-    the base's callable is gone. For any other language the assertion lines
+    docstring dropped, every skip's reason text blanked), a check also by the
+    name it is called through, together with its POSITION: each statement
+    enclosing it from the module down, read by its head (an `if`'s test, a
+    `for`'s target and iterable, a `with`'s items, a `try`'s handler types and
+    its else and finally, a def's or class's name, arguments, bases and
+    decorators) and by which part of it holds the unit (the body, the else,
+    which handler, the finally), every `pytestmark` on the way, and how many
+    statements that are not units stand before it in that part. A unit whose
+    text is the same and whose position differs is a finding saying it moved,
+    from where to where. A unit that disappears is reported unless one with the
+    same body and position appeared, in its own file (a rename) or in another
+    file of the diff (a move); a check the tree no longer calls through the
+    base's callable is gone. For any other language the assertion lines
     removed from a test file are reported, read through `ASSERTIONS`;
   * a skip added to a test file (`SKIPS`), a raised `SkipTest` and an
     `importorskip` call among them;
@@ -69,30 +72,39 @@ whatever the answer is.
 
 A FILE IS COMPARED ONLY WHOLE. Every file the reading did not compare is listed
 under `notRead` with its `move` and its reason, and with one of two kinds:
-`COULD_HOLD` - a binary file, a Python test file with a changed line nothing
-accounts for, a test file of another language with no assertion line this
-reading knows - and `CANNOT_HOLD`, a file with no syntax known here or a data
-file (`DATA_EXTENSIONS`), which is listed and recorded but does not make the
-reading partly read.
+`COULD_HOLD` - a binary file, a Python test file whose code outside its units
+is not the same in both copies, a test file of another language with no
+assertion line this reading knows - and `CANNOT_HOLD`, a file with no syntax
+known here or a data file (`DATA_EXTENSIONS`), which is listed and recorded but
+does not make the reading partly read.
 
-COMPARED MEANS EVERY CHANGED LINE IS ACCOUNTED FOR. In a Python test file read
-as compared, the changed lines of each copy, minus the lines of its units,
-minus the lines of the tree's inert additions, come out empty; otherwise the
-file is listed as not compared at the first line left over (`_unaccounted`).
-The changed lines come from an ordered diff of the two copies' statements, so
-a comment, a blank line, a layout change, a docstring or a skip reason is no
-change. An addition is inert only when it is a new unit; a new definition at
-module or class level whose name the base copy mentions nowhere, with no
-decorator and no name a framework calls by convention (`_HOOK`); a
-module-level import or assignment binding only names the base mentions
-nowhere; or a statement inside a function body after the last unit the base
-had there - or, in a function holding none, after every statement it had. In
-a test file new to the diff every statement is inert but a hook-named
-definition or a decorated one that is not a test. Anything else added - a statement before or between
-existing units, a module-level expression, conditional or raise, a statement
-inside a loop or a try, a hook, a decorator - is not inert, because it runs
-before an existing case or around it. A reformat, a docstring or a reworded
-label is therefore clean, and a call ending the run above the checks is not.
+COMPARED MEANS THE REST IS THE SAME AND EVERY UNIT HAS ITS TWIN. A Python test
+file of the diff is compared only when both of these hold, each a comparison of
+syntax trees and never of lines. S, THE REST IS THE SAME: with every unit taken
+out of each copy's tree, what is left is identical - the same statements, in
+the same order, each in the same part of the same enclosing statement (`_rest`);
+a comment, a blank line, a layout change, a leading docstring or a skip reason
+is not in what is compared, so it is never a difference. U, EVERY EXISTING UNIT
+IS STILL THERE AND STILL THE SAME: each unit of the base copy has one twin in
+the tree copy with the same own syntax, the same position and, for a check, the
+same callee. A unit of the tree copy with no twin is NEW: counted and named in
+the basis, and not judged. When U fails for a unit it is a finding; when S
+fails the file is listed as not compared, and its reason says which of two
+things the rest is, computed by fitting the base copy's rest into the tree
+copy's in order and in place (`_fit`): ONLY ADDED, naming the first added
+statement and its tree line, or CHANGED OR REMOVED, naming the first base
+statement with no place in the tree copy and its base line. A file new to the
+diff is read against an empty base copy, so any statement in it outside its
+units is only added. A reformat, a reworded label, a new unit and two adjacent
+units swapped are therefore clean; a new helper, import or set-up line makes
+its file not compared; and a statement put before a unit in that unit's own
+part makes the unit a finding as well, since its position is not the base's.
+
+WHAT THE READING DOES NOT CLAIM. It compares structure and never evaluates
+code. A new test or a new check can itself do anything when it runs, and the
+reading says new, not harmless. Code outside the test files of the diff - a
+changed helper module, a conftest in another directory - is read by the other
+rules of this module or not at all.
 
 A DECLARATION COVERS WHAT IS NEW. `declared` holds the task's own test paths. A
 bare path covers definitions new to that file and nothing else; only
@@ -135,12 +147,10 @@ its scope, so an `eslint-disable-next-line <rule>` the base holds hides the same
 rule disabled for the whole file. The marker shapes are written from each
 checker's documented behaviour, not measured against the checkers. A non-Python
 test file is read by assertion line, so a weakened test whose assertions stay
-is not seen. A binary file is never read. Python is read one file at a time
-and without data flow: a statement added after the last unit of a function
-that is itself called before other units - a group of checks ending the run
-once its own checks are done - is an inert addition, as is a new file's
-module code that changes state another file's tests read; and a name looked
-up dynamically (`getattr` on a string) is not a mention.
+is not seen. A binary file is never read. A position names each enclosing
+statement by its head and part, not by where that statement stands, so a unit
+moved between two sibling blocks whose heads are identical, the count before
+it unchanged, keeps its position.
 
 This module carries no `--selftest` of its own; its cases live in
 `tests/test__floor_guard.py`.
@@ -804,14 +814,16 @@ def _scope_of(spans, line):
 # A UNIT is what a runner runs as one case: a test definition, or - in a file
 # that defines none a runner collects, none outside a function
 # (`_collected_tests`) - a labelled check (below), wherever it stands in the file.
-# A unit is compared together with its CHAIN: each statement enclosing it, from
-# the module down, read by its head (`_head`), and the `pytestmark` of each body
-# on the way. So a unit whose own text is the same is still a change when a
-# statement around it changed - a check wrapped in `if False:`, moved into a
-# function nothing calls, put under a loop over a table that was cut, or inside
-# a `try` whose handler swallows it; a skip widened on a class is a change to
-# every test under it. A skip's reason text is no part of any comparison, so a
-# reason reworded is no change.
+# A unit is compared together with its POSITION: each statement enclosing it,
+# from the module down, read by its head (`_head`) and the part of it that holds
+# the unit, the `pytestmark` of each body on the way, and how many statements
+# that are not units stand before it in its own part. So a unit whose own text
+# is the same is still a change when a statement around it, or before it,
+# changed - a check wrapped in `if False:`, moved into a function nothing calls,
+# put under a loop over a table that was cut, inside a `try` whose handler
+# swallows it, or below a new statement; a skip widened on a class is a change
+# to every test under it. A skip's reason text is no part of any comparison, so
+# a reason reworded is no change.
 
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
 
@@ -909,36 +921,40 @@ def _first_line(node):
 
 def _statements(tree, unit_key):
     """Every statement of `tree`, outermost first, as a dict: `node`; `chain`,
-    the heads of the statements enclosing it with the position it holds in each
-    and every `pytestmark` on the way; `depth`; `where` - the body it sits in:
-    module, class, function or block; `function`, the def whose body holds it;
-    `unit`, its key when `unit_key(node, prefix)` names one, whose inside is not
-    walked; `first` and `last`, its lines, decorators counted in; `end`, the index
-    just past its last descendant. A leading docstring is no statement here, as
-    a comment is none."""
+    the heads of the statements enclosing it with the part of each that holds
+    it and every `pytestmark` on the way; `place`, the chain closed by how many
+    statements that are not units stand before it in its own part - a unit's
+    POSITION; `parent`, the index of the record whose part holds it (None at
+    module level), and `part`, which part; `unit`, its key when
+    `unit_key(node, prefix)` names one, whose inside is not walked; `first`
+    and `last`, its lines, decorators counted in; `end`, the index just past
+    its last descendant. A leading docstring is no statement here, as a comment
+    is none - the same reading `_own_dump` gives a unit."""
     out = []
 
-    def walk(body, chain, depth, where, func, prefix):
+    def walk(body, chain, where, prefix, parent, part):
         chain = chain + _marks_of(body)
+        before = 0
         for k, node in enumerate(body):
             if k == 0 and where != "block" and _is_docstring(node):
                 continue
-            rec = {"node": node, "chain": chain, "depth": depth, "where": where,
-                   "function": func, "unit": unit_key(node, prefix),
+            rec = {"node": node, "chain": chain, "place": chain + (("before", before),),
+                   "parent": parent, "part": part, "unit": unit_key(node, prefix),
                    "first": _first_line(node), "last": node.end_lineno or node.lineno}
+            here = len(out)
             out.append(rec)
             if rec["unit"] is None:
+                before += 1
                 for pos, stmts in _bodies(node):
-                    inner = ((_head(node), pos),)
+                    inner = chain + ((_head(node), pos),)
                     if isinstance(node, _FUNCTIONS):
-                        walk(stmts, chain + inner, depth + 1, "function", node, prefix)
+                        walk(stmts, inner, "function", prefix, here, pos)
                     elif isinstance(node, ast.ClassDef):
-                        walk(stmts, chain + inner, depth + 1, "class", None,
-                             prefix + node.name + ".")
+                        walk(stmts, inner, "class", prefix + node.name + ".", here, pos)
                     else:
-                        walk(stmts, chain + inner, depth + 1, "block", func, prefix)
+                        walk(stmts, inner, "block", prefix, here, pos)
             rec["end"] = len(out)
-    walk(tree.body, (), 0, "module", None, "")
+    walk(tree.body, (), "module", "", None, None)
     return out
 
 
@@ -965,10 +981,32 @@ def _collected_tests(records):
 
 def _dump(entry, anonymous=False):
     """One definition as the comparison reads it: `ast.dump` without line
-    numbers, leading docstring or skip reasons, followed by its chain;
+    numbers, leading docstring or skip reasons, followed by its position;
     `anonymous` also drops its name, to recognise a rename."""
-    node, chain = entry
-    return "%s %r" % (_own_dump(node, anonymous), chain)
+    node, place = entry
+    return "%s %r" % (_own_dump(node, anonymous), place)
+
+
+def _place_text(place):
+    """A position in words: the innermost statement enclosing it and which part
+    of it, and how many statements that are not units stand before it there."""
+    heads = [c for c in place if isinstance(c[0], tuple)]
+    if heads:
+        head, pos = heads[-1]
+        name = dict(head[1:]).get("name")
+        where = "in the %s of the %s%s" % (pos, head[0], " %s" % name if name else "")
+    else:
+        where = "at module level"
+    return "%s, after %d statement(s) that are not units" % (where, place[-1][1])
+
+
+def _moved_what(kind, name, base, tree):
+    """The finding for a unit whose own text is the same and whose position is
+    not; `base` and `tree` are each (line, place)."""
+    return ("%s `%s` is unchanged, but it moved - a statement enclosing it, or the "
+            "statements before it there, differ: from base line %d (%s) to tree line "
+            "%d (%s)" % (kind, name, base[0], _place_text(base[1]), tree[0],
+                         _place_text(tree[1])))
 
 
 def _own_dump(node, anonymous=False):
@@ -983,14 +1021,14 @@ def _own_dump(node, anonymous=False):
 
 
 def _test_units(records):
-    """{(name, n): (node, chain)} for the test definitions of `records`. `n`
+    """{(name, n): (node, place)} for the test definitions of `records`. `n`
     counts back from the last definition of a name, so 0 is the one Python
     keeps - and a weaker test appended under an existing name is a change to
     that name - while an earlier one is still compared as itself."""
     by_name = collections.OrderedDict()
     for rec in records:
         if rec["unit"] is not None:
-            by_name.setdefault(rec["unit"], []).append((rec["node"], rec["chain"]))
+            by_name.setdefault(rec["unit"], []).append((rec["node"], rec["place"]))
     return dict(((q, n), entry) for q, entries in by_name.items()
                 for n, entry in enumerate(reversed(entries)))
 
@@ -1000,7 +1038,8 @@ def _compare_definitions(base_records, tree_records, new):
     - `unit` is ("def", name), `sign` is set on a definition that is gone, so
     one that reappears unchanged in another file of the diff is a move;
     `renamed` holds {path, from, to, line}; `fresh` holds (sign, name, line)
-    for each test new to the tree copy. A rename keeps the body AND the chain."""
+    for each test new to the tree copy. A rename keeps the body AND the
+    position, and so does a move to another file."""
     base_defs, tree_defs = _test_units(base_records), _test_units(tree_records)
     fresh = dict((k, e) for k, e in tree_defs.items() if k not in base_defs)
     changed, renamed = [], []
@@ -1012,9 +1051,9 @@ def _compare_definitions(base_records, tree_records, new):
                 changed.append((("def", qual), "definition `%s` differs from its base copy"
                                 % qual, twin[0].lineno, "tree", None))
             elif entry[1] != twin[1]:
-                changed.append((("def", qual), "definition `%s` is unchanged, but a "
-                                "statement enclosing it is not" % qual, twin[0].lineno,
-                                "tree", None))
+                changed.append((("def", qual), _moved_what(
+                    "definition", qual, (entry[0].lineno, entry[1]),
+                    (twin[0].lineno, twin[1])), twin[0].lineno, "tree", None))
             continue
         shape = _dump(entry, anonymous=True)
         twin = next((k for k in sorted(fresh) if _dump(fresh[k], anonymous=True) == shape),
@@ -1035,10 +1074,11 @@ def _compare_definitions(base_records, tree_records, new):
 # f-string format whose text is constant) are its cases, each named by that
 # label. The callable is the one most such call statements of the BASE copy go
 # to, so a check the tree calls through another name is a check gone. Checks
-# are compared by label and chain: a label that is gone is a removed case, one
-# whose other arguments or enclosing statements changed is a changed case; the
-# values a label prints are not compared. A check whose label changed and whose
-# arguments and chain did not is a rename.
+# are compared by label, callee, arguments and position: a label that is gone
+# is a removed case, one whose other arguments changed is a changed case, one
+# whose position changed has moved; the values a label prints are not
+# compared. A check whose label changed and whose callee, arguments and
+# position did not is a rename.
 
 def _label_of(call):
     if not call.args:
@@ -1084,14 +1124,15 @@ def _check_key(callables):
 
 
 def _checks(records):
-    """[(label, signature, chain, line)] for each labelled check of `records`."""
+    """[(label, signature, place, line)] for each labelled check of `records`;
+    the signature is the name it is called through and its other arguments."""
     out = []
     for rec in records:
         if rec["unit"] is not None:
             call = rec["node"].value
-            sign = "|".join([ast.dump(a) for a in call.args[1:]]
+            sign = "|".join([ast.dump(call.func)] + [ast.dump(a) for a in call.args[1:]]
                             + [ast.dump(k) for k in call.keywords])
-            out.append((rec["unit"], sign, rec["chain"], rec["node"].lineno))
+            out.append((rec["unit"], sign, rec["place"], rec["node"].lineno))
     return out
 
 
@@ -1116,204 +1157,154 @@ def _take(found, left, same):
 
 def _compare_checks(base_records, tree_records, new):
     """(changed, renamed, fresh), in `_compare_definitions`' shapes, over the
-    labelled checks of the two copies: paired first on label, arguments and
-    chain, then on label and arguments - a check whose enclosing statement
-    changed - then on label alone - a check whose arguments changed - then on
-    arguments and chain, a rename."""
+    labelled checks of the two copies: paired first on label, signature and
+    position, then on label and signature - a check that moved - then on label
+    alone - a check whose arguments changed - then on signature and position,
+    a rename. A check gone, or new, carries its position in its move signature,
+    so one placed elsewhere in another file of the diff is no move."""
     tree_left = _checks(tree_records)
     _same, base_left = _take(_checks(base_records), tree_left, lambda b, t: b[:3] == t[:3])
     moved, base_left = _take(base_left, tree_left, lambda b, t: b[:2] == t[:2])
     edited, base_left = _take(base_left, tree_left, lambda b, t: b[0] == t[0])
     named, gone = _take(base_left, tree_left, lambda b, t: b[1:3] == t[1:3])
-    changed = [(("check", b[0]), "labelled check `%s` is unchanged, but a statement "
-                "enclosing it is not" % (_short(b[0]),), t[3], "tree", None)
+    changed = [(("check", b[0]), _moved_what("labelled check", _short(b[0]), (b[3], b[2]),
+                                             (t[3], t[2])), t[3], "tree", None)
                for b, t in moved]
     changed += [(("check", b[0]), "labelled check `%s` differs from its base copy"
                  % (_short(b[0]),), t[3], "tree", None) for b, t in edited]
     changed += [(("check", b[0]), "labelled check `%s` is gone from the tree copy"
-                 % (_short(b[0]),), b[3], "base", ("check", b[0], b[1])) for b in gone]
+                 % (_short(b[0]),), b[3], "base", ("check",) + b[:3]) for b in gone]
     renamed = [{"path": new, "from": b[0], "to": t[0], "line": t[3]} for b, t in named]
     return (sorted(changed, key=lambda c: (c[3], c[2])), renamed,
-            [(("check", t[0], t[1]), t[0], t[3]) for t in tree_left])
+            [(("check",) + t[:3], t[0], t[3]) for t in tree_left])
 
 
 def _short(text, width=70):
     return text if len(text) <= width else text[:width - 3] + "..."
 
 
-# --- every changed line accounted for ------------------------------------------------
-# A Python test file reads as compared only when every changed line of either
-# copy is accounted for: the changed lines of each copy, minus the lines of its
-# units, minus the lines of the tree's inert additions, must come out empty. A
-# line left over makes the file one that could hold a move and was not
-# compared, at that line. The units are compared on their own (above); this
-# section only subtracts.
-#
-# THE CHANGED LINES. Each statement outside a unit is one piece - a simple
-# statement whole, a compound one by its head (`_head`) on the lines no
-# statement inside it holds - and a unit is one piece too. The two copies'
-# pieces are diffed in order, each read by its depth and its dump, so a comment,
-# a blank line, a layout change, a docstring or a skip reason is no change, and
-# a statement moved, removed, edited or put under another block is. The lines of
-# every piece the diff did not pair are the copy's changed lines.
-#
-# AN INERT ADDITION is a tree statement every piece of which is new and which
-# holds no unit the base had, and is one of: a unit; a def or class at module
-# level or in a class whose name the base copy mentions nowhere - not bound,
-# not read, not an attribute - which carries no decorator and whose name is not
-# one a framework calls by convention (`_HOOK`); at module level, an import or
-# an assignment binding only names the base mentions nowhere; inside a function
-# body that is not a hook, any statement after the last unit the base had in
-# that function, or - in a function holding none - after every statement the
-# body already had. In a test file new to the diff nothing exists for an
-# addition to run before, so every statement is inert but a hook-named
-# definition or a decorated one that is not a test - the two a framework can
-# run against other files' tests. Everything else added is not inert: a
-# statement before or between existing units, a module-level expression,
-# conditional or raise, an assignment or import to a name that exists, a
-# decorator, a hook, a statement inside a loop, a conditional or a try. The
-# kinds named above are the only ones let through, and a changed line is left
-# over unless something subtracts it, so a statement kind not foreseen here
-# counts against the file rather than for it.
+# --- the rest is the same ---------------------------------------------------------
+# A Python test file reads as compared only when two things hold, each a
+# comparison of syntax trees and never of lines:
+#   S. THE REST IS THE SAME. With every unit taken out of each copy, what is left
+#      is identical: the same statements, in the same order, each in the same
+#      part of the same enclosing statement. A compound statement is read by its
+#      head (`_head`) and then its parts, any other by its dump, so a comment, a
+#      blank line, a layout change, a leading docstring or a skip reason is no
+#      difference.
+#   U. EVERY BASE UNIT HAS ITS TWIN in the tree copy, with the same own syntax
+#      and the same position - compared in the two sections above.
+# When S fails the file is listed as not compared, and the reason says which of
+# two things its rest is, computed by fitting the base copy's rest into the tree
+# copy's, in order and in place (`_fit`): ONLY ADDED when it fits and the tree
+# copy holds more - the first added statement is named - or CHANGED OR REMOVED
+# otherwise - the first base statement with no place is named. Nothing here asks
+# what a statement does: the reading compares structure and never evaluates
+# code, so no added statement is judged by what it would run.
 
-# What a test framework calls by convention, so a definition of one of these
-# names runs without any existing line calling it: unittest's fixtures
-# (`setUp`, `tearDown`, their `Class`/`Module` forms, the async ones), its
-# `run`/`debug` entry and its `load_tests` protocol; pytest's xunit fixtures
-# (`setup_module`, `teardown_method`, ...), the nose-style `setup`/`teardown`
-# pytest still calls, and every `pytest_` hook; and any dunder, which the
-# language calls.
-_HOOK = re.compile(r"^(?:(?:setUp|tearDown)(?:Class|Module)?|async(?:SetUp|TearDown)"
-                   r"|run|debug|load_tests"
-                   r"|(?:setup|teardown)(?:_(?:module|class|function|method))?"
-                   r"|pytest_\w+|__\w+__)$")
+def _own(node):
+    """A statement outside the units as S reads it: a compound one by its head,
+    any other by its dump."""
+    return repr(_head(node)) if _bodies(node) else ast.dump(node)
 
 
-def _signature(rec):
-    """A record's piece as the diff of the two copies reads it."""
-    node = rec["node"]
-    if rec["unit"] is not None:
-        return (rec["depth"], "unit", rec["unit"], _own_dump(node))
-    if _bodies(node):
-        return (rec["depth"], _head(node))
-    return (rec["depth"], ast.dump(node))
-
-
-def _own_lines(records):
-    """For each record, the lines it holds itself: all of a unit's or a simple
-    statement's; for a compound statement, those no statement inside it holds -
-    its head, its decorators, an `except`, `else` or `finally` line."""
-    owner = {}
+def _rest(records):
+    """The statements of `records` that are not units, as a tree of
+    (reading, record index, {part: [...]}) items; a part left holding units
+    only is no part here."""
+    items, top = {}, []
     for k, rec in enumerate(records):
-        for ln in range(rec["first"], rec["last"] + 1):
-            owner[ln] = k
-    out = [[] for _r in records]
-    for ln in sorted(owner):
-        out[owner[ln]].append(ln)
-    return out
-
-
-def _changed(base_records, tree_records):
-    """(base flags, tree flags): which records the ordered diff of the two
-    copies' pieces did not pair."""
-    base_sig = [_signature(r) for r in base_records]
-    tree_sig = [_signature(r) for r in tree_records]
-    base_flags, tree_flags = [False] * len(base_sig), [False] * len(tree_sig)
-    matcher = difflib.SequenceMatcher(None, base_sig, tree_sig, autojunk=False)
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag != "equal":
-            base_flags[i1:i2] = [True] * (i2 - i1)
-            tree_flags[j1:j2] = [True] * (j2 - j1)
-    return base_flags, tree_flags
-
-
-def _mentioned(tree):
-    """Every name `tree` binds, reads or uses as an attribute."""
-    out = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Name):
-            out.add(node.id)
-        elif isinstance(node, ast.Attribute):
-            out.add(node.attr)
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            out.add(node.name)
-        elif isinstance(node, ast.alias):
-            out.add((node.asname or node.name).split(".")[0])
-        elif isinstance(node, ast.arg):
-            out.add(node.arg)
-        elif isinstance(node, ast.ExceptHandler) and node.name:
-            out.add(node.name)
-    return out
-
-
-def _bound_names(node):
-    """The names an import or an assignment binds, or None when it binds anything
-    that is not a plain name."""
-    if isinstance(node, (ast.Import, ast.ImportFrom)):
-        names = [(a.asname or a.name).split(".")[0] for a in node.names]
-        return None if "*" in names else names
-    targets = (node.targets if isinstance(node, ast.Assign)
-               else [node.target] if isinstance(node, ast.AnnAssign) else None)
-    if targets is None:
-        return None
-    names = []
-    for target in targets:
-        parts = target.elts if isinstance(target, (ast.Tuple, ast.List)) else [target]
-        if not all(isinstance(p, ast.Name) for p in parts):
-            return None
-        names.extend(p.id for p in parts)
-    return names
-
-
-def _inert(k, records, flags, ask):
-    """Whether the added tree statement `records[k]` is inert, as the section
-    comment says; `ask` is (the base's unit keys, the names the base mentions,
-    whether the file is new to the diff)."""
-    base_keys, mentioned, added_file = ask
-    rec, node = records[k], records[k]["node"]
-    if rec["unit"] is not None:
-        return True
-    if any(records[j]["unit"] in base_keys for j in range(k + 1, rec["end"])):
-        return False
-    if isinstance(node, _FUNCTIONS + (ast.ClassDef,)):
-        return (rec["where"] in ("module", "class") and node.name not in mentioned
-                and not node.decorator_list and not _HOOK.match(node.name))
-    if rec["where"] == "module":
-        names = _bound_names(node)
-        return added_file or (names is not None and not set(names) & mentioned)
-    if rec["where"] != "function" or _HOOK.match(rec["function"].name):
-        return False
-    func = rec["function"]
-    ends = [r["last"] for r in records if r["unit"] in base_keys
-            and func.lineno <= r["first"] and r["last"] <= func.end_lineno]
-    if ends:
-        return rec["first"] > max(ends)
-    later = [j for j, r in enumerate(records) if r["function"] is func
-             and r["where"] == "function" and r["first"] > rec["last"]]
-    return all(all(flags[i] for i in range(j, records[j]["end"])) for j in later)
-
-
-def _unaccounted(base_records, tree_records, base_ast, added_file):
-    """(base lines, tree lines) changed and accounted for by no unit and no inert
-    addition, each sorted; both empty when the file is compared."""
-    base_flags, tree_flags = _changed(base_records, tree_records)
-    base_keys = set(r["unit"] for r in base_records if r["unit"] is not None)
-    ask = (base_keys, _mentioned(base_ast), added_file)
-    inert, k = set(), 0
-    while k < len(tree_records):
-        end = tree_records[k]["end"]
-        if not all(tree_flags[k:end]):
-            k += 1
+        if rec["unit"] is not None:
             continue
-        if _inert(k, tree_records, tree_flags, ask):
-            inert.update(range(k, end))
-        k = end
-    base_own, tree_own = _own_lines(base_records), _own_lines(tree_records)
-    base_left = sorted(ln for k, r in enumerate(base_records)
-                       if base_flags[k] and r["unit"] is None for ln in base_own[k])
-    tree_left = sorted(ln for k, r in enumerate(tree_records) if tree_flags[k]
-                       and r["unit"] is None and k not in inert for ln in tree_own[k])
-    return base_left, tree_left
+        item = (_own(rec["node"]), k, collections.OrderedDict())
+        items[k] = item
+        if rec["parent"] is None:
+            top.append(item)
+        else:
+            items[rec["parent"]][2].setdefault(rec["part"], []).append(item)
+    return top
+
+
+def _same_rest(base_items, tree_items):
+    """S: the two rests are identical, part by part."""
+    return len(base_items) == len(tree_items) and all(
+        b[0] == t[0] and list(b[2]) == list(t[2])
+        and all(_same_rest(b[2][part], t[2][part]) for part in b[2])
+        for b, t in zip(base_items, tree_items))
+
+
+def _fits(base_item, tree_item):
+    """Whether one base statement has its place in one tree statement: the same
+    reading, and each of its parts fitting into the same part of the tree's."""
+    return base_item[0] == tree_item[0] and all(
+        _fit(sub, tree_item[2].get(part, [])) is None for part, sub in base_item[2].items())
+
+
+def _fit(base_items, tree_items):
+    """None when `base_items` fit into `tree_items` in order; otherwise the
+    record index of the first base statement with no place - read inside a tree
+    statement of the same reading when one stands for it. Pairing each base
+    statement with the earliest tree statement it fits is enough: a later
+    pairing never leaves more room for the statements after it."""
+    j = 0
+    for b in base_items:
+        k = next((i for i in range(j, len(tree_items)) if _fits(b, tree_items[i])), None)
+        if k is not None:
+            j = k + 1
+            continue
+        same = next((t for t in tree_items[j:] if t[0] == b[0]), None)
+        for part, sub in (b[2].items() if same is not None else ()):
+            inner = _fit(sub, same[2].get(part, []))
+            if inner is not None:
+                return inner
+        return b[1]
+    return None
+
+
+def _added(base_items, tree_items):
+    """The record indices of the outermost tree statements no base statement was
+    paired with; only asked when `base_items` fit into `tree_items`."""
+    out, j = [], 0
+    for b in base_items:
+        while not _fits(b, tree_items[j]):
+            out.append(tree_items[j][1])
+            j += 1
+        twin = tree_items[j]
+        j += 1
+        for part, sub in twin[2].items():
+            out.extend(_added(b[2].get(part, []), sub))
+    return out + [t[1] for t in tree_items[j:]]
+
+
+def _statement_text(lines, rec):
+    """The first source line of a statement, stripped and shortened."""
+    first = rec["first"]
+    return _short(lines[first - 1].strip()) if 0 < first <= len(lines) else ""
+
+
+def _rest_reason(base, tree, held):
+    """None when S holds; otherwise the reason the file is not compared, saying
+    which of the two things its rest is and naming the statement. `base` and
+    `tree` are each (records, the copy's lines)."""
+    base_rest, tree_rest = _rest(base[0]), _rest(tree[0])
+    if _same_rest(base_rest, tree_rest):
+        return None
+    miss = _fit(base_rest, tree_rest)
+    added = _added(base_rest, tree_rest) if miss is None else []
+    if added:
+        rec = min((tree[0][k] for k in added), key=lambda r: r["first"])
+        return ("code outside %s was only added: every statement of the base copy "
+                "outside them stands in the tree copy, in order and in place, and the "
+                "first added one is at tree line %d (`%s`); what it runs is not compared"
+                % (held, rec["first"], _statement_text(tree[1], rec)))
+    if miss is None:
+        return ("code outside %s differs between the copies, and no statement of either "
+                "could be named as the first difference; it is not compared" % (held,))
+    rec = base[0][miss]
+    return ("code outside %s was changed or removed: the first statement of the base "
+            "copy outside them with no place in the tree copy is at base line %d (`%s`), "
+            "and what the code there does for a case is not compared"
+            % (held, rec["first"], _statement_text(base[1], rec)))
 
 
 # --- declared -------------------------------------------------------------------
@@ -1461,14 +1452,15 @@ def _unread(path, move, reason, could=None):
 
 
 def _one_file(rec, read_base, read_tree, index, accepted):
-    """{findings, declared, renamed, gone, fresh, problem, notRead} for one file
-    of the diff. `notRead` is one entry or None; its `move` is None when no move
-    was read, and names the move left uncompared otherwise. `gone` pairs each
-    finding for a test that disappeared with its signature, and `fresh` lists
-    the signatures of tests new to this file, so a test moved between two files
-    of the diff is read as moved."""
+    """{findings, declared, renamed, gone, fresh, units, problem, notRead} for one
+    file of the diff. `notRead` is one entry or None; its `move` is None when no
+    move was read, and names the move left uncompared otherwise. `gone` pairs
+    each finding for a test that disappeared with its signature, and `fresh`
+    lists the signatures of tests new to this file, so a test moved between two
+    files of the diff is read as moved. `units` is (the base units compared,
+    [(name, line)] of the new ones) for a Python test file read as compared."""
     out = {"findings": [], "declared": [], "renamed": [], "gone": [], "fresh": [],
-           "problem": None, "notRead": None}
+           "units": None, "problem": None, "notRead": None}
     path = rec["new"] or rec["old"]
     if rec["status"] == "deleted":
         if is_test_path(rec["old"]):
@@ -1510,15 +1502,15 @@ def _one_file(rec, read_base, read_tree, index, accepted):
 
 
 def _collect(rec, base, tree, fam, test, ask):
-    """{findings, declared, renamed, gone, fresh, notRead} for one file whose
-    copies were read; `base` and `tree` are each (text, Python AST or None) and
-    `ask` is (declared index, accepted suppression keys)."""
+    """{findings, declared, renamed, gone, fresh, units, notRead} for one file
+    whose copies were read; `base` and `tree` are each (text, Python AST or None)
+    and `ask` is (declared index, accepted suppression keys)."""
     index, accepted = ask
     path = rec["new"]
     base_marks = _side_marks(base[0], base[1], fam, test) if base[0] is not None else []
     tree_marks = _side_marks(tree[0], tree[1], fam, test)
     out = {"findings": [], "declared": [], "renamed": [], "gone": [], "fresh": [],
-           "notRead": None}
+           "units": None, "notRead": None}
     gone, _unused = _pair([m for m in base_marks if m[0] == "assertion"],
                           [m for m in tree_marks if m[0] == "assertion"])
     out["findings"].extend(_finding(DEFINITION_CHANGED, rec["old"], mark[2], "base",
@@ -1536,7 +1528,7 @@ def _collect(rec, base, tree, fam, test, ask):
                                     "suppression added (%s, new to the file): %s"
                                     % (_key_text(new), mark[4])) for mark, new in fresh)
     if fam == PY and test:
-        _python_test(out, rec, base[1], tree[1], index)
+        _python_test(out, rec, base, tree, index)
     elif test and base[0] is not None and not path.lower().endswith(DATA_EXTENSIONS) \
             and not any(m[0] == "assertion" for m in base_marks + tree_marks):
         out["notRead"] = _unread(path, DEFINITION_CHANGED, (
@@ -1545,14 +1537,15 @@ def _collect(rec, base, tree, fam, test, ask):
     return out
 
 
-def _python_test(out, rec, base_ast, tree_ast, index):
+def _python_test(out, rec, base, tree, index):
     """Fill `out` with what comparing a Python test file's two copies found:
-    its test definitions, or - a file that defines none - its labelled checks,
-    then whether every changed line is accounted for. A file new to the diff is
-    read against an empty base copy."""
+    its test definitions, or - a file that defines none - its labelled checks
+    (U), then whether the rest is the same (S); `units` is set only when it is.
+    `base` and `tree` are each (text, AST). A file new to the diff is read
+    against an empty base copy."""
     path, paths = rec["new"], (rec["new"], rec["old"])
-    added_file = base_ast is None
-    base_ast = ast.parse("") if added_file else base_ast
+    base_text, base_ast = ("", ast.parse("")) if base[1] is None else base
+    tree_text, tree_ast = tree
     has_tests = any(_collected_tests(_statements(t, _test_key)) for t in (base_ast, tree_ast))
     callables = (None if has_tests else
                  _check_callables([base_ast]) or _check_callables([tree_ast]))
@@ -1573,16 +1566,14 @@ def _python_test(out, rec, base_ast, tree_ast, index):
         out["findings"].append(found)
         if sign is not None:
             out["gone"].append((found, sign))
-    base_left, tree_left = _unaccounted(base_records, tree_records, base_ast, added_file)
-    if base_left or tree_left:
-        held = ("its test definitions" if has_tests else "its labelled checks"
-                if callables else "any test - it defines none and calls no labelled check")
-        at = " and ".join("%s line %d" % (side, lines[0]) for side, lines
-                          in (("base", base_left), ("tree", tree_left)) if lines)
-        out["notRead"] = _unread(path, DEFINITION_CHANGED, (
-            "a changed line lies outside %s and outside every inert addition (first "
-            "at %s), and the code there - a helper, a table a case reads, a fixture, "
-            "a statement before or around a case - is not compared" % (held, at)), True)
+    held = ("its test definitions" if has_tests else "its labelled checks"
+            if callables else "any test - it defines none and calls no labelled check")
+    reason = _rest_reason((base_records, _text_lines(base_text)),
+                          (tree_records, _text_lines(tree_text)), held)
+    if reason is not None:
+        out["notRead"] = _unread(path, DEFINITION_CHANGED, reason, True)
+    else:
+        out["units"] = (len(base_units), [(name, line) for _s, name, line in out["fresh"]])
 
 
 _ADDED_WORD = {SKIP_ADDED: "skip added", SUPPRESSION_ADDED: "suppression added",
@@ -1776,8 +1767,11 @@ def find_moves(diff, read_base, read_tree, declared=(), accepted=()):
     records = _paired_moves(records, read_base, read_tree)
     index = _declared_index(declared)
     findings, owned, renamed, cannot, not_read, gone, fresh = [], [], [], [], [], [], []
+    units = []
     for rec in records:
         got = _one_file(rec, read_base, read_tree, index, keys)
+        if got["units"] is not None:
+            units.append((rec["new"],) + got["units"])
         findings.extend(got["findings"])
         owned.extend(got["declared"])
         renamed.extend(got["renamed"])
@@ -1799,9 +1793,23 @@ def find_moves(diff, read_base, read_tree, declared=(), accepted=()):
     else:
         answer = PARTLY_READ if open_ else CLEAN
         basis = ("compared %d of the diff's %d file(s) and found none of the moves "
-                 "(%s)%s" % (len(records) - len(not_read), len(records),
-                             ", ".join(MOVES), tail))
+                 "(%s)%s%s" % (len(records) - len(not_read), len(records),
+                               ", ".join(MOVES), _units_text(units, renamed), tail))
     return _result(answer, basis, findings, owned, renamed, cannot, not_read)
+
+
+def _units_text(units, renamed):
+    """How many existing units the compared Python test files held and how many
+    new ones they gained - a unit moved in from another file of the diff is not
+    new - with the new ones named; "" when no such file was compared."""
+    if not units:
+        return ""
+    moved = set((r["path"], r["to"], r["line"]) for r in renamed)
+    new = ["`%s` in %s" % (name, path) for path, _n, fresh in units
+           for name, line in fresh if (path, name, line) not in moved]
+    return ("; %d existing unit(s) compared, %d new unit(s) counted and not judged%s"
+            % (sum(u[1] for u in units), len(new),
+               (": " + _output.some_of(new)) if new else ""))
 
 
 def _tail(owned, cannot, not_read):

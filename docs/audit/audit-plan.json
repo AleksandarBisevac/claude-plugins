@@ -1403,7 +1403,9 @@
       "SG1.29-ukq",
       "SG1.30-ukq",
       "SG1.31-ukq",
-      "SG1.32-ukq"
+      "SG1.32-ukq",
+      "SG1.33-ukq",
+      "SG1.34-ukq"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -2069,7 +2071,9 @@
       "SG1.29-ukq",
       "SG1.30-ukq",
       "SG1.31-ukq",
-      "SG1.32-ukq"
+      "SG1.32-ukq",
+      "SG1.33-ukq",
+      "SG1.34-ukq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2178,7 +2182,8 @@
       "SG1.7",
       "SG1.23-ukq",
       "SG1.25-ukq",
-      "SG1.30-ukq"
+      "SG1.30-ukq",
+      "SG1.34-ukq"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -2573,7 +2578,8 @@
       "SG1.25-ukq",
       "SG1.26-ukq",
       "SG1.30-ukq",
-      "SG1.31-ukq"
+      "SG1.31-ukq",
+      "SG1.34-ukq"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -3207,7 +3213,8 @@
       "P156.16-3st",
       "P159.2",
       "SG1.5",
-      "SG1.23-ukq"
+      "SG1.23-ukq",
+      "SG1.34-ukq"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -3282,7 +3289,8 @@
       "SG1.7",
       "SG1.23-ukq",
       "SG1.25-ukq",
-      "SG1.30-ukq"
+      "SG1.30-ukq",
+      "SG1.34-ukq"
     ],
     "plugins/audit/hooks/guard-history-rewrite.py": [
       "P29.2",
@@ -3425,7 +3433,8 @@
       "P130.8",
       "P131.1",
       "P131.2",
-      "P142.46-6yq"
+      "P142.46-6yq",
+      "SG1.34-ukq"
     ],
     "plugins/audit/hooks/meter-usage.py": [
       "P15.4",
@@ -3644,7 +3653,8 @@
       "SG1.6",
       "SG1.15-ukq",
       "SG1.24-ukq",
-      "SG1.29-ukq"
+      "SG1.29-ukq",
+      "SG1.33-ukq"
     ],
     "plugins/audit/reference/orchestrator.md": [
       "P7.1",
@@ -12488,7 +12498,8 @@
       "P156.16-3st",
       "P159.2",
       "SG1.5",
-      "SG1.23-ukq"
+      "SG1.23-ukq",
+      "SG1.34-ukq"
     ],
     "tests/test__config_rules.py": [
       "P131.1",
@@ -13370,7 +13381,8 @@
       "SG1.18-ukq",
       "SG1.23-ukq",
       "SG1.25-ukq",
-      "SG1.30-ukq"
+      "SG1.30-ukq",
+      "SG1.34-ukq"
     ],
     "tests/test_guard_history_rewrite.py": [
       "P131.1",
@@ -13424,7 +13436,8 @@
     "tests/test_journal_writes.py": [
       "P131.1",
       "P109.6",
-      "P142.46-6yq"
+      "P142.46-6yq",
+      "SG1.34-ukq"
     ],
     "tests/test_manage_worktrees.py": [
       "P131.1",
@@ -13689,13 +13702,15 @@
       "P148.5",
       "SG1.15-ukq",
       "SG1.24-ukq",
-      "SG1.29-ukq"
+      "SG1.29-ukq",
+      "SG1.33-ukq"
     ],
     "tests/test__clause_coverage.py": [
       "P131.7",
       "SG1.15-ukq",
       "SG1.24-ukq",
-      "SG1.29-ukq"
+      "SG1.29-ukq",
+      "SG1.33-ukq"
     ],
     "tests/test__config_rules_lints.py": [
       "P131.2"

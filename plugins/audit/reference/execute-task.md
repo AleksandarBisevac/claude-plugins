@@ -288,8 +288,8 @@ verb writes and refuses, and what the run commands leave behind, is
      holds `answer` (`clean`, `findings`, `could-not-tell`, or `partly-read` - nothing found
      but a file that could hold a move was not compared), `findings`, `declared`, `notRead`
      and `couldNotTell` apart; each `notRead` entry says whether the file `could-hold-one` (a
-     binary file, a test file with a changed line outside every compared test and every
-     inert addition, named) or `cannot-hold-a-move` (prose, data),
+     binary file, a test file whose code outside its tests was only added, or changed or
+     removed, the first such statement named) or `cannot-hold-a-move` (prose, data),
      and only the first kind makes the reading partly read. The reviewer's brief shows it as
      an input to judge, opening with *NOT clean overall* while a could-hold file stands. **It refuses nothing**: no gate, commit or sign-off reads it,
      a reading that raises is filed as `could-not-tell` naming the exception's type, and under

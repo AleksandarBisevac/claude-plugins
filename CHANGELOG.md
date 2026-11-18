@@ -160,15 +160,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   file is not gone. A skip put on a test's class or module now changes that test, while a reworded
   skip reason does not, and a skip that replaced a different one elsewhere in the file is no longer
   paired away. A suite written as labelled check rows is compared row by row. A test or a check
-  is compared with every statement enclosing it, wherever it stands, so one wrapped in
-  `if False:`, moved into a function nothing calls, put under a loop over a cut table or a `try`
-  that swallows it, or called through another function is a finding. A Python test file counts
-  as compared only when every changed line of either copy lies in a compared test or check or in
-  an inert addition - a new test or check, a new helper or import under a fresh name, or a
-  statement after the last existing check of its function; anything else added, such as a
-  `sys.exit(0)` above the checks, a hook such as `load_tests`, a decorator or a class-level
-  attribute, lists the file as not compared at that line. A comment, a reformat, a docstring or a
-  reworded label stays clean. A test file moved to a path that is not a test path is a deleted
+  is compared with its position - every statement enclosing it, the part of each that holds it,
+  and how many statements that are not tests or checks stand before it there - wherever it
+  stands, so one wrapped in `if False:`, moved into a function nothing calls, put under a loop
+  over a cut table or a `try` that swallows it, placed below a new statement, or called through
+  another function is a finding, and so is one moved to another file of the diff anywhere but the
+  same position there. A Python test file counts as compared only when its syntax tree with the
+  tests and checks taken out is identical in both copies and every existing test and check has
+  its twin; otherwise it is listed as not compared, and the reason says whether its code outside
+  them was only added - naming the first added statement - or changed or removed - naming the
+  first statement of the base copy with no place in the tree copy. The reading compares
+  structure and never evaluates code: a new test or check can do anything when it runs and is
+  reported as new, never judged, and a new helper, import or set-up line makes its file not
+  compared; code outside the diff's test files is read by the other rules or not at all. A
+  comment, a reformat, a reworded label, a new test or check and two adjacent checks swapped stay
+  clean, and the basis counts the existing ones compared and the new ones. A test file moved to a path that is not a test path is a deleted
   test, and a raised `SkipTest` or an `importorskip` is a skip. A `tests.add` path
   with no case id bound to it covers only tests new to that file: an existing test changed there,
   on the headless writer's route always, is now a finding; a case-bound change reads *clean apart
