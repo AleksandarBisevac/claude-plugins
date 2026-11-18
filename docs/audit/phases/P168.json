@@ -30,9 +30,16 @@
         "file": "tests/test_drive_phase.py:12378-12388 (stub at :808-812)",
         "issue": "contradicts task clause: 'Apply it to every case in this suite that hands one mark file to commands that run at the same time' / acceptance (1) 'no case hands one file to two commands that run at the same time'. au32 runs a real `auto` drive over _auto_writer_wave_repo (a wave of width 2); auto_run starts a wave's members together (drive-phase.py auto_run, Popen per command), and both writer-stub sessions append one json line each to the one WS_LOG file (_WRITER_STUB opens it with 'a'), and the case asserts len(_stub_runs(log)) == 2. That is the same shared-append shape the task fixes for au31. The executor's class sweep says WS_LOG is 'written by sessions run one at a time', which is false for au32. Mitigation I verified: au32 is skipped where os.killpg is absent (Windows), and O_APPEND is atomic on POSIX, so it cannot lose a line on the platform that went red; the defect is the unmet clause and the inaccurate claim, not a known red.",
         "resolution": "Either give each wave member's stub a log of its own (e.g. a per-session WS_LOG derived from WS_SESSION/pid, read together through a directory-reading helper like _auto_marks), or leave au32 as is and state in _auto_marks's docstring and the outcome why it is exempt (POSIX-only, atomic O_APPEND) and correct the class-sweep claim."
+      },
+      {
+        "id": "P168-R2",
+        "severity": "med",
+        "file": "tools/ui-checks/stage-tabs.mjs:978-979,1016-1017",
+        "issue": "contradicts task clause: \"use it at every place in the tool that confirms a write and then reads its result, in the panel legs and anywhere else the same shape appears\" / acceptance (1) \"no place in the tool reads the result of a confirmed write after a fixed wait\". The policy Save confirm at 978 is followed by waitForTimeout(900) and then a read of /api/policy and the row verdict; the confirm at 1016 (the refused audit:* write) has the same click-then-900ms-then-read shape. capture-screenshots.mjs imports this file (line 117) and runs those legs in the same gate and in repro mode, so the timer-read the task set out to remove is still in the gate. The executor disclosed this and left it because the task's files list holds only capture-screenshots.mjs; the scope gap is real either way.",
+        "resolution": "File a follow-up task with files tools/ui-checks/stage-tabs.mjs: export confirmWrite (or put it on stageCtx) and use it at 978 (PUT /api/config) and 1016, then add a page predicate after the 978 call because the policy save toasts before it re-reads /api/policy and repaints (e.g. waitForFunction on the row's data-verdict). Leave the Discard at 1035 as a literal."
       }
     ],
-    "outcome": "[findings: 1 - 0 high, 1 med, 0 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 2 - 0 high, 2 med, 0 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -174,7 +181,7 @@
     {
       "id": "P168.2",
       "title": "A recorded gate repeats the steps that grade the tree and measures again only the steps that grade the plan",
-      "status": "in_progress",
+      "status": "done",
       "description": "Today one entry that names a left-out path makes the whole run measured again, so a gate holding the manifest validator beside a sweep and a browser check pays for all three twice. Decide the repeat per step. A step that names no left-out path repeats from the newest measured row with the same identity, exactly as a whole run does now; a step that names one is run again, because what it reads (the plan) is not in the identity and may have moved. The row such a run writes says, step by step, which were repeated and from which run and which were measured, and its verdict is the worst of the two kinds. When every step repeats the run prints the existing reuse banner unchanged; when some were measured it prints a line of its own naming them and their seconds, and the row's verdictSource says so with a third word rather than reusing either existing one. The statuses that may be repeated stay the ones allowed today, a muted row is still not a source, and --no-reuse still measures everything. A red run repeats as red: the statuses that may be repeated already include failed, and that matters, because the drive reads a background run back by asking again, and a second measurement that comes out green replaces a red verdict nobody was shown (seen on this repository: one task's background run failed on one case and the read-back's own run on the same identity passed, and the task closed green). Dependants you answer for: _evidence_io.reusable_run and its callers; _verdict_binding and stamp-verification, which bind a commit and a stamp to a run and must accept a row whose steps are part repeated; the drive's stored_green and verdict_basis; gate_mean_ms and the gate budget, which must not count a repeated step's old duration as time spent now; audit-usage's reused-against-measured comparison; the report's and the panel's rendering of a reused row, which read verdictSource and must show an unknown word as itself; verify-invariants; COMPATIBILITY.md's list of evidence row keys and verdictSource words. Acceptance: (1) a gate of one tree-grading step and one plan-grading step, asked twice with no change, runs the tree step once and the plan step twice, and the second row names the first run as the source of the repeated step; (2) the same gate after an edit to a declared file measures both steps; (3) the same gate after the manifest alone changed in a way that turns the plan step red records a red verdict, with the tree step repeated; (4) a gate with no plan-grading step behaves byte for byte as before; (5) --no-reuse measures every step; (6) a repeated step's duration is not added to the time the row says the run took; (7) a red run asked again with no change repeats as red, with no second measurement of its tree-grading steps; (8) a commit is bound and a stamp verified against a part-repeated row exactly as against a measured one.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -209,14 +216,18 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "b8926c1b69a3",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "A gate whose entries name a path the content identity leaves out now measures only those entries and repeats the rest per step. _evidence_io: PART_REUSED='part-reused' (third verdictSource word), STEP_REUSED_KEY='reusedFrom' added to STEP_KEYS, step_repeated(), repeated_step_sources(); _step normalises reusedFrom to {runId, ts} and writes no durationMs on a repeated step; _gate_cost_walk and _matching_steps skip repeated steps, so gate_mean_ms, step_mean_ms, gate_cost_ms/gate_cost_measured (the doctor's budget) and gate_tally/command_tally/gate_last_caught count a step once, on the row that measured it; reusable_run gains steps=None - with names, a row is a candidate only where it measured every named step (present, not repeated, no outcome), a part-reused row qualifies for its measured steps only and never for a whole-run repeat, and a newest candidate missing a named step answers None; measured_row docstring says a part-reused row is its own answer. run-test-gate: repeat_plan(commands, grading), repeated_step(), part_reused_result() (declared order; failed = union; a repeated failed step makes the run failed per run_status precedence and drops the measured excuse; durationMs/tree reading/counts/mutes from the measured half; coverage joined with the source row's observations.coverage or None with a basis; followers joined; verdictSource part-reused; row-level reusedFrom), part_reuse_line() (no GATE word, names repeated steps, source run and measured steps with human_duration); main runs run_gate over the grading commands only when a source exists and not --no-reuse; _render_steps prints a repeated step as '(repeated) repeated from run X, not run here'; left_out_line now says 'this entry is MEASURED and not repeated' (lw9 still green). _verdict_binding: binding() appends repeated_clause() ('tree repeated from run R1, not run by it') to the sentence; a part-reused row binds as measured (its own testedState). Docs: PLUGIN-BUILD-GUIDE run-test-gate, _evidence_io and _verdict_binding sections; CHANGELOG Unreleased/Fixed entry; COMPATIBILITY additive bullet for the word and the step key. Gate: `python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__evidence_io.py tests/test__verdict_binding.py` exit 0, 3/3 files ok, 1030 cases (643 + 344 + 43). Self-checks beyond the gate, not reported as gates: ruff check on the six .py files exit 0; vermin -t=3.8- exit 0; sweep over tests/test__deps.py test__output_lints.py test__refs.py test_audit_lookup.py test_usage_ledger.py test__usage_economics.py exit 0, 6/6 ok. Mutation probe (in-process, functions swapped on the loaded modules, nothing written; <scratchpad>/probe/mutations.py): baseline none red; step_repeated never true -> pr2 pr4 prt1 prt2 prt3 vb36; repeat_plan repeats nothing -> pr1-pr8; repeat_plan measures no grading entry -> pr1 pr2 pr4-pr8; repeated red not carried -> pr6; writer keeps a repeated duration -> prt2; repeated_step and writer both keep it -> pr3 prt2; repeated_clause None -> vb36; _measured_steps always true -> pr4 prt3. DEPENDANTS: _evidence_io.reusable_run and its callers - changed (steps kwarg, default None keeps the old answer; callers run-test-gate.main and tests/test_record_outside_run.py unchanged in behaviour since a whole-run call now also skips part-reused rows, which no earlier row is). _verdict_binding - changed as above; commit-task-work/close-phase/audit-task read binding() and get the longer sentence only for a part-reused row. stamp-verification.py - still correct: it reads no evidence row (grep of the file for _evidence_io finds recorded_paths/project_config_for only), so a stamp is verified independent of row kind. drive-phase stored_green/verdict_basis - still correct: they go through _evidence_io.measured_row, which returns a part-reused row itself (it read the tree); gate_red_lines keeps the part line out of the verdict lines because it holds no 'GATE' word; the read-back's 'measured again inside next' did-line will fire for a part-reused repeat, which is true of its measured steps. gate_mean_ms and the gate budget - changed in _evidence_io as above (prt1). audit-usage reused-against-measured comparison (plugins/audit/scripts/usage/_usage_economics.py gate_reuse_comparison, line ~715) - NOT correct and NOT changed (outside this task's files): it classes every row whose verdictSource is not 'reused' as measured, so a part-reused row's measured-half durationMs joins the measured mean and understates the saving; it needs a third arm (leave part-reused rows out of both lists, or give them their own). Report and panel rendering - no reader of verdictSource found under plugins/audit/scripts/ui (grep for verdictSource over plugins/ and tools/ hits only audit-lookup.py, _usage_economics.py, run-test-gate.py, _verdict_binding.py, _evidence_io.py); audit-lookup prints the word as itself (verdictSource: %s) and reusedFrom, but its _RUN_STEP_KEYS omits the step-level reusedFrom, so a repeated step there shows no source - a follow-up outside these files. verify-invariants.py - still correct: it reads no steps, durations or verdictSource (grep for reus|verdictSource|durationMs|steps in it: no hits). COMPATIBILITY.md - changed (additive bullet). PLUGIN-BUILD-GUIDE.md, CHANGELOG.md - changed. run-test-gate's importers and test suites: test_run_test_gate 643/643 and the self-check sweep above green. Demo generator (tools/demo/gen-demo-manifest.py): no schema key added - the evidence row is not in plugins/audit/schema (grep for verdictSource/reusedFrom in schema and tools/demo: no hits), so nothing is owed there.",
+        "descriptive": "A recorded gate now runs only the entries that grade the plan and repeats the tree-grading ones from the run that measured them, keeping a red as red and billing no copied duration."
       },
       "startedAt": "2026-11-18T07:28:26Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T08:07:51Z",
+      "verifiedBy": [
+        "test_run_test_gate.py pr1-pr8: a real repository whose tree step and plan step log each run - asked twice the tree step runs once and the plan step twice with the first run named as source; the line and the green banner; the row's durationMs excludes the repeated step; a manifest-only change reddens the plan step with the tree step repeated; a declared-file edit measures both; a red tree step repeats as red without a second measurement; --no-reuse measures all; a gate with no plan step repeats whole as before",
+        "test__evidence_io.py prt1-prt3: a repeated step's duration and run are not counted by gate_mean_ms/step_mean_ms/gate_tally; row_for keeps reusedFrom and drops a repeated step's duration; reusable_run(steps=) takes a part-reused row only for the steps it measured",
+        "test__verdict_binding.py vb36-vb37: a part-reused row binds as a measured one and its sentence names the repeated step and run; a row that repeated nothing has no such clause"
+      ],
       "notes": [
         {
           "at": "2026-11-18T06:46:34Z",
@@ -250,7 +261,40 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T07:54:27Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1552000,
+            "startedAt": "2026-11-18T07:28:35Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T08:05:54Z.0ccb16",
+            "kind": "wait",
+            "ms": 322000,
+            "startedAt": "2026-11-18T07:54:38Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T08:05:54Z.0ccb16, ending at its startedAt",
+            "kind": "selection",
+            "ms": 23968,
+            "runId": "2026-11-18T08:05:54Z.0ccb16",
+            "startedAt": "2026-11-18T08:00:00Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T08:05:54Z.0ccb16",
+            "kind": "gate",
+            "ms": 330263,
+            "runId": "2026-11-18T08:05:54Z.0ccb16",
+            "startedAt": "2026-11-18T08:00:24Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit b8926c1b69a3",
+            "kind": "commit",
+            "ms": 1475,
+            "startedAt": "2026-11-18T08:07:48Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T07:28:26Z"
       },
       "reviewPerTask": "signals",
@@ -258,12 +302,24 @@
         "runId": "2026-11-18T08:06:15Z.17cf74",
         "status": "passed",
         "at": "2026-11-18T08:06:15Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "b8926c1b69a3",
+        "at": "2026-11-18T08:07:51Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T07:54:24Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__evidence_io.py tests/test__verdict_binding.py` in a throwaway tree at HEAD exited 1 with 12 of 643 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - prt1 (house FAIL), prt2 (house FAIL), prt3 (house FAIL), vb36 (house FAIL), pr1 (house FAIL), pr2 (house FAIL), pr3 (house FAIL), pr4 (house FAIL) and 4 more: SELFTEST FAILED: 635/643 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P168.3",
       "title": "The drive reads a background gate's own verdict back, says what was measured again and why, and its fixtures drive a gate that grades the plan",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The drive reads a background gate back by asking the recorded gate again, and prints that the run did not repeat on this tree whenever the reuse banner is missing, whatever the reason; its comments say a second ask on the same content measures nothing, which was false for every gate holding a plan-grading entry. The same happens to the phase gate at sign-off, which was measured whole a second time. Worse than the time, a read-back that measures again can replace the verdict the drive handed out: a background run that came back red was followed by a green second run on the same identity, and the task closed with the red never shown. The verdict of the run the drive launched is the one it acts on: a red background run goes to the base measurement and the decision exactly as an inline red does, for a task gate and for the phase gate alike. With repeats decided per step, the read-back line names what was repeated and what was measured again, with the measured steps' names and seconds, and says did not repeat only when a tree-grading step was measured again, with the reason the gate printed. The comments state what the code now does. The drive's gate fixtures use true and false as the gate, so the drive never met a plan-grading entry: add fixtures whose gate holds one. Dependants you answer for: the decision table and every step text in tests/test_drive_phase.py; the cases that require exactly one task-gate call carrying the reuse banner after a background run; the prompt hook and the orchestrator, which read the signal line and the did lines; the stage record the previous phase added, where a read-back that measured steps is a gate stage of its own with its real length and a fully repeated one adds none. Do not edit plugins/audit/reference/orchestrator.md. Acceptance: (1) a background gate holding a sweep and the manifest validator, read back with no change, leaves one measured sweep in the ledger and a read-back line naming the validator as measured again with its seconds; (2) the same after an edit to a declared file says the tree did not repeat and names the gate's own reason; (3) a gate of true alone reads back with the existing banner and the existing line; (4) a background run that came back red is read back as red and reaches the gate-red decision, with no second measurement between; (5) the phase gate at sign-off is read back the same way, with its tree-grading steps not measured again; (6) the task's timing holds one gate stage for the background run and one short one for the read-back in case (1), and one in case (3).",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -289,14 +345,14 @@
       "dependsOn": [
         "P168.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T08:08:16Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -305,7 +361,17 @@
           "text": "it quotes the Unreleased heading of CHANGELOG.md, and this task adds an entry under that heading and leaves the heading alone",
           "waives": "tools/release.py"
         }
-      ]
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T08:08:16Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T08:45:34Z.d66f34",
+        "status": "passed",
+        "at": "2026-11-18T08:45:34Z"
+      }
     },
     {
       "id": "P168.4",
@@ -761,7 +827,7 @@
     {
       "id": "P168.11-icj",
       "title": "The panel gate reads a confirmed save's outcome when the save has answered, not after a fixed wait",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The panel browser gate went red twice in a row in CI on one leg, on a tree with no change to the page, the server or this tool, and stayed green on this machine. The leg confirms a save and then reads what the page reports. Between the two it waits a fixed time: after the click on the dialog's confirm button the tool sleeps for a fixed number of milliseconds and then reads the page, in this leg and in its neighbours. What was measured: the composition save on the gate's large fixture took about 0.24 s before the last phase and about 0.30 s after it on this machine (every finished task now carries a timing record, so the plan is larger and is checked for more), and a CI runner is several times slower. With this leg's wait shortened to 150 ms in a scratch copy the gate fails with the very message CI printed, and in the same run, under load, the neighbouring leg that still waited its full time failed too, reading the plan from disk before the save had landed. So the gate was reading an outcome on a timer. Make it read the outcome when there is one: one helper that performs the confirm and returns when the save has answered and the page has acted on the answer - built on something the page or the network shows (the response to the write request, registered before the click; or the page's own state that changes when the answer is handled), never on a duration - and use it at every place in the tool that confirms a write and then reads its result, in the panel legs and anywhere else the same shape appears. A timeout on that wait is a failure that names the save that never answered, not a silent pass. A fixed pause that only lets an animation finish is a different thing; leave those, and say in the helper's comment how to tell the two apart. Then make the gate prove it: one leg delays the write endpoint's response past the old fixed wait (route the request, hold it, then let it through) and requires the same outcome to be read correctly, so the gate goes red if someone puts the timer back. The comment above the moved-manifest leg records two earlier patches for a refresh race; leave that mechanism as it is and add nothing to it - nothing measured here points at it. Do not run the browser gate yourself: the capture lock is machine-wide and the task's gate runs it. If the change needs a file under plugins/audit/scripts/ui or the server, stop and hand that back. Dependants you answer for: every leg after a confirm, which starts from the state the helper leaves; the tool's repro mode, which shares these legs; any suite that pins this tool's text. Acceptance: (1) no place in the tool reads the result of a confirmed write after a fixed wait; (2) the helper's timeout fails by name; (3) a leg with the write's answer delayed past the old wait is green, and is red when the helper is replaced by the old fixed wait - say how you checked without running the browser, or say that the check is left to the gate; (4) every existing failure message and pass note of the touched legs is unchanged; (5) the gate is green.",
       "files": [
         "tools/capture-screenshots.mjs"
@@ -780,6 +846,92 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-18T08:08:24Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T08:08:24Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T08:45:38Z.593c3c",
+        "status": "passed",
+        "at": "2026-11-18T08:45:38Z"
+      }
+    },
+    {
+      "id": "P168.12-icj",
+      "title": "The drive suite's writer-stub log is one file per session wherever a wave runs two sessions at once",
+      "status": "pending",
+      "description": "The task that gave each wave member its own mark file left one case with the same shape: a case that runs the real loop over a wave of two writer sessions has both stub sessions append one line each to a single log, and counts the lines. The class sweep of that task called this log 'written by sessions run one at a time', which is not true for that case, since the loop starts a wave's members together. The case is skipped where process groups are absent, so it has not failed on Windows, and an append of one short line is atomic on the systems where it does run; the shape is still the one the task set out to remove, and its own acceptance clause says no case hands one file to two commands that run at the same time. Give that case's stub sessions a log per session (or per member) read together through the same helper, and then walk every log in this suite that a stub or child appends to and state, in the helper's docstring table, which run concurrently and which serially, by case, from what the loop does and not from the case's name. Dependants you answer for: every case reading the writer-stub log, whose expectations must not change by value. Acceptance: (1) no stub or child in the suite appends to a file another concurrent process appends to; (2) the docstring's table names each shared log and why it is safe; (3) the suite's case count does not drop and every expectation is unchanged.",
+      "files": [
+        "tests/test_drive_phase.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_drive_phase.py: a real loop over a wave of two stub sessions leaves two session records, read from one log per session"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P168.13-icj",
+      "title": "Every file the panel gate runs confirms a write through one shared helper, and a unit test refuses a confirm followed by a fixed wait",
+      "status": "pending",
+      "description": "The task that made the panel gate read a confirmed save's outcome when the save has answered converted the sites in tools/capture-screenshots.mjs and stopped at its file boundary. tools/ui-checks/stage-tabs.mjs, which the tool imports and runs in the same gate and in repro mode, still confirms a policy save twice and reads the result after a fixed 900 ms. The reviewer of that task found it and the executor had disclosed it. Finish the class and close it. Move the helper that confirms a write and waits for its answer into a module both files import (a file of its own under tools/ui-checks/, since the checks cannot import the tool that imports them), keep its behaviour and its failure sentences as they are, and use it at the two policy-save sites and at any other confirm-then-read site in tools/ui-checks/. Then make the shape impossible to bring back unseen: a unit test beside the existing wait test in tools/ui-tests/ reads the gate's source files and fails, naming file and line, when a click on the dialog's confirm button is followed by a fixed wait before the next read without going through the helper; a Discard or any confirm that sends no request is named in an allow list with its reason, in the manner the existing wait allowance table uses, and an allow row that matches nothing fails too. Prove the test red on the two sites as they stand before converting them. Do not run the browser gate yourself; the task's gate runs it. If a new file under tools/ owes an entry anywhere (an enumeration, a lint's table), add the file that holds it to the hand-back instead of editing outside the declared files. Dependants you answer for: tools/ui-tests/gate-card-wait.test.mjs, which reads the tool's wait allowance table and its waits; the repro mode, which shares these legs; tests/test__panel_page.py, which pins text of the checks. Acceptance: (1) no file the gate runs reads the result of a confirmed write after a fixed wait; (2) one helper, in one module, imported by both; (3) the new unit test is red on a reintroduced click-then-sleep and on a stale allow row; (4) vitest and the browser gate are green.",
+      "files": [
+        "tools/ui-checks/stage-tabs.mjs",
+        "tools/ui-checks/confirm-write.mjs",
+        "tools/capture-screenshots.mjs",
+        "tools/ui-tests/confirm-write.test.mjs"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tools/ui-tests/confirm-write.test.mjs: a confirm click followed by a fixed wait outside the helper is reported with file and line, and an allow row matching nothing is reported"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "npx vitest run",
+          "node tools/capture-screenshots.mjs --check"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [
+        "P168.11-icj"
+      ],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,

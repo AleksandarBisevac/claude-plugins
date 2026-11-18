@@ -1,0 +1,37 @@
+{
+  "findings": [
+    {
+      "id": 1,
+      "severity": "med",
+      "file": "plugins/audit/scripts/governance/drive-phase.py:4163-4170",
+      "issue": "contradicts task clause \"The comments state what the code now does\": gate_red_lines' docstring still says \"a background gate's red reaches its reader as a repeat every time, so a reader taking the first GATE line would name the banner as the red\". After this diff a background red is read back by recorded_red from its row and carries no GATE VERDICT REUSED banner at all, so the stated reason for the banner filter is no longer true of the path it names (the filter still serves a green-then-red second ask).",
+      "resolution": "Reword the docstring to say the banner can open a repeated verdict (a second ask that repeated a red) and that a background red is no longer one of those."
+    },
+    {
+      "id": 2,
+      "severity": "med",
+      "file": "plugins/audit/scripts/governance/drive-phase.py:176-177",
+      "issue": "contradicts task clause \"The comments state what the code now does\": the module docstring still says of a background gate that \"the verdict is that row's, repeated rather than measured again\". After the diff a red is the row's own verdict with nothing asked, and a green is asked again and may measure the entries that name the plan, so \"repeated rather than measured again\" is the wording this task set out to correct.",
+      "resolution": "Say: a red is acted on as its row records it; a green is asked again, repeating each step that grades the tree and measuring an entry naming a path the identity leaves out."
+    },
+    {
+      "id": 3,
+      "severity": "low",
+      "file": "plugins/audit/scripts/governance/drive-phase.py:6620-6631",
+      "issue": "The read-back clause embeds each measured step's name, which is the gate entry's command text, unbounded and unsanitised. The outcome claims the did clauses hold no ` | ` and no `; `; that holds for the fixtures only. The signal line flattens ` | ` (_flat in did_word_clause), but a command containing `; ` is joined into a `; `-separated field, and a long command makes fit_rest drop the whole clause to `+N` in the signal line, so the detail acceptance (1)/(2) asks for survives only in the printed text.",
+      "resolution": "Clip each step name in step_seconds/repeated to a fixed width and replace `; ` in names, or state in the outcome that the clause is carried whole only in the printed text."
+    }
+  ],
+  "preExisting": [],
+  "intent": {
+    "answer": "matches",
+    "note": "Clause: \"The verdict of the run the drive launched is the one it acts on: a red background run goes to the base measurement and the decision exactly as an inline red does, for a task gate and for the phase gate alike.\" read_back (drive-phase.py:6639-6660) returns recorded_red for a `failed` row with no repeat() call; recorded_red prints GATE RED, the steps' failing lines and `evidence: recorded <run>`, which base_red_why, gate_row and red_gate_stop read by run id, so the decision and the phase stop see the background run's own row. Clause: \"says did not repeat only when a tree-grading step was measured again, with the reason the gate printed\": repeat_said writes it only for a measured step that grades_left_out does not name, and the reason is read off the two rows' recorded identities, not off a printed line - the executor says so openly, since run-test-gate prints none. Fixtures with a sweep beside a plan-naming validator exist (rd1-rd7). Dependants: bg3 and bi7 were rewritten to the new behaviour, which the task's dependants clause calls for; the stage record is covered by rd6 and rd3. orchestrator.md is untouched. The claim describes the diff. Two comments the task's clause \"The comments state what the code now does\" reaches were left stale (findings 1 and 2).",
+    "missing": [],
+    "redFirst": "could-not-prove",
+    "redFirstBasis": "The executor's filed word is could-not-prove, and its basis holds: `python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with cases bg3, rd1, rd2, rd4, rd5, rd7 and bi7 FAIL, but the fix run could not be made - it timed out after 148 s and its process group was torn down. Echoed with the refusal reason as filed; the red-side evidence is real, the green side is the recorded gate run (passed, 2026-11-18T08:45:34Z).",
+    "inheritedTests": "none-found",
+    "inheritedTestsBasis": "Gate command read: `python3 tools/sweep-selftests.py tests/test_drive_phase.py`, which selects the one 22k-line suite. I read the cases this diff touches (bg3, bi7, the rd block) and their helpers (_task_gate_runs, _phase_gate_calls); not the whole suite. The rewritten bg3 asserts `not [task-gate calls]` but also requires gate-red-writer and one ledger row, so it does not pass over a deleted recorded_red. rd6 compares two stage lengths of one run (about 10x apart, per the executor's own single observation), a timing assertion read from one measurement."
+  },
+  "verdict": "findings",
+  "tasks": []
+}

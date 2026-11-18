@@ -198,6 +198,32 @@ const RUNSTATUS_URL = '**/api/runstatus';
 /** The endpoint a settings/config Save PUTs to. Fixtures for it go HERE. */
 const CONFIG_URL = '**/api/config';
 
+/** The endpoint a Composition Save PUTs to, as a route pattern. */
+const COMPOSITION_URL = '**/api/composition';
+
+/**
+ * The write requests a confirmed save sends, as `confirmWrite` matches them: the
+ * method and the path, read off the panel's own save handlers (composition.js,
+ * settings.js, proposals-view.js).
+ */
+const COMPOSITION_WRITE = { method: 'PUT', path: '/api/composition' };
+const CONFIG_WRITE = { method: 'PUT', path: '/api/config' };
+const PROPOSAL_WRITE = { method: 'POST', path: '/api/proposal' };
+
+/**
+ * How long `confirmWrite` lets a confirmed save take to be answered, and then to be
+ * acted on, before it fails naming the save. A bound on a hang, not a guess at how
+ * long a save takes: the wait ends the moment the answer is handled.
+ */
+const CONFIRM_ANSWER_MS = 30000;
+
+/**
+ * How long the proving leg holds a save's request before letting it through: past
+ * every fixed wait this file used to sleep after a confirm, so that a read put back
+ * on such a timer lands before the write does and goes red.
+ */
+const HELD_ANSWER_MS = 2500;
+
 const problems = [];
 
 /**
@@ -425,6 +451,8 @@ export const POLL_WAIT_ALLOWED = [
     reason: 'the Guards tab first paint after boot, a load bound named by PANEL_BOOT_MS; nothing in it is timed by the run-status poll' },
   { find: 'timeout: TAB_WIRED_MS', sites: 1,
     reason: 'a tab button\'s click handler being wired after it appeared, a load bound named by TAB_WIRED_MS; the run-status poll does not touch it' },
+  { find: 'timeout: CONFIRM_ANSWER_MS', sites: 1,
+    reason: 'confirmWrite waits for the toast a confirmed save writes once its answer is handled; CONFIRM_ANSWER_MS bounds a hang, and the run-status poll writes no toast' },
 ];
 
 /**
@@ -3140,6 +3168,92 @@ async function awaitConfirmDialog(page) {
 }
 
 /**
+ * Press the open confirm dialog's primary button for a WRITE, and return once the
+ * server has answered that write and the page has acted on the answer.
+ *
+ * Every confirmed save in this file used to be "click, sleep a fixed number of ms,
+ * read", and the number was a guess at how long the save takes. The composition
+ * save grows with the plan it rewrites, and a CI runner is several times slower
+ * than a laptop, so the read landed before the save had: the gate was reading an
+ * outcome on a timer, red on one host and green on another.
+ *
+ * What it waits for instead, both armed BEFORE the click so neither can be missed:
+ *   - the response to the write request itself, matched by `write.method` and
+ *     `write.path` - which names the save when it never answers;
+ *   - the page's toast being written. The saves this file confirms report through
+ *     `toast()` once they have acted: the composition and ADO saves call
+ *     saveOutcome last, after re-reading the state and re-rendering; the settings
+ *     save calls it and then only moves its draft's base in the same synchronous
+ *     run, which ends before an observer is told; the proposal actions toast after
+ *     their reload. Nothing in the panel toasts on a timer, so the first toast
+ *     after the click is this save's answer, handled.
+ *     A text assignment replaces the toast's child, so even a toast repeating the
+ *     previous one's words is seen. The `show` class its own timer takes off is an
+ *     attribute and is not observed.
+ * One save path toasts BEFORE it has finished acting: the policy save reports and
+ * then re-reads /api/policy and repaints. A read of that repaint needs a page
+ * predicate after this helper returns, not more of this helper.
+ *
+ * Telling the two kinds of fixed pause apart: a pause belongs HERE when the line
+ * after it reads something a request has to change - the file on disk, a row
+ * re-rendered from the server's answer, the toast. A pause after an action that
+ * sends no request - a Discard, whose revert and toast run inside the click's own
+ * task; a dialog closing; a CSS transition - has no answer to wait for, and stays
+ * a short literal.
+ *
+ * A timeout is not a pass: it throws, naming the save, and saying whether the
+ * request went unanswered or was answered and never acted on.
+ *
+ * @param {import('playwright').Page} page
+ * @param {string} label - the leg's own name for this save, e.g. 'composition'
+ * @param {{method: string, path: string}} write - the request the confirm sends
+ * @returns {Promise<{status: number, toast: string}>} the write's HTTP status and
+ *   the toast the page wrote about it
+ */
+async function confirmWrite(page, label, write) {
+  const what = `${label}: the confirmed ${write.method} ${write.path}`;
+  const answered = page.waitForResponse((r) => r.request().method() === write.method
+    && new URL(r.url()).pathname === write.path, { timeout: CONFIRM_ANSWER_MS })
+    .then((r) => ({ status: r.status() }),
+          (err) => ({ lost: String(err).split('\n')[0] }));
+  const seen = await page.evaluateHandle(() => {
+    const t = document.querySelector('#toast');
+    const box = { present: !!t, acted: false, text: null };
+    if (t) {
+      const mo = new MutationObserver(() => {
+        mo.disconnect();
+        box.acted = true;
+        box.text = t.textContent;
+      });
+      mo.observe(t, { childList: true, characterData: true, subtree: true });
+    }
+    return box;
+  });
+  try {
+    if (!(await seen.evaluate((b) => b.present))) {
+      throw new Error(`${what}: the page has no #toast, so nothing on it can say `
+        + `the save was handled`);
+    }
+    during(`${what}: waiting for its answer`);
+    await page.locator('dialog.confirm [data-cfgo]').click();
+    const res = await answered;
+    if (res.lost) {
+      throw new Error(`${what} got no answer within ${CONFIRM_ANSWER_MS} ms `
+        + `(${res.lost})`);
+    }
+    const acted = await page.waitForFunction((b) => b.acted, seen,
+      { timeout: CONFIRM_ANSWER_MS }).then(() => true, () => false);
+    if (!acted) {
+      throw new Error(`${what} was answered (HTTP ${res.status}) and the page never `
+        + `acted on the answer within ${CONFIRM_ANSWER_MS} ms - no toast was written`);
+    }
+    return { status: res.status, toast: await seen.evaluate((b) => b.text) };
+  } finally {
+    await seen.dispose();
+  }
+}
+
+/**
  * The first task a reader could actually change, as the page itself decides it.
  *
  * A finished task, or any task inside a finished phase, is frozen by design, and
@@ -3308,8 +3422,7 @@ async function assertConfirmFlowWorks(page) {
   }
   await saveBtn.click();
   await awaitConfirmDialog(page);
-  await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(900);
+  await confirmWrite(page, 'composition', COMPOSITION_WRITE);
   const saved = await onDisk();
   const shownFor = (id) => page.evaluate((x) => {
     const tr = [...document.querySelectorAll('#comp tr.task')]
@@ -3389,8 +3502,7 @@ async function assertConfirmFlowWorks(page) {
   during('composition (moved manifest): Save, then its confirm dialog');
   await saveBtn.click();
   await awaitConfirmDialog(page);
-  await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(900);
+  await confirmWrite(page, 'composition (moved manifest)', COMPOSITION_WRITE);
   const warned = await page.evaluate(() => ({
     diff: (document.querySelector('#comp [data-cfdiff]') || {}).textContent || null,
     toast: (document.querySelector('#toast') || {}).className,
@@ -3590,8 +3702,7 @@ async function assertConfirmFlowWorks(page) {
   } else {
     note(`settings: the dialog lists "${cfgRows[0].join(' · ')}"`);
   }
-  await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(700);
+  await confirmWrite(page, 'settings', CONFIG_WRITE);
   const cfgSaved = await page.evaluate(async (p) => {
     const s = await api('GET', '/api/state');
     const v = p.split('.').reduce((o, k) => (o == null ? o : o[k]), s.config);
@@ -3777,8 +3888,7 @@ async function assertSkillTriState(page) {
     fail(`skills: the confirm dialog lists ${JSON.stringify(dlg)} — null must read `
        + `as the opt-out, not as "not set"`);
   }
-  await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(900);
+  await confirmWrite(page, 'skills', COMPOSITION_WRITE);
   const onDisk = await page.evaluate(async (id) => {
     const s = await api('GET', '/api/state');
     const t = (s.composition.tasks || []).find((x) => x.id === id);
@@ -3800,12 +3910,29 @@ async function assertSkillTriState(page) {
     note(`skills: ${pick.optId}.skills saved as null and re-read as the opt-out chip`);
   }
   // --- and back: the chip's × clears the answer to [] -------------------------
+  // This save is also the proof that confirmWrite waits for the answer rather than
+  // for a clock. Its request is held before it reaches the server, for longer than
+  // any fixed wait this file used to sleep after a confirm, and then let through:
+  // a read put back on such a timer runs while the file still holds null, and the
+  // check below goes red. The hold is counted, because a route that never matched
+  // would leave this leg green while proving nothing about the wait.
   await rowOf(pick.optId).locator('.tskills .chip.optout button').click();
   await page.waitForTimeout(200);
   await saveBtn.click();
   await awaitConfirmDialog(page);
-  await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(900);
+  let held = 0;
+  await page.route(COMPOSITION_URL, async (route) => {
+    if (route.request().method() === COMPOSITION_WRITE.method) {
+      held += 1;
+      await new Promise((res) => setTimeout(res, HELD_ANSWER_MS));
+    }
+    await route.continue();
+  });
+  try {
+    await confirmWrite(page, 'skills', COMPOSITION_WRITE);
+  } finally {
+    await page.unroute(COMPOSITION_URL);
+  }
   const back = await page.evaluate(async (id) => {
     const s = await api('GET', '/api/state');
     const t = (s.composition.tasks || []).find((x) => x.id === id);
@@ -3815,6 +3942,13 @@ async function assertSkillTriState(page) {
     fail(`skills: clearing the opt-out did not write [] back for ${pick.optId}`);
   } else {
     note('skills: the opt-out clears back to [] through the same save flow');
+  }
+  if (held !== 1) {
+    fail(`skills: the delayed-answer hold caught ${held} save request(s), not one — `
+       + `the leg that proves the confirm waits for its answer proved nothing`);
+  } else if (back) {
+    note(`skills: a save whose request was held ${HELD_ANSWER_MS} ms was read once `
+       + `it answered, not on a fixed clock`);
   }
   // --- the inventory hint (v0.37 B3): a name discovery does not know ----------
   // The probe name is INJECTED, and the fixture home declares every name the
@@ -4581,13 +4715,13 @@ async function assertSaveNoteLifecycle(page) {
   } else if (okUp) {
     note('settings: "saved" card present after the save, gone on its 5s clock');
   }
-  // Leave the fixture as found.
+  // Leave the fixture as found - and wait for that save to land, since every leg
+  // after this one starts from the config it writes.
   await box.click();
   await page.waitForTimeout(200);
   await page.locator('#guards').getByRole('button', { name: 'Save settings' }).click();
   await awaitConfirmDialog(page);
-  await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(400);
+  await confirmWrite(page, 'settings (restoring the fixture)', CONFIG_WRITE);
 }
 
 /* ---- v0.34 C4 (fp): filter persistence — reload, share link, clearAll -------
@@ -6004,8 +6138,7 @@ async function assertProposalsWork(page) {
   } else {
     note('proposals: the drop dialog shows the reason before it is written');
   }
-  await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(900);
+  await confirmWrite(page, 'proposals (drop)', PROPOSAL_WRITE);
   const afterDrop = (await read()).find((p) => p.id === target.id) || {};
   if (afterDrop.status !== 'dropped' || !/declined by the gate/.test(afterDrop.text)) {
     fail(`proposals: after dropping, ${target.id} reads `
@@ -6018,8 +6151,7 @@ async function assertProposalsWork(page) {
   await open();
   await page.locator(`#props [data-proprevive="${target.id}"]`).click();
   await awaitConfirmDialog(page);
-  await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(900);
+  await confirmWrite(page, 'proposals (revive)', PROPOSAL_WRITE);
   const revived = (await read()).find((p) => p.id === target.id) || {};
   if (revived.status !== 'proposed') {
     fail(`proposals: revive left ${target.id} at ${JSON.stringify(revived.status)}`);
@@ -6031,8 +6163,9 @@ async function assertProposalsWork(page) {
   await open();
   await page.locator(`#props [data-propmat="${target.id}"]`).click();
   await awaitConfirmDialog(page);
-  await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(1200);
+  // The plan POST that sized this dialog was answered before it opened, so the
+  // request confirmWrite matches is the materialize itself.
+  await confirmWrite(page, 'proposals (materialize)', PROPOSAL_WRITE);
   const done = (await read()).find((p) => p.id === target.id) || {};
   const inPlan = await page.evaluate((pid) => {
     // Bare `STATE`, not `window.STATE`: a top-level `let` in the page's script
