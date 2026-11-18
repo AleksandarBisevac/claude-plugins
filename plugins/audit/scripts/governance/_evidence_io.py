@@ -357,6 +357,20 @@ ACTION_RECORDED = "test.evidence.recorded"
 # that does not write it.
 VERDICT_SOURCE = "verdictSource"
 REUSED = "reused"
+# A THIRD WORD, FOR A ROW THAT IS NEITHER. A gate holding an entry that names a
+# path the content identity leaves out (the plan, the ledger) measures that
+# entry on every run and may repeat the rest; such a row measured some steps
+# and copied others, so `reused` would claim nothing ran and absence would
+# claim everything did. Each copied step carries `STEP_REUSED_KEY` naming the
+# run it came from; the row's own `reusedFrom` names that same run. The
+# row's tree reading, its `durationMs` and its counts are the measured steps'
+# alone, so a row with this word is graded as the measurement it is
+# (`measured_row` returns it, not its source).
+PART_REUSED = "part-reused"
+# On a step: the run whose measurement this step repeats, `{runId, ts}`. A step
+# carrying it ran nothing here, so no reader counts it as a run of that step
+# or as time spent (`step_repeated`), and the writer keeps no duration for it.
+STEP_REUSED_KEY = "reusedFrom"
 
 # WHO RAN THE SUITE, WHICH IS NOT THE SAME QUESTION AS `via`. `via` names the
 # interface the recorder was reached through and answers "cli" on every row ever
@@ -604,11 +618,35 @@ MAX_FAILING = 10
 # learns failing suites off a row. A quarantined, known failure is not
 # something the gate caught. Kept to suite, bug and day, cut at `MAX_PATHS`
 # and each suite path redacted as `failingSuites` is.
+#
+# `reusedFrom` (`STEP_REUSED_KEY`) IS THE RUN A REPEATED STEP COPIES, kept to
+# its `runId` and `ts`; `_step` writes no `durationMs` beside it.
 STEP_KEYS = ("name", "exit", "ran", "measured", "durationMs", "outcome",
              "timeoutSeconds", "teardown", "failing", "failingBasis",
              "failingSuites", "failingSuitesBasis", "suiteReader",
              "retriedAfterSignal", "retryBasis", "outcomeBasis", "derivedGap",
-             "flaky", "flakyBasis", "muted")
+             "flaky", "flakyBasis", "muted", STEP_REUSED_KEY)
+
+
+def step_repeated(step):
+    """True when a recorded step repeats another run's measurement rather than
+    ran here: it carries `STEP_REUSED_KEY`. Every reader that counts a step as
+    a run of it, or its duration as time spent, asks this first."""
+    return isinstance(step, dict) and step.get(STEP_REUSED_KEY) is not None
+
+
+def repeated_step_sources(row):
+    """`[(step name, runId)]` for each step of `row` that repeats another run,
+    in step order - empty for a row that repeated none."""
+    found = []
+    for step in (row or {}).get("steps") or []:
+        if not step_repeated(step):
+            continue
+        source = step[STEP_REUSED_KEY]
+        found.append((str(step.get("name")),
+                      str(source.get("runId") if isinstance(source, dict)
+                          else source)))
+    return found
 STATE_KEYS = ("head", "headBasis", "scopeDigest", "scopeBasis",
               "scopeListDigest", "dirtyDigest", "dirtyBasis", "tree")
 _PORCELAIN_RENAME = " -> "
@@ -756,7 +794,17 @@ def _step(project, step, published):
             # caller.
             out[key] = redacted_text(project, str(step[key]))
             continue
+        if key == STEP_REUSED_KEY:
+            source = step[key] if isinstance(step[key], dict) else {
+                "runId": step[key]}
+            out[key] = dict((k, str(source[k])) for k in ("runId", "ts")
+                            if source.get(k) is not None)
+            continue
         out[key] = step[key]
+    # A REPEATED STEP RAN NOTHING HERE, so this row holds no duration for it:
+    # the time is its source run's, and that row keeps it.
+    if step_repeated(out):
+        out.pop("durationMs", None)
     command = step.get("command")
     if command is None:
         return out
@@ -1326,7 +1374,9 @@ def tree_key(tree):
 def measured_row(rows, row):
     """The row that measured what `row` says: `row` itself, or the run a repeated
     verdict repeats (`reusedFrom`), newest by moment - None when that run is not
-    in `rows`, since a repeat whose source is gone names no tree."""
+    in `rows`, since a repeat whose source is gone names no tree. A
+    `PART_REUSED` row is its own answer: it read the tree itself, before the
+    steps it measured."""
     if not isinstance(row, dict) or row.get(VERDICT_SOURCE) != REUSED:
         return row if isinstance(row, dict) else None
     return row_by_run(rows, (row.get("reusedFrom") or {}).get("runId"))
@@ -1917,11 +1967,15 @@ def _matching_steps(rows, key, value):
 
     `rows` is whatever `read_rows(...)["rows"]` returned - unordered by this
     function's own contract, since a tally needs a count and not a sequence.
-    A caller that wants oldest-first sorts by `ts` before calling this."""
+    A caller that wants oldest-first sorts by `ts` before calling this.
+
+    A REPEATED STEP (`step_repeated`) IS NO RUN OF THE STEP: its run is the one
+    it names, which this walk already meets on that run's own row."""
     out = []
     for row in (rows or []):
         for step in (row.get("steps") or []):
-            if isinstance(step, dict) and step.get(key) == value:
+            if isinstance(step, dict) and step.get(key) == value \
+                    and not step_repeated(step):
                 out.append({"ts": row.get("ts"), "runId": row.get("runId"),
                             "exit": step.get("exit"), "outcome": step.get("outcome"),
                             "muted": step.get("muted"),
@@ -1969,11 +2023,17 @@ def _gate_cost_walk(rows, name):
     beside a count of exactly those steps. `gate_cost_ms` and
     `gate_cost_measured` both read this one walk rather than each summing and
     counting for itself, so a future step key can never make the sum and the
-    count disagree about which steps contributed."""
+    count disagree about which steps contributed.
+
+    A REPEATED STEP (`step_repeated`) IS SKIPPED, whatever duration it carries:
+    the run it names spent that time and is counted on its own row, so adding
+    it here would bill one measurement twice."""
     total, measured = 0, 0
     for row in (rows or []):
         for step in (row.get("steps") or []):
             if not (isinstance(step, dict) and step.get("name") == name):
+                continue
+            if step_repeated(step):
                 continue
             duration = step.get("durationMs")
             if isinstance(duration, (int, float)) and not isinstance(duration, bool):
@@ -2999,8 +3059,17 @@ def _same_subject(row, ids):
     return True
 
 
-def reusable_run(rows, scope, ids, key, statuses):
+def reusable_run(rows, scope, ids, key, statuses, steps=None):
     """The newest recorded run a caller may repeat instead of measuring, or None.
+
+    `steps` names the steps a caller repeats when it repeats only some of its
+    gate (the rest it measures, `PART_REUSED`); None repeats the whole run. A
+    row is a source for a named step only where it MEASURED that step - the
+    step is on it, copies no other run (`step_repeated`) and reached a verdict
+    (no `outcome`). So a `PART_REUSED` row is a candidate for the steps it
+    measured and for no other, and never for a whole-run repeat; and when the
+    newest candidate lacks a named step, the answer is None rather than an
+    older row, for the newest-decides rule below.
 
     EVERY CONDITION NARROWS. The identity has to match, the
     subject has to be the same work and the row has to be a MEASUREMENT rather
@@ -3032,18 +3101,33 @@ def reusable_run(rows, scope, ids, key, statuses):
     # bytes and is passed over; a verdict a mute excused IS one, and it is the
     # newest, so it ends the search with no repeat rather than letting an older
     # red - which the tree has since moved past - be handed back instead.
-    chosen = newest_row([r for r in _identity_measurements(rows, scope, ids, key)
+    chosen = newest_row([r for r in _identity_measurements(rows, scope, ids, key,
+                                                           steps)
                          if r.get("status") in statuses])
     # A VERDICT A MUTE EXCUSED holds only while the mute does, and whether
     # it still does depends on the day - which no content identity sees.
     if chosen is None or chosen.get("muted"):
         return None
+    if steps is not None and not _measured_steps(chosen, steps):
+        return None
     return chosen
 
 
-def _identity_measurements(rows, scope, ids, key):
+def _measured_steps(row, names):
+    """True when `row` MEASURED every step in `names`: each is on it, copies no
+    other run, and reached a verdict - a step with an `outcome` (it timed out,
+    could not start) is a fact about the machine, which a repeat would cache."""
+    found = dict((s.get("name"), s) for s in row.get("steps") or []
+                 if isinstance(s, dict))
+    return all(name in found and not step_repeated(found[name])
+               and not found[name].get("outcome") for name in names)
+
+
+def _identity_measurements(rows, scope, ids, key, steps=None):
     """The rows that MEASURED something for this identity, scope and subject: a
-    repeat copies a verdict and is not one, so it is left out."""
+    repeat copies a verdict and is not one, so it is left out - and a row that
+    repeated part of its gate is one only for the `steps` it measured, and for
+    a whole-run repeat (`steps` None) not at all."""
     found = []
     for row in rows or []:
         if not isinstance(row, dict):
@@ -3051,6 +3135,9 @@ def _identity_measurements(rows, scope, ids, key):
         if row.get(REUSE_KEY) != key:
             continue
         if row.get(VERDICT_SOURCE) == REUSED:
+            continue
+        if row.get(VERDICT_SOURCE) == PART_REUSED and (
+                steps is None or not _measured_steps(row, steps)):
             continue
         if str(row.get("scope") or "") != str(scope or ""):
             continue

@@ -3129,16 +3129,17 @@ def _names_path(rel, path, is_dir):
 
 
 def left_out_line(name, what):
-    """The line saying why a run naming a left-out path is measured, not
+    """The line saying why an entry naming a left-out path is measured, not
     repeated: the entry, and the path it names or the reason it was read as
-    naming one."""
+    naming one. The gate's other entries may still be repeated
+    (`part_reused_result`)."""
     if what.startswith(UNSPLITTABLE):
         return ("[run-test-gate] %s cannot be read for the paths it names - %s - "
                 "so it is treated as naming a path this identity leaves out, and "
-                "this run is MEASURED and not repeated. A guess the other way "
+                "this entry is MEASURED and not repeated. A guess the other way "
                 "would repeat a verdict nobody measured" % (name, what))
     return ("[run-test-gate] %s names %s, which this identity leaves out, so "
-            "this run is MEASURED and not repeated. Whether the command reads "
+            "this entry is MEASURED and not repeated. Whether the command reads "
             "that path is not established here; naming it is enough, because "
             "the other way round is a verdict that no longer describes the "
             "thing it graded" % (name, what))
@@ -3160,7 +3161,8 @@ def grades_left_out(gate, excluded, roots=(), directories=()):
     reads it - nothing short of running it could establish that, and running it
     is the cost this whole feature exists to avoid. So the conclusion is the
     conservative one and the sentence says which it is: a named path means the
-    verdict is MEASURED rather than repeated. Wrong in this direction costs a run;
+    ENTRY is MEASURED rather than repeated, while the gate's other entries may
+    still be repeated (`part_reused_result`). Wrong in this direction costs a run;
     wrong in the other direction is a stale pass, which is the failure the rest of
     this module is written against.
 
@@ -3195,16 +3197,17 @@ def grades_left_out(gate, excluded, roots=(), directories=()):
 def reuse_identity(project, manifest_path, manifest, commands, owns, group=None,
                    tree=None):
     """`{key, basis, limit, grading, unexcluded}` - what this run would have to
-    match to be a repeat, and the entries that stop it being one.
+    match to be a repeat, and the entries that are measured whatever matches.
 
     `key` is None when the tree's content could not be established; the basis
     then says why, and a None never matches a None - `reusable_run` refuses an
     empty key outright, for `field_state`'s reason one module over.
 
-    `grading` is non-empty when an entry names a path the identity leaves out.
-    The key is still computed and still recorded in that case, because the row
-    has to carry what this run was taken on whether or not a repeat was allowed -
-    a run that recorded no identity leaves the next one nothing to match.
+    `grading` is non-empty when an entry names a path the identity leaves out:
+    those entries are measured on every run, and the rest may still be
+    repeated (`part_reused_result`). The key is computed and recorded either
+    way, because the row has to carry what this run was taken on - a run that
+    recorded no identity leaves the next one nothing to match.
 
     `unexcluded` is `recorded_paths`' own report of a write it could not turn
     into a project-relative exclusion. It travels on the identity for the same
@@ -3342,6 +3345,128 @@ def reused_result(identity, row, elapsed_ms, newer=None):
         "coverageBasis": ("no command ran, so no runner named a path here; the "
                           "run named above is where that question was asked"),
     }
+
+
+# --- a gate repeated in part ---------------------------------------------------
+# An entry naming a path the identity leaves out (the plan, the ledger) grades
+# bytes no repeat can vouch for, so it is measured on every run. The entries
+# beside it grade the tree, which the identity does hold, so they are repeated
+# from the newest row that measured them (`_evidence_io.reusable_run` with
+# `steps`) - the same rule a whole-run repeat follows, one step at a time.
+def repeat_plan(commands, grading):
+    """`(repeated names, measured commands)` for a gate whose `grading` entries
+    name a path the identity leaves out: every other entry may be repeated, and
+    only the grading ones run. Empty names when no entry is left to repeat."""
+    graded = set(name for name, _what in grading or ())
+    return ([name for name, _command in commands if name not in graded],
+            [(name, command) for name, command in commands if name in graded])
+
+
+def repeated_step(stored, command, source):
+    """A step copied from `source`'s row: its verdict fields (`STEP_KEYS`), the
+    command as this run declares it, and `STEP_REUSED_KEY` naming the run. No
+    duration - this run spent none on it - and `exit`/`ran` kept present, None
+    where the stored step had none, because the step table reads both."""
+    step = dict((key, stored[key]) for key in _ev.STEP_KEYS
+                if key in stored
+                and key not in ("durationMs", _ev.STEP_REUSED_KEY))
+    step.setdefault("exit", None)
+    step.setdefault("ran", None)
+    step["command"] = command
+    step[_ev.STEP_REUSED_KEY] = {"runId": source.get("runId"),
+                                 "ts": source.get("ts")}
+    return step
+
+
+def part_reused_result(measured, source, repeated, commands):
+    """`run_gate`'s answer over the grading entries alone, joined with the
+    `repeated` steps copied from `source` into one run in declared order.
+
+    THE VERDICT IS THE WORSE OF THE TWO KINDS, by `run_status`' own
+    precedence: a repeated step that failed makes the run `failed`, which
+    outranks every other word; otherwise the measured part's word stands. So a
+    red is repeated as red - a second measurement of a tree step that came back
+    green cannot replace a red nobody was shown - and a plan entry turned red
+    by an edit the identity cannot see is red here too.
+
+    WHAT WAS OBSERVED HERE STAYS THIS RUN'S: `durationMs`, the tree reading, the
+    counts, the mutes and the selection are the measured steps' alone. Two
+    readings join the source's: the coverage, since the runner-named paths of
+    the repeated steps are as much this gate's answer as the measured ones'
+    (None when either half has none), and the followers its steps owed.
+    """
+    res = dict(measured)
+    by_name = dict((s.get("name"), s) for s in source.get("steps") or []
+                   if isinstance(s, dict))
+    ran_here = list(measured.get("steps") or [])
+    steps, copied = [], []
+    for name, command in commands:
+        if name in repeated:
+            step = repeated_step(by_name.get(name) or {}, command, source)
+            copied.append(step)
+            steps.append(step)
+            continue
+        found = next((s for s in ran_here if s.get("name") == name), None)
+        if found is not None:
+            ran_here.remove(found)
+            steps.append(found)
+    steps.extend(ran_here)
+    repeated_red = failed_steps(copied)
+    red = set(repeated_red) | set(measured.get("failed") or [])
+    res["steps"] = steps
+    res["failed"] = [s["name"] for s in steps if s["name"] in red]
+    if repeated_red:
+        res["status"] = "failed"
+        # The excuse an already-dirty tree gives a measured red says nothing
+        # about a repeated one, which was measured on a tree it did not see.
+        res["notAttributable"] = None
+        res["attributionBasis"] = None
+    prior_cover = (source.get("observations") or {}).get("coverage")
+    if measured.get("overlap") is None or prior_cover is None:
+        res["overlap"] = None
+        res["coverageBasis"] = (
+            "%s; run %s, which the repeated step(s) %s come from, %s, so the "
+            "two halves cannot be joined" % (
+                measured.get("coverageBasis") or "no coverage basis here",
+                source.get("runId"), ", ".join(repeated),
+                "recorded no coverage" if prior_cover is None
+                else "recorded coverage this run's half has none to join"))
+    else:
+        res["overlap"] = sorted(set(measured["overlap"]) | set(prior_cover))
+        res["coverageBasis"] = (
+            "%s; joined with the paths run %s's repeated step(s) %s named"
+            % (measured.get("coverageBasis") or "no coverage basis here",
+               source.get("runId"), ", ".join(repeated)))
+    res["countsBasis"] = (
+        "%s; counted over the step(s) measured here only - the repeated "
+        "step(s) %s ran no check in this run"
+        % (measured.get("countsBasis") or "no count basis here",
+           ", ".join(repeated)))
+    owed = list(measured.get(_ev.FOLLOWERS_KEY) or [])
+    owed.extend(f for f in source.get(_ev.FOLLOWERS_KEY) or [] if f not in owed)
+    res[_ev.FOLLOWERS_KEY] = owed
+    res[_ev.VERDICT_SOURCE] = _ev.PART_REUSED
+    res["reusedFrom"] = {"runId": source.get("runId"), "ts": source.get("ts"),
+                         "status": source.get("status")}
+    return res
+
+
+def part_reuse_line(res):
+    """The line a part-repeated run prints in place of the whole-run repeat
+    banner, which would claim nothing ran: which steps were repeated and from
+    which run, which were measured here and what each took. It holds no `GATE`
+    banner word, so a reader keying on those meets only the verdict line."""
+    prior = res.get("reusedFrom") or {}
+    repeated = [s["name"] for s in res.get("steps") or []
+                if _ev.step_repeated(s)]
+    measured = ["%s (%s)" % (s["name"], human_duration(s.get("durationMs"))
+                             or "not timed")
+                for s in res.get("steps") or [] if not _ev.step_repeated(s)]
+    return ("[run-test-gate] part repeated: %s repeated from run %s (%s, "
+            "recorded %s) - nothing ran for them here; measured here: %s. "
+            "Re-run with --no-reuse to measure every step."
+            % (", ".join(repeated), prior.get("runId"), prior.get("status"),
+               prior.get("ts"), ", ".join(measured) or "nothing"))
 
 
 EMPTY_GATE = "empty-gate"
@@ -4595,6 +4720,15 @@ def _render_steps(res, out, quiet):
     """
     for step in res["steps"]:
         if quiet and _quiet_step(step):
+            continue
+        if _ev.step_repeated(step):
+            # NOTHING RAN FOR IT HERE, so it prints no duration and no count
+            # of its own - only the verdict it copies and where from.
+            out("  %-12s exit %-3s %10s  repeated from run %s, not run here"
+                % (step["name"], step.get("exit"), "(repeated)",
+                   (step[_ev.STEP_REUSED_KEY] or {}).get("runId")))
+            for line in step.get("failing") or ():
+                out("      %s" % (line,))
             continue
         ran = step["ran"]
         # WHAT THE STEP COST, ON THE STEP'S OWN LINE AND NOT AS A TOTAL (P46.5).
@@ -6175,6 +6309,9 @@ def main(argv, out=print):
     # `reuse_identity` and the lookup it feeds are both a cost this run has
     # no question to spend them on.
     started = time.monotonic()
+    # `(source row, repeated names, commands to measure)` when only some of the
+    # gate is to run (`repeat_plan`), else None.
+    part = None
     if args.own:
         identity = {"key": None,
                     "basis": "--own is never recorded, so nothing here is "
@@ -6208,6 +6345,19 @@ def main(argv, out=print):
             # every time is owed the reason, or the next reader removes the cache.
             for name, path in identity["grading"]:
                 out(left_out_line(name, path))
+            # ...AND IT IS THE ENTRY THAT IS MEASURED, NOT THE WHOLE GATE. The
+            # entries beside it grade the tree the identity holds, so each is
+            # repeated from the newest row that measured it, exactly as a whole
+            # gate is below, and only the grading entries run.
+            repeatable, graded_commands = repeat_plan(commands,
+                                                      identity["grading"])
+            if repeatable and not args.no_reuse:
+                found = _ev.reusable_run(
+                    _ev.read_rows(project)["rows"], source,
+                    subject_ids(args.phase, args.task, source),
+                    identity["key"], REUSABLE_STATUS, steps=repeatable)
+                if found is not None:
+                    part = (found, repeatable, graded_commands)
         elif not args.no_reuse:
             ledger = _ev.read_rows(project)["rows"]
             prior = _ev.reusable_run(ledger, source,
@@ -6244,7 +6394,8 @@ def main(argv, out=print):
                 except KeyboardInterrupt as exc:
                     return stopped_before_run(
                         exc, _say_on_stderr if args.as_json else out)
-            res = run_gate(tree or project, commands, owns=owns,
+            res = run_gate(tree or project,
+                           commands if part is None else part[2], owns=owns,
                            timeout=args.timeout,
                            recorded=_ev.recorded_paths(project,
                                                        args.manifest)[0],
@@ -6263,6 +6414,8 @@ def main(argv, out=print):
                            say=(_say_on_stderr if args.as_json else out))
         finally:
             _disarm_interrupt(previous)
+        if part is not None:
+            res = part_reused_result(res, part[0], part[1], commands)
         # ON THE MEASURED RUN AND NOT ON THE REPEAT'S SOURCE. `run_gate` takes no
         # manifest and must not: it is the function the cases drive without a
         # repository around it, and an identity computed inside it would be a
@@ -6465,6 +6618,10 @@ def main(argv, out=print):
     # observations it never made.
     if res.get(_ev.VERDICT_SOURCE) == _ev.REUSED:
         return render_reuse(res, out=out)
+    # A PART-REPEATED RUN IS A RUN, rendered as one, with the line saying which
+    # steps it copied ahead of the table that marks them.
+    if res.get(_ev.VERDICT_SOURCE) == _ev.PART_REUSED:
+        out(part_reuse_line(res))
     return (render_quiet if args.quiet else render)(res, out=out)
 
 

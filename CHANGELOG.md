@@ -55,6 +55,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   ends in its base name, and a left-out directory when it is that directory or a path under it.
   A step naming the plan by path, or by base name after a `cd`, is still measured every time, and
   a command that cannot be split into words is treated as naming one, with that reason printed.
+- **A recorded gate measures again only the steps that grade the plan.** A gate holding an entry
+  that names the manifest, a shard or the ledger was measured whole on every run, so a validator
+  beside a sweep paid for the sweep twice. Now only the entries naming such a path run; every
+  other entry repeats from the newest run that measured it on the same tree and gate, as a whole
+  gate already did. The row says which steps were repeated and from which run (`reusedFrom` on
+  each copied step, `verdictSource: part-reused` on the row), keeps no duration for a copied
+  step, and its verdict is the worse of the two halves - so a red step is repeated as red rather
+  than measured again until it comes back green. The run prints a line naming the repeated and
+  the measured steps with their times; a gate naming no such path, and `--no-reuse`, behave as
+  before.
 
 ## [3.9.0]
 

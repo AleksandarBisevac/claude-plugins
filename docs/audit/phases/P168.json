@@ -625,7 +625,7 @@
     {
       "id": "P168.9-icj",
       "title": "Wave members in the drive's suite each write a mark file of their own, so a case cannot lose a line to two children appending at once",
-      "status": "in_progress",
+      "status": "done",
       "description": "A CI run on Windows went red on one case of the drive's suite: a wave whose two members each run a command expects both members' marks and found one. The loop's own answer was right (it finished, and asked for the next step twice). The fixture is what lost the line: every wave member's child opens one shared file in append mode and the members run at the same time, and on Windows an append is a seek followed by a write, so two children can write at the same offset and one line replaces the other. That reading comes from the fixture's code, not from a probe; if you can show it on this machine (two processes appending in a tight loop will not show it on a POSIX system, so say so if you cannot), do; otherwise fix the shape, which is wrong either way. Give each member that runs concurrently a mark file of its own and read them together: the helper that reads the marks takes the directory or the list of files and returns the same list of lines the cases compare today, so the cases' expectations do not change. Apply it to every case in this suite that hands one mark file to commands that run at the same time, and leave alone the cases whose commands run one after another, where one file is right and its order is what the case asserts. Say in the helper's docstring which cases need which. This changes a test fixture only; nothing under plugins/ changes. Dependants you answer for: every case in the suite that reads marks (they must keep asserting what they assert, by value); the staged table of the suite, since the sweep runs its blocks apart and a helper moved between blocks must still be reachable from each. Acceptance: (1) no case hands one file to two commands that run at the same time; (2) the case that failed asserts both marks from two files; (3) every case that read marks before still passes with unchanged expectations; (4) the suite's case count does not drop.",
       "files": [
         "tests/test_drive_phase.py"
@@ -648,16 +648,58 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "3e55c8d49b87",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Only tests/test_drive_phase.py changes; nothing under plugins/. (1) _auto_marks(where) now takes one mark file, a list of them, or a directory holding one per child, and returns their lines in file-name order, each file in write order. The old file reader became _auto_mark_lines. Its docstring says which cases need which: every case of _auto_cases, and au36/au37, run their commands one after another and share one file, whose order they assert; au30, au30b and au31 are wave members started together by auto_run, so each gets a file of its own. (2) _auto_wave_member treats `marks` as a directory and gives each member <dir>/<subject>.log. (3) _auto_clear also empties a directory of mark files. (4) _auto_wave_cases now makes root/marks as a directory for the wave members and root/marks.log (`serial`) for au36/au37, which run one command per step. (5) au31 still asserts sorted marks == ['0 first', '0 second'] by value, and now also that P1.1's file holds ['0 first'] and P1.2's holds ['0 second']. (6) New case au31c reads the mark paths off the wave step's own `runs`, by shlex-splitting each command and taking argv[3], and asserts two distinct files whose marks read together are the two the wave wrote. Every other case keeps its expectations unchanged. Class sweep (every append-mode child script in the suite): WS_LOG (_WRITER_STUB) is written by sessions run one at a time via subprocess.run, both in _play_session and in _auto_process. Each _auto_real_cases repo has a single task. DRIVE_CWD_LOG (_CWD_LOG) is written only by P1.1's gate under a serial `next` loop. LP_PROBE_LOG has one probe per run. owner.log is per tree. All were left alone because their writers do not run at the same time. Reproduction: two python processes each appending 3000 lines to one file with open(...,'a') kept 6000 of 6000 lines, in two rounds two seconds apart, because O_APPEND is atomic on macOS. So the Windows lost line is not shown on this machine; the fix was made on the fixture's shape. Gate: `python3 tools/sweep-selftests.py tests/test_drive_phase.py` exit 0, '1/1 files ok, 1009 cases'. Direct run `--selftest --stage au30-block --stage au-block`: exit 0, 'ALL PASS: 24/24 cases passed', au31c among them. ruff check tests/test_drive_phase.py exit 0. Dependants: tests/test_drive_without_model.py imports _Env, _base_mark, _base_measure_repo and others, none changed; a grep of tests, tools, plugins and .github finds the _auto_* mark helpers only in this file, so it is still correct. tests/test_stamp_verification.py uses _actions, unchanged, so still correct. The staged table is unchanged: au-block and au30-block each reach the helpers at module level, and the sweep's run of every block passed. .github/sweep-costs.json, ci.yml, drive-phase.py, tests/test__runner_output.py, tests/test_run_test_gate.py and tools/affected.py name this file by path only; its path and its block labels are unchanged, so all are still correct.",
+        "descriptive": "The wave cases in the drive suite give each concurrent member its own mark file, so two children appending at once can no longer lose a line and turn au31 red on Windows."
       },
       "startedAt": "2026-11-18T07:28:43Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T08:07:29Z",
+      "verifiedBy": [
+        "au31 now asserts each wave member's mark from its own file (P1.1 -> ['0 first'], P1.2 -> ['0 second']) as well as the combined marks by value",
+        "au31c: the two members of a concurrent wave are handed two distinct mark files, read off the step's own runs, and those files together hold both marks"
+      ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T07:35:05Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 376000,
+            "startedAt": "2026-11-18T07:28:49Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T07:59:59Z.a41de3",
+            "kind": "wait",
+            "ms": 8000,
+            "startedAt": "2026-11-18T07:54:39Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T07:59:59Z.a41de3, ending at its startedAt",
+            "kind": "selection",
+            "ms": 14213,
+            "runId": "2026-11-18T07:59:59Z.a41de3",
+            "startedAt": "2026-11-18T07:54:47Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T07:59:59Z.a41de3",
+            "kind": "gate",
+            "ms": 297029,
+            "runId": "2026-11-18T07:59:59Z.a41de3",
+            "startedAt": "2026-11-18T07:55:02Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-18T08:07:19Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 47000,
+            "startedAt": "2026-11-18T08:06:32Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 3e55c8d49b87",
+            "kind": "commit",
+            "ms": 1565,
+            "startedAt": "2026-11-18T08:07:26Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T07:28:43Z"
       },
       "reviewPerTask": "signals",
@@ -665,6 +707,17 @@
         "runId": "2026-11-18T08:06:31Z.22793b",
         "status": "passed",
         "at": "2026-11-18T08:06:31Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "3e55c8d49b87",
+        "at": "2026-11-18T08:07:29Z",
+        "return": "docs/audit/evidence/returns/P168.9-icj/20261118T072843Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "Regression task with tests.expectRedFirst false, and what was wrong was the fixture, not the driver. HEAD's driver plus this test file is the shape that already passes, so a red-first run at HEAD has no red to find. To show the new assertions can fail, I mutated a throwaway copy of tests/ in the scratchpad (plugins/ and tools/ symlinked), never the worktree. (a) _auto_wave_member pointed every member at one shared marks/shared.log: --stage au30-block exit 1, 'FAIL au31 FAIL au31c', 'SELFTEST FAILED: 7/9 cases passed'. (b) _auto_marks with its directory branch removed: exit 1, 'FAIL au31', '8/9 cases passed'. Purged __pycache__ before each run; the copy was then removed.",
+        "at": "not run through the helper; the mutation runs were made 2026-11-18 in the scratchpad copy"
       }
     },
     {

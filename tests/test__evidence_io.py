@@ -2633,6 +2633,82 @@ def _step_mean_cases(check, cost_rows):
           verdicts == (True, (2000, 2)) and none_left == (True, None))
 
 
+def _part_repeat_cases(check):
+    """(prt) a row whose steps are part repeated: a repeated step is no time
+    this run spent and no run of that step, the writer keeps which run it came
+    from, and such a row is a source for the steps it measured and for no
+    other. The word is spelled as the ledger holds it, as a row on disk is the
+    contract."""
+    key = "1:sha256:part"
+    ids = {"phaseId": "P1"}
+    measured = {"runId": "R-measured", "ts": "2026-01-01T00:00:00Z",
+                "scope": "phase", "phaseId": "P1", "status": "passed",
+                M.REUSE_KEY: key,
+                "steps": [{"name": "tree", "exit": 0, "durationMs": 1000},
+                          {"name": "plan", "exit": 0, "durationMs": 100}]}
+    # The repeated step still carries a duration, as a row a hand or an older
+    # writer produced might: the reader must not count it either way.
+    part = {"runId": "R-part", "ts": "2026-01-02T00:00:00Z",
+            "scope": "phase", "phaseId": "P1", "status": "passed",
+            M.REUSE_KEY: key, M.VERDICT_SOURCE: "part-reused",
+            "reusedFrom": {"runId": "R-measured"},
+            "steps": [{"name": "tree", "exit": 0, "durationMs": 1000,
+                       "reusedFrom": {"runId": "R-measured",
+                                      "ts": "2026-01-01T00:00:00Z"}},
+                      {"name": "plan", "exit": 0, "durationMs": 120}]}
+    rows = [measured, part]
+    tree_mean = _harness.attempt(lambda: M.gate_mean_ms(rows, ["tree"]))
+    plan_mean = _harness.attempt(lambda: M.step_mean_ms(rows, "plan"))
+    tally = _harness.attempt(lambda: M.gate_tally(rows, "tree"))
+    check("prt1 a repeated step's duration is not time the run that repeated "
+          "it spent: the tree step's mean is its one measurement - not the same "
+          "figure counted twice - while the plan step, measured by both rows, "
+          "is the mean of both; and a repeat is no run of the step in its "
+          "tally: %r / %r / %r" % (tree_mean, plan_mean, tally),
+          tree_mean == (True, (1000, 1)) and plan_mean == (True, (110, 2))
+          and tally == (True, (1, 0)))
+
+    written = _harness.attempt(lambda: M.row_for(
+        "/nonexistent-project", {
+            "status": "passed", "durationMs": 120,
+            M.VERDICT_SOURCE: "part-reused",
+            "steps": [{"name": "tree", "exit": 0, "durationMs": 1000,
+                       "reusedFrom": {"runId": "R-measured",
+                                      "ts": "2026-01-01T00:00:00Z",
+                                      "extra": "dropped"}},
+                      {"name": "plan", "exit": 0, "durationMs": 120}]},
+        "phase", ids, {"runId": "R-new"}))
+    steps = (written[1] or {}).get("steps") if written[0] else None
+    check("prt2 the writer keeps, step by step, which run a repeated step came "
+          "from - and no duration for it, since this run spent none - while a "
+          "measured step keeps its own: %r" % (steps,),
+          isinstance(steps, list) and len(steps) == 2
+          and steps[0].get("reusedFrom") == {"runId": "R-measured",
+                                              "ts": "2026-01-01T00:00:00Z"}
+          and "durationMs" not in steps[0]
+          and steps[1].get("durationMs") == 120
+          and "reusedFrom" not in steps[1]
+          and (written[1] or {}).get(M.VERDICT_SOURCE) == "part-reused")
+
+    def source(rows_in, steps_in):
+        got = _harness.attempt(lambda: M.reusable_run(
+            rows_in, "phase", ids, key, frozenset(("passed", "failed")),
+            steps=steps_in))
+        return got if not got[0] else (True, (got[1] or {}).get("runId"))
+    for_tree = source(rows, ["tree"])
+    for_plan = source(rows, ["plan"])
+    whole = source(rows, None)
+    unknown = source(rows, ["lint"])
+    check("prt3 a part-repeated row is a source for the steps it MEASURED and "
+          "for no other: the tree step it repeated reaches past it to the run "
+          "that measured it, the plan step it measured is taken from it, a "
+          "whole-run repeat never takes it, and a step no candidate measured "
+          "is no repeat at all: tree=%r plan=%r whole=%r unknown=%r"
+          % (for_tree, for_plan, whole, unknown),
+          for_tree == (True, "R-measured") and for_plan == (True, "R-part")
+          and whole == (True, "R-measured") and unknown == (True, None))
+
+
 def _pin_suite_cases(check):
     """(ps) one tracked path for a runner's spelling, and the one own-miss
     reading every third-place reader shares."""
@@ -4639,6 +4715,7 @@ def _selftest():
     def body(check):
         _cases(check)
         _foreground_bound_cases(check)
+        _part_repeat_cases(check)
         _selection_time_cases(check)
         _base_scope_cases(check)
         _claimed_followers_cases(check)

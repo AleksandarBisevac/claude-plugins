@@ -5401,6 +5401,7 @@ def _cases(check):
     # So the cases skip, and say so. Weakening them into something that passes
     # on both would mean asserting a `cancelled` row nothing cancelled.
     _harness.stage(check, "ru0 the verdict-reuse block", _reuse_cases)
+    _harness.stage(check, "pr0 the part-repeat block", _part_reuse_cases)
     _harness.stage(check, "ur0 the unrecorded-run block", _unrecorded_cases)
     _harness.stage(check, "nv0 the no-verdict block", _no_verdict_cases)
     _harness.stage(check, "ce0 the empty-and-retry block",
@@ -8572,6 +8573,200 @@ def _reuse_cases(check):
           and "GATE VERDICT REUSED" in after_text
           and (landed.get("reusedFrom") or {}).get("runId")
           == seeded.get("runId"))
+
+
+def _part_reuse_cases(check):
+    """A gate holding a step that grades the TREE and a step that grades the
+    PLAN repeats the first and measures the second.
+
+    The plan is among the paths the content identity leaves out, so an entry
+    naming it cannot be repeated - but the step beside it can, and measuring it
+    again only because a sibling names the plan is the cost these cases pin
+    down. Each step appends its name to an ignored log file, so how often each
+    one RAN is counted from the commands themselves rather than read off the
+    row the runner writes about them; the tree step sleeps, so a duration
+    copied from the run it repeats is visible in the row's own figure.
+
+    The word `part-reused` is spelled here as the ledger holds it: a row on disk
+    is the contract, so the fixture does not borrow the module's constant.
+    """
+    root = _harness.fixture_root("run-test-gate-part-reuse-")
+    os.makedirs(os.path.join(root, "docs", "audit", "phases"))
+    os.makedirs(os.path.join(root, ".claude"))
+    os.makedirs(os.path.join(root, "src"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    sources = {
+        ".gitignore": "runs.log\n",
+        "src/a.py": "declared = 1\n",
+        "tree.py": ("import sys\nimport time\n"
+                    "with open('runs.log', 'a') as fh:\n"
+                    "    fh.write('tree\\n')\n"
+                    "time.sleep(1.0)\n"
+                    "with open('src/a.py') as fh:\n"
+                    "    sys.exit(1 if 'BROKEN' in fh.read() else 0)\n"),
+        "plan.py": ("import json\nimport sys\n"
+                    "with open('runs.log', 'a') as fh:\n"
+                    "    fh.write('plan\\n')\n"
+                    "with open(sys.argv[1]) as fh:\n"
+                    "    title = json.load(fh)['phases'][0]['title']\n"
+                    "sys.exit(1 if title == 'red' else 0)\n"),
+    }
+    for rel, body in sources.items():
+        with open(os.path.join(root, rel), "w") as fh:
+            fh.write(body)
+    mp = os.path.join(root, "docs", "audit", "audit-plan.json")
+    build = {"tree": "python3 tree.py",
+             "plan": "python3 plan.py docs/audit/audit-plan.json"}
+
+    def _plan(gate, title="one"):
+        """The index and the shard; the manifest is outside the identity, so
+        a title change moves nothing a repeat is keyed on."""
+        with open(mp, "w") as fh:
+            json.dump({"meta": {"version": 3, "buildCommands": build},
+                       "phases": [{"id": "P1", "title": title,
+                                   "shard": "phases/P1.json"}]}, fh)
+        with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
+                  "w") as fh:
+            json.dump({"id": "P1", "title": title, "status": "in_progress",
+                       "testGate": gate, "tasks": [
+                           {"id": "P1.1", "title": "t", "status": "in_progress",
+                            "files": ["src/a.py"]}]}, fh)
+
+    _plan(["tree", "plan"])
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
+    for arg in (["add", "--", ".gitignore", "docs", ".claude", "src", "tree.py",
+                 "plan.py"],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
+    evdir = os.path.join(root, "docs", "audit", "evidence")
+
+    def _runs():
+        """`(tree, plan)`: how many times each step's command really ran."""
+        path = os.path.join(root, "runs.log")
+        if not os.path.exists(path):
+            return 0, 0
+        with open(path) as fh:
+            said = fh.read().split()
+        return said.count("tree"), said.count("plan")
+
+    def _run(*extra):
+        lines = []
+        code = M.main([mp, "P1", "--project-dir", root, "--record"]
+                      + list(extra), out=lines.append)
+        return code, "\n".join(lines), _recorded_rows(evdir)[-1]
+
+    def _step(row, name):
+        return next((s for s in row.get("steps") or []
+                     if s.get("name") == name), {})
+
+    def _source(row, name):
+        return (_step(row, name).get("reusedFrom") or {}).get("runId")
+
+    code_a, _text_a, row_a = _run()
+    code_b, text_b, row_b = _run()
+    after_b = _runs()
+    check("pr1 THE REQUIREMENT: asked twice over an unchanged tree, the step "
+          "grading the tree runs ONCE and the step naming the plan runs TWICE; "
+          "the second row is `part-reused`, keeps both steps in declared order, "
+          "and names the first run as the source of the repeated step and of "
+          "nothing else: runs=%r exit=%r/%r source=%r row=%r"
+          % (after_b, code_a, code_b, row_b.get("verdictSource"),
+             [(s.get("name"), s.get("reusedFrom")) for s in row_b["steps"]]),
+          code_a == M.E_OK and code_b == M.E_OK
+          and after_b == (1, 2)
+          and row_a.get("verdictSource") is None
+          and row_b.get("verdictSource") == "part-reused"
+          and [s.get("name") for s in row_b["steps"]] == ["tree", "plan"]
+          and _source(row_b, "tree") == row_a["runId"]
+          and "reusedFrom" not in _step(row_b, "plan")
+          and (row_b.get("reusedFrom") or {}).get("runId") == row_a["runId"]
+          and row_b.get("status") == "passed")
+    check("pr2 ...and the run SAYS so on a line of its own - not the whole-run "
+          "repeat banner, which would claim nothing ran - naming the source run, "
+          "the repeated step and the measured one, and still ends on the green "
+          "banner an orchestrator keys on: %r" % (text_b[-900:],),
+          "GATE VERDICT REUSED" not in text_b
+          and ("repeated from run %s" % (row_a["runId"],)) in text_b
+          and "measured here: plan" in text_b
+          and "GATE GREEN" in text_b)
+    tree_took = _step(row_a, "tree").get("durationMs")
+    check("pr3 A REPEATED STEP'S DURATION IS NOT TIME THIS RUN SPENT: the row's "
+          "durationMs is below what the repeated step took when it was "
+          "measured, and the repeated step carries no durationMs of its own: "
+          "measured tree=%r row=%r repeated step=%r"
+          % (tree_took, row_b.get("durationMs"), _step(row_b, "tree")),
+          isinstance(tree_took, int) and tree_took >= 1000
+          and isinstance(row_b.get("durationMs"), int)
+          and row_b["durationMs"] < tree_took
+          and "durationMs" not in _step(row_b, "tree"))
+
+    # THE PLAN ALONE TURNS RED: the identity cannot see it, the plan step can.
+    _plan(["tree", "plan"], title="red")
+    code_c, text_c, row_c = _run()
+    check("pr4 a manifest change that turns the plan step red records a RED "
+          "verdict, with the tree step still repeated from the first run: "
+          "runs=%r exit=%r status=%r failed=%r source=%r"
+          % (_runs(), code_c, row_c.get("status"), row_c.get("failed"),
+             _source(row_c, "tree")),
+          _runs() == (1, 3) and code_c == M.E_FAIL
+          and row_c.get("status") == "failed"
+          and row_c.get("failed") == ["plan"]
+          and row_c.get("verdictSource") == "part-reused"
+          and _source(row_c, "tree") == row_a["runId"]
+          and "GATE RED: plan" in text_c)
+
+    # A DECLARED FILE CHANGES: the identity moves and nothing may be repeated.
+    _plan(["tree", "plan"])
+    with open(os.path.join(root, "src", "a.py"), "w") as fh:
+        fh.write("declared = 'BROKEN'\n")
+    code_d, _text_d, row_d = _run()
+    check("pr5 an edit to a declared file MEASURES BOTH STEPS - the tree step "
+          "runs again and nothing on the row is repeated: runs=%r exit=%r "
+          "source=%r failed=%r"
+          % (_runs(), code_d, row_d.get("verdictSource"), row_d.get("failed")),
+          _runs() == (2, 4) and code_d == M.E_FAIL
+          and row_d.get("verdictSource") is None
+          and not any("reusedFrom" in s for s in row_d.get("steps") or [])
+          and row_d.get("failed") == ["tree"])
+
+    code_e, text_e, row_e = _run()
+    check("pr6 A RED IS REPEATED AS RED: asked again with no change, the tree "
+          "step that failed is not measured a second time - so a second reading "
+          "cannot come back green and replace a red nobody was shown - and the "
+          "row stays failed, naming the run that measured the red: runs=%r "
+          "exit=%r failed=%r source=%r"
+          % (_runs(), code_e, row_e.get("failed"), _source(row_e, "tree")),
+          _runs() == (2, 5) and code_e == M.E_FAIL
+          and row_e.get("status") == "failed"
+          and row_e.get("failed") == ["tree"]
+          and _source(row_e, "tree") == row_d["runId"]
+          and "GATE RED: tree" in text_e)
+
+    code_f, _text_f, row_f = _run("--no-reuse")
+    check("pr7 `--no-reuse` MEASURES EVERY STEP, the tree step included, and "
+          "its row repeats nothing: runs=%r exit=%r source=%r"
+          % (_runs(), code_f, row_f.get("verdictSource")),
+          _runs() == (3, 6) and code_f == M.E_FAIL
+          and row_f.get("verdictSource") is None
+          and not any("reusedFrom" in s for s in row_f.get("steps") or []))
+
+    # THE ALLOW CASE: a gate with no plan-grading step is untouched.
+    _plan(["tree"])
+    _run()
+    code_h, text_h, row_h = _run()
+    check("pr8 a gate with NO plan-grading step repeats as a whole, as before: "
+          "the tree step runs once for two asks, the row is `reused` with no "
+          "steps, and the summary opens with the whole-run banner: runs=%r "
+          "exit=%r source=%r"
+          % (_runs(), code_h, row_h.get("verdictSource")),
+          _runs() == (4, 6) and code_h == M.E_FAIL
+          and row_h.get("verdictSource") == _ev_io.REUSED
+          and row_h.get("steps") == []
+          and "GATE VERDICT REUSED" in text_h
+          and "measured here:" not in text_h)
 
 
 _KILLERS = ("kill", "killpg", "terminate", "send_signal", "tear_down",

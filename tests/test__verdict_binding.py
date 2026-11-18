@@ -180,6 +180,32 @@ def _cases(check):
         check("vb7 SECOND DIRECTION: a repeat whose source is gone is refused: %r"
               % (got["sentence"],),
               got["state"] == "refused" and "not in the ledger" in got["sentence"])
+        # A ROW WHOSE STEPS ARE PART REPEATED: it took its own reading of the
+        # tree, so it binds as a measured row does, and the sentence that
+        # binds it says which steps it repeated and from which run. Spelled as
+        # the ledger holds it.
+        two = _measured(base, "R1", "2026-09-01T00:00:00Z",
+                        steps=("tree", "plan"))
+        part = dict(_measured(base, "R5", "2026-09-05T00:00:00Z",
+                              steps=("tree", "plan")),
+                    reusedFrom={"runId": "R1"})
+        part[_evidence_io.VERDICT_SOURCE] = "part-reused"
+        part["steps"][0]["reusedFrom"] = {"runId": "R1",
+                                          "ts": "2026-09-01T00:00:00Z"}
+        _project(base, [two, part])
+        got = _bind(base, mpath, entries=("tree", "plan"))
+        check("vb36 a commit binds to a PART-REPEATED row as to a measured one - "
+              "the row itself is what measured the tree - and the sentence "
+              "names the repeated step and the run it came from: %r"
+              % (got["sentence"],),
+              got["state"] == "bound" and got["measured"]["runId"] == "R5"
+              and got["row"]["runId"] == "R5"
+              and "tree repeated from run R1" in got["sentence"])
+        _project(base, [two])
+        got = _bind(base, mpath, entries=("tree", "plan"))
+        check("vb37 SECOND DIRECTION: a row that repeated nothing binds with no "
+              "such clause: %r" % (got["sentence"],),
+              got["state"] == "bound" and "repeated from" not in got["sentence"])
         _project(base, [row], files="a = 2\n")
         got = _bind(base, mpath)
         check("vb8 changed declared files refuse the verdict: %r" % (got["sentence"],),

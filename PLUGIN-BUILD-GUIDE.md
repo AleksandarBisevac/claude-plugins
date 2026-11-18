@@ -3935,6 +3935,15 @@ their shape end to end: an unknown tree stays `None` rather than flattening to t
 truthy reader would call clean, and a step's `ran` keeps its `None` rather than vanishing into
 "absent", which a reader could mistake for zero.
 
+**A step can repeat another run's measurement.** On a `part-reused` row (`PART_REUSED`, the third
+`verdictSource` word beside `reused` and absent), a copied step carries `reusedFrom`
+(`STEP_REUSED_KEY`, kept to `runId` and `ts`) and `_step` writes no `durationMs` for it.
+`step_repeated()` is the one reading of that key: `_gate_cost_walk` and `_matching_steps` skip such a
+step, so `gate_mean_ms`, `step_mean_ms`, `gate_cost_ms` and the tallies count a step's time and its
+run once, on the row that measured it. `reusable_run(..., steps=names)` finds the newest row that
+measured every named step - a `part-reused` row qualifies for the steps it measured, never for a
+whole-run repeat - and `measured_row()` returns a `part-reused` row itself, since it read the tree.
+
 **`read_rows()` counts what it lost.** A torn line is skipped *and* counted, which is where this
 departs from `usage_ledger.read_ledger`'s silent `continue`: that is right for telemetry and wrong
 for evidence. It reports the file count too, because "no rows" and "no files" are different answers
@@ -4585,6 +4594,20 @@ is a directory on disk is not matched by its base name, so `-k journal` is no re
 journal. A command that cannot be split into words is reported as naming one, with
 `UNSPLITTABLE` as the reason (`left_out_line`), because the other guess repeats a verdict nobody
 measured.
+
+**It is the entry that is measured, not the whole gate.** `repeat_plan` splits the gate: the
+entries `grades_left_out` names run, and every other entry is repeated from the newest row that
+measured it — `_evidence_io.reusable_run(..., steps=...)`, the whole-run rule asked one step at a
+time, so a row that only copied a step is no source for it, a muted newest row is none, and a step
+that reached no verdict there is not copied. `part_reused_result` joins the two halves in declared
+order: each copied step carries `reusedFrom` (`STEP_REUSED_KEY`) and no `durationMs`, the row's
+`verdictSource` is `part-reused` (`PART_REUSED`) and its `reusedFrom` names the source run, and the
+verdict is the worse of the two — a repeated step that failed makes the run `failed`, so a red is
+repeated as red. The tree reading, `durationMs`, the counts and the mutes are the measured steps'
+alone; coverage and owed followers join the source's. The run prints `part_reuse_line` — no
+`GATE` word in it — then the step table, where a copied step reads `(repeated)`. With no step
+left to repeat, with no source row, or under `--no-reuse`, every entry is measured; a gate naming
+no left-out path repeats whole exactly as before.
 
 **`observations.countsBasis` is written here for the first time.** It has been copied into every
 evidence row by `_evidence_io.row_for` and rendered by the report and the panel since the ledger
@@ -5607,7 +5630,8 @@ first layer above `_evidence_io` (the ledger) and `_tree_stamp` (the digest), wh
 cannot hold it. `binding()` takes the subject's ids, the gate entries that measure it and their
 source, its declared files and the caller's own sentences, and answers `bound`, `no-gate` or
 `refused` with a sentence naming the run: the newest row for the subject, never the plan's
-pointer; a repeat graded through `reusedFrom`; a gate changed after the run; a red nothing
+pointer; a repeat graded through `reusedFrom`, while a `part-reused` row binds as measured and its
+sentence names the steps it copied and their run (`repeated_clause()`); a gate changed after the run; a red nothing
 retired; an unparseable line that could be the subject's; the digest with the recorder's paths
 left out on both sides. Every refusal carries the `arm` that produced it, and a close reads the
 arm rather than the sentence: `close_refusal()` refuses a close on every arm in

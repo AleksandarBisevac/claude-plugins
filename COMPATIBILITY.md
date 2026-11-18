@@ -304,6 +304,12 @@ current. Neither is legacy, and a mutating command does not nudge you off either
 - **The evidence row's `outcomeBasis` and `derivedGap` step keys are additive.** A row written
   before either existed carries neither key, which is the true reading for it, and a passed
   step's row is unchanged.
+- **The evidence row's `part-reused` `verdictSource` word and its step key `reusedFrom` are
+  additive.** A row whose gate repeated some steps and measured others says `part-reused`
+  beside the existing `reused` (and absent, which still means measured); each copied step
+  carries `reusedFrom` naming the run it repeats and no `durationMs`. A reader switching on
+  `verdictSource` needs a default arm that shows an unknown word as itself. A row written
+  before either existed carries neither, which is the true reading for it.
 - **The evidence row's `selectionMs` key is additive.** It is how long a recorded gate run
   spent choosing what to run before its first step. A row written before it existed carries
   none, which `_evidence_io.selection_ms` reads as not recorded, never as zero. `durationMs`

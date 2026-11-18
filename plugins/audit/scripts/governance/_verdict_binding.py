@@ -31,6 +31,9 @@ THE RULE, arm by arm, each with its sentence:
   * A newest row that is not `passed`: refused, naming it.
   * A repeated verdict is graded against the run that MEASURED it, through
     `reusedFrom`; a repeat whose source is gone from the ledger is refused.
+    A row that repeated only some steps (`_evidence_io.PART_REUSED`) read the
+    tree itself and is graded as measured; its sentence names the steps it
+    copied and their run (`repeated_clause`).
   * The declared work's digest, with the recorder's own paths left out on both
     sides, must match the row's - a changed LIST is told apart from changed
     CONTENT, and a question the tree cannot answer is said as that.
@@ -467,9 +470,31 @@ def binding(project, ids, entries, source, owns, manifest_path, record,
                            % (who, VERDICT_PASSED, run, mismatch, record))
         out["arm"] = ARM_GATE_CHANGED
         return out
-    return dict(out, **digest_binding(project, manifest_path, who, owns, config,
-                                      measured, run, record,
-                                      digest_root=digest_root))
+    answer = digest_binding(project, manifest_path, who, owns, config, measured,
+                            run, record, digest_root=digest_root)
+    # A ROW THAT REPEATED PART OF ITS GATE took its own reading of the tree and
+    # its digest, so it binds as a measured row does; what the sentence owes
+    # the reader is which of its steps it copied, and from which run.
+    clause = repeated_clause(measured)
+    if clause:
+        answer = dict(answer, sentence="%s (%s)" % (answer["sentence"], clause))
+    return dict(out, **answer)
+
+
+def repeated_clause(row):
+    """`"tree repeated from run R1, not run by it"` for the steps `row` copied
+    from other runs, in step order, consecutive steps from one run under one
+    clause - None when it copied none."""
+    by_run = []
+    for name, run_id in _evidence_io.repeated_step_sources(row):
+        if by_run and by_run[-1][0] == run_id:
+            by_run[-1][1].append(name)
+        else:
+            by_run.append((run_id, [name]))
+    if not by_run:
+        return None
+    return "; ".join("%s repeated from run %s, not run by it"
+                     % (", ".join(names), run_id) for run_id, names in by_run)
 
 
 def digest_binding(project, manifest_path, who, owns, config, measured, run,
