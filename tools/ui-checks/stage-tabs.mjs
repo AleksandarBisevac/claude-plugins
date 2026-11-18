@@ -5,8 +5,9 @@
  * WHY THESE FOUR TOGETHER. They were chosen by measurement, not by theme. Every
  * top-level declaration left in capture-screenshots.mjs was scanned for references
  * to the run's module state, and these four share exactly one footprint — `note`,
- * `fail`, `tabTo`, and (Appearance only) `shot`, plus `awaitConfirmDialog` for the
- * policy stage. Nothing else in the file has so small a surface for so many lines:
+ * `fail`, `tabTo`, and (Appearance only) `shot`, plus `awaitConfirmDialog` and
+ * `during` for the policy stage, whose saves go through confirm-write.mjs's
+ * helper. Nothing else in the file has so small a surface for so many lines:
  * 1023 of them, a quarter of what the orchestrator was carrying.
  *
  * THE DEPENDENCIES ARE A PARAMETER NOW, and that is the whole point of the move. In
@@ -26,6 +27,9 @@
 // what makes this file long: the reasoning is the part worth keeping next to the
 // assertion it justifies.
 
+// A confirmed write is read once the server has answered it, through the same
+// helper the tool uses; this module cannot import the tool, so both import it.
+import { confirmWrite, CONFIG_WRITE, CONFIRM_ANSWER_MS } from './confirm-write.mjs';
 
 /**
  * Overview is a filter, not a poster — so drive it.
@@ -762,7 +766,7 @@ export async function assertHelpDrawerWorks(page, declared, { note, fail, tabTo 
 
 export async function assertPolicyWorks(page, statePath,
                                         { note, fail, tabTo,
-                                          awaitConfirmDialog }) {
+                                          awaitConfirmDialog, during }) {
   await tabTo(page, 'policy');
   await page.waitForSelector('#policy .card', { timeout: 15000 });
   await page.waitForTimeout(250);
@@ -975,8 +979,20 @@ export async function assertPolicyWorks(page, statePath,
   } else {
     note(`policy: the dialog lists "${listed[0].join(' · ')}"`);
   }
-  await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(900);
+  await confirmWrite(page, 'policy', CONFIG_WRITE, during);
+  // The policy save toasts BEFORE it re-reads /api/policy and repaints, so the
+  // helper returning is not yet the repaint. POLICY is reassigned and the view
+  // redrawn in one synchronous run once the re-read lands, so a POLICY naming the
+  // denial is a page that has taken the server's answer; a refusal never re-reads
+  // and paints its findings box instead. A timeout here is not a pass: the read
+  // below then finds the old verdict, or the old file, and fails saying which,
+  // and that the page never took the re-read.
+  const repainted = await page.waitForFunction((name) =>
+    ((((POLICY || {}).stored || {}).skills || {}).deny || []).includes(name)
+    || !!document.querySelector('#policy .findings-slot .findings.err'),
+  subject.name, { timeout: CONFIRM_ANSWER_MS }).then(() => true, () => false);
+  const unrepainted = repainted ? ''
+    : ` - and the page never took the re-read of /api/policy within ${CONFIRM_ANSWER_MS} ms`;
 
   // The point of the whole flow: the file changed, and the verdict on screen is
   // the server's fresh answer about the file — not the client's guess about it.
@@ -991,12 +1007,12 @@ export async function assertPolicyWorks(page, statePath,
   }, subject.name);
   if (!after.stored.includes(subject.name)) {
     fail(`policy: after confirming, policy.skills.deny on disk is `
-       + `${JSON.stringify(after.stored)}`);
+       + `${JSON.stringify(after.stored)}${unrepainted}`);
   } else if (after.verdict !== 'violation' || !(after.basis || '').includes('deny')
              || after.pend || after.dirty) {
     fail(`policy: after saving, ${subject.name} still reads ${after.verdict} `
        + `("${after.basis}") with ${after.pend} pending cell(s) and ${after.dirty} `
-       + `unsaved change(s)`);
+       + `unsaved change(s)${unrepainted}`);
   } else {
     note(`policy: saved -> on disk, re-read, and the row now says violation`);
   }
@@ -1013,8 +1029,9 @@ export async function assertPolicyWorks(page, statePath,
   await page.waitForTimeout(200);
   await page.locator('#policy [data-psave]').click();
   await awaitConfirmDialog(page);
-  await page.locator('dialog.confirm [data-cfgo]').click();
-  await page.waitForTimeout(900);
+  // A refusal toasts after it has painted its findings box and re-reads nothing,
+  // so the helper returning is the whole answer.
+  await confirmWrite(page, 'policy (refused deny of audit:*)', CONFIG_WRITE, during);
   const refused = await page.evaluate(async () => {
     const p = await api('GET', '/api/policy');
     return { deny: ((p.stored || {}).skills || {}).deny || [],

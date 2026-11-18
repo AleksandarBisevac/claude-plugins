@@ -340,7 +340,7 @@
     {
       "id": "P168.3",
       "title": "The drive reads a background gate's own verdict back, says what was measured again and why, and its fixtures drive a gate that grades the plan",
-      "status": "in_progress",
+      "status": "done",
       "description": "The drive reads a background gate back by asking the recorded gate again, and prints that the run did not repeat on this tree whenever the reuse banner is missing, whatever the reason; its comments say a second ask on the same content measures nothing, which was false for every gate holding a plan-grading entry. The same happens to the phase gate at sign-off, which was measured whole a second time. Worse than the time, a read-back that measures again can replace the verdict the drive handed out: a background run that came back red was followed by a green second run on the same identity, and the task closed with the red never shown. The verdict of the run the drive launched is the one it acts on: a red background run goes to the base measurement and the decision exactly as an inline red does, for a task gate and for the phase gate alike. With repeats decided per step, the read-back line names what was repeated and what was measured again, with the measured steps' names and seconds, and says did not repeat only when a tree-grading step was measured again, with the reason the gate printed. The comments state what the code now does. The drive's gate fixtures use true and false as the gate, so the drive never met a plan-grading entry: add fixtures whose gate holds one. Dependants you answer for: the decision table and every step text in tests/test_drive_phase.py; the cases that require exactly one task-gate call carrying the reuse banner after a background run; the prompt hook and the orchestrator, which read the signal line and the did lines; the stage record the previous phase added, where a read-back that measured steps is a gate stage of its own with its real length and a fully repeated one adds none. Do not edit plugins/audit/reference/orchestrator.md. Acceptance: (1) a background gate holding a sweep and the manifest validator, read back with no change, leaves one measured sweep in the ledger and a read-back line naming the validator as measured again with its seconds; (2) the same after an edit to a declared file says the tree did not repeat and names the gate's own reason; (3) a gate of true alone reads back with the existing banner and the existing line; (4) a background run that came back red is read back as red and reaches the gate-red decision, with no second measurement between; (5) the phase gate at sign-off is read back the same way, with its tree-grading steps not measured again; (6) the task's timing holds one gate stage for the background run and one short one for the read-back in case (1), and one in case (3).",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -368,14 +368,22 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "c56ea741f798",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: read_back acts on the launched run's verdict. A `failed` background row is turned into the red by the new recorded_red (GATE RED line of the row's failed steps, each step's failing lines, `evidence: recorded <run>`, plus a did clause `<label> red read back from run X, not asked again`), with no gate asked again, so it reaches base_reading_for/gate_red_decision (task) and red_gate_stop (phase) as an inline red does. A `passed` row is still asked again through repeat(), and the new repeat_said reads the row that ask recorded: None on GATE VERDICT REUSED (whole repeat, existing line). Otherwise `<label> read back from run X: <repeated> repeated, not run again - measured again: <step> (N.N s)`, or `... did not repeat on this tree - <reason> - measured again: ...` only when a measured step is not named by the runner's left-out line (GATE_LEFT_OUT, mirrored from run-test-gate.left_out_line). The reason is repeat_reason over the reuseKey both rows recorded (moved / none recorded with its reuseBasis / same identity). New GATE_PASSED. Comments fixed: the background-gate block comment, base_gate, background_gate and read_back docstrings. tests/test_drive_phase.py: new rd-block (_readback_cases + _readback_phase_cases) with fixtures whose gate holds a sweep (rb_tree.py, sleeps, reads src/f1.txt, `strict` red on any change) beside a validator naming docs/audit/audit-plan.json, each appending to an ignored log so runs are counted from the commands. bg3 updated (a red background run makes no task-gate call), bi7 updated (red row read back with no gate call, names its run), _background_gate_cases docstring updated. PLUGIN-BUILD-GUIDE.md drive-phase section and CHANGELOG Fixed entry restate the same. Gate: `python3 tools/sweep-selftests.py tests/test_drive_phase.py` exit 0, `1/1 files ok, 1016 cases`. Also ran (not owed): tests/test_drive_without_model.py 74, tests/test__deps.py 284, tests/test__output_lints.py 183 cases, sweep exit 0; ruff on both .py files: All checks passed. Mutation probe on a scratch copy (task tree never written; anchor count asserted 1 per row; pycache purged), stages rd/bg/bi: baseline 31/31; recorded_red skipped -> bg3 bi7 rd4 rd7; over-fire (green read as red) -> bg3g rd1-rd7; no left-out step -> rd1 rd5; every step left-out -> rd2; no clause -> rd1 rd2 rd5; whole repeat says a clause -> rd3. DEPENDANTS: test_drive_without_model.py imports _Env/_base_mark/_base_measure_repo, unchanged, its suite green. .github/sweep-costs.json has no figure for the new rd-block, so it is weighed by the suite's figure over its blocks; not edited (outside files). ci.yml, tools/affected.py, test__runner_output, test_run_test_gate, test_stamp_verification (_actions): no name they use changed. drive-phase.py importers (hooks/drive-without-model.py, _worktrees, test__filed_returns, test__invariants, test__worktrees, test_audit_lookup, test_audit_status, test_commit_task_work): no signature removed or changed, only functions added and read_back's red arm. The prompt hook and orchestrator read the signal and did lines, and neither keys on `did not repeat`/`measured again`: grep over plugins/audit/{README.md,reference,commands,hooks,agents} finds none. The did clauses hold no ` | ` and no `; `. Prose naming decide-gate-red/gate-red etc. in README/execute-task/orchestrator.md is still correct: decision names are unchanged. orchestrator.md not edited. Stage record: a read-back that measured steps queues its own part-reused row with its real length, and a whole repeat or a red read back adds none, since gate_row_read reaches the already-queued row (rd6, rd3; tm6 green). PLUGIN-BUILD-GUIDE/CHANGELOG lints green under test__deps. LEFT, outside this task's files: run-test-gate.py prints no line of its own when a repeat lookup misses, so the `did not repeat` reason is read off the two rows' recorded identities rather than off a printed line.",
+        "descriptive": "A background gate's red is now the verdict the drive acts on, with no second ask. A green read-back says which steps it repeated and which it measured again, with their seconds, instead of always saying it did not repeat."
       },
       "startedAt": "2026-11-18T08:08:16Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T08:48:14Z",
+      "verifiedBy": [
+        "rd1: a background gate (sweep + manifest validator) read back unchanged runs the sweep once and the validator twice, one measured sweep in the ledger, and the did clause names the validator measured again with seconds and the sweep repeated, never `did not repeat`",
+        "rd6: that task's timing holds two gate stages, the background run's and a shorter one for the read-back",
+        "rd2: the same after an edit to the declared file says run X did not repeat on this tree, names the sweep with seconds and gives the identity-moved reason",
+        "rd3: a gate of `true` alone reads back with one banner-carrying call, the plain green did-line, no read-back clause, one gate stage",
+        "rd4: a red background run reaches decide gate-red with no task gate call between, each step having run once, and the did clause says red read back from run X",
+        "rd5: the phase gate at sign-off, backgrounded, is read back with the sweep not measured again and the validator named with seconds, and the phase lands",
+        "rd7: a red background phase gate is the red stop with no phase gate call after it"
+      ],
       "notes": [
         {
           "at": "2026-11-18T06:46:35Z",
@@ -384,7 +392,46 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T08:36:48Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1705000,
+            "startedAt": "2026-11-18T08:08:23Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T08:45:09Z.8214c6",
+            "kind": "wait",
+            "ms": 9000,
+            "startedAt": "2026-11-18T08:37:01Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T08:45:09Z.8214c6, ending at its startedAt",
+            "kind": "selection",
+            "ms": 22929,
+            "runId": "2026-11-18T08:45:09Z.8214c6",
+            "startedAt": "2026-11-18T08:37:10Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T08:45:09Z.8214c6",
+            "kind": "gate",
+            "ms": 455721,
+            "runId": "2026-11-18T08:45:09Z.8214c6",
+            "startedAt": "2026-11-18T08:37:33Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-18T08:47:45Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 128000,
+            "startedAt": "2026-11-18T08:45:37Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit c56ea741f798",
+            "kind": "commit",
+            "ms": 1473,
+            "startedAt": "2026-11-18T08:48:11Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T08:08:16Z"
       },
       "reviewPerTask": "signals",
@@ -392,12 +439,24 @@
         "runId": "2026-11-18T08:45:34Z.d66f34",
         "status": "passed",
         "at": "2026-11-18T08:45:34Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "c56ea741f798",
+        "at": "2026-11-18T08:48:14Z",
+        "return": "docs/audit/evidence/returns/P168.3/20261118T080816Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-18T08:36:46Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with failing cases bg3 (house FAIL), rd1 (house FAIL), rd2 (house FAIL), rd4 (house FAIL), rd5 (house FAIL), rd7 (house FAIL), bi7 (house FAIL), but the fix run could not be made: the run timed out after 148 s and its process group was torn down - SELFTEST FAILED: 1009/1016 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P168.4",
       "title": "An entry the project leaves to the phase gate is not run by a task's recorded gate, and the row says which were left and why",
-      "status": "pending",
+      "status": "in_progress",
       "description": "executor.phaseGateOnly names gate commands that belong to the phase gate. It reaches only the writer's prompt today: the recorded task gate still runs them, and on this repository's own tasks the two browser checks it names were about two thirds of a task gate's time. Make one reading of the setting serve both: an entry of a task's gate that matches it, and that the phase's own gate also holds, is left out of the task's recorded run; the row lists each entry left out with the setting as its basis, the run prints them, and the gate's identity is taken over the entries that ran. An entry that matches but is absent from the phase's gate is run, with a line saying it would otherwise run nowhere. A task whose every entry is left out is not an empty gate that passes: it records the existing no-checks outcome with the reason. The phase gate itself ignores the setting. The setting's schema description, the config reference and COMPATIBILITY.md state the wider meaning; this is a change to what a read key does, so it goes into the major section. Dependants you answer for: the writer brief's existing reading of the setting in audit-lookup.py, which must come from the same function; the drive's own view of a task's gate steps, which must agree with the recorder's or the background decision and the step text name entries that will not run; the affected selection, whose already-wide test compares a task's entries with the phase's; the reuse identity; the panel's settings page and the doctor, which describe the key; verify-invariants' check that a done task's gate ran. Acceptance: (1) a task gate of a sweep and a browser check, with the browser check named by the setting and present in the phase gate, runs the sweep alone and its row lists the browser check as left to the phase gate; (2) the same with the browser check absent from the phase gate runs both and says why; (3) a task gate holding only left-out entries records no-checks, never passed; (4) with the setting absent or empty every row and every printed line is byte for byte as before; (5) the phase gate runs every entry whatever the setting says; (6) the writer's brief and the recorded run name the same entries as left out.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -412,7 +471,14 @@
         "COMPATIBILITY.md",
         "README.md",
         "PLUGIN-BUILD-GUIDE.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/_verdict_binding.py",
+        "tests/test__verdict_binding.py",
+        "plugins/audit/README.md",
+        "plugins/audit/scripts/panel/_panel_settings.py",
+        "tests/test__panel_settings.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -434,14 +500,14 @@
       "dependsOn": [
         "P168.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T08:48:48Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -469,8 +535,27 @@
           "at": "2026-11-18T06:46:36Z",
           "text": "it quotes a manifest sentence of COMPATIBILITY.md, which this task does not edit",
           "waives": "tests/test__manifest_phases.py"
+        },
+        {
+          "at": "2026-11-18T08:53:14Z",
+          "text": "it quotes one table row of the plugin README about the high-risk decision step, and this task edits the config reference row for executor.phaseGateOnly and leaves that row alone",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T08:53:17Z",
+          "text": "Scope widened after the executor's hand-back (2026-11-18): _evidence_io.py and _verdict_binding.py with their suites, plugins/audit/README.md (the config reference row lives there; the root README stays declared but owes nothing unless it names the key), and the panel's settings help text with its suite. Decisions for the re-dispatch: (1) one matcher in _config_rules.py, called by the writer brief, the recorder and the drive's view of a task's steps; (2) the gate digest is taken over the full declared list and the row carries the entries left out, each with the setting as its basis, and the verdict binding reads that key as part of the declaration, so a row with one step fewer for that reason binds and a row with a step missing for any other reason still does not; (3) the setting names commands, so a task-scope run leaves a named command to the phase gate whichever arm proposed it, the affected selection's widening included, and the row says which arm proposed it; the exception is unchanged - a named command the phase gate does not hold is run and noted; (4) row keys are not in the plan schema, so the demo generator owes nothing for a new row key; (5) the panel change is the help sentence and label for this one setting, text only - no layout, no new control."
         }
-      ]
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T08:48:48Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T09:34:54Z.84f0e1",
+        "status": "failed",
+        "at": "2026-11-18T09:34:54Z"
+      }
     },
     {
       "id": "P168.5",
@@ -938,14 +1023,14 @@
       "id": "P168.12-icj",
       "title": "The drive suite's writer-stub log is one file per session wherever a wave runs two sessions at once",
       "status": "pending",
-      "description": "The task that gave each wave member its own mark file left one case with the same shape: a case that runs the real loop over a wave of two writer sessions has both stub sessions append one line each to a single log, and counts the lines. The class sweep of that task called this log 'written by sessions run one at a time', which is not true for that case, since the loop starts a wave's members together. The case is skipped where process groups are absent, so it has not failed on Windows, and an append of one short line is atomic on the systems where it does run; the shape is still the one the task set out to remove, and its own acceptance clause says no case hands one file to two commands that run at the same time. Give that case's stub sessions a log per session (or per member) read together through the same helper, and then walk every log in this suite that a stub or child appends to and state, in the helper's docstring table, which run concurrently and which serially, by case, from what the loop does and not from the case's name. Dependants you answer for: every case reading the writer-stub log, whose expectations must not change by value. Acceptance: (1) no stub or child in the suite appends to a file another concurrent process appends to; (2) the docstring's table names each shared log and why it is safe; (3) the suite's case count does not drop and every expectation is unchanged.",
+      "description": "The task that gave each wave member its own mark file left one case with the same shape: a case that runs the real loop over a wave of two writer sessions has both stub sessions append one line each to a single log, and counts the lines. The class sweep of that task called this log 'written by sessions run one at a time', which is not true for that case, since the loop starts a wave's members together. The case is skipped where process groups are absent, so it has not failed on Windows, and an append of one short line is atomic on the systems where it does run; the shape is still the one the task set out to remove, and its own acceptance clause says no case hands one file to two commands that run at the same time. Give that case's stub sessions a log per session (or per member) read together through the same helper, and then walk every log in this suite that a stub or child appends to and state, in the helper's docstring table, which run concurrently and which serially, by case, from what the loop does and not from the case's name. Dependants you answer for: every case reading the writer-stub log, whose expectations must not change by value. Acceptance: (1) no stub or child in the suite appends to a file another concurrent process appends to; (2) the docstring's table names each shared log and why it is safe; (3) the suite's case count does not drop and every expectation is unchanged. A second fragile case in the same suite, seen red in CI on the stress leg: the case that checks the wait stage before the writer picks the writer's wait by arithmetic alone (a wait whose start plus length equals the writer's start), and when the reviewer's hand-out lands in the same second as the writer's start, the reviewer's zero-length wait satisfies the same arithmetic and the case finds two where it requires one. Stamps are whole seconds, so this depends on where a second boundary falls. Pick the writer's wait by what it is - its basis names the writer's session record - and keep the arithmetic as the assertion about it, not as the selector; do the same wherever a case in this suite selects a stage by time arithmetic. Acceptance (4): the wait case selects by the stage's own basis and holds when two stages share a second, shown by a case that builds exactly that record.",
       "files": [
         "tests/test_drive_phase.py"
       ],
       "tests": {
         "mode": "regression",
         "add": [
-          "tests/test_drive_phase.py: a real loop over a wave of two stub sessions leaves two session records, read from one log per session"
+          "tests/test_drive_phase.py: a writer wait and a reviewer wait that share a second are told apart by basis"
         ],
         "expectRedFirst": false,
         "gate": [
@@ -972,7 +1057,7 @@
     {
       "id": "P168.13-icj",
       "title": "Every file the panel gate runs confirms a write through one shared helper, and a unit test refuses a confirm followed by a fixed wait",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The task that made the panel gate read a confirmed save's outcome when the save has answered converted the sites in tools/capture-screenshots.mjs and stopped at its file boundary. tools/ui-checks/stage-tabs.mjs, which the tool imports and runs in the same gate and in repro mode, still confirms a policy save twice and reads the result after a fixed 900 ms. The reviewer of that task found it and the executor had disclosed it. Finish the class and close it. Move the helper that confirms a write and waits for its answer into a module both files import (a file of its own under tools/ui-checks/, since the checks cannot import the tool that imports them), keep its behaviour and its failure sentences as they are, and use it at the two policy-save sites and at any other confirm-then-read site in tools/ui-checks/. Then make the shape impossible to bring back unseen: a unit test beside the existing wait test in tools/ui-tests/ reads the gate's source files and fails, naming file and line, when a click on the dialog's confirm button is followed by a fixed wait before the next read without going through the helper; a Discard or any confirm that sends no request is named in an allow list with its reason, in the manner the existing wait allowance table uses, and an allow row that matches nothing fails too. Prove the test red on the two sites as they stand before converting them. Do not run the browser gate yourself; the task's gate runs it. If a new file under tools/ owes an entry anywhere (an enumeration, a lint's table), add the file that holds it to the hand-back instead of editing outside the declared files. Dependants you answer for: tools/ui-tests/gate-card-wait.test.mjs, which reads the tool's wait allowance table and its waits; the repro mode, which shares these legs; tests/test__panel_page.py, which pins text of the checks. Acceptance: (1) no file the gate runs reads the result of a confirmed write after a fixed wait; (2) one helper, in one module, imported by both; (3) the new unit test is red on a reintroduced click-then-sleep and on a stale allow row; (4) vitest and the browser gate are green.",
       "files": [
         "tools/ui-checks/stage-tabs.mjs",
@@ -999,6 +1084,53 @@
       "dependsOn": [
         "P168.11-icj"
       ],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-18T08:48:57Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T08:48:57Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T09:35:19Z.87e689",
+        "status": "passed",
+        "at": "2026-11-18T09:35:19Z"
+      }
+    },
+    {
+      "id": "P168.14-icj",
+      "title": "The drive's comments describe the read-back it now performs, a step name cannot break the signal line, and a repeated gate's timing says what it repeats",
+      "status": "pending",
+      "description": "Findings of the review of the task that changed how the drive reads a background gate back. Two docstrings in the drive still describe the behaviour that task replaced. (a) The docstring of the function that picks a gate's red lines says a background gate's red reaches its reader as a repeat every time, which is the reason it gives for filtering the repeat banner; a background red is now read from its own row and carries no banner, and the filter still serves a second ask that repeated a red. (b) The module docstring says of a background gate that the verdict is that row's, repeated rather than measured again; now a red is acted on as its row records it, and a green is asked again, repeating each step that grades the tree and measuring an entry that names a path the identity leaves out. Correct both to what the code does, and then read every other comment and docstring in the drive that speaks of reading a gate back, repeating a verdict or measuring again, and correct any that the same change made untrue; list the ones you read in the outcome, changed or not. (c) The read-back clause embeds each measured step's name, which is the gate entry's command text, unbounded: a long command makes the signal line drop the whole clause to a count, and a command holding the field separator is joined into a separator-joined field. Clip each step name in that clause to a fixed width and replace the separator inside names, with a case for a long name and one for a name holding the separator; the printed text under --explain keeps the whole name. (d) When a task gate's newest row is a repeat, the drive says the gate stage of the task's timing was not recorded because the row has no readable start. A repeated row names the run it repeats; the stage should be the cost of the ask itself with a basis that says the verdict was repeated from that run, or be left out with that same sentence, whichever the timing record's rules already allow - decide from the timing helper's docstring, state which, and case it. Dependants you answer for: the signal line's field rules and their existing cases; /audit:status, which prints the stages the drive records. Acceptance: (1) the two docstrings state the present behaviour and no comment in the drive contradicts the read-back as it now is; (2) a long step name and one holding the separator each leave the signal line parseable, by case; (3) a repeated task gate leaves either a stage with an honest basis or one sentence naming the run it repeats, by case; (4) no case added passes with its feature removed.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a long step name and one holding the separator leave the signal line parseable; a repeated task gate leaves a stage or a sentence naming the run it repeats"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
       "attempts": 0,
       "maxAttempts": 3,
       "commit": null,
@@ -1008,7 +1140,65 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T08:53:15Z",
+          "reader": "PLUGIN-BUILD-GUIDE.md",
+          "reads": "plugins/audit/scripts/governance/drive-phase.py",
+          "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/governance/drive-phase.py - a section headed by its path"
+        }
+      ]
+    },
+    {
+      "id": "P168.15-icj",
+      "title": "A gate entry's path words are read as a shell reads them, so a quoted path with a space still names the record it resolves to",
+      "status": "pending",
+      "description": "The runner decides which gate entries name a path the content identity leaves out by reading each entry's path words. CI's stress leg, which runs the suites under a temp directory whose path holds a space, went red on the case that hands the runner an absolute path under the project, quoted as a shell word: the entry was read as naming nothing. It reproduces here with python3 tools/sweep-selftests.py --spaced tests/test_run_test_gate.py. So a gate entry that spells a path with a space in it, quoted as any shell requires, is not recognised as naming the plan or the evidence, and the step would be repeated from a stored verdict when it should be measured - the unsafe direction. Find where the entry's text becomes words and make it read the command the way a shell does: a quoted word is one word with its quotes removed, an escaped space stays inside its word, and text that cannot be split as a shell would (an unbalanced quote) is treated as naming a left-out path, since what cannot be read cannot be shown to be safe to repeat - say so on the line the runner prints for it. Check the same reading for a relative path with a space and for a path inside a quoted shell body (sh -c '...'), which an existing case covers for the unspaced spelling. Dependants you answer for: every existing case of the left-out reading, by value; the line the runner prints for a left-out entry; the drive's read-back, which says which steps were measured again and why. Acceptance: (1) the stress-leg command above is green; (2) a quoted absolute path, a quoted relative path and an escaped-space path under the project each name the left-out record they resolve to, by case, in a directory whose path holds a space; (3) an entry that cannot be split is measured, not repeated, with its reason printed; (4) no case added passes with its feature removed.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "tests/test_run_test_gate.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_test_gate.py: a quoted absolute path, a quoted relative path and an escaped-space path in a directory whose path holds a space each name the left-out record; an entry that cannot be split is measured"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T09:12:40Z",
+          "text": "it quotes one refusal sentence of the gate runner, which this task does not edit",
+          "waives": "tools/check-example-ledgers.py"
+        },
+        {
+          "at": "2026-11-18T09:12:40Z",
+          "reader": "PLUGIN-BUILD-GUIDE.md",
+          "reads": "plugins/audit/scripts/governance/run-test-gate.py",
+          "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/governance/run-test-gate.py - a section headed by its path"
+        }
+      ]
     }
   ],
   "request": "Brzina razvoja postaje merena metrika: task gate pokrece samo pogodjene testove, ceo suite ide na sign-off-u faze. Izmereno: task gate je 93% razlike prema obicnoj sesiji, a polovina toga je ponovljeno merenje vec zelenog stabla.",
