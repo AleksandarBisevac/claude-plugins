@@ -1,6 +1,8 @@
 name: ci
 
-# EVERY JOB IS SETUP PLUS ONE `tools/verify.sh --only <slices>` CALL. This file says
+# EVERY JOB THAT RUNS A GATE IS SETUP PLUS ONE `tools/verify.sh --only <slices>` CALL;
+# the one that runs none is `verified`, which asks whether the commit already
+# passed. This file says
 # WHERE a slice runs - which runner, which shard, which tier - and tools/verify.sh
 # says WHAT it runs; `sh tools/verify.sh --list` prints every slice and its steps.
 # The gate set used to be written here as inline shell as well, and a second copy of
@@ -89,9 +91,10 @@ concurrency:
 #              the 2m38s its estimate had set (the lint + e2e job's 1m50s plus the
 #              manifests job's verify, node and install steps), so the bound moved
 #              to 7, over twice the measurement
-#   browser-panel, browser-report - measured on the split, cached install below
-#              (head 55d48673): run 44363694425 missed both caches and run
-#              44366022835 hit them, and each job's longer one is its line. Before
+#   browser-panel, browser-report - measured on the split, cached install, when it
+#              was still written out in both jobs (head 55d48673): run 44363694425
+#              missed both caches and run 44366022835 hit them, and each job's
+#              longer one is its line. Before
 #              it the longest finished jobs over runs 41281241772 to 44356971266
 #              were 14m49s (panel, run 42283005055) and 17m57s (report, run
 #              44270291891), install-bound both: 9m43s and 6m27s of install, nearly
@@ -127,9 +130,11 @@ jobs:
   # a phase reaches main as a commit its ci/ branch dispatch already ran, and running
   # the same bytes again could only add a Windows intermittent the first draw did not
   # have. tools/ci-verified.py names the run that verified the commit, and every other
-  # job here is skipped. It refuses a run whose jobs were skipped - a skipped job
-  # reports success to GitHub - so a run this job skipped never vouches for the next;
-  # this job's own and the release-tier job may be skipped by design (`--exempt-job`).
+  # job's gate is skipped: the browser jobs still run, to seed the browser caches
+  # (the comment above browser-panel), and skip only their slice. It refuses a run
+  # whose jobs were skipped - a skipped job reports success to GitHub - so a run
+  # this job skipped never vouches for the next; this job's own and the
+  # release-tier job may be skipped by design (`--exempt-job`).
   # Could-not-ask leaves the output empty, and every job runs.
   verified:
     name: verified
@@ -352,35 +357,33 @@ jobs:
   # playwright is a devDependency that `npm ci` installs from the lockfile, and the
   # browser build and the system packages follow from that version.
   #
-  # THE INSTALL IS ONE STEP PER COST, so a job's step list says where its minutes
-  # went, and the two slow ones are cached. The steps are written out in both jobs,
-  # identical; a change to one is owed to the other.
-  #   - The browser download is cached by the playwright-core version
-  #     package-lock.json pins, and `playwright install chromium` runs on a hit
-  #     as well: it fetches nothing when the restored build is the pinned one, and
-  #     the pinned one when it is not, so a hit never skips a version change.
-  #   - The system packages are those `playwright install-deps --dry-run` names
-  #     that dpkg reports not installed - only what the image lacks. `--with-deps`
-  #     named them all, so apt also upgraded every listed package with a newer
-  #     version in the archive. The archive fetch was the cost, and naming fewer
-  #     packages does not remove it: the install step took 9m05s of run
-  #     44318839994's report job, 8m11s of it apt fetching 32.1 MB at 65.4 kB/s,
-  #     and 9m43s of run 42283005055's panel job, 9m22s of it fetching 19.1 MB with
-  #     nothing upgraded, against 38s in run 41322244766's report job. So their
-  #     .deb files are cached by the runner image's version and that package list;
-  #     a hit installs them with dpkg and asks no archive, and a miss, or a set
-  #     missing one, fetches them first.
-  # WHAT A MISS ON A SLOW MIRROR STILL COSTS: the fetch of the packages the image
-  # lacks, upgrades no longer among them - 21.1 MB in run 44363694425's miss, on a
-  # fast mirror. The same set, 19.1 MB with nothing upgraded, took 9m22s at
-  # 34.0 kB/s in run 42283005055's panel job, the slowest rate read before this
-  # change; so a miss on such a day adds about nine minutes to either job.
-  # A cache GitHub saved on one branch is read by that branch and by runs whose base
-  # it is, so a ci/ branch's first run misses unless main holds one.
+  # THE INSTALL IS WRITTEN ONCE, in .github/actions/browser-install, which both
+  # browser jobs call; its header says what each cache holds and
+  # what its key is made of. The slow part was the archive: the install took 9m05s
+  # of run 44318839994's report job, 8m11s of it apt fetching 32.1 MB of .deb files
+  # at 65.4 kB/s, and 9m43s of run 42283005055's panel job, 9m22s of it fetching
+  # 19.1 MB at 34.0 kB/s, against 38s in run 41322244766's report job. The package
+  # index came fast on both slow days (12.9 MB in 1s and 13.2 MB in 7s); the .deb
+  # fetch is what crawled. A hit asks the archive for no .deb and no index, so a
+  # slow mirror costs a hit nothing; a miss on such a day still pays the fetch of
+  # what the image lacks, which is the set run 42283005055's panel job took 9m22s
+  # over (apt: "Need to get 21.1 MB of archives", then "Fetched 19.1 MB in 9min 22s
+  # (34.0 kB/s)").
+  #
+  # A HIT IS THE ORDINARY CASE BECAUSE MAIN HOLDS THE ENTRIES. GitHub's cache is
+  # scoped by branch: a run restores what its own branch saved, or what the default
+  # branch saved, and nothing another branch saved (docs.github.com, "Restrictions
+  # for accessing a cache"). So these two jobs are NOT skipped on a push to main
+  # whose commit was already verified - only their slice is. On that push they
+  # SEED: the action computes both keys, installs nothing when an entry exists for
+  # both, and otherwise installs and saves, under main's scope, what the next
+  # ci/ branch's first run restores. Their bounds already hold a miss on a slow
+  # mirror. The slice step carries the guard the job used to, so gate-parity reads
+  # it (`job_slices` reads a step's `if:` as it reads a job's).
   browser-panel:
     name: browser (panel)
     needs: verified
-    if: ${{ !cancelled() && needs.verified.outputs.run == '' }}
+    if: ${{ !cancelled() }}
     timeout-minutes: 16
     runs-on: ubuntu-24.04
     steps:
@@ -391,83 +394,19 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 20
-      - name: "install: JavaScript dev dependencies (npm ci)"
-        run: npm ci
-      - id: pins
-        name: "install: read the playwright pin and the runner image"
-        run: |
-          v=$(node -e "const p=require('./package-lock.json').packages['node_modules/playwright-core'];if(!p||!p.version){console.error('package-lock.json pins no playwright-core');process.exit(1)}console.log(p.version)")
-          if [ -z "${ImageOS:-}" ] || [ -z "${ImageVersion:-}" ]; then
-            echo "the runner exports no ImageOS/ImageVersion, so no cache key names its image" >&2
-            exit 1
-          fi
-          echo "playwright=$v" >> "$GITHUB_OUTPUT"
-          echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
-      - name: "install: restore the browser download"
-        uses: actions/cache@v6
+      - name: "install: Chromium and the system packages it needs (.github/actions/browser-install)"
+        uses: ./.github/actions/browser-install
         with:
-          path: ~/.cache/ms-playwright
-          key: playwright-browsers-${{ runner.os }}-${{ runner.arch }}-${{ steps.pins.outputs.playwright }}
-      - name: "install: Chromium (fetched only when the restored build is not the pinned one)"
-        run: npx playwright install chromium
-      - id: sysdeps
-        name: "install: name the system packages Chromium needs that the image lacks"
-        run: |
-          out=$(npx playwright install-deps --dry-run chromium)
-          case "$out" in
-            *--no-install-recommends*) ;;
-            *) printf 'install-deps --dry-run printed no apt-get install line:\n%s\n' "$out" >&2; exit 1 ;;
-          esac
-          wanted=$(printf '%s\n' "$out" | sed -n 's/.*--no-install-recommends//p' | tr -d '"')
-          if [ -z "$(echo $wanted)" ]; then
-            echo "the apt-get install line names no package" >&2
-            exit 1
-          fi
-          missing=""
-          for p in $wanted; do
-            s=$(dpkg-query -W -f='${Status}' "$p" 2>/dev/null || true)
-            [ "$s" = "install ok installed" ] || missing="$missing $p"
-          done
-          missing=$(echo $missing)
-          echo "playwright names $(echo $wanted | wc -w) packages; the image lacks: ${missing:-none of them}"
-          echo "missing=$missing" >> "$GITHUB_OUTPUT"
-          echo "key=chromium-sysdeps-${{ steps.pins.outputs.image }}-$(printf '%s' "$missing" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
-      - name: "install: restore the system packages' .deb files"
-        if: ${{ steps.sysdeps.outputs.missing != '' }}
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/chromium-sysdeps
-          key: ${{ steps.sysdeps.outputs.key }}
-      - name: "install: system packages (the archive is asked only for a .deb the restored set lacks)"
-        if: ${{ steps.sysdeps.outputs.missing != '' }}
-        env:
-          MISSING: ${{ steps.sysdeps.outputs.missing }}
-        run: |
-          dir="$HOME/.cache/chromium-sysdeps"
-          mkdir -p "$dir"
-          fetch=""
-          for p in $MISSING; do
-            ls "$dir/${p}_"*.deb >/dev/null 2>&1 || fetch="$fetch $p"
-          done
-          if [ -n "$fetch" ]; then
-            echo "not in the restored set, so fetched from the archive:$fetch"
-            sudo apt-get update
-            dl=$(mktemp -d)
-            chmod 755 "$dl"
-            sudo apt-get install -y --download-only --no-install-recommends -o Dir::Cache::Archives="$dl" $MISSING
-            cp "$dl"/*.deb "$dir"/
-          else
-            echo "every package the image lacks is in the restored set; no archive is asked"
-          fi
-          sudo dpkg -i "$dir"/*.deb
+          seed: ${{ needs.verified.outputs.run != '' }}
       - name: verify slice
+        if: ${{ needs.verified.outputs.run == '' }}
         shell: bash
         run: sh tools/verify.sh --only panel
 
   browser-report:
     name: browser (report)
     needs: verified
-    if: ${{ !cancelled() && needs.verified.outputs.run == '' }}
+    if: ${{ !cancelled() }}
     timeout-minutes: 26
     runs-on: ubuntu-24.04
     steps:
@@ -478,76 +417,12 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 20
-      - name: "install: JavaScript dev dependencies (npm ci)"
-        run: npm ci
-      - id: pins
-        name: "install: read the playwright pin and the runner image"
-        run: |
-          v=$(node -e "const p=require('./package-lock.json').packages['node_modules/playwright-core'];if(!p||!p.version){console.error('package-lock.json pins no playwright-core');process.exit(1)}console.log(p.version)")
-          if [ -z "${ImageOS:-}" ] || [ -z "${ImageVersion:-}" ]; then
-            echo "the runner exports no ImageOS/ImageVersion, so no cache key names its image" >&2
-            exit 1
-          fi
-          echo "playwright=$v" >> "$GITHUB_OUTPUT"
-          echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
-      - name: "install: restore the browser download"
-        uses: actions/cache@v6
+      - name: "install: Chromium and the system packages it needs (.github/actions/browser-install)"
+        uses: ./.github/actions/browser-install
         with:
-          path: ~/.cache/ms-playwright
-          key: playwright-browsers-${{ runner.os }}-${{ runner.arch }}-${{ steps.pins.outputs.playwright }}
-      - name: "install: Chromium (fetched only when the restored build is not the pinned one)"
-        run: npx playwright install chromium
-      - id: sysdeps
-        name: "install: name the system packages Chromium needs that the image lacks"
-        run: |
-          out=$(npx playwright install-deps --dry-run chromium)
-          case "$out" in
-            *--no-install-recommends*) ;;
-            *) printf 'install-deps --dry-run printed no apt-get install line:\n%s\n' "$out" >&2; exit 1 ;;
-          esac
-          wanted=$(printf '%s\n' "$out" | sed -n 's/.*--no-install-recommends//p' | tr -d '"')
-          if [ -z "$(echo $wanted)" ]; then
-            echo "the apt-get install line names no package" >&2
-            exit 1
-          fi
-          missing=""
-          for p in $wanted; do
-            s=$(dpkg-query -W -f='${Status}' "$p" 2>/dev/null || true)
-            [ "$s" = "install ok installed" ] || missing="$missing $p"
-          done
-          missing=$(echo $missing)
-          echo "playwright names $(echo $wanted | wc -w) packages; the image lacks: ${missing:-none of them}"
-          echo "missing=$missing" >> "$GITHUB_OUTPUT"
-          echo "key=chromium-sysdeps-${{ steps.pins.outputs.image }}-$(printf '%s' "$missing" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
-      - name: "install: restore the system packages' .deb files"
-        if: ${{ steps.sysdeps.outputs.missing != '' }}
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/chromium-sysdeps
-          key: ${{ steps.sysdeps.outputs.key }}
-      - name: "install: system packages (the archive is asked only for a .deb the restored set lacks)"
-        if: ${{ steps.sysdeps.outputs.missing != '' }}
-        env:
-          MISSING: ${{ steps.sysdeps.outputs.missing }}
-        run: |
-          dir="$HOME/.cache/chromium-sysdeps"
-          mkdir -p "$dir"
-          fetch=""
-          for p in $MISSING; do
-            ls "$dir/${p}_"*.deb >/dev/null 2>&1 || fetch="$fetch $p"
-          done
-          if [ -n "$fetch" ]; then
-            echo "not in the restored set, so fetched from the archive:$fetch"
-            sudo apt-get update
-            dl=$(mktemp -d)
-            chmod 755 "$dl"
-            sudo apt-get install -y --download-only --no-install-recommends -o Dir::Cache::Archives="$dl" $MISSING
-            cp "$dl"/*.deb "$dir"/
-          else
-            echo "every package the image lacks is in the restored set; no archive is asked"
-          fi
-          sudo dpkg -i "$dir"/*.deb
+          seed: ${{ needs.verified.outputs.run != '' }}
       - name: verify slice
+        if: ${{ needs.verified.outputs.run == '' }}
         shell: bash
         run: sh tools/verify.sh --only report
 
