@@ -1788,10 +1788,11 @@ def _readback_signal_cases(check, M):
     """The read-back clause on the one-line signal: each step it names is
     clipped to a fixed width, with the did field's separator replaced inside
     it, so a long name or one holding `; ` neither drops the clause to a count
-    nor splits it into two; `--explain` keeps every name whole. And a task
-    gate whose background row repeated an earlier verdict says, once, that no
-    stage is recorded for it and which run it repeats - never that the row
-    has no readable start."""
+    nor splits it into two; `--explain` keeps every name whole. A task gate
+    whose background row repeated an earlier verdict records the stage of the
+    run it repeats and says so, once - never that the stage is not recorded,
+    nor that the row has no readable start. And a joined step whose declared
+    entry names a left-out path is read back with that reason."""
     root, mpath = _rb_repo("rb-long", (_RB_SWEEP, _RB_LONG))
     got = _rb_signal_back(M, root, mpath)
     pieces = _rb_pieces(M, got["line"])
@@ -1827,16 +1828,83 @@ def _readback_signal_cases(check, M):
     again = rows[-1].get("runId") if rows else None
     said = [p for p in _rb_pieces(M, got["explain"])
             if p.startswith("timing: gate stage of P1.1")]
+    stages = _tm_stages(mpath, "gate")
     check("rd10 a background row that repeated an earlier run's verdict leaves "
-          "no gate stage of its own and one sentence naming that row and the run "
-          "it repeats - never that it records no readable start: %r"
+          "no gate stage of its own, the gate stage the step records is the "
+          "run it repeated, and one sentence names that row and that run - "
+          "never that the stage is not recorded, nor that the row records no "
+          "readable start: %r"
           % ((said, [(r.get("runId"), r.get("verdictSource")) for r in rows],
-              _tm_stages(mpath, "gate")),),
+              stages),),
           len(rows) == 2 and rows[-1].get("verdictSource") == "reused"
           and (rows[-1].get("reusedFrom") or {}).get("runId") == first
           and len(said) == 1 and again in said[0] and first in said[0]
+          and "not recorded" not in said[0]
           and "readable" not in got["explain"]
-          and not [s for s in _tm_stages(mpath, "gate") if s.get("runId") == again])
+          and len([s for s in stages if s.get("runId") == first]) == 1
+          and not [s for s in stages if s.get("runId") == again])
+    _readback_joined_case(check, M)
+
+
+# A joined step: the declared entry in the plan's recorded subset spelling,
+# with the suite a related listing names for the task's change run in the same
+# call. The entry names the plan, which the runner's content identity leaves
+# out, so a read-back measures it again; the runner's sentence saying so names
+# the declared entry alone.
+_RB_JOIN_SUITE = "tests/test_rbj.py"
+_RB_JOINED = "%s + affected/related: %s" % (_RB_VALIDATE, _RB_JOIN_SUITE)
+
+
+def _rb_joined_repo(prefix):
+    """`_rb_repo` over the validator alone, its plan recording the validator's
+    subset spelling and a related listing naming `_RB_JOIN_SUITE` for any
+    change, committed: `(root, mpath)`. The phase's own gate is another
+    command, since a task gate that already runs the phase's is joined by
+    nothing."""
+    root, mpath = _rb_repo(prefix, (_RB_VALIDATE,), phase_gate=("true",))
+    with open(mpath, encoding="utf-8") as fh:
+        plan = json.load(fh)
+    plan.setdefault("meta", {})["phaseGate"] = {"derived": {
+        "spelling": "%s rb_plan.py {paths}" % (_RB_PY,),
+        "listing": {"related": "printf '%%s\\n' %s # {paths}" % (_RB_JOIN_SUITE,)},
+        "verifiedOn": {"command": "echo v1", "answer": "v1"}}}
+    _write_lf(mpath, json.dumps(plan, indent=2) + "\n")
+    suite = os.path.join(root, *_RB_JOIN_SUITE.split("/"))
+    if not os.path.isdir(os.path.dirname(suite)):
+        os.makedirs(os.path.dirname(suite))
+    _write_lf(suite, "pass\n")
+    for argv in (["add", "-A"], ["commit", "-qm", "the subset spelling"]):
+        _harness.git(root, *argv)
+    return root, mpath
+
+
+def _readback_joined_case(check, M):
+    """A joined step whose declared entry names a path the identity leaves out
+    is read back with that reason: measured again, the read-back clause naming
+    the joined step with its seconds, and never `did not repeat`.
+
+    THE READ-BACK STARTS IN A LATER SECOND THAN THE BACKGROUND RUN. Two runs
+    whose whole-second stamps meet are not known to have had the machine to
+    themselves, and the runner then prints its long form; one that had prints
+    its one-line green, which carries no left-out line. The wait makes the
+    second ask the quiet-host one every time, so the case reads the form the
+    drive has to ask for rather than whichever the clock gave it."""
+    root, mpath = _rb_joined_repo("rb-joined")
+    got = _rb_background(M, root, mpath, after=lambda _root: time.sleep(1.5))
+    names = [s.get("name") for r in _rows_of(root, mpath, "P1.1")
+             for s in r.get("steps") or [] if isinstance(s, dict)]
+    said = [c for c in got["did"] if _RB_JOINED in c]
+    check("rd11 a background gate whose one step is joined - the validator "
+          "naming the plan, with an affected suite in the same call - is read "
+          "back with the left-out reason: the step measured again, the "
+          "read-back clause naming the joined step with its seconds, and no "
+          "`did not repeat`: %r"
+          % ((names, said, got["code"], got["text"][-900:],
+              [o for _a, o in _rb_task_calls(got["calls"])]),),
+          bool(names) and set(names) == set([_RB_JOINED])
+          and len(said) == 1 and "read back from run" in said[0]
+          and re.search(re.escape(_RB_JOINED) + _RB_SECONDS, said[0])
+          and "did not repeat" not in got["text"])
 
 
 def _readback_phase_cases(check, M):
@@ -22235,23 +22303,22 @@ def _base_background_cases(check):
           and len(_stub_runs(log2)) == 1 and _writer_resumes(root2) == 0)
 
     if not hasattr(os, "killpg"):
-        _harness.skip(check, "bq4", "os.killpg, to stop a base run's whole "
-                      "process group", True)
+        for label in ("bq4", "bq6", "bq7", "bq8"):
+            _harness.skip(check, label, "os.killpg, to stop a base run's whole "
+                          "process group", True)
     else:
         _base_killed_case(check, k02, slow_ms)
+        _base_sweep_reading_case(check, k02, slow_ms)
     _base_auto_case(check, k02)
 
 
-def _base_killed_case(check, k02, slow_ms):
-    """A background base run killed - its own process and the gate run it
-    started - leaves its tree; the next drive sweeps it and stops on a base
-    nobody can know."""
-    M, why = _load("drive_phase_base_bg_killed", real_gate_choice=True)
-    if M is None:
-        check("bq4 the driver loads", False, why)
-        return
+def _killed_base_run(M, prefix, k02, slow_ms):
+    """A background base run started from the drive's own print and killed -
+    its process and the gate run it started - once its mark names its tree and
+    both pids: `(root, mpath, log, line, holder, built, pids)`, `built` whether
+    the tree stood on disk before the kill, `pids` those the mark named."""
     root, mpath, log, line, _block = _base_measure_repo(
-        M, "base-bg-killed", k02, k02, sleep=20, seed_ms=slow_ms)
+        M, prefix, k02, k02, sleep=20, seed_ms=slow_ms)
     argv = _base_run_argv(M, root, mpath)
     proc = _base_popen(root, argv) if argv else None
     mark, deadline = {}, time.monotonic() + 30
@@ -22262,13 +22329,27 @@ def _base_killed_case(check, k02, slow_ms):
         time.sleep(0.1)
     holder = mark.get("tree") or ""
     built = bool(holder) and os.path.isdir(os.path.join(holder, "tree"))
-    for pid in list(mark.get("pids") or []) + ([proc.pid] if proc else []):
+    pids = list(mark.get("pids") or [])
+    for pid in pids + ([proc.pid] if proc else []):
         try:
             os.killpg(os.getpgid(pid), signal.SIGKILL)
         except OSError:
             pass
     if proc is not None:
         proc.wait()
+    return root, mpath, log, line, holder, built, pids
+
+
+def _base_killed_case(check, k02, slow_ms):
+    """A background base run killed - its own process and the gate run it
+    started - leaves its tree; the next drive sweeps it and stops on a base
+    nobody can know."""
+    M, why = _load("drive_phase_base_bg_killed", real_gate_choice=True)
+    if M is None:
+        check("bq4 the driver loads", False, why)
+        return
+    root, mpath, log, line, holder, built, _pids = _killed_base_run(
+        M, "base-bg-killed", k02, slow_ms)
     _code, after = _signal_next(M, root, mpath)
     swept = _base_mark(root)
     check("bq4 a background base run killed while it measures leaves its tree "
@@ -22282,6 +22363,111 @@ def _base_killed_case(check, k02, slow_ms):
           and not os.path.exists(holder) and _base_trees(root) == []
           and not swept.get("tree") and swept.get("unknowable") is True
           and len(_stub_runs(log)) == 1)
+
+
+def _scripted_liveness(M, readings):
+    """Answer every liveness reading of a base mark the driver `M` makes from
+    `readings` - True alive, False dead - one per reading that names a pid of
+    another process, and dead once they are spent; a mark naming no such pid
+    reads dead, as it does for real. A killed run is dead, so only a scripted
+    True departs from the truth, and that one is the reading `ps` gives when a
+    pid exits between its kill probe and its own look, or when it times out:
+    unverified, counted as alive. The real reading is not consulted, so a
+    loaded machine cannot flip a reading the case did not script. Returns the
+    readings taken, in order, as `(pids, answer)`."""
+    taken = []
+
+    def _reading(held):
+        pids = [p for p in (held or {}).get("pids") or [] if p != os.getpid()]
+        if not pids:
+            return []
+        alive = bool(readings.pop(0)) if readings else False
+        taken.append((pids, alive))
+        return pids if alive else []
+
+    M.base_running = _reading
+    return taken
+
+
+def _sweep_claims(M, text, holder):
+    """The did-line clauses of a plain `next`'s `text` saying the base tree
+    `holder` was removed."""
+    return [c for c in _rb_did(M, text)
+            if ("base tree %s" % (holder,)) in c and c.endswith(" removed")]
+
+
+def _base_sweep_reading_case(check, k02, slow_ms):
+    """A killed background base run whose first liveness reading after the
+    kill says alive and every later one dead: one reading per run per sweep
+    decides both the fold of the run's own record and the removal, so the
+    drive that read it alive leaves the tree and its mark as they are, and the
+    next one removes the tree and clears it where the mark is read from - no
+    mark ever names a tree that is gone, and no drive after the removal says
+    it removed one again."""
+    M, why = _load("drive_phase_base_sweep_reading", real_gate_choice=True)
+    if M is None:
+        check("bq6 the driver loads", False, why)
+        return
+    root, mpath, log, _line, holder, built, pids = _killed_base_run(
+        M, "base-sweep-reading", k02, slow_ms)
+    taken = _scripted_liveness(M, [True])
+    # What each drive left, read before the next one runs: its text, the mark,
+    # whether the tree's directory stood and how many base trees git holds.
+    drives, marks, stood, registered = [], [], [], []
+    for _n in range(3):
+        drives.append(_rb_next(M, root, mpath)[1])
+        marks.append(_base_mark(root))
+        stood.append(os.path.isdir(os.path.join(holder, "tree")))
+        registered.append(len(_base_trees(root)))
+    first, last = marks[0], marks[-1]
+    left = [c for c in _rb_did(M, drives[0])
+            if ("base tree %s is left" % (holder,)) in c]
+    check("bq7 the drive whose one reading of a killed base run says alive "
+          "leaves its tree - the directory and git's registration both still "
+          "there - and its mark naming that tree and the run's pids, and says "
+          "the tree is left: %r"
+          % ((built, holder, first.get("tree"), first.get("pids"), pids,
+              stood, registered, left, taken, drives[0][-900:]),),
+          built and len(pids) >= 2 and taken[:1] == [(pids, True)]
+          and len(left) == 1 and stood[0] and registered[0] == 1
+          and first.get("tree") == holder and first.get("pids") == pids)
+    claims = [len(_sweep_claims(M, text, holder)) for text in drives]
+    named_gone = [n for n, m in enumerate(marks)
+                  if m.get("tree") == holder and not stood[n]]
+    check("bq6 a killed base run read alive once and dead after: across three "
+          "drives the tree is removed once and said removed once, no mark "
+          "after a drive names a tree that is gone, the last mark names no "
+          "tree and no pids, and the reading that said alive was the only one "
+          "that did: %r"
+          % ((holder, claims, named_gone, last, _base_trees(root), taken,
+              [d[-600:] for d in drives]),),
+          built and sum(claims) == 1 and named_gone == []
+          and not last.get("tree") and not last.get("pids")
+          and not os.path.exists(holder) and _base_trees(root) == []
+          and [a for _p, a in taken].count(True) == 1
+          and len(_stub_runs(log)) == 1)
+    # A mark naming a tree whose directory is already gone, its run dead: the
+    # sweep clears it and says the directory was gone, never that it removed
+    # one it did not.
+    where = os.path.join(root, ".claude", "state")
+    path = _fr.drive_state_path(where, PHASE)
+    with open(path, encoding="utf-8") as fh:
+        state = json.load(fh)
+    entry = state["baseMeasured"]["P1.1"]
+    entry["value"] = dict(entry["value"], tree=holder, pids=[])
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(state, fh)
+    with _Env(root):
+        ctx = dict(M.context(argparse.Namespace(
+            phase=PHASE, manifest=mpath, project_dir=root, verbose=False,
+            task_only=False)), phase=PHASE, did=[])
+        M.sweep_base_trees(ctx, M.read_state(ctx))
+    said = [d for d in ctx["did"] if ("base tree %s" % (holder,)) in d]
+    check("bq8 a mark naming a base tree already gone from disk, its run "
+          "dead, is cleared and said gone - never said removed: %r"
+          % ((said, _base_mark(root)),),
+          len(said) == 1 and said[0].endswith(" already gone from disk")
+          and not _base_mark(root).get("tree"))
 
 
 def _base_auto_case(check, k02):

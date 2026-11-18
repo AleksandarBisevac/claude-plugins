@@ -1047,6 +1047,13 @@ GATE_BANNERS = (("NO OVERLAP WITH THIS WORK", "NO OVERLAP"),
 # measured, its literal mirrored for the same reason; the `bg` and `gc` cases
 # drive the real verb, which is what goes red if it drifts.
 GATE_REUSED_BANNER = "GATE VERDICT REUSED"
+# The flag a read-back's second ask carries. On success `run-test-gate.py`
+# prints one green line when the run had the machine to itself, and that line
+# keeps none of the lines a read-back is said from - the entry naming a path
+# the identity leaves out among them - so a read-back asks for the long form
+# (`_output.terse_cli` prints it under this flag). `rd11` reads a read-back
+# taken in a later second than its run, which is the one-line case.
+READ_BACK_FORM = [_output.VERBOSE_FLAG]
 # The journal row `record-risk-confirmation.py` writes, and the sentence its
 # summary carries the covered ids in. An entry point may not import another,
 # so both are spelled here; the `hr` cases drive the real verb, which is what
@@ -1419,14 +1426,21 @@ def stage_unread(ctx, state, task, kind, why):
     and `why` - once per stage and reason, however many reads meet it. True
     when it was said now, so the caller writes the state. Never a warning and
     never a stop: timing does not block a gate, a commit or a close."""
+    return timing_said(ctx, state, task, "unread", "%s: %s" % (kind, why),
+                       "timing: %s stage of %s not recorded - %s"
+                       % (kind, task["id"], why))
+
+
+def timing_said(ctx, state, task, bucket, key, sentence):
+    """Put `sentence` on the step's did-line once per `key`, kept in `task`'s
+    timing entry under `bucket`. True when it was said now, so the caller
+    writes the state."""
     held = (state.get(TIMING_KEY) or {}).get(task["id"]) or {}
-    said = list(held.get("unread") or [])
-    key = "%s: %s" % (kind, why)
+    said = list(held.get(bucket) or [])
     if key in said:
         return False
-    state.setdefault(TIMING_KEY, {})[task["id"]] = dict(held, unread=said + [key])
-    ctx["did"].append("timing: %s stage of %s not recorded - %s"
-                      % (kind, task["id"], why))
+    state.setdefault(TIMING_KEY, {})[task["id"]] = dict(held, **{bucket: said + [key]})
+    ctx["did"].append(sentence)
     return True
 
 
@@ -1683,10 +1697,19 @@ def queue_row(ctx, state, task, read, kind="gate", since=None):
     and `gate_row_read` return it - for `task`, and the wait from a hand-out
     stamped at `since` to the run's start, then write the state. A row that
     could not be read, or a stage it lacks a figure for, is said
-    (`stage_unread`) rather than dropped in silence."""
+    (`stage_unread`) rather than dropped in silence.
+
+    A row that repeated another run's verdict measured nothing, so the stage
+    is that run's (`_evidence_io.measured_row`), queued under that run's own
+    source as every other read of it is, and the did-line says whose it is -
+    never that the stage is not recorded while this step records it. A
+    repeat whose run the ledger does not hold keeps its own gap."""
     row, why = read
     if row is None and why is None:
         return
+    measured = repeated_measured(ctx, row) if why is None else None
+    repeat = row if measured is not None else None
+    row = measured if measured is not None else row
     pairs, gaps = row_stages(row, kind) if why is None else ([], [why])
     if since and pairs:
         pairs = [("wait:%s:%s" % (kind, row.get("runId")), wait_stage(
@@ -1695,8 +1718,31 @@ def queue_row(ctx, state, task, read, kind="gate", since=None):
     for source, stage in pairs:
         queue_stage(state, task, source, stage)
     said = [gap for gap in gaps if stage_unread(ctx, state, task, kind, gap)]
-    if pairs or said:
+    own = "%s:%s" % (kind, row.get("runId")) if repeat is not None else None
+    noted = (repeat is not None
+             and any(s == own and st is not None for s, st in pairs)
+             and timing_said(
+                 ctx, state, task, "repeats", "%s: %s" % (kind, repeat.get("runId")),
+                 "timing: %s stage of %s is run %s's - evidence row %s repeated "
+                 "that run's verdict rather than measuring it"
+                 % (kind, task["id"], row.get("runId"), repeat.get("runId"))))
+    if pairs or said or noted:
         write_state(ctx, state)
+
+
+def repeated_measured(ctx, row):
+    """The row that measured the verdict `row` repeated, when `row` is a repeat
+    and the ledger holds that run (`_evidence_io.measured_row`); None for a row
+    that measured its own verdict, a repeat whose run is gone, and a ledger
+    that will not read - each of which keeps the row's own reading."""
+    if not isinstance(row, dict) or row.get(_evio.VERDICT_SOURCE) != _evio.REUSED:
+        return None
+    try:
+        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+    except Exception:                                          # noqa: BLE001
+        return None
+    found = _evio.measured_row(rows, row)
+    return found if isinstance(found, dict) and found is not row else None
 
 
 # --- reading the plan -------------------------------------------------------------
@@ -3692,24 +3738,33 @@ def read_base_progress(path):
 
 
 def fold_progress(ctx, task_id, held):
-    """`(mark, final)` - the base mark `held` with its background run's own
-    record laid over it, and that record's path when nothing will write it
-    again (else None): the run said it was done, or it ran and no process it
-    named is alive. A mark that is not a background launch, or that `next`
-    has closed, is returned as it is.
+    """`(mark, final)` of `fold_reading`, its liveness reading dropped."""
+    mark, final, _running = fold_reading(ctx, task_id, held)
+    return mark, final
+
+
+def fold_reading(ctx, task_id, held):
+    """`(mark, final, running)` - the base mark `held` with its background
+    run's own record laid over it; that record's path when nothing will write
+    it again (else None): the run said it was done, or it ran and no process it
+    named is alive; and the liveness reading that decided it (`base_running`),
+    None when none was taken. A mark that is not a background launch, or that
+    `next` has closed, is returned as it is.
 
     A run seen dead is read once more after the death was seen: a run that
     wrote its answer and exited between the first read and the liveness
     check left that answer in the file."""
     if not (isinstance(held, dict) and held.get("background")) or held.get("done"):
-        return held, None
+        return held, None, None
     path = base_progress_path(ctx, task_id, launch_key(held))
     progress = read_base_progress(path)
-    final = bool(progress.get("done"))
-    if not final and progress.get("ran") and not base_running(progress):
-        progress = read_base_progress(path)
-        final = True
-    return dict(held, **progress), (path if final else None)
+    final, running = bool(progress.get("done")), None
+    if not final and progress.get("ran"):
+        running = base_running(progress)
+        if not running:
+            progress = read_base_progress(path)
+            final = True
+    return dict(held, **progress), (path if final else None), running
 
 
 def base_mark(ctx, state, task):
@@ -4005,7 +4060,8 @@ def base_gate(ctx, state, phase, task, tree=None):
         return base_wait_said(ctx, task["id"], held.get("at"),
                               held.get("argv") or []), None
     return None, read_back(ctx, held.get("of"), red_status(ctx, held),
-                           lambda: record_gate(ctx, phase, task, tree),
+                           lambda verbose: record_gate(ctx, phase, task, tree,
+                                                       verbose=verbose),
                            "gate %s" % (task["id"],))
 
 
@@ -4098,13 +4154,22 @@ def sweep_base_trees(ctx, state):
     `remove_base_tree`. A base tree no mark of this phase names is another
     run's and is never touched. Each answer is a did-line, and the marks are
     written once when any changed. A background run's own record is folded
-    in first (`fold_progress`), since the tree and the processes are named
-    there; one nothing will write again is removed once the state holds it."""
+    in first (`fold_reading`), since the tree and the processes are named
+    there; one nothing will write again is removed once the state holds it.
+
+    ONE LIVENESS READING PER RUN DECIDES BOTH THE FOLD AND THE REMOVAL. A
+    reading can flip between two asks - a pid exiting between `_locks`' kill
+    probe and its `ps`, or a `ps` that times out, both read as alive - and a
+    fold that read alive keeps the run's record while a second reading of
+    dead clears the tree from this state alone: the next fold lays the
+    record's tree and pids back, and the mark names a tree that is gone. So
+    the fold's reading is the sweep's; only a mark the fold took no reading
+    of is read here, and a run read dead by the fold is the record it spends."""
     marks = state.get(BASE_MEASURED) or {}
     changed, spent = False, []
     for task_id in sorted(marks):
-        value, final = fold_progress(ctx, task_id,
-                                     (marks[task_id] or {}).get("value"))
+        value, final, running = fold_reading(ctx, task_id,
+                                             (marks[task_id] or {}).get("value"))
         if final is not None:
             spent.append(final)
             marks[task_id] = dict(marks[task_id], value=value)
@@ -4112,13 +4177,15 @@ def sweep_base_trees(ctx, state):
         holder = value.get("tree") if isinstance(value, dict) else None
         if not holder:
             continue
-        running = base_running(value)
+        if running is None:
+            running = base_running(value)
         if running:
             ctx["did"].append("%s's base tree %s is left: the run that measured "
                               "it may still be going (pid %s)" % (
                                   task_id, holder,
                                   ", ".join("%s" % (p,) for p in running)))
             continue
+        there = os.path.exists(holder)
         kept, left = remove_base_tree(ctx, holder)
         value = dict(value)
         value.pop("tree", None)
@@ -4126,8 +4193,12 @@ def sweep_base_trees(ctx, state):
         if kept is not None:
             value["kept"] = holder
             said = "kept: %s" % (kept,)
+        elif left:
+            said = "left behind"
         else:
-            said = "left behind" if left else "removed"
+            # A directory already gone was removed by nobody here; git's
+            # registration of it, if any, is what the removal took down.
+            said = "removed" if there else "already gone from disk"
         ctx["did"].append("%s's base tree %s, left by a drive stopped while it "
                           "measured, %s" % (task_id, holder, said))
         marks[task_id] = dict(marks[task_id], value=value)
@@ -4968,14 +5039,16 @@ def member_project(ctx, tree):
     return os.path.join(tree, *rel.split(os.sep))
 
 
-def record_gate(ctx, phase, task, tree=None, no_reuse=False):
+def record_gate(ctx, phase, task, tree=None, no_reuse=False, verbose=False):
     """`(code, stdout, stderr)` of the task's recorded gate run - measured in
     the project's directory inside `tree` (`member_project`) when the task runs
     in a tree of its own, and recorded in the project's ledger either way.
     `no_reuse` measures even where an earlier verdict on the same tree could be
-    repeated: what a `rerun` asks for."""
+    repeated: what a `rerun` asks for. `verbose` asks for the long form
+    (`READ_BACK_FORM`), which a read-back reads."""
     return run_verb(ctx, "run-test-gate.py",
-                    gate_args(ctx, phase, task, tree, no_reuse))
+                    gate_args(ctx, phase, task, tree, no_reuse)
+                    + (READ_BACK_FORM if verbose else []))
 
 
 def gate_args(ctx, phase, task, tree=None, no_reuse=False, absolute=False):
@@ -6595,17 +6668,23 @@ def recorded_red(ctx, run_id, label):
 # The lines `run-test-gate.py` prints for an entry naming a path its content
 # identity leaves out (`left_out_line`): such an entry is measured on every ask,
 # so measuring it again on a read-back is no failure to repeat. Mirrored because
-# an entry point may not import another; `rd1`, `rd2` and `rd5` drive the real
-# verb, which is what goes red if either drifts.
+# an entry point may not import another; `rd1`, `rd2`, `rd5` and `rd11` drive
+# the real verb, which is what goes red if either drifts.
 GATE_LEFT_OUT = ("[run-test-gate] %s names ",
                  "[run-test-gate] %s cannot be read for the paths it names")
 
 
 def grades_left_out(text, name):
-    """True when the gate's output `text` says the entry `name` names a path
-    its identity leaves out (`GATE_LEFT_OUT`)."""
-    return any(ln.startswith(form % (name,)) for ln in (text or "").splitlines()
-               for form in GATE_LEFT_OUT)
+    """True when the gate's output `text` says the entry the step `name` ran
+    names a path its identity leaves out (`GATE_LEFT_OUT`). A joined step's
+    name is the declared entry with the affected steps after it, and the
+    runner's sentence names the declared entry alone, so the entry is read
+    off the name by `_evidence_io.step_parts`; a step that ran no declared
+    entry is matched by its whole name."""
+    entry = _evio.step_parts(name)[0]
+    names = set([str(name)] + ([entry] if entry else []))
+    return any(ln.startswith(form % (n,)) for ln in (text or "").splitlines()
+               for form in GATE_LEFT_OUT for n in names)
 
 
 def step_seconds(step, name=str):
@@ -6715,16 +6794,20 @@ def read_back(ctx, run_id, status, repeat, label):
     """`(code, out, err)` for the background row `run_id` of `status`, the one
     reading the task gate and the phase gate share.
 
-    THE VERDICT ACTED ON IS THE ONE THE LAUNCHED RUN RECORDED. A red is that
+    A RED IS THE LAUNCHED RUN'S OWN; A GREEN IS ASKED AGAIN, AND THE SECOND
+    ASK'S VERDICT IS THE ONE ACTED ON. A red is that
     row's red (`recorded_red`), asked nothing again, so it reaches the base
     measurement and the decision as an inline red does: a second ask could
     come back green and replace a red nobody was shown. A green is asked
-    again through `repeat()`, the recorded gate's own call, which repeats
-    what it can on this tree - every step grading the tree when nothing moved
-    - and measures the rest: an entry naming a path its identity leaves out
-    (the plan) is measured on every ask, so a second ask on the same content
-    is no free repeat. `repeat_said` puts what it repeated and what it measured
-    on a did-line clause naming `label`, with the signal's shorter form of it.
+    again through `repeat(verbose)`, the recorded gate's own call, which
+    repeats what it can on this tree - every step grading the tree when
+    nothing moved - and measures the rest: an entry naming a path its identity
+    leaves out (the plan) is measured on every ask, so a second ask on the same
+    content is no free repeat. It is asked with `verbose` True, the long form
+    (`READ_BACK_FORM`), because the one-line green leaves out the lines that
+    say why a step was measured. `repeat_said` puts what it repeated and what
+    it measured on a did-line clause naming `label`, with the signal's shorter
+    form of it.
     An empty gate's row, the runner's own
     green, is asked again by the same call, which over a gate still empty runs
     nothing and over one given steps since measures them; it has no verdict to
@@ -6734,7 +6817,7 @@ def read_back(ctx, run_id, status, repeat, label):
         return unrepeatable_red(run_id, status)
     if status != GATE_EMPTY and status != GATE_PASSED:
         return recorded_red(ctx, run_id, label)
-    code, out, err = repeat()
+    code, out, err = repeat(True)
     said = None if status == GATE_EMPTY else repeat_said(ctx, run_id, out + err,
                                                          label)
     if said is not None:
@@ -6786,7 +6869,8 @@ def background_gate(ctx, state, phase, task, tree):
     write_state(ctx, state)
     queue_row(ctx, state, task, ledger_row(ctx, run_id), since=launched.get("at"))
     return None, read_back(ctx, run_id, status,
-                           lambda: record_gate(ctx, phase, task, tree),
+                           lambda verbose: record_gate(ctx, phase, task, tree,
+                                                       verbose=verbose),
                            "gate %s" % (task["id"],))
 
 
@@ -11313,18 +11397,19 @@ def phase_gate_args(ctx, phase, absolute=False):
             fix(ctx["project"]), "--timeout", str(SIGNOFF_STEP_SECONDS)]
 
 
-def run_phase_gate(ctx, phase):
+def run_phase_gate(ctx, phase, verbose=False):
     """`(code, stdout, stderr)` of the phase's recorded gate run, over the gate
-    as the plan holds it now."""
-    return run_verb(ctx, "run-test-gate.py", phase_gate_args(ctx, phase))
+    as the plan holds it now; `verbose` as `record_gate`'s."""
+    return run_verb(ctx, "run-test-gate.py", phase_gate_args(ctx, phase)
+                    + (READ_BACK_FORM if verbose else []))
 
 
-def phase_gate(ctx, phase):
+def phase_gate(ctx, phase, verbose=False):
     """`run_phase_gate`, derived first (`derive_phase_gate`)."""
     failed = derive_phase_gate(ctx, phase)
     if failed is not None:
         return failed
-    return run_phase_gate(ctx, phase)
+    return run_phase_gate(ctx, phase, verbose)
 
 
 def launch_phase_gate(ctx, state, phase, head, argv=None, why=None):
@@ -11377,7 +11462,8 @@ def chosen_phase_gate(ctx, state, phase, head):
                                  launched.get("argv")), None
     state.pop(PHASE_GATE_LAUNCH_KEY, None)
     write_state(ctx, state)
-    return None, read_back(ctx, run_id, status, lambda: phase_gate(ctx, phase),
+    return None, read_back(ctx, run_id, status,
+                           lambda verbose: phase_gate(ctx, phase, verbose),
                            "phase gate")
 
 

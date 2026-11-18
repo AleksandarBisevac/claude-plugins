@@ -1623,7 +1623,8 @@
       "P163.12-d6t",
       "P164.1",
       "P168.7",
-      "P168.8-icj"
+      "P168.8-icj",
+      "P168.18-icj"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -2087,7 +2088,9 @@
       "P168.7",
       "P168.8-icj",
       "P168.14-icj",
-      "P168.15-icj"
+      "P168.15-icj",
+      "P168.16-icj",
+      "P168.17-icj"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -4946,7 +4949,9 @@
       "P168.2",
       "P168.4",
       "P168.6",
-      "P168.15-icj"
+      "P168.15-icj",
+      "P168.16-icj",
+      "P168.17-icj"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -10450,7 +10455,8 @@
       "P155.30-gfj",
       "P156.6",
       "P168.7",
-      "P168.8-icj"
+      "P168.8-icj",
+      "P168.18-icj"
     ],
     "docs/audit/phases/P85.json": [
       "P91.1"
@@ -11216,7 +11222,8 @@
       "P167.8-fge",
       "P168.3",
       "P168.4",
-      "P168.14-icj"
+      "P168.14-icj",
+      "P168.16-icj"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -13415,7 +13422,8 @@
       "P168.4",
       "P168.9-icj",
       "P168.12-icj",
-      "P168.14-icj"
+      "P168.14-icj",
+      "P168.16-icj"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -13621,7 +13629,9 @@
       "P168.2",
       "P168.4",
       "P168.6",
-      "P168.15-icj"
+      "P168.15-icj",
+      "P168.16-icj",
+      "P168.17-icj"
     ],
     "tests/test_set_priority.py": [
       "P131.1"
@@ -13822,7 +13832,8 @@
       "P143.4-6yq",
       "P142.36-6yq",
       "P148.4",
-      "P168.8-icj"
+      "P168.8-icj",
+      "P168.18-icj"
     ],
     "plugins/audit/scripts/status/_impact.py": [
       "P131.18-dau",

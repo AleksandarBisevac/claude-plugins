@@ -5112,7 +5112,11 @@ phase gate). What the second ask did is a did-line clause (`repeat_said`, off th
 recorded): nothing for a whole repeat (`GATE VERDICT REUSED`); else the steps it repeated and the
 ones it measured again with their seconds, and `did not repeat on this tree` only when a measured
 step is one the runner did not say names a left-out path (`GATE_LEFT_OUT`, its line mirrored),
-with the reason taken from the identities the runner recorded on the two rows. On the one-line
+with the reason taken from the identities the runner recorded on the two rows. A joined step is
+matched by its declared entry, read off its name by `_evidence_io.step_parts`, since the runner's
+line names that entry alone (`grades_left_out`, `rd11`). The second ask is made for the long
+form (`READ_BACK_FORM`): a green run that had the machine to itself prints one line, which keeps
+none of the lines the clause is said from. On the one-line
 signal that clause rides in a shorter form of its own (`say_clause` keeps it under
 `SIGNAL_FORMS_KEY`, which `signal_line` reads): each step's name - its gate entry's command text,
 which nothing bounds - cut to `SIGNAL_STEP_BYTES` around `...` and with the did field's `; `
@@ -5226,8 +5230,12 @@ half-way loses the reading; measured under the bound it runs inside `next`, held
 run stopped there is handed to the background rather than read. The start's mark is written before
 the run, wherever it is, and names the tree and every process measuring in it, so a run killed
 during it is not followed by a second measurement, and the next drive removes the tree it left
-(`sweep_base_trees`) unless a process the mark names is still alive. `bt1`-`bt4` drive the bound,
-the mark and the sweep, `bq1` and `bq4` the background run and its kill. When the reading taken
+(`sweep_base_trees`) unless a process the mark names is still alive. That question is asked once
+per run per sweep: the reading the fold of the run's own record took (`fold_reading`) is the one
+the removal acts on, since a reading can flip between two asks and a fold that kept the record
+over a removal from the state alone lays the gone tree back on the mark. `bt1`-`bt4` drive the
+bound, the mark and the sweep, `bq1` and `bq4` the background run and its kill, and `bq6` and
+`bq7` a run read alive once and dead after. When the reading taken
 again is `base-only` the decision is `gate-red-base`, which sends no writer session and offers
 `block` and `rerun` - the owner's commit over the red is `commit-task-work.py --override-verdict`,
 their own act. `bm1`-`bm4` drive it. A base nobody can know - the run left no reading, failed, or
@@ -5634,7 +5642,10 @@ as unattributed; the step says so on its did-line (`stage_unread`) - the ledger 
 unreadable, a row with no start or length, a hand-out with no stamp - once per stage and reason,
 never as a warning or a stop. A row that repeated another run's verdict is no stage: it measured
 nothing and records no start, which a stage must carry (`_task_timing.stage_problems`), so the
-line names that row and the run it repeats (`rd10`) rather than a start it could not read. The `tm` cases drive each stage from its source, `tm3` compares the
+stage `queue_row` queues for it is the run it repeats (`repeated_measured`, through
+`_evidence_io.measured_row`), under that run's own source as every other read of it, and the line
+says whose stage it is rather than that none was recorded (`rd10`); only a repeat whose run the
+ledger no longer holds keeps the gap, naming that row and the run. The `tm` cases drive each stage from its source, `tm3` compares the
 journal's actions and the commit count with a drive whose stages are never queued, `tm8` holds
 the Agent route, `tm9` a wave member's stages in the phase tree's shard, and `tm10` to `tm16` the
 set-aside's commit stage, the no-change close, the unread lines and the fallback bases.
