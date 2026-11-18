@@ -341,12 +341,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   config write by comparing the placed path with the config's spelling, so the project's config
   in another letter case and a nested worktree's config - writes the guard asks the owner about -
   left no config row. Both hooks now ask one function, `_config.audit_config_way`, and the row
-  keeps its shape, its target the path as placed. **Matched:** the project's config and a linked
-  or nested worktree's config, either through a symlink; a hard link to the project's config
-  placed in the project, under any name; and a spelling differing only in letter case, where the
-  directory that name is looked up in folds case. **Not matched:** a hard link to a nested
-  tree's config under another name, a hard link placed in the project to the config of a tree
-  outside it, and the shell route, which is journalled and not refused. The journal writes its
+  keeps its shape, its target the path as placed. What is matched and what is not, symlinked
+  folders included, is the next entry's list. The journal writes its
   config row for exactly the edit-tool writes the guard holds, apart from a hold made without
   regard to case whose write created another file; an MCP write of a nested tree's config is
   held and leaves no config row. A write that would create the config is now walked one
@@ -357,6 +353,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   config. The guard's disk-call case now counts every call that asks the disk, a listing
   included, and holds its table complete against the source; an ordinary write makes the calls
   it made before, and the journal now pays the identity question on every edit-tool write.
+- **The config hold names the file a session would load, also when `.claude` is a symlink.** A
+  project whose `.claude` linked out of the repository let a subagent create the config with the
+  plan gate switched off, and write it again once it existed, with no journal row, because the
+  path was placed by where it resolved - outside every tree - before the config was asked about;
+  with `.claude` linked to a directory inside the project, creating the config was allowed
+  because the written path was compared resolved with a config path that was not. The question
+  is now asked of every tree whose loader could read the written file, whatever the path
+  resolves to - the tree it was placed in, the project, the session's tree, and a repository the
+  config's components hang off - and each tree's config and the written path are compared
+  resolved against resolved. So a subagent's write of the config is refused and the main
+  session's asked with `.claude` linked inside the project, out of the repository, into another
+  tree's `.claude`, through a chain or to a directory not made yet, spelled through the link or
+  at its destination, the config present or not, by an edit tool or an MCP write, and the
+  journal writes its config row for each. **Matched:** the project's config and a linked or
+  nested worktree's config, through a symlinked folder as above; a hard link to the project's
+  config under any name, wherever it is placed; and a spelling differing only in letter case,
+  where the directory that name is looked up in folds case. **Not matched:** a symlink file in
+  the project pointing at the existing config of a worktree outside it, a hard link placed in
+  the project to the config of a tree outside it, a hard link to a nested tree's config under
+  another name, the config of a repository that is no tree of this one, and the shell route,
+  which is journalled and not refused. A link that cannot be followed is held as before. An
+  ordinary write that would create its file now also asks whether the config's folder and file
+  are links.
 
 ## [3.8.0]
 

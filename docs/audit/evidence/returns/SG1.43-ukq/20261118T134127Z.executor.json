@@ -1,0 +1,96 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_guard_edits.py tests/test_journal_writes.py tests/test__config.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T14:23:44Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_guard_edits.py tests/test_journal_writes.py tests/test__config.py` in a throwaway tree at HEAD exited 1 with 7 of 166 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cf29 (house FAIL), cf33 (house FAIL), cf34 (house FAIL), cf33b (house FAIL), cf35 (house FAIL), oq4 (house FAIL), oq4c (house FAIL): SELFTEST FAILED: 164/166 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "(1) plugins/audit/hooks/_config.py: audit_config_way now asks a list of candidate trees that does not depend on where the path resolves to: the tree tree_for placed the path in (when inside), the project, the session's tree (_session_tree: a walk up to the project for a repository when the session stands under it elsewhere, path_tree's linked worktree when outside), and the config-shaped directory off the path once resolved (only inside the placed tree) and as written (only inside the placed tree or spelled under the project). Each is asked once by resolved directory (_candidate_word), an error costing that candidate only. config_question(tree, written, data) carries the written path and the session's cwd beside tree_for's answer; a relative path is also joined with the session's cwd. _names_audit_config compares resolved against resolved: identity where both exist, as before; for a creating write the config's folder and file are resolved first (_config_resolved, each followed where it is a link) and the resolved write is walked from the directory the folder resolves into, against the resolved names (_case_walk gains an owns parameter, default CONFIG_REL's parts). tree_for is NOT touched. (2) guard-edits.py rule 7 and the MCP lane ask the question of a path outside every tree too, the verdict naming the written path when there is no rel. (3) journal-writes.py: a write placed outside every tree that the question names is a config.edit row, target rel_path(project, path); the inside branch passes the written path too; no existing target changes. (4) SECURITY.md, plugins/audit/README.md, CHANGELOG.md, PLUGIN-BUILD-GUIDE.md say what is matched through a symlink and what is not; no row of SECURITY.md's fail-mode table changed. (5) Tests: the property table (39 arrangements) is red before (18 of 38 agree on HEAD's hooks with the final table before ln39 was added; 15 of 31 at first) and 39 of 39 after. Verdicts of the orchestrator's probes, run on copies under the scratchpad: probe_j both writes block (the probe writes the file itself whatever the verdict, so its load line reads planGate off either way) and the journal row now exists; probe_g all three rows block/ask; probe_a 1960 runs, 0 differing verdicts or words; probe_c one changed step and 2/2 trail rows, the same as an export-vs-export control run (a fixture-name artifact in a tmp-alias target), 0 guard/journal disagreements; probe_f every change is allow to block/ask where the write creates the config, none the other way, 0 images attached after; the orchestrator's mine.py, mine2.py, probe_hold.py, probe5.py print identical output on the export and the tree. Disk calls of an ordinary write per kind (cf29 prints them), before the change and after: existing source file lstat 21 stat 2 -> lstat 21 stat 2; new source file lstat 21 stat 1 -> lstat 23 stat 1; config-named file in a plain folder lstat 21 stat 2 -> lstat 23 stat 2; no listing (cf29b). A session standing elsewhere than the project adds a walk up to the project, or outside it the path_tree git question. bench-hooks --gate exit 0 on 3.14.7 and on 3.9.6 (11 hooks within budget each). Unresolvable link: a dangling link resolves to the place it names and is matched there; a link that cannot be followed (a loop) resolves to the same unresolved spelling as the config's and is held as before, fail-closed (ln32 pins it; the mutation reading it as no file is caught). Deviation from the description: the project being always a candidate, a hard link to the project's config placed in an outside worktree is now held by identity (it IS the project's config); the documents say it is matched rather than listing it as not matched. The symlink FILE residual stays unmatched (ln38 pins it) and the shell route is unchanged. Mutation probe: 14 rows, MUTATIONS ALL CAUGHT, exit 0. Dependants: every hook importing _config keeps its behaviour except guard-edits and journal-writes as above (test_hooks 247, test_require_plan 245, test_guard_bash_writes 239, test__journal_io 276, test__config 413 cases all ok); the scripts reaching _config's loader do not call the changed functions; the documents listed are updated where they spoke of the config question and otherwise untouched.",
+    "descriptive": "A subagent can no longer create or rewrite the audit config through a symlinked .claude folder, and the journal records the write."
+  },
+  "testsAdded": [
+    "cf33: the hook as a process refuses a subagent's and asks the main session's write of the config with .claude linked inside the project or outside the repository, present or absent, through the link or at its destination; cf33b the same for an MCP write, a file beside it allowed",
+    "cf34: the property by doing over a table of arrangements (real folder, links inside, outside, into another tree's folder, a chain, relative, dangling, a loop, a dangling config-file link, a nested worktree under the link, a session in a linked worktree, relative paths, a hard link into a sibling worktree, the symlink-file residual): hold exactly when the loader of the project, the session's tree or this repository's tree the path lies in then reads the written content; cf34b the allow twins; cf35/cf35b an error asking one candidate costs that candidate only",
+    "cf29 re-pinned to the new disk-call sequence and printing the calls by kind; cf29b no directory listing on an ordinary write, as its own case",
+    "oq4: the journal hook as a process writes one config row for the config written through a symlinked folder; oq4b no row for the twins; oq4c guard and journal agree over a symlinked folder"
+  ],
+  "casesAdded": [
+    [
+      "cf33",
+      "cf33b"
+    ],
+    [
+      "cf34",
+      "cf34b",
+      "cf35",
+      "cf35b"
+    ],
+    [
+      "oq4",
+      "oq4b",
+      "oq4c"
+    ]
+  ],
+  "claims": "claims:\n1 _config.py audit_config_way builds the candidate list (fixed trees, session tree, shaped tops) and _names_audit_config/_config_resolved do the resolved comparison; guard-edits.py rule 7 and _decide_mcp, journal-writes.py _classify_placed call config_question; each document sentence names those functions or the cases cf33-cf35b, oq4-oq4c\n2 mutation probe in the scratchpad's sg1.43/mutations.py, 14 rows each applied once on a copy with __pycache__ purged: narrowed candidates -> cf33 cf34 red; unresolved creating comparison -> cf33 cf33b cf34 red; ALLOW any write into a symlinked folder -> cf34b oq4b red; journal outside branch removed -> oq4 oq4c; MCP skip -> cf33b; session tree dropped -> cf34; ALLOW shaped dir anywhere -> cf28e cf34b; relative cwd spelling dropped -> cf34; walk against CONFIG_REL names -> cf34 (ln39, a folding volume); error ends question -> cf35; ALLOW loop read as no file -> cf34; dangling not followed -> cf34; listing -> cf29 cf29b; extra stat -> cf29; MUTATIONS ALL CAUGHT exit 0\n3 the class is 'the config question placed by where the path resolves'; grep of audit_config_way callers: guard-edits.py rule 7 and MCP lane, journal-writes.py _classify_placed - all three now pass config_question; tree_for's other callers untouched by design\n4 n/a - no rule addressed to an agent\n5 suites run twice (3.14.7 and 3.9.6), green both; probe_c differences reproduced on an export-vs-export control; disk-call counts are cf29's own printed values, one run\n6 decision reads resolved paths and file identity per candidate tree, never the spelling; allow twins (cf34b, cf28e, cf33b beside) green before and after, and the ALLOW mutations turn them red\n7 the counts in the outcome are cf29's printed output and probe tallies; no number written into the documents",
+  "stamp": "audit-stamp: {\"content\":\"sha256:a26070c6056a5c9b7582c4c58f0b7114da12f0574e0ab14e15568d114ecfde27\",\"dirtyDigest\":\"sha256:4250fe6a91eb4799a1158433efcfc55f8350f7759e85e2c393eb48cc64d31742\",\"dirtyPaths\":{\"CHANGELOG.md\":\"42badae669ea07d0\",\"PLUGIN-BUILD-GUIDE.md\":\"ac667a4d8065cb27\",\"SECURITY.md\":\"bf8b0f1bef239260\",\"plugins/audit/README.md\":\"0a64ad508893d2d8\",\"plugins/audit/hooks/_config.py\":\"d8d98ca872b5fcc3\",\"plugins/audit/hooks/guard-edits.py\":\"bcc1f40840221014\",\"plugins/audit/hooks/journal-writes.py\":\"b1170a3fb7b8af74\",\"tests/test_guard_edits.py\":\"e2f5e25fae98ba1e\",\"tests/test_journal_writes.py\":\"fb9ad94d9c0c39aa\"},\"head\":\"cf26c889\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/README.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/guard-edits.py\",\"plugins/audit/hooks/journal-writes.py\",\"tests/test__config.py\",\"tests/test_guard_edits.py\",\"tests/test_journal_writes.py\"],\"scopeDigest\":\"sha256:7cba021b65b496a6dcc4bea5074e1fba5b70fa87e247e3760d830053e3f9d776\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 3 of the diff's 9 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 4 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, SECURITY.md, plugins/audit/README.md; 2 file(s) that could hold a move not compared: tests/test_guard_edits.py, tests/test_journal_writes.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "SECURITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test_guard_edits.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 956 (`if _harness.attempt(os.stat, real)[0]:`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test_journal_writes.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was only added: every statement of the base copy outside them stands in the tree copy, in order and in place, and the first added one is at tree line 2083 (`_link_question_cases(check)`); what it runs is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "cf26c889024a58c5660af7cba71d881c0380c5c1"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-18T14:23:46Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

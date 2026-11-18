@@ -18,7 +18,8 @@ Appends one row to the tamper-evident journal for every write to the MANIFEST
 (index or phase shard) or to `.claude/audit.config.json`, whatever made it. An
 edit-tool write is a config write by `_config.audit_config_way`'s answer, the
 one guard-edits holds it by - so that config in another letter case, or a
-nested worktree's, is a config row too, its target the path as placed.
+nested worktree's, is a config row too, its target the path as placed (spelled
+from the project when a symlinked `.claude` resolves it out of every tree).
 Nothing else is recorded: the journal is the audit trail of the plan and the
 rules, not a log of the repository.
 
@@ -235,6 +236,12 @@ def _classify_placed(data, cfg, root):
         return (None, "no path", tool, ti, root)
     tree = _config.tree_for(data, path, cfg, project=root)
     if not tree["inside"]:
+        # A symlinked `.claude` resolves out of the repository while the
+        # project still loads its config through it: the guard holds that
+        # write, so it is a config row here, placed from the project.
+        if _config.audit_config_way(_config.config_question(tree, path, data)):
+            return ("config.edit", _config.rel_path(root, path), tool, ti,
+                    root)
         return (None, "outside this project (%s)" % tree["basis"], tool, ti,
                 root)
     rel, troot = tree["rel"], tree["root"]
@@ -253,7 +260,7 @@ def _classify_placed(data, cfg, root):
     # config write the guard asks about - the config in another letter case, a
     # nested worktree's - is a config row here, and no other write is. `rel`
     # stays the path as placed.
-    if _config.audit_config_way(tree):
+    if _config.audit_config_way(_config.config_question(tree, path, data)):
         return ("config.edit", rel, tool, ti, troot)
     return (None, "not a manifest or config path", tool, ti, troot)
 

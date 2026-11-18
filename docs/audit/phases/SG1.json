@@ -4304,7 +4304,7 @@
     {
       "id": "SG1.42-ukq",
       "title": "Green-first states what its two baseline runs showed and names the cause as one of two readings",
-      "status": "in_progress",
+      "status": "done",
       "description": "A narrow review of the task that made green-first explain a baseline that is not green by one more run of HEAD's own tree found the status independent of that run under every forced answer, the three answers true on every deterministic input, the run count and the deadline right, and the red verb unchanged. It found one sentence that states more than one extra run can establish; it was run by the reviewer and again by the orchestrator through the real green verb on a git fixture.\n\nMEASURED on the tree as it stands. HEAD holds a test that fails on its first invocation only; the task adds a new passing test file. The baseline run is red in HEAD's flaky test, the extra run is green, and the basis says the command is green at HEAD and stops being green once the declared files are laid - that what is left of the task's new file fails or does not load on HEAD's code. The new file loaded and holds no case after the take-out; the only failure is in a file nothing was laid into, and the basis's own first clause names it. One green run after one red run cannot tell a failure the laid files cause from a command that does not give the same answer twice. The status, could-not-prove, is right. Placement cannot settle it either - a laid file that changes shared state turns an untouched file red every time - so the answer is in the words.\nTwo smaller things in the same sentence: the extra run is described as HEAD's own tree with nothing of the task's laid, while it lays each new declared test file as an empty stub, which matters when the command names such a file by path; and an exception raised inside the extra run aborts the verb instead of leaving the cause unmeasured.\n\nTHE RULE TO BUILD.\n1. TWO OBSERVATIONS, THEN TWO READINGS. When the extra run is green, the basis says what the two runs showed - not green with the declared files laid, with the baseline's own line; green on one run of HEAD's own tree - and then that this has two readings and the runs do not choose between them: what was laid causes the failure, or the command does not give the same answer twice. It names the files something was taken out of as what was laid, and says nothing as fact about which of them fails or does not load beyond what the baseline's own line names.\n2. When the extra run is red, the basis says the command was red on a run of HEAD's own tree as well, with that run's line, and gives the advice to narrow, as today.\n3. THE EXTRA RUN IS DESCRIBED AS IT IS LAID: HEAD's own tree with each new declared test file as an empty stub and nothing else of the task's.\n4. AN EXTRA RUN THAT RAISES leaves the cause unmeasured, with the exception's name, like one that cannot be read or runs past its deadline. The status does not change.\n\nWHAT STAYS. Every status of every earlier probe. The red verb, to the character. The payload's shape and keys. The run count: two for a green baseline, a third only when it is not green.\n\nHOW TO PROVE. Through the real green verb on git fixtures, red before: a test of HEAD's that fails on its first invocation only, with a new passing test file - the basis gives both readings and does not say the new file fails or does not load; the same with the test failing in the extra run too - red on HEAD's own tree, the advice. Through the seam the suite stubs: an extra run that raises gives the not-measured answer with the exception's name, and the status is what it is without it. One case that the description of the extra run names the stubs when a new declared test file exists and does not when none does. The earlier cases for a file that does not load on HEAD's code keep their statuses and now assert the two readings. A mutation probe the orchestrator can run: the cause stated as fact again; the exception left to abort; the stubs left unsaid; and an allow row - the two readings printed for a red extra run turns the red case red.\n\nNOT in this task: running the command more than once to tell the two readings apart; other runners; whether could-not-prove stops a sign-off.\n\nAcceptance:\n(1) A baseline that is not green with a green extra run is said as two observations and two readings, and no sentence states as fact that a laid file fails or does not load beyond what the baseline's own line names.\n(2) A red extra run says the command was red on a run of HEAD's own tree and advises narrowing.\n(3) The extra run is described with the empty stubs it lays.\n(4) An extra run that raises leaves the cause unmeasured and the status unchanged.\n(5) Every status of the earlier probes, the run count and the red verb's output are unchanged.\n(6) The module, the build guide, the changelog and the reference document say what the basis now says and are true of the code.",
       "files": [
         "plugins/audit/scripts/governance/stamp-verification.py",
@@ -4333,14 +4333,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "cf26c889024a",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(1) plugins/audit/scripts/governance/stamp-verification.py: CAUSE_RUN (a constant) replaced by _cause_run_said(stubbed, article), which describes the extra run as it was laid - each new declared test file named as an empty stub where _green_cause_run laid one, 'with nothing of the task's laid' where none; _baseline_cause's green answer now reads: HEAD's own run, the declared files laid, is not green on HEAD's code (<baseline line>), while one run of HEAD's own tree with <layout> is green (<line>): the two runs do not choose between two readings - what was laid causes the failure, or the command does not give the same answer twice; what was laid is the declared files, each file something was taken out of named with what was taken out (<rel: names>). The sentence 'fails or does not load on HEAD's code' is gone; nothing names a file as failing beyond the baseline's own line. Red answer: same prefix and run line, 'the command was red on a run of HEAD's own tree as well - narrow it to the task's cases'. Unmeasured answer: prefix unchanged. New _cause_or_raised wraps _green_cause_run alone (run_green calls it in place of _green_cause_run): an exception becomes a cause record with an internal 'raised' key (never in the payload - run['cause'] is not serialised), which _cause_answer words as 'the cause was not measured: <Name>: <message>, raised making a run of HEAD's own tree'; the two proving runs are not wrapped. Status logic, run count, payload shape and keys, and red's NARROW and red_verdict untouched. Section comments at the GREEN_WORDS block and above _cause_run_said rewritten to the new words. (2) tests/test_stamp_verification.py: new cases gc7 (flaky test of HEAD's failing on its first invocation only, counter outside every tree, beside a new passing file: could-not-prove, two readings, the new file named as what was laid, no fact phrase, no narrow), gc8 (allow twin: fails in the extra run too - red on a run of HEAD's own tree as well, narrow, no readings), gc9 (the extra run raising through the _isolated_run seam tagged head: cause unmeasured with 'RuntimeError: ...', status equal to the unforced run for both a could-not-prove fixture and a not-green one), gc10 (stubs named when a new declared test file exists, green and red extra run alike; 'nothing of the task's laid' when none). CHANGED ON PURPOSE (the floor guard will report them as changed definitions; that is expected): constant _GC_RED was 'is red at HEAD', now \"was red on a run of HEAD's own tree as well\"; _GC_GREEN was 'is green at HEAD', now 'does not give the same answer twice'; new _GC_FACT, _GC_STUB, _GC_NOTHING. gc1 asserted 'is red at HEAD' present and 'is green at HEAD' absent, now asserts the new red phrase present and the readings phrase absent (title reworded); gc2 asserted 'is green at HEAD' present, now asserts the readings phrase and 'what was laid' present and 'fails or does not load on HEAD's code' absent (title reworded); gc3 code unchanged but reads the two constants, so it now asserts both new phrases absent from an unmeasured answer; gs5 asserted 'is green at HEAD' present, now the readings phrase present and the fact phrase absent (title reworded); gs6 asserted 'is red at HEAD' present and 'is green at HEAD' absent, now the new red phrase present and the readings phrase absent (title reworded). (3) Docs: PLUGIN-BUILD-GUIDE.md stamp-verification section, CHANGELOG.md Unreleased green-first entry, plugins/audit/reference/execute-task.md green-first paragraph - each now says the extra run is laid with stubs and described so, red = red on a run of HEAD's own tree as well + narrow, green = two observations and two readings naming what was laid, raising = unmeasured. RUNS: red before fix: --stage sg-green-cause --stage sg-green-same exit 1, SELFTEST FAILED 8/16; after: exit 0, ALL PASS 16/16; python3 tools/sweep-selftests.py tests/test_stamp_verification.py exit 0, 429 cases; sweep --jobs 4 test__deps test__output_lints test__refs exit 0, 792 cases; tools/prove-gates.py --list exit 0; tests/test_drive_phase.py --stage gfw-block gfs-block us-block exit 0, ALL PASS 90/90; sweep --jobs 4 test__filed_returns (146) test_audit_lookup (207) test__status_facts (199) exit 0; sweep test__claude_home (16) test__proc_group (39) test__affected_tests (51) exit 0; sweep test_audit_task exit 0, 1268 cases; tools/measure-context.py --gate exit 0; ruff and vermin -t=3.8- over both .py exit 0. Orchestrator's probes (scratch sg1.42/probes.py, compared against the runs on the tree before this change): y5, verb4, verb3 got lines unchanged; red4, red6 identical after masking; judge.py, sg1.37-mine/mine.py, sg1.27-mine/mine.py exit 0 (WRONG: 0). review6 probe_words.py whole: every got line equal to the reviewer's run on e512ae9; D1 basis lacks 'fails or does not load on HEAD's code' and holds 'does not give the same answer twice'; D2 holds 'narrow'. Mutation probe scratch sg1.42/mutations.py (run from the worktree root, copy only): cause-stated-as-fact CAUGHT (gc2 gc7 gs5), exception-left-to-abort CAUGHT (gc9), stubs-left-unsaid CAUGHT (gc10), ALLOW-readings-on-a-red-run CAUGHT (gc1 gc8 gs6); MUTATIONS: ALL CAUGHT, exit 0. Unrecorded gate run-test-gate.py SG1 --task SG1.42-ukq, run twice: first exit 1, GATE RED on one case outside the declared files - tests/test_drive_phase.py bq4 (a background base run killed while it measures; the drive's base-run cleanup, nothing of the green verb) - while other suites ran on the machine; that block alone then (python3 -B tests/test_drive_phase.py --selftest --stage bq-block) exit 0, ALL PASS 5/5; the whole gate again, exit 0, GATE GREEN. Not fixed, not mine. DEPENDANTS: no reader in plugins/, tests/ or tools/ matches on the reworded basis text (grep for the old phrases and CAUSE_RUN: hits only in this module, its suite and the three documents changed here); the 'cause' keys in _evidence_io.py, run-test-gate.py and _manifest_phases.py are gate gap records, a different field. test__claude_home, test__filed_returns, test__proc_group, test_audit_lookup, test_audit_task import the module - still correct, green above, none named CAUSE_RUN. tools/affected.py, tools/sweep-selftests.py, tools/verify.sh, .github/sweep-costs.json name the suite by path - unchanged path; the sg-green-cause block grows by four real-verb cases and its recorded cost was not re-recorded. _filed_returns.py's prose mention and drive-phase.py's filing read the greenFirst block's status and source, not its basis words - unchanged shape. CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, execute-task.md readers are the lint suites and measure-context - green above.",
+        "descriptive": "Green-first no longer states as fact that a laid file fails when one red baseline is followed by one green run of HEAD's own tree: it gives both readings (what was laid causes it, or the command does not give the same answer twice), describes the extra run with the stubs it lays, and leaves the cause unmeasured instead of aborting when that run raises."
       },
       "startedAt": "2026-11-18T12:50:18Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T13:41:10Z",
+      "verifiedBy": [
+        "gc7: through the real green verb, a test of HEAD's failing on its first invocation only beside a new passing file is said as two observations and two readings, naming the new file as what was laid and never as failing",
+        "gc8: the same test failing in the extra run too is said red on a run of HEAD's own tree as well with the advice to narrow and without the readings",
+        "gc9: an extra run raising through the _isolated_run seam leaves the cause unmeasured with the exception's name, statuses equal to the unforced runs (could-not-prove and not-green)",
+        "gc10: the extra run is described with its empty stubs named when a new declared test file exists, and as nothing of the task's laid when none does"
+      ],
       "notes": [
         {
           "at": "2026-11-18T12:50:16Z",
@@ -4358,12 +4363,24 @@
         "runId": "2026-11-18T13:41:06Z.2b467a",
         "status": "passed",
         "at": "2026-11-18T13:41:06Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "cf26c889024a",
+        "at": "2026-11-18T13:41:10Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T13:27:08Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 with 8 of 429 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - gs5 (house FAIL), gs6 (house FAIL), gc1 (house FAIL), gc2 (house FAIL), gc7 (house FAIL), gc8 (house FAIL), gc9 (house FAIL), gc10 (house FAIL): SELFTEST FAILED: 421/429 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "SG1.43-ukq",
       "title": "The config hold names the file a session would load, also when the config's folder is a symlink",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A narrow review of the task that gave the edit guard and the journal one question found every verdict and every word unchanged over a large table of writes, the per-directory case rule right on real volumes, and no crash. It also found a hole that is older than that task and lives in the function it moved; the reviewer ran it and the orchestrator ran it again, the hook as a process over a real repository.\n\nMEASURED on the tree as it stands.\n(a) The project's config folder is a symlink to a directory OUTSIDE the repository and no config exists yet. A subagent writes the config, plainly spelled, with the plan gate switched off. The guard allows it, the journal writes no row, and the loader then reads the switch as off. The same write again, the file now existing, is allowed too. The question which tree a path belongs to places the resolved path outside the project before the config question is asked at all.\n(b) The same with the folder a symlink to a directory INSIDE the project: allowed, where the commit before the task that made the question one of identity held it. The branch for a write that would create the file compares the resolved path of the write with a config path that was never resolved.\nThe documents say the config is matched through a symlink.\n\nTHE RULE TO BUILD. The property, stated as what can be tested by doing: the guard holds a write exactly when, once the write is made, the loader - asked for the project, for the tree the session stands in, or for the tree the path as written lies in - would read the written file as that tree's audit config. Built so:\n1. THE CANDIDATE TREES do not depend on where the path resolves to: the project, the session's tree, the tree the path lies in as written, and the tree it lies in once resolved.\n2. FOR EACH CANDIDATE the write's file and the tree's config are compared resolved against resolved. Where the tree's config exists, by identity, as today. Where it does not, the directory the write would create the file in and the tree's config folder are the same directory by identity once both are resolved, and the name is the config's by that directory's own rule on letter case, as the per-directory rule already says; where the folder itself does not exist, the walk of the previous task applies to the resolved path.\n3. The journal asks the same function, so the row follows.\n\nWHAT STAYS. Every verdict and every word on every write the review's table and the orchestrator's inputs hold today (the brief says where), except the measured inputs, which become holds. A file merely named like the config in a plain folder, an ordinary source file, and a write outside every tree to a file no tree loads are allowed as today. No directory listing on an ordinary write. The fail-mode table. The hook import budget.\nThe disk calls of an ordinary write may rise by what resolving each candidate tree's config path costs and by nothing else; the case that counts them is re-pinned to the new sequence and the outcome carries the count before and after.\n\nHOW TO PROVE. One case that states the property by doing: over a table of arrangements - the config folder a real directory, a symlink inside the project, a symlink outside the repository, a symlink to another tree's config folder, a dangling symlink; the config present and absent; the write spelled through the link and spelled at the link's destination; main session and subagent - the hook's verdict is a hold exactly when, with the write made in the fixture, the loader reads the written content for one of the candidate trees. Red before for (a) and (b), each as the hook run as a process. Allow twins: a write into a symlinked folder that is NOT any tree's config folder; a file beside the config in the symlinked folder under another name. The journal's agreement case gains the symlinked arrangements. A mutation probe the orchestrator can run: the candidates narrowed to the tree the resolved path lies in; the creating comparison put back to an unresolved config path; and an allow row - any write into a symlinked folder held - turns the twins red.\n\nNOT in this task: a symlink FILE in the project that points at the config of a worktree outside it; a hard link to the project's config placed in an outside worktree; the shell route. Each is stated in the documents as not matched.\n\nAcceptance:\n(1) With the config folder a symlink, inside the project or outside the repository, a subagent's write of the config is refused and the main session's is asked, whether or not the config exists yet and whether the write is spelled through the link or at its destination.\n(2) Over the table of arrangements the guard holds a write exactly when the loader would then read the written file for the project, the session's tree or the tree the path lies in.\n(3) The journal writes its config row for each of those writes.\n(4) Every other verdict and word is unchanged, the allow twins are allowed, and an ordinary write lists no directory; the disk calls of an ordinary write are reported before and after.\n(5) SECURITY.md, the README, the changelog and the build guide say what is matched through a symlink and what is not, and are true of the code.\n(6) The hook import budget gate is green and the fail-mode table is unchanged.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -4395,16 +4412,74 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T13:41:27Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T13:41:25Z",
+          "text": "it quotes the name of the security contact section of SECURITY.md; this task edits only the passage on which file the audit config hold names",
+          "waives": ".github/ISSUE_TEMPLATE/config.yml"
+        },
+        {
+          "at": "2026-11-18T13:41:25Z",
+          "text": "it quotes the sentence of SECURITY.md that the policy denies the tool, not the knowledge; this task edits only the passage on which file the audit config hold names",
+          "waives": "tests/test__panel_page.py"
+        },
+        {
+          "at": "2026-11-18T13:41:25Z",
+          "text": "it quotes the heading of SECURITY.md on the name-based secret-read guard; this task edits only the passage on which file the audit config hold names",
+          "waives": "tests/test_guard_secrets_read.py"
+        },
+        {
+          "at": "2026-11-18T13:41:25Z",
+          "text": "it quotes the phrase of SECURITY.md on a write journalled after the fact; this task edits only the passage on which file the audit config hold names and leaves that phrase as it is",
+          "waives": "tests/test_hooks.py"
+        },
+        {
+          "at": "2026-11-18T13:41:25Z",
+          "text": "it quotes a phrase of SECURITY.md's passage on committed paths; this task edits only the passage on which file the audit config hold names",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-18T13:41:25Z",
+          "text": "it quotes the phrase of SECURITY.md on a deliberately loud failure; this task edits only the passage on which file the audit config hold names",
+          "waives": "tools/check-git-pipeline.py"
+        },
+        {
+          "at": "2026-11-18T13:41:25Z",
+          "text": "it reads the fail-mode table of SECURITY.md by its heading; this task changes no row of that table - the hooks' events and fail modes stay as they are",
+          "waives": "tools/gate-parity.py"
+        },
+        {
+          "at": "2026-11-18T13:41:25Z",
+          "text": "it quotes the fail-mode row of guard-edits in SECURITY.md; this task changes which function names the config file, not the hook's event, its verdict or its fail mode, so the row stays as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T13:41:25Z",
+          "text": "a dated design note with a section on SECURITY.md as it stood; this task edits only the passage on which file the audit config hold names and the note records history",
+          "waives": "docs/research/guard-ownership-design.md"
+        },
+        {
+          "at": "2026-11-18T13:41:25Z",
+          "text": "it reads the Unreleased heading of CHANGELOG.md; this task rewords the entry on the audit config hold under that heading and leaves the heading as it is",
+          "waives": "tools/release.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T14:41:03Z.d45f14",
+        "status": "passed",
+        "at": "2026-11-18T14:41:03Z"
+      }
     },
     {
       "id": "SG1.44-ukq",

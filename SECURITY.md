@@ -1480,24 +1480,48 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
 
    **What is compared is which file the path names, not how it is spelled, and
    the journal asks the same question.** One function, `_config.audit_config_way`,
-   answers it for the project's tree and for a tree nested under it alike, and
-   both `guard-edits` and `journal-writes` call it. **Matched:** the project's
-   config and the config of a linked or nested worktree of it, either through a
-   symlink; a hard link to the project's config placed in the project, under any
-   name; and a spelling that differs from the config's only in letter case, where
-   the directory that name is looked up in folds case. **Not matched, stated:** a
-   hard link to a nested tree's config under another name; a hard link placed in
-   the project to the config of a tree outside it; and the shell route, which is
-   journalled and not refused (the residuals below). **The journal writes its
-   config row for exactly the edit-tool writes the guard holds**, its target the
-   path as placed (`oq1`–`oq3b` in `tests/test_journal_writes.py`, the hook run as
-   a process over real linked worktrees and one table through both hooks). It
-   asks after the write, so the one exception is a hold made without regard to
-   case whose write turned out to create another file: that is no config row.
+   answers it, and both `guard-edits` and `journal-writes` call it. It is asked of
+   every tree whose own loader could read the written file, and which trees those
+   are does not depend on where the path resolves to — a `.claude` that is a
+   symlink resolves out of every tree while the project still loads its config
+   through it: the tree the path was placed in, the project, the tree of this
+   repository the session stands in, and a repository the path's last components
+   hang off, as written under the project or once resolved inside the placed
+   tree. Each tree's config and the written path are compared resolved against
+   resolved, so a `.claude` linked to a directory inside the project, out of the
+   repository, into another tree's `.claude`, through a chain of links or to a
+   directory that does not exist yet is matched at its destination, whether the
+   write is spelled through the link or at that destination and whether or not
+   the config exists yet. A link that cannot be followed (a loop) is held as the
+   config's spelling, as it was before; no tool can make that write. `cf33`–`cf34b`
+   in `tests/test_guard_edits.py` state this by doing: over a table of such
+   arrangements the hook runs as a process, the write is then made, and the hook
+   held it exactly when the loader of the project, of the session's tree or of
+   the tree of this repository the path lies in as written reads what was
+   written. **Matched:** the project's config and the config of a linked or
+   nested worktree of it, through a symlinked folder as above; a hard link to the
+   project's config under any name, wherever it is placed;
+   and a spelling that differs from the config's only in letter case, where the
+   directory that name is looked up in folds case. **Not matched, stated:** a
+   symlink FILE in the project pointing at the existing config of a worktree
+   outside it (`ln38` in that table pins it); a hard link placed in the project to
+   the config of a tree outside it, and a hard link to a nested tree's config
+   under another name; the config of a repository that is no tree of this one;
+   and the shell route, which is journalled and not refused (the residuals
+   below). **The journal writes its config row for exactly the edit-tool writes
+   the guard holds**, its target the path as placed — spelled from the project
+   for a path that resolves out of every tree (`oq1`–`oq4c` in
+   `tests/test_journal_writes.py`, the hook run as a process over real linked
+   worktrees and symlinked folders, and tables through both hooks). It asks after
+   the write, so the one exception is a hold made without regard to case whose
+   write turned out to create another file: that is no config row.
 
    Where the written path and the config both exist, they are compared as files.
-   Where neither exists — the write would create the config — the path is walked
-   from the tree's root one component at a time, and each name is judged in the
+   Where neither exists — the write would create the config — the config's folder
+   and file are resolved first, each followed where it is a link, and the
+   resolved path is walked from the directory that folder resolves into, one
+   component at a time against the names the folder and file resolve to; each
+   name is judged in the
    directory it is looked up in: a name spelled as the config's is followed; one
    differing in case only is the config's name where both lookups reach one entry
    (where the config's own name exists in that directory), or by that directory's
@@ -1515,10 +1539,16 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    to case and the directory they hang off holds a repository; that string test
    comes first, and the walk only after it, so an ordinary write — a source file,
    or a file merely named like the config in a plain folder — makes the
-   question's disk calls it made before the walk existed, call for call, lists no
-   directory, and makes no more in total than before identity was asked (`cf29`
-   counts every call that asks the disk, a listing included, and `cf30` holds its
-   table complete against the source of both files). The journal used to compare
+   question's disk calls it made before the walk existed, call for call, plus,
+   for a write that would create its file, a link question for the config's
+   folder and one for its file, which is what resolving the project's config
+   path costs; it lists no directory, and makes no more in
+   total than before identity was asked (`cf29` counts every call that asks the
+   disk and prints them by kind, `cf29b` holds the listing at none, and `cf30`
+   holds the counted table complete against the source of both files). A session
+   standing elsewhere than the project costs a walk from its directory up to the
+   project for a repository, or, outside the project, the git question that
+   names a linked worktree. The journal used to compare
    spellings and asked the disk nothing for this; it now pays the identity
    question on every edit-tool write — resolving the path and its tree's root and
    reading the file and the config. `cf23`–`cf28e` in

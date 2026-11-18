@@ -397,19 +397,22 @@ def _decide_mcp(data, cfg):
                     or _config.DEFAULTS["stateDir"]).strip("/")
     for loc in payload["locators"]:
         tree = _config.tree_for(data, loc, cfg, project=root)
-        if not tree["inside"]:
-            continue
-        rel = tree["rel"]
-        base = rel.rsplit("/", 1)[-1]
-        if rel.startswith(state_rel + "/") and base.startswith("plan-bypass-"):
-            return ("block", _MCP_BYPASS % (rel, basis, op))
-        if _config.in_journal(tree["root"], cfg, loc):
-            return ("block", _MCP_JOURNAL % (rel, basis, op))
-        found = _config.audit_config_way(tree)
+        rel = tree["rel"] if tree["inside"] else ""
+        if rel:
+            base = rel.rsplit("/", 1)[-1]
+            if rel.startswith(state_rel + "/") \
+                    and base.startswith("plan-bypass-"):
+                return ("block", _MCP_BYPASS % (rel, basis, op))
+            if _config.in_journal(tree["root"], cfg, loc):
+                return ("block", _MCP_JOURNAL % (rel, basis, op))
+        # Asked of a locator outside every tree too: a symlinked `.claude`
+        # resolves out of the repository while the project still loads it.
+        found = _config.audit_config_way(
+            _config.config_question(tree, loc, data))
         if found:
             return _config_verdict(
-                data, rel, "\nThis call carries %s, which is what makes it a "
-                "write; `%s` is the operation it asked for.%s"
+                data, rel or loc, "\nThis call carries %s, which is what "
+                "makes it a write; `%s` is the operation it asked for.%s"
                 % (basis, op, _CASE_BLIND if found == "case-blind" else ""))
     return ("allow", "mcp: names no path this guard holds")
 
@@ -483,11 +486,15 @@ def decide(data, *, cfg=None):
 
         # 7. the audit config: refused to a subagent and to a session the drive
         #    started, asked of the main session.
-        #    The path alone decides, so an empty Write is held like any other.
-        found = _config.audit_config_way(tree)
+        #    The path alone decides, so an empty Write is held like any other,
+        #    and it is asked of a path outside every tree too: a symlinked
+        #    `.claude` resolves out of the repository while the project still
+        #    loads its config through it.
+        found = _config.audit_config_way(
+            _config.config_question(tree, path, data))
         if found:
             return _config_verdict(
-                data, rel, _CASE_BLIND if found == "case-blind" else "")
+                data, rel or path, _CASE_BLIND if found == "case-blind" else "")
 
     if not text:
         return ("allow", "no text")

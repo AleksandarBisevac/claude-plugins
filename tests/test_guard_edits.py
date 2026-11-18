@@ -354,6 +354,7 @@ def _cases(check):
 
     _config_cases(check, cfg, tmp, _tf if _tf_ok else None)
     _volume_pair_cases(check, cfg)
+    _link_cases(check)
 
 
 # --- cf: the audit config is the owner's, not an agent's ------------------------
@@ -925,17 +926,21 @@ def _spelling_cases(check, cfg, tf, nested, _cf, _w):
         "Write", _w(os.path.join(other, rel[0], _cap(rel[1]))),
         cwd=main)
 
-    # An ordinary write costs the disk what it did before the walk existed, call
-    # by call, and no more in total than before the identity question existed.
-    # Counted over every call of `_DISK_CALLS` (`_disk_calls`), for an existing and
-    # a new source file and for a file merely named like the config in a plain
-    # folder. Three references: the sequence the question made for such a write
-    # before identity (resolve the path, resolve the config, resolve the path
-    # again, compare the two as files when both exist); the sequence it made once
-    # identity was asked (`_today`: resolve both, read the path, read the config
-    # when the path exists, and ask the folder the config-shaped name hangs off
-    # whether it holds a repository); and the same question with the nested-tree
-    # half answered "no candidate". A listing on any of them is red by itself.
+    # An ordinary write costs the disk what the question makes by its sequence,
+    # call by call, and no more in total than before the identity question
+    # existed. Counted over every call of `_DISK_CALLS` (`_disk_calls`), for an
+    # existing and a new source file and for a file merely named like the
+    # config in a plain folder. Four references: the sequence the question made
+    # for such a write before identity (resolve the path, resolve the config,
+    # resolve the path again, compare the two as files when both exist); the
+    # sequence it made once identity was asked and before the config's folder
+    # was resolved (`_walked`: resolve both, read the path, read the config when
+    # the path exists, and ask the folder the config-shaped name hangs off
+    # whether it holds a repository); the sequence it makes now (`_today`: the
+    # same, and for a write that would create its file, the config's folder and
+    # file each asked whether it is a link, which is what resolving the
+    # candidate tree's config path costs); and the same question with the
+    # nested-tree half answered "no candidate". A listing is its own case.
     def _before(target, own):
         os.path.realpath(target)
         os.path.realpath(own)
@@ -950,7 +955,7 @@ def _spelling_cases(check, cfg, tf, nested, _cf, _w):
             p.casefold() for p in rel)
         return head2 if same else None
 
-    def _today(target, root):
+    def _walked(target, root):
         real = os.path.realpath(target)
         real_root = os.path.realpath(root)
         if _harness.attempt(os.stat, real)[0]:
@@ -959,40 +964,66 @@ def _spelling_cases(check, cfg, tf, nested, _cf, _w):
         if top is not None and top != real_root:
             _config._holds_repository(top)
 
+    def _today(target, root):
+        real = os.path.realpath(target)
+        real_root = os.path.realpath(root)
+        if _harness.attempt(os.stat, real)[0]:
+            _harness.attempt(os.stat, os.path.join(real_root, *rel))
+        else:
+            at = real_root
+            for name in rel:
+                at = os.path.join(at, name)
+                os.path.islink(at)
+        top = _shaped(real)
+        if top is not None and top != real_root:
+            _config._holds_repository(top)
+
+    def _kinds(by):
+        return dict((k.rsplit(".", 1)[-1], n) for k, n in sorted(by.items()))
+
     plain_cfg = os.path.join(main, "docs", "cf-sample", *rel)
     os.makedirs(os.path.dirname(plain_cfg))
-    costs = []
+    costs, kinds = [], []
     for src, plain in ((os.path.join(nested, "src", "app.ts"), False),
                        (os.path.join(nested, "src", "cf-new.ts"), False),
                        (plain_cfg, True)):
         data = {"tool_name": "Write", "tool_input": _w(src), "cwd": main,
                 "agent_id": "agent-cf"}
         tree = _config.tree_for(data, src, cfg)
+        asked = _config.config_question(tree, src, data) if hasattr(
+            _config, "config_question") else tree
         root = str(tree["root"])
         target = os.path.join(root, *str(tree["rel"]).split("/"))
         own = os.path.join(root, *rel)
         _, before = _disk_calls(lambda: _before(target, own))
+        _, walked = _disk_calls(lambda: _walked(target, root))
         _, today = _disk_calls(lambda: _today(target, root))
-        verdict, now = _disk_calls(lambda: _config_way(tree))
+        verdict, now = _disk_calls(lambda: _config_way(asked))
         _, off = _disk_calls(lambda: _with_attr(
             "_config_shaped_top", lambda real: None,
-            lambda: _config_way(tree), on=_config))
+            lambda: _config_way(asked), on=_config))
         listed = sum(now.get(n, 0) for n in _LISTINGS)
-        costs.append((os.path.basename(src) if not plain else "plain folder",
-                      verdict, sum(before.values()), sum(today.values()),
-                      sum(now.values()), listed,
+        name = os.path.basename(src) if not plain else "plain folder"
+        costs.append((name, verdict, sum(before.values()),
+                      sum(walked.values()), sum(now.values()), listed,
                       now == today and (plain or now == off)
                       and sum(now.values()) <= sum(before.values())))
+        kinds.append((name, _kinds(walked), _kinds(now)))
     check("cf29 an ordinary write - an existing and a new source file, and a "
           "file merely named like the config in a plain folder - makes the "
-          "config question's disk calls of before the walk, call for call, "
-          "lists no directory, makes no more in total than before identity was "
-          "asked, and none for the nested tree's identity (name, verdict, "
-          "before identity, before the walk, now, listings, held): %r"
-          % (costs,),
-          len(costs) == 3 and all(not v and listed == 0 and held
-                                  for _n, v, _b, _t, _now, listed, held
-                                  in costs))
+          "config question's disk calls call for call: before the walk's, and "
+          "for a write that creates its file a link question for the config's "
+          "folder and its file, what resolving the project's config path "
+          "costs, no more in total than before "
+          "identity was asked, and none for the nested tree's identity (name, "
+          "verdict, before identity, before the folder was resolved, now, "
+          "listings, held): %r; by kind, before the folder was resolved and "
+          "now: %r" % (costs, kinds),
+          len(costs) == 3 and all(not v and held
+                                  for _n, v, _b, _t, _now, _l, held in costs))
+    check("cf29b ...and lists no directory, on any of them (listings: %r)"
+          % ([(c[0], c[5]) for c in costs],),
+          len(costs) == 3 and all(c[5] == 0 for c in costs))
 
     _table_case(check)
     _walk_cases(check, cfg, main, fresh, rel, _w)
@@ -1215,6 +1246,453 @@ def _volume_pair_cases(check, cfg):
             check("cf32c the disk image is detached again (%s)"
                   % (gone.stderr.decode("utf-8", "replace").strip()
                      or "detached",), gone.returncode == 0)
+
+
+# --- cf: the config a session would load, its folder a symlink ---------------------
+# The property, by doing. For each arrangement the hook runs as a process for its
+# verdict, a subagent's and the main session's; then the write is made in the
+# fixture and the loader is asked - for the project, for the tree the session
+# stands in, and for the tree the path lies in as written - whether it now reads
+# what was written. The hook holds the write exactly when one of them does. The
+# trees are found here by a lexical walk for `.git`, never through the hook's own
+# placement, so the oracle and the subject do not share an answer.
+#
+# A ROW IS ONE ARRANGEMENT: (id, layout, config present, spelling, measured, twin).
+# `layout` is how the project's config folder is made and `spelling` how the write
+# names the file and where the session stands; `_link_world` and `_link_spell`
+# hold one branch per word. `measured` marks an arrangement the review ran as a
+# process and found allowed; `twin` an allow twin, a write no loader reads.
+_LINK_ROWS = (
+    ("ln1", "real", False, "link", False, False),
+    ("ln2", "real", True, "link", False, False),
+    ("ln3", "in-project", False, "link", True, False),
+    ("ln4", "in-project", True, "link", True, False),
+    ("ln5", "in-project", False, "dest", True, False),
+    ("ln6", "in-project", True, "dest", True, False),
+    ("ln7", "outside", False, "link", True, False),
+    ("ln8", "outside", True, "link", True, False),
+    ("ln9", "outside", False, "dest", True, False),
+    ("ln10", "outside", True, "dest", True, False),
+    ("ln11", "other-tree", False, "link", False, False),
+    ("ln12", "other-tree", True, "link", False, False),
+    ("ln13", "other-tree", False, "dest", False, False),
+    ("ln14", "other-tree", True, "dest", False, False),
+    ("ln15", "in-other-tree", False, "link", False, False),
+    ("ln16", "in-other-tree", True, "link", False, False),
+    ("ln17", "chain", False, "link", False, False),
+    ("ln18", "chain", True, "dest", False, False),
+    ("ln19", "relative", False, "link", False, False),
+    ("ln20", "relative", True, "link", False, False),
+    ("ln21", "dangling", False, "link", False, False),
+    ("ln22", "dangling", False, "dest", False, False),
+    ("ln23", "outside", False, "rel-cwd-link", False, False),
+    ("ln24", "outside", True, "rel-cwd-dest", False, False),
+    ("ln25", "outside", False, "nested-w", False, False),
+    ("ln26", "outside", False, "nested-p", False, False),
+    ("ln27", "outside", True, "name-case", False, False),
+    ("ln28", "outside", True, "beside", False, True),
+    ("ln29", "plain-link", False, "linked", False, True),
+    ("ln30", "plain-link", False, "sub-link", False, True),
+    ("ln31", "real", False, "no-tree", False, True),
+    ("ln32", "loop", False, "link", False, False),
+    ("ln33", "file-link", False, "link", False, False),
+    ("ln34", "file-link", False, "file-dest", False, False),
+    ("ln35", "session-tree", False, "session-dest", False, False),
+    ("ln36", "unrelated", False, "unrelated", False, True),
+    ("ln37", "sibling", True, "hard-link-out", False, False),
+    ("ln38", "sibling", False, "file-link-out", False, False),
+    ("ln39", "outside", False, "name-case", False, False),
+)
+
+
+def _link_world(base, layout, present):
+    """A repository at `base/proj` whose config folder is arranged as `layout`
+    says, with the config at the folder's destination when `present`.
+    -> {"proj", "folder" (the folder as the project spells it), "dest" (the
+    directory it reaches, spelled at the destination), "store"}"""
+    rel = _config.CONFIG_REL.split("/")
+    proj = os.path.join(base, "proj")
+    os.makedirs(os.path.join(proj, "src"))
+    with open(os.path.join(proj, "src", "x.ts"), "w", encoding="utf-8") as fh:
+        fh.write("export const x = 1;\n")
+    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "c"]):
+        _harness.git(proj, *argv, prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+    folder = os.path.join(proj, rel[0])
+    store = os.path.join(base, "store")
+    os.makedirs(store)
+    if layout in ("real", "plain-link", "unrelated"):
+        dest = folder
+        os.makedirs(folder)
+    elif layout == "file-link":
+        # The config FILE a dangling link: a write through it creates the
+        # file it names, under that name.
+        os.makedirs(folder)
+        dest = store
+        os.symlink(os.path.join(store, "conf.json"),
+                   os.path.join(folder, rel[1]))
+    elif layout == "loop":
+        dest = os.path.join(proj, rel[0] + "2")
+        os.symlink(rel[0] + "2", folder)
+        os.symlink(rel[0], dest)
+    elif layout == "sibling":
+        # A real folder, and a sibling linked worktree with a config of its own.
+        dest = folder
+        os.makedirs(folder)
+        ext = os.path.join(base, "ext")
+        _harness.git(proj, "worktree", "add", "-q", ext, "-b", "ext",
+                     prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+        os.makedirs(os.path.join(ext, rel[0]))
+        with open(os.path.join(ext, *rel), "w", encoding="utf-8") as fh:
+            json.dump({"cfMark": "ext"}, fh)
+    elif layout == "session-tree":
+        # The project's own folder is real; a sibling linked worktree, where
+        # the session stands, has its `.claude` linked out of the repository.
+        os.makedirs(folder)
+        ext = os.path.join(base, "ext")
+        _harness.git(proj, "worktree", "add", "-q", ext, "-b", "ext",
+                     prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+        dest = os.path.join(store, "xdir")
+        os.makedirs(dest)
+        os.symlink(dest, os.path.join(ext, rel[0]))
+    elif layout in ("in-project", "relative"):
+        dest = os.path.join(proj, "config", "claude")
+        os.makedirs(dest)
+        os.symlink(dest if layout == "in-project"
+                   else os.path.join("config", "claude"), folder)
+    elif layout == "outside":
+        dest = os.path.join(store, "claude-dir")
+        os.makedirs(dest)
+        os.symlink(dest, folder)
+    elif layout == "chain":
+        dest = os.path.join(store, "real")
+        os.makedirs(dest)
+        hop = os.path.join(base, "hop")
+        os.symlink(dest, hop)
+        os.symlink(hop, folder)
+    elif layout in ("other-tree", "in-other-tree"):
+        ext = os.path.join(base, "ext")
+        _harness.git(proj, "worktree", "add", "-q", ext, "-b", "ext",
+                     prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+        dest = os.path.join(ext, rel[0])
+        if layout == "in-other-tree":
+            dest = os.path.join(dest, "shared")
+        os.makedirs(dest)
+        os.symlink(dest, folder)
+    elif layout == "dangling":
+        dest = os.path.join(store, "missing")
+        os.symlink(dest, folder)
+    else:
+        raise ValueError("no layout %r" % (layout,))
+    with open(os.path.join(dest if os.path.isdir(dest) else store,
+                           "settings.json"), "w", encoding="utf-8") as fh:
+        fh.write("{}\n")
+    if present:
+        with open(os.path.join(dest, rel[1]), "w", encoding="utf-8") as fh:
+            json.dump({"cfMark": "pre"}, fh)
+    return {"proj": proj, "folder": folder, "dest": dest, "store": store,
+            "base": base}
+
+
+def _link_spell(world, spelling):
+    """(the path the Write names, the session's directory) for `spelling`."""
+    rel = _config.CONFIG_REL.split("/")
+    proj, folder, dest = world["proj"], world["folder"], world["dest"]
+    if spelling == "link":
+        return os.path.join(folder, rel[1]), proj
+    if spelling == "dest":
+        return os.path.join(dest, rel[1]), proj
+    if spelling == "beside":
+        return os.path.join(folder, "settings.json"), proj
+    if spelling == "name-case":
+        return os.path.join(folder, rel[1].upper()), proj
+    if spelling == "rel-cwd-link":
+        return rel[1], folder
+    if spelling == "rel-cwd-dest":
+        return rel[1], dest
+    if spelling in ("nested-w", "nested-p"):
+        nested = os.path.join(folder, "worktrees", "w1")
+        _harness.git(proj, "worktree", "add", "-q", nested, "-b", "w1",
+                     prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+        return (os.path.join(nested, *rel),
+                nested if spelling == "nested-w" else proj)
+    if spelling in ("linked", "sub-link"):
+        notes = os.path.join(world["store"], "notes")
+        os.makedirs(notes)
+        if spelling == "linked":
+            os.symlink(notes, os.path.join(proj, "linked"))
+            return os.path.join(proj, "linked", rel[1]), proj
+        os.makedirs(os.path.join(proj, "sub"))
+        os.symlink(notes, os.path.join(proj, "sub", rel[0]))
+        return os.path.join(proj, "sub", *rel), proj
+    if spelling == "no-tree":
+        out = os.path.join(world["base"], "outside", rel[0])
+        os.makedirs(out)
+        return os.path.join(out, rel[1]), proj
+    if spelling == "hard-link-out":
+        # The project's config, hard-linked into the sibling worktree.
+        link = os.path.join(world["base"], "ext", "src", "hl.json")
+        os.link(os.path.join(dest, rel[1]), link)
+        return link, proj
+    if spelling == "file-link-out":
+        # A symlink FILE in the project at the sibling worktree's existing
+        # config: no loader the property asks reads it - the stated residual.
+        link = os.path.join(proj, "lf.json")
+        os.symlink(os.path.join(world["base"], "ext", *rel), link)
+        return link, proj
+    if spelling == "file-dest":
+        return os.path.join(world["store"], "conf.json"), proj
+    if spelling == "session-dest":
+        return (os.path.join(dest, rel[1]),
+                os.path.join(world["base"], "ext"))
+    if spelling == "unrelated":
+        # Another repository, no tree of this one, its `.claude` linked out.
+        other = os.path.join(world["base"], "other")
+        os.makedirs(other)
+        _harness.git(other, "init", "-q", prefix=_harness.WORKTREE_PAIR_GIT,
+                     timeout=30)
+        odir = os.path.join(world["store"], "odir")
+        os.makedirs(odir)
+        os.symlink(odir, os.path.join(other, rel[0]))
+        return os.path.join(other, *rel), proj
+    raise ValueError("no spelling %r" % (spelling,))
+
+
+def _lexical_tree(directory):
+    """The nearest directory at or above `directory`, walked as SPELLED, holding a
+    `.git` entry - the tree a path lies in as written - or None."""
+    d = os.path.normpath(directory)
+    while True:
+        if os.path.lexists(os.path.join(d, ".git")):
+            return d
+        up = os.path.dirname(d)
+        if up == d:
+            return None
+        d = up
+
+
+def _hook_verdict(proj, cwd, path, body, agent):
+    """guard-edits.py run as the host runs it, for a Write of `path` from `cwd`:
+    'block', 'ask', 'allow', or a word naming what else happened."""
+    import subprocess
+    data = {"hook_event_name": "PreToolUse", "tool_name": "Write",
+            "session_id": "sess-ln", "cwd": cwd,
+            "tool_input": {"file_path": path, "content": body}}
+    if agent:
+        data["agent_id"] = "a1b2c3d4e5f6"
+        data["agent_type"] = "audit-executor"
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("CLAUDE") and k != _DRIVE_MARK)
+    env["CLAUDE_PROJECT_DIR"] = proj
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    got = subprocess.run(
+        [sys.executable, "-B", os.path.join(_harness.HOOKS_DIR,
+                                            "guard-edits.py")],
+        input=json.dumps(data).encode("utf-8"), capture_output=True,
+        env=env, cwd=proj, timeout=60)
+    out = got.stdout.decode("utf-8", "replace").strip()
+    err = got.stderr.decode("utf-8", "replace")
+    if got.returncode == 2:
+        return "block"
+    if got.returncode != 0 or "Traceback" in err:
+        return "rc%d:%s" % (got.returncode, err.strip()[-160:])
+    if not out:
+        return "allow"
+    try:
+        said = json.loads(out).get("hookSpecificOutput", {})
+    except ValueError:
+        return "unreadable:%s" % (out[:160],)
+    word = said.get("permissionDecision")
+    return {"deny": "block"}.get(word, word or "allow")
+
+
+def _link_row(base, row):
+    """One arrangement: the hook's two verdicts, then the write made, then which
+    of the trees' loaders reads it. -> (id, sub, main, trees that read, why)"""
+    rid, layout, present, spelling = row[:4]
+    world = _link_world(base, layout, present)
+    path, cwd = _link_spell(world, spelling)
+    body = json.dumps({"cfMark": rid}) + "\n"
+    sub = _hook_verdict(world["proj"], cwd, path, body, True)
+    main = _hook_verdict(world["proj"], cwd, path, body, False)
+    full = path if os.path.isabs(path) else os.path.join(cwd, path)
+    made, why = _harness.attempt(_link_write, full, body)
+    trees = [t for t in (world["proj"], _lexical_tree(cwd),
+                         _lexical_tree(os.path.dirname(full)))
+             if t is not None and _of_this_repository(t, world["proj"])]
+    reads = sorted(set(os.path.relpath(t, base) for t in trees
+                       if _config.load(t).get("cfMark") == rid))
+    if not made:
+        # A write no tool can make (a link that cannot be followed): the
+        # property has nothing to read, and the guard is owed the hold it gave
+        # such a path before - fail closed, never a hold turned into an allow.
+        reads = ["write not made: %s" % (why,)]
+    return rid, sub, main, reads, "%s/%s/%s" % (
+        layout, "present" if present else "absent", spelling)
+
+
+def _link_write(full, body):
+    """The write, made as a tool that creates missing directories makes it:
+    through every link on the way, the missing ones at the place they name."""
+    os.makedirs(os.path.realpath(os.path.dirname(full)), exist_ok=True)
+    with open(full, "w", encoding="utf-8") as fh:
+        fh.write(body)
+
+
+def _of_this_repository(tree, proj):
+    """Is the directory `tree` a tree of the repository at `proj` - the
+    project, a repository placed under it as spelled, or a working tree sharing
+    its git directory - asked of git here, apart from the hook."""
+    if _spelled_inside(tree, proj):
+        return True
+    ok, mine = _harness.attempt(_harness.git, proj, "rev-parse",
+                                "--git-common-dir")
+    ok2, theirs = _harness.attempt(_harness.git, tree, "rev-parse",
+                                   "--git-common-dir")
+    return ok and ok2 and os.path.realpath(
+        os.path.join(proj, mine.strip())) == os.path.realpath(
+            os.path.join(tree, theirs.strip()))
+
+
+def _spelled_inside(path, top):
+    p, t = os.path.normpath(path), os.path.normpath(top)
+    return p == t or p.startswith(t + os.sep)
+
+
+def _link_cases(check):
+    """cf33, cf34, cf34b: the arrangements of `_LINK_ROWS`, each in a fixture
+    of its own."""
+    label = ("cf33 a project whose config folder is a symlink: the hook run as "
+             "a process over the arrangements of a symlinked config folder")
+    base = os.path.realpath(_harness.fixture_root("guard-edits-link-"))
+    probe = os.path.join(base, "probe-link")
+    linked, why = _harness.attempt(os.symlink, base, probe)
+    if not linked:
+        _harness.skip(check, label, "no symlink can be made here (%s)" % (why,),
+                      os.name == "nt" or not hasattr(os, "symlink"))
+        return
+    os.remove(probe)
+    seen = []
+    for i, row in enumerate(_LINK_ROWS):
+        ok, got = _harness.attempt(_link_row, os.path.join(base, "r%d" % i), row)
+        seen.append(got if ok else (row[0], "fixture", "fixture", [], repr(got)))
+    by_id = dict((s[0], s) for s in seen)
+
+    def held(s):
+        return s[1] == "block" and s[2] == "ask"
+
+    def quiet(s):
+        return s[1] == "allow" and s[2] == "allow"
+    measured = [by_id[r[0]] for r in _LINK_ROWS if r[4]]
+    check("cf33 with the config folder a symlink inside the project or outside "
+          "the repository, the hook run as a process refuses a subagent's write "
+          "of the config and asks the main session's - config present or "
+          "absent, spelled through the link or at its destination; not held: "
+          "%r" % ([s for s in measured if not held(s)],),
+          len(measured) == 8 and all(held(s) and s[3] for s in measured))
+    agree = [s for s in seen if (held(s) if s[3] else quiet(s))]
+    check("cf34 over a table of arrangements of the config folder - a real "
+          "directory, a symlink inside the project, outside the repository, to "
+          "another tree's config folder, into one, a chain, a relative link, a "
+          "dangling link, a loop, the config file itself a dangling link, a "
+          "nested worktree under it, a session in a linked worktree, a "
+          "relative path, the project's config hard-linked into a sibling "
+          "worktree, a symlink file at a sibling's config - the hook holds a write exactly when the loader then "
+          "reads the written file for the project, the session's tree or the "
+          "tree of this repository the path lies in (%d of %d rows agree); "
+          "disagreeing: %r"
+          % (len(agree), len(seen),
+             [s for s in seen if s not in agree]),
+          len(seen) == len(_LINK_ROWS) and len(agree) == len(seen)
+          and any(s[3] for s in seen) and any(not s[3] for s in seen))
+    twins = [by_id[r[0]] for r in _LINK_ROWS if r[5]]
+    check("cf34b ...and the allow twins are allowed and no loader reads them: a "
+          "file beside the config in the symlinked folder, a config-named file "
+          "in a symlinked folder that is no tree's config folder, the same "
+          "under a symlinked .claude of a plain subfolder, one outside every "
+          "tree, and the config of an unrelated repository through its own "
+          "symlinked .claude: %r" % (twins,),
+          len(twins) == 5 and all(quiet(s) and not s[3] for s in twins))
+    _link_mcp_cases(check, os.path.join(base, "mcp"))
+    _candidate_error_cases(check, os.path.join(base, "err"))
+
+
+def _link_mcp_cases(check, base):
+    """cf33b: an MCP write carries the same question through a symlinked
+    folder - the locator resolves out of the repository as the edit tool's
+    path does."""
+    world = _link_world(base, "outside", False)
+    proj = world["proj"]
+    rel = _config.CONFIG_REL.split("/")
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    prev = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = proj
+    try:
+        seen = [(name, agent is None, _cf_decide(
+            cfg, "mcp__fs__write_file", {"path": path, "content": _CF_BODY},
+            proj, agent)[0])
+            for name, path in (("config", os.path.join(proj, *rel)),
+                               ("beside", os.path.join(proj, rel[0],
+                                                       "settings.json")))
+            for agent in ("agent-cf", None)]
+    finally:
+        if prev is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = prev
+    check("cf33b a subagent's MCP write of the config through a .claude linked "
+          "out of the repository is refused and the main session's asked, "
+          "while a file beside it is not held: %r" % (seen,),
+          seen == [("config", False, "block"), ("config", True, "ask"),
+                   ("beside", False, "allow"), ("beside", True, "allow")])
+
+
+def _candidate_error_cases(check, base):
+    """cf35: an error asking one candidate tree costs that tree only. The
+    project's `.claude` links into a sibling linked worktree's, so the write is
+    the project's config and that worktree's at once, and the question is
+    asked of both - the worktree first, as `tree_for` placed the path there."""
+    world = _link_world(base, "other-tree", False)
+    proj = world["proj"]
+    conf = os.path.join(proj, *_config.CONFIG_REL.split("/"))
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    ext = os.path.realpath(os.path.dirname(world["dest"]))
+    real = _config._names_audit_config
+    asked = []
+
+    def failing(only):
+        def ask(path, top):
+            asked.append(top)
+            if only is None or top == only:
+                raise OSError("candidate unreadable")
+            return real(path, top)
+        return ask
+    prev = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = proj
+    try:
+        one = _with_attr("_names_audit_config", failing(ext), lambda: _cf_decide(
+            cfg, "Write", {"file_path": conf, "content": _CF_BODY}, proj,
+            "agent-cf")[0], on=_config)
+        n_one = list(asked)
+        every = _with_attr("_names_audit_config", failing(None),
+                           lambda: _cf_decide(
+                               cfg, "Write", {"file_path": conf,
+                                              "content": _CF_BODY}, proj,
+                               "agent-cf")[0], on=_config)
+    finally:
+        if prev is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = prev
+    check("cf35 STUBBED - the question raising for the tree the path was "
+          "placed in, the project is still asked and the write of its config "
+          "through the link is refused (%s, asked of %r)"
+          % (one, [os.path.relpath(t, base) for t in n_one]),
+          one == "block" and n_one[:1] == [ext]
+          and os.path.realpath(proj) in n_one)
+    check("cf35b STUBBED: raising for every tree, the question answers 'not "
+          "the config' and the write is allowed - the guard's fail-open row in "
+          "SECURITY.md's table, stated rather than hidden (%s)" % (every,),
+          every == "allow")
 
 
 def _selftest():

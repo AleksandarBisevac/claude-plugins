@@ -2080,6 +2080,7 @@ def _cases(check):
     _machine_path_value_cases(check)
     _call_mark_cases(check)
     _one_question_cases(check)
+    _link_question_cases(check)
 
 
 # --- oq: the guard and the journal ask one function which file is the config ------
@@ -2281,6 +2282,121 @@ def _with_cfg(name, value, fn):
             delattr(_config, name)
         else:
             setattr(_config, name, prev)
+
+
+# --- oq: the config written through a symlinked config folder ----------------------
+# A project whose `.claude` is a symlink - to a directory inside the project, or
+# out of the repository - loads its config through the link, so a write of it
+# there is a config edit and the journal records its row, by the same question
+# the guard asks. Which target the row names is not pinned here: only that the
+# row exists, and that the twins leave none.
+_OQ_PLAN = {"meta": {"version": 3, "developmentBranch": "main"}, "phases": []}
+
+
+def _oq_link_repo(base, where, present):
+    """A repository at `base/proj` whose config folder is a symlink to a
+    directory inside it (`where` "in-project") or outside it ("outside"), the
+    config present at the destination when `present`. -> (proj, destination)"""
+    rel = _config.CONFIG_REL.split("/")
+    proj = os.path.join(base, "proj")
+    os.makedirs(os.path.join(proj, "src"))
+    os.makedirs(os.path.join(proj, "docs", "audit"))
+    with open(os.path.join(proj, "src", "app.ts"), "w", encoding="utf-8") as fh:
+        fh.write("export const a = 1;\n")
+    with open(os.path.join(proj, "docs", "audit", "audit-plan.json"), "w",
+              encoding="utf-8") as fh:
+        json.dump(_OQ_PLAN, fh)
+    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "c"]):
+        _harness.git(proj, *argv, prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+    dest = (os.path.join(proj, "config", "claude") if where == "in-project"
+            else os.path.join(base, "store", "claude-dir"))
+    os.makedirs(dest)
+    os.symlink(dest, os.path.join(proj, rel[0]))
+    if present:
+        with open(os.path.join(dest, rel[1]), "w", encoding="utf-8") as fh:
+            fh.write(_OQ_BODY)
+    return proj, dest
+
+
+def _link_question_cases(check):
+    """oq4, oq4b, oq4c: the journal's config row through a symlinked folder."""
+    label = "oq4 the journal's config row through a symlinked config folder"
+    base = os.path.realpath(_harness.fixture_root("journal-oq-link-"))
+    probe = os.path.join(base, "probe-link")
+    made, why = _harness.attempt(os.symlink, base, probe)
+    if not made:
+        _harness.skip(check, label, "no symlink can be made here (%s)" % (why,),
+                      os.name == "nt" or not hasattr(os, "symlink"))
+        return
+    os.remove(probe)
+    rel = _config.CONFIG_REL.split("/")
+    missing, n = [], 0
+    for where in ("in-project", "outside"):
+        for present in (False, True):
+            for spelling in ("link", "dest"):
+                at = os.path.join(base, "w%d" % n)
+                n += 1
+                proj, dest = _oq_link_repo(at, where, present)
+                path = (os.path.join(proj, *rel) if spelling == "link"
+                        else os.path.join(dest, rel[1]))
+                rows, codes = _oq_write(path, proj, "sess-oq4-%d" % n)
+                edits = [r for r in rows if r[0] == "config.edit"]
+                if len(edits) != 1 or codes != (0, 0):
+                    missing.append((where, present, spelling, rows, codes))
+    check("oq4 the journal hook, run as a process, writes one config row for the "
+          "config written through a symlinked config folder - the folder a link "
+          "into the project or out of the repository, the config present or "
+          "absent, the write spelled through the link or at its destination; "
+          "without one: %r" % (missing,), n == 8 and not missing)
+
+    proj, dest = _oq_link_repo(os.path.join(base, "twins"), "outside", True)
+    notes = os.path.join(base, "twins", "store", "notes")
+    os.makedirs(notes)
+    os.symlink(notes, os.path.join(proj, "linked"))
+    twins = (os.path.join(proj, rel[0], "settings.json"),
+             os.path.join(proj, "linked", rel[1]))
+    loud = []
+    for i, path in enumerate(twins):
+        rows, codes = _oq_write(path, proj, "sess-oq4b-%d" % i)
+        if any(r[0] == "config.edit" for r in rows) or codes != (0, 0):
+            loud.append((_output.posix_rel(path, proj), rows, codes))
+    check("oq4b ...and no config row for a file beside the config in that "
+          "folder, nor for a config-named file in a symlinked folder that is no "
+          "tree's config folder: %r" % (loud,), not loud)
+
+    G = _loader.load(os.path.join(_harness.HOOKS_DIR, "guard-edits.py"),
+                     modname="guard_edits_oq4")
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    table = (os.path.join(proj, *rel), os.path.join(dest, rel[1]),
+             os.path.join(proj, rel[0], "notes.json"),
+             os.path.join(proj, "linked", rel[1]),
+             os.path.join(proj, "src", "app.ts"))
+    prev = dict((k, os.environ.get(k)) for k in ("CLAUDE_PROJECT_DIR", _OQ_MARK))
+    os.environ["CLAUDE_PROJECT_DIR"] = proj
+    os.environ.pop(_OQ_MARK, None)
+    try:
+        seen = []
+        for path in table:
+            data = {"tool_name": "Write", "session_id": "sess-oq4c", "cwd": proj,
+                    "tool_input": {"file_path": path, "content": _OQ_BODY}}
+            g_ok, g = _harness.attempt(G.decide, data, cfg=cfg)
+            j_ok, j = _harness.attempt(M.decide, data, cfg=cfg, root=proj)
+            seen.append((_output.posix_rel(path, proj),
+                         g_ok and g[0] == "ask" and "audit config" in str(g[1]),
+                         j_ok and j[0] == "journal"
+                         and j[1].get("action") == "config.edit"))
+    finally:
+        for k, v in prev.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    check("oq4c over a symlinked config folder the guard holds a write as the "
+          "config exactly when the journal classifies it as a config edit, and "
+          "both hold the config through the link and at its destination: %r"
+          % (seen,),
+          all(s[1] == s[2] for s in seen) and seen[0][1] and seen[1][1]
+          and not any(s[1] for s in seen[2:]))
 
 
 # --- cm: a status row says when its call's baseline stood ----------------------
