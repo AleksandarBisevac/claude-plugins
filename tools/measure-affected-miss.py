@@ -58,7 +58,10 @@ WHAT IT DOES NOT SAY.
     whether it misses what the default does not, with the faults, the reds and the
     re-runs held fixed between the two (`run_mutation` says how a red is charged).
     A commit whose default selection was the full set is still swept when the
-    comparison is narrower.
+    comparison is narrower. A comparison that cannot be read on a commit costs
+    only its own reading there: the default is measured as if none were asked,
+    and the commit is named as not measured for the comparison and left out of
+    the comparison's count.
   - A mutation that changes no suite's verdict is reported as `inert`: nothing went
     red, or everything that went red was red on the commit unmutated too (or green
     when swept again). Zero misses over an inert mutation is zero evidence, and the
@@ -69,7 +72,7 @@ WHAT IT DOES NOT SAY.
     as the whole of it.
   - A commit that changed no Python has nothing to mutate; it is named and left out
     of the commits count. A commit whose selection was the full set cannot have a
-    miss by construction; it is counted, and named as full.
+    miss for that selection by construction; it is counted, and named as full.
   - A commit that could not be measured (the worktree, the selector or the sweep
     failed) is named with the reason and is not counted as a zero.
   - A CI miss is a failing suite its commit's selection did not name, whatever made it
@@ -682,24 +685,27 @@ def select_in_tree(opts, tree, parent, selector=None):
 
 
 def measure_in_tree(opts, tree, parent, changed):
-    """The mutation records for one commit's tree, or why it could not be measured."""
+    """The mutation records for one commit's tree, or why it could not be measured.
+
+    A comparison selector that cannot be read costs the comparison alone: the
+    default is measured as it would be with no comparison asked, and `compare_why`
+    carries the comparison's reason - empty when it was read."""
     sel = select_in_tree(opts, tree, parent)
     if not sel["readable"]:
         return {"status": "could-not-measure", "why": sel["why"], "full": False,
-                "compare_full": False, "mutations": []}
-    compare = None
+                "compare_full": False, "compare_why": "", "mutations": []}
+    compare, compare_why = None, ""
     if opts["compare_selector"] is not None:
         compare = select_in_tree(opts, tree, parent, opts["compare_selector"])
         if not compare["readable"]:
-            return {"status": "could-not-measure", "full": sel["full"],
-                    "compare_full": False, "mutations": [],
-                    "why": "the compare selector: " + compare["why"]}
+            compare, compare_why = None, "the compare selector: " + compare["why"]
     compare_full = compare is not None and compare["full"]
     # Nothing to sweep only when NO selection can miss: a full default beside a
     # narrower comparison is exactly the commit the comparison is asked about.
     if sel["full"] and (compare is None or compare_full):
         return {"status": "measured", "why": "", "full": True,
-                "compare_full": compare_full, "mutations": []}
+                "compare_full": compare_full, "compare_why": compare_why,
+                "mutations": []}
     originals = {}
     for rel in changed:
         with open(os.path.join(tree, rel), "rb") as fh:
@@ -709,10 +715,12 @@ def measure_in_tree(opts, tree, parent, changed):
     bad = [m for m in mutations if m["status"] != "ran"]
     if bad:
         return {"status": "could-not-measure", "full": sel["full"],
-                "compare_full": compare_full, "mutations": mutations,
+                "compare_full": compare_full, "compare_why": compare_why,
+                "mutations": mutations,
                 "why": "%s: %s" % (bad[0]["kind"], bad[0]["why"])}
     return {"status": "measured", "why": "", "full": sel["full"],
-            "compare_full": compare_full, "mutations": mutations}
+            "compare_full": compare_full, "compare_why": compare_why,
+            "mutations": mutations}
 
 
 def measure_commit(opts, commit):
@@ -720,7 +728,7 @@ def measure_commit(opts, commit):
     run that takes hours must not lose its other commits to one bad worktree."""
     rec = {"sha": commit["sha"], "subject": commit["subject"], "status": "",
            "why": "", "full": False, "compare": opts["compare_selector"],
-           "compare_full": False, "changed": [], "mutations": []}
+           "compare_full": False, "compare_why": "", "changed": [], "mutations": []}
     repo, env = opts["repo"], opts["env"]
     scratch = opts["scratch_dir"] or tempfile.gettempdir()
     if inside(scratch, repo):
@@ -920,8 +928,10 @@ def describe(rec):
 
 def _compare_part(rec, m):
     """The comparison's own counts for one mutation, or nothing when no second
-    selector was asked about. A record without the key predates the comparison."""
-    if "compare_missed" not in m or rec.get("compare") is None:
+    selector was asked about, or none could be read on this commit (`render` names
+    that commit apart). A record without the key predates the comparison."""
+    if ("compare_missed" not in m or rec.get("compare") is None
+            or rec.get("compare_why")):
         return ""
     if rec.get("compare_full"):
         return " (compare: the full set)"
@@ -973,10 +983,20 @@ def render(result):
     elif result["range"]:
         fulls = sum(1 for r in result["commits"]
                     if r["status"] == "measured" and r["full"])
-        lines.append("window: %d task commit(s), %s..%s, %d measured (%d of them the "
-                     "full set, which cannot miss)"
+        # A commit the default selection takes whole can still miss for a narrower
+        # comparison, so with one given each count is said of its own selection.
+        if result.get("compare_selector"):
+            full_part = ("%d of them the full set for the default selection, which "
+                         "cannot miss for it; %d for the comparison, which cannot "
+                         "miss for that one"
+                         % (fulls, sum(1 for r in result["commits"]
+                                       if r["status"] == "measured"
+                                       and r.get("compare_full"))))
+        else:
+            full_part = "%d of them the full set, which cannot miss" % (fulls,)
+        lines.append("window: %d task commit(s), %s..%s, %d measured (%s)"
                      % (len(result["commits"]), result["range"][0][:9],
-                        result["range"][1][:9], result["measured"], fulls))
+                        result["range"][1][:9], result["measured"], full_part))
     else:
         lines.append("window: no task commit found")
     for rec in result["commits"]:
@@ -987,6 +1007,9 @@ def render(result):
                                             result["stopped"]["of"]))
     measured = [r for r in result["commits"] if r["status"] == "measured"]
     for rec in result["commits"]:
+        if rec["status"] == "measured" and rec.get("compare_why"):
+            lines.append("NOT MEASURED (compare)  %s  %s"
+                         % (rec["sha"][:9], rec["compare_why"]))
         for kind, path in commit_misses(rec):
             lines.append("MISS  %s  %s  %s  (changed: %s)"
                          % (rec["sha"][:9], kind, path, ", ".join(rec["changed"])))
@@ -1021,9 +1044,12 @@ def render(result):
         with_miss = sum(1 for r in measured if commit_misses(r))
         head = "misses %d of %d commits (mutation)" % (with_miss, len(measured))
         if result.get("compare_selector"):
+            compared = [r for r in measured if not r.get("compare_why")]
             head += "; compare selector misses %d of %d commits (%s)" % (
-                sum(1 for r in measured if commit_misses(r, "compare_missed")),
-                len(measured), result["compare_selector"])
+                sum(1 for r in compared if commit_misses(r, "compare_missed")),
+                len(compared), result["compare_selector"])
+            if len(compared) < len(measured):
+                head += ", %d not measured for it" % (len(measured) - len(compared),)
     else:
         head = "misses unknown (no commit could be measured)"
     if ci is None:
@@ -1836,6 +1862,68 @@ def _cases(check):
               and flip_raise[0]["compare_missed"] == []
               and main(["--compare-selector", os.path.join(sel_dir, "absent")],
                        io.StringIO()) == 2)
+
+        # A default selection of the full set cannot miss, but a narrower comparison
+        # on the same commit can: the commit is still swept, and only the comparison
+        # is charged. The guard that skips the sweep reads both selections; read on
+        # the default alone it returns no mutation here and this case goes red.
+        whole = os.path.join(sel_dir, _py("whole_selector"))
+        _write(whole, "import json\nprint(json.dumps({'full': True, "
+                      "'reasons': ['fixture']}))\n")
+        over_full = measure(_fixture_opts(fx, affected_cmd=at_rel, selector=whole,
+                                          compare_selector=narrow))
+        full_recs = [r for r in over_full["commits"] if r["status"] == "measured"]
+        full_raise = mutations_of(over_full, "raise")
+        check("m23b a commit whose default selection is the full set is still swept "
+              "for a narrower comparison selector: the default misses nothing, the "
+              "comparison misses the suite it left out: %r"
+              % ([(r["full"], r["compare_full"], len(r["mutations"]))
+                  for r in full_recs],),
+              [(r["full"], r["compare_full"]) for r in full_recs] == [(True, False)]
+              and len(full_raise) == 1 and full_raise[0]["missed"] == []
+              and full_raise[0]["compare_missed"] == [_t("test_b")])
+
+        # What the window line says of the full-set commits holds for the selection
+        # that was the full set: with a comparison given, each count is that
+        # selection's own, and neither is said of the other.
+        full_window = [line for line in render(over_full)
+                       if line.startswith("window: ")]
+        plain_window = [line for line in render(fullset)
+                        if line.startswith("window: ")]
+        check("m23c with a comparison selector the window line counts the full-set "
+              "commits per selection and says each cannot miss only for that one - "
+              "without one it keeps its single count: %r, %r"
+              % (full_window, plain_window),
+              len(full_window) == 1
+              and "1 of them the full set for the default selection, which cannot "
+                  "miss for it; 0 for the comparison" in full_window[0]
+              and "full set, which cannot miss)" not in full_window[0]
+              and len(plain_window) == 1
+              and "1 of them the full set, which cannot miss)" in plain_window[0])
+
+        # A comparison that cannot be read costs the comparison its reading of the
+        # commit, not the default's: the default is measured as it would be alone,
+        # and the comparison is named as not measured there, with the reason, and
+        # left out of the comparison's own count rather than read as zero misses.
+        unread = os.path.join(sel_dir, _py("unread_selector"))
+        _write(unread, "print('no selection here')\n")
+        half = measure(_fixture_opts(fx, affected_cmd=at_rel, selector=narrow,
+                                     compare_selector=unread))
+        half_raise = mutations_of(half, "raise")
+        half_text = "\n".join(render(half))
+        check("m23d a comparison selector that cannot be read leaves the default's "
+              "measurement of the commit standing and names the comparison as not "
+              "measured there, by reason, outside its count: %r"
+              % (half_text.splitlines(),),
+              half["measured"] == 1 and len(half_raise) == 1
+              and half_raise[0]["missed"] == [_t("test_b")]
+              and [r["compare_why"] for r in half["commits"]
+                   if r["status"] == "measured"] != [""]
+              and "NOT MEASURED (compare)" in half_text
+              and "no selection here" in half_text
+              and "compare: unselected" not in half_text
+              and "compare selector misses 0 of 0 commits" in half_text
+              and "1 not measured for it" in half_text)
 
         def _line(*argv):
             # The tool splits these two options with `shlex.split` (POSIX rules),

@@ -590,7 +590,8 @@ before it lands: `--selector <file> --compare-selector <file>` replays one windo
 judges both selector files against the same faults and the same sweeps, and prints the
 comparison's misses on their own `MISS (compare)` lines and in its own headline. That headline is
 the evidence a narrowed rule owes before it becomes the default; nothing checks that it was
-taken, so the selector's docstring carries the command and the date of the one that was.
+taken, so the comment above `TEXT_RESOLVERS` in `tools/affected.py` carries the command and the
+date of the one that was - the docstring only points there.
 
 CI (`.github/workflows/ci.yml`) runs the sweep slices on ubuntu + windows, and the
 `runner` and `e2e` slices on both - the windows cells prove the `python3` → `python`

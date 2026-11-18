@@ -311,7 +311,9 @@ RESOLVERS = {_deps._LOADER_MODULE: tuple(_deps._LOADER_FUNCS) + ("script_path",)
 # related listing for a governance script was the whole tree. `--why-related`
 # prints that chain on a tree where this tuple is empty. The value handed to a
 # list, to a call other than `shlex.quote`, or bound to a name unquoted is still a
-# run; `_spells` says which is which.
+# run; `_spells` says which is which. Both sides of that edge are cases: `a21e` the
+# spelled text, `a21f` a percent operand wrapped in another call, `a21g` an operator
+# other than percent - so widening the reading turns one of them red.
 #
 # MEASURED BEFORE IT BECAME THE DEFAULT, on 2026-11-18: one replay of the task commits
 # fb61b6b8..c56ea741, judging the selector as it stood (this tuple empty) and this
@@ -2206,6 +2208,35 @@ def _cases(check):
           "unknown %r" % (sorted(sp_runs), sp_unknown, sorted(run_runs), run_unknown),
           sp_runs == set() and sp_unknown is False
           and run_runs == set(("sp_a",)) and run_unknown is False)
+
+    # THE EDGE OF THE SPELLED READING, one side per case, so a widening of either
+    # turns its own case red. Only `shlex.quote` and a `%` operand make text: a `%`
+    # operand that is another call wrapping the resolver hands the path to that
+    # call, and a `+` joins it to a string some caller may still run.
+    def _runs_of(text):
+        tree = ast.parse(_src(text))
+        _i, runs, unknown = _file_edges(
+            product, _scan(tree, _py_constants(tree)), known | set(("sp_d", "sp_e")),
+            set())
+        return runs, unknown
+
+    names["@d@"], names["@e@"] = repr(_fx("sp_d")), repr(_fx("sp_e"))
+    wrapped_runs, wrapped_unknown = _runs_of(
+        "import os\nimport _loader\n"
+        "def wrapped():\n"
+        "    return 'python3 %s' % (os.path.realpath(_loader.script_path(@d@)),)\n")
+    check("a21f a percent-format operand that is another call wrapping the resolver is still a "
+          "run - the call, not the format, receives the path: runs %r unknown %r"
+          % (sorted(wrapped_runs), wrapped_unknown),
+          wrapped_runs == set(("sp_d",)) and wrapped_unknown is False)
+    joined_runs, joined_unknown = _runs_of(
+        "import _loader\n"
+        "def joined():\n"
+        "    return 'python3 ' + _loader.script_path(@e@)\n")
+    check("a21g an operator other than percent is still a run - only a percent format "
+          "spells the path into text: runs %r unknown %r"
+          % (sorted(joined_runs), joined_unknown),
+          joined_runs == set(("sp_e",)) and joined_unknown is False)
 
     def _cli(*argv):
         buf = io.StringIO()

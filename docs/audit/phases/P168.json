@@ -96,24 +96,30 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/run-test-gate.py (_WORD_PIECES, _word_rels, _names_path)",
         "issue": "A gate entry that names a path the tree identity leaves out is no longer seen as naming it when the path is followed by a delimiter other than = or a backquote: --files=docs/audit/audit-plan.json,src/a.py, docs/audit/audit-plan.json:3, a trailing comma, a closing brace after a quoted path inside python -c. Before this phase all four were graded. The step is then repeated green after the plan it reads has changed. Shown by a probe calling the reader on both trees: four entries graded at the phase's base and not at its head.",
-        "resolution": "Stop deciding by splitting the entry into shell words. State the invariant the reading must keep: a literal occurrence of a left-out path in the entry, between path boundaries, always grades it, whatever quotes, escapes or delimiters surround it; reading more than a shell would is the safe direction, reading less is not.",
-        "fixTask": "P168.17-icj"
+        "resolution": "fixed in P168.17-icj (ec0dfc31a99e): Stop deciding by splitting the entry into shell words. State the invariant the reading must keep: a literal occurrence of a left-out path in the entry, between path boundaries, always grades it, whatever quotes, escapes or delimiters surround it; reading more than a shell would is the safe direction, reading less is not.",
+        "fixTask": "P168.17-icj",
+        "commit": "ec0dfc31a99e",
+        "status": "fixed"
       },
       {
         "id": "P168-R9",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/run-test-gate.py (_command_words)",
         "issue": "The path reader recurses until RecursionError on a gate entry holding whitespace shlex does not split on (a non-breaking space, a form feed, a vertical tab): its re-read trigger matches any Unicode whitespace while the lexer splits on four ASCII characters, so the token lexes back to itself. Nothing catches it and the reader runs on every recorded gate run, so every run of such a gate dies with a traceback. Before this phase the same entries returned a reading. The docstring's claim that the recursion ends is false.",
-        "resolution": "No recursive re-read: the invariant reading above needs no lexer. A case per whitespace kind, each returning a reading.",
-        "fixTask": "P168.17-icj"
+        "resolution": "fixed in P168.17-icj (ec0dfc31a99e): No recursive re-read: the invariant reading above needs no lexer. A case per whitespace kind, each returning a reading.",
+        "fixTask": "P168.17-icj",
+        "commit": "ec0dfc31a99e",
+        "status": "fixed"
       },
       {
         "id": "P168-R10",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/run-test-gate.py:3269-3270 (reuse_identity)",
         "issue": "A step the change widened onto the phase gate, named affected/phase-gate: <key>, is asked for the paths it names by its NAME, not by the command the build key resolves to, so it is never read as grading a left-out path. This repository's own phase-gate keys (validate, gate, report) read the plan. A task whose gate holds such a step is asked again after a plan edit and the step's earlier green is repeated, whole or per step. Present before this phase; this phase's per-step repeat rests on the reading being right.",
-        "resolution": "Ask each step's own command, the one that runs, for the paths it names; a case with a phase-gate arm step whose build command names the plan, measured after a plan edit.",
-        "fixTask": "P168.17-icj"
+        "resolution": "fixed in P168.17-icj (ec0dfc31a99e): Ask each step's own command, the one that runs, for the paths it names; a case with a phase-gate arm step whose build command names the plan, measured after a plan edit.",
+        "fixTask": "P168.17-icj",
+        "commit": "ec0dfc31a99e",
+        "status": "fixed"
       },
       {
         "id": "P168-R11",
@@ -130,8 +136,10 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-test-gate.py (_command_words, left_out_line)",
         "issue": "An entry any shell runs is reported as one that cannot be split into words when a double-quoted body holds an apostrophe (pytest -k \"not don't_run\"), and is then measured on every run with a sentence that is false about it. Safe direction; before this phase such an entry repeated.",
-        "resolution": "Goes away with the invariant reading; one allow case.",
-        "fixTask": "P168.17-icj"
+        "resolution": "fixed in P168.17-icj (ec0dfc31a99e): Goes away with the invariant reading; one allow case.",
+        "fixTask": "P168.17-icj",
+        "commit": "ec0dfc31a99e",
+        "status": "fixed"
       },
       {
         "id": "P168-R13",
@@ -168,9 +176,32 @@
         "file": "tools/measure-affected-miss.py:700, :974-979, :690-696; tools/ui-tests/confirm-write.test.mjs:169-176; CONTRIBUTING.md:593",
         "issue": "Five small faults in the repo's tools: the branch that still sweeps a commit whose default selection is the full set when the comparison selector is narrower has no case (reverting its guard stays green); the window line says the full-set commits cannot miss, which holds for the default selector only; a comparison selector that cannot be read discards the default selector's measurement for that commit; the scan for a confirm click followed by a fixed wait does not report a click followed directly by a read, and its list of what it cannot see does not say so; CONTRIBUTING.md says the selector's docstring carries the command and date, which sit in a comment.",
         "resolution": "The first three with the case above, in the same two tools; the rest to the low batch."
+      },
+      {
+        "id": "P168-R18",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:3318 (reuse_identity), :3437 (repeat_plan)",
+        "issue": "A step that reads the plan without naming it is repeatable: the content identity leaves the plan out and the key holds only the gate commands and the declared scope. Before this phase one grading entry made the whole gate measured; since the per-step repeat, the steps beside it repeat. On this repository's own phase gate validate, gate and report are measured and the sweep beside them is repeated, though two suites it runs read the live plan. The same holds for a gate entry that runs one of the plugin's own plan readers with no path argument (audit-status.py --gate, validate-manifest.py): a bug filed or a meta block edited between two asks leaves a stale green. The limit is stated nowhere.",
+        "resolution": "Put a digest of the plan's meta in the key, and read a command that names one of the plugin's own scripts as grading the plan; state what still cannot be seen (a suite that opens the plan's phases itself) beside the other limits.",
+        "fixTask": "P168.20-icj"
+      },
+      {
+        "id": "P168-R19",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py:355-376 (recorded_paths); plugins/audit/scripts/governance/run-test-gate.py:3318",
+        "issue": "A manifest reached through a symlink is left out under its resolved name only, so the name the reading searches for is the target's; a gate entry naming the plan by its configured path is not graded, the symlink's own blob does not change when the plan does, and the verdict is repeated stale. Present before this phase.",
+        "resolution": "Search for the last component of the manifest path as configured as well as of the resolved one; a case with a symlinked plan.",
+        "fixTask": "P168.20-icj"
+      },
+      {
+        "id": "P168-R20",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py (_holds_name, _quote_removed); plugins/audit/scripts/governance/drive-phase.py:6677-6688, :1697-1745; tests/test_run_test_gate.py (ru46)",
+        "issue": "Cheap places the reading still reads less than a shell: case is not folded though the host file systems are case-insensitive; a backslash a shell would drop before a letter; a directory that holds only left-out files (the shards' directory) named as a directory. In the drive: a joined step measured through one of its derived parts is reported as not repeated; a gate stage can be queued twice across a close and reopen. Case ru46's first conjunct cannot fail under either single mutation.",
+        "resolution": "The runner's three and ru46 with the fix above; the drive's two to the low batch."
       }
     ],
-    "outcome": "[findings: 17 - 0 high, 9 med, 8 low; 7 with a recorded fix commit]"
+    "outcome": "[findings: 20 - 0 high, 11 med, 9 low; 11 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2019,7 +2050,7 @@
     {
       "id": "P168.17-icj",
       "title": "Whether a gate step may be repeated is decided by an invariant reading of the command that runs: a literal left-out path always grades it, whatever surrounds it",
-      "status": "in_progress",
+      "status": "done",
       "description": "The runner decides whether a gate step may be repeated by asking whether the step's command names a path the tree identity leaves out (the plan, its shards, the evidence record). That reading has now been wrong three times in this phase, each time by enumeration: split the entry into shell words, then match words. This task replaces the enumeration with an invariant and proves it.\n\nTHE INVARIANT. A literal occurrence of a left-out path in the command that runs, between path boundaries, always grades that path - whatever quotes, escapes, option glue or delimiters surround it. Reading more than a shell would (and so measuring a step that could have been repeated) is the safe direction; reading less is a stale green and is never acceptable. A name that merely contains a left-out path's base name inside a longer file name (tests/test__evidence_io.py against the evidence record) still does not grade it; that is the one false positive the earlier work removed and it must stay removed.\n\nWHAT IS WRONG TODAY, each shown by a probe on the phase's base and head:\n(1) a path followed by a delimiter other than = or a backquote is not read: --files=docs/audit/audit-plan.json,src/a.py ; docs/audit/audit-plan.json:3 ; a trailing comma ; a closing brace after a quoted path inside python -c. All four were graded before this phase.\n(2) the reader recurses until RecursionError on an entry holding a non-breaking space, a form feed or a vertical tab, and nothing catches it, so every recorded run of that gate dies. Its docstring says the recursion ends.\n(3) a step the change widened onto the phase gate, named affected/phase-gate: <key>, is asked by its name and not by the command its build key resolves to, so it never grades; this repository's own keys (validate, gate, report) read the plan. Ask the command that runs, for every step.\n(4) an entry with an apostrophe inside a double-quoted body is reported as one that cannot be split and is measured on every run with a sentence that is false about it.\n\nACCEPTANCE.\n1. Each entry in (1), each whitespace kind in (2) and the step in (3) is read as naming the plan; none raises. Each is a case, red before the change.\n2. Allow cases, proved by weakening the reading until it over-fires: an entry naming only tests/test__evidence_io.py, and an entry naming nothing left out, do not grade.\n3. No recursive re-read and no lexer failure can decide the answer; say in the outcome what happens to an entry the old code called unsplittable, and whether that sentence can still be printed.\n4. The two sentences the runner prints for a step that grades a left-out path keep their text byte for byte where they are still printed: plugins/audit/scripts/governance/drive-phase.py matches them by prefix and is NOT in this task's files. If one of them can no longer be printed, leave the drive alone and say so in the outcome.\n5. A probe file of mutations, each applied to an in-memory copy, with the cases each turns red.\n6. Pre-existing limits that stay (a bare $VAR, a glob, a word naming an ancestor directory of a left-out path) are stated where the reading is documented, each with the direction it fails in; fix any of them the invariant makes free.\n\nDEPENDANTS. drive-phase.py reads the left-out sentences (see 4). tools/check-example-ledgers.py quotes a runner refusal sentence. The per-step repeat, the joined step (declared and affected suites as one step, read back by _evidence_io.step_parts) and the entries left to the phase gate all rest on this reading: a joined step is measured when any part of it grades. Run under the spaced leg as well: python3 tools/sweep-selftests.py --spaced tests/test_run_test_gate.py.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -2046,14 +2077,24 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ec0dfc31a99e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "THE RULE (written before code). An entry names a left-out path when its command's text holds that path's last component as a whole name - no letter or digit runs on into it through the characters that join a name (._-+@~) on either side - and, for a path known to be a directory, with a / or \\ separator directly beside it. The text is searched as written and once more as a shell's quote removal leaves it, never split into words, so no quote, escape, delimiter or whitespace kind can hide an occurrence and nothing in the reading can fail or recurse. FAILURE DIRECTIONS: a command that is not text grades (measured, UNREADABLE reason); over-reads (a path in a comment/echo, a sibling directory sharing a left-out directory's last component, two unquoted words spelling a spaced path, a literal path a shell would glue a word onto) grade (a run measured); kept under-reads, each a stale green, stated beside UNREADABLE and pinned by lw22: a bare $VAR, a glob, an ancestor directory (docs/audit, .), a left-out directory named by its bare last component after a cd, a brace expansion. Fixed by the invariant: a path through .. and a name assembled from quoted pieces are now read (lw22). CHANGES in plugins/audit/scripts/governance/run-test-gate.py: _command_words, _word_rels, _names_path, _WORD_PIECES and the posixpath import removed; added _quote_removed, _reaches_letter, _holds_name, _last_name, _NAME_JOINERS, _SEPARATORS; UNSPLITTABLE renamed UNREADABLE ('its command is not text'); grades_left_out(gate, excluded, directories=()) drops the roots parameter (an absolute path holds the relative path's last component, so no root is needed; no caller outside this file passed it). (3) reuse_identity now grades _grading_steps(commands, build): every step under its declared command AND the command that runs; declared_gate resolves a step named affected/phase-gate: <entry> to its entry's build command (_declared_entry, _PHASE_GATE_STEP, which the arm-step builder now also spells). Consequence: a stored row whose gate held a phase-gate arm step keys differently once (one measurement after upgrade, never a stale repeat). ACCEPTANCE 3/4: an entry the old code called unsplittable (unbalanced quote, apostrophe in double quotes) is read for literal names like any other - it grades only if it names a left-out path, with the 'names' sentence. The 'cannot be read for the paths it names' sentence is still printed, byte for byte, but only for a command that is not text (lw9, lw21 pin its prefix); whether the manifest validator lets a non-string build command through was not checked. Both prefixes in drive-phase.py GATE_LEFT_OUT still match; drive-phase.py untouched. TESTS (tests/test_run_test_gate.py): new lw16-lw22, ru46, ru47; changed lw5/lw6 (open quote now read for its paths), lw8/lw10/lw11/lw14/lw15 (roots= dropped), lw9 (unreadable line from a non-text command), lw13 (unquoted 'my plan/evidence/x' now grades - more than a shell, the accepted direction; sibling allow case kept as 'my plan/evidence-old', 'my\\ plan/evidenced'), lw14 (now graded with the 'names' line). PLUGIN-BUILD-GUIDE.md run-test-gate section paragraph rewritten to the new reading. WINDOWS: lw19 builds backslash-separated absolute paths by hand, under a drive-letter user directory whose name holds a space (dq, sq, escaped space, shell body, forward slashes, relative backslash path), and runs on every leg; mutation m10 (backslash not a separator) turns only lw19 red on posix. lw10 itself, on its os.path-built backslash paths with a real temp root, can only be confirmed by CI's Windows legs. MUTATION PROBE: <scratchpad>/P168.17-icj/mutations.py <tree> applies each of m1-m12 to an in-memory copy and runs _left_word_cases/_reuse_cases: all 12 KILLED, baseline green, exit 0 (run with TMPDIR in the scratchpad). Allow cases (lw20, lw1, lw2, lw11, lw13) go red under the over-fire mutations m1-m4. Reviewer probes rerun on this tree: probe_glued all graded; probe_recursion no raise; probe_apostrophe no unsplittable line; probe_identity/probe_phasearm arm step grades the plan. COMMANDS (from the tree): python3 tools/sweep-selftests.py tests/test_run_test_gate.py exit 0, 677 cases; --spaced same file exit 0, 677 cases; tests/test__deps.py test__affected_tests.py test__evidence_io.py test__verdict_binding.py test_drive_phase.py exit 0, 5/5 files, 1771 cases; tests/test__output_lints.py test_full_gate.py test__tree_stamp.py test_commit_task_work.py test_drive_without_model.py exit 0, 5/5 files; ruff check on both .py files: All checks passed; vermin -t=3.8- exit 0; prose_number_claims/house_style_violations/doc_prose_numbers: 0 findings. DEPENDANTS: drive-phase.py - still correct, both GATE_LEFT_OUT prefixes unchanged and test_drive_phase green; tools/check-example-ledgers.py - quotes classify_mutations sentences, not these, unchanged; tests/test_commit_task_work.py, test_drive_phase.py, test_drive_without_model.py, test__tree_stamp.py, test_full_gate.py import helpers from tests/test_run_test_gate.py (_derived_base_repo, _follower_cases, _full_repo, _excluded_cases) - none changed, suites green; full-gate.py, _evidence_io.py, audit-lookup.py and the other importers of run-test-gate.py call no function whose signature changed (grades_left_out had no caller outside its file); _config_rules._command_words is that module's own unrelated reader, left; .github/sweep-costs.json, tools/affected.py, tools/verify.sh, COMPATIBILITY.md name the files by path only - still correct; the joined step and repeat_plan are unchanged and still read the unjoined step names grading returns. claims:\n1 rule comment above UNREADABLE is implemented by _holds_name/_quote_removed/grades_left_out in run-test-gate.py; its limit list is pinned by lw22\n2 m1-m12 applied in memory -> all KILLED (probe exit 0); allow lw20 red under over-fire m1-m4\n3 grep _command_words|UNSPLITTABLE|_names_path|_word_rels|split into words over the three files: 1 hit, the rule comment stating the text is never split into words - left, it describes the new behaviour; drive-phase GATE_LEFT_OUT mirror left (not mine, prefixes unchanged)\n4 n/a - no rule to an agent\n5 n/a - no property recorded\n6 decision reads each step's declared and running command, not its name; allow cases lw1/lw11/lw20 green on the fix and red under m1-m4\n7 n/a - no number written into prose",
+        "descriptive": "Whether a gate step may be repeated is now decided by a whole-name search of the command's text, so delimiters, whitespace kinds, apostrophes, Windows separators and phase-gate arm steps can no longer hide a left-out path, and nothing in the reading can raise."
       },
       "startedAt": "2026-11-18T15:00:42Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T15:34:34Z",
+      "verifiedBy": [
+        "lw16 a left-out path behind a comma, colon, brace, bracket, or literally between quotes grades it",
+        "lw17 nbsp, form feed, vertical tab, em space, ideographic space and 400-deep nested quotes raise nothing and grade only where the plan is written",
+        "lw18 an apostrophe inside double quotes is no unreadable entry",
+        "lw19 Windows-shaped backslash paths under a spaced directory, built by hand, grade on every leg",
+        "lw20 allow: suites whose names contain a left-out name, a backup, a sibling, a bare selector, and an ordinary entry grade nothing",
+        "lw21 a non-text command is measured with the 'cannot be read' sentence the drive matches",
+        "lw22 the documented limits are what the reading does",
+        "ru46 a phase-gate arm step whose key validates the plan and a derived step whose running command names it grade; an arm naming nothing does not",
+        "ru47 an arm step's declaration is its entry's build command, so a remapped key is a different gate"
+      ],
       "notes": [
         {
           "at": "2026-11-18T14:07:27Z",
@@ -2080,7 +2121,40 @@
         "P168-R12"
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T15:26:48Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1560000,
+            "startedAt": "2026-11-18T15:00:48Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T15:33:54Z.312e64",
+            "kind": "wait",
+            "ms": 0,
+            "startedAt": "2026-11-18T15:27:06Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T15:33:54Z.312e64, ending at its startedAt",
+            "kind": "selection",
+            "ms": 26597,
+            "runId": "2026-11-18T15:33:54Z.312e64",
+            "startedAt": "2026-11-18T15:27:06Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T15:33:54Z.312e64",
+            "kind": "gate",
+            "ms": 380948,
+            "runId": "2026-11-18T15:33:54Z.312e64",
+            "startedAt": "2026-11-18T15:27:33Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit ec0dfc31a99e",
+            "kind": "commit",
+            "ms": 2008,
+            "startedAt": "2026-11-18T15:34:30Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T15:00:42Z"
       },
       "reviewPerTask": "signals",
@@ -2088,6 +2162,18 @@
         "runId": "2026-11-18T15:34:13Z.dbc0a0",
         "status": "passed",
         "at": "2026-11-18T15:34:13Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "ec0dfc31a99e",
+        "at": "2026-11-18T15:34:34Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T15:26:42Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_test_gate.py` in a throwaway tree at HEAD exited 1 with 13 of 677 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - lw5 (house FAIL), lw6 (house FAIL), lw8 (house FAIL), lw10 (house FAIL), lw13 (house FAIL), lw14 (house FAIL), lw15 (house FAIL), lw16 (house FAIL) and 5 more: SELFTEST FAILED: 664/677 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2172,7 +2258,7 @@
     {
       "id": "P168.19-icj",
       "title": "The edge of the selector's text-not-run reading is held by cases that fail when it is widened, and a comparison selector's faults stay its own",
-      "status": "pending",
+      "status": "in_progress",
       "description": "This repository's test selector (tools/affected.py) was narrowed in this phase: a path obtained from the script resolver and then spelled into a percent format or handed to shlex.quote is read as text, not as a run of that script. A review found the narrowing sound on the tree as it stands (every such site in product code is text nobody executes) and found that nothing holds its edge: two mutations that widen it leave the tool's own cases green.\n\nACCEPTANCE.\n1. tools/affected.py gains a case for each side of the edge the comment above TEXT_RESOLVERS and the docstring of the spelled reading state: a percent format whose operand is another call wrapping the resolver is still a run; an operator other than percent is still a run. Each is proved by its mutation going red: the call branch of the spelled reading returning the flag instead of False, and the operator test accepting any binary operator. Deliver both mutations as a probe file run against an in-memory copy or an export, never the checkout.\n2. tools/measure-affected-miss.py gains a case for the branch that still sweeps a commit whose default selection is the full set when the comparison selector is narrower; proved by reverting that guard.\n3. The window line of that tool does not say of the comparison selector what holds only for the default one: with a comparison selector given, the full-set commits can miss for it.\n4. A comparison selector that cannot be read does not cost the default selector its measurement for that commit: the default's reading is kept and the comparison's is reported as not measured, by name.\n5. CONTRIBUTING.md says where the command and the date behind the narrowing really sit.\n6. The listings the plan records (one path per line from --list-related and --list-all) do not change by a byte; say how you checked.\n\nDEPENDANTS. The plugin's gate runner reads --list-related and --list-all through the plan's recorded listing commands; tools/verify.sh and CI read --json; tests/test__output_lints.py pins the prose-scan exemption row for tools/measure-affected-miss.py's fixtures by the tool's path, so keep the tool at its path and keep its fixtures. Both tools carry their own cases and are run by the sweep as tools/affected.py and tools/measure-affected-miss.py; no file under tests/ is added.",
       "files": [
         "tools/affected.py",
@@ -2196,14 +2282,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T15:34:43Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -2233,6 +2319,80 @@
       ],
       "fixes": [
         "P168-R16"
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T15:34:43Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T15:51:40Z.1e9963",
+        "status": "passed",
+        "at": "2026-11-18T15:51:40Z"
+      }
+    },
+    {
+      "id": "P168.20-icj",
+      "title": "A step that reads the plan without naming it is measured: the plan's meta is in the reuse key, and a command naming one of the plugin's own scripts grades the plan",
+      "status": "pending",
+      "description": "The runner repeats a gate step's earlier verdict unless the step grades something the tree identity leaves out. After this phase's earlier work the reading holds for a path a command NAMES. A second review found what is left: reads that name nothing, and three cheap under-reads. All are the unsafe direction (a stale green); reading more is always acceptable here.\n\nWHAT IS WRONG TODAY, each shown by a reviewer's probe:\n(1) A step that reads the plan without naming it is repeatable. The key holds the gate commands and the declared scope and nothing of the plan. Since steps repeat one by one, this repository's own phase gate measures validate, gate and report and repeats the sweep beside them, though suites in that sweep read the live plan's meta. And a gate entry that runs one of the plugin's own plan readers with no path argument (audit-status.py --gate, validate-manifest.py) is never graded: a bug filed between two asks leaves a stale green.\n(2) A manifest reached through a symlink is left out under its resolved name only, so an entry naming the plan by its configured path is not graded.\n(3) Case is not folded, though macOS and Windows file systems fold it; a backslash a shell drops before a letter hides a name; the shards' directory named as a directory is not graded.\n(4) Case ru46's first conjunct cannot fail under either single mutation.\n\nACCEPTANCE.\n1. The reuse key holds a digest of the plan's meta as it stands at the ask, so an edit to any meta block measures every step, whole run and per step. Say in the outcome which meta keys the runner or the drive write during a phase (a reading done while planning found only the evidence boundary, written once) and show by a case that a second ask straight after a recorded run still repeats: this must not cost the repeat the phase exists for.\n2. A command that holds, as a whole name, the name of a script the plugin ships grades the plan. The list of names is derived from what the plugin ships, never typed out. A case for audit-status.py --gate and validate-manifest.py with no path argument, and an allow case for a suite whose file name merely contains a script's name (test_run_test_gate.py does not name run-test-gate.py).\n3. A symlinked plan is graded by an entry naming either its configured path or its target; a case builds the symlink (skipped by name with its reason where the platform cannot make one).\n4. Names are compared case-folded; a reading with every backslash dropped is searched beside the two there are; the directory holding the shards counts as a left-out directory. A case each, and the allow cases that prove none over-fires onto a sibling name.\n5. What still cannot be seen is stated beside the other limits, in the code and in the guide, with its direction: a suite that opens the plan's phases or tasks itself, in a gate that runs no plan reader.\n6. ru46 is given a running command that does not hold the plan, so its declared reading can fail.\n7. Mutations as a probe file on an in-memory copy; the reviewers' probes pass on your tree.\n\nDEPENDANTS. drive-phase.py matches the runner's two left-out sentences by prefix and is not in this task's files: keep them byte for byte. A row recorded before this change keys differently once (one measurement, never a stale repeat): say so in the outcome and in CHANGELOG.md only if a sentence there already describes the key. The per-step repeat, the joined step and the entries left to the phase gate all read this key. _evidence_io.py is imported by most of the tree; do the symlink reading in the runner, from the manifest path it was handed, and hand back if it can only live in _evidence_io.py.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "tests/test_run_test_gate.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "tests/test_run_test_gate.py",
+        "tests/test__evidence_io.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_test_gate.py: an edit to a meta block measures every step while a second ask straight after a recorded run still repeats; audit-status.py --gate and validate-manifest.py with no path grade the plan; a symlinked plan, a name in another case, a dropped backslash and the shards' directory each grade; a suite whose file name contains a script's name does not"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T15:46:08Z",
+          "text": "scope: plugins/audit/scripts/governance/run-test-gate.py, plugins/audit/scripts/governance/_evidence_io.py, every path the finding(s) P168-R18, P168-R19 name"
+        },
+        {
+          "at": "2026-11-18T15:46:08Z",
+          "text": "scope: tests/test_run_test_gate.py, the suite that tests plugins/audit/scripts/governance/run-test-gate.py (python: its import closure reaches plugins/audit/scripts/governance/run-test-gate.py)"
+        },
+        {
+          "at": "2026-11-18T15:46:08Z",
+          "text": "scope: tests/test__evidence_io.py, the suite that tests plugins/audit/scripts/governance/_evidence_io.py (python: its import closure reaches plugins/audit/scripts/governance/_evidence_io.py)"
+        },
+        {
+          "at": "2026-11-18T15:46:21Z",
+          "text": "it quotes one refusal sentence of the gate runner about a verdict the runner cannot produce; this task changes what goes into the reuse key and which commands grade the plan, and leaves that sentence as it is",
+          "waives": "tools/check-example-ledgers.py"
+        }
+      ],
+      "fixes": [
+        "P168-R18",
+        "P168-R19"
       ]
     }
   ],
