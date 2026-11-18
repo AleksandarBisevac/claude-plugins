@@ -379,7 +379,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   session's asked with `.claude` linked inside the project, out of the repository, into another
   tree's `.claude`, through a chain or to a directory not made yet, spelled through the link or
   at its destination, the config present or not, by an edit tool or an MCP write, and the
-  journal writes its config row for each. **Matched:** the project's config and a linked or
+  journal writes its config row for each edit-tool write; an MCP write leaves the row the entry
+  below on created files says. **Matched:** the project's config and a linked or
   nested worktree's config, through a symlinked folder as above; a hard link to the project's
   config under any name, wherever it is placed; and a spelling differing only in letter case,
   where the directory that name is looked up in folds case. **Not matched:** a symlink file in
@@ -411,6 +412,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   dimensions, each impossible combination skipped by a named predicate and counted, and a case
   counts the git processes of an ordinary write through a shim on PATH from the project, a
   nested worktree and a linked worktree outside it.
+- **A config or plan file created by a shell command or an MCP tool leaves its journal row, and
+  so does the write that switches the journal off.** For those two routes the journal cannot
+  read from the payload what was written, so its pass before the call notes the files it
+  records and its pass after writes a row for each that moved. A file that did not exist had no
+  note, and the pass after read that as nothing to compare with: a config created by a redirect,
+  through a symlinked `.claude` too, or by an MCP write left no row while the guard asked the
+  owner about the MCP write, and a phase file created by a command left none either. The pass
+  before now notes a missing file as absent - a phase file by the shard directory's listing,
+  since its name is not known before it exists - and the pass after writes a row saying the file
+  was `created`, with the row's usual keys and the state after; a plan file's creation row
+  derives no completion and says so. No key was added, renamed or removed. A pass after with no
+  pass before still writes nothing, a file created and removed inside one call leaves no row, and
+  a creation a verb's own row already records is not written twice. The row for a write that
+  switches the journal off - an existing config flipped by any tool, or a config created with the
+  switch off - was computed and then refused by the append, which reads the config on disk after
+  the call, so the last will the documents describe was never written when the hooks ran as
+  processes. That row is now appended with the switch as it stood before the call, into the
+  project's own trail only, and is written once; a write made while the journal was already off
+  leaves no row, as before.
 
 ## [3.8.0]
 

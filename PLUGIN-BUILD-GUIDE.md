@@ -1004,9 +1004,10 @@ spelling** (`_config_target`, from `_config.config_of_tree`): the config of the 
 the row goes into is named `.claude/audit.config.json` whatever spelling, letter case or link
 reached it — the plain row is the one it always was — so the per-(session, agent, target) slot
 and the trail check's drift anchor follow the file (`oq1`, `oq1e`, `oq4d`, `oq6`); another
-tree's config keeps the path as placed, a record of the write and not an anchor. An MCP write of a nested tree's config is held
-and leaves no config row, since the sweep lane reads the project's config and the session's own
-tree's. Bash and MCP share the **sweep lane**
+tree's config keeps the path as placed, a record of the write and not an anchor. An MCP write of
+another tree's config - a nested worktree's, or a linked worktree's from a session standing
+elsewhere - is held and leaves no config row, since the sweep lane reads the project's config
+and the session's own tree's. Bash and MCP share the **sweep lane**
 (`_swept_rows`), which needs no rule about which operations write: it compares each recorded
 path's digest against the slot the Pre pass seeded, so a read moves nothing and says nothing
 while a write gets the row an `Edit` gets. NO stdout at all — a recorder that talks turns
@@ -1045,6 +1046,32 @@ first write of every session would have no baseline. Two limits are stated in th
 than left to be discovered: a path with no slot at all is seeded and claimed nothing about,
 and a path that moved with no parseable pre-image carries `DERIVATION_MISSED` in its summary
 and in `details.reason`.
+
+**Absent is a state the Pre pass records, and no slot is not.** A recorded path that does not
+exist when the sweep lane's Pre pass looks is noted in its slot as `ABSENT` — a value no digest
+can take, kept apart from `None`, which is a file whose bytes could not be read
+(`_snapshot`). A phase file's name is not known before it exists, so its absence is the shard
+directory's listing, which `_sweep_paths` reads anyway and the Pre pass keeps beside the slots
+(`_note_listing`, read back by `_absent_by_listing`). A Post pass that finds the file present
+where the note says absent writes the row an edit would, its summary saying `<tool> created
+<path>` (`_created_rows`); a config created with the switch off carries the flip from the
+default, and a plan file carries `CREATED_NOT_DERIVED`, since no completion is derived from a
+file that had no state before. A Post pass with no note at all still seeds and claims nothing
+(`cq3` shows the same write both ways), and a creation goes through the same window check as
+any move, so a verb's own row for that state is not repeated (`cq4`).
+
+**The last will reaches the trail.** `_journal_io._append` refuses every row while the config
+it is handed says the journal is off, and the hook hands it the config loaded after the call,
+so the row for the write that switched the journal off was computed and refused. The Post pass
+marks that row (`_ON_BEFORE`) when the switch was on before the call — the pre-image's, or the
+default when the note says the config did not exist — and `_append_rows` hands it over with
+`journal.enabled` as it stood then, only into the project's own trail and only for the trail
+tree's own config — another tree's config named as placed is not that switch (`cq7`) — and
+drops the mark. The
+slot follows the row, so the writer's next call does not owe it again (`cf5`, `cq6`); a write
+made with the switch already off leaves none (`cq5`). The edit lane's rows keep their wording:
+an edit tool creating the config is recorded as `Write wrote …`, as it always has, or as the
+flip when it creates the config switched off.
 
 **Which agent, not just which session.** One session runs an orchestrator and its subagents
 and they all share `session_id`, so `actor.sessionId` could say which *session* changed the

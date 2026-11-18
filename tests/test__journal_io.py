@@ -3116,6 +3116,58 @@ def _old_row_cases(check):
           len(edited) == 1 and edited[0].startswith(
               "%s has changed since the last row" % (_config.CONFIG_REL,)))
 
+    _created_row_cases(check)
+
+
+def _cc_hook(event, project, sid):
+    """journal-writes.py as a process, for one pass of a shell command - the
+    route whose payload names no file."""
+    payload = {"hook_event_name": event, "tool_name": "Bash",
+               "session_id": sid, "tool_use_id": "call-" + sid,
+               "cwd": project, "tool_input": {"command": "sh ./make-it.sh"}}
+    if event == "PostToolUse":
+        payload["tool_response"] = {"stdout": "", "stderr": ""}
+    env = dict(os.environ)
+    env["CLAUDE_PROJECT_DIR"] = project
+    env.pop(_CR_MARK, None)
+    return subprocess.run(
+        [sys.executable, os.path.join(_harness.HOOKS_DIR, "journal-writes.py")],
+        input=json.dumps(payload).encode("utf-8"), capture_output=True,
+        env=env, cwd=project, timeout=60)
+
+
+def _created_row_cases(check):
+    """cc1: the row a shell command creating the config leaves is read by the
+    trail check like an edit row - no finding, and the next drift is measured
+    from it."""
+    import _config
+    ok, tf = _harness.attempt(_harness.worktree_pair, "journal-cc-")
+    if not ok:
+        _harness.could_not_run(check, "cc1 the repository fixture",
+                               "it did not build: %s" % (tf,))
+        return
+    main = tf["main"]
+    conf = os.path.join(main, *_config.CONFIG_REL.split("/"))
+    codes = [_cc_hook("PreToolUse", main, "sess-cc1").returncode]
+    os.makedirs(os.path.dirname(conf), exist_ok=True)
+    _cr_shell(conf, 500)
+    codes.append(_cc_hook("PostToolUse", main, "sess-cc1").returncode)
+    rows = [(r.get("target"), r.get("summary")) for r in M.read_all(main)
+            if r.get("action") == "config.edit"]
+    after_row = _cr_seen(main)
+    _cr_shell(conf, 501)
+    edited = _cr_config_warnings(main)
+    check("cc1 a config created by a shell command leaves a row saying so, the "
+          "trail check reads that row with no finding and no warning, and an "
+          "edit behind the journal after it warns exactly once, naming the "
+          "config's own path - the creation row is the drift anchor: rows %r, "
+          "then %r, then %r" % (rows, after_row, edited),
+          len(rows) == 1 and rows[0][0] == _config.CONFIG_REL
+          and "created" in (rows[0][1] or "") and after_row == ([], [])
+          and len(edited) == 1 and edited[0].startswith(
+              "%s has changed since the last row" % (_config.CONFIG_REL,))
+          and codes == [0, 0], "exit codes %r" % (codes,))
+
 
 # --- nl: every trail and ledger writer writes LF, whatever the platform ---------
 # The trail is committed and hash-chained, so its bytes must be the same on every

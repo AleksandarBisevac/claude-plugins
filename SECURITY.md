@@ -1610,8 +1610,25 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    refused; this is the cost of that choice. And an MCP write the guard does hold
    is journalled by the sweep lane, which asks the file rather than the payload
    and reads only the project's config and the config of the tree the session
-   stands in when that is a linked worktree beside the project: such a write of a
-   nested tree's config is held and leaves no config row.
+   stands in when that is a linked worktree beside the project: a write of any
+   other tree's config - a nested worktree's, or a linked worktree's from a
+   session standing elsewhere - is held and leaves no config row.
+   **What the shell and MCP routes leave in the journal.** The pass before the
+   call notes each file the sweep reads - the config, the plan's index, its phase
+   files - as its bytes, or as absent when it does not exist (a phase file by the
+   shard directory's listing, since its name is not known before it exists). The
+   pass after writes a row for each that moved: an edit row, or a row saying the
+   file was `created` when the note says absent, with the state after. A file
+   created and removed inside one call leaves no row, and a state a verb's own
+   row already records in the call's window is not written twice. A call whose
+   pass before never ran - a hook that timed out - leaves nothing for a file this
+   writer never noted: absence that was not observed is not a state to compare
+   with (`cf1`-`cf4`, `cq1`-`cq4` in `tests/test_journal_writes.py`). The write
+   that switches the journal off, on any route and whether it edits the config
+   or creates it, leaves its row, judged by the switch as it stood before the
+   call and appended into the project's own trail with that switch; a write made
+   with the journal already off leaves none, and neither does a write of another
+   tree's config while the project's journal is off (`cf5`, `cq5`-`cq7`).
 4. **Test-file exemption.** Test files are exempt from plan-first so red-first
    TDD stays frictionless — the first act of a red-first fix is writing a test
    that fails, and a gate that blocks that blocks the discipline. Logic can

@@ -1,0 +1,100 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_journal_writes.py tests/test__journal_io.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T17:40:55Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_journal_writes.py tests/test__journal_io.py` in a throwaway tree at HEAD exited 1 with 7 of 184 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cc1 (house FAIL), cf1 (house FAIL), cf2 (house FAIL), cf3 (house FAIL), cf4 (house FAIL), cf5 (house FAIL), cq3 (house FAIL): SELFTEST FAILED: 178/184 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "(1) THE FLIP-ROW FAULT REPRODUCED. On HEAD code, cf5 (the journal hook as a process for both passes, rows read back from the trail) wrote no row for any of five writes that switch the journal off: a config created off by a command, by an MCP tool and by an edit tool, and an existing config flipped on->off by a command and by an edit tool (`python3 -B tests/test_journal_writes.py --selftest` before the fix: FAIL cf5 with rows [] for all five, exit codes [0, 0]). The refusal lives in _journal_io._append (`if not enabled(config): raise IOError(\"journal disabled ...\")`), which the hook's _append_rows called with the config loaded from disk after the call. _journal_io.py is NOT changed: the Post pass now marks the row it owes because the switch was on before the call with a private entry key `_ON_BEFORE` (journal-writes.py, set in _swept_tree when the current switch is off, and on the edit lane only for a row whose target is CONFIG_REL); _append_rows pops that key and, only when the row goes into the project's own trail (_config._same_dir(troot, project)), hands append the loaded config with journal.enabled True. No other caller of append is touched; the key never reaches a row (_normalise builds the row from known fields, and post_entries strips it too). The slot is refreshed after the last will so the writer's next call does not owe it again (cq6). (2) ABSENT. `ABSENT = \"absent\"` is the slot's `sha256` value for a file that does not exist: _snapshot returns (ABSENT, None) on FileNotFoundError/NotADirectoryError and keeps (None, None) for any other OSError (unreadable). \"No pass before\" is no slot at all (_read_preimage returns None), told apart in _swept_tree: `pre is None` -> seed a present file, claim nothing (as before); `pre.sha256 == ABSENT` and the file present -> creation. cq3 shows both in one case: the same write with no Pre leaves [] and with a Pre leaves the creation row. A phase file's name is unknown before it exists, so the Pre pass keeps the shard directory's listing in a slot named `<shard dir>/` (_note_listing, written only when it changed; the listing is the one _swept_targets already made, now returned by the new _sweep_paths), and _absent_by_listing turns 'not in the noted listing' into an ABSENT note. (3) CREATION ROW: same keys as an edit row; no key added. Wording: summary `<tool> created <rel>` (_created_rows); a config created switched off appends `: journal.enabled true->false` with details.changes [the flip from the default]; a plan file gets details.reason CREATED_NOT_DERIVED and the same text in the summary, and no chained rows. The edit lane's rows keep their wording (`Write wrote ...`) byte for byte; the edit lane now also judges a created config's switch from the default, so a config an edit tool creates switched off leaves its flip row. verify/drift_anchor/newest_anchor read a creation row as an edit row: cc1 (test__journal_io) - creation row, verify ([], []), then an edit behind the journal warns exactly once naming .claude/audit.config.json. (4) Dedupe: an edit tool creating the config leaves exactly one row (cf6); a creation goes through the same recorded_states window check, so a verb's own row for the state is not repeated (cq4). (5) Orchestrator probes, copies under <SP>/sg1.47 (fixtures repointed there): probe_sh AFTER - real/linked x absent/plain/dest now each `[('config.edit', '.claude/audit.config.json')]` where BEFORE had [] (3 rows changed), every present row unchanged; probe_j - u20b changed DIS->ok (one config row), every other row's cfgrows identical to sg1.46-mine/probe_j.after.out; u21 STAYS DIS: it is an MCP write of a SIBLING linked worktree's config from a session standing in the project, and <SP>/sg1.47/w/probe_u21p.py shows no row before or after the change with that config ABSENT or PRESENT - the sweep does not read that tree's paths at all, which is the excluded 'another tree's config through an MCP tool' and would need the swept tree set widened; the documents now name it. twins.py WRONG: 0; probe_e identical to sg1.46-mine/probe_e.after.out (no warning, no finding); probe_a differing: 0 of 1960. (6) Mutation probe <SP>/sg1.47/mutations.py (output mutations.out), run from the worktree root on a copy: 11 rows, MUTATIONS ALL CAUGHT, exit 0 - absence snapshots as unreadable -> cf1 cf2 cf3 cf5 cq3 cc1; Pre does not note absence -> cf1 cf2 cf3 cf5 cq3; shard listing never kept -> cf4; created-off row withheld sweep lane -> cf5, edit lane -> cf5 cq6; flip row withheld (append handed the after config) -> cf5; last will twice, sweep lane slot -> cq6, edit lane slot -> cq6; ALLOW a row whenever the file is present after -> cq3 cq5 (also f10b f11 f5 f8 s1); ALLOW last will marked for any config row -> cq7; ALLOW creation written despite a verb's row -> cq4. (7) Runs, each exit 0 unless said: task gate `python3 tools/sweep-selftests.py --jobs 4 tests/test_journal_writes.py tests/test__journal_io.py` 2/2 files, 466 cases (184 + 282); dependants 7 suites 2319 cases: test_journal_writes 183, test__journal_io 282, test_audit_journal 186, test_hooks 247, test__config 413, test_drive_phase 1008, test_guard_edits FAILED once on cf32c only ('the disk image is detached again') - a file outside my scope, re-run alone 126/126; `python3 tools/bench-hooks.py --gate` exit 0 (3.14.7 only, other interpreters not measured); test__deps/test__output_lints/test__refs 3/3 files 792 cases; gate-parity.py 0; prove-gates.py --list 0; ruff and vermin clean on the changed .py files; run-test-gate.py SG1 --task SG1.47-ukq unrecorded: exit 0, 'GATE GREEN' (its affected/related suites included; tallies clipped by the tool without --verbose). An orphaned disk image from a guard-edits run (its scratch directory already gone) is still attached on this host; not detached by me. Suite seconds (sweep's own figures, --jobs 4): HEAD export test_journal_writes 29.9 s then 13.3 s, test__journal_io 19.8 s then 12.5 s (two runs with a gap; the first under load); this tree 16.4 s and 12.9 s. (8) Dependants: journal-writes.py stays registered Pre and Post in hooks.json unchanged; its readers test_journal_writes/test_hooks/test_audit_journal green; the existing oq6 comment that said the append refuses the flip was rewritten. _journal_io.py unchanged, so its importers (audit-journal, doctor, drive, panel journal views) and test__journal_io/test_audit_journal/test__doctor_policy read nothing new; no row key added, so COMPATIBILITY.md's row shape is untouched. SECURITY.md: residuals paragraph gains what the shell and MCP routes leave, creation and no-pass-before included, and the MCP sentence widened to another tree's config; the fail-mode table and the phrase 'write, after the fact' unchanged (test_hooks green). README: the journal-writes table row and the journal.enabled paragraph. CHANGELOG: new Security entry, and the SG1.43 entry's 'journal writes its config row for each' corrected to edit-tool writes. PLUGIN-BUILD-GUIDE: journal-writes section, two new paragraphs. No number written into prose.",
+    "descriptive": "A config or plan file created by a shell command or an MCP tool now leaves a journal row saying it was created, and the write that switches the journal off - edit or creation, any tool - is finally written to the trail when the hooks run as processes."
+  },
+  "testsAdded": [
+    "cf1-cf5: the journal hook as a process for both passes around a shell write creating the config (plain, through a symlinked .claude spelled through the link and at its destination), an MCP write creating it, a command creating a phase file, and the five writes that switch the journal off, each read back from the trail",
+    "cf6, cq1-cq7: an edit tool creating the config leaves one row; a command creating nothing, a config created and removed in one call, a Post with no Pre beside the same call with one, a phase file a verb recorded, a write with the journal already off, the writer's next call after the last will, and another tree's config with the project's journal off leave no row",
+    "cc1: the trail check reads a creation row with no finding and no warning, and an edit behind the journal after it warns exactly once naming the config's own path"
+  ],
+  "casesAdded": [
+    [
+      "cf1",
+      "cf2",
+      "cf3",
+      "cf4",
+      "cf5"
+    ],
+    [
+      "cf6",
+      "cq1",
+      "cq2",
+      "cq3",
+      "cq4",
+      "cq5",
+      "cq6",
+      "cq7"
+    ],
+    [
+      "cc1"
+    ]
+  ],
+  "claims": "claims:\n1 journal-writes.py: ABSENT and _snapshot (absent vs unreadable), _pre_seed_sweep + _note_listing/_noted_listing/_absent_by_listing (the notes), _swept_tree's created/allowed branch and _created_rows (the row), post_rows' was_on/now_on (edit lane), _ON_BEFORE set in _swept_tree and post_rows and read in _append_rows (the last will). Each document sentence names one of these or a case.\n2 eleven mutations in <SP>/sg1.47/mutations.py, all CAUGHT as listed in the outcome, restored byte for byte, __pycache__ purged between rows; ALLOW rows: present-after -> cq3 cq5, any config row marked -> cq7, creation despite a verb row -> cq4. New cases red on HEAD code (cf1-cf5, cq3, cc1) before the fix\n3 the class is 'a state the Pre pass did not record'. git grep for 'nested tree.s config is held', 'seeds one and claims nothing', 'no slot' over *.md *.py: journal-writes.py:94 and the build guide's 'no slot' sentence stay true (no slot is still no claim); test f5 stays; SECURITY/README/build guide MCP sentences widened; the CHANGELOG SG1.44 entry's narrower 'nested tree' sentence left as history of that entry. Left, out of scope: u21 (another tree's config through MCP), measured\n4 n/a - no rule addressed to an agent\n5 suite seconds measured twice on HEAD with a gap (spread 29.9/13.3 s and 19.8/12.5 s), once after; reported as such, not written into a document\n6 the sweep decides from the file's state (stat/digest) against the recorded note, never from the command text or the tool name; allow twins (cq1-cq7, cf6) shown and the ALLOW mutations turn them red\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:f980660f5003680b1aa5b67e5ddeefd82b9f608fab4d9f115bfe17c7b37c5a51\",\"dirtyDigest\":\"sha256:ebc5367209503f0effff132b27326886ca83d6b70bacb2b93ea6405977b85e8a\",\"dirtyPaths\":{\"CHANGELOG.md\":\"c9e6585de4ddde6d\",\"PLUGIN-BUILD-GUIDE.md\":\"d2d952ae3dbdf6df\",\"SECURITY.md\":\"49f5260121a1ddd4\",\"plugins/audit/README.md\":\"0d035d30444ab5ea\",\"plugins/audit/hooks/journal-writes.py\":\"395076a8c1b55b9f\",\"tests/test__journal_io.py\":\"bb7ae84987ba0143\",\"tests/test_journal_writes.py\":\"7b1869ec007562f5\"},\"head\":\"5a3fbd7e\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/README.md\",\"plugins/audit/hooks/journal-writes.py\",\"plugins/audit/scripts/governance/_journal_io.py\",\"tests/test__journal_io.py\",\"tests/test_journal_writes.py\"],\"scopeDigest\":\"sha256:37c96cdf495ff97b59d28e4d6127cd500678725299670ac4dd550b432254cccd\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 1 of the diff's 7 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 4 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, SECURITY.md, plugins/audit/README.md; 2 file(s) that could hold a move not compared: tests/test__journal_io.py, tests/test_journal_writes.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "SECURITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test__journal_io.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was only added: every statement of the base copy outside them stands in the tree copy, in order and in place, and the first added one is at tree line 3119 (`_created_row_cases(check)`); what it runs is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test_journal_writes.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was only added: every statement of the base copy outside them stands in the tree copy, in order and in place, and the first added one is at tree line 2086 (`_created_file_cases(check)`); what it runs is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "5a3fbd7e384482e9e7596e27db4fabb33234a9e2"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-18T17:40:57Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

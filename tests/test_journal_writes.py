@@ -2083,6 +2083,7 @@ def _cases(check):
     _link_question_cases(check)
     _generated_question_cases(check)
     _slot_follows_file_cases(check)
+    _created_file_cases(check)
 
 
 # --- oq: the guard and the journal ask one function which file is the config ------
@@ -2521,9 +2522,9 @@ def _generated_question_cases(check):
 # Post whose own Pre never ran (a hook timeout): it can only know the state
 # before from the slot the previous write refreshed, and the switch flipped off
 # is the row it owes only when it does. The first write runs as a process; the
-# second's rows are read off `post_entries`, as k1 reads the flip, because the
-# append that follows refuses a row while the config on disk says the journal
-# is off.
+# second's rows are read off `post_entries`, as k1 reads the flip: this case is
+# about which state the slot holds, and cf5 is the one that reads the flip row
+# back from the trail.
 _OQ_ON = '{\n  "journal": {"enabled": true},\n  "n": %d\n}\n'
 _OQ_OFF = '{\n  "journal": {"enabled": false}\n}\n'
 
@@ -2601,6 +2602,341 @@ def _slot_follows_file_cases(check):
           "row the Post owes is the switch turned off, naming the config's "
           "own path; otherwise: %r" % (wrong,),
           len(seen) == 2 * len(others) and not wrong, repr(seen))
+
+
+# --- cf: a file the sweep records, created by a shell or an MCP tool --------------
+# For the shell and for an MCP tool the journal cannot know from the payload
+# what was written, so its Pre pass notes each file the sweep records and its
+# Post pass writes a row for each that moved. A file the Pre pass found absent
+# is noted as absent, and a Post pass that finds it present writes a row saying
+# it was created. A Post pass with no Pre pass knows nothing about the state
+# before and writes nothing. Run as the host runs them: the hook as a process
+# for each pass, the write itself made by this process between the two, so the
+# command text the payload carries is never what decides.
+_CF_ON = '{\n  "journal": {"enabled": true}\n}\n'
+_CF_OFF = '{\n  "journal": {"enabled": false}\n}\n'
+_CF_GATE = '{"planGate": "off"}'
+_CF_MCP = "mcp__fs__write_file"
+
+
+def _cf_hook(event, project, sid, tool, path, body):
+    """journal-writes.py as a process, for one pass of a call by `tool` - Bash
+    (a command naming nothing), an MCP tool (`path` in its input), or Write."""
+    import subprocess
+    if tool == "Bash":
+        tin = {"command": "sh ./make-it.sh"}
+    elif tool == "Write":
+        tin = {"file_path": path, "content": body}
+    else:
+        tin = {"path": path, "content": body}
+    payload = {"hook_event_name": event, "tool_name": tool, "session_id": sid,
+               "tool_use_id": "call-" + sid, "cwd": project, "tool_input": tin}
+    if event == "PostToolUse":
+        payload["tool_response"] = {"stdout": "", "stderr": ""}
+    env = dict(os.environ)
+    env["CLAUDE_PROJECT_DIR"] = project
+    env.pop(_OQ_MARK, None)
+    return subprocess.run(
+        [sys.executable, os.path.join(_harness.HOOKS_DIR, "journal-writes.py")],
+        input=json.dumps(payload).encode("utf-8"), capture_output=True,
+        env=env, cwd=project, timeout=60)
+
+
+def _cf_call(project, sid, act, tool="Bash", path=None, body="", pre=True):
+    """One call: the Pre pass (unless `pre` is False), `act()` - the write the
+    call makes - and the Post pass. -> (the rows the project's trail gained, as
+    (action, target, summary), the exit codes of the passes that ran)"""
+    before = set(r.get("hash") for r in _journal_io.read_all(project))
+    codes = []
+    if pre:
+        codes.append(_cf_hook("PreToolUse", project, sid, tool, path,
+                              body).returncode)
+    act()
+    codes.append(_cf_hook("PostToolUse", project, sid, tool, path,
+                          body).returncode)
+    rows = [(r.get("action"), r.get("target"), r.get("summary"))
+            for r in _journal_io.read_all(project)
+            if r.get("hash") not in before]
+    return rows, codes
+
+
+def _cf_put(path, body):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(body)
+
+
+def _cf_repo(prefix):
+    """A repository with a plan of one sharded phase and no config. -> its root"""
+    root = os.path.realpath(_harness.fixture_root(prefix))
+    proj = os.path.join(root, "proj")
+    _cf_put(os.path.join(proj, "src", "app.ts"), "export const a = 1;\n")
+    _cf_put(os.path.join(proj, ".gitignore"), ".claude/\n")
+    _cf_put(os.path.join(proj, "docs", "audit", "audit-plan.json"), json.dumps(
+        {"meta": {"version": 3, "developmentBranch": "main"},
+         "phases": [{"id": "P1", "shard": "phases/P1.json"}]}) + "\n")
+    _cf_put(os.path.join(proj, "docs", "audit", "phases", "P1.json"), json.dumps(
+        {"id": "P1", "title": "p", "status": "pending", "tasks": []}) + "\n")
+    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "c"]):
+        _harness.git(proj, *argv, prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+    return proj
+
+
+def _cf_created(rows, action, target):
+    """The rows naming `target` under `action`, each saying the file was
+    created - or None when any row naming it does not say so."""
+    named = [r for r in rows if r[1] == target]
+    if [r for r in named if r[0] != action or "created" not in (r[2] or "")]:
+        return None
+    return named
+
+
+def _created_file_cases(check):
+    """cf1-cf6: a creation leaves its row; cq1-cq5: the twins leave none."""
+    conf_rel = _config.CONFIG_REL
+    rel = conf_rel.split("/")
+    ok, proj = _harness.attempt(_cf_repo, "journal-cf-")
+    if not ok:
+        _harness.could_not_run(check, "cf0 the repository fixture",
+                               "it did not build: %s" % (proj,))
+        return
+    conf = os.path.join(proj, *rel)
+
+    def fresh():
+        """The project as it starts: no config, the plan as committed, no
+        trail. The journal's own state goes with it."""
+        for sub in (os.path.join(proj, rel[0]),
+                    os.path.join(proj, "docs", "audit", "journal")):
+            if os.path.islink(sub):
+                os.remove(sub)
+            else:
+                shutil.rmtree(sub, ignore_errors=True)
+        p2 = os.path.join(proj, "docs", "audit", "phases", "P2.json")
+        if os.path.exists(p2):
+            os.remove(p2)
+
+    # (1) a shell redirect creates the config: one row, saying so.
+    fresh()
+    rows, codes = _cf_call(proj, "sess-cf1", lambda: _cf_put(conf, _CF_GATE))
+    got = _cf_created(rows, "config.edit", conf_rel)
+    check("cf1 a shell command creating the config, the journal hook run as a "
+          "process before and after it, leaves one config row naming the "
+          "config's own path and saying it was created",
+          got is not None and len(got) == 1 and len(rows) == 1
+          and codes == [0, 0], "rows %r, exit codes %r" % (rows, codes))
+
+    # (2) the same through a symlinked config folder, spelled through the link
+    # and at its destination.
+    label = "cf2 the config created through a symlinked config folder"
+    probe = os.path.join(os.path.dirname(proj), "probe-link")
+    made, why = _harness.attempt(os.symlink, proj, probe)
+    if not made:
+        _harness.skip(check, label, "no symlink can be made here (%s)" % (why,),
+                      os.name == "nt" or not hasattr(os, "symlink"))
+    else:
+        os.remove(probe)
+        dest = os.path.join(os.path.dirname(proj), "store", "claude-dir")
+        seen = []
+        for spelling in ("link", "dest"):
+            fresh()
+            shutil.rmtree(dest, ignore_errors=True)
+            os.makedirs(dest)
+            os.symlink(dest, os.path.join(proj, rel[0]))
+            at = conf if spelling == "link" else os.path.join(dest, rel[1])
+            rows, codes = _cf_call(proj, "sess-cf2-" + spelling,
+                                   lambda: _cf_put(at, _CF_GATE))
+            got = _cf_created(rows, "config.edit", conf_rel)
+            seen.append((spelling, got is not None and len(got) == 1
+                         and len(rows) == 1 and codes == [0, 0], rows, codes))
+        fresh()
+        check("%s, spelled through the link and at its destination, leaves one "
+              "config row saying it was created: %r" % (label, seen),
+              len(seen) == 2 and all(s[1] for s in seen), repr(seen))
+
+    # (3) an MCP tool creates the config.
+    fresh()
+    rows, codes = _cf_call(proj, "sess-cf3", lambda: _cf_put(conf, _CF_GATE),
+                           tool=_CF_MCP, path=conf, body=_CF_GATE)
+    got = _cf_created(rows, "config.edit", conf_rel)
+    check("cf3 an MCP tool creating the config leaves one config row saying it "
+          "was created",
+          got is not None and len(got) == 1 and len(rows) == 1
+          and codes == [0, 0], "rows %r, exit codes %r" % (rows, codes))
+
+    # (4) a command creates a phase file and names it in the plan's index.
+    fresh()
+    index = os.path.join(proj, "docs", "audit", "audit-plan.json")
+    p2_rel = "docs/audit/phases/P2.json"
+
+    def add_phase():
+        _cf_put(os.path.join(proj, *p2_rel.split("/")), json.dumps(
+            {"id": "P2", "title": "q", "status": "pending", "tasks": []}) + "\n")
+        _cf_put(index, json.dumps(
+            {"meta": {"version": 3, "developmentBranch": "main"},
+             "phases": [{"id": "P1", "shard": "phases/P1.json"},
+                        {"id": "P2", "shard": "phases/P2.json"}]}) + "\n")
+
+    rows, codes = _cf_call(proj, "sess-cf4", add_phase)
+    got = _cf_created(rows, "manifest.edit", p2_rel)
+    check("cf4 a command creating a phase file leaves one row for it saying it "
+          "was created, beside the index's own edit row",
+          got is not None and len(got) == 1
+          and [r[0] for r in rows if r[1] == "docs/audit/audit-plan.json"]
+          == ["manifest.edit"] and codes == [0, 0],
+          "rows %r, exit codes %r" % (rows, codes))
+
+    # (5) the write that switches the journal off leaves its row: a config
+    # created with the switch off, by a command, an MCP tool and an edit tool,
+    # and an existing config flipped off by a command and by an edit tool. The
+    # row is read back from the trail, so a row computed and then refused is a
+    # miss. The edit tool's row keeps the edit route's wording, which says
+    # `wrote` for a creation as it always has.
+    flips, lasts = [], []
+    for how, tool, existing in (("a command creating it", "Bash", False),
+                                ("an MCP tool creating it", _CF_MCP, False),
+                                ("an edit tool creating it", "Write", False),
+                                ("a command flipping it", "Bash", True),
+                                ("an edit tool flipping it", "Write", True)):
+        fresh()
+        if existing:
+            _cf_put(conf, _CF_ON)
+        sid = "sess-cf5-%d" % (len(flips),)
+        rows, codes = _cf_call(proj, sid, lambda: _cf_put(conf, _CF_OFF),
+                               tool=tool, path=conf, body=_CF_OFF)
+        # The same writer's next command, which writes nothing.
+        later, later_codes = _cf_call(proj, sid, lambda: None)
+        lasts.append((how, later, later_codes))
+        cfg_rows = [r for r in rows if r[0] == "config.edit"]
+        right = (len(cfg_rows) == 1 and cfg_rows[0][1] == conf_rel
+                 and "journal.enabled true->false" in (cfg_rows[0][2] or "")
+                 and ("created" in cfg_rows[0][2])
+                 == (not existing and tool != "Write"))
+        flips.append((how, right, rows, codes))
+    check("cf5 a config write that switches the journal off leaves its row, "
+          "read back from the trail, when the hooks run as processes - a config "
+          "created off by a command, an MCP tool or an edit tool, and an "
+          "existing one flipped off by a command or an edit tool: %r"
+          % ([f for f in flips if not f[1]],),
+          len(flips) == 5 and all(f[1] and f[3] == [0, 0] for f in flips),
+          repr(flips))
+    check("cq6 ...and that row is written once: the same writer's next "
+          "command, writing nothing, leaves no second row after any of those "
+          "five: %r" % ([x for x in lasts if x[1] or x[2] != [0, 0]],),
+          len(lasts) == 5 and all(x[1] == [] and x[2] == [0, 0] for x in lasts),
+          repr(lasts))
+
+    # (6) an edit tool creating the config: its own row, and not a second.
+    fresh()
+    rows, codes = _cf_call(proj, "sess-cf6", lambda: _cf_put(conf, _CF_GATE),
+                           tool="Write", path=conf, body=_CF_GATE)
+    check("cf6 an edit tool creating the config leaves exactly one config row "
+          "- the edit route's own - and not a second for the same creation",
+          [r[0] for r in rows] == ["config.edit"] and rows[0][1] == conf_rel
+          and codes == [0, 0], "rows %r, exit codes %r" % (rows, codes))
+
+    # The twins. (cq1) a command that creates nothing: the config absent before
+    # and after, a source file written.
+    fresh()
+    rows, codes = _cf_call(proj, "sess-cq1", lambda: _cf_put(
+        os.path.join(proj, "src", "app.ts"), "export const a = 2;\n"))
+    check("cq1 a command that creates nothing - the config absent before and "
+          "after it, a source file written - leaves no row",
+          rows == [] and codes == [0, 0], "rows %r, exit codes %r" % (rows, codes))
+
+    # (cq2) created and removed inside one call.
+    fresh()
+
+    def in_and_out():
+        _cf_put(conf, _CF_GATE)
+        os.remove(conf)
+
+    rows, codes = _cf_call(proj, "sess-cq2", in_and_out)
+    check("cq2 a config created and removed inside one call leaves no row",
+          rows == [] and codes == [0, 0], "rows %r, exit codes %r" % (rows, codes))
+
+    # (cq3) a Post pass with no Pre pass, beside the same call with one: the
+    # one write, the one state after - absent noted gives the row, nothing
+    # noted gives none.
+    fresh()
+    unseen, unseen_codes = _cf_call(proj, "sess-cq3-a",
+                                    lambda: _cf_put(conf, _CF_GATE), pre=False)
+    fresh()
+    noted, noted_codes = _cf_call(proj, "sess-cq3-b",
+                                  lambda: _cf_put(conf, _CF_GATE))
+    check("cq3 a Post pass with no Pre pass before it leaves no row for a "
+          "config it finds created, while the same call with its Pre pass - the "
+          "config noted absent - leaves the creation row: absence not observed "
+          "and absence observed are two states",
+          unseen == [] and unseen_codes == [0]
+          and [r[0] for r in noted] == ["config.edit"]
+          and "created" in (noted[0][2] or "") and noted_codes == [0, 0],
+          "with no Pre %r %r, with a Pre %r %r" % (unseen, unseen_codes, noted,
+                                                     noted_codes))
+
+    # (cq4) a creation the trail already records: a verb run by the command
+    # creates the phase file and appends its own row for that state.
+    fresh()
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+
+    def verb_adds_phase():
+        _cf_put(os.path.join(proj, *p2_rel.split("/")), json.dumps(
+            {"id": "P2", "title": "q", "status": "pending", "tasks": []}) + "\n")
+        _journal_io.append(proj, {
+            "action": "phase.add", "target": p2_rel, "summary": "P2 added",
+            "actor": {"sessionId": "sess-cq4", "via": "cli"}}, cfg)
+
+    rows, codes = _cf_call(proj, "sess-cq4", verb_adds_phase)
+    check("cq4 a phase file a verb created and recorded in its own row gets no "
+          "second row from the command that ran the verb",
+          [r for r in rows if r[1] == p2_rel] == [("phase.add", p2_rel,
+                                                   "P2 added")]
+          and codes == [0, 0], "rows %r, exit codes %r" % (rows, codes))
+
+    # (cq5) the journal already off before the call: a write of the config
+    # leaves no row, by a command or by an edit tool.
+    quiet = []
+    for tool in ("Bash", "Write"):
+        fresh()
+        _cf_put(conf, _CF_OFF)
+        body = '{\n  "journal": {"enabled": false},\n  "n": 1\n}\n'
+        rows, codes = _cf_call(proj, "sess-cq5-" + tool,
+                               lambda: _cf_put(conf, body), tool=tool,
+                               path=conf, body=body)
+        quiet.append((tool, rows, codes))
+    check("cq5 with the journal already off before the call, a write of the "
+          "config leaves no row, by a command or an edit tool: %r" % (quiet,),
+          all(q[1] == [] and q[2] == [0, 0] for q in quiet), repr(quiet))
+    fresh()
+
+    # (cq7) another tree's config is not the project's switch: with the
+    # project's journal off, the main session's edit tool switching a nested
+    # worktree's journal off leaves no row in either trail. The writer's slot
+    # for that config holds its state from a write made while the project's
+    # journal was on, so the pre-image says on and the row is computed.
+    ok, nproj = _harness.attempt(_cf_repo, "journal-cf-nested-")
+    if not ok:
+        _harness.could_not_run(check, "cq7 the nested-worktree fixture",
+                               "it did not build: %s" % (nproj,))
+        return
+    nested = os.path.join(nproj, ".claude", "worktrees", "n1")
+    _harness.git(nproj, "worktree", "add", "-q", nested, "-b", "nested/n1",
+                 prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+    nconf = os.path.join(nested, *rel)
+    first, first_codes = _cf_call(nproj, "sess-cq7", lambda: _cf_put(
+        nconf, _CF_ON), tool="Write", path=nconf, body=_CF_ON)
+    _cf_put(os.path.join(nproj, *rel), _CF_OFF)
+    rows, codes = _cf_call(nproj, "sess-cq7", lambda: _cf_put(nconf, _CF_OFF),
+                           tool="Write", path=nconf, body=_CF_OFF)
+    own = [(r.get("action"), r.get("target"))
+           for r in _journal_io.read_all(nested)]
+    check("cq7 with the project's journal off, the main session's edit tool "
+          "switching a nested worktree's journal off leaves no row in either "
+          "trail - that config is not the switch the project's trail is "
+          "appended under",
+          len(first) == 1 and first_codes == [0, 0]
+          and rows == [] and own == [] and codes == [0, 0],
+          "first write %r %r, then %r %r, the nested trail %r"
+          % (first, first_codes, rows, codes, own))
 
 
 # --- cm: a status row says when its call's baseline stood ----------------------

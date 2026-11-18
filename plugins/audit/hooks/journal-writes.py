@@ -98,12 +98,26 @@ the write IS known: the row is the generic summary plus `DERIVATION_MISSED`,
 which turns a silent gap into a stated one. Both halves are also why the slot is
 seeded on the way past rather than only when something moved.
 
+ABSENT IS A STATE THE PRE PASS RECORDS, and not the same state as no slot. A
+file the sweep records that does not exist when the Pre pass looks is noted as
+`ABSENT` in its slot; a phase shard, whose name nobody knows before it exists,
+is noted absent by the listing of the shard directory the Pre pass keeps
+beside the slots. A Post pass that finds the file present where the note says
+absent writes a row saying the file was CREATED, with the state after. A Post
+pass that finds no note at all -- no Pre pass ever ran for this writer --
+still seeds and claims nothing: absence that was never observed is not a
+state to diff against.
+
 THE DISABLE LOOPHOLE, CLOSED. `journal.enabled` used to be read from the config
 AFTER the write, so flipping it true->false silenced the very row that would
 have recorded the flip. The Post pass now judges `enabled` against the PRE-IMAGE
-config when the config itself is the target, so the flip is journalled as a
-final config.edit row -- the last will. Nothing overrides the user's switch:
-once off, edits record nothing.
+config when the config itself is the target -- and against the default (on)
+when the note says the config did not exist -- so the flip is journalled as a
+final config.edit row -- the last will. The append refuses any row while the
+config on disk says off (`_journal_io._append`), so the last will is handed to
+it with the switch as it stood before the call (`_append_rows`), for that row
+and that trail only. Nothing overrides the user's switch: once off, edits
+record nothing.
 
 Fail-open at every step: no cache, unparseable JSON, an over-the-cap file --
 each falls back to today's generic "<tool> wrote <path>" summary, never to a
@@ -173,6 +187,23 @@ PHASE_FIELDS = ("status", "mergedAt", "branch")
 DERIVATION_MISSED = ("no pre-image, so the completion records "
                      "(task.complete, task.commit, phase.signoff) were NOT "
                      "derived from this write")
+
+# A slot's `sha256` when the pass found the file NOT TO EXIST. Not None: None
+# is a file whose bytes could not be read, and a slot with no `sha256` at all
+# is no slot. A creation is judged from this value and from nothing else.
+ABSENT = "absent"
+
+# What a sweep-lane row for a CREATED plan file says in place of a diff: the
+# state before is known - there was no file - and no completion is derived
+# from a file that had no state before this call.
+CREATED_NOT_DERIVED = ("created by this call, so no completion record "
+                       "(task.complete, task.commit, phase.signoff) was "
+                       "derived from it")
+
+# The key a Post pass sets on a config row it owes because the switch was on
+# BEFORE the call while the config on disk now says off - the last will.
+# `_append_rows` reads it and drops it; it never reaches the trail.
+_ON_BEFORE = "_journalOnBeforeCall"
 
 
 # --- helpers ------------------------------------------------------------------
@@ -351,7 +382,8 @@ def _slot_path(root, cfg, data, rel):
 
 def _snapshot(path):
     """(digest, text) of a file: the digest at ANY size, the text only under the
-    cap. (None, None) when the bytes cannot be read at all.
+    cap. (ABSENT, None) when there is no such file; (None, None) when one may be
+    there and its bytes cannot be read.
 
     THE DIGEST IS THE DETECTION AND THE TEXT IS THE DIFF, and that split is why
     those are two answers now instead of one. The old reader took neither past
@@ -371,8 +403,10 @@ def _snapshot(path):
                 for chunk in iter(lambda: fh.read(65536), b""):
                     digest.update(chunk)
         return "sha256:" + digest.hexdigest(), text
+    except (FileNotFoundError, NotADirectoryError):
+        return ABSENT, None        # no such file yet: the slot records that too
     except OSError:
-        return None, None          # no such file yet: the slot records that too
+        return None, None
 
 
 def _write_slot(root, cfg, data, rel, call=None):
@@ -528,10 +562,18 @@ def _pre_seed_sweep(root, cfg, data):
     writer's own rows depended on the order the Posts arrived in, and a Pre
     whose Post never came left it waiting for ever.
 
+    A FILE THAT IS NOT THERE IS NOTED TOO, as `ABSENT`, so the Post pass can
+    tell a file this call created from one it never saw: the stat this loop
+    makes anyway answers it, and the note is written once and then kept like
+    any slot whose state still matches. A shard's name is not known before
+    it exists, so its absence is the shard directory's listing, which
+    `_swept_targets` reads anyway, noted beside the slots (`_note_listing`).
+
     Returns the last slot written, or None, matching `pre_cache`'s contract.
     """
     last = None
-    for rel in _swept_targets(root, cfg):
+    targets, shard_dir, names = _sweep_paths(root, cfg)
+    for rel in targets:
         if _config.in_journal(root, cfg, rel):
             continue
         now_sha = _snapshot(os.path.join(str(root), rel))[0]
@@ -541,7 +583,52 @@ def _pre_seed_sweep(root, cfg, data):
         if pre is not None and pre.get("sha256") == now_sha:
             continue
         last = _write_slot(root, cfg, data, rel) or last
-    return last
+    return _note_listing(root, cfg, data, shard_dir, names) or last
+
+
+def _listing_rel(shard_dir):
+    """The slot name a shard directory's listing is kept under - the
+    directory with its trailing separator, which no file the sweep records
+    can be named."""
+    return shard_dir + "/"
+
+
+def _noted_listing(root, cfg, data, shard_dir):
+    """The shard names this writer's last Pre pass found, or None when no
+    listing was ever noted."""
+    note = _read_preimage(root, cfg, data, _listing_rel(shard_dir))
+    names = note.get("names") if isinstance(note, dict) else None
+    return names if isinstance(names, list) else None
+
+
+def _note_listing(root, cfg, data, shard_dir, names):
+    """Keep the shard directory's listing as of this Pre pass, written only
+    when it differs from the one kept. `names` None - a directory that could
+    not be read - notes nothing. Returns the slot path when written, else
+    None; never raises."""
+    try:
+        if names is None or _noted_listing(root, cfg, data, shard_dir) == names:
+            return None
+        rel = _listing_rel(shard_dir)
+        slot = _slot_path(root, cfg, data, rel)
+        _config.ensure_local_dir(os.path.dirname(slot))
+        with open(slot, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump({"path": rel, "ts": _config.utc_stamp(),
+                       "names": names}, fh)
+        return slot
+    except Exception:
+        return None
+
+
+def _absent_by_listing(rel, shard_dir, noted):
+    """A slot-shaped note saying the shard `rel` was ABSENT, when the noted
+    listing exists and does not name it; None otherwise - no listing noted,
+    or a name it holds, is no note of absence."""
+    if noted is None or not rel.startswith(_listing_rel(shard_dir)):
+        return None
+    if rel[len(_listing_rel(shard_dir)):] in noted:
+        return None
+    return {"path": rel, "ts": None, "sha256": ABSENT, "content": None}
 
 
 def _read_preimage(root, cfg, data, rel):
@@ -1074,19 +1161,30 @@ def _swept_targets(root, cfg):
     decay into a shell log, which THE ONE EXCEPTION above is careful not to do. A
     shard that does not exist is not listed and a directory that cannot be read
     contributes nothing -- both cost the sweep a path, never a crash."""
+    return _sweep_paths(root, cfg)[0]
+
+
+def _sweep_paths(root, cfg):
+    """(`_swept_targets`' list, the shard directory, the shard names listed in
+    it) - one listing for both. The names are [] when the directory does not
+    exist and None when it exists and cannot be read, so the Pre pass notes
+    an empty listing and never an unread one."""
     manifest_rel = (cfg.get("manifestPath")
                     or _config.DEFAULTS["manifestPath"])
     out = [manifest_rel]
     mdir = os.path.dirname(manifest_rel)
     shard_dir = (mdir + "/" if mdir else "") + "phases"
     try:
-        names = sorted(os.listdir(os.path.join(str(root), shard_dir)))
-    except OSError:
+        names = sorted(name for name in
+                       os.listdir(os.path.join(str(root), shard_dir))
+                       if name.endswith(".json"))
+    except (FileNotFoundError, NotADirectoryError):
         names = []
-    out.extend(shard_dir + "/" + name for name in names
-               if name.endswith(".json"))
+    except OSError:
+        names = None
+    out.extend(shard_dir + "/" + name for name in names or [])
     out.append(_config.CONFIG_REL)
-    return out
+    return out, shard_dir, names
 
 
 def _sweep_roots(data, cfg, project):
@@ -1180,7 +1278,9 @@ def _swept_tree(data, cfg, root, tool, enabled, project=None):
             held["keys"] = recorded_keys(root) or set()
         return held["keys"]
 
-    for rel in (_swept_targets(root, cfg) if enabled else [_config.CONFIG_REL]):
+    targets, shard_dir, _names = (_sweep_paths(root, cfg) if enabled
+                                  else ([_config.CONFIG_REL], None, None))
+    for rel in targets:
         # The journal is never its own subject, on this lane too. guard-edits
         # refuses that write and no default layout puts a journal file behind one
         # of these names, so this is the structural half of a property that would
@@ -1188,18 +1288,27 @@ def _swept_tree(data, cfg, root, tool, enabled, project=None):
         if _config.in_journal(root, cfg, rel):
             continue
         pre = _read_preimage(root, cfg, data, rel)
+        if pre is None and shard_dir is not None:
+            if "listing" not in held:
+                held["listing"] = _noted_listing(root, cfg, data, shard_dir)
+            pre = _absent_by_listing(rel, shard_dir, held["listing"])
         now_sha = _snapshot(os.path.join(str(root), rel))[0]
         if pre is None:
-            if enabled and now_sha is not None:
+            if enabled and now_sha not in (None, ABSENT):
                 _write_slot(root, cfg, data, rel)
             continue
-        if now_sha is None or now_sha == pre.get("sha256"):
-            continue               # unreadable, or it did not move
+        if now_sha in (None, ABSENT) or now_sha == pre.get("sha256"):
+            continue               # unreadable, absent, or it did not move
+        # CREATED: the note says the file was not there, and it is now.
+        created = pre.get("sha256") == ABSENT
         old_obj = _parse_preimage(pre)
         is_cfg = (rel == _config.CONFIG_REL)
         allowed = enabled
-        if is_cfg and old_obj is not None:
-            allowed = _config.journal_enabled(old_obj)
+        if is_cfg and (old_obj is not None or created):
+            # The switch as it stood before the call: the pre-image's, or the
+            # default when there was no config.
+            allowed = _config.journal_enabled(old_obj if isinstance(
+                old_obj, dict) else {})
         if not allowed:
             continue
         # A STATE A ROW ALREADY ACCOUNTS FOR WAS WRITTEN BY WHOEVER WROTE THAT ROW.
@@ -1227,13 +1336,17 @@ def _swept_tree(data, cfg, root, tool, enabled, project=None):
         if peers:
             entry["actor"]["sessionId"] = None
         new_obj = (_read_json(os.path.join(str(root), rel))
-                   if old_obj is not None else None)
-        primary, chained = (_config_rows(entry, old_obj, new_obj) if is_cfg
-                            else _manifest_rows(entry, rel, old_obj, new_obj,
-                                                recorded=recorded,
-                                                marks=_call_marks(
-                                                    pre, _own_call_start(
-                                                        project, cfg, data))))
+                   if old_obj is not None or created else None)
+        if created:
+            primary, chained = _created_rows(entry, tool, rel, is_cfg, new_obj)
+        else:
+            primary, chained = (_config_rows(entry, old_obj, new_obj) if is_cfg
+                                else _manifest_rows(entry, rel, old_obj, new_obj,
+                                                    recorded=recorded,
+                                                    marks=_call_marks(
+                                                        pre, _own_call_start(
+                                                            project, cfg,
+                                                            data))))
         if peers:
             note = _config.window_note(peers)
             primary["summary"] = "%s (%s)" % (primary["summary"], note)
@@ -1241,11 +1354,37 @@ def _swept_tree(data, cfg, root, tool, enabled, project=None):
             details["reason"] = "; ".join(
                 part for part in (details.get("reason"), note) if part)
             primary["details"] = details
+        if not enabled:
+            # The last will: owed because the switch was on before the call.
+            # The slot follows the row, so the next call reads the state this
+            # row recorded and does not owe the same row again.
+            primary[_ON_BEFORE] = True
         rows.append((root, primary))
         rows.extend((root, row) for row in chained)
-        if enabled:
-            _write_slot(root, cfg, data, rel)
+        _write_slot(root, cfg, data, rel)
     return rows
+
+
+def _created_rows(entry, tool, rel, is_cfg, new_obj):
+    """(primary, chained) for a recorded file the call CREATED - the note said
+    absent and the file is there now. The row an edit would be, saying
+    `created` where an edit says `wrote`. A config created with the journal
+    switched off carries the flip from the default (on), as the flip of an
+    existing config does; a plan file carries `CREATED_NOT_DERIVED`. Never
+    chains: there was no state before to derive a completion from."""
+    row = dict(entry)
+    row["summary"] = "%s created %s" % (tool, rel)
+    if is_cfg:
+        flip = _journal_flip({}, new_obj) if new_obj is not None else None
+        if flip is not None:
+            row["summary"] = "%s: journal.enabled %s->%s" % (
+                row["summary"], str(flip["from"]).lower(),
+                str(flip["to"]).lower())
+            row["details"] = {"changes": [flip]}
+        return row, []
+    row["summary"] = "%s (%s)" % (row["summary"], CREATED_NOT_DERIVED)
+    row["details"] = {"reason": CREATED_NOT_DERIVED}
+    return row, []
 
 
 def recorded_states(root, held, start):
@@ -1296,9 +1435,10 @@ def post_entries(data, *, cfg=None, root=None):
     `journal.enabled` is judged against the pre-image, so a true->false flip is
     journalled as a final config.edit row instead of silencing its own record.
 
-    The entries alone; `post_rows` is the same pass with the tree each row is
-    appended to, which is what `main` needs."""
-    return [entry for _root, entry in post_rows(data, cfg=cfg, root=root)]
+    The entries alone, as the trail would hold them; `post_rows` is the same
+    pass with the tree each row is appended to, which is what `main` needs."""
+    return [dict((k, v) for k, v in entry.items() if k != _ON_BEFORE)
+            for _root, entry in post_rows(data, cfg=cfg, root=root)]
 
 
 def post_rows(data, *, cfg=None, root=None):
@@ -1324,16 +1464,30 @@ def post_rows(data, *, cfg=None, root=None):
         # behind. The slot now holds the target as of the last write this hook
         # SAW, which is what lets the next write be diffed whatever makes it. The
         # current config gates it, not the pre-image judgement below: once the
-        # switch is off there is no next row for a baseline to serve.
-        enabled = _config.journal_enabled(cfg)
-        if enabled:
+        # switch is off the one row left to serve is the last will, which
+        # refreshes the slot itself.
+        now_on = _config.journal_enabled(cfg)
+        if now_on:
             _write_slot(root, cfg, data, rel)
-        if action == "config.edit" and old_obj is not None:
-            enabled = _config.journal_enabled(
+        # The config's own switch as it stood before the call: the
+        # pre-image's, or the default (on) when the note says there was no
+        # config - so a config created switched off owes its row too.
+        created = isinstance(pre, dict) and pre.get("sha256") == ABSENT
+        was_on = now_on
+        if action == "config.edit" and (old_obj is not None or created):
+            was_on = _config.journal_enabled(
                 old_obj if isinstance(old_obj, dict) else {})
-        if not enabled:
+        if not was_on:
             return []
         entry = _entry(action, rel, tool, ti, data, root, cfg)
+        if not now_on and rel == _config.CONFIG_REL:
+            # The last will - of the trail tree's own config, whose switch
+            # the append reads; another tree's config named as placed is not
+            # that switch. The slot follows the row as on the sweep lane.
+            entry[_ON_BEFORE] = True
+            _write_slot(root, cfg, data, rel)
+        if action == "config.edit" and created:
+            old_obj = {}
         new_obj = (_read_json(os.path.join(str(root), rel))
                    if old_obj is not None else None)
         primary, chained = (_config_rows(entry, old_obj, new_obj)
@@ -1416,7 +1570,17 @@ def main():
 
 def _append_rows(data, rows):
     """Append [(tree root, entry)] to each tree's journal, and claim each
-    project-tree append in this session's sidecar. Nothing to do for []."""
+    project-tree append in this session's sidecar. Nothing to do for [].
+
+    THE LAST WILL GETS PAST THE APPEND'S OWN SWITCH, and nothing else does.
+    `_journal_io._append` refuses every row while the config it is handed says
+    the journal is off, and the config loaded here is the one on disk AFTER
+    the call - so the row for the write that switched it off was computed and
+    then refused. A row the Post pass marked `_ON_BEFORE` was owed because the
+    switch was on before this call; it is handed over with `journal.enabled`
+    as it stood then, the rest of the config as loaded. Only when the row goes
+    into the project's own trail, whose switch that is: a linked worktree's
+    trail is appended under the project's switch, as every other row is."""
     if not rows:
         return
     mod = _journal_lib()
@@ -1425,7 +1589,11 @@ def _append_rows(data, rows):
     home = _config.tree_for(data, _config.PROJECT_ONLY)
     project = str(home["project"])
     for troot, entry in rows:
-        written = mod.append(str(troot), entry, home["cfg"])
+        cfg = home["cfg"]
+        entry = dict(entry)
+        if entry.pop(_ON_BEFORE, False) and _config._same_dir(troot, project):
+            cfg = _config._deep_merge(cfg, {"journal": {"enabled": True}})
+        written = mod.append(str(troot), entry, cfg)
         # The sidecar claims a rel in the PROJECT's tree, the one
         # guard-bash-writes watches; a worktree's journal file of the same
         # name is not that file.
