@@ -1430,8 +1430,10 @@ def _timing_cases(check, M, root, bindir):
           and failed[0] == M.E_IO and io_rec is not None
           and sorted(io_rec) == ["exit", "line"] and failed[3] is None)
 
-    # The drive reads a record written before the time figures existed exactly as
-    # it reads one carrying them: the same reading, and the same note.
+    # The drive reads a record written before the time figures existed as it
+    # reads one carrying them: the same reading but for the two figures the drive
+    # times a session by - None for the old record, the recorded values for the
+    # new - and the same note.
     D = _loader.load_script("drive-phase.py", modname="drive_phase_ras73")
     run, rec = recorded("tdr", TIMING)
     old = dict((k, v) for k, v in (rec or {}).items() if k in OLD_KEYS)
@@ -1444,11 +1446,19 @@ def _timing_cases(check, M, root, bindir):
     readings = [D.read_sessions(p) for p in paths]
     notes = [D.session_note(1, r[0]) if len(r) == 1 else None for r in readings]
     first = readings[1][0] if len(readings[1]) == 1 else {}
+    timed = ("startedAt", "durationMs")
+    bare = [[dict((k, v) for k, v in r.items() if k not in timed) for r in each]
+            for each in readings]
+    figures = [[tuple(r.get(k) for k in timed) for r in each] for each in readings]
     check("ras73 a record with none of the new keys is read by the drive as before - "
           "the session, the cost and the stream off its line - and identically to "
-          "the same record carrying them, note included: %r" % ((readings, notes),),
+          "the same record carrying them but for the start and the duration, which "
+          "it reads as absent there, note included: %r" % ((readings, notes),),
           rec is not None and sorted(old) == sorted(OLD_KEYS)
-          and readings[0] == readings[1] and notes[0] == notes[1]
+          and bare[0] == bare[1] and notes[0] == notes[1]
+          and figures[1] == [(None, None)]
+          and figures[0] == [(rec.get("startedAt"), TIMING["duration_ms"])]
+          and rec.get("startedAt")
           and notes[0] is not None and first.get("session") == SESSION
           and float(first.get("cost") or "nan") == LAST_COST
           and first.get("stream") == _fields(run[1].strip()).get("stream"))

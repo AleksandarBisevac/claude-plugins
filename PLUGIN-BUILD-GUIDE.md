@@ -443,7 +443,7 @@ L9:
   close-phase -> _branch, _claude_home, _config_rules, _evidence_io, _excerpt, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _scoped_commit, _tree_stamp, _utc_stamp, _verdict_binding, _worktrees
   commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_vocab, _output, _panel_write, _scoped_commit, _verdict_binding, usage_ledger
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _invariants, _loader, _machine_paths, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _utc_stamp
-  drive-phase -> _affected_tests, _areas, _claude_home, _clause_coverage, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _gate_derive, _invariants, _journal_io, _loader, _locks, _manifest_io, _manifest_phases, _output, _proc_group, _runner_collects, _scope_companions, _scoped_commit, _skill_places, _status_facts, _task_outputs, _tree_stamp, _verdict_binding, _wave, _worktrees
+  drive-phase -> _affected_tests, _areas, _claude_home, _clause_coverage, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _gate_derive, _invariants, _journal_io, _loader, _locks, _manifest_io, _manifest_phases, _output, _proc_group, _runner_collects, _scope_companions, _scoped_commit, _skill_places, _status_facts, _task_outputs, _task_timing, _tree_stamp, _usage_core, _verdict_binding, _wave, _worktrees
   explain-ado-drift -> _ado_drift, _manifest_io, _output
   fetch-ado-items -> _ado_fetch, _manifest_io, _output
   full-gate -> _claude_home, _evidence_io, _loader, _manifest_io, _output, _panel_write, _status_facts
@@ -5459,6 +5459,31 @@ file-return`, the write-once door, which a reviewer's return and a phase review'
 reach unchanged. Exit 0 filed, 1 refused with nothing written, 2 a usage error. The `ds` cases
 in `tests/test_drive_phase.py` hold each refusal beside the twin that files, and
 the drive's own cases play every agent through `submit`.
+
+**A task's timing is written as the drive reads each step back.** Each stage is queued in the
+drive's state under the record it was read from (`queue_stage`, once per source): a writer or
+reviewer session from the `startedAt` and `durationMs` its session record carries
+(`session_stages`, the writer's round counted from one); a gate run, and the time it spent
+choosing what to run, from its evidence row's `startedAt`, `durationMs` and `selectionMs`
+(`row_stages`, read through `gate_row` to the run that measured a repeated verdict); the base run
+a red's measurement took, when its reading is decided on; and the record commit, timed around
+`commit-task-work.py` or the writer's commit, since no record holds that length. A writer or
+reviewer dispatch is stamped when it is handed out (`at` on its entry), as a gate's launch is,
+and the gap to the step's own start is a `wait` stage (`wait_stage`; a start floored into the
+hand-out's own second is a wait of 0 that says so). An executor or reviewer dispatched as an
+Agent has no session record, so its hand-out is stamped under the same key
+(`agent_handed_out`, leaving the `dispatched-<role>` marks as they were) and its writer or
+reviewer stage runs from that stamp to the filing (`agent_stage`, `filed_moment`): the journal
+row that filed an executor's return, or - since no row files a reviewer's - the filed file's own
+modification time. That route writes no wait stage, because no record says when the agent began,
+and the stage's basis says its length holds the wait too. The queue rides writes the drive already
+makes - each session's note and the close, through `audit-task.py`'s `--stage` - and never a
+write or a commit of its own; a refused note leaves it queued for the next one. A wave member's
+notes and close are the phase tree's writes, so its stages land in the phase tree's shard. A
+source that cannot be read queues nothing, and `_task_timing.summarize` then carries that time
+as unattributed. The `tm` cases drive each stage from its source, `tm3` compares the
+journal's actions and the commit count with a drive whose stages are never queued, `tm8` holds
+the Agent route and `tm9` a wave member's stages in the phase tree's shard.
 
 ### `plugins/audit/scripts/governance/propose-gates.py`
 A plan proposal that reads what previous runs in THIS repository actually ran and what they

@@ -8210,10 +8210,13 @@ def _locked_done(args, project, config, mpath, tid, out):
     # The key this close was held to, kept where nothing recorded one: a task
     # blocked from `pending` reaches here with no `start` having written it.
     _record_key(node, phase, key)
+    stages, _refusal = _stage_values(args)
+    _append_stages(node, stages)
     phase_id = phase.get("id")
     # THE FIX IS RECORDED ON ITS FINDINGS IN THIS WRITE: `add --fixes` named them
     # and no other verb has to be remembered afterwards.
     finding_changes = record_fix_on_findings(phase, tid, sha) if sha else []
+    finding_changes = finding_changes + _stage_changes(tid, stages)
     # A bug this task fixes derives `fixed` (and its `fixedIn`) from this close, so
     # both are stored on the bug - in the index, which is where `bugs[]` lives.
     settled = _settle(assembled, set(
@@ -8922,6 +8925,39 @@ def _locked_unblock(args, project, config, mpath, tid, reason, out):
 # --description` refuses one because its brief is what its attempts were judged
 # against, and a finding that arrived since belongs beside the brief, dated,
 # rather than in place of it.
+def _stage_values(args):
+    """`(stages, refusal)` - each `--stage` value read as one timing stage and
+    graded by `_task_timing.stage_problems`, or the sentence refusing the first
+    that will not read. Asked before the lock, so a stage nobody can check
+    costs no write; the step driver is the caller, and its stages ride the
+    note or the close it already writes rather than a write of their own."""
+    stages = []
+    for raw in getattr(args, "stage", None) or []:
+        try:
+            stage = json.loads(raw)
+        except ValueError as exc:
+            return [], "[audit-task] --stage is not JSON (%s): %s" % (exc, raw[:120])
+        problems = _timing.stage_problems(stage)
+        if problems:
+            return [], ("[audit-task] --stage %s: %s -- nothing written"
+                        % (raw[:120], "; ".join(problems)))
+        stages.append(stage)
+    return stages, None
+
+
+def _append_stages(node, stages):
+    """`stages` appended, in order, to `node`'s timing record in place - the
+    node this verb is already writing."""
+    for stage in stages:
+        node["timing"] = _timing.append_stage(node, stage)
+
+
+def _stage_changes(tid, stages):
+    """The journal change recording the stages a write appended; none for none."""
+    return [{"id": tid, "field": "timing.stages", "from": None, "to": list(stages)}] \
+        if stages else []
+
+
 def cmd_note(args, out):
     project = _resolve_project(args)
     if not os.path.isdir(project):
@@ -8935,6 +8971,10 @@ def cmd_note(args, out):
     if not text:
         out("[audit-task] note needs --text \"<what to record>\" -- an empty note "
             "records nothing and would still take a journal row")
+        return E_USAGE
+    _stages, refusal = _stage_values(args)
+    if refusal:
+        out(refusal)
         return E_USAGE
     return _under_lock(args, project, out,
                        lambda config, mpath: _locked_note(
@@ -8959,12 +8999,15 @@ def _locked_note(args, project, config, mpath, tid, text, out):
     phase_id = phase.get("id")
     entry = {"at": _utc_stamp.utc_stamp(), "text": text}
     node["notes"] = list(notes or []) + [entry]
+    stages, _refusal = _stage_values(args)
+    _append_stages(node, stages)
     wrote = _write_plan(project, mpath, raw_index, assembled, vm, [phase_id],
                         "the note", out)
     if isinstance(wrote, int):
         return wrote
     written, written_manifest, warnings = wrote
-    changes = [{"id": tid, "field": "notes", "from": None, "to": entry}]
+    changes = [{"id": tid, "field": "notes", "from": None, "to": entry}] \
+        + _stage_changes(tid, stages)
     jres = _journal_row(project, config, mpath, "task.note",
                         "%s note in %s: %s" % (tid, phase_id, text),
                         {"taskId": tid, "phaseId": phase_id, "changes": changes})
@@ -11855,7 +11898,7 @@ def cmd_done(args, out):
     if not tid:
         _refuse_on_stderr(args, out, "[audit-task] done needs a task id")
         return E_USAGE
-    refusal = _done_flags_refusal(args)
+    refusal = _done_flags_refusal(args) or _stage_values(args)[1]
     if refusal:
         _refuse_on_stderr(args, out, refusal)
         return E_USAGE
@@ -15935,7 +15978,7 @@ VERB_FLAGS = {
     # flags the verb READS, and the door says which of them it requires.
     "done": ("commit", "descriptive", "technical", "verified_by", "intent",
              "intent_basis", "no_change", "reason", "override_verdict",
-             "from_return"),
+             "from_return", "stage"),
     # `file-return` takes the role and nothing that could name a path; the
     # return itself arrives on stdin. A phase return adds the head its brief
     # was computed at, which keys the file, and the tasks that brief showed.
@@ -15975,8 +16018,9 @@ VERB_FLAGS = {
     "block": ("reason",),
     # `unblock` resets a spent attempt count on a human's word, and records it.
     "unblock": ("reason",),
-    # `note` appends one entry, and its text is its one flag.
-    "note": ("text",),
+    # `note` appends one entry, and its text is its one flag; the drive's
+    # timing stages ride the same write on `--stage`.
+    "note": ("text", "stage"),
     # `couple` writes `meta.coupling`: the test, what it is coupled to, and
     # the run that taught it. `--phases` is the only learning flag that may
     # be absent -- a coupling learned off a run with no phase scope narrows
@@ -16282,6 +16326,10 @@ def build_parser():
                    default=False,
                    help="done: take the outcome, verifiedBy, redFirst and the "
                         "intent answer from the returns filed for this start")
+    p.add_argument("--stage", action="append", default=None, metavar="JSON",
+                   help="note, done: one timing stage (kind, startedAt, ms, "
+                        "basis; round, runId) appended to the task's timing in "
+                        "the same write; the flag may repeat")
     # `file-return` only. Whose return arrives on stdin; no value names a path.
     # No `choices`: argparse would refuse on stderr before `main` buffers
     # anything, so the door grades the word and says it takes no path.
@@ -16484,6 +16532,8 @@ def option_dests(parser=None):
 #   nothing - `--gate-drop`. A plan written before the reader existed may hold
 #   a joined entry, and the drop is the way to remove it, so the value is
 #   passed as given and the door that holds the gate answers held or not held.
+# - `object`: one JSON object per flag - `--stage`. Its commas are the
+#   object's own, so it is never read as joined; `_stage_values` grades it.
 #
 # `add --from-file` reads the same table, and `CSV_FLAG_READINGS` beside it:
 # each list key of the batch carries the reading of the flag that writes it
@@ -16508,6 +16558,7 @@ LIST_FLAG_READINGS = {
     "gate_set": "gate",
     "waive": "waiver",
     "accept_open": "pair", "carried": "pair",
+    "stage": "object",
 }
 CSV_FLAG_READINGS = {"skills": "split", "outputs": "split", "area": "split"}
 

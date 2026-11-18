@@ -5546,7 +5546,8 @@
       "P156.18-3st",
       "P156.20-3st",
       "P165.3",
-      "P167.2"
+      "P167.2",
+      "P167.4"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -13128,7 +13129,8 @@
       "P156.18-3st",
       "P156.20-3st",
       "P165.3",
-      "P167.2"
+      "P167.2",
+      "P167.4"
     ],
     "tests/test_audit_usage.py": [
       "P131.1",
@@ -13663,7 +13665,8 @@
       "P148.2",
       "P157.3",
       "P157.12-mwz",
-      "P167.1"
+      "P167.1",
+      "P167.4"
     ],
     "plugins/audit/scripts/governance/_clause_coverage.py": [
       "P131.7",

@@ -22858,6 +22858,7 @@ _LR_SAMPLES = {
                ["src/a.py: it cannot reach it", "src/b.py: nor this"]),
     "pair": ("P1-R1=BUG-1,P1-R2=BUG-2", ["P1-R1=BUG-1", "P1-R2=BUG-2"]),
     "held": ("lint,test", ["lint", "test"]),
+    "object": ('{"kind":"wait","ms":0}', ['{"kind":"wait"', '"ms":0}']),
 }
 
 
@@ -22916,9 +22917,10 @@ def _list_flag_cases(check):
             if reading == "split":
                 if refusal is not None or values.get(dest) != parts:
                     bad.append((dest, reading, values.get(dest), refusal))
-            elif reading == "held":
+            elif reading in ("held", "object"):
                 # Names an entry the field already holds and stores nothing:
-                # the door that holds the field answers held or not held.
+                # the door that holds the field answers held or not held. An
+                # `object` value is one JSON object, whose commas are its own.
                 if refusal is not None or values.get(dest) != [joined]:
                     bad.append((dest, reading, values.get(dest), refusal))
             elif refusal is None or flags[dest] not in refusal \
@@ -22926,7 +22928,7 @@ def _list_flag_cases(check):
                     or joined in (values.get(dest) or []):
                 bad.append((dest, reading, values.get(dest), refusal))
         check("lr3 every row, driven through the reader with a comma-joined "
-              "value: a `split` row returns the parts, a `held` row the value "
+              "value: a `split` row returns the parts, a `held` or `object` row the value "
               "as given, every other row refuses "
               "the value naming its flag and each part, and none returns the "
               "joined string; rows that did not: %r" % (bad,),
@@ -23452,6 +23454,11 @@ def _gate_reach_cases(check):
 
 
 # --- a task's timing record across the verbs that copy or reset a task ----------
+def _read_bytes(path):
+    with open(path, "rb") as fh:
+        return fh.read()
+
+
 def _timing_cases(check):
     """`start` sets timing.firstStartedAt once; `move`, `reopen` and `cancel`
     carry the record the way they carry notes.
@@ -23535,6 +23542,70 @@ def _timing_cases(check):
               % ((code5, t5.get("status"), t5.get("timing")),),
               code5 == 0 and t5.get("status") == "cancelled"
               and t5.get("timing") == record)
+
+        # `--stage` on the two writes the step driver makes for a task: a
+        # value that is not JSON, and one `_task_timing.stage_problems`
+        # rejects, are each refused before the lock with nothing written.
+        fx6 = base_manifest()
+        fx6["phases"][1]["tasks"].append(
+            {"id": "P2.4", "title": "running", "status": "in_progress",
+             "attempts": 1, "maxAttempts": 3,
+             "startedAt": "2025-12-03T00:00:00Z", "completedAt": None,
+             "timing": json.loads(json.dumps(record))})
+        proj6, mp6 = mk("tmg-stage", fx6)
+        good = {"kind": "wait", "startedAt": "2025-12-03T00:00:05Z", "ms": 2000,
+                "basis": "hand-out -> start"}
+        bad_values = (("not JSON", '{"kind": "wait", '),
+                      ("graded out", json.dumps({"kind": "nap", "ms": -1,
+                                                 "startedAt": "yesterday"})))
+        verbs = (("note", ["note", "P2.4", "--text", "t"]),
+                 ("done", ["done", "P2.4", "--no-change", "--reason",
+                           "nothing to change"]))
+
+        def written(proj, mp):
+            jdir = os.path.join(proj, "docs", "audit", "journal")
+            rows = sorted(os.listdir(jdir)) if os.path.isdir(jdir) else []
+            return _read_bytes(mp), [(r, _read_bytes(os.path.join(jdir, r)))
+                                     for r in rows]
+        refused = []
+        for (label, value), (verb, argv) in [(b, v) for b in bad_values
+                                             for v in verbs]:
+            before = written(proj6, mp6)
+            # `done` refuses on stderr (`_refuse_on_stderr`), `note` on stdout.
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                code, txt = run(argv + ["--stage", value, "--project-dir", proj6])
+            txt += err.getvalue()
+            refused.append((label, verb, code, "--stage" in txt,
+                            written(proj6, mp6) == before, txt[-160:]))
+        check("tmg6 `note` and `done` each refuse a --stage value that is not "
+              "JSON and one stage_problems rejects, naming the flag, before the "
+              "lock - the plan's and the journal's bytes as they were: %r"
+              % (refused,),
+              len(refused) == 4 and all(code == M.E_USAGE and named and same
+                                        for _l, _v, code, named, same, _t
+                                        in refused)
+              and (task_in(mp6, "P2.4") or {}).get("status") == "in_progress"
+              and (task_in(mp6, "P2.4") or {}).get("timing") == record)
+        code7, txt7 = run(["note", "P2.4", "--text", "t", "--stage",
+                           json.dumps(good), "--project-dir", proj6])
+        noted = ((task_in(mp6, "P2.4") or {}).get("timing") or {}).get("stages")
+        code8, txt8 = run(["done", "P2.4", "--no-change", "--reason",
+                           "nothing to change", "--stage",
+                           json.dumps(dict(good, kind="commit", ms=40)),
+                           "--project-dir", proj6])
+        closed = task_in(mp6, "P2.4") or {}
+        check("tmg7 THE TWIN: a well-formed --stage is appended by the write the "
+              "verb makes anyway - after the note on `note`, with the close on "
+              "`done` - keeping the stages and first start already recorded: %r"
+              % ((code7, txt7[-120:], noted, code8, txt8[-160:],
+                  closed.get("status"), closed.get("timing")),),
+              code7 == 0 and noted == record["stages"] + [good]
+              and code8 == 0 and closed.get("status") == "done"
+              and (closed.get("timing") or {}).get("stages")
+              == record["stages"] + [good, dict(good, kind="commit", ms=40)]
+              and (closed.get("timing") or {}).get("firstStartedAt")
+              == record["firstStartedAt"])
     finally:
         _harness.remove_tree(tmp)
 

@@ -836,13 +836,16 @@ if reads is None:
     reads = ["src/mine.py"] * int(os.environ.get("WS_TOOLS") or 0)
 tools = [{"type": "tool_use", "id": "t%d" % n, "name": "Read",
           "input": {"file_path": path}} for n, path in enumerate(reads)]
+result = {"type": "result", "subtype": "success", "is_error": False,
+          "session_id": sid, "total_cost_usd": float(os.environ["WS_COST"]),
+          "result": os.environ.get("WS_RESULT") or "done"}
+if os.environ.get("WS_DURATION"):
+    result["duration_ms"] = int(os.environ["WS_DURATION"])
 for event in ({"type": "system", "subtype": "init", "session_id": sid},
               {"type": "assistant", "session_id": sid,
                "message": {"role": "assistant",
                            "content": [{"type": "text", "text": "working"}] + tools}},
-              {"type": "result", "subtype": "success", "is_error": False,
-               "session_id": sid, "total_cost_usd": float(os.environ["WS_COST"]),
-               "result": os.environ.get("WS_RESULT") or "done"}):
+              result):
     sys.stdout.write(json.dumps(event) + "\n")
 sys.stdout.flush()
 '''
@@ -935,7 +938,7 @@ def _flag(argv, flag):
 
 
 def _stub_environ(bindir, log, cost, session=WRITER_SESSION, mode="ok", edit=None,
-                  result=None, commit=False, tools=0, reads=None):
+                  result=None, commit=False, tools=0, reads=None, duration=None):
     """This process's environment with the stub standing for `claude`. `mode`
     `none` makes the stub exit 7 with no result event, `sleep` makes it
     write its pid and a child's to `WS_PIDS` and sleep, and `killrunner` makes it
@@ -943,7 +946,8 @@ def _stub_environ(bindir, log, cost, session=WRITER_SESSION, mode="ok", edit=Non
     the stub writes to their text, `result` is its last message, `commit`
     has it commit what it wrote and `tools` is how many tool calls its stream
     holds, each a Read of src/mine.py - or, given `reads`, one Read of each
-    path it lists."""
+    path it lists. `duration` is the `duration_ms` its result event carries;
+    None leaves the key out, as every stub before the timing record did."""
     env = dict(os.environ)
     env["PATH"] = bindir + os.pathsep + env.get("PATH", "")
     # A TEMP DIRECTORY OF THE FIXTURE'S, removed with it: the runner makes the
@@ -956,19 +960,21 @@ def _stub_environ(bindir, log, cost, session=WRITER_SESSION, mode="ok", edit=Non
                WS_EDIT=json.dumps(edit or {}), WS_RESULT=(result if result is not None
                           else _said("the session is done")),
                WS_COMMIT="1" if commit else "", WS_TOOLS=str(tools),
-               WS_READS=json.dumps(reads) if reads is not None else "")
+               WS_READS=json.dumps(reads) if reads is not None else "",
+               WS_DURATION="" if duration is None else str(int(duration)))
     return env
 
 
 def _play_session(root, argv, bindir, log, cost, session=WRITER_SESSION,
                   mode="ok", edit=None, result=None, commit=False, tools=0,
-                  reads=None):
+                  reads=None, duration=None):
     """Run the printed session command as the main loop does - its interpreter
     word replaced by this one - with the stub standing for `claude`
     (`_stub_environ` says what each argument makes it do). Returns
     `(code, output)`."""
     env = _stub_environ(bindir, log, cost, session=session, mode=mode, edit=edit,
-                        result=result, commit=commit, tools=tools, reads=reads)
+                        result=result, commit=commit, tools=tools, reads=reads,
+                        duration=duration)
     done = subprocess.run([sys.executable] + list(argv[1:]), cwd=root, env=env,
                           capture_output=True, text=True, encoding="utf-8",
                           errors="replace", timeout=120)
@@ -18793,6 +18799,388 @@ def _rf_verb_brief(check):
                                              "P1.2")))
 
 
+# --- a task's timing, written as the drive reads each step back -------------------
+# The durations a stub session's result event carries: no two share a digit run,
+# so a stage holding the writer's figure cannot read as the reviewer's.
+TM_WRITER_MS, TM_RESUME_MS, TM_REVIEWER_MS = 41250, 23750, 17125
+# The second gate entry of the red-then-green fixture: green at the base (`v = 1`)
+# and once the writer marks its fix `ok`, red on the first round's `v = 2` - so
+# the first round passes its red-first proof and still fails the gate, and the
+# base measurement charges the red to the task rather than to the base.
+_TM_CHECK = "tests/check_mine.py"
+_TM_CHECK_SRC = ("import sys\n"
+                 "text = open('src/mine.py', encoding='utf-8').read()\n"
+                 "sys.exit(0 if ('v = 1' in text or 'ok' in text) else 1)\n")
+
+
+def _tm_task(mpath, task_id="P1.1"):
+    return tasks_of(mpath).get(task_id) or {}
+
+
+def _tm_stages(mpath, kind=None, task_id="P1.1"):
+    """The stages the task's shard records, oldest first - those of `kind` alone
+    when one is named."""
+    timing = _tm_task(mpath, task_id).get("timing") or {}
+    return [s for s in timing.get("stages") or []
+            if isinstance(s, dict) and (kind is None or s.get("kind") == kind)]
+
+
+def _tm_rows(root, mpath):
+    """`{runId: row}` of every evidence row the fixture recorded."""
+    project, config = _evio.project_config_for(mpath, root)
+    return dict((r.get("runId"), r) for r in _evio.read_rows(project, config)["rows"]
+                if isinstance(r, dict) and r.get("runId"))
+
+
+def _tm_records(argv):
+    """The outcomes the runner appended to the record a session command names."""
+    path = _flag(argv, "--record")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return [json.loads(ln) for ln in fh if ln.strip()]
+    except (OSError, TypeError, ValueError):
+        return []
+
+
+def _tm_epoch(stamp):
+    import _usage_core
+    return _usage_core.parse_ts(stamp)
+
+
+def _tm_actions(root):
+    """The action of every journal row the fixture holds, sorted: what the
+    verbs the drive ran wrote under the lock, one row a write."""
+    import _journal_io
+    return sorted(str(r.get("action")) for r in _journal_io.read_all(root))
+
+
+def _tm_commits(root):
+    return int(_git_out(root, "rev-list", "--count", "HEAD").strip() or 0)
+
+
+def _tm_drive_clean(M, prefix, bindir, log, writer_ms=TM_WRITER_MS,
+                    reviewer_ms=TM_REVIEWER_MS, delay=0):
+    """A one-task tdd fixture driven to its close: the writer's session (after
+    `delay` seconds between its hand-out and its run), a green gate, the
+    reviewer's session, the commit and the close. Returns `(root, mpath,
+    {"writer": argv, "reviewer": argv, "lines": [...]})`."""
+    root, mpath = _tdd_writer_repo(prefix, (_wf_gate(),))
+    lines = [_signal_next(M, root, mpath)]
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    writer = _run_argv(block) or []
+    if delay:
+        time.sleep(delay)
+    _play_session(root, writer, bindir, log, "0.31", duration=writer_ms,
+                  edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST},
+                  result=_WF_CLAIM)
+    lines.append(_signal_next(M, root, mpath))
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    reviewer = _run_argv(block) or []
+    _play_session(root, reviewer, bindir, log, "0.21", session=RV_SESSIONS[2],
+                  duration=reviewer_ms, result=_review_json(mpath), tools=3)
+    lines.append(_signal_next(M, root, mpath))
+    return root, mpath, {"writer": writer, "reviewer": reviewer, "lines": lines}
+
+
+def _tm_parts_add_up(summary):
+    """Whether a summary's parts give back its window: no source missing, and
+    attributed less overrun plus unattributed equal to the window."""
+    return (summary.get("missing") == [] and isinstance(summary.get("windowMs"), int)
+            and summary["attributedMs"] - summary["overrunMs"]
+            + summary["unattributedMs"] == summary["windowMs"])
+
+
+def _timing_cases(check):
+    """Every task the drive runs leaves in its shard how long each stage took,
+    read off the record each length comes from - the session record, the
+    evidence row, the commit verb timed around - and carried by a write the
+    drive already makes, so the drive makes no more commits and no more locked
+    writes than it did."""
+    M, why = _load("drive_phase_timing")
+    if M is None:
+        check("tm1 the driver loads", False, why)
+        return
+    import _task_timing
+    stubs = os.path.realpath(_harness.fixture_root("drive-tm-stub-"))
+    bindir = _writer_stub(stubs)
+    log = os.path.join(stubs, "runs.jsonl")
+
+    root, mpath, run = _tm_drive_clean(M, "tm", bindir, log, delay=2)
+    task = _tm_task(mpath)
+    rows = _tm_rows(root, mpath)
+    writer_rec = [r for r in _tm_records(run["writer"]) if "durationMs" in r]
+    reviewer_rec = [r for r in _tm_records(run["reviewer"]) if "durationMs" in r]
+    writers, reviewers = _tm_stages(mpath, "writer"), _tm_stages(mpath, "reviewer")
+    gates, picks = _tm_stages(mpath, "gate"), _tm_stages(mpath, "selection")
+    commits = _tm_stages(mpath, "commit")
+    summary = _task_timing.summarize(task)
+    check("tm1 a task driven to done leaves a writer stage, a gate stage with its "
+          "selection, a reviewer stage and a commit stage, each read off its "
+          "source - the session's own record, the gate run's evidence row - and "
+          "the summary's parts add up to the task's window: %r"
+          % ((task.get("status"), task.get("timing"), summary, run["lines"]),),
+          task.get("status") == "done"
+          and len(writers) == 1 and len(writer_rec) == 1
+          and writers[0]["ms"] == TM_WRITER_MS == writer_rec[0]["durationMs"]
+          and writers[0]["startedAt"] == writer_rec[0]["startedAt"]
+          and writers[0].get("round") == 1
+          and len(reviewers) == 1 and len(reviewer_rec) == 1
+          and reviewers[0]["ms"] == TM_REVIEWER_MS == reviewer_rec[0]["durationMs"]
+          and reviewers[0]["startedAt"] == reviewer_rec[0]["startedAt"]
+          and len(gates) >= 1 and all(
+              g.get("runId") in rows and g["ms"] == rows[g["runId"]]["durationMs"]
+              and g["startedAt"] == rows[g["runId"]]["startedAt"] for g in gates)
+          and len(picks) == len(gates) and all(
+              p.get("runId") in rows
+              and p["ms"] == rows[p["runId"]].get("selectionMs") for p in picks)
+          and len(commits) == 1 and commits[0]["ms"] >= 0
+          and all(not _task_timing.stage_problems(s) for s in _tm_stages(mpath))
+          and _tm_parts_add_up(summary)
+          and all(k in summary["byKind"]
+                  for k in ("writer", "selection", "gate", "reviewer", "commit")))
+    waits = _tm_stages(mpath, "wait")
+    writer_wait = [w for w in waits if writers and _tm_epoch(w["startedAt"])
+                   + w["ms"] / 1000.0 == _tm_epoch(writers[0]["startedAt"])]
+    check("tm2 a hand-out read back after a delay leaves a wait stage of that "
+          "length: it starts at the writer's hand-out and ends where the writer's "
+          "session starts, and the two-second delay is in it: %r"
+          % ((waits, writers),),
+          len(writer_wait) == 1 and writer_wait[0]["ms"] >= 1000
+          and all(w["ms"] >= 0 for w in waits))
+
+    # THE COUNTS, AGAINST THE SAME DRIVE WITH NO STAGE QUEUED. Every locked
+    # write is a journal row, so the two journals' actions are the locked
+    # writes each made; the stages of the first run then rode on writes the
+    # second made too. The mutant leaves `queue_stage` a no-op and nothing
+    # else, so an extra write made only when a stage is pending shows here.
+    M2, _why = _load("drive_phase_timing_none")
+    M2.queue_stage = lambda state, task, source, stage: None
+    base_root, base_mpath, _run = _tm_drive_clean(M2, "tm-none", bindir, log)
+    check("tm3 the drive makes no more commits and no more locked writes for a "
+          "task than it does with no stage written: the journal's actions and "
+          "the commit count match a drive whose stages are never queued, and "
+          "only the first carries a timing stage: %r"
+          % ((_tm_actions(root), _tm_actions(base_root), _tm_commits(root),
+              _tm_commits(base_root)),),
+          _tm_task(base_mpath).get("status") == "done"
+          and _tm_actions(root) == _tm_actions(base_root)
+          and _tm_commits(root) == _tm_commits(base_root)
+          and _tm_stages(mpath) and not _tm_stages(base_mpath))
+
+    bare_root, bare_mpath, bare = _tm_drive_clean(M, "tm-bare", bindir, log,
+                                                  writer_ms=None)
+    bare_task = _tm_task(bare_mpath)
+    absent = [r.get("timingAbsent") for r in _tm_records(bare["writer"])]
+    bare_summary = _task_timing.summarize(bare_task)
+    check("tm4 a writer session whose record carries no duration leaves no writer "
+          "stage, and the summary carries that time as unattributed - no source "
+          "missing, the window still accounted for: %r"
+          % ((absent, bare_task.get("timing"), bare_summary),),
+          bare_task.get("status") == "done"
+          and absent and all("durationMs" in (a or {}) for a in absent)
+          and not _tm_stages(bare_mpath, "writer")
+          and _tm_stages(bare_mpath, "reviewer")
+          and "writer" not in bare_summary["byKind"]
+          and _tm_parts_add_up(bare_summary))
+    _timing_red_cases(check, M, bindir, log)
+    _timing_background_cases(check)
+    _timing_agent_cases(check, M)
+    _timing_wave_cases(check, M)
+
+
+def _timing_wave_cases(check, M):
+    """A wave member's stages - its writer, its gate measured in its own tree,
+    its commit - are in the phase tree's shard once it is integrated and
+    closed, and no member tree's shard holds them instead."""
+    root, mpath = _wave_repo("tm-wave", 2)
+    code, first = _next_wave(M, root, mpath)
+    sent = _dispatched(first)
+    trees = dict((t, _tree_of(root, t)) for t in sent)
+    filed = [_file_wave_executor(root, mpath, t) for t in sent]
+    code2, second = _next_wave(M, root, mpath)
+    seen = {}
+    for tid in ("P1.1", "P1.2"):
+        rows = dict((r.get("runId"), r) for r in _rows_of(root, mpath, tid))
+        gates = _tm_stages(mpath, "gate", tid)
+        seen[tid] = {
+            "status": _tm_task(mpath, tid).get("status"),
+            "writer": len(_tm_stages(mpath, "writer", tid)),
+            "gates": [(g.get("runId") in rows,
+                       g["ms"] == (rows.get(g.get("runId")) or {}).get("durationMs"))
+                      for g in gates],
+            "commit": len(_tm_stages(mpath, "commit", tid))}
+    # A member tree still standing holds its own copy of the plan; none of its
+    # tasks may carry a stage there, since the stages are the phase tree's.
+    in_trees = []
+    for tid, tree in sorted(trees.items()):
+        plan = os.path.join(tree or "", "docs", "audit", "audit-plan.json")
+        if tree and os.path.isfile(plan):
+            in_trees += [(tid, s) for t in _mio.tasks_by_id(
+                _mio.load_manifest(plan)).values()
+                for s in (t.get("timing") or {}).get("stages") or []]
+    check("tm9 a wave member's writer, gate and commit stages are in the phase "
+          "tree's shard once it is integrated and closed - its gate stage the "
+          "run measured in its own tree - and no member tree's shard holds a "
+          "stage: %r" % ((sent, [c for c, _t in filed], code2, seen, in_trees),),
+          code == 0 and sent == ["P1.1", "P1.2"]
+          and [c for c, _t in filed] == [0, 0] and code2 == 0
+          and all(v["status"] == "done" and v["writer"] == 1 and v["commit"] == 1
+                  and v["gates"] and all(a and b for a, b in v["gates"])
+                  for v in seen.values())
+          and not in_trees)
+
+
+def _tm_filed_rows(root, role):
+    """`ts` of every journal row filing a `role` return, oldest first."""
+    import _journal_io
+    return [str(r.get("ts")) for r in _journal_io.read_all(root)
+            if r.get("action") == "task.return.filed"
+            and str(r.get("target") or "").endswith(".%s.json" % (role,))]
+
+
+def _tm_window(M, root, mpath):
+    """`((first second, last second), (code, line))` around one `next --signal`:
+    the whole seconds a stamp the call took may hold."""
+    before = int(time.time())
+    said = _signal_raw(M, root, mpath)
+    return (before, int(time.time())), said
+
+
+def _timing_agent_cases(check, M):
+    """On the route with no session record - the executor and the reviewer
+    dispatched as Agents - the drive's hand-out stamp and the record of the
+    return's filing bound a writer and a reviewer stage whose basis says the
+    agent's own start is not recorded, and no wait stage is written."""
+    root, mpath = _repo("tm-agent", task_ids=TASKS[:1])
+    windows, lines = [], []
+    for role, play in (("executor", _file_executor), ("reviewer", _file_reviewer)):
+        window, said = _tm_window(M, root, mpath)
+        windows.append(window)
+        lines.append(said)
+        # A real length between the hand-out and the filing.
+        time.sleep(2)
+        play(root, mpath, "P1.1")
+    lines.append(_signal_raw(M, root, mpath))
+    # The executor's filing writes a journal row; a reviewer's writes none, so
+    # its filing is the filed file's own modification time, to the second.
+    reviewed = _filed_path(mpath, "P1.1", "reviewer")
+    filed = {"executor": _tm_filed_rows(root, "executor"),
+             "reviewer": [time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(
+                 os.path.getmtime(reviewed)))] if reviewed
+             and os.path.isfile(reviewed) else []}
+    got = {"executor": _tm_stages(mpath, "writer"),
+           "reviewer": _tm_stages(mpath, "reviewer")}
+
+    def bound(role, window):
+        stages, rows = got[role], filed[role]
+        if len(stages) != 1 or len(rows) != 1:
+            return False
+        start = _tm_epoch(stages[0]["startedAt"])
+        return (window[0] <= start <= window[1]
+                and start + stages[0]["ms"] / 1000.0 == _tm_epoch(rows[0])
+                and stages[0]["ms"] >= 1000 and rows[0] in stages[0]["basis"]
+                and "own start is not recorded" in stages[0]["basis"])
+    check("tm8 on the Agent route the writer and the reviewer stages run from "
+          "the drive's hand-out stamp to the record of each filing - the journal "
+          "row for the executor's, the filed file's time for the reviewer's, "
+          "which no row files - with a basis saying the agent's own start is not "
+          "recorded, and no wait stage is written: %r"
+          % ((lines, windows, filed, _tm_task(mpath).get("timing")),),
+          _tm_task(mpath).get("status") == "done"
+          and M.REVIEWER_AGENT in lines[1][1]
+          and bound("executor", windows[0]) and bound("reviewer", windows[1])
+          and not _tm_stages(mpath, "wait"))
+
+
+def _timing_background_cases(check):
+    """A gate left to the background is read back twice - off its launch, and
+    through the repeat that answers its verdict, which names the run that
+    measured it - and leaves that run once, with the wait from its hand-out."""
+    M, why = _load("drive_phase_timing_bg", real_gate_choice=True)
+    if M is None:
+        check("tm6 the driver loads", False, why)
+        return
+    root, mpath = _repo("tm-bg", task_ids=TASKS[:1], per_task="phase")
+    lines = [_signal_raw(M, root, mpath)]
+    _file_executor(root, mpath, "P1.1")
+    lines.append(_signal_raw(M, root, mpath))
+    # Two seconds between the gate's hand-out and its run, so the wait is
+    # past the whole second both stamps are read at; the same-second case
+    # is tm7's.
+    time.sleep(2)
+    lines.append(_signal_raw(M, root, mpath))
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    _play_gate(root, _run_argv(block) or [])
+    lines.append(_signal_raw(M, root, mpath))
+    rows = _tm_rows(root, mpath)
+    gates, waits = _tm_stages(mpath, "gate"), _tm_stages(mpath, "wait")
+    gate_waits = [w for w in waits if gates and "evidence row %s" % (
+        gates[0].get("runId"),) in w["basis"]]
+    check("tm6 a gate run in the background is one gate stage and one selection "
+          "stage of the run that measured it, however many reads name it, and "
+          "the wait from its hand-out ends where that run began: %r"
+          % ((lines, _tm_task(mpath).get("timing")),),
+          "run-test-gate.py --task P1.1" in lines[1][1]
+          and _tm_task(mpath).get("status") == "done"
+          and len(gates) == 1 and gates[0].get("runId") in rows
+          and len(_tm_stages(mpath, "selection")) == 1
+          and len(gate_waits) == 1 and gate_waits[0]["ms"] >= 1000
+          and _tm_epoch(gate_waits[0]["startedAt"]) + gate_waits[0]["ms"] / 1000.0
+          == _tm_epoch(M.run_start(rows[gates[0]["runId"]])))
+    same = M.wait_stage("2026-11-18T02:04:14Z", "2026-11-18T02:04:13Z", "b")
+    moved = M.wait_stage("2026-11-18T02:04:14Z", "2026-11-18T02:04:11Z", "b")
+    after = M.wait_stage("2026-11-18T02:04:14Z", "2026-11-18T02:04:17Z", "b")
+    check("tm7 a start read one second before its hand-out - a floored derived "
+          "start in the hand-out's own second - is a wait of 0 that says so, one "
+          "further back is no wait at all, and one after is its gap: %r"
+          % ((same, moved, after),),
+          isinstance(same, dict) and same["ms"] == 0 and "own second" in same["basis"]
+          and moved is None and isinstance(after, dict) and after["ms"] == 3000
+          and "own second" not in after["basis"])
+
+
+def _timing_red_cases(check, M, bindir, log):
+    """A red gate, the base measurement it asks for and a resumed round: each
+    writer round leaves its own stage with its round, each gate run its own,
+    and the base run one of its own."""
+    root, mpath = _tdd_writer_repo("tm-red", (_wf_gate(), '"%s" %s' % (
+        sys.executable.replace("\\", "/"), _TM_CHECK)))
+    _write_lf(os.path.join(root, *_TM_CHECK.split("/")), _TM_CHECK_SRC)
+    for argv in (["add", "-A"], ["commit", "-qm", "the second gate entry"]):
+        _harness.git(root, *argv)
+    steps = [_signal_next(M, root, mpath)]
+    steps.append(_writer_round(M, root, mpath, bindir, log, "0.31",
+                               duration=TM_WRITER_MS,
+                               edit={_WF_SRC: "v = 2\n", _WF_TEST: _WF_NEW_TEST},
+                               result=_WF_CLAIM))
+    steps.append(_signal_next(M, root, mpath, "--answer", "resume"))
+    steps.append(_writer_round(M, root, mpath, bindir, log, "0.32",
+                               duration=TM_RESUME_MS,
+                               edit={_WF_SRC: "v = 2  # ok\n"}, result=_WF_CLAIM))
+    _c, block = _explain_of(M, root, mpath, "P1.1")
+    _play_session(root, _run_argv(block) or [], bindir, log, "0.21",
+                  session=RV_SESSIONS[2], duration=TM_REVIEWER_MS,
+                  result=_review_json(mpath), tools=3)
+    steps.append(_signal_next(M, root, mpath))
+    rows = _tm_rows(root, mpath)
+    writers = _tm_stages(mpath, "writer")
+    gates, bases = _tm_stages(mpath, "gate"), _tm_stages(mpath, "base")
+    check("tm5 a red gate, a base measurement and a second writer round leave two "
+          "writer stages with their rounds and figures, two gate stages of two "
+          "runs with their statuses red then green, and one base stage read off "
+          "the base run's row: %r"
+          % ((steps, _tm_task(mpath).get("timing")),),
+          _tm_task(mpath).get("status") == "done"
+          and [(w.get("round"), w["ms"]) for w in writers]
+          == [(1, TM_WRITER_MS), (2, TM_RESUME_MS)]
+          and len(gates) == 2 and len(set(g.get("runId") for g in gates)) == 2
+          and [rows.get(g.get("runId"), {}).get("status") for g in gates]
+          == ["failed", "passed"]
+          and len(bases) == 1 and bases[0].get("runId") in rows
+          and bases[0]["ms"] == rows[bases[0]["runId"]]["durationMs"]
+          and bases[0]["runId"] not in [g.get("runId") for g in gates])
+
+
 STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("ws-block", "_writer_session_cases"),
           ("bg-block", "_background_gate_cases"),
@@ -18880,7 +19268,8 @@ STAGES = (("e2e-steps", "_e2e_steps_cases"),
           ("uy-block", "_wave_unit_cases"),
           ("rf-block", "_ready_first_cases"),
           ("sd-block", "_scope_declared_cases"),
-          ("sb-block", "_stage_cases"))
+          ("sb-block", "_stage_cases"),
+          ("tm-block", "_timing_cases"))
 
 
 CI_CADENCE_CLAUSE = ("tests/test_drive_phase.py: with ci.cadence "

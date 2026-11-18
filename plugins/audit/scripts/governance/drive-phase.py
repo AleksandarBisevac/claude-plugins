@@ -389,6 +389,8 @@ import _scoped_commit  # noqa: E402  (plugin_owned_rels: the one table of what t
 import _proc_group  # noqa: E402  (shell_invocation, stop_and_drain: the lint probe and the base run as one stoppable tree)
 import _locks  # noqa: E402  (pid_alive: whether the run a base tree's mark names still runs; acquire/release: the one claim on a base launch)
 import _task_outputs  # noqa: E402  (covers: the one rule for whether a declared path covers a changed one)
+import _task_timing as _timing  # noqa: E402  (make_stage: the one shape of a timing stage)
+import _usage_core  # noqa: E402  (parse_ts: the one reading of an ISO stamp)
 
 E_OK, E_STOPPED, E_USAGE = 0, 1, 2
 PREFIX = "[drive-phase]"
@@ -1371,6 +1373,245 @@ def _spend(state, kind, task):
     return held
 
 
+# --- a task's timing: each stage read back, carried by a write already made --------
+# Every stage the drive reads back - a session from its record, a gate run, its
+# selection or a base run from its evidence row, the commit it timed itself, a
+# hand-out's wait - is queued here under the record it was read from, once, and
+# rides the next write the drive makes for the task anyway: a session's note
+# (`note_sessions`) or the close (`close_task`), each through `--stage`. NO WRITE
+# AND NO COMMIT OF ITS OWN: a metric that adds work to the thing it measures
+# measures itself. The queue lives under `TIMING_KEY`, beside the marks and
+# keyed by task rather than by start, so a stage read before a restart still
+# reaches the shard. A source that cannot be read queues nothing, and the
+# summary then carries that time as unattributed rather than as a zero.
+TIMING_KEY = "timing"
+STAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+
+
+def queue_stage(state, task, source, stage):
+    """Queue `stage` for `task`, once per `source` - the record it was read from
+    - however many times a step reads that record back. A None stage queues
+    nothing; the caller writes the state."""
+    held = (state.get(TIMING_KEY) or {}).get(task["id"]) or {}
+    seen = list(held.get("seen") or [])
+    if stage is None or source in seen:
+        return
+    state.setdefault(TIMING_KEY, {})[task["id"]] = dict(
+        held, seen=seen + [source],
+        pending=list(held.get("pending") or []) + [stage])
+
+
+# The Agent route's two roles, each with the stage kind its length is written
+# under.
+AGENT_KINDS = {"executor": "writer", "reviewer": "reviewer"}
+
+
+def agent_handed_out(state, task, role):
+    """Stamp the hand-out of `task`'s `role` Agent for its current start, the
+    moment the dispatch is printed - as a session dispatch's `at` and a gate's
+    launch are stamped. Kept under `TIMING_KEY`, beside the queue, so the
+    `dispatched-<role>` marks keep the value they always held; the caller
+    writes the state."""
+    entry = (state.get(TIMING_KEY) or {}).get(task["id"]) or {}
+    handout = dict(entry.get("handout") or {})
+    handout[role] = {"at": _utc_stamp(), "start": start_key(task)}
+    state.setdefault(TIMING_KEY, {})[task["id"]] = dict(entry, handout=handout)
+
+
+def filed_moment(ctx, task, role):
+    """`(stamp, what)` - when `task`'s `role` return for its current start was
+    filed, and the record that says so: the journal row that filed it, or,
+    for a role whose filing writes no row (a reviewer's), the filed file's own
+    modification time, read to the whole second as every other stamp here.
+    `(None, None)` when neither can be read."""
+    path = _fr.return_path(ctx["evidence"], task, role)
+    try:
+        rows = _journal_io.read_all(ctx["project"], ctx.get("config"))
+    except Exception:                                          # noqa: BLE001
+        rows = None
+    row = _fr.already_filed_row(rows, path, ctx["project"]) if rows else None
+    if row is not None and _usage_core.parse_ts(row.get("ts")) is not None:
+        return row["ts"], "journal row %s at %s" % (_fr.RETURN_FILED_ACTION,
+                                                    row["ts"])
+    try:
+        stamp = time.strftime(STAMP_FORMAT, time.gmtime(os.path.getmtime(path)))
+    except (OSError, TypeError):
+        return None, None
+    return stamp, ("the filed file's modification time, %s - no journal row "
+                   "files a %s return" % (stamp, role))
+
+
+def agent_stage(ctx, task, role, at):
+    """The stage of an Agent `role` handed out at `at` whose return is filed:
+    from the hand-out to the filing (`filed_moment`). None while nothing says
+    it was filed, and for a filing stamped more than a second before its
+    hand-out - both stamps are whole seconds - since that is a clock that
+    moved. NO WAIT STAGE ON THIS ROUTE: no record says when the agent began,
+    so its wait cannot be told apart from its work, and the basis says the
+    length holds both rather than a wait of zero being written."""
+    stamp, what = filed_moment(ctx, task, role)
+    begin, end = _usage_core.parse_ts(at), _usage_core.parse_ts(stamp)
+    if begin is None or end is None or end < begin - 1:
+        return None
+    return _timing.make_stage(
+        AGENT_KINDS[role], at, int(round(max(0.0, end - begin) * 1000)),
+        "hand-out to the filed return (%s); the agent's own start is not "
+        "recorded, so any wait before it is inside this length" % (what,))
+
+
+def queue_agent_stage(ctx, state, task, role):
+    """Queue the stage of `task`'s `role` Agent once its return is filed - only
+    for an Agent this start handed out, since a session's stages come off its
+    own record - and write the state when one was queued."""
+    entry = (state.get(TIMING_KEY) or {}).get(task["id"]) or {}
+    handout = (entry.get("handout") or {}).get(role) or {}
+    if handout.get("start") != start_key(task):
+        return
+    source = "agent:%s:%s" % (role, handout["start"])
+    if source in (entry.get("seen") or []):
+        return
+    stage = agent_stage(ctx, task, role, handout.get("at"))
+    if stage is not None:
+        queue_stage(state, task, source, stage)
+        write_state(ctx, state)
+
+
+def stage_args(state, task):
+    """The `--stage` arguments carrying every stage queued for `task`."""
+    pending = ((state.get(TIMING_KEY) or {}).get(task["id"]) or {}).get("pending")
+    return [word for stage in pending or []
+            for word in ("--stage", json.dumps(stage, sort_keys=True,
+                                               separators=(",", ":")))]
+
+
+def stages_carried(state, task, closed=False):
+    """The queue emptied once a write carried it; `closed` drops the task's
+    entry whole, since no later write of it will read what was seen."""
+    entries = state.get(TIMING_KEY) or {}
+    if closed:
+        entries.pop(task["id"], None)
+    elif task["id"] in entries:
+        entries[task["id"]] = dict(entries[task["id"]], pending=[])
+    if not entries:
+        state.pop(TIMING_KEY, None)
+
+
+def _length(value):
+    """A recorded length in whole milliseconds, or None for anything that is
+    not a finite number of zero or more - a bool included."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) \
+            or value != value or value < 0 or value == float("inf"):
+        return None
+    return int(round(value))
+
+
+def _stamp_less(stamp, ms):
+    """The whole second `ms` before `stamp`, or None when `stamp` will not read."""
+    epoch = _usage_core.parse_ts(stamp)
+    if epoch is None:
+        return None
+    return time.strftime(STAMP_FORMAT, time.gmtime(int(epoch - ms / 1000.0)))
+
+
+def wait_stage(since, until, basis):
+    """The wait from a hand-out stamped at `since` to the step's own start
+    `until`; None when either will not read.
+
+    BOTH ARE WHOLE SECONDS, and a start derived by subtraction (`run_start`)
+    is floored, so a step that began in its hand-out's own second can read as
+    starting the second before it: that is a wait under a second, written as
+    0 with the basis saying so. A start further back than one second is a
+    clock that moved, and no wait is written."""
+    begin, end = _usage_core.parse_ts(since), _usage_core.parse_ts(until)
+    if begin is None or end is None or end < begin - 1:
+        return None
+    if end < begin:
+        return _timing.make_stage("wait", since, 0, basis + "; under a second: "
+                                  "the start fell in the hand-out's own second")
+    return _timing.make_stage("wait", since, int(round((end - begin) * 1000)), basis)
+
+
+def session_stages(dispatch, run, kind, first):
+    """`[(source, stage)]` for one session outcome read off dispatch
+    `dispatch`'s record: the session itself, from the `startedAt` and
+    `durationMs` its record carries, and - for the first outcome of that
+    dispatch - the wait from its hand-out to the session's start. Nothing for
+    a figure the record lacks."""
+    record = os.path.basename(dispatch.get("record") or "")
+    started, ms = run.get("startedAt"), _length(run.get("durationMs"))
+    out = []
+    if first and isinstance(started, str):
+        out.append(("wait:%s" % (record,), wait_stage(
+            dispatch.get("at"), started,
+            "hand-out stamped by the drive -> startedAt in session record %s"
+            % (record,))))
+    if ms is not None and _usage_core.parse_ts(started) is not None:
+        number = dispatch.get("round", 0) + 1 if kind == "writer" \
+            else dispatch.get("seq", 0) + 1
+        out.append(("%s:%s:%s" % (kind, record, run.get("index")),
+                    _timing.make_stage(kind, started, ms,
+                                       "durationMs in session record %s" % (record,),
+                                       round=number)))
+    return out
+
+
+def ledger_row(ctx, run_id):
+    """The evidence row of `run_id`, or None when the ledger will not read or
+    holds no such row."""
+    try:
+        rows = _evio.read_rows(ctx["project"], ctx["config"])["rows"]
+    except Exception:                                          # noqa: BLE001
+        return None
+    return _evio.row_by_run(rows, run_id)
+
+
+def row_stages(row, kind="gate"):
+    """`[(source, stage)]` for one evidence row: the run's own length under
+    `kind`, and for a gate run the time it spent choosing what to run, which
+    ends where the run's own `startedAt` begins. Nothing for a figure the row
+    lacks - a row from before a key existed included."""
+    if not isinstance(row, dict) or not row.get("runId"):
+        return []
+    run_id, started = str(row["runId"]), row.get(_evio.STARTED_KEY)
+    if _usage_core.parse_ts(started) is None:
+        return []
+    out = []
+    selection = _evio.selection_ms(row)
+    if kind == "gate" and selection is not None:
+        out.append(("selection:%s" % (run_id,), _timing.make_stage(
+            "selection", _stamp_less(started, selection), selection,
+            "selectionMs in evidence row %s, ending at its startedAt" % (run_id,),
+            run_id=run_id)))
+    ms = _length(row.get("durationMs"))
+    if ms is not None:
+        out.append(("%s:%s" % (kind, run_id), _timing.make_stage(
+            kind, started, ms, "durationMs in evidence row %s" % (run_id,),
+            run_id=run_id)))
+    return out
+
+
+def run_start(row):
+    """When a run began choosing what to run: its `startedAt` less its
+    selection, or its `startedAt` when it recorded none."""
+    started = (row or {}).get(_evio.STARTED_KEY)
+    selection = _evio.selection_ms(row)
+    return _stamp_less(started, selection) if selection is not None else started
+
+
+def queue_row(ctx, state, task, row, kind="gate", since=None):
+    """Queue `row`'s stages for `task`, and the wait from a hand-out stamped
+    at `since` to the run's start, then write the state."""
+    pairs = row_stages(row, kind)
+    if since and pairs:
+        pairs = [("wait:%s:%s" % (kind, row.get("runId")), wait_stage(
+            since, run_start(row), "hand-out stamped by the drive -> start of "
+            "evidence row %s" % (row.get("runId"),)))] + pairs
+    for source, stage in pairs:
+        queue_stage(state, task, source, stage)
+    if pairs:
+        write_state(ctx, state)
+
+
 # --- reading the plan -------------------------------------------------------------
 def load_phase(ctx):
     """`(manifest, phase)` read fresh: every verb the driver calls writes."""
@@ -2064,6 +2305,9 @@ def dispatch(ctx, state, phase, task, role, tree=None):
     model = (task.get("model") if role == "executor"
              else (phase.get("review") or {}).get("model")) or "unset"
     agent = EXECUTOR_AGENT if role == "executor" else REVIEWER_AGENT
+    if role in AGENT_KINDS:
+        agent_handed_out(state, task, role)
+        write_state(ctx, state)
     return dispatch_said(ctx, role, task["id"], agent, model, brief)
 
 
@@ -2212,8 +2456,10 @@ def open_dispatch(ctx, state, task, round_n, build, tree=None, key="writer",
     record = session_record(ctx, task, seq, "writer" if key == "writer" else "reviewer")
     argv = build(record)
     held["seq"] = seq + 1
+    # `at` is the hand-out, stamped as a gate's launch is: the gap from it to
+    # the session's own start is the wait `session_stages` reads.
     entry = {"seq": seq, "round": round_n, "record": record, "argv": argv,
-             "head": tree_head(ctx, tree)}
+             "head": tree_head(ctx, tree), "at": _utc_stamp()}
     if kind:
         entry["kind"] = kind
     held["dispatches"] = list(held["dispatches"]) + [entry]
@@ -2268,7 +2514,9 @@ def read_sessions(path):
                                   if isinstance(s, dict) and s.get("name")]
                      if isinstance(skills, list) else [],
                      "invoked": [str(n) for n in invoked]
-                     if isinstance(invoked, list) else None})
+                     if isinstance(invoked, list) else None,
+                     "startedAt": body.get("startedAt"),
+                     "durationMs": body.get("durationMs")})
     return runs
 
 
@@ -2369,15 +2617,16 @@ def session_note(round_n, run, who="writer"):
                                        run["exit"], skills_said(run)))
 
 
-def note_task(ctx, task, text):
+def note_task(ctx, task, text, stages=()):
     """Note `text` on `task` through the verb, every path in it spelled the way
     a committed row may say it (`redacted_free_text`: project-relative inside
     the project, a token outside it), since the verb refuses a machine path.
-    None, or the verb's refusal - which the caller records and goes past: a
-    note is a record of a session, and no step waits on it."""
+    `stages` are `stage_args`' words, carried by the same write. None, or the
+    verb's refusal - which the caller records and goes past: a note is a record
+    of a session, and no step waits on it."""
     clean = _journal_io.redacted_free_text(ctx["project"], text)
     code, out, err = run_verb(ctx, "audit-task.py", _task_args(
-        ctx, "note", task["id"]) + ["--text", "-"], stdin=clean)
+        ctx, "note", task["id"]) + ["--text", "-"] + list(stages), stdin=clean)
     if code == 0:
         return None
     return _clip(" ".join((out + err).split()) or "exit %d" % (code,), 160)
@@ -2386,7 +2635,9 @@ def note_task(ctx, task, text):
 def note_sessions(ctx, state, task, key="writer"):
     """Note each outcome the task's writer records - or its reviewer's, under
     `key` - hold that the last step had not seen - once, whether the verb took
-    the note or refused it."""
+    the note or refused it. Each note carries the session's stages and every
+    stage queued before it (`session_stages`, `stage_args`); a refused note
+    leaves them queued for the next write."""
     who = "writer" if key == "writer" else "reviewer"
     held = writer_state(state, task, key)
     for each in held["dispatches"]:
@@ -2395,7 +2646,13 @@ def note_sessions(ctx, state, task, key="writer"):
         resumed = resumed_session(each.get("argv"))
         for run in runs[seen:]:
             run = session_reading(held["runs"], run, resumed)
-            refused = note_task(ctx, task, session_note(each["round"], run, who))
+            for source, stage in session_stages(each, dict(run, index=seen), who,
+                                                seen == 0):
+                queue_stage(state, task, source, stage)
+            refused = note_task(ctx, task, session_note(each["round"], run, who),
+                                stage_args(state, task))
+            if refused is None:
+                stages_carried(state, task)
             held["runs"] = list(held["runs"]) + [dict(run, round=each["round"],
                                                       seq=each["seq"])]
             held["noted"] = dict(held["noted"], **{str(each["seq"]): seen + 1})
@@ -3601,6 +3858,11 @@ def base_reading_for(ctx, state, phase, task, text, tree=None):
         held = dict(held, decided=True)
         _mark(state, BASE_MEASURED, task, held)
         write_state(ctx, state)
+        # The base run this start measured, read once, as it is decided on;
+        # a launched one also waited from its hand-out.
+        if base_behind(fresh):
+            queue_row(ctx, state, task, ledger_row(ctx, fresh["run"]), "base",
+                      since=held.get("at") if held.get("background") else None)
     use = fresh if (fresh is not None and mine) else reading
     if base_behind(use):
         return None, use, None
@@ -5723,6 +5985,9 @@ def close_task(ctx, state, phase, task, intent_basis=None):
     route, _none = _close_plan("route", {
         "writerPath": lambda: writer_path_on(ctx),
         "session": lambda: recorded_session(state, task)})
+    # THE RECORD COMMIT IS TIMED HERE, around the verb: no record of it holds a
+    # length, and the close below is the write that carries it.
+    began, clock = _utc_stamp(), time.monotonic()
     if route == "writer-commit":
         sha, stop = writer_commit(ctx, state, phase, task)
         if stop is not None:
@@ -5732,6 +5997,11 @@ def close_task(ctx, state, phase, task, intent_basis=None):
         if stop is not None:
             return stop
         sha = committed_sha(out)
+    if sha:
+        queue_stage(state, task, "commit:%s" % (sha,), _timing.make_stage(
+            "commit", began, int((time.monotonic() - clock) * 1000),
+            "commit-task-work.py timed around by the drive, commit %s" % (sha[:12],)))
+        write_state(ctx, state)
     # A close refused after the commit landed leaves the work committed: close
     # on that commit through the same verb and checks, rather than offer
     # no-change (a false outcome) or retry (the work redone). `own` is a git
@@ -5740,7 +6010,7 @@ def close_task(ctx, state, phase, task, intent_basis=None):
                                           "own": lambda: own_commit(ctx, task)})
     if closing == "no-change":
         return decision(ctx, state, "no-change", task, "")
-    extra = ["--commit", sha, "--from-return"]
+    extra = ["--commit", sha, "--from-return"] + stage_args(state, task)
     done_args = _task_args(ctx, "done", task["id"], *extra)
     if intent_basis is None:
         _out, stop = _verb_or_stop(ctx, "audit-task.py", done_args)
@@ -5750,6 +6020,8 @@ def close_task(ctx, state, phase, task, intent_basis=None):
             "--intent-basis", intent_basis)
     if stop is not None:
         return stop
+    stages_carried(state, task, closed=True)
+    write_state(ctx, state)
     ctx["did"].append("%s %s at %s" % (CLOSED, task["id"], sha[:7]))
     stop = ci_after_close(ctx, state, phase)
     if stop is not None:
@@ -5790,6 +6062,8 @@ def advance(ctx, state, manifest, phase, task, tree=None):
     executor, problem = filed(ctx, task, "executor")
     if problem:
         return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], problem)
+    if executor is not None:
+        queue_agent_stage(ctx, state, task, "executor")
     turn, _none = _advance_plan("writer", _writer_facts(
         state, task, executor, lambda: writer_holds(state, task)))
     if turn == "file-return":
@@ -5841,6 +6115,8 @@ def advance(ctx, state, manifest, phase, task, tree=None):
         reviewer, problem = filed(ctx, task, "reviewer")
         if problem:
             return E_STOPPED, "%s %s: stopped - %s" % (PREFIX, ctx["phase"], problem)
+        if reviewer is not None:
+            queue_agent_stage(ctx, state, task, "reviewer")
     review_turn, _none = _advance_plan("reviewer", _reviewer_facts(
         state, task, due, reviewer, False))
     if review_turn == "session-step":
@@ -5916,12 +6192,16 @@ def gate_step(ctx, state, manifest, phase, task, tree=None):
     if said is not None:
         return said
     code, out, err = measured
+    # The run that measured the verdict, a repeat's included (`gate_row`
+    # reads through to it), queued once per run whatever reads it again.
+    queue_row(ctx, state, task, gate_row(ctx, out + err))
     if code == 1:
         followed, again = follow_red_gate(ctx, state, phase, task, out + err, tree)
         if followed is not None:
             return followed
         if again is not None:
             code, out, err = again
+            queue_row(ctx, state, task, gate_row(ctx, out + err))
     if code == 1:
         return gate_red_decision(ctx, state, manifest, phase, task, out + err,
                                  tree)
@@ -6199,6 +6479,7 @@ def background_gate(ctx, state, phase, task, tree):
                            launched.get("argv")), None
     _spend(state, GATE_LAUNCH_KEY, task)
     write_state(ctx, state)
+    queue_row(ctx, state, task, ledger_row(ctx, run_id), since=launched.get("at"))
     return None, read_back(ctx, run_id, status,
                            lambda: record_gate(ctx, phase, task, tree),
                            "gate %s" % (task["id"],))

@@ -205,7 +205,7 @@
     {
       "id": "P167.3",
       "title": "A recorded gate run says how long choosing what to run took, beside how long the steps took",
-      "status": "in_progress",
+      "status": "done",
       "description": "run-test-gate.py starts its clock at the first step, so the time it spends gathering the affected suites and reading the gate's reach is in no figure at all. The recorded row gains selectionMs: the time from the start of that work to the first step, measured on the same monotonic clock. durationMs keeps its meaning, the steps alone, because other code decides on it. A run that selected nothing (a reused verdict, a gate with no derived part) records selectionMs for the work it did do, and a row written before this change carries no such key, which reads as not recorded. Dependants you answer for: _evidence_io.gate_mean_ms decides whether a gate runs in the foreground from durationMs and must give the same answer on the same rows; the doctor grades meta.gateBudgetMs from durationMs; audit-usage compares narrowed and phase gates and reused and measured runs from durationMs; the report and the panel list a row's steps and its took figure and must render a row with the new key unchanged; the row's hash chain covers the row as written, so a new key must enter the row before it is hashed; COMPATIBILITY.md lists the evidence row's additive keys and gains this one. Acceptance: (1) a recorded task gate with a derived part carries selectionMs and its durationMs equals the sum the steps took, as before; (2) gate_mean_ms over a ledger holding old and new rows returns what it returned over the same rows without the key; (3) a row without selectionMs is read as not recorded by every reader, never as zero; (4) the ledger's verifier accepts a chain holding both kinds of row.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -235,14 +235,17 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "798a336fdf64",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_evidence_io.py: SELECTION_KEY = 'selectionMs' beside STARTED_KEY with its reason; selection_ms(row) is the one reader - None for an absent key, a bool, a negative or a non-int, never 0; row_for writes the key only when selection_ms(result) answers, before append_row hashes the row. run-test-gate.py: main starts a monotonic selection clock before the affected gathering (so it covers gathering, reuse_identity + ledger lookup, and the reach reading); run_gate takes selection_started=None and returns selectionMs = time from it to the same `started` reading durationMs begins at (None when no caller timed one, so the base-of, --full and other run_gate callers write no key); a reused verdict gets selectionMs from the clock at the reuse decision. durationMs is untouched. COMPATIBILITY.md: one bullet naming selectionMs as an additive evidence-row key, absent = not recorded, durationMs unchanged. Tests: test__evidence_io._selection_time_cases sel1-sel7; test_run_test_gate ag6 in _affected_cases (listing made to sleep 600 ms; asserts selectionMs >= the sleep and durationMs - sum(step durationMs) < the sleep). Gate `python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__evidence_io.py` exit 0 (342 + 625 cases). Mutations in a scratch rsync copy, never the shared tree: selection forced to 0 -> ag6 red (selectionMs=0); run_gate's started set to selection_started -> ag6 red (durationMs=1361); reader returning 0 for absent -> sel2, sel3, sel6 red; reader without the type check -> sel2, sel4 red. Dependants, each re-run: _evidence_io.gate_mean_ms reads steps' durationMs only and sel5 pins equal answers with and without the key; doctor gateBudgetMs (test__doctor_trail 155, test__doctor_report 24 ok) and audit-usage (test_audit_usage 183 ok) read durationMs, unchanged; report/panel render steps and took and ignore the key (test__report_html, test__report_md, test_render_report, test__panel_composition ok); hash chain: sel6 verify ok over mixed rows and stored hash == row_hash(row), sel7 a rewritten selectionMs is a finding; drive-phase.py/full-gate.py/test_commit_task_work import run-test-gate - run_gate's new arg defaults None, test_commit_task_work 239 ok; COMPATIBILITY.md readers test_audit_status 411 ok; lints test__deps 284, test__output_lints 183 ok; ruff and vermin -t=3.8- clean on the four .py files. PLUGIN-BUILD-GUIDE.md and CHANGELOG.md not edited - declared by P167.5 (pending), which owns the documentation of this key. The empty-gate path (no commands) is left without selectionMs: it runs no step and selects nothing, so absent reads correctly as not recorded.",
+        "descriptive": "A recorded gate run now records selectionMs, the time spent choosing what to run, beside an unchanged durationMs."
       },
       "startedAt": "2026-11-18T01:20:40Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T01:49:45Z",
+      "verifiedBy": [
+        "ag6: a recorded task gate with a derived part (related listing slowed by a sleep) carries selectionMs covering the sleep, and its durationMs stays the steps alone",
+        "sel1-sel7: the key's name; selection_ms reads absent as None and a recorded 0 as 0; row_for carries a valid value and writes no key otherwise; gate_mean_ms answers the same with and without the key; verify accepts a chain of old and new rows with the key inside the hash, and a rewritten selectionMs is a finding"
+      ],
       "notes": [
         {
           "at": "2026-11-18T00:24:27Z",
@@ -284,18 +287,33 @@
         "runId": "2026-11-18T01:49:40Z.9eb7f7",
         "status": "passed",
         "at": "2026-11-18T01:49:40Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "798a336fdf64",
+        "at": "2026-11-18T01:49:45Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T01:34:42Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__evidence_io.py` in a throwaway tree at HEAD exited 1 with 6 of 625 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sel1 (house FAIL), sel2 (house FAIL), sel3 (house FAIL), sel6 (house FAIL), sel7 (house FAIL), ag6 (house FAIL): SELFTEST FAILED: 624/625 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P167.4",
       "title": "The drive writes a task's stages as it reads each step back, and stamps a writer or reviewer dispatch when it hands it out",
-      "status": "pending",
+      "status": "in_progress",
       "description": "When the drive reads a finished step back it appends one stage to the task's timing through the shared helper: a writer round from the session record (start, length, round), a recorded gate run from its ledger row (runId, start, length) with its selection time as a stage of its own, a base measurement from its row, the reviewer session from its record, and the record commit timed around the commit verb. A dispatch for a writer or a reviewer is stamped when it is handed out, the way a gate's is, and the gap between a hand-out and the step's own start is a wait stage, so time the orchestrator spent not calling next is counted rather than lost. The stages go into the shard in a write the drive already makes for that step (the session note, the verdict pointer, the close): this change adds no commit and no locked write of its own, because a metric that slows the thing it measures is wrong by construction. A source that is missing (a session record with no duration, a row that could not be read) appends nothing for that stage and the summary then reports the time as unattributed. A wave member writes its stages in its own tree's shard and integration carries them. Dependants you answer for: the drive's state file and its one-use launch marks (gateLaunched, baseMeasured, phaseGateLaunched) keep their meaning; the wait and dispatch step texts the orchestrator and the prompt hook read keep their wording apart from a since clause where one is added; commit-task-work's refusal on an unexpected shard change must not fire on a timing append; verify-invariants' commit-scope check reads what a task commit staged; tests/test_drive_phase.py holds fixtures of every step and its decision table. Do not edit plugins/audit/reference/orchestrator.md (it sits at its context ceiling); put any text the orchestrator needs into the step the drive prints. Acceptance: (1) a fixture task driven from start to done through a writer round, a green gate, a review and the commit leaves writer, selection, gate, reviewer and commit stages whose figures match their sources, and the summary's parts add up to the window; (2) a red gate followed by a base measurement and a second writer round leaves two writer stages with their rounds, two gate stages and a base stage; (3) a hand-out read back after a delay leaves a wait stage of that length; (4) a session record with no duration leaves no writer stage and the summary reports that time as unattributed; (5) the number of commits and of locked manifest writes the drive makes for the fixture task is the same as before the change; (6) a wave member's stages reach the phase tree's shard at integration.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
         "tests/test_drive_phase.py",
         "PLUGIN-BUILD-GUIDE.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_audit_task.py",
+        "tests/test_run_agent_session.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -317,14 +335,14 @@
         "P167.2",
         "P167.3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T01:49:46Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -332,8 +350,22 @@
           "at": "2026-11-18T01:20:35Z",
           "text": "it quotes the Unreleased heading of CHANGELOG.md, and this task adds an entry under that heading and leaves the heading alone",
           "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T02:16:47Z",
+          "text": "Scope widened by the plan owner after the executor's first return was refused for three paths outside its files. audit-task.py and its suite: the drive writes a task's shard only through the note and done verbs, so a stage reaches the shard in a write the drive already makes only if those verbs take one (a repeatable --stage flag); the alternative was a locked write of the drive's own, which the task forbids. tests/test_run_agent_session.py: the drive now reads startedAt and durationMs from a session record, so the case holding that old and new records read identically compares them without those two keys."
         }
-      ]
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T01:49:46Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T03:03:33Z.3b1b3e",
+        "status": "passed",
+        "at": "2026-11-18T03:03:33Z"
+      }
     },
     {
       "id": "P167.5",

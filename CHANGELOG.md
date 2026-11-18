@@ -14,6 +14,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `move`, `reopen` and `cancel` keep the record. A stage with an unknown kind, a negative length
   or no basis is a validation finding naming the task and the stage. A plan without the key
   validates and behaves exactly as before.
+- **The step driver fills a task's timing as it runs it.** Each writer and reviewer session,
+  each recorded gate run with the time it spent choosing what to run, a red's base
+  measurement, the record commit, and the wait between a handed-out step and its start are
+  appended to the task's `timing`, each read off its own record. An executor or reviewer
+  dispatched as an agent is timed from its hand-out to its filed return, with a basis saying
+  the agent's own start is not recorded. They ride the session notes
+  and the close the driver already writes, so a task costs no extra commit and no extra write.
+  A session whose record holds no duration adds no stage, and that time shows as unattributed.
+  `/audit:task note` and `done` take the stages on a repeatable `--stage`.
 
 ## [3.9.0]
 
