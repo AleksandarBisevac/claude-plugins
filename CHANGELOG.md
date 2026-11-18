@@ -222,6 +222,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   them and says so. Suppression markers are read where each checker reads them, so prose
   that names one is no finding. `/audit:status` no longer cuts its floor id list mid-id; a list too
   long for the line ends *and N more*.
+- **The floor guard sets aside one table of things, and compares everything else.** What its
+  comparison leaves out is now stated once, in the module, and is only: a label's literal text,
+  the body of a bare new test or a new check, a docstring holding no doctest example, and a skip's
+  reason where that skip's own signature calls it one. So a value a check's label formats is
+  compared like its condition - a label value that rebinds what the condition reads, clears the
+  failures or ends the run, and a constant label turned into one carrying a call, read clean and
+  are now findings; a new test with a decorator, a default or an evaluated annotation, nested in a
+  helper, or under a name the base copy spells - which could rebind an existing test, an assertion
+  method or a table a test loops over before anything ran - is no new unit and leaves its file not
+  compared, only added, a new parametrised or skip-marked test included (a decorated test renamed
+  with its head unchanged is still a rename); a doctest example edited or deleted is compared; and
+  an expected-failure mark's first argument is its condition, compared, not a reason. A finding for
+  a changed test or check names the part that differs in a new `part` field and in its text - what
+  a check is called through, its condition and arguments, or its label's values; a test's head or
+  its body. The reading is a comparison of structure that never evaluates code: a new test or check
+  can do anything when it runs, and an author set on defeating it can; clean means every existing
+  test stands where it stood, unchanged, and nothing in a test file but tests was touched.
 - **An Acceptance list the clause reader could not number is now read, never silently dropped.**
   The items after a task description's last `Acceptance:` were read only when numbered
   `(1) ... (2) ...`; a Markdown numbered list and unnumbered prose read as no clause, so on the

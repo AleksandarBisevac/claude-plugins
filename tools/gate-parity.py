@@ -1409,6 +1409,11 @@ AUDITED_EXEMPTIONS = {
     # session neither judges, so this is the weaker strength too.
     "CLAUDE_LIVE_WRITES": ("live", "tools/sweep-selftests.py cw10"),
     "EXCLUDED": ("live", "tests/test__refs.py t2"),
+    # What the floor guard leaves out of its comparison. `fx8` reads every row
+    # for its name, a function the module defines and a reason that is not empty;
+    # whether the module sets aside only what the rows say is `fx4`'s question,
+    # and neither judges whether a reason's sentence is true.
+    "SET_ASIDE": ("live", "tests/test__floor_guard.py fx8"),
 }
 
 # ...and the tables the shape reaches that excuse nothing. `{subject: sentence}` is

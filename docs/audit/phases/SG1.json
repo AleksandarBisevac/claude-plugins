@@ -3635,7 +3635,7 @@
     {
       "id": "SG1.34-ukq",
       "title": "The guard and the journal ask one function which file is the audit config, and each name is judged where it is looked up",
-      "status": "in_progress",
+      "status": "done",
       "description": "A fresh review of the config hold found no write let through on an ordinary checkout and no honest write held, and three things that are not as the documents say. Each was run by the reviewer and again by the orchestrator.\n\nMEASURED on the tree as it stands.\n(a) THE JOURNAL ASKS A DIFFERENT QUESTION. The edit guard now answers which file a path names by identity and by the volume's rule on letter case; the write journal still decides that a write is a config edit by comparing the placed path with the config's spelling. For a write the guard asks the main session about - the project's config spelled in another case, a nested worktree's config, the same in another case - the journal records no config row at all, while the README says every config write leaves a hash-chained row. This predates the phase; the phase's own rule, one function for the question, is what it breaks.\n(b) ONE DIRECTORY ANSWERS FOR ANOTHER. For a write that would create the file, the case rule is asked once, of an entry of the nearest existing directory on the path. Where the name that differs is looked up in a directory with another rule, the answer is wrong: with the config's folder present and telling case apart, inside a tree that does not, a write through the folder's name in another case is allowed and creates the real config. The reviewer built it with a mounted image; a folder with its own case setting inside a checkout is the same arrangement. The function's own docstring says a per-directory setting is answered by the directory the asked name sits in.\n(c) THE CASE THAT HOLDS THE DISK-CALL CLAIM CANNOT FAIL FOR A LISTING. SECURITY.md says an ordinary write makes no more disk calls than before and names the case that measures it. That case counts three kinds of call and not a directory listing - the very call the new code makes. With the guard changed to list a directory on every ordinary write, the suite stays green.\n(d) The README and the changelog say a hard link is the config with no exception; SECURITY.md and the code except a hard link to a NESTED tree's config under another name, and neither says that a hard link placed in the project to a config of a tree OUTSIDE it is not matched.\n\nTHE RULE TO BUILD.\n1. ONE FUNCTION, TWO CALLERS. The question - does this path name the file a session in some tree of this repository would load as its audit config, and which way - is answered in one place both hooks can reach under the hook layer's import rule, and the journal classifies a write as a config edit by that answer and by nothing else. So the two cannot disagree: every write the guard holds as the config is, once made, a config row in the journal, and no other write is. The row keeps its existing shape; its path is the path as placed. The journal runs after the write and stays advisory: an error inside the question leaves the journal's fail mode as SECURITY.md's table states it, and the row for the project's own config spelled plainly is written exactly as today.\n2. EACH NAME IS JUDGED WHERE IT IS LOOKED UP. For a creating write, the path is walked from the tree's root down, one component at a time. A component spelled as the config's is followed. A component that differs from the config's in letter case only is judged in the directory that holds it: where the config's own component exists there, the two are the same when both lookups reach one entry - identity, no rule needed; where it does not exist there, by that directory's own rule, asked of an entry of that directory as today; and where that directory holds no name that can answer, through the nearest directory above that can, as today, or held without regard to case with the stated words when none can. A directory the write would itself create has no rule yet and takes the answer of the directory it would be created in. A component that differs in more than case ends the walk: another file.\n3. THE DISK-CALL CASE COUNTS EVERY CALL THAT ASKS THE DISK. The counter wraps, through one table in the case, every function of the os module the hook can reach that reads the filesystem - the three it counts today, a listing in each of its forms, and whatever else the hook file calls (derive the table's completeness in the case: every `os.` and `os.path.` call the hook's source makes is either in the table or in a short list of ones that touch no disk, and a call in neither turns the case red). The claim in SECURITY.md is then what the case measures, for an ordinary source write and for a file merely named like the config in a plain folder.\n4. THE DOCUMENTS SAY WHAT IS AND IS NOT MATCHED, THE SAME IN EACH. README, changelog, SECURITY.md and the build guide agree on the hard-link exceptions of (d) and on the journal's row for a nested or case-variant config.\n\nWHAT MUST STAY AS IT IS. Every answer the guard gives today on a volume with one case rule (the orchestrator's and the reviewers' probes, where the brief says) - same holds, same allows, same words. The disk calls of an ordinary write do not rise; the reviewer's independent count is in the brief. The hook import budget gate stays green. The fail-mode table's rows do not change.\n\nHOW TO PROVE. For (a): through the journal hook run as a process over real linked worktrees, a row for each of the three writes it missed, red before; allow twins that write no config row - a file named like the config in a plain folder, in a worktree's docs, an ordinary source file. And one case that states the agreement itself: over a table of paths, the guard's answer is a hold exactly when the journal's classification is a config edit. For (b): a case that builds a directory telling case apart inside one that does not where the host can (a disk image on macOS, skipped by name with the reason elsewhere - and say in the outcome on which hosts it ran), plus a case through a stubbed per-directory answer that runs everywhere and shows each component is asked of its own directory. For (c): the mutation that lists a directory on every ordinary write turns the case red. A mutation probe the orchestrator can run, with those rows and: the journal put back to the spelling comparison; the walk collapsed to one question of the nearest existing directory; an allow row for each (the function widened until a plain folder's file is a config must turn a twin red).\n\nNOT in this task: the shell route to the config, which stays journalled and not refused, as stated; Windows names with a trailing dot or blank; what the doctor says about the trail.\n\nAcceptance:\n(1) The journal writes a config row for the project's config spelled in another case, for a nested worktree's config, and for that in another case, and none for the allow twins.\n(2) Over a table of paths, the guard holds a write exactly when the journal classifies it as a config edit, and both call one function.\n(3) A creating write through a name differing in case is judged in the directory that holds that name, shown on a real pair of directories with different rules where the host can make one and through a stubbed per-directory answer everywhere.\n(4) The disk-call case counts listings and every other call of the hook that asks the disk, goes red when an ordinary write lists a directory, and its table is held complete against the hook's source.\n(5) Every answer the guard gave before on a volume with one case rule is unchanged, and an ordinary write makes no more disk calls than before.\n(6) README, changelog, SECURITY.md and the build guide say the same about a hard link and about the journal's row, and are true of the code.\n(7) The hook import budget gate is green and the fail-mode table is unchanged.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -3670,14 +3670,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "e512ae97131e",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(1) ONE FUNCTION: plugins/audit/hooks/_config.py gains a section 'which file is the audit config' holding audit_config_way(tree) (the public entry, the old guard-edits._is_audit_config body) and the helpers MOVED from guard-edits.py (_CONFIG_PARTS, _CONFIG_FOLDED, _stat_or_none, _config_shaped_top, _parts_below, _volume_folds, _names_audit_config), plus two new ones, _one_entry(directory, name, own) and _case_walk(top, parts). No copy stays in guard-edits.py: it keeps _CASE_BLIND, _config_verdict and the verdict words, and calls _config.audit_config_way at its two sites (edit tools, MCP). No existing _config name changed behaviour; only os calls are used, nothing imported. journal-writes._classify_placed now reads `if _config.audit_config_way(tree):` instead of `rel == _config.CONFIG_REL`; the row keeps its event name, keys and shape, target the path as placed, no key added. (2) RULE 2: for a creating write that is config-shaped once case is set aside, _case_walk walks from the tree's root one component at a time: an exact component is followed; a case-only difference is judged in the directory that holds it - by _one_entry (lstat identity) where the config's own name exists there, else by that directory's rule (_volume_folds, memoised per call), a directory the write would create taking the rule of the one it would be created in; an unanswerable question gives case-blind (held, stated words). The walk starts only after the existing string shape test and the existing early returns, so the ordinary path is untouched. (3) RULE 3: tests/test_guard_edits.py's counter (_disk_calls) wraps one table (_DISK_CALLS: os.stat/lstat/readlink/listdir/scandir/access and os.path exists/lexists/isdir/isfile/islink/ismount/realpath/samefile/getsize/getmtime), counting leaf calls; cf29 now asserts kind-for-kind equality with the sequence before the walk, zero listings, total no more than before identity, for an existing source file, a new one and a plain-folder config-named file; cf30 reads guard-edits.py and the _config functions audit_config_way reaches (AST, transitive) and names any os./os.path. call in neither _DISK_CALLS nor _NOT_DISK. Disk calls measured with that counter (SP/sg1.34/count.py, run twice with a gap, identical both times, HEAD export vs a copy of this tree at the same depth): config question existing source 24 -> 24, new source 23 -> 23, nested existing source 27 -> 27, plain-folder config name 25 -> 25 (same kinds); guard decide() 103/102/115/104 -> same; the journal's classification 47/47/53/47 -> 71/70/80/72, because the journal now asks the identity question on every edit-tool write instead of a string comparison - a cost rule 1 implies, stated in SECURITY.md and the changelog. (4) DOCS: SECURITY.md, plugins/audit/README.md (both rows), CHANGELOG.md (unreleased Security: the earlier bullet loses its unqualified hard-link claim; a new bullet) and PLUGIN-BUILD-GUIDE.md (guard-edits, _config, journal-writes sections) carry one statement: matched / not matched (incl. both hard-link exceptions and the shell route) / the journal writes its config row for exactly the edit-tool writes the guard holds, apart from a case-blind hold whose write created another file; an MCP write of a nested tree's config is held and leaves no config row (sweep lane reads only the project's and the session tree's config) - stated as a residual. Fail-mode table rows unchanged. EXISTING CASES CHANGED ON PURPOSE: cf25, cf25b, cf25c, cf25d stubbed guard-edits._volume_folds, now _config._volume_folds (same assertions); cf26 stubbed guard-edits._names_audit_config, now _config._names_audit_config (same assertion); cf29 counted stat/lstat/readlink over two source writes and asserted now <= before-identity and now == nested-half-off, now as described in (3); _with_attr gained an `on` module argument; _os_calls replaced by _disk_calls. Plain-spelling journal row before/after, Pre+write+Post through the hook as a process, chain fields blanked: identical bytes, {action: config.edit, actor{agent: main, author, sessionId, via: hook}, stateHash, summary: 'Write wrote .claude/audit.config.json', target: .claude/audit.config.json, v: 1} (SP/sg1.34/rows.before.out, rows.after.out). Real-directories case cf32/cf32b/cf32c/cf32d ran on darwin (macOS, hdiutil, a 4 MB image of the other case rule mounted at the project's .claude, under the sweep too, detached in finally - hdiutil info shows none left); a host without hdiutil gets _harness.skip by name with the reason; hdiutil present but refusing gives could_not_run. Orchestrator probes: mine.py, mine2.py, probe_hold.py exit 0 on this tree with output identical to the HEAD export's; the reviewer's probe1 payloads run through both trees: guard stdout byte-identical for every payload (SP/sg1.34/words1.out); probe4's arrangement rebuilt with my own image: HEAD allows, this tree denies (subagent) / asks (main); probe5: all four paths now a config row. Mutation probe SP/sg1.34/mutations.py: ten rows, MUTATIONS ALL CAUGHT, exit 0 (SP/sg1.34/mutations.out). FINDING outside my files: scripts/governance/_journal_io.py verify keys its drift check by the row's target spelling, so after a config write recorded under a case variant it warns that .claude/audit.config.json (or a nested tree's plain spelling) changed with no row, though the write is recorded under the other spelling (SP/sg1.34/rows.after.out, verify section); before this change the same warning stood over a true gap. No scripts reader matches action config.edit; doctor/status read other rows.",
+        "descriptive": "The guard and the journal now ask one _config function which file is the audit config; a new config's path is judged name by name in the directory holding each name; the disk-call case counts every disk call, listings included, against a table held complete."
       },
       "startedAt": "2026-11-18T10:24:14Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T11:22:56Z",
+      "verifiedBy": [
+        "journal hook run as a process over real linked worktrees: one config row, target as placed, for the project config in another case, a nested worktree's config and that in another case (plus the plain spelling as control); no row for a plain folder's config-named file, a worktree's docs, an ordinary source file",
+        "one table of paths existing and not through both hooks: guard hold iff journal config.edit; both hooks call _config.audit_config_way once per path, and its answer alone decides both",
+        "stubbed per-directory model: each component of a creating write asked of its own directory, the would-be-created directory taking its parent's rule; real directories with different case rules via a mounted disk image (macOS), skipped by name elsewhere, detached in finally",
+        "disk-call counter over one table, listings included, leaf-counted; ordinary writes equal the pre-walk sequence kind for kind, list nothing; table held complete against both sources by AST"
+      ],
       "notes": [
         {
           "at": "2026-11-18T10:24:12Z",
@@ -3735,6 +3740,18 @@
         "runId": "2026-11-18T11:22:52Z.32e107",
         "status": "passed",
         "at": "2026-11-18T11:22:52Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "e512ae97131e",
+        "at": "2026-11-18T11:22:56Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T11:09:07Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_journal_writes.py tests/test_guard_edits.py tests/test__config.py` in a throwaway tree at HEAD exited 1 with 13 of 163 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cf25 (house FAIL), cf25c (house FAIL), cf26 (house FAIL), cf29 (house FAIL), cf30 (house FAIL), cf31 (house FAIL), cf31b (house FAIL), cf32 (house FAIL) and 5 more: SELFTEST FAILED: 158/163 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -3822,14 +3839,15 @@
     {
       "id": "SG1.36-ukq",
       "title": "The floor guard sets aside only a label's literal text and a bare new test's body, and says so in one table",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A fourth review of the floor guard, over the two tasks that rebuilt it around structural identity, found no regression, no finding on an honest edit of this repository's suites, and every move across statements and blocks it tried. It also found four places where the comparison still sets something aside by its KIND, and for each an edit confined to that kind after which a failing test passes while the reading is clean. Each was run by the reviewer and again by the orchestrator; each reads clean on the tree before those tasks too, so none is a regression.\n\nMEASURED (answer clean, nothing listed as not compared).\n(a) WHAT A LABEL INTERPOLATES. Only a label's constant text is kept and nothing compares the expressions it formats in: a format value that rebinds the variable the condition reads, one that clears the recorded failures, one that ends the run, and a constant label turned into a formatted one carrying a call (read as a rename). A case in the suite pins this as intended.\n(b) A NEW TEST'S DEFINITION. A new test definition is taken out whole, so what runs when it is DEFINED is read by nobody: a decorator that rebinds an existing test's name in the class body, a decorator or a default that replaces the check function or an assertion method, a new definition under the name of a table an existing test loops over. The documents say only that a new test can do anything when it RUNS.\n(c) DOCSTRINGS. They are dropped from the rest and from each test, so a doctest whose expected output is edited to pass, or whose failing example is deleted, reads clean.\n(d) A DECORATOR'S FIRST ARGUMENT. The expected-failure marker's first positional argument is blanked as if it were a reason; for that marker it is the condition, and a string condition made always true reads clean with no skip finding.\n\nTHE RULE TO BUILD. What the comparison does not compare is stated once, as a table in the module, and has exactly these rows; everything else of both copies is compared, by S for the rest and by U for a unit.\n1. THE LITERAL TEXT OF A LABEL. A unit's own syntax is all of it but the constant text of its label. Every expression a label formats, interpolates or joins is compared like the condition. A label whose literal text alone changed stays a rename; a label whose values changed is a change of the unit, and the finding says WHICH part of the unit differs - what it is called through, its condition and arguments, or the values its label carries - so that a reviewer can tell an edited condition from an edited message.\n2. THE BODY OF A BARE NEW TEST. A new unit is a test definition under a name the base copy mentions nowhere, with nothing evaluated when it is defined - no decorator, no default, no annotation that is evaluated - or a new labelled check statement, as today. Only such a definition's BODY is set aside. A new test definition that is not bare, or whose name the base copy mentions, is not a new unit: its head stays in the rest, so the file is listed as not compared, only added, naming it. A definition nested in a helper is named for what it is and not as a test of the class.\n3. A DOCSTRING HOLDING NO EXAMPLE. A docstring is set aside only when neither copy's text of it holds a doctest prompt. One that does is syntax of the statement holding it: of a unit (a changed example is a change of the unit) or of the rest.\n4. A REASON, WHERE THE DECORATOR'S OWN SIGNATURE CALLS IT ONE. For each skip or expected-failure decorator the guard knows, the argument set aside is the one that decorator documents as its reason, by position or by keyword; any other argument is compared. The expected-failure marker's first positional argument is a condition.\nNothing else is set aside. If the module sets aside anything this table does not name, it is either added to the table with the reason it cannot change what runs, or it is compared - say which in the outcome.\n\nWHAT THE DOCUMENTS SAY. The module, the build guide, the README row and the changelog carry the table's four rows in words, and one sentence on what the reading is: a comparison of structure that never evaluates code, so a new test or a new check can do anything when it runs, and an author set on defeating it can; clean means every existing test stands where it stood, unchanged, and nothing but tests was touched.\n\nWHAT THIS COSTS, AND YOU MEASURE IT. A new decorated or parametrised test now makes its file not compared; an existing check whose message gained a value is now a finding that says so. Run the measurement over this repository's task commits before and after and report the tally, how many commits changed verdict and in which direction, and ten of them judged by hand. Do not tune the rule to move the tally.\n\nCASES THAT PIN WHAT THIS REPLACES are changed on purpose - the one that pins a label's values as unread among them; name each in the outcome with what it asserted and asserts now.\n\nHOW TO PROVE. A case for each measured input of (a) to (d), red before the change. The invariant case gains operators - a value inside a label edited, a decorator added to a new test, a default added to a new test, a new test under a name the base copy mentions, a doctest example edited in a unit's docstring and in the module's - and its own route sets aside exactly the table's rows by its own means, so that it would disagree with the guard if the guard set aside more. Allow twins, clean before and after: a label's literal text reworded; a bare new test method; a bare new test function; a docstring with no example reworded, in a unit and in the module; a skip reason reworded by keyword and by position. A mutation probe the orchestrator can run: one row per table row removed from the comparison (each of (a) to (d) goes red) and one per table row widened (its allow twin goes red).\n\nNOT in this task: other languages; evaluating what code does; which reading a file gets; the wording of a moved finding for a renamed enclosing function.\n\nAcceptance:\n(1) Each measured input of (a) to (d) is a finding or a file listed as not compared with the statement named, and none reads clean.\n(2) A finding for a changed unit says whether its callee, its condition and arguments, or its label's values differ.\n(3) A new test definition with a decorator, a default or an evaluated annotation, or under a name the base copy mentions, leaves its head in the rest; a bare one under a fresh name is a new unit.\n(4) A docstring holding a doctest prompt in either copy is compared; one holding none is not.\n(5) The module states what is set aside in one table with these four rows and sets aside nothing else.\n(6) The allow twins read clean.\n(7) The invariant case sets aside the table's rows by its own means, agrees with the guard on every generated edit, and goes red when the guard sets aside more.\n(8) The outcome carries the measurement, the verdict changes with ten judged by hand, and each existing case changed on purpose.\n(9) The module, the build guide, the README row and the changelog state the four rows and what a clean reading means, and are true of the code.",
       "files": [
         "plugins/audit/scripts/governance/_floor_guard.py",
         "tests/test__floor_guard.py",
         "PLUGIN-BUILD-GUIDE.md",
         "CHANGELOG.md",
-        "plugins/audit/README.md"
+        "plugins/audit/README.md",
+        "tools/gate-parity.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -3850,16 +3868,34 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T11:23:08Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T11:23:06Z",
+          "text": "it reads the Unreleased heading of CHANGELOG.md; this task rewords the floor-guard entry under that heading and leaves the heading as it is",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T11:23:06Z",
+          "text": "it quotes the README row on the high-risk decision; this task edits only the row on the floor guard and leaves that row as it is",
+          "waives": "tools/prove-gates.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T12:50:03Z.49ad8a",
+        "status": "passed",
+        "at": "2026-11-18T12:50:03Z"
+      }
     },
     {
       "id": "SG1.37-ukq",
@@ -4247,6 +4283,139 @@
         "status": "proved",
         "source": "red-first-helper"
       }
+    },
+    {
+      "id": "SG1.42-ukq",
+      "title": "Green-first states what its two baseline runs showed and names the cause as one of two readings",
+      "status": "pending",
+      "description": "A narrow review of the task that made green-first explain a baseline that is not green by one more run of HEAD's own tree found the status independent of that run under every forced answer, the three answers true on every deterministic input, the run count and the deadline right, and the red verb unchanged. It found one sentence that states more than one extra run can establish; it was run by the reviewer and again by the orchestrator through the real green verb on a git fixture.\n\nMEASURED on the tree as it stands. HEAD holds a test that fails on its first invocation only; the task adds a new passing test file. The baseline run is red in HEAD's flaky test, the extra run is green, and the basis says the command is green at HEAD and stops being green once the declared files are laid - that what is left of the task's new file fails or does not load on HEAD's code. The new file loaded and holds no case after the take-out; the only failure is in a file nothing was laid into, and the basis's own first clause names it. One green run after one red run cannot tell a failure the laid files cause from a command that does not give the same answer twice. The status, could-not-prove, is right. Placement cannot settle it either - a laid file that changes shared state turns an untouched file red every time - so the answer is in the words.\nTwo smaller things in the same sentence: the extra run is described as HEAD's own tree with nothing of the task's laid, while it lays each new declared test file as an empty stub, which matters when the command names such a file by path; and an exception raised inside the extra run aborts the verb instead of leaving the cause unmeasured.\n\nTHE RULE TO BUILD.\n1. TWO OBSERVATIONS, THEN TWO READINGS. When the extra run is green, the basis says what the two runs showed - not green with the declared files laid, with the baseline's own line; green on one run of HEAD's own tree - and then that this has two readings and the runs do not choose between them: what was laid causes the failure, or the command does not give the same answer twice. It names the files something was taken out of as what was laid, and says nothing as fact about which of them fails or does not load beyond what the baseline's own line names.\n2. When the extra run is red, the basis says the command was red on a run of HEAD's own tree as well, with that run's line, and gives the advice to narrow, as today.\n3. THE EXTRA RUN IS DESCRIBED AS IT IS LAID: HEAD's own tree with each new declared test file as an empty stub and nothing else of the task's.\n4. AN EXTRA RUN THAT RAISES leaves the cause unmeasured, with the exception's name, like one that cannot be read or runs past its deadline. The status does not change.\n\nWHAT STAYS. Every status of every earlier probe. The red verb, to the character. The payload's shape and keys. The run count: two for a green baseline, a third only when it is not green.\n\nHOW TO PROVE. Through the real green verb on git fixtures, red before: a test of HEAD's that fails on its first invocation only, with a new passing test file - the basis gives both readings and does not say the new file fails or does not load; the same with the test failing in the extra run too - red on HEAD's own tree, the advice. Through the seam the suite stubs: an extra run that raises gives the not-measured answer with the exception's name, and the status is what it is without it. One case that the description of the extra run names the stubs when a new declared test file exists and does not when none does. The earlier cases for a file that does not load on HEAD's code keep their statuses and now assert the two readings. A mutation probe the orchestrator can run: the cause stated as fact again; the exception left to abort; the stubs left unsaid; and an allow row - the two readings printed for a red extra run turns the red case red.\n\nNOT in this task: running the command more than once to tell the two readings apart; other runners; whether could-not-prove stops a sign-off.\n\nAcceptance:\n(1) A baseline that is not green with a green extra run is said as two observations and two readings, and no sentence states as fact that a laid file fails or does not load beyond what the baseline's own line names.\n(2) A red extra run says the command was red on a run of HEAD's own tree and advises narrowing.\n(3) The extra run is described with the empty stubs it lays.\n(4) An extra run that raises leaves the cause unmeasured and the status unchanged.\n(5) Every status of the earlier probes, the run count and the red verb's output are unchanged.\n(6) The module, the build guide, the changelog and the reference document say what the basis now says and are true of the code.",
+      "files": [
+        "plugins/audit/scripts/governance/stamp-verification.py",
+        "tests/test_stamp_verification.py",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/execute-task.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_stamp_verification.py: through the real green verb, a test of HEAD's that fails on its first invocation only beside a new passing test file is said as two observations and two readings, and the same test failing in the extra run too is said to be red on HEAD's own tree with the advice to narrow",
+          "tests/test_stamp_verification.py: an extra run that raises leaves the cause unmeasured with the exception's name and the status unchanged",
+          "tests/test_stamp_verification.py: the description of the extra run names the empty stubs when a new declared test file exists and not otherwise"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_stamp_verification.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "SG1.43-ukq",
+      "title": "The config hold names the file a session would load, also when the config's folder is a symlink",
+      "status": "pending",
+      "description": "A narrow review of the task that gave the edit guard and the journal one question found every verdict and every word unchanged over a large table of writes, the per-directory case rule right on real volumes, and no crash. It also found a hole that is older than that task and lives in the function it moved; the reviewer ran it and the orchestrator ran it again, the hook as a process over a real repository.\n\nMEASURED on the tree as it stands.\n(a) The project's config folder is a symlink to a directory OUTSIDE the repository and no config exists yet. A subagent writes the config, plainly spelled, with the plan gate switched off. The guard allows it, the journal writes no row, and the loader then reads the switch as off. The same write again, the file now existing, is allowed too. The question which tree a path belongs to places the resolved path outside the project before the config question is asked at all.\n(b) The same with the folder a symlink to a directory INSIDE the project: allowed, where the commit before the task that made the question one of identity held it. The branch for a write that would create the file compares the resolved path of the write with a config path that was never resolved.\nThe documents say the config is matched through a symlink.\n\nTHE RULE TO BUILD. The property, stated as what can be tested by doing: the guard holds a write exactly when, once the write is made, the loader - asked for the project, for the tree the session stands in, or for the tree the path as written lies in - would read the written file as that tree's audit config. Built so:\n1. THE CANDIDATE TREES do not depend on where the path resolves to: the project, the session's tree, the tree the path lies in as written, and the tree it lies in once resolved.\n2. FOR EACH CANDIDATE the write's file and the tree's config are compared resolved against resolved. Where the tree's config exists, by identity, as today. Where it does not, the directory the write would create the file in and the tree's config folder are the same directory by identity once both are resolved, and the name is the config's by that directory's own rule on letter case, as the per-directory rule already says; where the folder itself does not exist, the walk of the previous task applies to the resolved path.\n3. The journal asks the same function, so the row follows.\n\nWHAT STAYS. Every verdict and every word on every write the review's table and the orchestrator's inputs hold today (the brief says where), except the measured inputs, which become holds. A file merely named like the config in a plain folder, an ordinary source file, and a write outside every tree to a file no tree loads are allowed as today. No directory listing on an ordinary write. The fail-mode table. The hook import budget.\nThe disk calls of an ordinary write may rise by what resolving each candidate tree's config path costs and by nothing else; the case that counts them is re-pinned to the new sequence and the outcome carries the count before and after.\n\nHOW TO PROVE. One case that states the property by doing: over a table of arrangements - the config folder a real directory, a symlink inside the project, a symlink outside the repository, a symlink to another tree's config folder, a dangling symlink; the config present and absent; the write spelled through the link and spelled at the link's destination; main session and subagent - the hook's verdict is a hold exactly when, with the write made in the fixture, the loader reads the written content for one of the candidate trees. Red before for (a) and (b), each as the hook run as a process. Allow twins: a write into a symlinked folder that is NOT any tree's config folder; a file beside the config in the symlinked folder under another name. The journal's agreement case gains the symlinked arrangements. A mutation probe the orchestrator can run: the candidates narrowed to the tree the resolved path lies in; the creating comparison put back to an unresolved config path; and an allow row - any write into a symlinked folder held - turns the twins red.\n\nNOT in this task: a symlink FILE in the project that points at the config of a worktree outside it; a hard link to the project's config placed in an outside worktree; the shell route. Each is stated in the documents as not matched.\n\nAcceptance:\n(1) With the config folder a symlink, inside the project or outside the repository, a subagent's write of the config is refused and the main session's is asked, whether or not the config exists yet and whether the write is spelled through the link or at its destination.\n(2) Over the table of arrangements the guard holds a write exactly when the loader would then read the written file for the project, the session's tree or the tree the path lies in.\n(3) The journal writes its config row for each of those writes.\n(4) Every other verdict and word is unchanged, the allow twins are allowed, and an ordinary write lists no directory; the disk calls of an ordinary write are reported before and after.\n(5) SECURITY.md, the README, the changelog and the build guide say what is matched through a symlink and what is not, and are true of the code.\n(6) The hook import budget gate is green and the fail-mode table is unchanged.",
+      "files": [
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/hooks/guard-edits.py",
+        "plugins/audit/hooks/journal-writes.py",
+        "tests/test_guard_edits.py",
+        "tests/test_journal_writes.py",
+        "tests/test__config.py",
+        "SECURITY.md",
+        "plugins/audit/README.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_guard_edits.py: with the config folder a symlink inside the project or outside the repository, the hook run as a process refuses a subagent's write of the config and asks the main session, config present or absent, spelled through the link or at its destination",
+          "tests/test_guard_edits.py: over a table of arrangements the guard holds a write exactly when the loader then reads the written file for the project, the session's tree or the tree the path lies in, and a write into a symlinked folder that is no tree's config folder is allowed",
+          "tests/test_journal_writes.py: the journal writes its config row for a config written through a symlinked folder"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_guard_edits.py tests/test_journal_writes.py tests/test__config.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "SG1.44-ukq",
+      "title": "A config row names the file it recorded, so the trail check does not warn about an edit the journal saw",
+      "status": "pending",
+      "description": "A narrow review of the task that made the journal write a config row for every write the edit guard holds found the guard and the journal in agreement over every write it made, and two false warnings that task introduced in the trail check. Each was run by the reviewer and again by the orchestrator: the hooks as processes, then the trail check.\n\nMEASURED on the tree as it stands. The journal records a config row with its target spelled as the write placed it; the trail check anchors its drift warning on the target's spelling.\n(a) The project's config is written plainly, then through its folder's name in another letter case on a volume that folds case, then plainly again. After the last write the trail check warns that the other-case spelling has changed since the last row that recorded it - an edit the journal never saw - though every one of the three writes has its row. The warning clears only when someone writes through the other spelling again. The doctor prints it as drift from outside: a checkout, a script, a shell write.\n(b) The main session writes the config of a worktree nested under the project; the row goes into the project's trail. A session inside that worktree then edits its own config, recorded in that worktree's own trail - and the project's trail check warns of an edit the journal never saw. After the worktree is removed, the project warns that the file no longer exists and nothing clears it. Before that task there was no warning at any of these steps. Nested worktrees are where agent worktrees live, and removing them is routine.\nThe documents say nothing of either.\n\nTHE RULE TO BUILD.\n1. THE TARGET IS THE FILE, NOT THE SPELLING. When the written file is the audit config of the tree whose trail the row goes into, the row's target is that config's own path as the journal has always written it, whatever spelling, letter case or symlink the write went through. The slot the journal keeps per target follows the same name, so a write through one spelling and the next through another are one file to it.\n2. ANOTHER TREE'S CONFIG IS RECORDED AND IS NOT AN ANCHOR. A write to the config of a tree other than the one whose trail the row goes into is still a config row - the record that this session wrote there - with its target as placed. The trail check does not anchor drift on it: that file's own trail is its own tree's, so its later changes and its removal are not this trail's to warn about. The check decides this from the row and the tree, by the function that answers which file a path names - not from the spelling.\n3. The warning for the tree's own config changed with no row is unchanged, and still fires when the config really is edited behind the journal.\n\nWHAT STAYS. The row's shape and keys; a key may be added, none renamed or removed. The row for the project's own config written plainly, byte for byte apart from time and chain fields. Every other finding and warning of the trail check. The guard.\n\nHOW TO PROVE. The hooks run as processes over a real repository with a nested worktree, then the trail check, red before: the three writes of (a) end with no warning; the three steps of (b) end with no warning at each step. Deny twins that must still warn: the project's own config edited with no hook run (a shell write) after a row; the same after a row recorded through the other-case spelling; the project's own config deleted after a row. One case that the slot follows the file: a write through the other spelling and then a plain one each record the state before as the other left it. A mutation probe the orchestrator can run: the target as placed again for the tree's own config; another tree's row anchored again; and an allow row - no config row anchored at all - turns the deny twins red.\n\nNOT in this task: a write of a nested tree's config through an MCP tool, which leaves no row, as the documents state; the long relative target recorded for a write through an alias of the temp directory.\n\nAcceptance:\n(1) A config row for the trail's own tree names the config's own path whatever spelling or link the write went through, and the per-target slot follows it.\n(2) After writes of the project's config through two spellings the trail check prints no warning.\n(3) A row for another tree's config is recorded and is not a drift anchor: no warning when that tree's own session edits it or when the tree is removed.\n(4) The project's own config edited or deleted behind the journal still warns, also after a row recorded through another spelling.\n(5) The plain row is unchanged apart from time and chain fields, and no key is renamed or removed.\n(6) SECURITY.md, the README, the changelog and the build guide say what a config row's target is and which rows the trail check anchors on, and are true of the code.",
+      "files": [
+        "plugins/audit/hooks/journal-writes.py",
+        "plugins/audit/hooks/_config.py",
+        "plugins/audit/scripts/governance/_journal_io.py",
+        "tests/test_journal_writes.py",
+        "tests/test__journal_io.py",
+        "tests/test__config.py",
+        "SECURITY.md",
+        "plugins/audit/README.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_journal_writes.py: a config row for the trail's own tree names the config's own path through another letter case and through a symlink, and the per-target slot follows the file",
+          "tests/test__journal_io.py: after writes of the project's config through two spellings, after another tree's session edits a nested config the project recorded, and after that tree is removed, the trail check prints no warning",
+          "tests/test__journal_io.py: the project's own config edited or deleted behind the journal still warns, also after a row recorded through another spelling"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_journal_writes.py tests/test__journal_io.py tests/test__config.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "parentBranch": "integration/skill-gates",

@@ -1412,7 +1412,10 @@
       "SG1.38-ukq",
       "SG1.39-ukq",
       "SG1.40-ukq",
-      "SG1.41-ukq"
+      "SG1.41-ukq",
+      "SG1.42-ukq",
+      "SG1.43-ukq",
+      "SG1.44-ukq"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -2087,7 +2090,10 @@
       "SG1.38-ukq",
       "SG1.39-ukq",
       "SG1.40-ukq",
-      "SG1.41-ukq"
+      "SG1.41-ukq",
+      "SG1.42-ukq",
+      "SG1.43-ukq",
+      "SG1.44-ukq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2197,7 +2203,9 @@
       "SG1.23-ukq",
       "SG1.25-ukq",
       "SG1.30-ukq",
-      "SG1.34-ukq"
+      "SG1.34-ukq",
+      "SG1.43-ukq",
+      "SG1.44-ukq"
     ],
     "docs/audit/audit-plan.json": [
       "P2.7",
@@ -2595,7 +2603,9 @@
       "SG1.31-ukq",
       "SG1.34-ukq",
       "SG1.35-ukq",
-      "SG1.36-ukq"
+      "SG1.36-ukq",
+      "SG1.43-ukq",
+      "SG1.44-ukq"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -3230,7 +3240,9 @@
       "P159.2",
       "SG1.5",
       "SG1.23-ukq",
-      "SG1.34-ukq"
+      "SG1.34-ukq",
+      "SG1.43-ukq",
+      "SG1.44-ukq"
     ],
     "plugins/audit/hooks/detect-plan-skip.py": [
       "P1.1",
@@ -3306,7 +3318,8 @@
       "SG1.23-ukq",
       "SG1.25-ukq",
       "SG1.30-ukq",
-      "SG1.34-ukq"
+      "SG1.34-ukq",
+      "SG1.43-ukq"
     ],
     "plugins/audit/hooks/guard-history-rewrite.py": [
       "P29.2",
@@ -3450,7 +3463,9 @@
       "P131.1",
       "P131.2",
       "P142.46-6yq",
-      "SG1.34-ukq"
+      "SG1.34-ukq",
+      "SG1.43-ukq",
+      "SG1.44-ukq"
     ],
     "plugins/audit/hooks/meter-usage.py": [
       "P15.4",
@@ -3631,7 +3646,8 @@
       "SG1.35-ukq",
       "SG1.37-ukq",
       "SG1.38-ukq",
-      "SG1.40-ukq"
+      "SG1.40-ukq",
+      "SG1.42-ukq"
     ],
     "plugins/audit/reference/manifest-conventions.md": [
       "P1.6",
@@ -4572,7 +4588,8 @@
       "P142.1",
       "P142.46-6yq",
       "P143.14-z9j",
-      "P152.6"
+      "P152.6",
+      "SG1.44-ukq"
     ],
     "plugins/audit/scripts/governance/_locks.py": [
       "P22.11",
@@ -5071,7 +5088,8 @@
       "SG1.32-ukq",
       "SG1.37-ukq",
       "SG1.38-ukq",
-      "SG1.40-ukq"
+      "SG1.40-ukq",
+      "SG1.42-ukq"
     ],
     "plugins/audit/scripts/governance/verify-invariants.py": [
       "P55.4",
@@ -8954,7 +8972,8 @@
       "P156.6",
       "P156.8-3st",
       "P159.2",
-      "SG1.25-ukq"
+      "SG1.25-ukq",
+      "SG1.36-ukq"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -12524,7 +12543,9 @@
       "P159.2",
       "SG1.5",
       "SG1.23-ukq",
-      "SG1.34-ukq"
+      "SG1.34-ukq",
+      "SG1.43-ukq",
+      "SG1.44-ukq"
     ],
     "tests/test__config_rules.py": [
       "P131.1",
@@ -12696,7 +12717,8 @@
       "P142.46-6yq",
       "P143.14-z9j",
       "P152.6",
-      "P152.8"
+      "P152.8",
+      "SG1.44-ukq"
     ],
     "tests/test__json_schema.py": [
       "P131.1"
@@ -13407,7 +13429,8 @@
       "SG1.23-ukq",
       "SG1.25-ukq",
       "SG1.30-ukq",
-      "SG1.34-ukq"
+      "SG1.34-ukq",
+      "SG1.43-ukq"
     ],
     "tests/test_guard_history_rewrite.py": [
       "P131.1",
@@ -13462,7 +13485,9 @@
       "P131.1",
       "P109.6",
       "P142.46-6yq",
-      "SG1.34-ukq"
+      "SG1.34-ukq",
+      "SG1.43-ukq",
+      "SG1.44-ukq"
     ],
     "tests/test_manage_worktrees.py": [
       "P131.1",
@@ -13629,7 +13654,8 @@
       "SG1.32-ukq",
       "SG1.37-ukq",
       "SG1.38-ukq",
-      "SG1.40-ukq"
+      "SG1.40-ukq",
+      "SG1.42-ukq"
     ],
     "tests/test_usage_ledger.py": [
       "P131.1",

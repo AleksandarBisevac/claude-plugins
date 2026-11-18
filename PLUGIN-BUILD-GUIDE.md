@@ -5867,9 +5867,10 @@ whose name starts with `TEST_PREFIX`, the prefix unittest and pytest agree on - 
 that defines none outside a function (`_collected_tests`; a helper of that name nested in a cases
 function is collected by no runner), a labelled check, a call of the one callable the base copy's
 labelled calls go to most. A unit is found wherever it stands, inside a loop, a conditional, a `with`, a `try` or
-another function, and compared by `ast.dump` (decorators included, skip reasons blanked, line
-numbers and a leading docstring not), a check also by the name it is called through, together with
-its position, read by pairing rather than by counting. In each part (a body, an else, a handler, a
+another function, and compared by `ast.dump` (decorators included, line numbers not, and nothing
+else left out but what `SET_ASIDE` names, below), a check also by the name it is called through
+and the values its label formats, together with its position, read by pairing rather than by
+counting. In each part (a body, an else, a handler, a
 finally) the statements that are not units form a sequence of tokens: a simple statement's dump, a
 compound one's head (`_head`, built from the node's own fields, so no statement kind is listed). A
 best pairing of two such sequences is a longest common subsequence, and a unit standing after i
@@ -5892,10 +5893,13 @@ listed under `notRead`.
 Compared means the rest is the same and every unit has its twin, each a comparison of syntax trees
 and never of lines. S: with every unit taken out of each copy's tree, what is left (`_rest`) is
 identical - the same statements in the same order, each in the same part of the same enclosing
-statement; a comment, a layout change, a leading docstring or a skip reason is not in the tree read
-and so is never a difference. U: each base unit has one twin in the tree copy with the same own
-syntax, position and, for a check, callee; a tree unit with no twin is new - counted and named in the
-basis, never judged. When U fails it is a finding. When S fails the file is listed under `notRead`
+statement; a comment or a layout change is no syntax and so is never a difference. U: each base
+unit has one twin in the tree copy with the same own syntax, position and, for a check, callee; a
+tree unit with no twin is new - counted and named in the basis, never judged. When U fails it is a
+finding, and one for a unit whose own syntax changed carries `part` (`PARTS`, joined by `+`) and
+says it in its text: for a check what it is called through, its condition and arguments, or its
+label's values; for a test its head or its body - so a reviewer tells an edited condition from an
+edited message. When S fails the file is listed under `notRead`
 as one that could hold a move, and the reason says which of two things the rest is, computed by
 fitting the base copy's rest into the tree copy's in order and in place (`_fit`): only added -
 naming the first added statement at its tree line - or changed or removed - naming the first base
@@ -5905,11 +5909,30 @@ a new helper, import or set-up line makes its file not compared. It leaves every
 place, a duplicate of an existing statement included - one best pairing crosses the unit and
 another does not, and one is enough; a unit moved across a statement, under a new or another block,
 or into a later block whose head reads the same is a finding, moved; and where the rest was changed
-or removed, each unit is still judged against the best pairing of what is there. What the reading
-does not claim: it compares structure and never evaluates code, so a new test or check can itself
-do anything when it runs and is reported as new, not as harmless; and code outside the diff's test
-files - a changed helper module, a conftest in another directory - is read by the other rules or
-not at all.
+or removed, each unit is still judged against the best pairing of what is there.
+
+What is set aside is one table, `SET_ASIDE`, each row naming the function that sets it aside and
+why it cannot change what runs; everything else of both copies is compared, by S for the rest and
+by U for a unit. A label's literal text (`_literal_text_aside`): every expression a label formats is
+compared like the condition, so a check whose literal text alone changed is a rename and one whose
+label values changed is a changed check. The body of a bare new test, or a new labelled check
+(`_new_test_aside`): a new test is a unit only when it has no decorator, default or evaluated
+annotation, is nested in no function, and is under a name no identifier of the base copy spells;
+any other new test stays in the rest, so its file is not compared, only added, naming it - unless
+it is the rename of a base test gone from the tree with the same head and body, whose head is then
+compared with that test's. A docstring holding no example (`_docstring_aside`): one holding a
+doctest prompt in either copy is syntax of the statement holding it. A reason, where the skip's own
+signature calls it one (`_reason_aside`, by `_REASONS`): the literal text of the argument each known
+skip or expected-failure decorator or call documents as its reason, by position or keyword; an
+expected-failure mark's first positional argument is its condition and is compared, and a skip the
+table does not know has nothing set aside. The cost is measured rather than tuned away: a new
+decorated or parametrised test makes its file not compared, and a check whose message gained a
+value is a finding that says so. What the reading does not claim: it is a comparison of structure
+that never evaluates code, so a new test or check can do anything when it runs and is reported as
+new, not as harmless, and an author set on defeating it can; clean means every existing test
+stands where it stood, unchanged, and nothing in a test file but tests was touched. Code outside the
+diff's test files - a changed helper module, a conftest in another directory - is read by the other
+rules or not at all.
 
 A FILE IS COMPARED ONLY WHOLE. Each `notRead` entry carries a `kind`: `could-hold-one` - a binary
 file, a Python test file whose rest is not the same, a test file with no assertion row known - or
@@ -5926,8 +5949,8 @@ only `path::case` makes a change to a test the base held the task's own, returne
 rather than as a finding - and only when exactly one unit of the base copy answers to the case; one
 several units answer to covers none, and the finding says it is ambiguous and what would name the
 unit alone. A non-Python test line is never declared. A test renamed unchanged, a test
-moved unchanged into another file of the diff, a reworded skip reason, a comment or docstring edit
-and a suppression inside a fixture string are no finding. A deleted file and an added file whose
+moved unchanged into another file of the diff, a reworded skip reason, a comment, an edit of a
+docstring holding no example and a suppression inside a fixture string are no finding. A deleted file and an added file whose
 texts git's default would call a rename (`RENAME_SIMILARITY`) are read as one renamed file, so a
 file moved with its new path untracked carries its old marks; `drive-phase.py`'s `floor_diff`
 detects renames in the tracked diff for the move git sees itself. Either way a test file is moved

@@ -19,6 +19,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 import ast
 import collections
+import copy
 import difflib
 import json
 import re
@@ -1019,11 +1020,14 @@ def _labelled(check):
     renamed = HOUSE_SUITE.replace('"h2 zero doubled is zero"', '"h2 zero doubled stays zero"')
     said = HOUSE_SUITE.replace('% (got,), got == 4)', '% (got, 4), got == 4)')
     got = [_run([("tests/test_house.py", HOUSE_SUITE, t)]) for t in (renamed, said)]
-    check("fa27 THE TWIN: a label reworded with its check unchanged, and the "
-          "values a label prints changed, give no finding: %s / %s"
+    check("fa27 THE TWIN: a label reworded with its check unchanged gives no finding; "
+          "the values a label prints changed are a change of the check, naming its "
+          "label's values as the part that differs: %s / %s"
           % (_show(got[0]), _show(got[1])),
-          [(g["answer"], g["findings"], g["notRead"]) for g in got]
-          == [(M.CLEAN, [], [])] * 2)
+          (got[0]["answer"], got[0]["findings"], got[0]["notRead"]) == (M.CLEAN, [], [])
+          and [(f["side"], "h1" in f["what"], f.get("part"))
+               for f in _moves(got[1], M.DEFINITION_CHANGED)] == [("tree", True, "label")]
+          and got[1]["answer"] == M.FINDINGS)
 
     bare = _run([("tests/test_house.py", HOUSE_SUITE, weak)],
                 declared=("tests/test_house.py",))
@@ -1599,6 +1603,15 @@ def _inert_twins(check):
 # above a unit does not move it. A fixed table of edit operators is applied
 # at every statement position of two small fixtures, so the edits and their count
 # are reproducible.
+#
+# The route sets aside what the module's table of things set aside names, and
+# nothing else, each by its own means here: a label's literal text is blanked in
+# a check's dump (`_inv_label`), a new test definition is holed only when it is
+# bare and under a name the base copy holds no identifier of (`_inv_walk`), a
+# docstring holding no doctest prompt is deleted from every dump (`_inv_strip`),
+# and a skip's reason is blanked where that skip's own signature names it
+# (`INV_REASONS`). A guard that set aside anything more reads some generated edit
+# as clean that this route does not.
 
 INV_ROWS = '''import sys
 
@@ -1643,7 +1656,12 @@ def main():
     return _cases(print)
 '''
 
-INV_UNIT = '''import unittest
+INV_UNIT = '''"""The unit fixture.
+
+>>> BASE + 1
+3
+"""
+import unittest
 
 BASE = 2
 
@@ -1669,12 +1687,19 @@ class TestA(unittest.TestCase):
         self.x = 2
 
     def test_one(self):
+        """One.
+
+        >>> 1 + 1
+        2
+        """
         self.assertEqual(self.x, 2)
 
+    @unittest.skipIf(BASE > 5, "only on small bases")
     def test_two(self):
         self.assertTrue(BASE < 3)
 
     def test_three(self):
+        """The helper, plainly."""
         _helper(self, self.x)
 
 
@@ -1698,14 +1723,59 @@ INV_ME = "__inv_me__"
 INV_HOLE_DUMP = ast.dump(ast.parse(INV_HOLE).body[0])
 
 
-def _inv_walk(tree, rows):
+INV_PROMPT = re.compile(r"^[ \t]*>>>", re.M)
+
+# Each skip this route knows, by its dotted spelling: the position and the
+# keyword its own signature gives the reason. A mark's condition comes first.
+INV_REASONS = {"unittest.skip": (0, "reason"), "unittest.skipIf": (1, "reason"),
+               "unittest.skipUnless": (1, "reason"), "pytest.mark.skip": (0, "reason"),
+               "pytest.mark.skipif": (None, "reason"), "pytest.mark.xfail": (None, "reason"),
+               "pytest.skip": (0, "reason"), "pytest.xfail": (0, "reason"),
+               "self.skipTest": (0, "reason"), "unittest.SkipTest": (0, "reason")}
+
+
+def _inv_dotted(node):
+    parts = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    return ".".join([node.id] + parts[::-1]) if isinstance(node, ast.Name) else None
+
+
+def _inv_bare(node):
+    """No decorator, no default, no annotation: nothing evaluated when defined."""
+    a = node.args
+    notes = [x.annotation for x in a.posonlyargs + a.args + a.kwonlyargs] + [
+        x.annotation for x in (a.vararg, a.kwarg) if x is not None]
+    return not (node.decorator_list or a.defaults or any(d is not None for d in a.kw_defaults)
+                or node.returns is not None or any(n is not None for n in notes))
+
+
+def _inv_ids(tree):
+    """Every identifier the copy holds: names bound or read, attributes, args."""
+    out = set()
+    for node in ast.walk(tree):
+        for field in ("id", "name", "attr", "arg", "asname"):
+            value = getattr(node, field, None)
+            if isinstance(value, str):
+                out.add(value)
+        if isinstance(node, ast.alias):
+            out.add(node.name.split(".")[0])
+        if isinstance(node, (ast.Global, ast.Nonlocal)):
+            out.update(node.names)
+    return out
+
+
+def _inv_walk(tree, rows, base=None):
     """(node, name or None, parent body) for every statement outside a unit,
     outermost first, and for every unit - whose inside is not walked. A unit is
     a call of `check` with a string label in a row suite, or a def named with
-    the test prefix in a unittest file, qualified by its classes."""
+    the test prefix in a unittest file, qualified by its classes and nested in
+    no function. With `base` given, a definition the base copy has no unit of
+    is a unit only when it is bare and its name is no identifier of the base."""
     out = []
 
-    def visit(body, cls):
+    def visit(body, cls, in_fn):
         for node in body:
             name = None
             if rows and isinstance(node, ast.Expr) and isinstance(node.value, ast.Call) \
@@ -1715,19 +1785,75 @@ def _inv_walk(tree, rows):
                 label = label.left if isinstance(label, ast.BinOp) else label
                 if isinstance(label, ast.Constant) and isinstance(label.value, str):
                     name = label.value
-            if not rows and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) \
+            if not rows and not in_fn and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) \
                     and node.name.startswith("test"):
                 name = cls + node.name
+                if base is not None and name not in base["units"] \
+                        and not (_inv_bare(node) and node.name not in base["ids"]):
+                    name = None
             out.append((node, name, body))
             if name is not None:
                 continue
             inner = cls + node.name + "." if isinstance(node, ast.ClassDef) else cls
+            fn = in_fn or isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda))
             for field in ("body", "orelse", "finalbody"):
-                visit(getattr(node, field, None) or [], inner)
+                visit(getattr(node, field, None) or [], inner, fn)
             for handler in getattr(node, "handlers", None) or []:
-                visit(handler.body, inner)
-    visit(tree.body, "")
+                visit(handler.body, inner, fn)
+    visit(tree.body, "", False)
     return out
+
+
+class _InvAside(ast.NodeTransformer):
+    """Deletes each docstring holding no prompt and blanks each known skip's
+    reason - two of the table's rows, done here without the module."""
+
+    def _doc(self, node):
+        self.generic_visit(node)
+        body = node.body
+        if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
+                and isinstance(body[0].value.value, str) \
+                and not INV_PROMPT.search(body[0].value.value):
+            node.body = body[1:]
+        return node
+
+    visit_Module = visit_ClassDef = visit_FunctionDef = visit_AsyncFunctionDef = _doc
+
+    def visit_Call(self, node):
+        self.generic_visit(node)
+        spelled = INV_REASONS.get(_inv_dotted(node.func) or "")
+        if spelled is not None:
+            at, word = spelled
+            if at is not None and len(node.args) > at:
+                node.args[at] = ast.Constant(value="")
+            for kw in node.keywords:
+                if kw.arg == word:
+                    kw.value = ast.Constant(value="")
+        return node
+
+
+def _inv_text(node):
+    """`node`, a label, with every piece of its literal text blanked."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return ast.Constant(value="")
+    if isinstance(node, ast.JoinedStr):
+        node.values = [_inv_text(v) if isinstance(v, ast.Constant) else v for v in node.values]
+    elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):
+        node.left = _inv_text(node.left)
+    elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        node.left, node.right = _inv_text(node.left), _inv_text(node.right)
+    elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
+            and node.func.attr == "format":
+        node.func.value = _inv_text(node.func.value)
+    return node
+
+
+def _inv_own(node, rows):
+    """A unit's own dump, the table's rows set aside."""
+    node = _InvAside().visit(copy.deepcopy(node))
+    if rows:
+        node.value.args[0] = _inv_text(node.value.args[0])
+    return ast.dump(node)
 
 
 def _inv_span(node):
@@ -1748,23 +1874,26 @@ def _inv_fill(lines, spans, word):
 
 
 def _inv_dump(lines):
-    dump = ast.dump(ast.parse("".join(lines)))
+    dump = ast.dump(_InvAside().visit(ast.parse("".join(lines))))
     return dump.replace(INV_HOLE_DUMP + ", ", "").replace(", " + INV_HOLE_DUMP, "").replace(
         INV_HOLE_DUMP, "")
 
 
-def _inv_copy(text, rows):
-    """{lines, units: {name: (own dump, position dump, first line)}, holed, rest}."""
+def _inv_copy(text, rows, base=None):
+    """{lines, units: {name: (own dump, position dump, first line)}, holed, rest,
+    ids}; `base`, the base copy's own, decides which new definitions are units."""
     lines = text.splitlines(True)
-    walked = _inv_walk(ast.parse(text), rows)
+    tree = ast.parse(text)
+    walked = _inv_walk(tree, rows, base)
     units = [(node, name) for node, name, _b in walked if name is not None]
     holed = _inv_fill(lines, [_inv_span(n) for n, _nm in units], INV_HOLE)
     found = {}
     for node, name in units:
         marked = _inv_fill(holed, [_inv_span(node)], INV_ME)
-        found[name] = (ast.dump(node), _inv_dump(marked), node.lineno)
+        found[name] = (_inv_own(node, rows), _inv_dump(marked), node.lineno)
     return {"lines": lines, "units": found, "holed": holed, "rest": _inv_dump(holed),
-            "rows": rows, "spans": dict((name, _inv_span(node)) for node, name in units)}
+            "rows": rows, "spans": dict((name, _inv_span(node)) for node, name in units),
+            "ids": _inv_ids(tree)}
 
 
 def _inv_lost(base, tree, gone):
@@ -1891,7 +2020,8 @@ def _inv_edits(text, rows):
     parts = _inv_parts(tree)
     twins = _inv_same_heads(tree, lines)
     unit = ('check("zeta new", 1 == 1)\n',) if rows else (
-        "def test_zeta(self=None):\n", "    self = 1\n")
+        "def test_zeta(self):\n", "    self = 1\n")
+    classes = [n.body for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
     edits = []
     for node, _name, body in _inv_walk(tree, rows):
         first, last = _inv_span(node)
@@ -1899,6 +2029,25 @@ def _inv_edits(text, rows):
 
         def put(at, stmt):
             return lines[:at] + [pad + s for s in stmt] + lines[at:]
+        if not rows:
+            # The base defines `test_one` in the class and `test_four` outside it,
+            # so a definition of the other name here is under a name the base
+            # mentions while being no second definition of a base unit.
+            known = "test_four" if any(body is b for b in classes) else "test_one"
+            edits.append(("a decorator added to a new test",
+                          put(last, ("@staticmethod\n",) + unit)))
+            edits.append(("a default added to a new test",
+                          put(last, ("def test_zeta(self=None):\n", "    self = 1\n"))))
+            edits.append(("a new test under a name the base copy mentions",
+                          put(last, ("def %s(self):\n" % known, "    self = 1\n"))))
+        label = node.value.args[0] if rows and _name is not None else None
+        if isinstance(label, ast.BinOp):
+            at = label.right
+            line = lines[at.lineno - 1]
+            edits.append(("a value inside a label edited",
+                          lines[:at.lineno - 1] + [line[:at.col_offset] + "(%s + 0)"
+                                                   % line[at.col_offset:at.end_col_offset]
+                                                   + line[at.end_col_offset:]] + lines[at.lineno:]))
         edits.append(("an inserted call", put(first - 1, ("sys.exit(0)\n",))))
         edits.append(("an inserted assignment of a call",
                       put(first - 1, ("_q = setattr(sys, 'flags', None)\n",))))
@@ -1925,6 +2074,18 @@ def _inv_edits(text, rows):
             edits.append(("moved between the parts of an if or a try", moved))
         edits.append(("a pure reformat", lines[:first - 1] + [pad + "# reformatted\n", "\n"]
                       + [lines[first - 1].rstrip("\n") + "  # same\n"] + lines[first:]))
+    for op, old, new in (
+            ("a doctest example edited in a unit's docstring",
+             "        >>> 1 + 1\n        2\n", "        >>> 1 + 1\n        3\n"),
+            ("a doctest example deleted from a unit's docstring", "        >>> 1 + 1\n        2\n", ""),
+            ("a doctest example edited in the module's docstring",
+             ">>> BASE + 1\n3\n", ">>> BASE + 1\n4\n"),
+            ("a docstring with no example reworded", '"""The helper, plainly."""',
+             '"""The helper, said plainly."""'),
+            ("a skip reason reworded", '"only on small bases"', '"small bases only"'),
+            ("a skip condition edited", "skipIf(BASE > 5,", "skipIf(BASE > 0,")):
+        if not rows and text.count(old) == 1:
+            edits.append((op, text.replace(old, new).splitlines(True)))
     out, seen = [], set()
     for op, edit in edits:
         joined = "".join(edit)
@@ -1938,7 +2099,7 @@ def _inv_agrees(expect, got, path):
     """Whether the guard's reading `got` is the one `expect` computed."""
     kind, detail = expect
     listed = [n for n in got["notRead"] if n["path"] == path and n.get("kind") == COULD_HOLD]
-    named = sorted(f["what"].split("`")[1] for f in got["findings"])
+    named = sorted((f["what"].split("`") + [""])[1] for f in got["findings"])
     if kind in ("only added", "changed or removed"):
         other = "changed or removed" if kind == "only added" else "only added"
         said = [n["reason"] for n in listed if kind in n["reason"] and other not in n["reason"]]
@@ -1953,6 +2114,21 @@ def _inv_agrees(expect, got, path):
     return (got["answer"], got["findings"], got["notRead"]) == (M.CLEAN, [], [])
 
 
+# Each operator of a table row with the reading the route itself must give it at
+# least once, so a route that set aside nothing, or everything, is seen.
+INV_MUST = (("a value inside a label edited", "findings"),
+            ("a decorator added to a new test", "only added"),
+            ("a default added to a new test", "only added"),
+            ("a new test under a name the base copy mentions", "only added"),
+            ("a new unit after it", "clean"),
+            ("a doctest example edited in a unit's docstring", "findings"),
+            ("a doctest example deleted from a unit's docstring", "findings"),
+            ("a doctest example edited in the module's docstring", "changed or removed"),
+            ("a docstring with no example reworded", "clean"),
+            ("a skip reason reworded", "clean"),
+            ("a skip condition edited", "findings"))
+
+
 def _invariant(check):
     tally = collections.Counter()
     wrong = []
@@ -1962,7 +2138,7 @@ def _invariant(check):
         for op, tree_text in _inv_edits(base_text, rows):
             tally["made"] += 1
             try:
-                expect = _inv_expect(base, _inv_copy(tree_text, rows))
+                expect = _inv_expect(base, _inv_copy(tree_text, rows, base))
             except SyntaxError:
                 tally["unparsed"] += 1
                 continue
@@ -1976,15 +2152,17 @@ def _invariant(check):
                     _show(got), [n.get("reason") for n in got["notRead"]]))
     setup = tally[("a set-up line inserted before it", "only added")]
     rehomed = tally[("moved into another block whose head reads the same", "findings")]
+    missing = [pair for pair in INV_MUST if tally[pair] == 0]
     check("fx4 over %d generated edits (%d not parsing, skipped) the guard agrees with "
-          "the case's own tree comparison - %d only added, %d changed or removed, %d "
-          "with a base unit lost or moved, %d clean; %d set-up lines inserted before a "
-          "statement read as only added, %d units moved into a block whose head reads "
-          "the same read as moved: wrong %d: %s"
+          "the case's own tree comparison, which sets aside the table's rows by its own "
+          "means - %d only added, %d changed or removed, %d with a base unit lost or "
+          "moved, %d clean; %d set-up lines inserted before a statement read as only "
+          "added, %d units moved into a block whose head reads the same read as moved; "
+          "operators that never gave their reading: %r; wrong %d: %s"
           % (tally["made"], tally["unparsed"], tally["only added"],
              tally["changed or removed"], tally["findings"], tally["clean"], setup, rehomed,
-             len(wrong), some_of(wrong, render=repr)),
-          wrong == [] and setup > 0 and rehomed > 0
+             missing, len(wrong), some_of(wrong, render=repr)),
+          wrong == [] and setup > 0 and rehomed > 0 and missing == []
           and all(tally[k] > 0 for k in ("only added", "changed or removed",
                                          "findings", "clean")))
 
@@ -2370,6 +2548,338 @@ def _pairing_allow(check):
           (got["answer"], got["findings"], got["notRead"]) == (M.CLEAN, [], []))
 
 
+# --- what is set aside, and nothing else -----------------------------------------
+# The module keeps one table of what its comparison sets aside: a label's literal
+# text, a bare new test's body, a docstring holding no doctest prompt, and a
+# skip's reason where that skip's own signature calls it one. Each deny input
+# below was measured clean on a real repository through the drive's diff before
+# the table, each an edit confined to one of those kinds after which a failing
+# test passes; each allow input is the honest edit of the same kind.
+
+ROWS_VALUES = '''import sys
+
+FAILED = []
+
+
+def check(label, ok):
+    if not ok:
+        FAILED.append(label)
+
+
+def main():
+    out = 2 + 2
+    check("c1 two", 1 + 1 == 2)
+    check("c2 three", 1 + 2 == 3)
+    check("c3 four %s" % out, out == 5)
+    check(f"c4 got {out}", out == 5)
+    sys.exit(1 if FAILED else 0)
+
+
+main()
+'''
+
+UNIT_HELPER = '''import unittest
+
+
+class TestA(unittest.TestCase):
+    def setUp(self):
+        self.x = 2
+
+    def _verify(self, out):
+        self.assertEqual(out, 3)
+
+    def test_two(self):
+        self._verify(self.x)
+
+    def test_three(self):
+        self.assertNotEqual(self.x, 3)
+
+
+if __name__ == "__main__":
+    unittest.main()
+'''
+
+VECTORS = '''def double(x):
+    return x * 2
+
+
+test_vectors = [(1, 2), (2, 5)]
+
+
+def test_double():
+    for a, b in test_vectors:
+        assert double(a) == b
+'''
+
+DOCTESTED = '''import doctest
+import sys
+
+
+def double(x):
+    """
+    >>> double(2)
+    4
+    >>> double(3)
+    7
+    """
+    return x * 2
+
+
+if __name__ == "__main__":
+    sys.exit(doctest.testmod().failed)
+'''
+
+DOCTESTED_TEST = '''import pytest
+
+
+def test_double():
+    """
+    >>> double(3)
+    7
+    """
+    assert double(2) == 4
+'''
+
+XFAILED = '''import sys
+import pytest
+
+
+@pytest.mark.xfail("sys.version_info < (3,)", strict=True)
+def test_one():
+    assert 1 + 1 == 3
+'''
+
+
+def _said_at(result, path, word, side, text):
+    """The line a could-hold not-compared entry of `path` names on `side`, when its
+    reason holds `word` and `text`; None when there is none."""
+    other = "changed or removed" if word == "only added" else "only added"
+    for n in _not_compared(result, path):
+        found = re.search(r"\b%s line (\d+)" % side, n["reason"])
+        if found and word in n["reason"] and other not in n["reason"] and text in n["reason"]:
+            return int(found.group(1))
+    return None
+
+
+def _aside_deny(check):
+    path = "tests/test_rows.py"
+    seen = []
+    for label, old, new, word in (
+            ("an f-string value rebinding the variable the condition reads",
+             'check(f"c4 got {out}", out == 5)', 'check(f"c4 got {(out := 5)}", out == 5)', "c4"),
+            ("a %-value clearing the failures recorded so far",
+             'check("c3 four %s" % out, out == 5)', 'check("c3 four %s" % FAILED.clear(), '
+                                                    'out == 5)', "c3"),
+            ("a %-value ending the run", 'check("c3 four %s" % out, out == 5)',
+             'check("c3 four %s" % sys.exit(0), out == 5)', "c3"),
+            ("a constant label turned into an f-string carrying a call",
+             'check("c2 three", 1 + 2 == 3)',
+             'check(f"c2 three{FAILED.clear() or \'\'}", 1 + 2 == 3)', "c2")):
+        assert ROWS_VALUES.count(old) == 1, old
+        got = _run([(path, ROWS_VALUES, ROWS_VALUES.replace(old, new))])
+        seen.append((label, got["answer"], _labels_found(got, (word,)), _show(got)))
+    check("fm73 a value inside a label - an f-string value rebinding what the condition "
+          "reads, a %%-value clearing the failures or ending the run, a constant label "
+          "turned into one carrying a call - is a finding naming that check, never "
+          "clean: %r" % (seen,),
+          [s[1:3] for s in seen] == [(M.FINDINGS, [1])] * 4)
+
+    upath, vpath = "tests/test_unit.py", "tests/test_v.py"
+    seen = []
+    for label, cpath, base, old, new, name in (
+            ("a module-level def whose default replaces check, in a row suite", path,
+             ROWS_VALUES, "\n\nmain()\n",
+             "\n\ndef test_z(_=globals().update(check=lambda *a: None)):\n    pass\n\n\nmain()\n",
+             "test_z"),
+            ("a def whose decorator neuters assertEqual", upath, UNIT_HELPER, "\n\nclass TestA",
+             "\n\n@(lambda f: setattr(unittest.TestCase, 'assertEqual', "
+             "lambda *a, **k: None) or f)\ndef test_zz():\n    pass\n\n\nclass TestA", "test_zz"),
+            ("a method whose decorator rebinds an existing test", upath, UNIT_HELPER,
+             "    def test_three(self):",
+             "    @(test_two := (lambda self: None)) and (lambda f: f)\n"
+             "    def test_zz(self):\n        pass\n\n    def test_three(self):", "test_zz"),
+            ("a decorated def under the name of a table a test loops over", vpath, VECTORS,
+             "        assert double(a) == b\n",
+             "        assert double(a) == b\n\n\n@vars\ndef test_vectors():\n"
+             "    \"\"\"The vectors, documented.\"\"\"\n", "test_vectors"),
+            ("a bare def under the name of a table a test loops over", vpath, VECTORS,
+             "        assert double(a) == b\n",
+             "        assert double(a) == b\n\n\ndef test_vectors():\n    pass\n",
+             "test_vectors"),
+            ("a def nested in a helper whose default neuters assertEqual", upath, UNIT_HELPER,
+             "    def _verify(self, out):\n",
+             "    def _verify(self, out):\n        def test_q(_=setattr(self, 'assertEqual', "
+             "lambda *a: None)):\n            pass\n", "test_q")):
+        assert base.count(old) == 1, old
+        tree = base.replace(old, new)
+        got = _run([(cpath, base, tree)])
+        lines = [k + 1 for k, ln in enumerate(tree.splitlines()) if ln not in base.splitlines()]
+        at = _said_at(got, cpath, "only added", "tree", name)
+        seen.append((label, got["answer"], got["findings"], at in lines,
+                     "TestA.%s" % name not in json.dumps(got), _show(got), got["notRead"]))
+    check("fm74 a new test definition that is not bare - a default or a decorator that "
+          "replaces the check, an assertion method or an existing test - or under a name "
+          "the base copy mentions, or nested in a helper, is no new unit: its file is not "
+          "compared, only added, naming it at a line it added, and a nested one is not "
+          "named as a test of the class: %r" % (seen,),
+          [s[1:5] for s in seen] == [(PARTLY_READ, [], True, True)] * 6)
+
+    dpath, tpath = "tests/test_doc.py", "tests/test_pyt.py"
+    edited = _run([(dpath, DOCTESTED, DOCTESTED.replace("    7\n", "    6\n"))])
+    deleted = _run([(dpath, DOCTESTED, DOCTESTED.replace("    >>> double(3)\n    7\n", ""))])
+    unit = _run([(tpath, DOCTESTED_TEST, DOCTESTED_TEST.replace("    7\n", "    6\n"))])
+    check("fm75 a doctest example's expected output edited, or the example deleted, in a "
+          "helper's docstring is code outside the tests changed, named at the docstring; "
+          "in a test's docstring it is a change of that test: %s / %s / %s"
+          % (_show(edited), _show(deleted), _show(unit)),
+          [_said_at(g, dpath, "changed or removed", "base", ">>> double(2)")
+           for g in (edited, deleted)] == [6, 6]
+          and [g["answer"] for g in (edited, deleted)] == [PARTLY_READ] * 2
+          and _labels_found(unit, ("test_double",)) == [1] and unit["answer"] == M.FINDINGS)
+
+    xpath = "tests/test_xf.py"
+    got = _run([(xpath, XFAILED, XFAILED.replace('"sys.version_info < (3,)"', '"True"'))])
+    keyword = XFAILED.replace('"sys.version_info < (3,)", strict=True',
+                              'condition="sys.version_info < (3,)", strict=True')
+    named = _run([(xpath, keyword, keyword.replace('"sys.version_info < (3,)"', '"True"'))])
+    check("fm76 the expected-failure marker's string condition made always true - its "
+          "first positional argument, and its condition keyword - is a change of the test "
+          "it marks, never a reason reworded: %s / %s" % (_show(got), _show(named)),
+          [_labels_found(g, ("test_one",)) for g in (got, named)] == [[1], [1]]
+          and [g["answer"] for g in (got, named)] == [M.FINDINGS] * 2)
+
+    apath = "tests/test_api.py"
+    widened = API_TEST.replace("@pytest.mark.parametrize('a,b', CASES)\ndef test_double(a, b):",
+                               "@pytest.mark.parametrize('a,b', CASES[:1])\n"
+                               "def test_doubles(a, b):")
+    shadowing = API_TEST.replace("def test_double(a, b):", "def test_get(a, b):")
+    got = [_run([(apath, API_TEST, t)]) for t in (widened, shadowing)]
+    check("fm77 a decorated test renamed with its decorator changed, or renamed to a name "
+          "the base copy holds, is no rename: the base test is gone, a finding on its "
+          "base line: %s / %s" % (_show(got[0]), _show(got[1])),
+          [[(f["side"], f.get("part")) for f in _moves(g, M.DEFINITION_CHANGED)
+            if "test_double" in f["what"]] for g in got] == [[("base", "gone")]] * 2
+          and [g["renamed"] for g in got] == [[], []])
+
+
+def _aside_parts(check):
+    path = "tests/test_rows.py"
+    tied = ('def main(check, expect):\n    check("k1 two", 1 + 1 == 2)\n'
+            '    expect("k2 three", 1 + 2 == 3)\n')
+    seen = []
+    for label, cpath, base, old, new, word in (
+            ("a label's value", path, ROWS_VALUES, '"c3 four %s" % out',
+             '"c3 four %s" % FAILED.clear()', "c3"),
+            ("the condition", path, ROWS_VALUES, "1 + 1 == 2)", "1 + 1 == 2 or True)", "c1"),
+            ("a keyword added", path, ROWS_VALUES, "1 + 1 == 2)", "1 + 1 == 2, quiet=True)", "c1"),
+            ("the callee", path, tied, '    expect("k2', '    check("k2', "k2"),
+            ("a test's head", "tests/test_xf.py", XFAILED, '"sys.version_info < (3,)"',
+             '"True"', "test_one"),
+            ("a test's body", "tests/test_pyt.py", DOCTESTED_TEST, "    7\n", "    6\n",
+             "test_double")):
+        assert base.count(old) == 1, old
+        got = _run([(cpath, base, base.replace(old, new))])
+        seen.append((label, [(f.get("part"), f["what"]) for f in _moves(got, M.DEFINITION_CHANGED)
+                             if word in f["what"]]))
+    want = [("label", "its label's values"), ("arguments", "its condition and arguments"),
+            ("arguments", "its condition and arguments"), ("callee", "what it is called through"),
+            ("head", "its head"), ("body", "its body")]
+    table = getattr(M, "SET_ASIDE", ())
+    rows = [(row[0], callable(getattr(M, row[1], None)), bool(row[2])) for row in table]
+    check("fx8 the module states what its comparison sets aside in one table - a label's "
+          "literal text, a bare new test's body, a docstring holding no example, a skip's "
+          "reason - each row naming the function that sets it aside and why it cannot "
+          "change what runs: %r" % (rows,),
+          [r[0] for r in rows] == ["a label's literal text",
+                                   "the body of a bare new test, or a new labelled check",
+                                   "a docstring holding no example",
+                                   "a reason, where the skip's own signature calls it one"]
+          and all(r[1] and r[2] for r in rows))
+
+    check("fx7 a finding for a changed unit names the part that differs, as a fixed word "
+          "in the finding and a phrase in its text - a label's values, the condition and "
+          "arguments, the callee, a test's head, a test's body: %r" % (seen,),
+          [len(s[1]) for s in seen] == [1] * len(want)
+          and [s[1][0][0] for s in seen] == [w for w, _p in want]
+          and all(p in s[1][0][1] for s, (_w, p) in zip(seen, want)))
+
+
+def _aside_allow(check):
+    path = "tests/test_rows.py"
+    seen = []
+    for old, new in (('"c3 four %s" % out', '"c3 is four %s" % out'),
+                     ('f"c4 got {out}"', 'f"c4 now got {out}"'),
+                     ('"c2 three"', '"c2 one and two make three"')):
+        got = _run([(path, ROWS_VALUES, ROWS_VALUES.replace(old, new))])
+        seen.append((old, got["answer"], got["findings"], got["notRead"], len(got["renamed"])))
+    check("fa51 THE TWIN of fm73: a label's literal text reworded around the same values - "
+          "a %%-label, an f-string, a constant - reads clean, listed as renamed: %r" % (seen,),
+          [s[1:] for s in seen] == [(M.CLEAN, [], [], 1)] * 3)
+
+    upath, cpath = "tests/test_unit.py", "tests/test_cart.py"
+    method = UNIT_HELPER.replace("    def test_three(self):",
+                                 "    def test_four(self):\n        self.assertTrue(self.x)\n\n"
+                                 "    def test_three(self):")
+    function = CART_TEST.replace("\n\nclass TestCart:",
+                                 "\n\ndef test_pair():\n    assert total([2, 2]) == 4\n\n\n"
+                                 "class TestCart:")
+    unannotated = CART_TEST + "\n\nasync def test_later():\n    assert total([]) == 0\n"
+    renamed = API_TEST.replace("def test_double(a, b):", "def test_doubles(a, b):")
+    got = [_run([(upath, UNIT_HELPER, method)]), _run([(cpath, CART_TEST, function)]),
+           _run([(cpath, CART_TEST, unannotated)]), _run([("tests/test_api.py", API_TEST, renamed)])]
+    check("fa52 THE TWIN of fm74: a bare new test method, a bare new test function between "
+          "two tests, and a bare new async test function, each under a fresh name, are new "
+          "units and read clean; a decorated test renamed to a fresh name is a rename, its "
+          "head compared with the base test's: %s" % [_show(g) for g in got],
+          [(g["answer"], g["findings"], g["notRead"]) for g in got] == [(M.CLEAN, [], [])] * 4
+          and [len(g["renamed"]) for g in got] == [0, 0, 0, 1])
+
+    module = '"""The cart.\n\nTotals, summed.\n"""\n' + CART_TEST
+    reworded = module.replace("Totals, summed.", "What a cart adds up to.").replace(
+        '"""The sum of the cart."""', '"""What the cart sums to."""')
+    helper = DOCTESTED.replace('    """\n    >>> double(2)\n    4\n    >>> double(3)\n    7\n'
+                               '    """\n', '    """Twice the value."""\n')
+    helper_new = helper.replace("Twice the value.", "The value, doubled.")
+    got = [_run([(cpath, module, reworded)]), _run([("tests/test_doc.py", helper, helper_new)])]
+    check("fa53 THE TWIN of fm75: a docstring holding no example reworded - the module's, "
+          "a test's, a helper's - reads clean: %s / %s" % (_show(got[0]), _show(got[1])),
+          [(g["answer"], g["findings"], g["notRead"]) for g in got] == [(M.CLEAN, [], [])] * 2)
+
+    marks = '''import sys
+import unittest
+
+import pytest
+
+
+@pytest.mark.skip("later")
+def test_a():
+    assert 1
+
+
+@pytest.mark.xfail(sys.platform == "win32", reason="flaky there")
+def test_b():
+    assert 2
+
+
+class TestC(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "linux", "linux only")
+    def test_c(self):
+        self.assertTrue(3)
+
+    @unittest.skip(reason="not yet")
+    def test_d(self):
+        self.assertTrue(4)
+'''
+    reworded = marks.replace('"later"', '"much later"').replace(
+        '"flaky there"', '"flaky on that host"').replace('"linux only"', '"needs linux"').replace(
+        '"not yet"', '"not before the next release"')
+    got = _run([("tests/test_marks.py", marks, reworded)])
+    check("fa54 THE TWIN of fm76: a reason reworded where the skip's own signature calls it "
+          "one - a skip mark's first positional, an expected-failure mark's reason keyword, "
+          "a skipUnless's second positional, a skip's reason keyword - reads clean: %s"
+          % _show(got), (got["answer"], got["findings"], got["notRead"]) == (M.CLEAN, [], []))
+
+
 # The child is killed at DEADLINE; CEILING is what the reading may take inside it.
 # A per-unit recomputation of the pairing turns the reading cubic in a part's
 # length, which is the difference these two numbers are there to show.
@@ -2548,6 +3058,9 @@ def _cases(check):
     _rest_allow(check)
     _pairing_deny(check)
     _pairing_allow(check)
+    _aside_deny(check)
+    _aside_parts(check)
+    _aside_allow(check)
     _time(check)
     _untold(check)
     _shape(check)

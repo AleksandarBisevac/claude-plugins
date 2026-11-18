@@ -1,0 +1,111 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__floor_guard.py": "pass",
+    "python3 tools/sweep-selftests.py --jobs 4 tools/gate-parity.py tests/test__floor_guard.py": "pass",
+    "python3 tools/gate-parity.py --selftest": "pass",
+    "python3 tools/gate-parity.py": "pass",
+    "python3 tools/sweep-selftests.py --jobs 4 tests/test__deps.py tests/test__output_lints.py tests/test__refs.py": "pass",
+    "python3 tools/prove-gates.py --list": "pass",
+    "run-test-gate.py SG1 --task SG1.36-ukq (unrecorded)": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T12:33:30Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__floor_guard.py` in a throwaway tree at HEAD exited 1 with 9 of 152 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fa27 (house FAIL), fx4 (house FAIL), fm73 (house FAIL), fm74 (house FAIL), fm75 (house FAIL), fm76 (house FAIL), fm77 (house FAIL), fx8 (house FAIL) and 1 more: SELFTEST FAILED: 143/152 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "THE TABLE. plugins/audit/scripts/governance/_floor_guard.py now states what the comparison sets aside as data, `SET_ASIDE`, rows of (name, function, reason): 'a label's literal text' (_literal_text_aside: a constant label, the left of a `%`, an f-string's constants; every value a label formats is compared), 'the body of a bare new test, or a new labelled check' (_new_test_aside: a new test definition is a unit only under a name the base copy mentions nowhere as an identifier, with no decorator, no default and no evaluated annotation, and not nested in a function; otherwise its head stays in the rest and the file is listed as not compared, only added), 'a docstring holding no example' (_docstring_aside: a docstring is dropped only when neither copy holds a `>>>` prompt at a line start after optional indentation), 'a reason, where the skip's own signature calls it one' (_reason_aside over the _REASONS table: unittest.skip position 0, skipIf/skipUnless position 1, skipTest position 0, pytest.mark.skip position 0, mark.skipif and mark.xfail keyword `reason` only - xfail's first positional is its condition and is compared -, pytest.skip position 0 or reason=/msg=, pytest.xfail position 0). The old _REASON_FROM/_REASON_KEYWORDS blanking (first positional of every mark) is gone. Nothing else is set aside: comments and layout are no syntax to ast. FIFTH THINGS, each kept inside a row rather than added: reasons of the skip CALLS inside a test (pytest.skip, pytest.xfail, skipTest) are row 4, its text says decorator or call; a non-bare new test stays a unit only as the rename of a gone base test with the same head and body, its head compared (row 2, pinned by fa52 and fm77); base test definitions nested in functions remain units, only NEW nested ones are held out. PART: every definition-changed finding gains a key `part` - a `+`-joined subset of callee/arguments/label/head/body, or `position`, or `gone` - and its text names the part in words (what it is called through, its condition and arguments, its label's values, its head, its body); no existing key was renamed or removed. _statement_text names a decorated def by its def line and a docstring by its first content line. DOCUMENTS: the module docstring (WHAT IS SET ASIDE, WHAT THE READING DOES NOT CLAIM), PLUGIN-BUILD-GUIDE.md's _floor_guard.py section, the plugins/audit/README.md floorGuard.mode row and a CHANGELOG Unreleased/Changed bullet state the four rows and the sentence: a comparison of structure that never evaluates code, so a new test or check can do anything when it runs and an author set on defeating it can; clean means every existing test stands where it stood, unchanged, and nothing in a test file but tests was touched. SCOPE WIDENED: tools/gate-parity.py gained one AUDITED_EXEMPTIONS row, \"SET_ASIDE\": (\"live\", \"tests/test__floor_guard.py fx8\"), with a comment; its derivation of reason-carrying tables found SET_ASIDE and ea1/ea4-ea7 went red without it. fx8 is named because the audit's rule asks for the instrument that READS the rows (name, function defined, reason not empty); fx4 is the behavioural half (the module sets aside only what the rows say) and the comment names it; 'live' because neither judges whether a reason's sentence is true. Proved on copies of the tree: row removed -> ea1, ea4, ea5, ea6, ea7 red naming SET_ASIDE (123/128); row pointed at a made-up case id -> the same five red, ea1 saying \"names case 'fx99' in tests/test__floor_guard.py and no case by that id is there any more\"; control 128/128. Nothing reads AUDITED_EXEMPTIONS but gate-parity.py itself: tools/_suite.py, tools/lints/_output_lints.py and tools/prove-gates.py mention it in comments, and prove-gates' ea1 row mutates CONTRAST_EXEMPTIONS, not this row. TESTS: tests/test__floor_guard.py 152/152 (sweep exit 0); red before the change 143/150 with fa27, fx4, fm73, fm74, fm75, fm76, fx7 failing. EXISTING CASES CHANGED ON PURPOSE: fa27 asserted a label whose values changed gives no finding (values unread); it now asserts a reworded literal label is a clean rename and a changed value is exactly one finding with part `label`, answer findings. fx4: its unit fixture's new unit was `def test_zeta(self=None)` and is now bare, the defaulted form its own operator; INV_UNIT gained a module docstring and a test docstring holding examples, a prose docstring and a skipIf; its own route sets aside the four rows by its own means (own prompt regex, own reason table, own bare/identifier reading); operators added for a label value, a decorator and a default on a new test, a new test under a base-mentioned name, doctest examples edited and deleted in a unit and in the module, a prose docstring, a skip reason and a skip condition; INV_MUST requires each operator to give its reading at least once. PROBES: q1 after - L1-L4, D1-D3, X1 none reads clean; N2-N4 now partly-read (row 2, the probe's CLEAN expectation predates the rule), N5 findings plus not compared, N1 clean (a new check). mine.py, p1, p3_allow, p4: identical before and after. q3_honest: verdict columns identical, only finding wording and timings differ. Mutation probe (15 rows, one removed and one widened per table row, plus rename and part): every row caught, exit 0. MEASUREMENT over this repository's task commits (1041), before -> after: clean 236 -> 236, declared 1 -> 1, findings 308 -> 311, partly-read 496 -> 493. Eight commits changed: three partly-read -> findings (b10ddfddfb, 725b2c6622, 316b40b0b0), five same verdict with added findings (c403486bf2, 1b5a047755, 37af653579, 0cd45d3b64, ed891f8b39); none toward clean. Judged by hand from the diffs, all eight correct: in each a check's label values changed (ru17 differ[:4] -> some_of(...); i31 and gtf4 gained a relative-here value; the drive_phase locale check _output.clip_bytes -> _harness.tail_bytes, part label; dpn1 gained _dpn_scan['basis']; ps1/ps1b/ps1c gained stderr; sp9/sp10 re-valued; hk2a `or \"none\"`); pp14 really left its file. Two unchanged commits judged from the guard's output: e512ae97 partly-read with no findings, 2116541f gs5/gs6 gone, identical rows. Wording observation, not tuned: where a label's literal text AND values both changed, the base check is reported part `gone` rather than `label`, since a rename pairs only checks whose values agree; the verdict is right. TIMING on tests/test_audit_task.py (the largest test file), two runs each under background load: before 2.38-2.67 s, after 2.64-2.98 s. DEPENDANTS: drive-phase.py reads the findings and is unchanged in behaviour (one key added; flr, flr10, flm, wf blocks green); test__filed_returns 146, test__status_facts 199, test_audit_lookup 207, test__panel_settings 83 cases ok; PLUGIN-BUILD-GUIDE.md updated; lint sweep 3/3 files, 792 cases; prove-gates --list exit 0; ruff clean, vermin minimum 3.7. ACCEPTANCE: (1) every measured input of (a)-(d) is a finding or a file not compared - fm73, fm74, fm75, fm76, q1. (2) part word and phrase - fx7, fa27. (3) a non-bare new test or one under a mentioned name leaves its head in the rest, a bare fresh one is a unit - fm74, fa52, fm77. (4) a docstring with a prompt in either copy is compared, one without is not - fm75, fa53. (5) one table of the four rows, nothing else set aside - fx8, fx4, the mutation rows. (6) allow twins clean - fa51, fa52, fa53, fa54. (7) the invariant sets aside the rows by its own means, agrees on every generated edit and goes red when the guard sets aside more - fx4, red under r1d, r2d*, r3d, r4d-cond. (8) measurement, eight changes plus two unchanged judged, cases changed - above. (9) module, guide, README row, changelog state the rows and the clean sentence.",
+    "descriptive": "The floor guard sets aside only a label's literal text, a bare new test's body, a docstring holding no example and a skip's own reason, says so in one table, and names which part of a changed unit differs."
+  },
+  "testsAdded": [
+    "fm73-fm77: label values, new-test decorators/defaults/names/nesting, doctest edits and deletions, xfail conditions and a decorated rename each read as a finding or not compared, never clean",
+    "fx7: a changed unit's finding names its part - label, arguments, callee, head, body",
+    "fa51-fa54: reworded literal labels, bare new tests, prose docstrings and skip reasons read clean",
+    "fx4 extended and fx8: the invariant's own route sets aside exactly the table's rows; the table carries those rows, each with a function and a reason"
+  ],
+  "casesAdded": [
+    [
+      "fm73",
+      "fm74",
+      "fm75",
+      "fm76",
+      "fm77"
+    ],
+    [
+      "fx7"
+    ],
+    [
+      "fa51",
+      "fa52",
+      "fa53",
+      "fa54"
+    ],
+    [
+      "fx4",
+      "fx8"
+    ]
+  ],
+  "claims": "claims:\n  comment-truth: the SET_ASIDE row's comment says fx8 reads name, defined function and non-empty reason - checked against fx8's code (callable(getattr(M,row[1])), bool(row[2])); fx4 named for the behavioural half.\n  check-can-fail: the row proved red on copies (removed -> ea1,ea4-ea7; fx99 -> reported); the suite's new cases were red before the change (143/150); the mutation probe's 15 rows all caught.\n  class-not-instance: what is set aside is one table, and the invariant's own route disagrees if the module sets aside more.\n  rule-has-mechanism: the table is held by fx8 and fx4, and gate-parity's AUDITED_EXEMPTIONS now names it.\n  measured-twice: timing taken in two before/after pairs, spread stated; the commit measurement ran once per side over the same commits.\n  guard-reads-operation: the guard compares ast structure, never the spelling of a command.\n  numbers-in-prose: the documents name the rows and do not count them.",
+  "stamp": "audit-stamp: {\"content\":\"sha256:678a341e6842264b3d9e8b2771213660303604beefec91099934bbe74135efbe\",\"dirtyDigest\":\"sha256:ccb4069c0779566ddd7cf587ec4b173c894aab16fd9ea4c9c1dca20a588fe004\",\"dirtyPaths\":{\"CHANGELOG.md\":\"1b10bd2438308370\",\"PLUGIN-BUILD-GUIDE.md\":\"2924942aea8ae15e\",\"plugins/audit/README.md\":\"88a132e6177c8f36\",\"plugins/audit/scripts/governance/_floor_guard.py\":\"535940f79f93ed24\",\"tests/test__floor_guard.py\":\"ea2adc9174290c54\",\"tools/gate-parity.py\":\"1360370ba4333a71\"},\"head\":\"e512ae97\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/README.md\",\"plugins/audit/scripts/governance/_floor_guard.py\",\"tests/test__floor_guard.py\",\"tools/gate-parity.py\"],\"scopeDigest\":\"sha256:d71454bc20ec6f4d68fb0121054ca49bfbc1cea302fb12daf80a792255bd9e07\",\"v\":2}",
+  "floorGuard": {
+    "answer": "findings",
+    "basis": "1 move(s) that lower the bar across 6 file(s) of the diff; 1 change(s) to tests the task declared by case; 3 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/README.md; 1 file(s) that could hold a move not compared: tests/test__floor_guard.py",
+    "findings": [
+      {
+        "move": "definition-changed",
+        "path": "tests/test__floor_guard.py",
+        "line": 1022,
+        "side": "base",
+        "what": "labelled check `fa27 THE TWIN: a label reworded with its check unchanged, and the v...` is gone from the tree copy"
+      }
+    ],
+    "declared": [
+      {
+        "move": "definition-changed",
+        "path": "tests/test__floor_guard.py",
+        "line": 1979,
+        "side": "base",
+        "what": "labelled check `fx4 over %d generated edits (%d not parsing, skipped) the guard agr...` is gone from the tree copy"
+      }
+    ],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test__floor_guard.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 1646 (`INV_UNIT = '''import unittest`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "e512ae97131ec1ee348cd84bd2895d06d95890e3"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-18T12:33:32Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

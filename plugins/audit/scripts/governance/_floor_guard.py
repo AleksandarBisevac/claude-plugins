@@ -26,9 +26,10 @@ THE MOVES, NAMED IN `MOVES`:
     function, the house's row suites - a labelled check, a call of the one callable the base copy's
     labelled calls go to most. A unit is found wherever it stands - inside a
     loop, a conditional, a `with`, a `try`, another function - and compared by
-    `ast.dump` (line numbers excluded, decorators included, a leading
-    docstring dropped, every skip's reason text blanked), a check also by the
-    name it is called through, together with its POSITION, read by PAIRING:
+    `ast.dump` (line numbers excluded, decorators included, nothing else left
+    out but what WHAT IS SET ASIDE names), a check also by the name it is
+    called through and the values its label formats, together with its
+    POSITION, read by PAIRING:
     in each part (a body, an else, a handler, a finally) the statements that
     are not units are a sequence of tokens - a simple statement's syntax, a
     compound one's head (an `if`'s test, a `for`'s target and iterable, a
@@ -88,12 +89,18 @@ file of the diff is compared only when both of these hold, each a comparison of
 syntax trees and never of lines. S, THE REST IS THE SAME: with every unit taken
 out of each copy's tree, what is left is identical - the same statements, in
 the same order, each in the same part of the same enclosing statement (`_rest`);
-a comment, a blank line, a layout change, a leading docstring or a skip reason
-is not in what is compared, so it is never a difference. U, EVERY EXISTING UNIT
-IS STILL THERE AND STILL THE SAME: each unit of the base copy has one twin in
-the tree copy with the same own syntax, the same position and, for a check, the
-same callee. A unit of the tree copy with no twin is NEW: counted and named in
-the basis, and not judged. When U fails for a unit it is a finding; when S
+a comment, a blank line or a layout change is no syntax, so it is never a
+difference, and of what is syntax only WHAT IS SET ASIDE is left out. U, EVERY
+EXISTING UNIT IS STILL THERE AND STILL THE SAME: each unit of the base copy has
+one twin in the tree copy with the same own syntax, the same position and, for
+a check, the same callee. A unit of the tree copy with no twin is NEW: counted
+and named in the basis, and not judged - and a test definition is a new unit
+only when it is bare (WHAT IS SET ASIDE). A finding for a unit whose own
+syntax changed carries `part`, the fixed words of `PARTS` joined by `+`, and
+says them in its text: for a check what it is called through, its condition
+and arguments, or its label's values; for a test its head or its body.
+"position" is the part of a unit that moved, "gone" of one with no twin.
+When U fails for a unit it is a finding; when S
 fails the file is listed as not compared, and its reason says which of two
 things the rest is, computed by fitting the base copy's rest into the tree
 copy's in order and in place (`_fit`): ONLY ADDED, naming the first added
@@ -108,9 +115,37 @@ or another block, or into a later block whose head reads the same is a
 finding, moved; and where the rest was changed or removed, each unit is still
 judged against the best pairing of what is there.
 
-WHAT THE READING DOES NOT CLAIM. It compares structure and never evaluates
-code. A new test or a new check can itself do anything when it runs, and the
-reading says new, not harmless. Code outside the test files of the diff - a
+WHAT IS SET ASIDE. The comparison reads all of both copies but what the table
+`SET_ASIDE` names, one row per thing with the function that sets it aside and
+why it cannot change what runs:
+  * A LABEL'S LITERAL TEXT. A check's own syntax is all of it but the constant
+    text of its label; every expression the label formats is compared like
+    the condition. A check whose literal text alone changed is a rename; one
+    whose label values changed is a changed check, `part` "label".
+  * THE BODY OF A BARE NEW TEST, OR A NEW LABELLED CHECK. A new test is a unit
+    only when it is bare - no decorator, no default, no evaluated annotation -
+    nested in no function, and under a name no identifier of the base copy
+    spells (a string is no identifier); only then is it set aside, with what it
+    runs. Any other new test is no unit: it stays in the rest, so its file is
+    not compared, only added, naming it - unless it is the rename of a base
+    test gone from the tree with the same head and body, whose head is then
+    compared with that test's.
+  * A DOCSTRING HOLDING NO EXAMPLE. A docstring is set aside only when neither
+    copy's text of it holds a doctest prompt; one that does is syntax of the
+    statement holding it, a unit's (`part` "body") or the rest's.
+  * A REASON, WHERE THE SKIP'S OWN SIGNATURE CALLS IT ONE. For each skip and
+    expected-failure decorator or call `_REASONS` knows, the literal text of
+    the argument its signature documents as the reason, by position or by
+    keyword; every other argument is compared, and an expected-failure mark's
+    first positional argument is its condition. A skip `_REASONS` does not
+    know has nothing set aside.
+
+WHAT THE READING DOES NOT CLAIM. It is a comparison of structure that never
+evaluates code, so a new test or a new check can do anything when it runs - the
+reading says new, not harmless - and an author set on defeating it can, for
+one by code that reads a label's or a docstring's text back as a value. Clean
+means every existing test stands where it stood, unchanged, and nothing in a
+test file but tests was touched. Code outside the test files of the diff - a
 changed helper module, a conftest in another directory - is read by the other
 rules of this module or not at all.
 
@@ -828,22 +863,25 @@ def _scope_of(spans, line):
 # wrapped in `if False:`, moved into a function nothing calls, put under a loop
 # over a table that was cut, inside a `try` whose handler swallows it, or moved
 # past a statement; a skip widened on a class is a change to every test under
-# it. A skip's reason text is no part of any comparison, so a reason reworded is
-# no change.
+# it. What the comparison sets aside is `SET_ASIDE` below, and nothing else.
 
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
-
-# A skip call's reason: its string arguments from this position on, and these
-# keywords. `skipif`'s first argument is a condition, so it is kept.
-_REASON_FROM = {"skip": 0, "skipTest": 0, "xfail": 0, "skipIf": 1, "skipUnless": 1,
-                "skipif": 1}
-_REASON_KEYWORDS = ("reason", "msg")
 
 
 def _callee(func):
     if isinstance(func, ast.Attribute):
         return func.attr
     return func.id if isinstance(func, ast.Name) else None
+
+
+def _dotted(func):
+    """`pytest.mark.skip` for the callable a call names, or None for one that is
+    not a chain of names."""
+    parts = []
+    while isinstance(func, ast.Attribute):
+        parts.append(func.attr)
+        func = func.value
+    return ".".join([func.id] + parts[::-1]) if isinstance(func, ast.Name) else None
 
 
 def _is_text(node):
@@ -854,23 +892,173 @@ def _is_docstring(node):
     return isinstance(node, ast.Expr) and _is_text(node.value)
 
 
-def _parse_test(text):
-    """A Python test file's AST with every skip call's reason text blanked, so
-    no comparison of it sees a reason. The blanking is done in place on the
-    tree this function has just parsed, never on one a caller holds: a copy of
-    each definition would cost a deep recursion per node, which a long
-    expression in a test turns into a crash."""
-    tree = ast.parse(text)
+# --- what the comparison sets aside -----------------------------------------------
+# The comparison reads both copies whole, by S for the rest and by U for a unit,
+# except for what `SET_ASIDE` names - one row each, its function, and why it
+# cannot change what runs. Layout, comments and blank lines are no syntax, so no
+# row; anything else that is syntax is compared.
+
+# A doctest prompt: three characters at the start of a docstring line, after
+# optional indentation.
+_PROMPT = re.compile(r"^[ \t]*>>>", re.M)
+
+# Each skip and expected-failure decorator or call this reading knows, by the
+# dotted name it is called through (`*.` any receiver): the position its own
+# signature gives the reason, or None for a keyword-only one, and the reason's
+# keywords. An expected-failure MARK takes its condition first.
+_REASONS = (
+    ("unittest.skip", 0, ("reason",)), ("skip", 0, ("reason",)),
+    ("unittest.skipIf", 1, ("reason",)), ("skipIf", 1, ("reason",)),
+    ("unittest.skipUnless", 1, ("reason",)), ("skipUnless", 1, ("reason",)),
+    ("*.skipTest", 0, ("reason",)),
+    ("pytest.mark.skip", 0, ("reason",)), ("mark.skip", 0, ("reason",)),
+    ("pytest.mark.skipif", None, ("reason",)), ("mark.skipif", None, ("reason",)),
+    ("pytest.mark.xfail", None, ("reason",)), ("mark.xfail", None, ("reason",)),
+    ("pytest.skip", 0, ("reason", "msg")), ("pytest.xfail", 0, ("reason",)),
+)
+
+
+def _reason_of(call):
+    """(position, keywords) of `call`'s reason by `_REASONS`, or None."""
+    spelled = _dotted(call.func)
+    if spelled is None:
+        return None
+    for name, at, words in _REASONS:
+        if spelled == name or name.startswith("*.") and spelled.endswith(name[1:]):
+            return at, words
+    return None
+
+
+def _literal_text_aside(node):
+    """`node` - a label, or a reason - as a new node with its literal text
+    blanked: a constant string, a `%` format's constant text, an f-string's
+    constant pieces. Every expression it formats is kept, so it is compared."""
+    if _is_text(node):
+        return ast.Constant(value="")
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod) and _is_text(node.left):
+        return ast.BinOp(left=ast.Constant(value=""), op=node.op, right=node.right)
+    if isinstance(node, ast.JoinedStr):
+        return ast.JoinedStr(values=[ast.Constant(value="") if _is_text(v) else v
+                                     for v in node.values])
+    return node
+
+
+def _reason_aside(tree):
+    """Blanks, in place, the literal text of every reason `_REASONS` names in
+    `tree` - done on the tree `_parse_test` has just parsed, never on one a
+    caller holds: a copy of each definition would cost a deep recursion per
+    node, which a long expression in a test turns into a crash."""
     for sub in ast.walk(tree):
-        first = _REASON_FROM.get(_callee(sub.func)) if isinstance(sub, ast.Call) else None
-        if first is None:
+        spec = _reason_of(sub) if isinstance(sub, ast.Call) else None
+        if spec is None:
             continue
-        sub.args = [ast.Constant(value="") if k >= first and _is_text(a) else a
-                    for k, a in enumerate(sub.args)]
+        at, words = spec
+        if at is not None and len(sub.args) > at:
+            sub.args[at] = _literal_text_aside(sub.args[at])
         for kw in sub.keywords:
-            if kw.arg in _REASON_KEYWORDS and _is_text(kw.value):
-                kw.value = ast.Constant(value="")
+            if kw.arg in words:
+                kw.value = _literal_text_aside(kw.value)
     return tree
+
+
+def _docstring_aside(node):
+    """Whether `node`, the first statement of a module, class or function body,
+    is a docstring set aside: one holding no doctest prompt in this copy. A
+    docstring holding one in either copy is then compared - the copy with the
+    prompt keeps it, so the two differ unless both hold the same text."""
+    return _is_docstring(node) and not _PROMPT.search(node.value.value)
+
+
+def _bare(node, lazy):
+    """Whether a definition evaluates nothing when it is defined: no decorator,
+    no default, no type parameter, and no annotation unless the copy's
+    annotations are never evaluated (`lazy`)."""
+    a = node.args
+    notes = [x.annotation for x in a.posonlyargs + a.args + a.kwonlyargs
+             + [v for v in (a.vararg, a.kwarg) if v is not None]] + [node.returns]
+    return not (node.decorator_list or a.defaults or any(d is not None for d in a.kw_defaults)
+                or getattr(node, "type_params", None)
+                or not lazy and any(n is not None for n in notes))
+
+
+def _new_test_aside(base_ast, tree_ast, base_records):
+    """The tree copy's records of a file read by its definitions, with each
+    test new to the tree a unit - its body set aside, nothing of it judged -
+    only when it is bare, nested in no function, and under a name no identifier
+    of the base copy spells. A test is new when the base copy has no unit of
+    its name and count (`_test_units`), so a second definition under an
+    existing name is new too. One that is not bare stays a unit only as the
+    rename of a base test gone from the tree with the same head and body, so
+    `_compare_definitions` judges its head against that test's. Any other new
+    test is no unit: it stays in the rest, so its file is not compared, only
+    added, naming it - and the copy is walked again, since a definition put
+    back may hold another."""
+    base_defs, names = _test_units(base_records), _identifiers(base_ast)
+    lazy, held = _lazy_annotations(tree_ast), set()
+
+    def key(node, prefix):
+        return None if id(node) in held else _test_key(node, prefix)
+    while True:
+        records = _statements(tree_ast, key)
+        tree_defs = _test_units(records)
+        nested = dict((id(r["node"]), r["nested"]) for r in records)
+        renames = set(_own_dump(e[0], anonymous=True) for k, e in base_defs.items()
+                      if k not in tree_defs)
+        more = set(id(e[0]) for k, e in tree_defs.items() if k not in base_defs and (
+            nested[id(e[0])] or e[0].name in names
+            or not _bare(e[0], lazy) and _own_dump(e[0], anonymous=True) not in renames))
+        if not more:
+            return records
+        held |= more
+
+
+# (what is set aside, the function that sets it aside, why it cannot change what
+# runs). Each reason holds for code that only runs these things; code that reads
+# a label's or a docstring's text back as a value is not followed, which is the
+# reading's stated limit, not a row.
+SET_ASIDE = (
+    ("a label's literal text", "_literal_text_aside",
+     "the text a check prints when it fails; every value the label formats is "
+     "evaluated, so it is compared"),
+    ("the body of a bare new test, or a new labelled check", "_new_test_aside",
+     "nothing of it runs before it runs as the new case it is: a bare new test "
+     "evaluates nothing when it is defined and binds a name the base copy spells "
+     "nowhere; what a new case does when it runs is not judged (see WHAT THE "
+     "READING DOES NOT CLAIM)"),
+    ("a docstring holding no example", "_docstring_aside",
+     "a string no runner executes; a docstring holding a doctest prompt in either "
+     "copy is executed by doctest, so it is compared"),
+    ("a reason, where the skip's own signature calls it one", "_reason_aside",
+     "the text a skip reports; whether and when the skip applies is in its other "
+     "arguments, which are compared"),
+)
+
+
+def _lazy_annotations(tree):
+    return any(isinstance(n, ast.ImportFrom) and n.module == "__future__"
+               and any(a.name == "annotations" for a in n.names) for n in tree.body)
+
+
+def _identifiers(tree):
+    """Every identifier `tree` spells - a name bound or read, an attribute, an
+    argument, an import - and no string."""
+    out = set()
+    for node in ast.walk(tree):
+        for field in ("id", "name", "attr", "arg", "asname"):
+            value = getattr(node, field, None)
+            if isinstance(value, str):
+                out.update(value.split("."))
+        if isinstance(node, (ast.Global, ast.Nonlocal)):
+            out.update(node.names)
+        if isinstance(node, ast.ImportFrom) and node.module:
+            out.update(node.module.split("."))
+    return out
+
+
+def _parse_test(text):
+    """A Python test file's AST with every skip's reason text blanked
+    (`_reason_aside`), so no comparison of it sees a reason."""
+    return _reason_aside(ast.parse(text))
 
 
 def _is_pytestmark(node):
@@ -934,21 +1122,23 @@ def _statements(tree, unit_key):
     while its POSITION in its own file is read by pairing (`_judge`); `parent`,
     the index of the record whose part holds it (None at
     module level), and `part`, which part; `unit`, its key when
-    `unit_key(node, prefix)` names one, whose inside is not walked; `first`
-    and `last`, its lines, decorators counted in; `end`, the index just past
-    its last descendant. A leading docstring is no statement here, as a comment
+    `unit_key(node, prefix)` names one, whose inside is not walked; `nested`,
+    whether a function encloses it; `first` and `last`, its lines, decorators
+    counted in; `end`, the index just past its last descendant. A leading
+    docstring set aside (`_docstring_aside`) is no statement here, as a comment
     is none - the same reading `_own_dump` gives a unit."""
     out = []
 
-    def walk(body, chain, where, prefix, parent, part):
+    def walk(body, chain, where, prefix, parent, part, nested):
         chain = chain + _marks_of(body)
         before = 0
         for k, node in enumerate(body):
-            if k == 0 and where != "block" and _is_docstring(node):
+            if k == 0 and where != "block" and _docstring_aside(node):
                 continue
             rec = {"node": node, "chain": chain, "place": chain + (("before", before),),
                    "parent": parent, "part": part, "unit": unit_key(node, prefix),
-                   "first": _first_line(node), "last": node.end_lineno or node.lineno}
+                   "nested": nested, "first": _first_line(node),
+                   "last": node.end_lineno or node.lineno}
             here = len(out)
             out.append(rec)
             if rec["unit"] is None:
@@ -956,13 +1146,13 @@ def _statements(tree, unit_key):
                 for pos, stmts in _bodies(node):
                     inner = chain + ((_head(node), pos),)
                     if isinstance(node, _FUNCTIONS):
-                        walk(stmts, inner, "function", prefix, here, pos)
+                        walk(stmts, inner, "function", prefix, here, pos, True)
                     elif isinstance(node, ast.ClassDef):
-                        walk(stmts, inner, "class", prefix + node.name + ".", here, pos)
+                        walk(stmts, inner, "class", prefix + node.name + ".", here, pos, nested)
                     else:
-                        walk(stmts, inner, "block", prefix, here, pos)
+                        walk(stmts, inner, "block", prefix, here, pos, nested)
             rec["end"] = len(out)
-    walk(tree.body, (), "module", "", None, None)
+    walk(tree.body, (), "module", "", None, None, False)
     return out
 
 
@@ -1173,7 +1363,7 @@ def _judge(base, tree, pairs):
 
 def _dump(entry, anonymous=False):
     """One definition as the comparison reads it: `ast.dump` without line
-    numbers, leading docstring or skip reasons, followed by its position;
+    numbers or what `SET_ASIDE` names, followed by its position;
     `anonymous` also drops its name, to recognise a rename."""
     node, place = entry[:2]
     return "%s %r" % (_own_dump(node, anonymous), place)
@@ -1205,11 +1395,35 @@ def _own_dump(node, anonymous=False):
     if not isinstance(node, _FUNCTIONS):
         return ast.dump(node)
     clone = copy.copy(node)
-    if clone.body and _is_docstring(clone.body[0]):
+    if clone.body and _docstring_aside(clone.body[0]):
         clone.body = clone.body[1:]
     if anonymous:
         clone.name = ""
     return ast.dump(clone)
+
+
+# The part of a changed unit that differs, as the finding's `part` names it, and
+# the words its text says it with.
+PARTS = (("callee", "what it is called through"), ("arguments", "its condition and arguments"),
+         ("label", "its label's values"), ("head", "its head"), ("body", "its body"))
+
+
+def _def_parts(node):
+    """(head, body) of a test definition as the comparison reads them: its
+    decorators, name, arguments and annotations; its statements."""
+    clone = copy.copy(node)
+    body = clone.body[1:] if clone.body and _docstring_aside(clone.body[0]) else clone.body
+    clone.body = []
+    return ast.dump(clone), "".join(ast.dump(s) for s in body)
+
+
+def _differs(words, base, tree):
+    """(part, text) for a changed unit: each of `words` whose reading differs
+    between the base's `base` and the tree's `tree`, joined by `+`, and the
+    phrase saying so."""
+    said = dict(PARTS)
+    hit = [w for w, b, t in zip(words, base, tree) if b != t]
+    return "+".join(hit), " and ".join(said[w] for w in hit)
 
 
 def _test_units(records):
@@ -1226,9 +1440,10 @@ def _test_units(records):
 
 
 def _compare_definitions(base_records, tree_records, new):
-    """(changed, renamed, fresh). `changed` holds (unit, what, line, side, sign)
-    - `unit` is ("def", name), `sign` is set on a definition that is gone, so
-    one that reappears unchanged in another file of the diff is a move;
+    """(changed, renamed, fresh). `changed` holds (unit, what, line, side, sign,
+    part) - `unit` is ("def", name), `sign` is set on a definition that is gone,
+    so one that reappears unchanged in another file of the diff is a move, and
+    `part` says what differs (`PARTS`, or "position" or "gone");
     `renamed` holds {path, from, to, line}; `fresh` holds (sign, name, line)
     for each test new to the tree copy. A rename keeps the body AND the
     position, and so does a move to another file - read there by the count of
@@ -1248,17 +1463,20 @@ def _compare_definitions(base_records, tree_records, new):
         if key in tree_defs:
             twin = tree_defs[key]
             if _own_dump(entry[0]) != _own_dump(twin[0]):
-                changed.append((("def", qual), "definition `%s` differs from its base copy"
-                                % qual, twin[0].lineno, "tree", None))
+                part, said = _differs(("head", "body"), _def_parts(entry[0]),
+                                      _def_parts(twin[0]))
+                changed.append((("def", qual), "definition `%s` differs from its base copy "
+                                "in %s" % (qual, said), twin[0].lineno, "tree", None, part))
             elif not kept[(entry[2], twin[2])]:
                 changed.append((("def", qual), _moved_what(
                     "definition", qual, (entry[0].lineno, entry[1]),
-                    (twin[0].lineno, twin[1])), twin[0].lineno, "tree", None))
+                    (twin[0].lineno, twin[1])), twin[0].lineno, "tree", None, "position"))
             continue
         twin = next((k for k in sorted(fresh) if named.get((entry[2], fresh[k][2]))), None)
         if twin is None:
             changed.append((("def", qual), "definition `%s` is gone from the tree copy" % qual,
-                            entry[0].lineno, "base", ("def", _dump(entry, anonymous=True))))
+                            entry[0].lineno, "base", ("def", _dump(entry, anonymous=True)),
+                            "gone"))
         else:
             renamed.append({"path": new, "from": qual, "to": twin[0],
                             "line": fresh.pop(twin)[0].lineno})
@@ -1272,11 +1490,11 @@ def _compare_definitions(base_records, tree_records, new):
 # f-string format whose text is constant) are its cases, each named by that
 # label. The callable is the one most such call statements of the BASE copy go
 # to, so a check the tree calls through another name is a check gone. Checks
-# are compared by label, callee, arguments and position: a label that is gone
-# is a removed case, one whose other arguments changed is a changed case, one
-# whose position changed has moved; the values a label prints are not
-# compared. A check whose label changed and whose callee, arguments and
-# position did not is a rename.
+# are compared by label, callee, arguments, the values the label formats and
+# position: a label that is gone is a removed case, one whose callee, other
+# arguments or label values changed is a changed case, one whose position
+# changed has moved. Only the label's literal text is set aside
+# (`_literal_text_aside`): a check whose literal text alone changed is a rename.
 
 def _label_of(call):
     if not call.args:
@@ -1323,16 +1541,22 @@ def _check_key(callables):
 
 def _checks(records):
     """[(label, signature, place, line, record index)] for each labelled check of
-    `records`; the signature is the name it is called through and its other
-    arguments."""
+    `records`; the signature is (the name it is called through, its other
+    arguments, its label with the literal text set aside) - the order of
+    `_CHECK_PARTS`."""
     out = []
     for k, rec in enumerate(records):
         if rec["unit"] is not None:
             call = rec["node"].value
-            sign = "|".join([ast.dump(call.func)] + [ast.dump(a) for a in call.args[1:]]
-                            + [ast.dump(kw) for kw in call.keywords])
+            sign = (ast.dump(call.func),
+                    "|".join([ast.dump(a) for a in call.args[1:]]
+                             + [ast.dump(kw) for kw in call.keywords]),
+                    ast.dump(_literal_text_aside(call.args[0])))
             out.append((rec["unit"], sign, rec["place"], rec["node"].lineno, k))
     return out
+
+
+_CHECK_PARTS = ("callee", "arguments", "label")
 
 
 def _alike(base_checks, tree_checks, key):
@@ -1380,12 +1604,14 @@ def _compare_checks(base_records, tree_records, new):
     still = _judge(base, tree, _alike(base_left, tree_left, lambda c: c[1]))
     named, gone = _take(base_left, tree_left, lambda b, t: still.get((b[4], t[4]), False))
     changed = [(("check", b[0]), _moved_what("labelled check", _short(b[0]), (b[3], b[2]),
-                                             (t[3], t[2])), t[3], "tree", None)
+                                             (t[3], t[2])), t[3], "tree", None, "position")
                for b, t in moved]
-    changed += [(("check", b[0]), "labelled check `%s` differs from its base copy"
-                 % (_short(b[0]),), t[3], "tree", None) for b, t in edited]
+    for b, t in edited:
+        part, said = _differs(_CHECK_PARTS, b[1], t[1])
+        changed.append((("check", b[0]), "labelled check `%s` differs from its base copy in %s"
+                        % (_short(b[0]), said), t[3], "tree", None, part))
     changed += [(("check", b[0]), "labelled check `%s` is gone from the tree copy"
-                 % (_short(b[0]),), b[3], "base", ("check",) + b[:3]) for b in gone]
+                 % (_short(b[0]),), b[3], "base", ("check",) + b[:3], "gone") for b in gone]
     renamed = [{"path": new, "from": b[0], "to": t[0], "line": t[3]} for b, t in named]
     return (sorted(changed, key=lambda c: (c[3], c[2])), renamed,
             [(("check",) + t[:3], t[0], t[3]) for t in tree_left])
@@ -1402,8 +1628,8 @@ def _short(text, width=70):
 #      is identical: the same statements, in the same order, each in the same
 #      part of the same enclosing statement. A compound statement is read by its
 #      head (`_head`) and then its parts, any other by its dump, so a comment, a
-#      blank line, a layout change, a leading docstring or a skip reason is no
-#      difference.
+#      blank line or a layout change is no difference, and of what is syntax
+#      only what `SET_ASIDE` names is left out.
 #   U. EVERY BASE UNIT HAS ITS TWIN in the tree copy, with the same own syntax
 #      and the same position - compared in the two sections above.
 # When S fails the file is listed as not compared, and the reason says which of
@@ -1489,9 +1715,17 @@ def _added(base_items, tree_items):
 
 
 def _statement_text(lines, rec):
-    """The first source line of a statement, stripped and shortened."""
-    first = rec["first"]
-    return _short(lines[first - 1].strip()) if 0 < first <= len(lines) else ""
+    """The first source line of a statement, stripped and shortened - and for a
+    decorated definition, whose first line is a decorator, the name it defines."""
+    first, node = rec["first"], rec["node"]
+    text = _short(lines[first - 1].strip()) if 0 < first <= len(lines) else ""
+    if _is_docstring(node) and not text.strip("\"'rRuUbB"):
+        said = [ln.strip() for ln in node.value.value.splitlines() if ln.strip()]
+        text = _short("%s %s" % (text, said[0] if said else ""))
+    if getattr(node, "decorator_list", None) and isinstance(node, _FUNCTIONS + (ast.ClassDef,)):
+        text = "%s ... %s %s" % (text, "class" if isinstance(node, ast.ClassDef) else "def",
+                                 node.name)
+    return text
 
 
 def _rest_reason(base, tree, held):
@@ -1762,16 +1996,19 @@ def _python_test(out, rec, base, tree, index):
     callables = (None if has_tests else
                  _check_callables([base_ast]) or _check_callables([tree_ast]))
     unit_key = _test_key if has_tests else _check_key(callables)
-    base_records, tree_records = _statements(base_ast, unit_key), _statements(tree_ast, unit_key)
+    base_records = _statements(base_ast, unit_key)
+    tree_records = (_new_test_aside(base_ast, tree_ast, base_records) if has_tests
+                    else _statements(tree_ast, unit_key))
     changed, out["renamed"], out["fresh"] = (
         _compare_definitions(base_records, tree_records, path) if has_tests
         else _compare_checks(base_records, tree_records, path))
     base_units = [("def" if has_tests else "check", r["unit"]) for r in base_records
                   if r["unit"] is not None]
-    for unit, what, line, side, sign in changed:
+    for unit, what, line, side, sign, part in changed:
         covered, note = _declaration(index, paths, unit, base_units)
         found = _finding(DEFINITION_CHANGED, path if side == "tree" else rec["old"],
                          line, side, what if note is None else "%s - %s" % (what, note))
+        found["part"] = part
         if covered:
             out["declared"].append(found)
             continue
