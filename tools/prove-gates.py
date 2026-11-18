@@ -587,6 +587,13 @@ TABLE = (
   "                if why is not None and why.strip():",
   "                if why is not None:",
   DEP, "gb4"),
+ # ...and its argv reader, dropping the words it cannot read: a `--` followed
+ # only by a name, a starred list or a list added on then reads as a bare
+ # trailing `--`, which is no listing, and `gb8` holds those spellings as
+ # listings the lint must name.
+ ("git_path_base_violations", L + "_deps.py", "replace",
+  "        else:\n            out.append(None)\n    return out\n",
+  "    return out\n", DEP, "gb8"),
  # The whole mechanism, crippled the same way. A comment or a document citing
  # the private register is a claim nobody can check on the far side of it, and
  # a version reporting nothing reads exactly like a tree with no citations left
@@ -922,7 +929,7 @@ TABLE = (
  # never observed, before the rule under test had anything to report.
  #
  # THIS READ IS RESOLVED, where that one is not: `pointer` is a local assigned
- # straight from `_ev.write_pointer(...)`, so the scan traces it to that
+ # straight from `_ev.write_record(...)`, so the scan traces it to that
  # producer's own key set. Asking it for a key nothing writes is the shape only
  # the rule under test, through `dk2b`, catches; no producer's key set moves, so
  # the floor case stays exactly where it was.
@@ -1194,6 +1201,13 @@ ALLOW = (
   "                if why is not None and why.strip():\n"
   "                    continue\n",
   "", DEP, "gb3"),
+ # ...and its pathspec reading, widened back to any `--`: a bare trailing `--`
+ # hands git no path and only keeps a revision from being read as one, yet it
+ # would be convicted, and `gb9` reads `_commit_trail.task_verdicts`, the real
+ # reader that ends its argv so with no exemption row.
+ ("git_path_base_violations", L + "_deps.py", "replace",
+  "    if \"--\" in tail and tail.index(\"--\") < len(tail) - 1:\n",
+  "    if \"--\" in tail:\n", DEP, "gb9"),
  # `_output.py` is exempt from this rule BY NAME, and `pp10`'s fixture is the
  # ordinary compliant file. Counting one preamble too many is the smallest
  # plausible off-by-one, and it convicts every correctly-bootstrapped file.

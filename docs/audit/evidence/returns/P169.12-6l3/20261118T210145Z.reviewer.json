@@ -1,0 +1,15 @@
+{
+ "findings": [],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Task asked for two rows copied from the P169.2 executor return (red row mutating the argv reader so a word after `--` is no longer collected, expected gb8; allow row widening the pathspec condition back to any `--`, expected gb9). The diff adds exactly those two tuples, byte-identical to the PROVE-GATES paragraph of docs/audit/evidence/returns/P169.2/20261118T182730Z.executor.json, in the RED table after gb4 and the ALLOW table after gb3, plus the dk2b comment word write_pointer -> write_record. The claim describes the diff: 1 file, 15 insertions, 1 deletion; nothing else in the tables moved. dk2b comment checked against code: run-test-gate.py:5648 reads `pointer = _ev.write_record(...)` and :5666 `pointer.get(\"releaseRefused\")`; _evidence_io.write_record documents `{written, reason, path, releaseRefused}` (2768) and returns releaseRefused (2834), so the comment is now true. Both anchors occur exactly once in tools/lints/_deps.py in the member tree (red: lines 2139-2141; allow: line 2168). Dependants: only two tuples appended and a comment word changed, so the executor's per-dependant answers hold. Executor did not run the task gate itself and says so; the brief records a passed gate run (2026-11-18T21:13:48Z.ef1076).",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "tests.add is empty and the task adds proving rows, not test cases (executor's own basis: tests.mode gate-only, expectRedFirst false). I independently checked each row's red below.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "Gate command read: `python3 tools/sweep-selftests.py tools/prove-gates.py tests/test__deps.py`. I read the cases this task's rows depend on, tests/test__deps.py gb1, gb8, gb9 (via their printed output under mutation) and watched each go red under the mutation it guards; I did not read the other cases of that file or any of prove-gates's own suite, so none-found is scoped to the gb cases."
+ },
+ "verdict": "clean",
+ "tasks": []
+}

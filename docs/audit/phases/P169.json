@@ -103,35 +103,40 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/_evidence_io.py:2764-2831 (write_record); tests/test__evidence_io.py lr4,lr5",
         "issue": "contradicts task clause \"the recorder takes the phase lock with a bounded wait behind any verb's write\" and acceptance 4 (\"a verb's write and a background record write, interleaved in both orders, both land\"). write_record takes `phase-<id>`, but every audit-task.py verb reads and writes the shard under the INDEX lock (`_under_lock` -> `_panel_write.acquire_index_lock`, LOCK_NAME \"index\" at _panel_write.py:392); the only `phase-<id>` holders are `start`'s claim and the drive's phase run. So a verb's read-modify-write and the recorder's are not mutually exclusive. Probe in a scratch copy: index lock held by a stand-in verb, write_record returned written=True after 0.02s without waiting, then the verb's write from its earlier read left the shard with neither lastRun nor testEvidence (and the reverse order loses the verb's write, e.g. a `done`). lr4 passes only because its stand-in verb takes `phase-P1`, which no real verb does; lr5 (\"the other order\") asserts only what the test's own read-modify-write does and goes red only when lr4's landing is missing (M1 and M2 each reddened it as a knock-on). CHANGELOG, manifest-conventions.md and PLUGIN-BUILD-GUIDE.md repeat the claim (\"so neither write loses the other's key\"). The old pointer write had the same exposure; what is new is the claim, and that the shard now holds the only copy of the record and of the stages.",
-        "resolution": "Make the recorder's write exclude the verbs: take the index lock as well as the phase lock (one fixed order, checked against `start`, which takes `phase-<id>` while a verb holds the index lock), or have the verbs' shard writes take the phase lock. Re-aim lr4 so the stand-in verb takes the lock real verbs take (drive a real `audit-task.py note` against the same project), and either give lr5 a product assertion or drop it. Until then, correct the three documents so they promise what is true: a wait behind `phase-<id>` holders only."
+        "resolution": "Make the recorder's write exclude the verbs: take the index lock as well as the phase lock (one fixed order, checked against `start`, which takes `phase-<id>` while a verb holds the index lock), or have the verbs' shard writes take the phase lock. Re-aim lr4 so the stand-in verb takes the lock real verbs take (drive a real `audit-task.py note` against the same project), and either give lr5 a product assertion or drop it. Until then, correct the three documents so they promise what is true: a wait behind `phase-<id>` holders only.",
+        "fixTask": "P169.15-6l3"
       },
       {
         "id": "P169-R12",
         "severity": "med",
         "file": "plugins/audit/scripts/governance/_evidence_io.py:2677-2712 (run_record, `source`); plugins/audit/scripts/governance/run-test-gate.py:5697-5724 (_run_record_of); plugins/audit/schema/audit-plan.schema.json (lastRun.startedAt)",
         "issue": "The repeated-verdict arm has no case, and it fails silent. Deleting the copy (`steps = []` for the `source` branch) left test__evidence_io 361/361 and test_run_test_gate 699/699 green (M6, both suites run in a scratch copy): every lr case runs with `--no-reuse`, and no case passes `source=` to run_record. The clause \"a copied step carries its source's verdict fields forward, so ... no older record is needed to read it\" is therefore shown by nothing. The source is read only from the ledger row (`row_by_run`); when that row is not there - the day the later task stops writing rows, or a rotated ledger - the record is `steps: []` with `verdictSource: reused` and no marker that its steps are unavailable (probe: run_record(reused_row, source=None) -> steps []). Separately, the record keeps the read-back's own startedAt and durationMs (probe: durationMs 120, startedAt of the repeat) while the schema says startedAt is \"absent on a run that repeated another's verdict, which measured nothing\", and nothing on the record separates those figures from a measurement except `verdictSource`.",
-        "resolution": "Add a gate-level case (reuse on, second run) and a run_record(source=...) case asserting the copied steps, their per-step reusedFrom and the absence of per-step durationMs; take the source from the subject's previous `lastRun` when the ledger row is gone, and say `stepsUnavailable` (or equivalent) when neither is there rather than writing an empty list. For a repeated run either omit startedAt/durationMs/selectionMs from the record or state in the schema that they are the read-back's own."
+        "resolution": "Add a gate-level case (reuse on, second run) and a run_record(source=...) case asserting the copied steps, their per-step reusedFrom and the absence of per-step durationMs; take the source from the subject's previous `lastRun` when the ledger row is gone, and say `stepsUnavailable` (or equivalent) when neither is there rather than writing an empty list. For a repeated run either omit startedAt/durationMs/selectionMs from the record or state in the schema that they are the read-back's own.",
+        "fixTask": "P169.15-6l3"
       },
       {
         "id": "P169-R13",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_evidence_io.py:3554-3600 (reconcile); plugins/audit/scripts/governance/_evidence_io.py:2512-2575 (write_pointer); plugins/audit/reference/manifest-conventions.md:~190",
         "issue": "Two writers of one key can leave `testEvidence` naming a run other than `lastRun`, against the doc's \"the two always name one run\" and COMPATIBILITY's \"runId, status and at in it are the values testEvidence caches\". reconcile takes the ledger row when it is stamped after the record (the run whose record write was refused, exit 3) and calls write_pointer, which moves only the pointer; lastRun keeps the older run. Also write_pointer still reads the shard BEFORE it takes the lock (read_json at 2542, acquire at 2553, save at 2567), so a reconcile racing a recorder saves its stale body over the recorder's lastRun and timing stages. The task's clause says reconcile does to lastRun what it does to testEvidence.",
-        "resolution": "In reconcile, when the ledger row wins, also write `run_record(row)` so the pair stays one run, or soften the two sentences to \"names one run except after a refused record write, until the next recorded run\". Read the shard under the lock in write_pointer, as write_record now does (share `_holders`)."
+        "resolution": "In reconcile, when the ledger row wins, also write `run_record(row)` so the pair stays one run, or soften the two sentences to \"names one run except after a refused record write, until the next recorded run\". Read the shard under the lock in write_pointer, as write_record now does (share `_holders`).",
+        "fixTask": "P169.15-6l3"
       },
       {
         "id": "P169-R14",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-test-gate.py:172-179 and 6499-6500",
         "issue": "Stale text contradicts the new behaviour: the `--record` help reads \"a green run whose row could not be stored exits 3 (0 passed, 1 failed, 2 usage, 3 passed but unrecorded)\" and the E_UNRECORDED comment says \"the gate is green and the record the caller asked for does not exist\"; a red run now exits 3 as well (lr6), and `unrecorded_line` says so. A pre-push or CI step reading `--help` is told that 1 is always the work's failure.",
-        "resolution": "Reword both to \"a run (green or red) whose row or whose record in the plan could not be stored exits 3\"."
+        "resolution": "Reword both to \"a run (green or red) whose row or whose record in the plan could not be stored exits 3\".",
+        "fixTask": "P169.15-6l3"
       },
       {
         "id": "P169-R15",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_evidence_io.py:2788-2796 (write_record, hint passed to lock_state)",
         "issue": "A stale phase lock is refused at once, with no wait (probe: dead holder, wait=5, returned in 0.00s), so every recorded gate of that phase exits 3 until a human runs `audit-lock --takeover`; that is the designed rule, but the sentence it prints is garbled by the hint: \"...use audit-lock --takeover, then nothing was written to the plan\". It names no repair, and the gate's own closing line says \"re-run once the phase lock is free\" for a run that may have taken minutes.",
-        "resolution": "Pass a hint that names the repair (\"then re-run this gate; nothing was written to the plan\") so both the stale and the held sentences read, and say in `unrecorded_line` that the ledger row stands, so `--reconcile` is not mistaken for the repair of a missing record."
+        "resolution": "Pass a hint that names the repair (\"then re-run this gate; nothing was written to the plan\") so both the stale and the held sentences read, and say in `unrecorded_line` that the ledger row stands, so `--reconcile` is not mistaken for the repair of a missing record.",
+        "fixTask": "P169.15-6l3"
       }
     ],
     "outcome": "[findings: 15 - 0 high, 5 med, 10 low; 0 with a recorded fix commit]"
@@ -498,7 +503,7 @@
     {
       "id": "P169.3",
       "title": "The newest run of a task or a phase is one record in its own shard, written by the gate under the phase lock",
-      "status": "in_progress",
+      "status": "done",
       "description": "Add the record that will replace the ledger row, beside the row, changing no reader yet. After a recorded run (run-test-gate.py --record, task or phase scope) the subject in its shard carries `lastRun`: the run's id, moments and durations (startedAt, durationMs, selectionMs), status and failed list, verdictSource and reusedFrom, the reuse key, the gate digest and source, leftToPhaseGate, the tested state (head, dirty, tree key), the banners and the machine and attribution lines, and per step: name, exit, ran, outcome, failing lines up to the existing cap, the measured duration when measured here, and reusedFrom when copied. A copied step carries its source's verdict fields forward, so the record is the newest measurement of each current step and no older record is needed to read it. `testEvidence` stays the three-key pointer and is written from the record in the same write. Replace, never append.\n\nThe write. Today the pointer write is skipped when the phase lock is held, because the ledger row stands anyway. A record that is the only copy cannot be skipped: the recorder takes the phase lock with a bounded wait behind any verb's write, and a record it still could not write is exit 3 naming the log path. Never exit 0 or 1 without the record. A verb that rewrites a task (move, reopen, group sign-off's copy of a carrier's pointer, reconcile) does to `lastRun` what it does to `testEvidence`.\n\nThe launch. `--launch <token>` is stored on the record, so a caller that started the run in the background can find the record of exactly that run.\n\nTime. The recorder appends the gate and the selection stage to the task's `timing` itself, in the same locked write, from the same figures, citing the run by id; today the drive queues them in its own state from the ledger row. The stage survives the record's replacement.\n\nACCEPTANCE (each a case).\n1. After five recorded runs of one gate a subject holds exactly one `lastRun`, its runId is the last one printed, and the shard is no larger than after the first run.\n2. Exit 0 or 1 implies the shard's record names the printed runId and status; a lock that stays held past the wait is exit 3 naming the log, and the shard is unchanged.\n3. `testEvidence` equals the pointer derived from `lastRun`; delete the pointer and reconcile restores it from the record.\n4. A verb's write and a background record write, interleaved in both orders, both land: neither field is lost.\n5. A recorded run changes no byte inside the content identity: the reuse key is the same before and after, and the set of paths the run modified (git status in a fixture) is exactly what recorded_paths names.\n6. The record's size is bounded by the gate's width: failing lines per step at the existing cap, steps no more than declared plus derived. Print the measured bytes for this repository's own task gate in the outcome.\n7. The schema accepts `lastRun` on a task and on a phase, a plan without it validates unchanged, and a one-file plan and a per-phase plan both carry it.\n8. A machine path in a failing line reads scrubbed, as every string the shard write passes does, and the verdict fields are untouched.\n9. The evidence row is still written, byte for byte as before, with the same runId as the record.\n\nDEPENDANTS to answer for by name: every reader of a task or phase object that copies, renders or validates its keys - validate-manifest.py and _manifest_rules.py, _manifest_io's split and join, audit-task.py's verbs named above, render-report.py and the panel's composition (an unknown key must not be rendered as content), tools/demo/gen-demo-manifest.py and the committed examples, tools/check-committed-pii.py (the record holds a head and failing lines), tools/check-example-ledgers.py, and drive-phase.py's timing queue (queue_row, row_stages, stage_args): once the recorder writes the stages, the drive must not write them a second time.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -547,14 +552,21 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1638013d32a9",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "THE WHOLE RECORD OF P169.3 (attempt 2; it replaces attempt 1's filing). WHAT THE TREE HOLDS. (a) The record. `_evidence_io`: RECORD_KEY `lastRun`. run_record builds the record from a row: runId, startedAt, durationMs, selectionMs, status, failed, verdictSource, reusedFrom, reuse key, gate digest, gateSource, leftToPhaseGate, banners, testedState {head, dirtyDigest, treeKey}, the machine and attribution lines, and launch. Each step keeps name, exit, ran, outcome, failing lines cut at MAX_FAILING, durationMs only when measured here, and reusedFrom when copied. A REUSED row copies its source's steps forward; steps are cut at MAX_STEPS with stepsDropped. Also pointer_from_record and record_stages. write_record takes the phase lock with a bounded wait (RECORD_WAIT_SECONDS), reads the shard UNDER the lock, and writes lastRun, testEvidence and the task's gate+selection timing stages in one save_plan_json. It releases the lock only if it took it, then writes the testEvidence journal row. subject_records reads every record; reconcile restores a pointer from the record when the ledger holds no newer row. The redaction report (_mio.report_redactions) sits directly beside each save in write_pointer and write_record. Attempt 1 had moved it into the shared journal-row helper, which turned tests/test__manifest_io.py ex6 red; ex6 is now green. (b) run-test-gate --record builds the record (_run_record_of) and calls write_record. A record that is not written prints `record: NOT written - this run is only in <ledger file>` and exits 3 on a green AND a red run, at every exit site (verdict, all-left, empty gate, --json). New --launch TOKEN is stored on the record. (c) _task_timing: whole_ms, stamp_less, run_stages, append_run_stages (once per kind+runId). drive-phase: row_stages delegates to run_stages; queue_row queues only the wait stage for a gate run, because the recorder appends gate and selection; it still says whose stage a repeated verdict's is, read off the stages built. (d) audit-task group sign-off copies the carrier's lastRun, or one built from its row, to each member with gradedBy. (e) Schema: $defs/lastRun, referenced from phase and task. _manifest_vocab: `lastRun` beside `testEvidence` in KNOWN_PHASE and KNOWN_TASK; the module holds no other key rule (no order, derived-class, carry or doc table; test__help_lints compares the same sets with the schema). (f) Demo generator. CORRECTION: attempt 1 said gen-demo-manifest and the committed examples were unaffected; that was WRONG. tests/test_gen_demo_manifest.py went red on the schema-coverage case, and this attempt fixes it. _stamp_pointers now writes each subject's lastRun through run_record and derives the pointer from it (`_recorded`). The rows now carry every field the demo honestly has a value for, each by the recorder's own derivation: gateSource (`_manifest_io.gate_entries`' answer, which the demo used to discard), gateDigest (`_evidence_io.gate_digest`), banners (`_banners_of`, compared with the real run-test-gate verdict_banners over every run by a new case), and startedAt (the run's stamp less its steps' length, through `_task_timing.stamp_less`). SCHEMA_EXEMPTIONS gains one row with its own reason for each field the demo has no honest value for: selectionMs (no selection is timed), verdictSource (absent means measured, and every demo run is one), reusedFrom (no repeated verdict), reuseKey (nothing runs the demo again), leftToPhaseGate (phaseGateOnly is not set), machine and attribution (nothing printed them), launch, gradedBy (no group sign-off) and stepsDropped (no gate past MAX_STEPS). New cases in test_gen_demo_manifest: the banners match the real function, with both arms present; every stamped subject carries run_record's record of its newest row with the derived pointer and the gate's source and digest; and the record pass agrees with the write pass. Mutations in a scratch copy: banners never produced -> that case red (139/140); a record naming another run -> the record case red (139/140); both restored. (g) Docs: COMPATIBILITY.md section 1 says lastRun is additive and does not change where a verdict is read from: a done task's commit trailers (section 3) first, else testEvidence; lastRun is the run the pointer names. Also CHANGELOG (Unreleased Added + Changed), manifest-conventions.md and PLUGIN-BUILD-GUIDE.md; the module map was regenerated (`python3 tools/lints/_deps.py --write-map`). COMMITTED ARTIFACTS: `python3 tools/check-example-ledgers.py` exit 0. `python3 tools/check-rendered-artifacts.py --before-commit` exit 1: '1 committed artifact(s) no longer match their source', namely docs/demo-large.html. The report's evidence detail now prints each run's gate source ('gate: this task's own tests.gate'); a scratch render diff showed only those gate lines and the generated stamp. The page is outside my files, so I did not re-render it. HANDED BACK, the checker's own recipe (it also prints a FOLLOWER-OWED line for it): d=$(mktemp -d); python3 tools/demo/gen-demo-manifest.py \"$d\" --phases 40 --tasks 5; python3 tools/demo/gen-demo-usage.py \"$d/audit-plan.json\"; CLAUDE_PROJECT_DIR=$d python3 plugins/audit/scripts/report/render-report.py \"$d/audit-plan.json\" --out-dir \"$d\"; cp \"$d/demo-large.html\" docs/demo-large.html. The other two committed artifacts match, and examples/acme-store is not this generator's output. GATES on the final tree: declared gate `python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__evidence_io.py tests/test__task_timing.py tests/test_drive_phase.py tests/test_audit_task.py` exit 0, 5/5 files, 3389 cases. `python3 tools/sweep-selftests.py tests/test_gen_demo_manifest.py tests/test__manifest_vocab.py tests/test__manifest_io.py tests/test__deps.py tests/test__output_lints.py tests/test__refs.py` exit 0, 6/6 files, 1163 cases; g1 is green, so the module map is current. ruff and vermin -t=3.8- are clean on the changed .py files. pgo7 did not fail. RED-FIRST: watched by hand before the fix. test__task_timing raised AttributeError on run_stages; the evidence lr block was 0/8; the gate lr block 1/6 (lr3 is the second-direction case, green at base by design); drive tm1c failed (10/11); mv68 is red with lastRun dropped from KNOWN_TASK (64/69). The helper's one 480 s deadline cannot hold two runs of the declared gate on this host: attempt 1's fix run got the 16 s HEAD's run left ('the run timed out after 16 s and its process group was torn down', stamp-verification.py's _run_in, each stage getting what the earlier ones left). So the helper runs a narrowed command that carries casesAdded[0..2] plus mv68 and the demo cases: `python3 tools/sweep-selftests.py tests/test__task_timing.py tests/test__evidence_io.py tests/test_run_test_gate.py tests/test__manifest_vocab.py tests/test_gen_demo_manifest.py`. tm1c (casesAdded[3]) is outside it; its red above was watched by hand. OTHER MUTATIONS, each in a scratch copy and restored: shard read before the lock -> lr4, lr5 red; wait=0 -> lr4, lr5 red; no dedupe -> tt25 red; record_failed ignoring the record -> gate lr6 red; the drive's gate filter removed -> tm1c, tm5, tm6 red. The prove-gates dk2b row still fires: `pointer` is now assigned from write_record, and the mutation gives a finding at run-test-gate.py:5666. Its stale comment is left for the task owning tools/prove-gates.py. MEASURED ONCE: record bytes for this repo's own task gate, json.dumps(run_record(row), indent=2) over real ledger rows. P169.2's one-step run 6275 bytes against its row's 14103; P169.1's two-step run 995; repeated-verdict runs 547-550; lr7's synthetic over-wide row 32364 against its bound of 49120. DEPENDANTS: validate-manifest and _manifest_rules (the schema accepts lastRun at both levels, lr9; the unknown-key check knows it, mv68); _manifest_io split/join (one-file and per-phase plans carry it, lr9); audit-task verbs (move carries the task whole, reopen drops no evidence key, sign-off copies it, gse2b); render-report and the panel (a marked lastRun in an example render appears in neither the html nor the md while a marked title does; the panel reads testEvidence by name); gen-demo-manifest and the committed examples (above); check-committed-pii (record strings pass the shard's machine-path scrub, lr8); check-example-ledgers (exit 0); the drive's timing queue (tm1c, tm3, tm11, tm12, rd10 green).",
+        "descriptive": "Every recorded gate run now leaves one lastRun record in its shard, written under the phase lock with its pointer and timing stages; an unwritable record exits 3. The vocabulary and the demo know the record too, and the demo carries a real one. One committed demo page must be re-rendered."
       },
       "startedAt": "2026-11-18T20:03:59Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T21:00:10Z",
+      "verifiedBy": [
+        "test_run_test_gate lr1-lr6: one lastRun after five runs with a non-growing shard, the pointer derived from it, the evidence row unchanged under the same runId, the content identity untouched, --launch stored, exit 3 on green and red past the lock wait",
+        "test__evidence_io lr1-lr9: pointer from record, reconcile restoring from the record, interleaved writes in both orders, a held lock leaving the shard unchanged, the size bound, scrubbing, one-file and per-phase layouts, and the schema at both levels",
+        "test__task_timing tt23-tt27: run_stages and append_run_stages",
+        "test_drive_phase tm1c: each gate stage once, citing the recorder (tm3, tm11, tm12 adjusted; gse2b in test_audit_task)",
+        "test__manifest_vocab mv68: a plan carrying lastRun validates with no unknown-key warning; the misspelt twin is warned at both levels",
+        "test_gen_demo_manifest: the demo's banners match the real verdict_banners with both arms present; every stamped subject carries run_record's record of its newest row, its derived pointer and the gate's source and digest, and both passes agree"
+      ],
       "notes": [
         {
           "at": "2026-11-18T17:39:26Z",
@@ -602,7 +614,118 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T19:40:33Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 2485000,
+            "startedAt": "2026-11-18T18:59:08Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T20:03:39Z.5e96fb",
+            "kind": "wait",
+            "ms": 0,
+            "startedAt": "2026-11-18T19:58:06Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T20:03:39Z.5e96fb, ending at its startedAt",
+            "kind": "selection",
+            "ms": 22824,
+            "runId": "2026-11-18T20:03:39Z.5e96fb",
+            "startedAt": "2026-11-18T19:58:06Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T20:03:39Z.5e96fb",
+            "kind": "gate",
+            "ms": 309736,
+            "runId": "2026-11-18T20:03:39Z.5e96fb",
+            "startedAt": "2026-11-18T19:58:29Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T20:03:56Z.db4415",
+            "kind": "wait",
+            "ms": 13000,
+            "startedAt": "2026-11-18T20:03:41Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T20:03:56Z.db4415",
+            "kind": "base",
+            "ms": 1940,
+            "runId": "2026-11-18T20:03:56Z.db4415",
+            "startedAt": "2026-11-18T20:03:54Z"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T20:17:49Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 826000,
+            "startedAt": "2026-11-18T20:04:03Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T20:28:44Z.5b3a2e",
+            "kind": "wait",
+            "ms": 1000,
+            "startedAt": "2026-11-18T20:20:06Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T20:28:44Z.5b3a2e, ending at its startedAt",
+            "kind": "selection",
+            "ms": 31239,
+            "runId": "2026-11-18T20:28:44Z.5b3a2e",
+            "startedAt": "2026-11-18T20:20:07Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T20:28:44Z.5b3a2e",
+            "kind": "gate",
+            "ms": 485426,
+            "runId": "2026-11-18T20:28:44Z.5b3a2e",
+            "startedAt": "2026-11-18T20:20:39Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T20:28:54Z.b009e0",
+            "kind": "wait",
+            "ms": 3000,
+            "startedAt": "2026-11-18T20:28:46Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T20:28:54Z.b009e0",
+            "kind": "base",
+            "ms": 4978,
+            "runId": "2026-11-18T20:28:54Z.b009e0",
+            "startedAt": "2026-11-18T20:28:49Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T20:35:39Z.669fe1",
+            "kind": "wait",
+            "ms": 1000,
+            "startedAt": "2026-11-18T20:29:53Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T20:35:39Z.669fe1, ending at its startedAt",
+            "kind": "selection",
+            "ms": 27596,
+            "runId": "2026-11-18T20:35:39Z.669fe1",
+            "startedAt": "2026-11-18T20:29:54Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T20:35:39Z.669fe1",
+            "kind": "gate",
+            "ms": 316802,
+            "runId": "2026-11-18T20:35:39Z.669fe1",
+            "startedAt": "2026-11-18T20:30:22Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-18T20:59:14Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 994000,
+            "startedAt": "2026-11-18T20:42:40Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 1638013d32a9",
+            "kind": "commit",
+            "ms": 1945,
+            "startedAt": "2026-11-18T21:00:07Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T18:58:59Z"
       },
       "reviewPerTask": "signals",
@@ -610,12 +733,24 @@
         "runId": "2026-11-18T20:41:43Z.ad0ee7",
         "status": "passed",
         "at": "2026-11-18T20:41:43Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "1638013d32a9",
+        "at": "2026-11-18T21:00:10Z",
+        "return": "docs/audit/evidence/returns/P169.3/20261118T200359Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-18T20:17:48Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__task_timing.py tests/test__evidence_io.py tests/test_run_test_gate.py tests/test__manifest_vocab.py tests/test_gen_demo_manifest.py` in a throwaway tree at HEAD exited 1 with failing cases lr1 (house FAIL), lr2 (house FAIL), lr3 (house FAIL), lr4 (house FAIL), lr5 (house FAIL), lr6 (house FAIL), lr7 (house FAIL), lr8 (house FAIL) and 7 more, but with the working tree's implementation the task's tests do not all pass (SELFTEST FAILED: 698/699 cases passed; the sweep failed tests/test_run_test_gate.py (exited 1)), so the red is not one the fix turns green - SELFTEST FAILED: 694/699 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P169.4",
       "title": "Every reader of recorded runs goes through one reader over the shard records and the older rows, and answers the same from either",
-      "status": "pending",
+      "status": "in_progress",
       "description": "`_evidence_io.read_rows` is the seam every reader of recorded runs already goes through (count its callers with grep before you start and put the count's command in the outcome). Make what it returns the union of the frozen ledger rows and the `lastRun` records of the plan's subjects, each record presented in the row's shape, one entry per runId (a run present as both is one entry). Then prove that nothing downstream needs the ledger: for a fixture holding records only and the same fixture holding rows only, each of these gives the same answer - the verdict binding (_verdict_binding.binding, with its reused row followed to the measured source), the step repeat (reusable_run, repeated_step_sources, step_parts) and its part-reused result, the reading of a red against the base (base_run), latest_by_subject, row_by_run, the gate's mean, the drive's read-back of a run it launched (green and red, with no commit made, and a red read back runs no step), close-phase's reading of a branch's runs (it reads the branch's ledger texts through git today; it must read the branch's shards the same way), and audit-task's --failing-from and couple --basis-run (resolve against records and rows, or refuse naming both places).\n\nThe drive finds the record of the run it launched by the launch token, not by comparing the subject's run ids against a list kept in its own state.\n\nWith one record per subject, a rule written over 'the newest row for the identity' has only one candidate; where a branch can no longer be reached (a newer row for the same identity), delete it and its case rather than leaving it unreachable, and name each deleted branch in the outcome.\n\nACCEPTANCE.\n1. The table: every reader named above, records-only against rows-only, same answer.\n2. A second ask on an unchanged tree, with records only, measures exactly the steps the left-out reading names and copies every other, each copy naming a run that measured it.\n3. A record whose reuse key is not the current key repeats nothing.\n4. The drive's decision read from the record equals the run's own --json for green and for red, with no commit made; reading a red back runs no gate step.\n5. A reader of history that finds no older directory says so with a basis; it never prints a zero as if it had counted.\n6. A plan and ledger as the previous release wrote them (use a committed example or build the fixture from real rows) give the same status, report and gate-condition answers before and after this change.\n\nDEPENDANTS to answer for by name: every caller of read_rows, row_by_run, latest_by_subject and oldest_first (the callers span the drive, the gate runner, audit-task.py, audit-lookup.py, full-gate.py, the doctor's trail and completion checks, the report, the panel, usage economics, propose-gates.py, validate-manifest.py's suite keys, record-outside-run.py, tools/plan-window.py, tools/gate-parity.py, tools/check-example-ledgers.py and the release guard under .claude/hooks). A caller that reads `rowFiles` or `files` to name where a run lives must still be able to: say what those mean for an entry that came from a shard.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
@@ -661,14 +796,14 @@
         "P169.3",
         "P169.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T21:01:37Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -682,7 +817,12 @@
           "text": "it quotes one refusal sentence of the gate runner ('the work under test declares no files'); this task leaves that sentence as it is",
           "waives": "tools/check-example-ledgers.py"
         }
-      ]
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T21:01:37Z"
+      },
+      "reviewPerTask": "signals"
     },
     {
       "id": "P169.5",
@@ -723,7 +863,8 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [
-        "P169.4"
+        "P169.4",
+        "P169.15-6l3"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -799,7 +940,8 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [
-        "P169.4"
+        "P169.4",
+        "P169.15-6l3"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -887,7 +1029,8 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [
-        "P169.4"
+        "P169.4",
+        "P169.15-6l3"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -1000,7 +1143,8 @@
       "dependsOn": [
         "P169.5",
         "P169.6",
-        "P169.7"
+        "P169.7",
+        "P169.15-6l3"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -1376,7 +1520,7 @@
     {
       "id": "P169.12-6l3",
       "title": "The proving tables break the empty-pathspec reading both ways and see its two cases go red",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The lint that holds git path listings to the plan/git path pair (git_path_base_violations in tools/lints/_deps.py) changed what it reads: a `--` with nothing after it is no longer a pathspec listing, because an empty pathspec hands git no path and is the guard that keeps a revision from being read as a path. Two cases in tests/test__deps.py hold both directions (gb8: the bare trailing `--` is not reported while a `--` followed by a literal, a variable, a starred list or a concatenated list is; gb9: the real reader in _commit_trail.py is clean with no exemption row). The proving tables in tools/prove-gates.py do not yet break that reading and confirm the cases go red.\n\nAdd the two rows the change's author proved in a scratch copy and handed back; they are written out in docs/audit/evidence/returns/P169.2/20261118T182730Z.executor.json, in the outcome's PROVE-GATES paragraph (one row for the red table, mutating the reading so a word after `--` is no longer collected, expected to fail gb8; one for the allow table, mutating the condition back to any `--`, expected to fail gb9). Read them from that file rather than retyping from this description, check each anchor occurs exactly once in tools/lints/_deps.py as it stands now, and run only those two rows to confirm each mutation lands and its case goes red (the tool's help says how to run a named row; if it cannot run less than the whole table, say so and run the whole table once).\n\nACCEPTANCE.\n1. Both rows are in their tables and each, run, reports its case red with the mutation applied and the tree restored.\n2. `python3 tools/prove-gates.py --list` shows them, and the tool's own suite is green.\n3. Nothing else in the tables moves.",
       "files": [
         "tools/prove-gates.py"
@@ -1395,14 +1539,14 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T21:01:45Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1415,7 +1559,62 @@
           "at": "2026-11-18T19:41:27Z",
           "text": "Also in this file: the dk2b row's comment names _ev.write_pointer(...); since the run record landed the call it guards is _ev.write_record(...). The row still fires (the record task's author checked: the mutation gives a finding, the clean tree none). Correct the comment to name what the row guards now."
         }
-      ]
+      ],
+      "timing": {
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-18T21:07:37Z",
+            "ms": 13529,
+            "basis": "selectionMs in run 2026-11-18T21:13:31Z.e7200e's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-18T21:13:31Z.e7200e"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-18T21:07:51Z",
+            "ms": 340594,
+            "basis": "durationMs in run 2026-11-18T21:13:31Z.e7200e's record (run-test-gate --record)",
+            "runId": "2026-11-18T21:13:31Z.e7200e"
+          }
+        ],
+        "firstStartedAt": "2026-11-18T21:01:45Z"
+      },
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-18T21:13:48Z.ef1076",
+        "durationMs": 108,
+        "selectionMs": 13701,
+        "status": "passed",
+        "failed": [],
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-18T21:13:31Z.e7200e",
+          "ts": "2026-11-18T21:13:31Z",
+          "status": "passed"
+        },
+        "reuseKey": "1:sha256:f92b3e0a9b3a27036ef93043367d3138b4e71b90b60db58b0bd593a9917fae2a",
+        "gateDigest": "sha256:330637e4b8c0d1b82922a3908e56129dff06127bdc91c4670fe0a5a14b6ef274",
+        "gateSource": "task",
+        "banners": [],
+        "at": "2026-11-18T21:13:48Z",
+        "steps": [
+          {
+            "name": "python3 tools/sweep-selftests.py tools/prove-gates.py tests/test__deps.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, tests/test__affected_tests.py, tests/test__config.py, tests/test__evidence_io.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__impact.py, tests/test__journal_io.py, tests/test__manifest_io.py, tests/test__manifest_phases.py, tests/test__output_lints.py, tests/test__refs.py, tests/test_audit_task.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_drive_phase.py, tests/test_drive_without_model.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_render_report.py, tests/test_run_test_gate.py, tests/test_stamp_verification.py, tools/affected.py, tools/check-committed-pii.py, tools/gate-parity.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/release.py",
+            "exit": 0,
+            "ran": null,
+            "reusedFrom": {
+              "runId": "2026-11-18T21:13:31Z.e7200e",
+              "ts": "2026-11-18T21:13:31Z"
+            }
+          }
+        ],
+        "machine": "this run had the machine to itself"
+      },
+      "testEvidence": {
+        "runId": "2026-11-18T21:13:48Z.ef1076",
+        "status": "passed",
+        "at": "2026-11-18T21:13:48Z"
+      }
     },
     {
       "id": "P169.13-6l3",
@@ -1559,6 +1758,152 @@
         "P169-R6",
         "P169-R7",
         "P169-R8"
+      ]
+    },
+    {
+      "id": "P169.15-6l3",
+      "title": "A shard has one lock every writer takes and reads behind: the run record, the pointer and reconcile go through one helper, and a repeated verdict's record says where its steps came from",
+      "status": "pending",
+      "description": "The run record (`lastRun` in a task's or phase's shard, with `testEvidence` derived from it) is written by the gate under the phase lock. Its review showed that this is not the lock that serialises writers of a shard: every audit-task.py verb writes the shard under the `index` lock, and the phase lock is held only by `start`'s claim and the drive's phase run. A probe held the index lock as a verb does; the record was written after 0.02 s without waiting, and the verb's later write from its earlier read left neither `lastRun` nor `testEvidence`; in the other order the verb's write is lost. The case meant to hold this (lr4) passes because its stand-in verb takes the phase lock, which no real verb does, and lr5 asserts what the test's own read-modify-write does. CHANGELOG.md, manifest-conventions.md and PLUGIN-BUILD-GUIDE.md state \"neither write loses the other's key\", which is false today. Everything later in this phase reads the record, so this is fixed before any reader moves.\n\nTHE INVARIANT, to hold by mechanism and not by a list of call sites: a shard has one lock that every writer of it takes, and every writer reads the shard AFTER taking it. Find which lock that is by reading what the verbs do (`_under_lock`, `acquire_index_lock`), not by what the record's first design said, and make the record's write, the pointer's write (`write_pointer` still reads the shard before it takes its lock) and reconcile obey it through ONE helper that takes the lock, reads, lets the caller change the node, and saves; no function in _evidence_io.py saves a shard outside that helper. Whether the phase lock is still taken as well is yours to decide and to state with its reason and with the one fixed order in which two locks are taken (a second order anywhere is a deadlock); say what a gate launched by the drive, which runs while the drive's own phase run holds the phase lock, does under your rule. The bounded wait stays: a live holder is waited for up to the bound, and a record that still cannot be written exits 3 as now.\n\nThen the rest of the review:\n1. A repeated verdict's record. When the gate repeats an earlier run's verdict instead of measuring, the record's steps are copied from the ledger row of the source run; with no such row the record is `steps: []` under `verdictSource: reused` with nothing saying the steps are missing, and no case covers the arm at all (replacing the copy with an empty list left both suites green, because every record case runs with --no-reuse). A later task of this phase stops writing ledger rows, so the ledger cannot be the source. The run being repeated is, by the reuse rule, the subject's newest run, which is the record this write replaces: take the steps from the record being replaced when it is that run, from the ledger row otherwise, and when neither holds them say so in the record in a field a reader cannot mistake for an empty run. Settle with the schema what `startedAt` and `durationMs` mean on a repeated run (the schema says `startedAt` is absent there; the code keeps the read-back's own) and make code, schema and documents say one thing. Cases: the repeated arm with the source in the replaced record, with the source only in the ledger, and with neither.\n2. Two writers of one key. When a ledger row is stamped after the record (a record write that was refused), reconcile moves only the pointer, so `testEvidence` and `lastRun` name different runs, against \"the two always name one run\" in manifest-conventions.md and COMPATIBILITY.md's sentence about the values `testEvidence` caches. Decide which is true: reconcile rewrites the record from the row it trusts, or the documents say when the two may differ and what a reader does then. One of them changes.\n3. Text: the `--record` help and the comment beside the unrecorded exit say a green run; a red run exits 3 as well. The refusal printed for a dead lock holder reads \"...use audit-lock --takeover, then nothing was written to the plan\" and names no repair in an order a reader can follow: say what happened, then what to run.\n\nACCEPTANCE.\n1. A case drives a REAL verb of audit-task.py (not a stand-in that takes a lock by name) against a record write, in both orders, with the verb held inside its locked section by the test: both writes land, and the record's write waited. It is red at HEAD.\n2. A case fails if any function in _evidence_io.py saves a shard outside the one helper (read the module's AST or prove it by mutation; say which).\n3. The three repeated-verdict cases above; the mutation that empties the copied steps is red.\n4. Mutations, each in a scratch copy outside every checkout, restored in the same command, __pycache__ purged, the mutation confirmed landed: the lock replaced by the phase lock alone; the read moved before the lock in each of the three writers; the wait set to 0; the lock order swapped if two are taken.\n5. The documents say what the code does: search every place that states the lock or \"neither write loses\" (CHANGELOG.md, manifest-conventions.md, PLUGIN-BUILD-GUIDE.md, COMPATIBILITY.md, the schema's descriptions, help text) and list in the outcome each place changed.\n6. Timing: the gate's own run must not get slower by a wait it does not need. Measure `run-test-gate.py --record` on a small fixture plan before and after, twice each with a gap, and report the four figures.\n\nDEPENDANTS to answer for by name: the drive's read-back of a background gate and its timing queue; `audit-task.py` verbs that write a task node while a gate of that task runs (`note`, `scope`, `done`, group sign-off's copy of the record); reconcile and the doctor's evidence checks; the panel's writes through `_panel_write` (same lock?); the sweep's isolation (a suite that takes the index lock in a scratch project); Windows, where a lock file's rename and a held handle behave differently (say what your change does there and which existing case covers it).\n\nIf a file you need is outside your list, stop BEFORE filing and hand back the exact change.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "tests/test__evidence_io.py",
+        "tests/test_run_test_gate.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "CHANGELOG.md",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/reference/manifest-conventions.md",
+        "tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__evidence_io.py: Make the recorder's write exclude the verbs: take the index lock as well as the phase lock (one fixed order, checked against `start`, which takes `phase-<id>` ...",
+          "tests/test__evidence_io.py: Add a gate-level case (reuse on, second run) and a run_record(source=...) case asserting the copied steps, their per-step reusedFrom and the absence of ...",
+          "tests/test__evidence_io.py: In reconcile, when the ledger row wins, also write `run_record(row)` so the pair stays one run, or soften the two sentences to \"names one run except after a ...",
+          "tests/test_run_test_gate.py: Reword both to \"a run (green or red) whose row or whose record in the plan could not be stored exits 3\"",
+          "tests/test__evidence_io.py: Pass a hint that names the repair (\"then re-run this gate"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_run_test_gate.py tests/test_audit_task.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T21:01:24Z",
+          "text": "scope: plugins/audit/scripts/governance/_evidence_io.py, tests/test__evidence_io.py, plugins/audit/scripts/governance/run-test-gate.py, plugins/audit/schema/audit-plan.schema.json, plugins/audit/reference/manifest-conventions.md, every path the finding(s) P169-R11, P169-R12, P169-R13, P169-R14, P169-R15 name"
+        },
+        {
+          "at": "2026-11-18T21:01:24Z",
+          "text": "scope: tests/test__evidence_io.py, the suite that tests plugins/audit/scripts/governance/_evidence_io.py (python: its import closure reaches plugins/audit/scripts/governance/_evidence_io.py)"
+        },
+        {
+          "at": "2026-11-18T21:01:24Z",
+          "text": "scope: tests/test_run_test_gate.py, the suite that tests plugins/audit/scripts/governance/run-test-gate.py (python: its import closure reaches plugins/audit/scripts/governance/run-test-gate.py)"
+        },
+        {
+          "at": "2026-11-18T21:01:24Z",
+          "text": "no suite: plugins/audit/schema/audit-plan.schema.json - 18 test files name it and none is named for it (tests/test__commit_trail.py, tests/test__config_rules.py, tests/test__evidence_io.py, tests/test__filed_returns.py, tests/test__help.py, tests/test__id_refs.py and 12 more); name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-11-18T21:01:24Z",
+          "text": "no suite: plugins/audit/reference/manifest-conventions.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/config/_help.py, tests/test__refs.py, tests/test_audit_lookup.py, tools/lints/_refs.py, tools/measure-context.py, tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T21:01:24Z",
+          "text": "no test runner in this task's gate for the test P169-R11, P169-R12, P169-R13, P169-R14, P169-R15 asks for: the gate is ['python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_run_test_gate.py tests/test_audit_task.py'], derived as from --gate; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        },
+        {
+          "at": "2026-11-18T21:02:35Z",
+          "text": "it quotes the gate runner's refusal 'the work under test declares no files'; this task changes the record's write and the unrecorded-exit text and leaves that refusal as it is",
+          "waives": "tools/check-example-ledgers.py"
+        },
+        {
+          "at": "2026-11-18T21:02:35Z",
+          "text": "it quotes the red-first enum of the schema; this task changes the lastRun record's description and leaves that enum as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T21:02:35Z",
+          "text": "it quotes the '## [Unreleased]' heading; this task edits entries under that heading and leaves the heading as it is",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T21:02:35Z",
+          "text": "its comments name COMPATIBILITY.md for two config-key decisions and share four ordinary words with the trailers section; this task edits the run-record section only",
+          "waives": "plugins/audit/hooks/_config.py"
+        },
+        {
+          "at": "2026-11-18T21:02:35Z",
+          "text": "it quotes 'beside the manifest' from COMPATIBILITY.md's config section; this task edits the run-record section only",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        },
+        {
+          "at": "2026-11-18T21:02:35Z",
+          "text": "it quotes 'which one wins' from COMPATIBILITY.md's key-precedence text; this task edits the run-record section only",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-18T21:02:35Z",
+          "text": "it quotes 'Validation stays additive' from COMPATIBILITY.md; this task adds no key to the vocabulary and leaves that sentence as it is",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-18T21:02:35Z",
+          "text": "it quotes 'names no file' from COMPATIBILITY.md; this task edits the run-record section only",
+          "waives": "tests/test__manifest_phases.py"
+        },
+        {
+          "at": "2026-11-18T21:02:35Z",
+          "text": "it quotes 'related listing' from the guide; this task edits the guide's evidence sections and leaves that passage as it is",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-18T21:02:35Z",
+          "text": "it quotes the guide's passage on a copy's age; this task edits the guide's evidence sections and leaves that passage as it is",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-18T21:02:35Z",
+          "text": "it quotes a section marker name the guide lists for the drive; this task does not edit the drive or its listing",
+          "waives": "tests/test_drive_phase.py"
+        },
+        {
+          "at": "2026-11-18T21:02:35Z",
+          "text": "it quotes the generated module map's heading in the guide; the map's body may be regenerated by its own tool if an import moves, the heading stays",
+          "waives": "tools/lints/_deps.py"
+        }
+      ],
+      "fixes": [
+        "P169-R11",
+        "P169-R12",
+        "P169-R13",
+        "P169-R14",
+        "P169-R15"
       ]
     }
   ],
