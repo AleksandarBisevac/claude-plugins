@@ -89,17 +89,14 @@ concurrency:
 #              the 2m38s its estimate had set (the lint + e2e job's 1m50s plus the
 #              manifests job's verify, node and install steps), so the bound moved
 #              to 7, over twice the measurement
-#   browser-panel - the screenshot step, and the two interactive steps, of that
-#              run's manifest job, plus its node setup (run 38929591548)
-#   browser-report - measured: run 41322244766 (fa1b0c81) took 9m05s, the longest
-#              finished browser (report) job of the ci.yml runs from 40194747670 to
-#              41349318354, past the 7m19s its estimate had set, so the bound moved to
-#              19, the first whole minute over twice the measurement. Every failure
-#              in that range ended sooner, with the runner shutting the job down
-#              rather than the job finishing. That run rendered the whole live
-#              plan; the live-plan leg renders a window of it since
-#              (tools/verify.sh `rendered_plan_legs`), so re-measure on its first
-#              finished run and bring the bound down if the figure allows
+#   browser-panel, browser-report - PROVISIONAL, until a run of the split install
+#              below is measured: the longest finished job of each over the ci.yml
+#              runs from 41281241772 to 44356971266, read on 2026-11-18. Both had
+#              outgrown the figures their lines carried then - the panel's 6m24s
+#              estimate and the report's 9m05s (run 41322244766) - and both were
+#              install-bound: the panel's install step took 9m43s of run
+#              42283005055's job, and the report's 6m27s of run 44270291891's, nearly
+#              all of it the apt archive fetch `--with-deps` asks for
 #   verified - checkout, setup-python and two API reads (no run yet)
 # The resample figure is measured: its first finished run, run 40715565769 (f06f113f,
 # success), took 22m00s, past half the bound of 40 its estimate had set, so the bound
@@ -108,8 +105,8 @@ concurrency:
 #   bound selftests: held by the sweep deadline (tools/sweep-selftests.py SWEEP_DEADLINE)
 #   longest e2e: 1m41s (estimate, run 38902667892)
 #   longest lint: 3m14s (run 41112221437, 19:04:54 to 19:08:08)
-#   longest browser-panel: 6m24s (estimate, run 38929591548)
-#   longest browser-report: 9m05s (run 41322244766, 15:38:30 to 15:47:35)
+#   longest browser-panel: 14m49s (run 42283005055, 19:49:30 to 20:04:19)
+#   longest browser-report: 17m57s (run 44270291891, 08:49:27 to 09:07:24)
 #   longest verified: 0m30s (estimate, no run yet)
 #   longest resample: 22m00s (run 40715565769, windows-2025)
 # EVERY JOB PINS ITS RUNNER IMAGE, and so does every `os` value a matrix crosses. A
@@ -348,14 +345,35 @@ jobs:
         shell: bash
         run: sh tools/verify.sh --only lint,runner,e2e,manifests,js,plugin
 
-  # The two browser gates are two jobs, so neither waits for the other. One install
-  # and one pin: playwright is a devDependency that `npm ci` installs from the
-  # lockfile, and only the browser binaries are fetched beside it.
+  # The two browser gates are two jobs, so neither waits for the other. One pin:
+  # playwright is a devDependency that `npm ci` installs from the lockfile, and the
+  # browser build and the system packages follow from that version.
+  #
+  # THE INSTALL IS ONE STEP PER COST, so a job's step list says where its minutes
+  # went, and the two slow ones are cached. The steps are written out in both jobs,
+  # identical; a change to one is owed to the other.
+  #   - The browser download is cached by the playwright-core version
+  #     package-lock.json pins, and `playwright install chromium` runs on a hit
+  #     as well: it fetches nothing when the restored build is the pinned one, and
+  #     the pinned one when it is not, so a hit never skips a version change.
+  #   - The system packages are those `playwright install-deps --dry-run` names
+  #     that dpkg reports not installed - only what the image lacks. `--with-deps`
+  #     named them all, so apt also upgraded every listed package with a newer
+  #     version in the archive. The archive fetch was the cost, and naming fewer
+  #     packages does not remove it: the install step took 9m05s of run
+  #     44318839994's report job, 8m11s of it apt fetching 32.1 MB at 65.4 kB/s,
+  #     and 9m43s of run 42283005055's panel job, 9m22s of it fetching 19.1 MB with
+  #     nothing upgraded, against 38s in run 41322244766's report job. So their
+  #     .deb files are cached by the runner image's version and that package list;
+  #     a hit installs them with dpkg and asks no archive, and a miss, or a set
+  #     missing one, fetches them first.
+  # A cache GitHub saved on one branch is read by that branch and by runs whose base
+  # it is, so a ci/ branch's first run misses unless main holds one.
   browser-panel:
     name: browser (panel)
     needs: verified
     if: ${{ !cancelled() && needs.verified.outputs.run == '' }}
-    timeout-minutes: 15
+    timeout-minutes: 30
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -365,10 +383,75 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 20
-      - name: Install the JavaScript dev dependencies and Chromium
+      - name: "install: JavaScript dev dependencies (npm ci)"
+        run: npm ci
+      - id: pins
+        name: "install: read the playwright pin and the runner image"
         run: |
-          npm ci
-          npx playwright install --with-deps chromium
+          v=$(node -e "const p=require('./package-lock.json').packages['node_modules/playwright-core'];if(!p||!p.version){console.error('package-lock.json pins no playwright-core');process.exit(1)}console.log(p.version)")
+          if [ -z "${ImageOS:-}" ] || [ -z "${ImageVersion:-}" ]; then
+            echo "the runner exports no ImageOS/ImageVersion, so no cache key names its image" >&2
+            exit 1
+          fi
+          echo "playwright=$v" >> "$GITHUB_OUTPUT"
+          echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - name: "install: restore the browser download"
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-${{ runner.arch }}-${{ steps.pins.outputs.playwright }}
+      - name: "install: Chromium (fetched only when the restored build is not the pinned one)"
+        run: npx playwright install chromium
+      - id: sysdeps
+        name: "install: name the system packages Chromium needs that the image lacks"
+        run: |
+          out=$(npx playwright install-deps --dry-run chromium)
+          case "$out" in
+            *--no-install-recommends*) ;;
+            *) printf 'install-deps --dry-run printed no apt-get install line:\n%s\n' "$out" >&2; exit 1 ;;
+          esac
+          wanted=$(printf '%s\n' "$out" | sed -n 's/.*--no-install-recommends//p' | tr -d '"')
+          if [ -z "$(echo $wanted)" ]; then
+            echo "the apt-get install line names no package" >&2
+            exit 1
+          fi
+          missing=""
+          for p in $wanted; do
+            s=$(dpkg-query -W -f='${Status}' "$p" 2>/dev/null || true)
+            [ "$s" = "install ok installed" ] || missing="$missing $p"
+          done
+          missing=$(echo $missing)
+          echo "playwright names $(echo $wanted | wc -w) packages; the image lacks: ${missing:-none of them}"
+          echo "missing=$missing" >> "$GITHUB_OUTPUT"
+          echo "key=chromium-sysdeps-${{ steps.pins.outputs.image }}-$(printf '%s' "$missing" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+      - name: "install: restore the system packages' .deb files"
+        if: ${{ steps.sysdeps.outputs.missing != '' }}
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/chromium-sysdeps
+          key: ${{ steps.sysdeps.outputs.key }}
+      - name: "install: system packages (the archive is asked only for a .deb the restored set lacks)"
+        if: ${{ steps.sysdeps.outputs.missing != '' }}
+        env:
+          MISSING: ${{ steps.sysdeps.outputs.missing }}
+        run: |
+          dir="$HOME/.cache/chromium-sysdeps"
+          mkdir -p "$dir"
+          fetch=""
+          for p in $MISSING; do
+            ls "$dir/${p}_"*.deb >/dev/null 2>&1 || fetch="$fetch $p"
+          done
+          if [ -n "$fetch" ]; then
+            echo "not in the restored set, so fetched from the archive:$fetch"
+            sudo apt-get update
+            dl=$(mktemp -d)
+            chmod 755 "$dl"
+            sudo apt-get install -y --download-only --no-install-recommends -o Dir::Cache::Archives="$dl" $MISSING
+            cp "$dl"/*.deb "$dir"/
+          else
+            echo "every package the image lacks is in the restored set; no archive is asked"
+          fi
+          sudo dpkg -i "$dir"/*.deb
       - name: verify slice
         shell: bash
         run: sh tools/verify.sh --only panel
@@ -377,7 +460,7 @@ jobs:
     name: browser (report)
     needs: verified
     if: ${{ !cancelled() && needs.verified.outputs.run == '' }}
-    timeout-minutes: 19
+    timeout-minutes: 36
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -387,10 +470,75 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 20
-      - name: Install the JavaScript dev dependencies and Chromium
+      - name: "install: JavaScript dev dependencies (npm ci)"
+        run: npm ci
+      - id: pins
+        name: "install: read the playwright pin and the runner image"
         run: |
-          npm ci
-          npx playwright install --with-deps chromium
+          v=$(node -e "const p=require('./package-lock.json').packages['node_modules/playwright-core'];if(!p||!p.version){console.error('package-lock.json pins no playwright-core');process.exit(1)}console.log(p.version)")
+          if [ -z "${ImageOS:-}" ] || [ -z "${ImageVersion:-}" ]; then
+            echo "the runner exports no ImageOS/ImageVersion, so no cache key names its image" >&2
+            exit 1
+          fi
+          echo "playwright=$v" >> "$GITHUB_OUTPUT"
+          echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - name: "install: restore the browser download"
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-${{ runner.arch }}-${{ steps.pins.outputs.playwright }}
+      - name: "install: Chromium (fetched only when the restored build is not the pinned one)"
+        run: npx playwright install chromium
+      - id: sysdeps
+        name: "install: name the system packages Chromium needs that the image lacks"
+        run: |
+          out=$(npx playwright install-deps --dry-run chromium)
+          case "$out" in
+            *--no-install-recommends*) ;;
+            *) printf 'install-deps --dry-run printed no apt-get install line:\n%s\n' "$out" >&2; exit 1 ;;
+          esac
+          wanted=$(printf '%s\n' "$out" | sed -n 's/.*--no-install-recommends//p' | tr -d '"')
+          if [ -z "$(echo $wanted)" ]; then
+            echo "the apt-get install line names no package" >&2
+            exit 1
+          fi
+          missing=""
+          for p in $wanted; do
+            s=$(dpkg-query -W -f='${Status}' "$p" 2>/dev/null || true)
+            [ "$s" = "install ok installed" ] || missing="$missing $p"
+          done
+          missing=$(echo $missing)
+          echo "playwright names $(echo $wanted | wc -w) packages; the image lacks: ${missing:-none of them}"
+          echo "missing=$missing" >> "$GITHUB_OUTPUT"
+          echo "key=chromium-sysdeps-${{ steps.pins.outputs.image }}-$(printf '%s' "$missing" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+      - name: "install: restore the system packages' .deb files"
+        if: ${{ steps.sysdeps.outputs.missing != '' }}
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/chromium-sysdeps
+          key: ${{ steps.sysdeps.outputs.key }}
+      - name: "install: system packages (the archive is asked only for a .deb the restored set lacks)"
+        if: ${{ steps.sysdeps.outputs.missing != '' }}
+        env:
+          MISSING: ${{ steps.sysdeps.outputs.missing }}
+        run: |
+          dir="$HOME/.cache/chromium-sysdeps"
+          mkdir -p "$dir"
+          fetch=""
+          for p in $MISSING; do
+            ls "$dir/${p}_"*.deb >/dev/null 2>&1 || fetch="$fetch $p"
+          done
+          if [ -n "$fetch" ]; then
+            echo "not in the restored set, so fetched from the archive:$fetch"
+            sudo apt-get update
+            dl=$(mktemp -d)
+            chmod 755 "$dl"
+            sudo apt-get install -y --download-only --no-install-recommends -o Dir::Cache::Archives="$dl" $MISSING
+            cp "$dl"/*.deb "$dir"/
+          else
+            echo "every package the image lacks is in the restored set; no archive is asked"
+          fi
+          sudo dpkg -i "$dir"/*.deb
       - name: verify slice
         shell: bash
         run: sh tools/verify.sh --only report
