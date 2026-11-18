@@ -804,12 +804,20 @@ WRITER_COSTS = ("0.4242", "0.5151", "0.6161")
 # argv and the prompt on its stdin - one JSON line per run, writes the files
 # `WS_EDIT` maps (and commits them under `WS_COMMIT`), as a writer would, and
 # ends the stream with the one `result` event the runner reads the session id
-# and cost from, its `result` text `WS_RESULT`.
+# and cost from, its `result` text `WS_RESULT`. `WS_LOG` names a file, which
+# sessions run one after another share, or a directory, in which each session
+# creates a file of its own (`_stub_runs` says which case is which).
 _WRITER_STUB = r'''
-import json, os, subprocess, sys, time
+import json, os, subprocess, sys, tempfile, time
 prompt = sys.stdin.buffer.read().decode("utf-8")
-with open(os.environ["WS_LOG"], "a", encoding="utf-8") as fh:
-    fh.write(json.dumps({"argv": sys.argv[1:], "stdin": prompt}) + "\n")
+line = json.dumps({"argv": sys.argv[1:], "stdin": prompt}) + "\n"
+if os.path.isdir(os.environ["WS_LOG"]):
+    fd, _own = tempfile.mkstemp(suffix=".jsonl", dir=os.environ["WS_LOG"])
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(line)
+else:
+    with open(os.environ["WS_LOG"], "a", encoding="utf-8") as fh:
+        fh.write(line)
 if os.environ.get("WS_MODE") == "killrunner":
     import signal
     os.kill(os.getppid(), signal.SIGKILL)
@@ -981,12 +989,77 @@ def _play_session(root, argv, bindir, log, cost, session=WRITER_SESSION,
     return done.returncode, done.stdout + done.stderr
 
 
-def _stub_runs(log):
+def _stub_run_lines(path):
     try:
-        with open(log, encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             return [json.loads(ln) for ln in fh if ln.strip()]
     except OSError:
         return []
+
+
+def _stub_runs(where):
+    """The runs the stub `claude` logged, from the one file `where` names, or
+    from every file in the directory it names, in file-name order - an order
+    that is not the order the sessions ran in, so a case reading a directory
+    counts and never reads `[-1]`.
+
+    WHO APPENDS TO WHICH LOG, AND AT ONCE OR ONE AT A TIME. Read off what
+    starts the processes, not off a case's name: `_play_session` and every
+    other direct start in this suite wait for the process to end before the
+    next one starts, and `auto` (`auto_run`) starts a step's commands
+    together, which is more than one only for a wave. Two processes appending
+    to one file at once can lose a line where an append is a seek followed by
+    a write, as on windows; every log below has one writer at a time, or one
+    file per writer.
+
+      log (who appends)          cases                 how they run
+      ------------------------   -------------------   ---------------------
+      `WS_LOG`, a file (each     every case that       one after another:
+      stub session)              passes a file - the   `_play_session`, the
+                                 ws, bg, wf, xs, wl,   members of sr2's and
+                                 wi, wj, ck, rv, pv,   ww's waves included;
+                                 rw, sr, ww, tm, bm,   or `auto` over one
+                                 bdr, bt, bq and brc   task or a phase at
+                                 cases, and au6,       width 1 (au20-au24,
+                                 au20-au24, au32b,     au32b, au33), or a
+                                 au33, au35            one-task `auto` (au6,
+                                                       au35)
+      `WS_LOG`, a directory      au32, au32c           AT ONCE: `auto` over a
+      (each stub session, a                            wave of two writer
+      file of its own)                                 sessions starts both
+      `_AUTO_CHILD` marks        `_auto_cases` and     `_auto_marks` holds
+                                 `_auto_wave_cases`    its own table: a wave
+                                                       member marks a file
+                                                       of its own
+      `_RB_LOG` (each step of    rd1-rd7               one after another:
+      the gate)                                        run-test-gate.py waits
+                                                       on each step, and the
+                                                       read-back `next` runs
+                                                       after `_play_gate`
+                                                       waited for the run
+      `LP_PROBE_LOG`,            the lint-probe cases  one after another:
+      `LP_PROBE_TOUCH` (the                            `run_lint_probe`
+      probe)                                           waits on the probe
+      `DRIVE_CWD_LOG` (the       kr1, kr2              one after another: the
+      restarted task's gate)                           one task the loop
+                                                       runs, its gate waited
+                                                       on by `next`
+      `owner.log` (the           su6, su7              one after another:
+      follower owner, one per                          `claimed_followers`
+      tree)                                            waits on each owner
+
+    Left as it is, and why: the `auto` log the driver opens once and hands a
+    wave's children as their stdout and stderr is the driver's own file,
+    written in append mode, and no case here reads it from a wave - bq5 reads
+    it from a step of one child. `WS_PIDS` is written whole, not appended to,
+    by the one sleeping session of au6 and au35."""
+    if isinstance(where, (list, tuple)):
+        paths = list(where)
+    elif os.path.isdir(where):
+        paths = [os.path.join(where, n) for n in sorted(os.listdir(where))]
+    else:
+        paths = [where]
+    return [run for p in paths for run in _stub_run_lines(p)]
 
 
 def _notes(mpath, task_id):
@@ -12666,8 +12739,14 @@ def _auto_wave_real_cases(check):
     if not hasattr(os, "killpg"):
         _harness.skip(check, "au32 a killed session runner", "no SIGKILL here",
                       True)
+        _harness.skip(check, "au32c a log per session of that wave",
+                      "no SIGKILL here", not hasattr(os, "killpg"))
     else:
-        bindir, log, _stubs = _auto_stub("auto-wkill-stub")
+        bindir, _log, stubs = _auto_stub("auto-wkill-stub")
+        # `auto` starts a wave's two sessions together, so each stub session
+        # logs into a file of its own in this directory (`_stub_runs`).
+        log = os.path.join(stubs, "runs")
+        os.makedirs(log)
         root, mpath = _auto_writer_wave_repo("auto-wkill")
         code, out, err = _auto_process(root, mpath, PHASE, bindir, log,
                                        mode="killrunner")
@@ -12678,6 +12757,13 @@ def _auto_wave_real_cases(check):
               % ((code, out, err[-400:], len(runs)),),
               len(runs) == 2 and code in (AUTO_STOP, AUTO_NEEDS_MODEL)
               and bool(out.strip()))
+        own = [os.path.join(log, n) for n in sorted(os.listdir(log))]
+        check("au32c the two sessions of that wave, which ran at once, each "
+              "logged into a file of its own - two files of one run each - and "
+              "the runs read from them together are the two au32 counts: %r"
+              % ((own, [len(_stub_runs(p)) for p in own]),),
+              len(own) == 2 and [len(_stub_runs(p)) for p in own] == [1, 1]
+              and len(_stub_runs(own)) == len(runs) == 2)
         one_bin, one_log, _one = _auto_stub("auto-wkill1-stub")
         alone, alone_mpath = _repo("auto-wkill1", task_ids=TASKS[:1],
                                    executor=WRITER_EXECUTOR)
@@ -19195,6 +19281,61 @@ def _tm_commits(root):
     return int(_git_out(root, "rev-list", "--count", "HEAD").strip() or 0)
 
 
+def _tm_session_waits(waits, record):
+    """The wait stages whose basis names the session record `record` - one
+    session's own wait, picked by what it is. Never by when it ends: stamps
+    are whole seconds, so another session's zero-length wait handed out in
+    the second this session started ends there too (`tm2b`)."""
+    name = os.path.basename(record or "")
+    if not name:
+        return []
+    named = re.compile(re.escape("session record %s" % (name,)) + r"(;|$)")
+    return [w for w in waits if named.search(str(w.get("basis") or ""))]
+
+
+def _tm_ends_at(wait, stage):
+    """Whether `wait` ends exactly where `stage` starts - the assertion about a
+    wait already picked, never the way to pick one."""
+    return (_tm_epoch(wait["startedAt"]) is not None
+            and _tm_epoch(wait["startedAt"]) + wait["ms"] / 1000.0
+            == _tm_epoch(stage["startedAt"]))
+
+
+def _tm_shared_second_case(check, M):
+    """A writer's wait and a reviewer's that share a second, built by the
+    drive's own `session_stages`: the reviewer handed out in the second the
+    writer's session started, and started in that second, so its wait is 0 and
+    ends where the writer's session starts as the writer's own wait does."""
+    w_record, r_record = "/r/P1.1-writer-1.jsonl", "/r/P1.1-reviewer-1.jsonl"
+    built = (M.session_stages({"at": "2026-11-18T02:04:10Z", "record": w_record,
+                               "round": 0},
+                              {"startedAt": "2026-11-18T02:04:12Z",
+                               "durationMs": TM_WRITER_MS, "index": 0},
+                              "writer", True)
+             + M.session_stages({"at": "2026-11-18T02:04:12Z", "record": r_record,
+                                 "seq": 0},
+                                {"startedAt": "2026-11-18T02:04:12Z",
+                                 "durationMs": TM_REVIEWER_MS, "index": 0},
+                                "reviewer", True))
+    stages = [s for _source, s in built if isinstance(s, dict)]
+    waits = [s for s in stages if s.get("kind") == "wait"]
+    writer = [s for s in stages if s.get("kind") == "writer"]
+    # The selector tm2 used to apply: every wait ending where the writer starts.
+    by_time = [w for w in waits if writer and _tm_ends_at(w, writer[0])]
+    mine = _tm_session_waits(waits, w_record)
+    theirs = _tm_session_waits(waits, r_record)
+    check("tm2b a writer wait and a reviewer wait that share a second are told "
+          "apart by basis: both end where the writer's session starts, so time "
+          "arithmetic picks two, and the basis naming the writer's session "
+          "record picks the writer's two-second wait alone, the reviewer's "
+          "zero-length one by its own record: %r" % ((waits, by_time, mine),),
+          len(waits) == 2 and len(writer) == 1 and len(by_time) == 2
+          and len(mine) == 1 and mine[0]["ms"] == 2000
+          and mine[0]["startedAt"] == "2026-11-18T02:04:10Z"
+          and _tm_ends_at(mine[0], writer[0])
+          and len(theirs) == 1 and theirs[0]["ms"] == 0 and theirs[0] is not mine[0])
+
+
 def _tm_drive_clean(M, prefix, bindir, log, writer_ms=TM_WRITER_MS,
                     reviewer_ms=TM_REVIEWER_MS, delay=0):
     """A one-task tdd fixture driven to its close: the writer's session (after
@@ -19276,14 +19417,15 @@ def _timing_cases(check):
           and all(k in summary["byKind"]
                   for k in ("writer", "selection", "gate", "reviewer", "commit")))
     waits = _tm_stages(mpath, "wait")
-    writer_wait = [w for w in waits if writers and _tm_epoch(w["startedAt"])
-                   + w["ms"] / 1000.0 == _tm_epoch(writers[0]["startedAt"])]
+    writer_wait = _tm_session_waits(waits, _flag(run["writer"], "--record"))
     check("tm2 a hand-out read back after a delay leaves a wait stage of that "
           "length: it starts at the writer's hand-out and ends where the writer's "
           "session starts, and the two-second delay is in it: %r"
           % ((waits, writers),),
           len(writer_wait) == 1 and writer_wait[0]["ms"] >= 1000
+          and len(writers) == 1 and _tm_ends_at(writer_wait[0], writers[0])
           and all(w["ms"] >= 0 for w in waits))
+    _tm_shared_second_case(check, M)
 
     # THE COUNTS, AGAINST THE SAME DRIVE WITH NO STAGE QUEUED. Every locked
     # write is a journal row, so the two journals' actions are the locked

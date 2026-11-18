@@ -9341,7 +9341,8 @@
       "P131.1",
       "P131.2",
       "P148.5",
-      "P148.23-xpz"
+      "P148.23-xpz",
+      "P168.5"
     ],
     "plugins/audit/tests/test_derive_phase_gate.py": [
       "P79.3",
@@ -13268,7 +13269,8 @@
     "tests/test_derive_phase_gate.py": [
       "P131.1",
       "P148.23-xpz",
-      "P155.15"
+      "P155.15",
+      "P168.5"
     ],
     "tests/test_detect_plan_skip.py": [
       "P131.1",

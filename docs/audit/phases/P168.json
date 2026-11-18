@@ -456,7 +456,7 @@
     {
       "id": "P168.4",
       "title": "An entry the project leaves to the phase gate is not run by a task's recorded gate, and the row says which were left and why",
-      "status": "in_progress",
+      "status": "done",
       "description": "executor.phaseGateOnly names gate commands that belong to the phase gate. It reaches only the writer's prompt today: the recorded task gate still runs them, and on this repository's own tasks the two browser checks it names were about two thirds of a task gate's time. Make one reading of the setting serve both: an entry of a task's gate that matches it, and that the phase's own gate also holds, is left out of the task's recorded run; the row lists each entry left out with the setting as its basis, the run prints them, and the gate's identity is taken over the entries that ran. An entry that matches but is absent from the phase's gate is run, with a line saying it would otherwise run nowhere. A task whose every entry is left out is not an empty gate that passes: it records the existing no-checks outcome with the reason. The phase gate itself ignores the setting. The setting's schema description, the config reference and COMPATIBILITY.md state the wider meaning; this is a change to what a read key does, so it goes into the major section. Dependants you answer for: the writer brief's existing reading of the setting in audit-lookup.py, which must come from the same function; the drive's own view of a task's gate steps, which must agree with the recorder's or the background decision and the step text name entries that will not run; the affected selection, whose already-wide test compares a task's entries with the phase's; the reuse identity; the panel's settings page and the doctor, which describe the key; verify-invariants' check that a done task's gate ran. Acceptance: (1) a task gate of a sweep and a browser check, with the browser check named by the setting and present in the phase gate, runs the sweep alone and its row lists the browser check as left to the phase gate; (2) the same with the browser check absent from the phase gate runs both and says why; (3) a task gate holding only left-out entries records no-checks, never passed; (4) with the setting absent or empty every row and every printed line is byte for byte as before; (5) the phase gate runs every entry whatever the setting says; (6) the writer's brief and the recorded run name the same entries as left out.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -503,14 +503,22 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ed8b946a4ab8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "One reading of executor.phaseGateOnly, in _config_rules.py: phase_gate_only_match, left_to_phase_gate (moved from audit-lookup.py, which now aliases it), and phase_gate_only_split(steps, phase_steps, names), which returns kept, left and unheld. A step counts as held when the phase gate has the same entry name or the same resolved command. _evidence_io.py: phase_gate_steps(manifest, phase) gives the phase's runnable gate, resolved and without review-only entries. New row key leftToPhaseGate (LEFT_TO_PHASE_GATE_KEY): each entry has the fields name, arm, basis and matched; row_for copies it only when the run left something out. Also left_to_phase_gate_record and left_to_phase_gate_names (declared arm only). run-test-gate.py: under --task, and not --own, after the affected steps join and after the declared part is cut for gateDigest, phase_gate_only_plan leaves out the named steps the phase gate holds, whichever arm proposed them (decision 3). Each left-out or unheld step prints a line (stderr under --json); reach_args, the reuse identity and the measured run are taken over the steps that ran; res carries leftToPhaseGate on measured, part-reused and reused results. When every step is left out, _all_left records all_left_result: status no-checks, ranTotal 0, with the reason in each basis; it prints NO CHECK RAN and exits 1. An unusable key is refused with E_ASK. The phase-scope run never asks. _verdict_binding.gate_mismatch compares the recorded declared steps with the declaration minus the names the row lists. A listed name the gate does not declare, or a listed name the row also ran, still fails the length/prefix comparison, so an extra guard I first wrote was dropped as unreachable: a mutation probe showed vb39 stayed green without it. drive-phase.py: task_gate_steps(manifest, phase, task_id, left=()) drops the same steps through the split; already_wide is still asked of the declared entries; chosen_task_gate reads the setting from ctx['config'] (a malformed key leaves nothing out there; the runner refuses it by name). The split is asked only when names are set, because one np-block fixture replaces _evio with a namespace. audit-lookup.compose_writer_prompt uses the same split against _evio.phase_gate_steps: a named command the phase gate does not hold stays listed with UNHELD_NOTE. The _wp_manifest fixture now gives the phase a testGate equal to the task's gate, so the existing wp/ws cases still leave the browser checks out; a task declaring no gate gets no phase gate either. Panel: help sentence and label only. Docs updated: schema description, plugin README config row, COMPATIBILITY.md (config-key Promised section: a set value now does more, absence unchanged), CHANGELOG (Unreleased, Changed), PLUGIN-BUILD-GUIDE (run-test-gate, drive gate choice, _verdict_binding and _config_rules sections; the module-map fence regenerated by `_deps.py --write-map`, whose only change is the new run-test-gate -> _config_rules edge). Root README.md does not name the key, so it was not touched. Gate command (brief's, from the tree) exit 0: 4/4 files ok, 2047 cases. Related sweep over test__evidence_io, test__verdict_binding, test__panel_settings, test__panel_page, test__config_rules_lints, test_validate_config, test__config, test__deps, test__help, test__impact, test_panel_server, test_audit_task, test_close_phase, test_commit_task_work, test__output_lints, test_meter_usage, test__panel_paths and test_drive_without_model: 17/18 files ok; test__deps g1 failed on the stale module map, which was then regenerated, and test__deps, test__evidence_io and test__output_lints then ran 3/3 ok, 813 cases. ruff and vermin -t=3.8- were clean on the changed files. Mutation probes, in process or on in-memory copies of module source, with no tree writes: split never leaves -> pgo1-5, pgo8, pg5, pg6, wa1, wa2, gc11, gc12 red; split leaves every named step (over-fire) -> pgo4, pg5, wa2, gc11 red; binding blind to the key -> vb38, vb39 red; binding excuses any listed row, or binds a short prefix when anything is listed -> vb39 red; reader keeps every arm -> ltp2 red; baseline none red. Known non-red: binding reading every arm is caught by the length comparison, so vb39 cannot see it; ltp2 holds that filter directly. Dependants: the writer brief's reading now comes from _config_rules (the same function); the drive's view agrees with the recorder (gc11, gc12); the affected selection's already-wide test is still asked of the full declared entries, in both the runner and the drive; the reuse identity is taken over the steps that ran (pgo2); the panel help and label are changed; the doctor reads the key through the schema description, which is changed; commit-task-work and audit-task done bind through _verdict_binding, which reads the new key (a real pgo1 row gives gate_mismatch None, probed); verify-invariants is unchanged. Left alone: the writer prompt still leaves a step to the drive's gate because its recorded mean is slow, which the recorder runs. That is a different reason with the same sentence, and it existed before this task.",
+        "descriptive": "executor.phaseGateOnly now also leaves a named command out of a task's recorded gate when the phase gate runs it, lists it on the row, and the writer brief, recorder, drive and verdict binding all read it one way."
       },
       "startedAt": "2026-11-18T08:48:48Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T09:47:19Z",
+      "verifiedBy": [
+        "pgo1-pgo8 in tests/test_run_test_gate.py: a named step the phase gate holds is left out and listed on the row (digest stays the declared gate's, identity over what ran, a repeat still skips it); one the phase gate lacks runs, with the reason; only left-out entries record no-checks and exit red; the phase gate runs every entry; absent and empty settings give identical output; a widened phase-gate step is left out and keeps its arm",
+        "gc11, gc12 in tests/test_drive_phase.py: the drive's task_gate_steps and the gate choice leave out the entry the recorder leaves out, reading the config",
+        "wa1, wa2 in tests/test_audit_lookup.py: the writer brief leaves out exactly what the recorder leaves out, and lists unheld entries with the runs-nowhere note",
+        "pg4-pg7 in tests/test__config_rules.py: the matcher, the split by name and by command, and the empty-names allow case",
+        "vb38, vb39 in tests/test__verdict_binding.py: a row short a step because it is listed binds; short for any other reason does not",
+        "ltp1, ltp2 in tests/test__evidence_io.py: the row key and its declared-arm reader",
+        "pgs2 in tests/test__panel_settings.py: help and label describe the wider meaning"
+      ],
       "notes": [
         {
           "at": "2026-11-18T06:46:36Z",
@@ -552,7 +560,73 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T09:25:51Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 2215000,
+            "startedAt": "2026-11-18T08:48:56Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T09:34:54Z.84f0e1",
+            "kind": "wait",
+            "ms": 14000,
+            "startedAt": "2026-11-18T09:26:25Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T09:34:54Z.84f0e1, ending at its startedAt",
+            "kind": "selection",
+            "ms": 27996,
+            "runId": "2026-11-18T09:34:54Z.84f0e1",
+            "startedAt": "2026-11-18T09:26:39Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T09:34:54Z.84f0e1",
+            "kind": "gate",
+            "ms": 467190,
+            "runId": "2026-11-18T09:34:54Z.84f0e1",
+            "startedAt": "2026-11-18T09:27:07Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T09:36:06Z.3b8ce5",
+            "kind": "wait",
+            "ms": 33000,
+            "startedAt": "2026-11-18T09:35:12Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T09:36:06Z.3b8ce5",
+            "kind": "base",
+            "ms": 21310,
+            "runId": "2026-11-18T09:36:06Z.3b8ce5",
+            "startedAt": "2026-11-18T09:35:45Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T09:46:40Z.80b7a0",
+            "kind": "wait",
+            "ms": 6000,
+            "startedAt": "2026-11-18T09:41:28Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T09:46:40Z.80b7a0, ending at its startedAt",
+            "kind": "selection",
+            "ms": 20206,
+            "runId": "2026-11-18T09:46:40Z.80b7a0",
+            "startedAt": "2026-11-18T09:41:34Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T09:46:40Z.80b7a0",
+            "kind": "gate",
+            "ms": 285698,
+            "runId": "2026-11-18T09:46:40Z.80b7a0",
+            "startedAt": "2026-11-18T09:41:55Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit ed8b946a4ab8",
+            "kind": "commit",
+            "ms": 1541,
+            "startedAt": "2026-11-18T09:47:16Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T08:48:48Z"
       },
       "reviewPerTask": "signals",
@@ -560,12 +634,24 @@
         "runId": "2026-11-18T09:47:01Z.6cf0aa",
         "status": "passed",
         "at": "2026-11-18T09:47:01Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "ed8b946a4ab8",
+        "at": "2026-11-18T09:47:19Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T09:25:46Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test_drive_phase.py tests/test_audit_lookup.py tests/test__config_rules.py` in a throwaway tree at HEAD exited 1 with 14 of 651 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - pg4 (house FAIL), pg5 (house FAIL), pg6 (house FAIL), pg7 (house FAIL), wa1 (house FAIL), wa2 (house FAIL), gc11 (house FAIL), gc12 (house FAIL) and 6 more: SELFTEST FAILED: 645/651 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P168.5",
       "title": "A task that has not started and carries the phase's wide gate for want of a subset spelling gets the narrow gate once the spelling is recorded",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A task added before the project recorded how to run a subset of its suites stores the whole phase gate, with a basis word saying no spelling was known. Recording the spelling later changes nothing for it: only a scope edit re-derives a gate, so the task runs the whole gate when its turn comes. The settle verb is the one writer of a plan's stale derived values; make a derived wide gate one of them. For a task that has not started, whose basis is one of the derivation's own wide words and whose derivation now gives a narrower gate, settle writes the narrow gate and its basis, the validator warns about each such task and names the verb, and record-listing prints how many tasks the new spelling leaves stale. A gate somebody declared or cleared is never touched, and a started task keeps the gate its attempt is graded against. Dependants you answer for: the existing rule that a scope edit re-derives a derived gate, which must share the one derivation function; settle's revalidate-or-roll-back and its journal row; the validator's warning groups and their counts in the doctor and the panel; every committed example plan, which must still validate with no new warning. Acceptance: (1) after record-listing stores a spelling, a pending task whose basis says no spelling was known is warned about by the validator, and settle rewrites its gate to the narrow one with the basis the derivation gives; (2) a task whose gate was declared or cleared is untouched and unwarned; (3) a started task, and one put back to pending after an attempt, is untouched; (4) a task whose derivation still gives the wide gate is untouched and unwarned; (5) settle on a plan with nothing stale writes nothing.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -574,7 +660,9 @@
         "tests/test__manifest_phases.py",
         "plugins/audit/commands/task.md",
         "PLUGIN-BUILD-GUIDE.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "plugins/audit/scripts/governance/derive-phase-gate.py",
+        "tests/test_derive_phase_gate.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -593,14 +681,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T10:15:06Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -614,7 +702,17 @@
           "text": "it quotes the operator's-words sentence of the task command page, and this task adds a sentence about settle and leaves that one alone",
           "waives": "tools/prove-gates.py"
         }
-      ]
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T09:47:26Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T10:29:16Z.bfc4a0",
+        "status": "passed",
+        "at": "2026-11-18T10:29:16Z"
+      }
     },
     {
       "id": "P168.6",
@@ -1027,7 +1125,7 @@
     {
       "id": "P168.12-icj",
       "title": "The drive suite's writer-stub log is one file per session wherever a wave runs two sessions at once",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The task that gave each wave member its own mark file left one case with the same shape: a case that runs the real loop over a wave of two writer sessions has both stub sessions append one line each to a single log, and counts the lines. The class sweep of that task called this log 'written by sessions run one at a time', which is not true for that case, since the loop starts a wave's members together. The case is skipped where process groups are absent, so it has not failed on Windows, and an append of one short line is atomic on the systems where it does run; the shape is still the one the task set out to remove, and its own acceptance clause says no case hands one file to two commands that run at the same time. Give that case's stub sessions a log per session (or per member) read together through the same helper, and then walk every log in this suite that a stub or child appends to and state, in the helper's docstring table, which run concurrently and which serially, by case, from what the loop does and not from the case's name. Dependants you answer for: every case reading the writer-stub log, whose expectations must not change by value. Acceptance: (1) no stub or child in the suite appends to a file another concurrent process appends to; (2) the docstring's table names each shared log and why it is safe; (3) the suite's case count does not drop and every expectation is unchanged. A second fragile case in the same suite, seen red in CI on the stress leg: the case that checks the wait stage before the writer picks the writer's wait by arithmetic alone (a wait whose start plus length equals the writer's start), and when the reviewer's hand-out lands in the same second as the writer's start, the reviewer's zero-length wait satisfies the same arithmetic and the case finds two where it requires one. Stamps are whole seconds, so this depends on where a second boundary falls. Pick the writer's wait by what it is - its basis names the writer's session record - and keep the arithmetic as the assertion about it, not as the selector; do the same wherever a case in this suite selects a stage by time arithmetic. Acceptance (4): the wait case selects by the stage's own basis and holds when two stages share a second, shown by a case that builds exactly that record.",
       "files": [
         "tests/test_drive_phase.py"
@@ -1048,16 +1146,26 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T09:47:33Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T09:47:33Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T10:14:04Z.722584",
+        "status": "passed",
+        "at": "2026-11-18T10:14:04Z"
+      }
     },
     {
       "id": "P168.13-icj",
