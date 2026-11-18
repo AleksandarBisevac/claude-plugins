@@ -563,7 +563,10 @@ the unscoped sweep, `python3 tools/sweep-selftests.py`: this plan's `selftests` 
 of every phase still to sign off, and the `selftests` slice of `verify.sh`'s per-run tier, which
 CI runs on a push to `main`, on a pull request and on a dispatched run. So a scanner a task turns
 red surfaces at sign-off, not in the task. Print the set with
-`python3 tools/affected.py --list-scanners`. The split is held by cases rather than by this
+`python3 tools/affected.py --list-scanners`, and why the listing names each file it names with
+`python3 tools/affected.py --why-related <path>...`: one line per listed file, then the chain of
+imports and runs, or the one rule, that reaches it from a changed path. A listed file no chain
+reaches exits 1 with a `NO CHAIN` line rather than a line short. The split is held by cases rather than by this
 paragraph: `tools/affected.py --selftest` checks the listing leaves them out while the narrowed
 run, the full listing and the per-run tier keep them, and `tests/test__affected_tests.py` checks
 the same listing read through the task gate's selection and that every phase still to sign off
@@ -582,7 +585,12 @@ safety. When `gh` lists as many failed runs as `--ci-limit` allows and the oldes
 the window, the CI tail prints `WINDOW TRUNCATED`, because the older runs were never read. It
 never touches the checkout, and it changes no gate: trusting the selection is a separate decision that this
 number informs. `--budget-minutes` stops starting commits past a time limit and says so, because
-a mutation sweep per commit is minutes each.
+a mutation sweep per commit is minutes each. A change to the selection is asked the same question
+before it lands: `--selector <file> --compare-selector <file>` replays one window of commits once,
+judges both selector files against the same faults and the same sweeps, and prints the
+comparison's misses on their own `MISS (compare)` lines and in its own headline. That headline is
+the evidence a narrowed rule owes before it becomes the default; nothing checks that it was
+taken, so the selector's docstring carries the command and the date of the one that was.
 
 CI (`.github/workflows/ci.yml`) runs the sweep slices on ubuntu + windows, and the
 `runner` and `e2e` slices on both - the windows cells prove the `python3` → `python`

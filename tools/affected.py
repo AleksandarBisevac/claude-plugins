@@ -17,6 +17,11 @@ Which checks a change actually needs — and, when it cannot tell, all of them.
                                        # line, nothing executed -- .listing.all
     tools/affected.py --list-scanners # every suite and tool that walks the
                                        # whole tree, one per line
+    tools/affected.py --why-related <path> <path>    # each path --list-related
+                                       # prints, then the chain of imports,
+                                       # runs or the one rule that put it
+                                       # there; exit 1 and a NO CHAIN line
+                                       # for a listed path nothing explains
 
 HOW OFTEN THIS SELECTION IS WRONG is not decided here: `tools/measure-affected-miss.py` plants
 a fault in the files of recent commits and counts the red suites this file did not select.
@@ -59,7 +64,9 @@ plan by `tests/test__affected_tests.py`, and that the per-run tier does by this
 file's own cases.
 
 WHAT A SUITE REACHES is read the same way, off the code rather than a list: what it
-imports, what it loads or resolves through `_loader` or the hooks' resolver, what a
+imports, what it loads or resolves through `_loader` or the hooks' resolver - except a
+script path only spelled into text, a command printed for a reader (`TEXT_RESOLVERS`
+says why and carries the measurement that let it narrow) - what a
 suite, a tool or one of the repository's own hooks names inside a call (the
 subprocess it starts, the source it reads), and onward through each of those,
 however many files away. A path assembled from literal pieces - a join, a `+`, a
@@ -68,6 +75,23 @@ document read that way reaches what the commands it records run. What that readi
 cannot see: a target computed at runtime in the product's own code, and a file loaded
 through `importlib` by a computed path - neither shows up here, and the miss
 measurement is what finds them.
+
+WHERE A LISTING'S SECONDS GO. Nearly all of a `--list-related` call is `reach_graph()`:
+parsing every `.py` the sweep can reach and one walk of each tree (`_scan`); importing
+this file and selecting over the built graph are noise beside it, and `--list-all`
+builds no graph at all. Re-derive the split rather than trusting this sentence:
+
+    python3 -m cProfile -s cumulative tools/affected.py --list-related <path> | head -30
+
+A task's gate asks the related listing once per declared path, side by side, and once
+for the whole change (`_affected_tests.prefetch_listings`, in the plugin), so it pays
+for that one graph once per process. ONE SCAN CAN SERVE THEM ALL only from outside
+this file: the graph depends on the tree and not on the paths, but each listing is
+its own process with its own `{paths}`, so sharing it means the plugin asking one
+process for every path's answer at once - with each answer still printed in the shape
+the plan records - or a cache keyed by the tree's bytes, which `reach_graph()` refuses
+for the reason it gives. Neither is this file's to decide; the answer is recorded
+here so the next measurement starts from it.
 """
 import ast
 import contextlib
@@ -278,6 +302,34 @@ REACH_DIRS = (_output.SCRIPTS_DIR, _output.HOOKS_DIR, _output.TESTS_DIR,
 RESOLVERS = {_deps._LOADER_MODULE: tuple(_deps._LOADER_FUNCS) + ("script_path",),
              "_config": ("find_script",)}
 
+# ...BUT A PATH SPELLED INTO TEXT IS NOT RUN. A resolver named here only answers
+# where a script is; when its answer is quoted with `shlex.quote` or formatted into
+# a string with `%` - a command a stop prints for the reader, a prompt an agent is
+# handed - nothing in that process starts the script. Read as a run, the one
+# `restore_command()` in `_worktrees.py` made every importer of `_worktrees` - most
+# of the tree, through `_evidence_io` - a reacher of `drive-phase.py`, and the
+# related listing for a governance script was the whole tree. `--why-related`
+# prints that chain on a tree where this tuple is empty. The value handed to a
+# list, to a call other than `shlex.quote`, or bound to a name unquoted is still a
+# run; `_spells` says which is which.
+#
+# MEASURED BEFORE IT BECAME THE DEFAULT, on 2026-11-18: one replay of the task commits
+# fb61b6b8..c56ea741, judging the selector as it stood (this tuple empty) and this
+# reading against the same planted faults and the same sweeps -
+#
+#     python3 tools/measure-affected-miss.py --rev c56ea741 --commits 5 \
+#         --budget-minutes 100 --no-ci --selector <the old copy> \
+#         --compare-selector tools/affected.py
+#
+# - and neither missed a suite on any commit it measured. The reading changed the
+# selection on two of them, c56ea741 and fb61b6b8, and every suite the import-time
+# raise turned red there sat inside the narrower one. A window of a handful of commits
+# is a floor, not a proof: re-run it after changing what counts as spelled.
+TEXT_RESOLVERS = ("script_path",)
+# The call that quotes a value for a shell line, by module and name: its argument
+# is text from there on.
+QUOTE_CALL = ("shlex", "quote")
+
 # Where the shared tree walks live: `_output.py` holds the walk the sweep and the
 # lints share, and the lint modules hold every walk built on it. A function here
 # that reaches `os.walk` - directly or through another function here - walks the
@@ -428,9 +480,12 @@ def _scan(tree, consts):
     pieces (`_assembled`) read as the literal it spells; `docs` every document path
     named inside a call the same way; `calls` one row per call that
     names a target or could resolve one - `(name, qualifier, targets, forwards,
-    has_args, function)`, where `forwards` says the call passes on a parameter of the
-    function it sits in; `fn_calls` the call names inside each function; `aliases`
-    and `from_names` how its imports are bound.
+    has_args, function, spelled)`, where `forwards` says the call passes on a
+    parameter of the function it sits in and `spelled` that its value is spelled
+    into text: an argument of `shlex.quote`, or an operand of a `%` format, reached
+    through nothing but tuples, lists and dicts (`TEXT_RESOLVERS` says why that
+    matters); `fn_calls` the call names inside each function; `aliases` and
+    `from_names` how its imports are bound.
 
     One walk because the graph parses every `.py` the sweep can reach on every
     selection, and the first version, walking each tree once per question, spent
@@ -442,9 +497,11 @@ def _scan(tree, consts):
     # argument of a join, an operand of a `+` - and is read through the whole it
     # belongs to: `os.path.join(tmp, "docs", "README.md")` names `docs/README.md`,
     # never the repository's own `README.md`.
-    stack = [(tree, True, False)]
+    # The fourth says the node's value is spelled into text (the docstring's
+    # `spelled`).
+    stack = [(tree, True, False, False)]
     while stack:
-        node, entering, piece = stack.pop()
+        node, entering, piece, spelled = stack.pop()
         if not entering:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 frames.pop()
@@ -453,7 +510,7 @@ def _scan(tree, consts):
                 if row[0] is not None:
                     found["calls"].append(tuple(row))
             continue
-        stack.append((node, False, piece))
+        stack.append((node, False, piece, spelled))
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             params = set(a.arg for a in ast.walk(node.args) if isinstance(a, ast.arg))
             frames.append((node.name, params))
@@ -469,7 +526,7 @@ def _scan(tree, consts):
                 found["fn_calls"][frames[-1][0]].add(
                     OS_WALK if (qualifier, name) == ("os", "walk") else name)
             open_calls.append([name, qualifier, set(), False, bool(node.args),
-                               frames[-1][0] if frames else None])
+                               frames[-1][0] if frames else None, spelled])
             if not piece and _is_path_join(node):
                 _note_path(found, open_calls, _assembled(node, consts))
         elif isinstance(node, ast.BinOp):
@@ -500,8 +557,35 @@ def _scan(tree, consts):
                 found["from_names"][alias.asname or alias.name] = (base, alias.name)
         pieces = isinstance(node, ast.BinOp) or (isinstance(node, ast.Call)
                                                  and _is_path_join(node))
-        stack.extend((child, True, pieces) for child in ast.iter_child_nodes(node))
+        quoted = _spells(node, spelled) if isinstance(node, SPELL_NODES) else False
+        if quoted is True or quoted is False:
+            stack.extend((child, True, pieces, quoted)
+                         for child in ast.iter_child_nodes(node))
+        else:
+            stack.extend((child, True, pieces, child in quoted)
+                         for child in ast.iter_child_nodes(node))
     return found
+
+
+# The only nodes whose children `_spells` can call spelled.
+SPELL_NODES = (ast.BinOp, ast.Call, ast.Tuple, ast.List, ast.Dict)
+
+
+def _spells(node, spelled):
+    """Which children of `node` are spelled into text: True for every one (the
+    operands of a `%` format, the elements of a tuple, list or dict that already
+    is), the argument list of a `shlex.quote` call, or False. Any other call or
+    name in between ends it - what a call does with a value this does not guess.
+    Asked once per node rather than once per child: the walk is most of what a
+    listing costs."""
+    if isinstance(node, ast.BinOp):
+        return isinstance(node.op, ast.Mod)
+    if isinstance(node, ast.Call):
+        func = node.func
+        return node.args if (isinstance(func, ast.Attribute)
+                             and isinstance(func.value, ast.Name)
+                             and (func.value.id, func.attr) == QUOTE_CALL) else False
+    return spelled and isinstance(node, (ast.Tuple, ast.List, ast.Dict))
 
 
 def _walk_names(scans, homes):
@@ -528,7 +612,7 @@ def _scans_tree(scan, walks, home_stems):
     via = set(local for local, mod in scan["aliases"].items() if mod in home_stems)
     bare = set(local for local, (mod, name) in scan["from_names"].items()
                if mod in home_stems and name in walks)
-    for name, qualifier, _t, _f, _a, _fn in scan["calls"]:
+    for name, qualifier, _t, _f, _a, _fn, _s in scan["calls"]:
         if (qualifier in via and name in walks) or (qualifier is None and name in bare):
             return True
     return False
@@ -541,6 +625,21 @@ def _is_resolver(scan, name, qualifier):
         return name in RESOLVERS.get(scan["aliases"].get(qualifier), ())
     mod, original = scan["from_names"].get(name, (None, None))
     return original in RESOLVERS.get(mod, ())
+
+
+def _resolves_a_run(scan, name, qualifier, spelled):
+    """True for a resolver call whose answer is a run - every one, except a
+    `TEXT_RESOLVERS` call whose value is spelled into text."""
+    return _is_resolver(scan, name, qualifier) and not (
+        spelled and _resolver_name(scan, name, qualifier) in TEXT_RESOLVERS)
+
+
+def _resolver_name(scan, name, qualifier):
+    """The resolver's own name: the attribute through a module alias, or the name
+    a `from` import bound locally to it."""
+    if qualifier is not None:
+        return name
+    return scan["from_names"].get(name, (None, None))[1]
 
 
 def _file_edges(rel, scan, known, wrappers, doc_stems=None):
@@ -559,9 +658,14 @@ def _file_edges(rel, scan, known, wrappers, doc_stems=None):
         for doc in scan["docs"]:
             runs |= (doc_stems or {}).get(doc) or set()
     unknown = False
-    for name, qualifier, targets, forwards, has_args, _fn in scan["calls"]:
-        resolver = _is_resolver(scan, name, qualifier)
-        if not resolver and name not in wrappers:
+    for name, qualifier, targets, forwards, has_args, _fn, spelled in scan["calls"]:
+        if _is_resolver(scan, name, qualifier):
+            resolver = _resolves_a_run(scan, name, qualifier, spelled)
+            if not resolver:
+                continue                    # spelled into text: no run, no guess
+        elif name in wrappers:
+            resolver = False
+        else:
             continue
         runs |= targets
         if resolver and not targets and has_args and not forwards:
@@ -592,8 +696,9 @@ def reach_graph():
     scripts = set(_stem(rel) for rel in files
                   if rel.startswith(_rel(_output.SCRIPTS_DIR) + "/"))
     wrappers = set(fn for scan in scans.values()
-                   for name, qualifier, _t, forwards, _a, fn in scan["calls"]
-                   if forwards and fn and _is_resolver(scan, name, qualifier))
+                   for name, qualifier, _t, forwards, _a, fn, spelled in scan["calls"]
+                   if forwards and fn and _resolves_a_run(scan, name, qualifier,
+                                                          spelled))
     doc_stems = {}
     for rel, scan in scans.items():
         for doc in scan["docs"] if _is_dev(rel) else ():
@@ -625,25 +730,34 @@ def _is_runner(rel):
             or rel.startswith(REPO_HOOKS))
 
 
-def reached_by(graph, rel):
-    """Every file that imports or runs `rel`, transitively.
+def reach_chains(graph, rel):
+    """Every file that imports or runs `rel`, transitively, each with the chain of
+    hops that reaches it: `[("changed", rel), ("imported by", a), ("run by", b),
+    ...]`, ending at that file. Breadth first over sorted neighbours, so a chain is
+    a shortest one and the same tree always prints the same chain.
 
     A suite is where a red STOPS: a file naming a suite's path does not run its cases.
     The one way past one is an import - a suite borrowing another suite's fixture
     goes red with it - so from a suite only the importers are followed."""
-    seen = set()
-    stack = [rel]
-    while stack:
-        cur = stack.pop()
+    chains = {rel: [("changed", rel)]}
+    queue = [rel]
+    for cur in queue:                       # grows while it is read: breadth first
         stem = _stem(cur)
-        up = set(graph["imported_by"].get(stem, ()))
+        steps = [("imported by", nxt) for nxt in sorted(graph["imported_by"].get(stem, ()))]
         if not _is_suite(cur):
-            up |= graph["run_by"].get(stem, set())
-        for nxt in up - seen:
-            seen.add(nxt)
-            stack.append(nxt)
-    seen.discard(rel)
-    return seen
+            steps.extend(("run by", nxt) for nxt in sorted(graph["run_by"].get(stem, ())))
+        for label, nxt in steps:
+            if nxt not in chains:
+                chains[nxt] = chains[cur] + [(label, nxt)]
+                queue.append(nxt)
+    del chains[rel]
+    return chains
+
+
+def reached_by(graph, rel):
+    """Every file that imports or runs `rel`, transitively - `reach_chains()`
+    without the chains, so the set and the explanation cannot disagree."""
+    return set(reach_chains(graph, rel))
 
 
 def _suite_for(module_basename):
@@ -661,19 +775,27 @@ def _suite_for(module_basename):
 
 
 def _reached_selection(graph, rel):
-    """`(suites, tool gates)` that `rel` can turn red: its own suite, and every suite
-    and tool whose cases import or run it, however many files away."""
-    suites, gates = set(), []
-    reached = reached_by(graph, rel) | set((rel,))
+    """`(suites, tool gates, chains)` that `rel` can turn red: its own suite, and
+    every suite and tool whose cases import or run it, however many files away -
+    with the chain that names each, by the path a listing prints it as."""
+    suites, gates, chains = set(), [], {}
+    reached = reach_chains(graph, rel)
     own = _suite_for(_stem(rel))
     if own:
         suites.add(own)
-    for other in sorted(reached):
+        chains[_suite_path(own)] = [("changed", rel),
+                                    ("rule: its own suite", _suite_path(own))]
+    for other in sorted(set(reached) | set((rel,))):
+        chain = reached.get(other) or [("changed", rel),
+                                       ("rule: the changed file itself", other)]
         if _is_suite(other):
             suites.add(other[len(TESTS) + 1:])
         elif _is_runner(other):
             gates.append(TOOL_SELFTEST % (other,))
-    return suites, gates
+        else:
+            continue
+        chains.setdefault(other, chain)
+    return suites, gates, chains
 
 
 # --- the selection rules ------------------------------------------------------
@@ -735,14 +857,53 @@ def _related_suite_paths(paths, graph=None):
 
     WITHOUT THE TREE SCANNERS: this is the listing a task's gate reads, and the
     gates that run every scanner are the phase gate and the per-run sweep."""
-    suites, gates, _reasons, full = select(paths, graph, scanners=False)
-    if full:
-        return _all_suite_paths()
+    return _related(paths, graph)[0]
+
+
+def _related(paths, graph):
+    """`(listed, chains)`: the related listing, and the chain naming each listed
+    path - `related_chains()` without the filter, so a listed path the selection
+    names without a chain is absent from `chains` rather than invented."""
+    got = _select(paths, graph, False)
+    if got["full"]:
+        listed = _all_suite_paths()
+        posix, why = got["full_why"][0] if got["full_why"] else (None, None)
+        if posix is None:
+            return listed, {}
+        return listed, dict((p, [("changed", posix), ("full set: " + why, p)])
+                            for p in listed)
     # A deleted tool still selects its own gate in `--json`, but it has no cases
     # left to run and the sweep refuses a path it does not hold, by name.
-    runners = set(p for p in (_selftest_path(g) for g in gates)
+    runners = set(p for p in (_selftest_path(g) for g in got["gates"])
                   if p and os.path.isfile(os.path.join(REPO, p)))
-    return sorted(set(_suite_path(s) for s in suites) | runners)
+    listed = sorted(set(_suite_path(s) for s in got["suites"]) | runners)
+    return listed, dict((p, got["chains"][p]) for p in listed if p in got["chains"])
+
+
+def related_chains(paths, graph=None):
+    """For each path `--list-related` prints, the chain from a changed path that
+    put it there (`reach_chains()`'s shape) - absent where none is known, which
+    `render_why()` reports as an error rather than leaving the line out."""
+    return _related(paths, graph)[1]
+
+
+def render_why(listed, chains):
+    """`(exit code, lines)`: one line per listed path, led by that path, then its
+    chain - and, for a listed path no chain reaches, a `NO CHAIN` line and exit 1.
+    A listing whose reason is unknown is a defect of this file, never a quiet
+    line short."""
+    lines, missing = [], []
+    for path in listed:
+        chain = chains.get(path)
+        if not chain:
+            missing.append(path)
+            continue
+        hops = [chain[0][1]] + ["%s %s" % (label, rel) for label, rel in chain[1:]]
+        lines.append("%s  <=  %s" % (path, " > ".join(hops)))
+    for path in missing:
+        lines.append("affected: NO CHAIN reaches %s - it is listed and nothing "
+                     "here says why" % (path,))
+    return (1 if missing else 0), lines
 
 
 def _once(gates):
@@ -771,26 +932,58 @@ def select(paths, graph=None, scanners=True):
     tree; absent, it is built here when a `.py` is among the paths. `scanners`
     False leaves out the suites and tools that walk the whole tree unless an edge
     reaches them - the task's listing; the reason says where they run instead."""
+    got = _select(paths, graph, scanners)
+    return got["suites"], got["gates"], got["reasons"], got["full"]
+
+
+def _select(paths, graph, scanners):
+    """`select()`'s answer as a dict, plus what only `--why-related` reads:
+    `chains`, by the path a listing prints, the chain that named each suite and
+    tool (`reach_chains()`'s shape; a rule's chain is the changed path and one
+    `rule: ...` hop), and `full_why`, the changed path and reason that widened to
+    the full set. Recorded at the line that names a suite, so a branch that names
+    one without saying why leaves it chainless, and `render_why()` refuses that."""
     suites = set()
     gates = []
     reasons = []
+    chains = {}
+    full_why = []
     full = False
     touched_py = False
     panel = report = artifacts = vitest = False
     if graph is None and any(_repo_relative(p).endswith(".py") for p in paths):
         graph = reach_graph()
 
+    def note(target, chain):
+        if target not in chains:
+            chains[target] = chain
+
+    def by_rule(posix, rule, *names):
+        for name in names:
+            suites.add(name)
+            note(_suite_path(name), [("changed", posix),
+                                     ("rule: " + rule, _suite_path(name))])
+
+    def gate_rule(posix, rule, rel):
+        gates.append(TOOL_SELFTEST % (rel,))
+        note(rel, [("changed", posix), ("rule: " + rule, rel)])
+
+    def widen(posix, why):
+        full_why.append((posix, why))
+
     def reach(posix):
-        found, tool_gates = _reached_selection(graph, posix)
+        found, tool_gates, found_chains = _reached_selection(graph, posix)
         suites.update(found)
         gates.extend(tool_gates)
+        for target, chain in sorted(found_chains.items()):
+            note(target, chain)
 
     for path in paths:
         posix = _repo_relative(path)
         if refs_reads(posix):
             # Applied to EVERY path rather than added inside four branches by hand,
             # which is how three of them came to disagree about it.
-            suites.add("test__refs.py")
+            by_rule(posix, "_refs reads this path", "test__refs.py")
         # THE PROSE SCANS, and they are applied to every path for the same reason.
         # Their sets are derived now - every `.py` this repo keeps for
         # `prose_number_claims()`, every `.md` for `doc_prose_numbers()` - so the
@@ -807,18 +1000,19 @@ def select(paths, graph=None, scanners=True):
         if posix.endswith(".py"):
             touched_py = True
         if posix.endswith(".md"):
-            suites.add("test__deps.py")
+            by_rule(posix, "_deps reads every .md", "test__deps.py")
         if posix == WORKFLOW:
             # THE WORKFLOW IS NO SWEEP DOCUMENT any more - every job is one verify.sh
             # call - but it is what the slice rule holds against `verify.sh --list`,
             # and the tools whose own cases read it go red when it moves.
             gates.append(PARITY)
-            gates.extend(TOOL_SELFTEST % (rel,) for rel in WORKFLOW_READERS)
+            for rel in WORKFLOW_READERS:
+                gate_rule(posix, "its own cases read the workflow", rel)
             reasons.append("%s - the workflow, so the slice rule and the cases "
                            "that read it are re-checked" % (posix,))
             continue
         if posix in SWEEP_DOCS:
-            suites.add("test__deps.py")
+            by_rule(posix, "a sweep document, read by _deps", "test__deps.py")
             # EVERY sweep document, not only the workflow. Some of them are parity
             # SIDES and the workflow was the only one selecting the check, so editing
             # `CONTRIBUTING.md` - a side long before this - narrowed to a run that
@@ -839,7 +1033,7 @@ def select(paths, graph=None, scanners=True):
             # Root prose. The `.md` half is already selected above, along with
             # every other `.md` in the tree; what this branch still owns is `.txt`
             # and the `continue` that says a root document needs nothing else.
-            suites.add("test__deps.py")
+            by_rule(posix, "root prose, linted by _deps", "test__deps.py")
             reasons.append("%s - root prose, linted by _deps" % (posix,))
             continue
         if posix.startswith(TESTS.replace(os.sep, "/") + "/"):
@@ -848,7 +1042,7 @@ def select(paths, graph=None, scanners=True):
                 # harness, a shared fixture) is no suite at all, and was named as
                 # one here. Either way what imports or runs it goes red with it.
                 if _is_suite(posix):
-                    suites.add(posix[len(TESTS) + 1:])
+                    by_rule(posix, "the changed suite itself", posix[len(TESTS) + 1:])
                 reach(posix)
                 reasons.append("%s - its own cases, plus every suite and tool that "
                                "imports or runs it" % (posix,))
@@ -862,18 +1056,20 @@ def select(paths, graph=None, scanners=True):
             vitest = True
             if "/panel" in posix:
                 panel = True
-                suites.update(("test__panel_page.py", "test__panel_ui.py",
-                               "test_panel_server.py"))
+                by_rule(posix, "a panel part", "test__panel_page.py",
+                        "test__panel_ui.py", "test_panel_server.py")
                 reasons.append("%s - a panel part, so the panel is reassembled"
                                % (posix,))
             if "/report" in posix:
                 report = artifacts = True
-                suites.update(("test_render_report.py", "test__report_page.py"))
+                by_rule(posix, "a report part", "test_render_report.py",
+                        "test__report_page.py")
                 reasons.append("%s - a report part, so the report is reassembled"
                                % (posix,))
             if "/shared" in posix:
                 panel = report = artifacts = True
-                suites.update(("test__panel_page.py", "test_render_report.py"))
+                by_rule(posix, "a part both surfaces share", "test__panel_page.py",
+                        "test_render_report.py")
                 reasons.append("%s - shared by BOTH surfaces" % (posix,))
             continue
         if posix.endswith(".py") and posix.startswith("plugins/audit/"):
@@ -892,6 +1088,7 @@ def select(paths, graph=None, scanners=True):
             continue
         if posix == "plugins/audit/.claude-plugin/plugin.json":
             full = True
+            widen(posix, "the version is in every rendered artifact")
             reasons.append("%s - the version is embedded in every rendered "
                            "artifact, so nothing here is unaffected" % (posix,))
             continue
@@ -903,13 +1100,15 @@ def select(paths, graph=None, scanners=True):
             # its frontmatter, so those two are the whole answer. Left unrecognised
             # this selected the full set - correct but expensive, and these are
             # among the most frequently edited files in the tree.
-            suites.update(("test__refs.py", "test__deps.py"))
+            by_rule(posix, "plugin prose, read by _refs and _deps", "test__refs.py",
+                    "test__deps.py")
             gates.append("claude plugin validate plugins/audit")
             reasons.append("%s - plugin prose: path references and frontmatter, "
                            "no rendered surface" % (posix,))
             continue
         if posix.startswith("plugins/audit/README.md"):
-            suites.update(("test__refs.py", "test__deps.py"))
+            by_rule(posix, "the plugin README, read by _refs and _deps",
+                    "test__refs.py", "test__deps.py")
             reasons.append("%s - the plugin README, read by _refs and _deps"
                            % (posix,))
             continue
@@ -941,12 +1140,12 @@ def select(paths, graph=None, scanners=True):
                 # runs the file itself.
                 suite = _suite_for(os.path.basename(posix)[:-3].replace("-", "_"))
                 if suite:
-                    suites.add(suite)
+                    by_rule(posix, "the suite its cases moved to", suite)
                     answered = True
                     reasons.append("%s - a development module: its suite %s"
                                    % (posix, suite))
             if own:
-                gates.append(TOOL_SELFTEST % (posix,))
+                gate_rule(posix, "a tool, so its own cases run", posix)
                 reasons.append("%s - a tool, so its own cases run" % (posix,))
             if posix.endswith(".py"):
                 # ...and every suite and tool that imports or runs it: a tool is a
@@ -979,7 +1178,8 @@ def select(paths, graph=None, scanners=True):
                     # no import graph shows, and one the parity check above, which
                     # is not `--selftest`, never exercises. The tool itself takes
                     # its own cases through `own`.
-                    gates.append(TOOL_SELFTEST % (PARITY_TOOL,))
+                    gate_rule(posix, "the parity tool's cases run functions cut "
+                              "out of it", PARITY_TOOL)
                     reasons.append("%s - the parity tool's own cases run functions "
                                    "cut out of it, so they run" % (posix,))
             elif not answered:
@@ -998,15 +1198,18 @@ def select(paths, graph=None, scanners=True):
             reasons.append("%s - a rendered artifact" % (posix,))
             continue
         full = True
+        widen(posix, "no rule here recognises it")
         reasons.append("%s - UNRECOGNISED, so the full set is selected rather "
                        "than a guess" % (posix,))
 
+    first_py = next((_repo_relative(p) for p in paths
+                     if _repo_relative(p).endswith(".py")), None)
     if touched_py and scanners:
         for rel in graph["scanners"]:
             if _is_suite(rel):
-                suites.add(rel[len(TESTS) + 1:])
+                by_rule(first_py, "walks the whole tree", rel[len(TESTS) + 1:])
             else:
-                gates.append(TOOL_SELFTEST % (rel,))
+                gate_rule(first_py, "walks the whole tree", rel)
         reasons.append("a .py changed, so every suite and tool that walks the tree "
                        "through a shared walk is included - editing one file turns "
                        "those red without touching them")
@@ -1020,6 +1223,7 @@ def select(paths, graph=None, scanners=True):
             # A file the graph could not parse is a file whose edges it does not
             # know, so what reaches through it is unknown too.
             full = True
+            widen(first_py, "%s would not parse" % (", ".join(graph["broken"]),))
             reasons.append("%s - would not parse, so what it reaches is unknown "
                            "and the full set is selected" % (", ".join(graph["broken"]),))
     if vitest:
@@ -1031,7 +1235,8 @@ def select(paths, graph=None, scanners=True):
             gates.append(REPORT_GATE % (doc,))
     if panel:
         gates.append(PANEL_GATE)
-    return sorted(suites), _once(gates), reasons, full
+    return {"suites": sorted(suites), "gates": _once(gates), "reasons": reasons,
+            "full": full, "chains": chains, "full_why": full_why}
 
 
 # --- the CLI entry point -------------------------------------------------------
@@ -1055,6 +1260,13 @@ def main(argv):
         for path in reach_graph()["scanners"]:
             print(path)
         return 0
+    if "--why-related" in argv:
+        i = argv.index("--why-related")
+        listed, chains = _related(argv[i + 1:], None)
+        rc, lines = render_why(listed, chains)
+        for line in lines:
+            print(line)
+        return rc
 
     base = "HEAD"
     as_json = "--json" in argv
@@ -1105,6 +1317,13 @@ def main(argv):
 # commit, the label of the case that holds it, the commit, the files it changed, and
 # every suite a planted fault in those files turned red while this selection left it
 # out. Copied from the measurement's JSON, so the case reads no file outside the tree.
+#
+# THE LATEST MEASUREMENT ADDED NO ROW. The replay recorded at `TEXT_RESOLVERS`, on
+# 2026-11-18 over fb61b6b8..c56ea741 (its command is there), found no miss for this
+# selection as it stood nor for the narrowed reading, so there was nothing to copy in.
+# The rows below stay: each is a suite this selection once left out, and the case
+# reading them is what keeps it selected. A measurement that finds misses adds its
+# rows here, with its date and command.
 MEASURED_MISSES = (
     ("a18a", "4805f994",
      ("plugins/audit/scripts/governance/_runner_output.py",
@@ -1868,6 +2087,143 @@ def _cases(check):
           "affected" in listed and suite_runs == set(("affected",))
           and product_runs == set()
           and _doc_command_stems("contributing.md") is None)
+
+    # --- why a listed file is listed --------------------------------------------
+    # A chain is the list of hops from a changed path to the listed file: it opens
+    # with `("changed", <path>)`, every graph hop is an edge the graph holds (an
+    # import, or a run from a file that is not a suite), and a rule hop - a listing
+    # that comes from a rule rather than from the graph - is the last hop and comes
+    # straight after the changed path. Checked against `graph` here, not against
+    # the explainer's own reading, so a chain that names an edge nobody holds fails.
+    def _hop_real(prev, label, nxt):
+        if label == "imported by":
+            return nxt in graph["imported_by"].get(_stem(prev), ())
+        if label == "run by":
+            return not _is_suite(prev) and nxt in graph["run_by"].get(_stem(prev), ())
+        return False
+
+    def _chain_problems(paths, listed, chains):
+        bad = sorted(set(listed) ^ set(chains))
+        for target, chain in sorted(chains.items()):
+            if not chain or chain[0][0] != "changed" or chain[0][1] not in paths \
+                    or chain[-1][1] != target:
+                bad.append(target)
+                continue
+            for at in range(1, len(chain)):
+                label, nxt = chain[at]
+                if label in ("imported by", "run by"):
+                    ok = _hop_real(chain[at - 1][1], label, nxt)
+                else:
+                    ok = label.startswith(("rule: ", "full set: ")) \
+                        and at == 1 and at == len(chain) - 1
+                if not ok:
+                    bad.append(target)
+                    break
+        return bad
+
+    why_sets = (("plugins/audit/scripts/governance/drive-phase.py",),
+                ("plugins/audit/scripts/status/_doctor_policy.py",),
+                ("tests/test_drive_phase.py",),
+                ("plugins/audit/hooks/guard-secrets-read.py", "CONTRIBUTING.md"))
+    why_bad, deep = {}, 0
+    for paths in why_sets:
+        listed = _related_suite_paths(list(paths), graph)
+        chains = related_chains(list(paths), graph)
+        deep += sum(1 for chain in chains.values() if len(chain) > 2)
+        problems = _chain_problems(paths, listed, chains)
+        if problems:
+            why_bad[paths[0]] = problems[:5]
+    check("a21 every file the related listing names has a chain from a changed path, "
+          "each graph hop an import or a run the graph holds and each rule hop the "
+          "single step after the changed path - and some chain is longer than one "
+          "hop, so the graph half is read at all: bad %r, multi-hop chains %d"
+          % (why_bad, deep), not why_bad and deep > 0)
+
+    def _fx(stem):
+        # Assembled: `_refs` requires every `.py` name written under tools/ to exist.
+        return stem + "." + "py"
+
+    fx_x, fx_y = "tests/" + _fx("test_x"), "tests/" + _fx("test_y")
+    one = [("changed", _fx("x")), ("rule: its own cases", fx_x)]
+    rc_gap, gap_lines = render_why([fx_x, fx_y], {fx_x: one})
+    rc_all, all_lines = render_why([fx_x], {fx_x: one})
+    check("a21b a listed file no chain reaches is an error, named, never an "
+          "omission: exit %r over %r - and, the other direction, a listing every "
+          "chain covers exits 0 with one line per listed file: exit %r over %r"
+          % (rc_gap, gap_lines, rc_all, all_lines),
+          rc_gap == 1 and any("NO CHAIN" in line and fx_y in line
+                              for line in gap_lines)
+          and not any(line.startswith(fx_y + " ") for line in gap_lines)
+          and rc_all == 0 and len(all_lines) == 1
+          and all_lines[0].startswith(fx_x + " "))
+
+    unknown = ["Makefile"]
+    full_listed = _related_suite_paths(unknown, graph)
+    full_chains = related_chains(unknown, graph)
+    check("a21c a full-set widening is a chain too: every file of the full listing "
+          "is reached by the one rule that widened, said as such - %d listed, %d "
+          "chained, %r" % (len(full_listed), len(full_chains),
+                           _chain_problems(tuple(unknown), full_listed,
+                                           full_chains)[:3]),
+          full_listed == _all_suite_paths()
+          and not _chain_problems(tuple(unknown), full_listed, full_chains)
+          and all(c[-1][0].startswith("full set: ") for c in full_chains.values()))
+
+    # A product file spelling a script's path into text does not run it; one handing
+    # the same path to an argv list does. Both halves, because a reading that drops
+    # every resolver call passes the first alone and the old reading the second.
+    names = dict(("@%s@" % (k,), repr(_fx("sp_" + k))) for k in ("a", "b", "c"))
+
+    def _src(text):
+        for token, name in names.items():
+            text = text.replace(token, name)
+        return text
+
+    spelled_src = _src(
+        "import shlex\nimport _loader\n"
+        "def hint():\n"
+        "    return 'python3 %s restore' % (shlex.quote(_loader.script_path(@a@)),)\n"
+        "def prompt():\n"
+        "    return PROMPT % {'script': _loader.script_path(@b@)}\n"
+        "def quoted():\n"
+        "    script = shlex.quote(_loader.script_path(@c@))\n"
+        "    return script\n"
+        "def computed():\n"
+        "    return 'python3 %s' % (shlex.quote(_loader.script_path(NAMES[KEY])),)\n")
+    run_src = _src("import subprocess, sys\nimport _loader\n"
+                   "def go():\n"
+                   "    subprocess.run([sys.executable, _loader.script_path(@a@)])\n")
+    known = set(("sp_a", "sp_b", "sp_c", "_loader"))
+    product = "plugins/audit/scripts/governance/" + _fx("sp_probe")
+    sp_tree, run_tree = ast.parse(spelled_src), ast.parse(run_src)
+    _i, sp_runs, sp_unknown = _file_edges(
+        product, _scan(sp_tree, _py_constants(sp_tree)), known, set())
+    _i, run_runs, run_unknown = _file_edges(
+        product, _scan(run_tree, _py_constants(run_tree)), known, set())
+    check("a21e a script path quoted or formatted into text - a printed command, a "
+          "prompt - is no run, and neither is a computed one spelled that way, while "
+          "the same path in an argv list still is: spelled %r unknown %r, argv %r "
+          "unknown %r" % (sorted(sp_runs), sp_unknown, sorted(run_runs), run_unknown),
+          sp_runs == set() and sp_unknown is False
+          and run_runs == set(("sp_a",)) and run_unknown is False)
+
+    def _cli(*argv):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = main(list(argv))
+        return rc, buf.getvalue().splitlines()
+
+    doc = "CONTRIBUTING.md"
+    rc_list, list_lines = _cli("--list-related", doc)
+    rc_why, why_lines = _cli("--why-related", doc)
+    check("a21d `--why-related` prints one line per file `--list-related` prints, "
+          "led by that file, and the listing itself keeps its shape - one existing "
+          "path per line and nothing else: list %r, why %r"
+          % (list_lines, why_lines),
+          rc_list == 0 and rc_why == 0 and list_lines
+          and all(os.path.isfile(os.path.join(REPO, p)) for p in list_lines)
+          and len(why_lines) == len(list_lines)
+          and [w.split(" ", 1)[0] for w in why_lines] == list_lines)
 
 
 def _selftest():

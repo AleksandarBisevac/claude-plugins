@@ -807,7 +807,7 @@
     {
       "id": "P168.6",
       "title": "The suites a task declares and the suites its change can break run as one call when both use the project's subset spelling",
-      "status": "in_progress",
+      "status": "done",
       "description": "A task gate runs the declared suites as one step and the affected suites as a second, one after the other, each a separate call of the same runner over a different list. The two lists never overlap, so nothing is run twice, but the wall time is the sum of the two calls' longest suites instead of the longest of all. When a declared entry is exactly the project's recorded subset spelling over a list of paths, and the affected step is that spelling over another list, run one step over the union, in the declared order first. The row keeps both facts: the step's name says which paths were declared and which were added as affected, so the breadth clause, the usage comparison of narrow against wide gates and the report's step list lose nothing. A declared entry in any other spelling stays its own step, and with no affected suites nothing changes. Dependants you answer for: the gate identity, which is taken over the commands that ran and must be the same for the same two lists whichever way they were split; the affected selection's own step naming, which the usage comparison and the doctor read by prefix; the per-step repeat rule; the selection time the previous phase records; the already-wide test. Acceptance: (1) a task with a declared entry in the recorded spelling and a non-empty affected list runs one step over the union and its name carries both lists; (2) a declared entry in another spelling stays a separate step beside the affected one; (3) an empty affected list leaves the run byte for byte as before; (4) the usage comparison still counts the run as a narrowed gate; (5) a suite present in both lists is passed once.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -842,14 +842,23 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "2525593299d2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "One joined step for a declared entry in the plan's recorded subset spelling plus the affected steps spelled the same way. _affected_tests: union_paths, spelled_paths (the words where {paths} stands, each a path, no option), joined_steps (joins every suite-arm affected step in the recorded spelling into the FIRST declared entry that is that spelling with name == command; build key, other runner, option, sibling spelling, phase-gate arm, no affected step -> unchanged, no line), entry_paths/spelled_entry for the base. _evidence_io: JOINED_STEP_SEPARATOR, joined_step_name (writer) and step_parts (the one reader: declared entry only at the head, tail must be affected names with arm + suites); declared_steps, derived_step_suites and step_runs_suite answer through it; older names read as before (jst1-jst6). Lists ride in the NAME, not a key: every reader of a row's steps (binding, base lookup, repeat by name, printed step line) already reads the name, so none needs the step dict. _verdict_binding: comparison code unchanged (through declared_steps); the reserved-entry refusal now also refuses an entry step_parts does not read back as itself (vb42). run-test-gate: main joins AFTER the phaseGateOnly split and after the declared slice/digest, reuse_identity taken over the unjoined commands (same identity whichever way the lists ran, jn5); repeat_plan measures a joined step when any part grades (jn6); base_commands/_joined_at_base spell each failing suite under its part (affected arm via _derived_at_base, declared suites under the entry via the recorded spelling), _charge_step answers declared-part suites by the base step of the entry's name, base_red asks for the base by the entry's name too (jn8-jn11). Tests updated by value: as3, as8 (one joined step); bod fixture given gate=_LONE_GATE so bod keeps a lone derived step. New cases: af44-af52, jst1-jst6, vb40-vb42, jn1-jn11. Red on HEAD code before the fix (seen): af44-af52 (51/60), jst1-jst6 (346/352), vb40 vb42 (46/48), as3 as8 jn1 jn5 jn6 jn7 jn8 jn10 (653/661; jn5's red there was the fixture's bytecode cache changing the content identity, fixed in the fixture with a .gitignore). Mutation probe in-process, nothing written (scratchpad/probe/mutations.py), baseline 42 cases 0 failed, restored 0 failed, all 14 rows KILLED: A identity over joined -> jn5; B join before split -> jn7; C repeat by name only -> jn6; D no joined base branch -> jn8 jn9 jn10 jn11; E no declared-part answer -> jn10 jn11; F no base lookup by entry name -> jn11; G no joined reserved check -> vb42; H1 build key hosts -> af49; H2 option word as path -> af50; H3 phase-gate arm joins -> af52; I union duplicates -> af44 af45; K WEAKENED READER (declared entry taken at any position) -> vb41 (the refusing case, red as asked) + jst1 jst3; L reader joins any tail -> jst1; M old declared_steps -> vb40 jst3 as4 jn4. Gates: task gate exit 0 (2/2 files ok, 722 cases); deps+evidence_io+verdict_binding exit 0 (3/3 files ok, 684 cases); --spaced test_run_test_gate exit 1, 661/662, the only red lw8 - seen and LEFT, red at base already and P168.15-icj's. ruff check exit 0; vermin -t=3.8- exit 0; house_style_violations/prose_number_claims/text_encoding/text_write_newline over the tree: 0. MEASURED on one real pair (P168.12-icj's recorded gate: declared tests/test_drive_phase.py, related arm tests/test__refs.py tests/test_drive_without_model.py; its row recorded 159638 ms + 18551 ms), python3 tools/sweep-selftests.py as two calls vs one call over the union, two rounds with a 120 s gap, order swapped in round 2, every exit 0: round 1 two calls 195.7 s, one call 165.0 s (-30.7 s); round 2 one call 103.4 s, two calls 165.6 s (-62.2 s). Spread is wide: a sibling session's affected sweep (pid 59197, a long related list) was running during round 1, so the absolute figures carry that load; one call was faster in both rounds. Dependants: gate identity - over unjoined commands, cased jn5; affected step naming read by prefix - derived names unchanged, a joined step's affected names are read through step_parts by every _evidence_io reader; usage comparison (_usage_economics.gate_scope_comparison) reads gateSource, a joined row is gateSource task and counted narrowed (jn4); doctor - no reader of the affected/ prefix found under scripts/status, scripts/usage, scripts/panel, scripts/report (grep for affected/ and derived_step: nothing), so nothing there to change; per-step repeat - jn6; selection time - the join sits inside the selection window, nothing else moved, ag6/ag7 green; already-wide test - affected_steps returns nothing, nothing joins, ag4/as2 green; _verdict_binding - binds a joined row (vb40, as4, jn4), refuses one lacking the entry (vb41); drive-phase/full-gate/audit-lookup importers - unchanged interfaces, a joined name is carried whole like a derived one; PLUGIN-BUILD-GUIDE and CHANGELOG updated. LEFT, outside the change: gate_tally/_matching_steps (per-step history and cost means by exact name) do not count a joined step toward its declared entry, on purpose - the joined step's exit and duration are the union call's, not the entry's alone; drive-phase's view of a task's gate steps reads the plan, not rows, and is unaffected.",
+        "descriptive": "A task's own suites and the suites its change can break now run as one call when both use the recorded subset spelling; on one real pair the single call took 165.0 s vs 195.7 s and 103.4 s vs 165.6 s for two calls, in two rounds with a gap, under a shared machine's load."
       },
       "startedAt": "2026-11-18T10:35:30Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T11:31:16Z",
+      "verifiedBy": [
+        "jn1 one joined step: one sweep call over the union, declared path first, each suite once, name and printed line carrying both lists",
+        "jn2 a declared entry in another spelling stays its own step beside the affected ones",
+        "jn3 no affected suite: the declared entry alone, one call with the declared path only",
+        "jn4-jn11 the joined run binds, counts as narrowed, keeps the unjoined identity, leaves phaseGateOnly steps out before the join, repeats and measures at base part by part",
+        "af44 union_paths keeps the declared order first and passes a suite in both lists once",
+        "af45-af52 joined_steps joins into the first recorded-spelling entry and leaves every other spelling as it was",
+        "jst1-jst6 step_parts and the readers that answer through it, older names unchanged",
+        "vb40-vb42 a joined row binds, a joined step lacking the declared entry does not, a joined-shaped entry is reserved"
+      ],
       "notes": [
         {
           "at": "2026-11-18T06:46:38Z",
@@ -867,7 +876,46 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T11:21:06Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 2735000,
+            "startedAt": "2026-11-18T10:35:31Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T11:28:21Z.2d5652",
+            "kind": "wait",
+            "ms": 16000,
+            "startedAt": "2026-11-18T11:21:36Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T11:28:21Z.2d5652, ending at its startedAt",
+            "kind": "selection",
+            "ms": 24501,
+            "runId": "2026-11-18T11:28:21Z.2d5652",
+            "startedAt": "2026-11-18T11:21:52Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T11:28:21Z.2d5652",
+            "kind": "gate",
+            "ms": 364367,
+            "runId": "2026-11-18T11:28:21Z.2d5652",
+            "startedAt": "2026-11-18T11:22:17Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-18T11:31:05Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 142000,
+            "startedAt": "2026-11-18T11:28:43Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 2525593299d2",
+            "kind": "commit",
+            "ms": 1694,
+            "startedAt": "2026-11-18T11:31:13Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T10:35:30Z"
       },
       "reviewPerTask": "signals",
@@ -875,6 +923,18 @@
         "runId": "2026-11-18T11:28:40Z.a6c1a5",
         "status": "passed",
         "at": "2026-11-18T11:28:40Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "2525593299d2",
+        "at": "2026-11-18T11:31:16Z",
+        "return": "docs/audit/evidence/returns/P168.6/20261118T103530Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-18T11:21:01Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__affected_tests.py` in a throwaway tree at HEAD exited 1 with 18 of 662 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - af44 (house FAIL), af45 (house FAIL), af46 (house FAIL), af47 (house FAIL), af49 (house FAIL), af50 (house FAIL), af51 (house FAIL), af52 (house FAIL) and 10 more: SELFTEST FAILED: 653/662 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -947,7 +1007,7 @@
     {
       "id": "P168.8-icj",
       "title": "This repository's related listing says which edge pulls in each suite, and stops listing the whole tree for a file whose change cannot reach it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "For most files under the plugin's scripts, this repository's own selector (tools/affected.py --list-related) lists nearly every suite, so the affected step of a task gate here is close to the whole sweep and was half of a month's task-gate time. For other files it lists a few dozen. Nothing prints why a suite is in the list. First make the selector answer that: a flag that prints, for each listed suite, the chain of imports or runs that reaches it from the changed path. Then act on what it shows. Where the chain is a real one (the suite runs the changed file) it stays. Where every suite is reached through one shared helper that imports a product module only to locate it, or through a rule that fires on any Python change, narrow that edge only if a replay shows no miss: use the replay that already exists. tools/measure-affected-miss.py replays recent task commits, plants faults, and counts the suites the selection left out, and it takes another selector by path. Do not write a second tool: put the narrowed rule behind a variant of the selector the tool can be pointed at, run both over the same commits, and require zero misses from the narrowed one before it becomes the default; extend the tool only where it cannot yet answer that. If the replay shows a miss, or the chain is real, leave the selector as it is and record the measurement and the edge in the selector's docstring as the reason, with the command that re-derives it. The gathering itself is not free either: the stage record of the previous phase shows about twenty seconds of selection before every task gate here; say where those seconds go (the listing command, the import graph scan) and whether one scan can serve both listings. This is the repository's tool, not the plugin's rule; nothing under plugins/audit changes. Dependants you answer for: tools/verify.sh and CI, which call the selector for the affected slices; the gate-parity check on the checks the selector may name; the plan's recorded listing commands, whose output shape (one path per token) must not change; the selector's own cases; tests/test__affected_tests.py and tools/prove-gates.py, which use the selector's graph; the recorded miss table inside the selector, which a new measurement replaces with its date and command. Both tools carry their own cases, as every tool under tools/ does, so the new cases go into each tool's own suite and no file under tests/ is added. The replay runs whole sweeps: run it in scratch worktrees outside every checkout, as the tool already does, and never a browser gate. Acceptance: (1) the new flag prints one chain per listed suite and a suite with no chain is an error, not an omission; (2) the measurement's table for both selectors is quoted in the task's outcome with the command that produced it; (3) either the list for a governance script is shorter than the whole tree with zero misses over the replay, or it is unchanged and the docstring carries the edge and the measurement; (4) the output of the two listing commands the plan records keeps its shape.",
       "files": [
         "tools/affected.py",
@@ -974,14 +1034,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T11:31:18Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1003,7 +1063,17 @@
           "at": "2026-11-18T06:50:46Z",
           "text": "Correction to the waiver for tests/test__output_lints.py: that suite does not quote the tool's output. It pins, by the tool's path, the prose-scan exemption row the lints keep for the tool's fixtures. The waiver holds for that reason instead: this task keeps the tool at its path and keeps its fixtures, so the row and its reason stay true. If the task removes or renames those fixtures, the row in tools/lints/_output_lints.py is owed and is outside the declared files - hand that back."
         }
-      ]
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T11:31:18Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T12:44:55Z.5fe54c",
+        "status": "passed",
+        "at": "2026-11-18T12:44:55Z"
+      }
     },
     {
       "id": "P168.9-icj",
