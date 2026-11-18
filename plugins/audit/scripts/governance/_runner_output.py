@@ -539,21 +539,91 @@ def _unittest_cases(text):
 # environment - is a collected case failing, which it is not: nothing in that
 # module was collected. `did_not_load` is the one test of which a failure is;
 # a collected case that raised in its body, or whose fixture did, is not one.
+#
+# The SHAPE of such a line is not the runner's report of it: a case that asserts
+# on a captured transcript carries the stand-in line in its own failure message,
+# and a test may print a line opening with `ERROR` into its captured output -
+# both inside that case's block, and the case failed. So a load failure is read
+# off the runner's own report and nowhere else (`failure_kind`): under unittest,
+# the errored ENTRY - its header straight under the `=` rule the runner opens
+# every entry with - whose id is the stand-in and whose block, up to the next
+# rule, carries the loader's own sentence (`_LOADER_SENTENCE`, the one line
+# `_make_failed_import_test` writes); under pytest, a path named by the
+# collection-error section header AND by an `ERROR` line of the short test
+# summary. A stand-in entry without that sentence - a `load_tests` that raised,
+# an attribute the command names that is not there - is not read as a module
+# that did not load, so it stays a failing entry. A message forging a whole
+# entry, rule line included, is not told from one.
 _UNITTEST_STAND_IN = "unittest.loader._FailedTest"
+_LOADER_SENTENCE = "ImportError: Failed to import test module: "
 _PYTEST_COLLECTING = re.compile(r"^_+ ERROR collecting (\S+) _+[ \t]*$", re.M)
+_PYTEST_SHORT_SUMMARY = re.compile(r"^=+ short test summary info =+[ \t]*$")
 _SECTION_END = re.compile(r"^(?:={3,}|-{20,}|_{3,})(?:[ \t].*)?$")
+_ENTRY_RULE = re.compile(r"^={20,}[ \t]*$")
 # An exception line as a traceback ends on it: a dotted name, a colon, the rest.
 _EXCEPTION_LINE = re.compile(r"^([A-Za-z_][\w.]*): (.*)$")
 
 
-def did_not_load(failure):
-    """Whether one record of `failing_cases` is a test module the runner could
-    not load - unittest's loader stand-in, or a pytest `ERROR` naming a file
-    with no case in it - rather than a collected case that failed."""
+def load_shaped(failure):
+    """Whether one record of `failing_cases` has the SHAPE of a module the
+    runner could not load - unittest's loader stand-in as its location, or a
+    pytest `ERROR` naming a file with no case in it. The shape alone says
+    nothing about where the line stood; `failure_kind` reads that."""
     where = failure.get("where") or ""
     if where == _UNITTEST_STAND_IN or where.startswith(_UNITTEST_STAND_IN + "."):
         return True
     return failure.get("kind") == "ERROR" and "::" not in (failure.get("label") or "")
+
+
+def _unittest_entries(lines, label):
+    """The index of every line that opens a unittest error ENTRY for `label`:
+    `ERROR: <label> (...)` straight under the `=` rule unittest prints above
+    each entry, never a line of that shape inside another entry's block."""
+    head = "ERROR: %s (" % (label,)
+    return [i for i, ln in enumerate(lines)
+            if ln.startswith(head) and i > 0 and _ENTRY_RULE.match(lines[i - 1])]
+
+
+def _pytest_summary_errors(lines):
+    """The paths the short test summary names on an `ERROR <path>` line - the
+    lines after its `short test summary info` header only."""
+    starts = [i for i, ln in enumerate(lines) if _PYTEST_SHORT_SUMMARY.match(ln)]
+    out = set()
+    for ln in (lines[starts[-1] + 1:] if starts else []):
+        if ln.startswith("ERROR "):
+            out.add(ln[len("ERROR "):].split(" - ", 1)[0].strip())
+    return out
+
+
+def failure_kind(failure, text):
+    """What one record of `failing_cases(text)` is, read off the runner's own
+    report in `text`: `"load"`, a test module the runner reported it could not
+    load; `"quoted"`, a line of that shape standing anywhere else - inside
+    another case's failure message or captured output - which is no case and no
+    module; or `"case"`, a failing case or entry. See the comment above."""
+    if not load_shaped(failure):
+        return "case"
+    lines = plain_text(text).splitlines()
+    label = failure.get("label") or ""
+    if failure.get("kind") == "ERROR":
+        if label not in _pytest_summary_errors(lines):
+            return "quoted"
+        collecting = set(m.group(1) for m in (_PYTEST_COLLECTING.match(ln) for ln in lines)
+                         if m)
+        return "load" if label in collecting else "case"
+    entries = _unittest_entries(lines, label)
+    if not entries:
+        return "quoted"
+    if any(ln.startswith(_LOADER_SENTENCE) for i in entries for ln in _section(lines, i)):
+        return "load"
+    return "case"
+
+
+def did_not_load(failure, text):
+    """Whether one record of `failing_cases(text)` is a test module the runner
+    reported it could not load (`failure_kind`), rather than a collected case
+    that failed or a line of that shape quoted inside one."""
+    return failure_kind(failure, text) == "load"
 
 
 def _section(lines, start):
@@ -586,20 +656,21 @@ def _why_not_loaded(lines):
 
 def load_failures(text, runner=None):
     """`[{"module", "line"}]` - every test module the run's runner reported it
-    could not load (`did_not_load`), in printed order, each with the runner's own
-    line saying which and why; `runner` defaults to the one `read_tally()`
-    selects. `[]` when none was reported."""
+    could not load (`did_not_load`, read off the runner's own report of it), in
+    printed order, each with the runner's own line saying which and why;
+    `runner` defaults to the one `read_tally()` selects. `[]` when none was
+    reported."""
     text = plain_text(text)
     lines = text.splitlines()
     out = []
     for failure in failing_cases(text, runner):
-        if not did_not_load(failure):
+        if not did_not_load(failure, text):
             continue
         name = failure["label"]
-        heads = [i for i, ln in enumerate(lines)
-                 if ln.startswith("ERROR: %s (" % (name,))
-                 or (_PYTEST_COLLECTING.match(ln)
-                     and _PYTEST_COLLECTING.match(ln).group(1) == name)]
+        heads = (_unittest_entries(lines, name)
+                 + [i for i, ln in enumerate(lines)
+                    if _PYTEST_COLLECTING.match(ln)
+                    and _PYTEST_COLLECTING.match(ln).group(1) == name])
         why = _why_not_loaded(_section(lines, heads[0])) if heads else None
         # A pytest summary line may carry the reason after ` - `; unittest's
         # `why` is only the word ERROR.

@@ -5966,12 +5966,19 @@ expected-failure cases: unittest's `Ran N` less every other figure its `OK (...)
 **A test module that did not load is not a case, though both runners print it as one.**
 unittest's loader hands back a stand-in test of its own `_FailedTest` class, named after the
 module and counted in `Ran N` and `errors=`; pytest prints `ERROR <file>` - a node with no case
-in it - under `ERROR collecting <file>`. `did_not_load` is the one test of which a failing-case
-record is (the unittest record keeps its printed location as `where`, the pytest one its `kind`),
-and `load_failures` names each such module with the runner's own line saying why - unittest's
-`Failed to import test module` line and the cause its traceback ends on, or pytest's `E` gutter
-line, never its `Hint:`. A collected case that raised in its body, or whose fixture did, is not
-one (`ru19`).
+in it - under `ERROR collecting <file>`. `failure_kind` is the one reading of which a failing-case
+record is - `case`, `load`, or `quoted` (a load-shaped line inside another case's block, which is
+no record of its own) - and `did_not_load` is `failure_kind` answering `load`. **It reads the
+runner's own report block, never a line alone**: under unittest a load is an entry headed by the
+stand-in's id directly under the runner's `=` rule whose block carries the loader's
+`ImportError: Failed to import test module:` sentence; under pytest it is a path named both in an
+`ERROR collecting` header and on an `ERROR` line of the short test summary. A stand-in entry
+without the loader's sentence stays a failing entry, and a line of the same shape a case printed
+inside its own block is quoted. A whole entry forged in a case's output, rule and all, cannot be
+told apart from the runner's. `load_failures` names each such module with the runner's own line
+saying why - unittest's `Failed to import test module` line and the cause its traceback ends on, or
+pytest's `E` gutter line, never its `Hint:`. A collected case that raised in its body, or whose
+fixture did, is not one (`ru19`, `ru20`).
 
 ### `plugins/audit/scripts/governance/stamp-verification.py`
 The CLI over it: `take` a stamp, or `compare` one against the tree now — and `red`, which
@@ -5987,24 +5994,54 @@ files over HEAD's code; `green_verdict` reads them. `proved` (exit 0) needs a gr
 case of the task's own seen to run and pass - a passing case whose id HEAD's own run printed for
 no case (`house_case_id`; a whole label is never compared, since the two runs are handed
 different temp and home directories), or the runner's PASSED count rising over HEAD's run (the
-sweep's row per file, else the tally's `passed`). A rise made only of skips is no pass. **A
-rising tally proves only what the task defines**, because HEAD's cases collected again raise it
-too - a new file that imports HEAD's TestCase, or subclasses it, runs HEAD's cases a second time.
-So under unittest, pytest, jest, vitest and playwright `_count_proof` asks `own_definitions` for
-the cases the declared test files define that HEAD's test files do not hold identically, read
-through `red`'s own credit reading (`_definition_in`, `_head_copy`, `_js_head_copy`; `go10` holds
-both verbs to it), and proves only when there are more of them than the cases the run skipped or
-expected to fail beyond HEAD's own run, the basis stating both figures; otherwise it is
-`could-not-prove`, saying the rise is made of cases HEAD already holds or of cases that did not
-run. `run_green` gathers the texts and `head_tree`'s definitions for it. Where they were not read,
-or a case cannot be counted - a decorator that may generate cases, such as `parametrize`; a
-`load_tests`; a JS title built at run time - the rise proves as a count alone and the basis names
-that weaker proof. A case built by `setattr` or `type()` has no def to read and is not seen. A
-house run and the sweep keep their own id and per-file routes. **A test module the runner could
-not load** (`_runner_output.did_not_load`) is `could-not-prove` with the runner's line, whether
-or not other cases ran, and is read before the tally is asked about failed cases; `red` reads
-the same function and names such a module apart from its failing cases, its verdicts unchanged:
-a load failure never failed an assertion, so it was never credited.
+sweep's row per file, else the tally's `passed`). A rise made only of skips is no pass.
+
+**Green-first proves by taking the task's own tests out.** For `green` alone, `_baseline_files`
+is handed `take_out` and lays each new Python test file over at HEAD's run as ITSELF with the
+task's own test definitions taken out (`take_out_own`): every `test`-named def that `red`'s
+credit reading calls the task's own - not identical, under the same class chain and name, to a
+def in HEAD's tree (`_head_copy`) - removed by its span, decorators included, a block left
+empty given `pass`, its imports, classes, helpers and copies of HEAD's tests kept. The payload's
+`baseline.takenOut` names what went, by file. So the two runs are of the same files and differ by
+those definitions alone, and under unittest and pytest `_difference_proof` proves when the passed
+count rose between them, the basis stating both figures and the definitions taken out. That one
+difference answers what a count of definitions could not: a method in a class the runner never
+collects, a case the command deselects, a file its pattern does not run, a skip a class or module
+fixture raised, a skip decorator bound to another name, and a HEAD class imported or inherited
+(which runs in both runs) all leave it flat. A new file with no definition of the task's own to
+take out is `could-not-prove`, saying none was found and that a case generated when the module
+loads is not one, and naming a HEAD test class only when the file imports or inherits one. What is
+left of a new file must load on the base: when it does not, HEAD's run is not a green baseline and
+the basis names the module and the runner's line. Three files stay empty stubs: one that does not
+parse, any under the sweep, and the script a command runs with nothing taken out of it (a house
+suite, read by its ids). `red` keeps the empty-file baseline. **Two limits follow, and both are
+`could-not-prove` although a case of the task's own ran:** a case that overrides an inherited test
+of the same name runs in that test's place, so taking it out leaves the count flat; and a case
+generated at import - by `setattr`, `type()` or a `load_tests` hook - is no definition to take out.
+Under unittest a skip a class or module fixture raises is counted among the skips but not in
+`Ran`, so the passed figure reads low for it - which can hide a rise but never make one, and the
+basis says so.
+
+**Where nothing is taken out, the count route stays.** Under jest, vitest and playwright, whose
+definitions are read by a tokenizer that finds a case but does not cut one out, a new file is left
+absent (or empty) and `_count_proof` weighs the rise: `own_definitions` counts the cases the
+declared test files define that HEAD's test files do not hold identically, read through `red`'s
+own credit reading (`_definition_in`, `_head_copy`, `_js_head_copy`; `go10` holds both verbs to
+it), and the rise proves only when there are more of them than the cases the run skipped or
+expected to fail beyond HEAD's own run - the basis stating both figures and labelling it the weaker
+proof, with the reason. A task changing only declared files HEAD holds is weighed the same way,
+those files keeping HEAD's copy at HEAD's run. Where the definitions were not read, or a case cannot
+be counted, the rise proves as a count alone and the basis names that weaker proof. A house run
+and the sweep keep their own id and per-file routes.
+
+**A failing collected case outranks a module that did not load** (`_read_failures`, which both
+verbs read). A run that exited non-zero, collected a case and failed more of them than the modules
+it could not load is `not-green`, the module named in the basis beside the case, never in its
+place; a module that did not load with no failing case beside it is `could-not-prove` with the
+runner's line, read off the runner's own report block (`_runner_output.failure_kind`). `red`
+reads the same order and names such a module apart from its failing cases, its verdicts
+unchanged: a load failure never failed an assertion, so it was never credited, and a case it
+collected is never said to have not loaded.
 `not-green` (exit 1) is a collected case failing on the base with HEAD's own tests green - by an
 assertion or by raising, read off one runner's tally - or an expected failure HEAD's run did not
 have; zero collected, no tally, two runners' tallies, a red baseline and a refusal are

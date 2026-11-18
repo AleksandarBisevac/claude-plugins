@@ -601,6 +601,7 @@ def _cases(check):
     _sweep_cases(check)
     _layer_cases(check)
     _load_cases(check)
+    _block_load_cases(check)
 
 
 def _load_cases(check):
@@ -619,7 +620,17 @@ def _load_cases(check):
              + "-" * 70 + "\nRan 1 test in 0.000s\n\nFAILED (errors=1)\n",
              "ERROR tests/test_b.py::test_b - fixture 'newfix' not found\n"
              "=== 1 passed, 1 error in 0.05s ===\n")
-    allowed = [([M.did_not_load(f) for f in M.failing_cases(text)], M.load_failures(text))
+    def did_not_load(failure, text):
+        # The reading takes the run's whole text beside the record; a copy
+        # taking the record alone is asked that way, so this case still says
+        # what it says of the record and never raises building it.
+        try:
+            return M.did_not_load(failure, text)
+        except TypeError:
+            return M.did_not_load(failure)
+
+    allowed = [([did_not_load(f, text) for f in M.failing_cases(text)],
+                M.load_failures(text))
                for text in cases]
     check("ru19 a module the runner could not load - unittest's loader stand-in "
           "as 3.11 and later print it and as earlier versions do, pytest's "
@@ -634,6 +645,67 @@ def _load_cases(check):
           + [[{"module": "tests/test_b.py",
                "line": "ModuleNotFoundError: No module named 'newmod'"}]]
           and allowed == [([False], [])] * 2)
+
+
+# A unittest run as 3.11 and later print it, whose one failing case asserts on a
+# captured transcript: the loader's stand-in line sits inside that case's own
+# block, under its AssertionError, not after an entry rule of its own.
+_QUOTED_STAND_IN = (
+    "F\n" + "=" * 70 + "\nFAIL: test_a (test_new.N.test_a)\n" + "-" * 70
+    + "\nTraceback (most recent call last):\n  File \"tests/test_new.py\", line 6, "
+    "in test_a\n    self.assertEqual(mine.v, 2, out)\nAssertionError: 1 != 2 : \n"
+    "ERROR: test_x (unittest.loader._FailedTest.test_x)\n" + "-" * 70
+    + "\nImportError: Failed to import test module: test_x\n\n" + "-" * 70
+    + "\nRan 1 test in 0.000s\n\nFAILED (failures=1)\n")
+
+
+def _block_load_cases(check):
+    """A module that did not load is read from the runner's own report of it:
+    unittest's errored entry whose id is the stand-in and whose block carries the
+    loader's sentence; pytest's path named in the collection-error section AND as
+    an error in the short summary. A line of that shape anywhere else - inside
+    another case's failure message, in captured output - is not one."""
+    stand_in = _LINE_END_EXTRA[-1]
+    no_sentence = stand_in.replace("ImportError: Failed to import test module: test_new",
+                                   "AttributeError: type object 'N' has no attribute 'x'")
+    collect = ("=" * 10 + " ERRORS " + "=" * 10 + "\n" + "_" * 5 + " ERROR collecting "
+               "tests/test_b.py " + "_" * 5 + "\nE   ModuleNotFoundError: No module named "
+               "'newmod'\n" + "=" * 10 + " short test summary info " + "=" * 10 + "\n"
+               "ERROR tests/test_b.py\n" + "=" * 10 + " 1 error in 0.05s " + "=" * 10 + "\n")
+    captured = ("=" * 10 + " FAILURES " + "=" * 10 + "\n" + "_" * 5 + " test_a " + "_" * 5
+                + "\nE       assert 1 == 2\n" + "-" * 10 + " Captured stdout call "
+                + "-" * 10 + "\nERROR config.yaml\n" + "=" * 10 + " short test summary "
+                "info " + "=" * 10 + "\nFAILED tests/test_new.py::test_a - assert 1 == 2\n"
+                + "=" * 10 + " 1 failed, 1 passed in 0.03s " + "=" * 10 + "\n")
+    summary_only = collect.replace("_" * 5 + " ERROR collecting tests/test_b.py " + "_" * 5,
+                                   "_" * 5 + " test_c " + "_" * 5)
+
+    def read(text):
+        try:
+            flags = [(f["label"], M.did_not_load(f, text)) for f in M.failing_cases(text)]
+        except TypeError as exc:
+            # The reading asked of a record alone, with no text to read a block
+            # in, cannot tell a quoted line from the runner's own report.
+            flags = "did_not_load reads no text: %s" % (exc,)
+        return flags, [load["module"] for load in M.load_failures(text)]
+
+    got = dict((name, read(text)) for name, text in (
+        ("stand-in", stand_in), ("quoted", _QUOTED_STAND_IN),
+        ("no-sentence", no_sentence), ("collect", collect), ("captured", captured),
+        ("summary-only", summary_only)))
+    check("ru20 a module that did not load is read off the runner's own report: "
+          "unittest's stand-in entry carrying the loader's sentence is one, the same "
+          "line inside another case's failure block is not, nor is a stand-in entry "
+          "without the sentence; pytest's path in the collection section AND the "
+          "summary is one, a captured `ERROR` line is not, nor is a summary error "
+          "with no collection section: %r" % (got,),
+          got == {"stand-in": ([("test_new", True)], ["test_new"]),
+                  "quoted": ([("test_a", False), ("test_x", False)], []),
+                  "no-sentence": ([("test_new", False)], []),
+                  "collect": ([("tests/test_b.py", True)], ["tests/test_b.py"]),
+                  "captured": ([("config.yaml", False),
+                                ("tests/test_new.py::test_a", False)], []),
+                  "summary-only": ([("tests/test_b.py", False)], [])})
 
 
 def _selftest():

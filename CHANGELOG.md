@@ -48,15 +48,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   dropped by `submit`. `proved` needs exit 0 and a case of the task's own seen to run and pass:
   a case id HEAD's own run printed for no case, or the runner's passed count rising - never a
   whole label, which differs between the two runs when it quotes a temp path, and never a
-  skipped case. A rising count proves only cases the task defines: under unittest, pytest,
-  jest, vitest and playwright the declared test files must define more cases HEAD's test files
-  do not hold identically - read the way `red` credits a case - than the run skipped or expected
-  to fail beyond HEAD's own, and the basis states both figures, so a new file that only imports
-  or subclasses HEAD's TestCase is `could-not-prove`; where the definitions were not read or
-  cannot be counted (a `parametrize`, a generated case) the count alone proves, and the basis
-  says it is that weaker proof. A test module the runner could not load - unittest's loader
-  stand-in, pytest's collection error - is no case: `could-not-prove` with the runner's line,
-  whether or not other cases ran, and named apart from the failing cases in `red`'s basis too. A new jest or vitest file and a new `--stage` block are proved through the
+  skipped case. **Under unittest and pytest the proof is a difference between two runs of the
+  same files**: HEAD's own run is handed each new Python test file as itself with the task's own
+  test definitions taken out - read the way `red` credits a case, removed with their decorators,
+  a block left empty given `pass` - so a passed count that rises is those definitions running
+  and passing. A method in a class the runner never collects, a case the command deselects, a
+  file its pattern does not run, a skip a fixture raised and a HEAD TestCase imported or
+  subclassed all leave it flat, and a new file with no definition of its own to take out is
+  `could-not-prove` saying so; what is left of a new file must load on the base, or the baseline
+  is not green and the basis names the module. `red` keeps its empty-file baseline. Two limits
+  are `could-not-prove` although a case ran: a case overriding an inherited test of the same
+  name, which leaves the count flat, and a case generated at import (`setattr`, `type()`,
+  `load_tests`), which is no definition to take out. Under jest, vitest and playwright, whose
+  definitions are not taken out, the declared test files must define more cases HEAD's test
+  files do not hold identically than the run skipped or expected to fail beyond HEAD's own, and
+  the basis states both figures and labels that count the weaker proof, saying why; where the
+  definitions were not read or cannot be counted the count alone proves, and the basis says so.
+  **A failing collected case outranks a module that did not load**: the run is `not-green`, the
+  module named beside the case. A module that did not load with no failing case beside it -
+  read off the runner's own report block (unittest's entry under its `=` rule carrying the
+  loader's `Failed to import test module` sentence, pytest's path in an `ERROR collecting`
+  header and on a short-summary `ERROR` line), never off a line a case printed - is no case:
+  `could-not-prove` with the runner's line, and named apart from the failing cases in `red`'s
+  basis too, which no longer says a collected case could not load. A new jest or vitest file and a new `--stage` block are proved through the
   baseline step `red` takes, which the two verbs now share with their set-up and teardown.
   `not-green` - a collected test failing on the base by an assertion or by raising, or an
   expected failure, so written to the new code - is an answer only a human settles, which the

@@ -1,0 +1,153 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test__runner_output.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T05:28:17Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_stamp_verification.py tests/test__runner_output.py` in a throwaway tree at HEAD exited 1 with 22 of 409 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ru20 (house FAIL), gl5 (house FAIL), go1 (house FAIL), go2 (house FAIL), go3 (house FAIL), go4 (house FAIL), go5 (house FAIL), go6 (house FAIL) and 14 more: SELFTEST FAILED: 388/409 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "stamp-verification.py: green's baseline lays each new Python test file over at HEAD's run as itself minus the task's own test definitions (take_out_own: test-named defs red's credit reading calls own, removed by span with decorators, an emptied block given pass), via _baseline_files(take_out={'defs': head_defs}) in run_green only; red's call is unchanged and keeps the empty-file baseline. Files that stay empty stubs: unparseable, under the sweep, and the script a command runs with nothing taken out (house suite). Payload baseline gains takenOut. _difference_proof (unittest, pytest; not a sweep) proves when the passed count rose between the two runs, naming the definitions taken out and both counts; no own definition -> could-not-prove 'no test definition of the task's own was found to take out of X, and a case generated when the module loads is not one', the HEAD-class sentence only when the file imports or inherits a HEAD class (_uses_head_class); a flat count -> could-not-prove stating both limits, plus a unittest fixture-skip note when more skips. _baseline_loads_clause names a module that did not load at HEAD's run with its definitions taken out (rule 4). _count_proof stays for jest/vitest/playwright (named in _TAKEN_OUT_RUNNERS's comment) and for existing-file-only tasks, labelled 'a weaker proof than a difference between two runs' with the reason. _read_failures gives both verbs one order: a failing collected case outranks a module that did not load (green: not-green naming both; red: verdicts unchanged, basis no longer says a collected case could not load). _runner_output.py: failure_kind(failure, text) -> case|load|quoted read off the runner's own block (unittest: an ERROR entry for the stand-in id directly under the = rule whose block carries 'ImportError: Failed to import test module: '; pytest: a path in an ERROR collecting header and on a short-summary ERROR line); did_not_load(failure, text) and load_failures use it. Docs: module comments, PLUGIN-BUILD-GUIDE.md (_runner_output and stamp-verification sections), CHANGELOG.md (Unreleased green-first entry), plugins/audit/reference/execute-task.md state the rule, the count-route runners and both limits. Tests: new stage sg-green-diff gd1-gd12, ru20; helpers _gv/_defined_ctx/_unit_verdict/_pytest_verdict model the taken-out baseline; go1-go7, go9, gl5 (_load_readers), gf13 (taken={} house), ru19 (two-argument did_not_load) updated on purpose. Runs: the gate command exit 0 (2/2 files ok, 437 cases; 47 s wall, 144.1 s summed over test_stamp_verification's 47 blocks; a first run gave 50 s and 157.3 s); orchestrator gate run-test-gate.py SG1 --task SG1.32-ukq unrecorded: GATE GREEN exit 0 in 527 s; sweep of test__deps/test__output_lints/test__refs 3/3 files ok, 792 cases; prove-gates.py --list exit 0; ruff and vermin clean on the four .py files; dependants test__filed_returns 146, test_audit_lookup 207, test__status_facts 199 cases ok, test_drive_phase stages gfw-block 3/3, gfs-block 3/3, us-block 84/84. Mutation probe (a copy, five rows, __pycache__ purged between rows): ALL CAUGHT, exit 0.",
+    "descriptive": "Green-first now proves by the difference between two runs of the same files - HEAD's with the task's own tests taken out - and a failing collected case outranks a module that did not load, read only off the runner's own block."
+  },
+  "testsAdded": [
+    "gd1-gd5: through the real green verb, a never-collected method, a deselected failing case, a declared file the pattern does not run, a setUpClass skip and a renamed skip decorator are could-not-prove, naming the definitions taken out and both counts",
+    "gd6, gd7 (gd8, gd12 supporting): own passing cases prove by the difference; a file with no definition to take out is could-not-prove with a reason true of it, the HEAD-class sentence only where one is imported or inherited; red's baseline unchanged; take_out_own removes by span",
+    "gd9-gd11: a module that did not load beside a failing case is not-green naming both; a stand-in-shaped line inside a failure message, or an ERROR line in pytest captured output, is not a load failure for green or red",
+    "ru20: _runner_output reads a load failure off unittest's own entry and off pytest's collection header plus short-summary line together"
+  ],
+  "casesAdded": [
+    [
+      "gd1",
+      "gd2",
+      "gd3",
+      "gd4",
+      "gd5"
+    ],
+    [
+      "gd6",
+      "gd7",
+      "gd8",
+      "gd12"
+    ],
+    [
+      "gd9",
+      "gd10",
+      "gd11"
+    ],
+    [
+      "ru20"
+    ]
+  ],
+  "claims": "claims:\n1 stamp-verification.py: take_out_own and _own_spans (green's baseline section) do the removal; _baseline_files(take_out=...) is called with it only from run_green; _difference_proof is the proof; _read_failures sets first='case' before 'load'; _runner_output.failure_kind reads the entry under the = rule / the collecting header plus summary line. The module comment, PLUGIN-BUILD-GUIDE.md, CHANGELOG.md and execute-task.md sentences were rewritten to what those functions do\n2 mutations.py on a copy, five rows, each anchor asserted to occur once, __pycache__ purged: green's baseline back to an empty file -> gd1-gd6, gd8 red; removal widened to HEAD copies -> gd7, gd12 red; rule 6 reversed -> gd9, gd11 red; rule 7 widened to any line -> ru20, gd10, gd11 red; ALLOW over-fire (a rise refused) -> gd6 red; 'MUTATIONS: ALL CAUGHT - 5 rows', exit 0. Each restored from the original bytes\n3 the old count argument was the class; it is replaced, not extended: the green comment block, green_verdict, _count_proof and baseline_problem docstrings, the build guide, the changelog entry and execute-task.md all described the count rule and were rewritten. grep -n 'did_not_load' over plugins/ tests/ tools/: callers are only _runner_output.py, stamp-verification.py and the two test files, all updated. Left: an existing test file gaining a subclass of a HEAD class still takes the count route and can prove in the V9 shape - as before this task, reported as a finding\n4 n/a - no rule to an agent\n5 the whole-suite timing was measured twice with a gap (50 s then 47 s wall); every other figure here is a single command's exit or tally\n6 n/a - no guard\n7 no number written into prose in the documents; every figure in this return carries the command that printed it",
+  "stamp": "audit-stamp: {\"content\":\"sha256:5a5e1958a4f31f25234e374119cb06251a21dab6683a2310a929ee08d7dd32a2\",\"dirtyDigest\":\"sha256:73df6f86df1ada33130f64f1aca01564ebc547376dbaf1f2782fc2fc7165d0f5\",\"dirtyPaths\":{\"CHANGELOG.md\":\"19829a73fe06eb63\",\"PLUGIN-BUILD-GUIDE.md\":\"733fed62519f7316\",\"plugins/audit/reference/execute-task.md\":\"8d24f4963dda80e8\",\"plugins/audit/scripts/governance/_runner_output.py\":\"4932d1c397f51b72\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"2f1552148c133d0b\",\"tests/test__runner_output.py\":\"f2cf0a9451bfe89c\",\"tests/test_stamp_verification.py\":\"142ae393b29eaa09\"},\"head\":\"bf91e203\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/scripts/governance/_runner_output.py\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"tests/test__runner_output.py\",\"tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:d89c306bda541ff1b65446812b4b5e65e0fd02e06f3d9d47672d5f756f11af05\",\"v\":2}",
+  "floorGuard": {
+    "answer": "findings",
+    "basis": "8 move(s) that lower the bar across 7 file(s) of the diff; 3 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/reference/execute-task.md; 2 file(s) that could hold a move not compared: tests/test__runner_output.py, tests/test_stamp_verification.py",
+    "findings": [
+      {
+        "move": "definition-changed",
+        "path": "tests/test_stamp_verification.py",
+        "line": 10058,
+        "side": "base",
+        "what": "labelled check `go1 a new test file defining no case of its own that imports HEAD's...` is gone from the tree copy"
+      },
+      {
+        "move": "definition-changed",
+        "path": "tests/test_stamp_verification.py",
+        "line": 10071,
+        "side": "base",
+        "what": "labelled check `go2 a new file whose one own case is SKIPPED on the base and whose ...` is gone from the tree copy"
+      },
+      {
+        "move": "definition-changed",
+        "path": "tests/test_stamp_verification.py",
+        "line": 10090,
+        "side": "base",
+        "what": "labelled check `go3 THE ALLOW CASES for go1 and go2: a new file with a passing case...` is gone from the tree copy"
+      },
+      {
+        "move": "definition-changed",
+        "path": "tests/test_stamp_verification.py",
+        "line": 10100,
+        "side": "base",
+        "what": "labelled check `go4 a new file with two own cases, one skipped and one passing, is ...` is gone from the tree copy"
+      },
+      {
+        "move": "definition-changed",
+        "path": "tests/test_stamp_verification.py",
+        "line": 10106,
+        "side": "base",
+        "what": "labelled check `go5 a new file that redefines, byte for byte, the case HEAD holds u...` is gone from the tree copy"
+      },
+      {
+        "move": "definition-changed",
+        "path": "tests/test_stamp_verification.py",
+        "line": 10135,
+        "side": "base",
+        "what": "labelled check `go7 where the definitions cannot COUNT the cases - a parametrised f...` is gone from the tree copy"
+      },
+      {
+        "move": "definition-changed",
+        "path": "tests/test_stamp_verification.py",
+        "line": 10180,
+        "side": "tree",
+        "what": "labelled check `go6 under pytest-shaped output the same reading holds: a new file t...` differs from its base copy"
+      },
+      {
+        "move": "definition-changed",
+        "path": "tests/test_stamp_verification.py",
+        "line": 10189,
+        "side": "base",
+        "what": "labelled check `go9 the real `green` verb on a git fixture gathers the definitions ...` is gone from the tree copy"
+      }
+    ],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/reference/execute-task.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test__runner_output.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 622 (`allowed = [([M.did_not_load(f) for f in M.failing_cases(text)], M.l...`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test_stamp_verification.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 6938 (`STAGES = (`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "bf91e203092e8bf42f124629736dc470c19f3841"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-18T05:28:25Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

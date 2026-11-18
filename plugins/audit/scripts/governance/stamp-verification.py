@@ -220,7 +220,10 @@ unless the command passes `--passWithNoTests`: HEAD's baseline would never be
 green and every proof would be `could-not-prove`. So a new test file
 `_is_js_test_path` reads as jest's or vitest's is left ABSENT in HEAD's run -
 the reset already removes it - and the stub stays the rule for the Python
-runners; the payload's `baseline` names which way each new file went. The
+runners under `red`, while `green` lays a new Python test file over with the
+task's own definitions taken out (the section on green's baseline, below);
+the payload's `baseline` names which way each new file went (`stubbed`,
+`absent`, and `green`'s `takenOut`). The
 baseline is then green on exit 0, or on exit 1 with the runner's own
 no-test-file sentence quoted above and no tally counting a case or a failure
 (`_js_none_found`), read only when a file was left absent: the JS counterpart
@@ -1865,7 +1868,10 @@ def baseline_problem(head, cmd, stages=(), stubbed=()):
     EMPTY file - or, for a jest or vitest test file (`_is_js_test_path`), left
     ABSENT and named in `absent`, since both runners fail an empty suite - so
     the same command reaches what the task's run reaches, however it is
-    spelled, minus the new files' content. Green is exit 0 with no failure
+    spelled, minus the new files' content. (`green` lays a new Python test file
+    over with only the task's own definitions taken out, `_baseline_files`'
+    `take_out`; what is left of it is part of the baseline judged here.) Green
+    is exit 0 with no failure
     counted, or the runner's own no-tests-ran exit 5 - which a command naming
     only new files legitimately gives, and pytest gives when `-k` deselects
     every case - read as ONE runner's tally counting no case run and no
@@ -2867,6 +2873,104 @@ def own_definitions(texts, runner, head_defs, head_js):
     return {"own": own, "uncounted": uncounted}
 
 
+# --- green's baseline: a new test file with the task's own definitions taken out ---
+# A count of what the declared files DEFINE, weighed against what the run
+# SKIPPED, cannot say whether a definition was collected, selected, run, or
+# skipped under its class: a method in a class the runner never collects, a
+# case the command deselects, a file its pattern does not run, a skip raised in
+# setUpClass, a skip decorator bound to another name - each lets the two numbers
+# say yes while nothing of the task's ran. So `green` makes the proof a
+# DIFFERENCE between two runs of the same files: HEAD's own run is handed each
+# new Python test file as ITSELF with the task's own test definitions taken out
+# (`take_out_own`) - every `test`-named def the red verb's reading calls the
+# task's own, i.e. defined there and not identical (`_head_copy`) to a def of
+# the same name and class chain in HEAD's tree, removed by its span, decorators
+# included, a block left empty given `pass` - while its imports, its classes and
+# their bases, its helpers and a test it copies from HEAD stay. Nothing else
+# differs between that run and the task's, so a passed count that rises is the
+# task's own definitions running and passing, and one that does not was none of
+# them: a definition never collected, deselected, not run by the command or
+# skipped adds nothing to the task's run, and a HEAD class imported or
+# inherited runs in both. Two limits follow from it. A case of the task's own
+# that OVERRIDES an inherited test of the same name runs in place of it, so
+# taking it out leaves the count where it was and the proof is refused though
+# one ran. And a case generated when the module loads - by `setattr`, `type()`
+# or a `load_tests` hook - is no definition to take out, so a file holding only
+# such cases is refused (`_no_own_reason`). The red verb's baseline stays the
+# empty file; `_baseline_files` takes nothing out unless asked.
+_PY_LINE = re.compile(r"[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+\Z")
+
+
+def _stmt_blocks(stmt):
+    """The statement lists nested in a compound statement: its body, `else`,
+    `finally`, each handler's body and each match case's body."""
+    blocks = [getattr(stmt, field) for field in ("body", "orelse", "finalbody")
+              if isinstance(getattr(stmt, field, None), list)]
+    blocks += [h.body for h in getattr(stmt, "handlers", None) or ()]
+    blocks += [c.body for c in getattr(stmt, "cases", None) or ()]
+    return [b for b in blocks if b]
+
+
+def _own_spans(body, chain, head_defs):
+    """`(spans, names)` - the task's own test definitions in the statement list
+    `body` under the class chain `chain`, each as `(first line, last line,
+    pass)`, its decorators included; `pass` True for the first span of a list
+    every statement of which goes, which leaves a `pass` in its place."""
+    spans, names, kept = [], [], False
+    for stmt in body:
+        if isinstance(stmt, _DEFS) and stmt.name.startswith("test") \
+                and _head_copy(chain, stmt.name, stmt, head_defs) is None:
+            first = min([d.lineno for d in stmt.decorator_list] + [stmt.lineno])
+            spans.append([first, stmt.end_lineno, False])
+            names.append(".".join(chain + (stmt.name,)))
+            continue
+        kept = True
+        if isinstance(stmt, ast.ClassDef):
+            inner = [(stmt.body, chain + (stmt.name,))]
+        elif type(stmt).__name__ in _COMPOUND:
+            inner = [(block, chain) for block in _stmt_blocks(stmt)]
+        else:
+            inner = []
+        for block, where in inner:
+            got = _own_spans(block, where, head_defs)
+            spans.extend(got[0])
+            names.extend(got[1])
+    if spans and not kept:
+        # Every statement here went, and none nested deeper was read, so the
+        # first span is this list's own first statement.
+        spans[0][2] = True
+    return spans, names
+
+
+def take_out_own(text, head_defs):
+    """`(text, names)` - a Python test file's `text` with the task's own test
+    definitions taken out (see the comment above) and their dotted names in
+    source order; `(None, None)` when the file does not parse, since nothing of
+    it can be read. Line endings are the file's own."""
+    tree = _parse(text)
+    if tree is None:
+        return None, None
+    spans, names = _own_spans(tree.body, (), head_defs or {})
+    if not spans:
+        return text, []
+    lines = _PY_LINE.findall(text)
+    drop = {}
+    for first, last, keep_pass in spans:
+        for n in range(first, last + 1):
+            drop[n] = drop.get(n, False)
+        if keep_pass:
+            drop[first] = True
+    out = []
+    for n, line in enumerate(lines, 1):
+        if n not in drop:
+            out.append(line)
+        elif drop[n]:
+            body = line.rstrip("\r\n")
+            indent = body[:len(body) - len(body.lstrip())]
+            out.append(indent + "pass" + line[len(body):])
+    return "".join(out), names
+
+
 def _cat_blobs(root, rels, deadline):
     """`(texts, problem)` - HEAD's text of each of `rels`, read by ONE
     `git cat-file --batch` under the deadline."""
@@ -3653,9 +3757,11 @@ def red_verdict(run, ctx):
             "record for this%s%s" % (where, line, ", ".join(ctx["dropped"]) or "nothing",
                                      support_clause(run.get("support")),
                                      deps_clause(ctx.get("deps"))))
-    failing, loads = (_loaded_split(text, tally["runner"], _failing_cases(
-        text, tally["runner"], run["cmd"]))
-        if tally is not None and tally["runner"] is not None else ([], []))
+    # The same reading of how the run failed that `green` makes. Red's word comes
+    # from the tally's assertion count, which a module that did not load never
+    # adds to, so `first` - the order green answers in - is not read here.
+    read = _read_failures(run, tally)
+    failing, loads = read["cases"], read["loads"]
     # A module that did not load is never a failing case here either: it never
     # failed an assertion, so it was never credited, and it is named apart in
     # every basis below.
@@ -3828,29 +3934,46 @@ def red_verdict(run, ctx):
 # it instead of the old behaviour, and then the refactor proves nothing kept. So
 # `green` shares `red`'s set-up, baseline step and teardown (`_proof_setup`,
 # `_baseline_files`, `_baseline_run`, `_proof_teardown`) and makes two runs:
-# HEAD's own tests first, the baseline `red` makes - a new jest or vitest file
-# left absent, a new stage block read as new - then the task's. Proved is exit 0
-# with a case of the task's own seen to RUN AND PASS: by its case id where the
-# runner prints a label carrying one and HEAD's own run printed no such id (a
-# house run), else by the tally's PASSED count rising over the baseline's (the
-# sweep's row per file, or the run's tally). A whole label is never compared:
-# the two runs are handed different temp and home directories, so a label
-# quoting either differs between them for the same case. A rising tally proves
-# only what the task defines, since HEAD's cases collected again - a new file
-# importing or subclassing HEAD's TestCase - raise it too: under unittest,
-# pytest, jest, vitest and playwright the declared test files must define more
-# cases HEAD's test files do not hold identically than the run skipped or
-# expected to fail beyond HEAD's own (`_count_proof`, `own_definitions`, the
-# reading `red`'s credit uses); where those definitions were not read or cannot
-# be counted, the rise proves as a count alone and the basis names it weaker.
-# A skipped case did not run and an expected failure failed, so neither is a
-# pass. A test module the runner could not load - unittest's loader stand-in,
-# pytest's collection error, whatever the cause - is no case, whether or not
-# other cases ran, and is `could-not-prove` with the runner's line
-# (`_runner_output.did_not_load`, which `red` reads too). A collected case that
-# failed on the base - an assertion or any exception, an expected failure
-# included - is `not-green`: against a green baseline every failure is the
-# task's change to the tests. Zero collected, a compile or import error, a run
+# HEAD's own tests first, then the task's. Green's baseline is not red's: a new
+# Python test file under unittest or pytest is laid over at HEAD's run as
+# itself with the task's own definitions taken out (`take_out_own`, the section
+# above), so the two runs are of the same files and differ by those definitions
+# alone; a new jest or vitest file is left absent, a new stage block read as
+# new, and a declared file HEAD holds keeps HEAD's copy, as for `red`. Proved
+# is exit 0 with a case of the task's own seen to RUN AND PASS: by its case id
+# where the runner prints a label carrying one and HEAD's own run printed no
+# such id (a house run); else, under unittest and pytest with a new test file,
+# by the passed count rising between the two runs (`_difference_proof`); else
+# by the tally's PASSED count rising over the baseline's (the sweep's row per
+# file, or the run's tally). A whole label is never compared: the two runs are
+# handed different temp and home directories, so a label quoting either
+# differs between them for the same case. A new file with no definition of the
+# task's own to take out is `could-not-prove` saying so - a case generated when
+# the module loads is not one - and so is a difference that does not rise,
+# which is two limits as well as the honest refusals: a task's own case that
+# overrides an inherited test of the same name runs in that test's place and
+# leaves the count flat, and a case generated at import is never taken out, so
+# both are `could-not-prove` although the case ran. Where the definitions are
+# not taken out - jest, vitest and playwright, and a declared file HEAD holds -
+# a rise proves only what the task defines, since HEAD's cases collected again
+# raise it too: the declared test files must define more cases HEAD's test
+# files do not hold identically than the run skipped or expected to fail beyond
+# HEAD's own (`_count_proof`, `own_definitions`, the reading `red`'s credit
+# uses), and under jest, vitest and playwright the basis labels that count the
+# weaker proof, saying why; where those definitions were not read or cannot be
+# counted, the rise proves as a count alone and the basis names it weaker. A
+# skipped case did not run and an expected failure failed, so neither is a
+# pass. A FAILING COLLECTED CASE OUTRANKS A MODULE THAT DID NOT LOAD
+# (`_read_failures`, which `red` reads too): a case that failed on the base -
+# an assertion or any exception, an expected failure included - is
+# `not-green`, a module the runner could not load beside it named in the basis
+# with it, since against a green baseline every failure is the task's change
+# to the tests. A module that did not load with no failing case beside it -
+# read off the runner's own report block by `_runner_output.failure_kind`,
+# never off a line quoted inside a case's block - is no case and is
+# `could-not-prove` with the runner's line; when it is what is left of a new
+# file at HEAD's run, the baseline is not green and the basis says so
+# (`_baseline_loads_clause`). Zero collected, a compile or import error, a run
 # that could not start, output no reader reads, two runners' tallies and a
 # refusal are `could-not-prove` with the reason verbatim.
 # The words are the schema's `greenFirst.status` enum less the one no run gives
@@ -3987,6 +4110,9 @@ def _own_passing(run, ctx):
         if problem is not None:
             problem += _skipped_clause(head_text, run["text"], cmd)
         return own, how, problem
+    difference = _difference_proof(run, ctx)
+    if difference is not None:
+        return difference
     if risen:
         return _count_proof(run, ctx, risen)
     return [], None, ("the run prints no label for a passing case, and no test "
@@ -3998,6 +4124,142 @@ def _own_passing(run, ctx):
 # The runners whose cases `own_definitions` reads as definitions. A house run is
 # read by its case ids and the sweep by its per-file rows, and neither is here.
 _DEFINED_RUNNERS = ("unittest", "pytest") + JS_RUNNERS
+# The runners whose definitions `take_out_own` takes out of a new test file for
+# HEAD's own run, so the proof is a difference between two runs of the same
+# files. jest, vitest and playwright are read by a tokenizer that finds a case
+# but does not cut one out of its file: under them, and under any runner whose
+# definitions are not read at all, a new test file stays an empty file (or is
+# left absent) at HEAD's run and the rise is weighed by `_count_proof`, the
+# basis labelling it the weaker proof and saying why.
+_TAKEN_OUT_RUNNERS = ("unittest", "pytest")
+
+
+def _head_classes(head_defs):
+    """The names of HEAD's test classes: every top-level class `test_definitions`
+    found a def in."""
+    return set(key[0][0] for key in (head_defs or {}) if key[0])
+
+
+def _uses_head_class(text, head_defs):
+    """Whether a test file's `text` imports one of HEAD's test classes by name
+    (or with `*`), or names one as a base of a class it defines - so unittest
+    collects that class again from it, in both runs."""
+    tree = _parse(text)
+    classes = _head_classes(head_defs)
+    if tree is None or not classes:
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and any(
+                a.name == "*" or a.name in classes for a in node.names):
+            return True
+        if isinstance(node, ast.ClassDef) and any(
+                (_dotted(b) or [""])[-1] in classes for b in node.bases):
+            return True
+    return False
+
+
+def _no_own_reason(files, ctx, where="to take out of"):
+    """Why a proof has no definition of the task's own to rest on, true of the
+    `files` named: none was found (`where`: to take out of a new file, or in a
+    file HEAD holds), and a case generated when the module loads is none; the
+    sentence about a HEAD test class only for a file that imports or inherits
+    one."""
+    wt = ctx.get("wt") or {}
+    heads = [rel for rel in files if _uses_head_class(wt.get(rel), ctx.get("head_defs"))]
+    return ("no test definition of the task's own was found %s %s, and a case "
+            "generated when the module loads is not one, so no case of the task's "
+            "own is shown to have run%s"
+            % (where, ", ".join(files) or "the declared test files",
+               "; %s imports or inherits a HEAD test class, which the runner collects "
+               "again in both runs" % (", ".join(heads),) if heads else ""))
+
+
+def _taken_clause(taken):
+    """`tests/a.py: N.test_a, N.test_b; ...` - the definitions taken out, by
+    file."""
+    return "; ".join("%s: %s" % (rel, ", ".join(names) or "nothing")
+                     for rel, names in sorted(taken.items()))
+
+
+def _difference_proof(run, ctx):
+    """`(own, how, problem)` for a unittest or pytest run whose task adds a
+    Python test file, or None where this proof does not apply - another runner,
+    or no new Python test file (a declared file HEAD holds keeps HEAD's copy at
+    HEAD's run, and `_count_proof` weighs it as before). PROVED IS A DIFFERENCE
+    BETWEEN TWO RUNS OF THE SAME FILES: HEAD's own run had each new file laid
+    over with the task's own definitions taken out (`ctx["taken"]`,
+    `{rel: names}`, from `_baseline_files`), so a passed count higher in the
+    task's run is those definitions running and passing, and an equal one is
+    none of them. No definition taken out at all is refused with the reason
+    (`_no_own_reason`); so is a new file HEAD's run laid over as an empty file
+    while the task's run ran it whole, which no difference covers."""
+    cmd = run["cmd"]
+    tally = _runner_output.read_run_tally(run["text"], cmd)
+    if tally is None or tally["runner"] not in _TAKEN_OUT_RUNNERS \
+            or sweep_suites(cmd) is not None:
+        return None
+    wt, taken = ctx.get("wt"), ctx.get("taken")
+    stubbed = [rel for rel in ctx.get("new") or [] if rel.endswith(".py")
+               and (wt is None or _parse(wt.get(rel)) is not None)]
+    if not taken and not stubbed:
+        return None
+    if ctx.get("taken_problem"):
+        return [], None, ctx["taken_problem"]
+    if taken is None:
+        return [], None, (
+            "HEAD's own run laid the new test files %s over as empty files rather "
+            "than with the task's own definitions taken out, so a passed count that "
+            "rises is no difference made by those definitions alone"
+            % (", ".join(stubbed),))
+    if stubbed:
+        return [], None, _no_own_reason(stubbed, ctx)
+    names = [n for rel in sorted(taken) for n in taken[rel]]
+    held = [rel for rel in ctx.get("tests") or []
+            if rel not in taken and rel not in (ctx.get("new") or [])]
+    # What the task changed in a file HEAD holds is the difference HEAD's copy
+    # makes; its own definitions there are read the same way, never taken out.
+    changed = ["%s %s" % (rel, n) for rel in held if rel.endswith(".py")
+               for n in (take_out_own((wt or {}).get(rel), ctx.get("head_defs"))[1]
+                         or [])]
+    if not names and not changed:
+        return [], None, _no_own_reason(sorted(taken), ctx)
+    head_text = (run.get("head") or {}).get("text") or ""
+    before = (_runner_output.read_run_tally(head_text, cmd) or {}).get("passed") or 0
+    counts = "%d passed at HEAD's own run and %d with the task's" % (before,
+                                                                     tally["passed"])
+    out = ("HEAD's own run had the task's own definitions taken out of its new test "
+           "files (%s)%s" % (_taken_clause(taken),
+                             " and the declared files HEAD holds at HEAD's copy (%s)"
+                             % (", ".join(held),) if held else ""))
+    if tally["passed"] > before:
+        return names + changed, (
+            "seen by the difference between two runs of the same files: the passed "
+            "count rose - %s - and the two runs differ by nothing but the definitions "
+            "taken out of the new test files (%s)%s" % (
+                counts, _taken_clause(taken),
+                " and what the task changed in the declared files HEAD holds at HEAD's "
+                "copy (%s)" % (", ".join(held),) if held else "")), None
+    return [], None, (
+        "the passed count did not rise between two runs of the same files - %s; "
+        "%s - so none of the task's own definitions is shown to have run and "
+        "passed: one never collected, deselected, not run by the command or "
+        "skipped adds nothing to the task's run, and one overriding an inherited "
+        "test of the same name runs in its place"
+        % (out, counts) + _skipped_clause(head_text, run["text"], cmd)
+        + _fixture_skip_note(head_text, run["text"], cmd, tally["runner"]))
+
+
+def _fixture_skip_note(head_text, text, cmd, runner):
+    """Under unittest, when the task's run skipped more than HEAD's own: a skip
+    a class or module fixture raised is in unittest's skipped figure and not in
+    its `Ran` count, so the passed figure read off the two reads one low for
+    each such skip - which can hide a rise, never make one."""
+    if runner != "unittest" or (_tally_figure(text, cmd, "skipped")
+                                <= _tally_figure(head_text, cmd, "skipped")):
+        return ""
+    return ("; unittest counts a skip its class or module fixture raised among the "
+            "skips and not among the tests it ran, so where a skip came from a "
+            "fixture the task's passed figure reads one low for it")
 
 
 def _count_proof(run, ctx, risen):
@@ -4007,11 +4269,14 @@ def _count_proof(run, ctx, risen):
     identically (`own_definitions`, from `ctx["wt"]`, `ctx["head_defs"]` and
     `ctx["head_js"]`), and N must exceed M, the cases the task's run skipped or
     expected to fail beyond HEAD's own run - then at least one of the task's
-    own ran and passed. Where the definitions were not read (no texts, or a
-    runner the reading does not know) or some cannot be counted, the rise
-    proves as a count alone and the basis says it is that weaker proof. A
-    sweep-shaped run and a house run are read as before: their cases are not
-    definitions this reads."""
+    own ran and passed. This is the route where nothing was taken out of a new
+    file for HEAD's run (`_difference_proof` returned None): jest, vitest and
+    playwright, whose proof the basis labels weaker than a difference and says
+    why, and a task changing only declared files HEAD holds. Where the
+    definitions were not read (no texts, or a runner the reading does not know)
+    or some cannot be counted, the rise proves as a count alone and the basis
+    says it is that weaker proof. A sweep-shaped run and a house run are read
+    as before: their cases are not definitions this reads."""
     cmd, cases = run["cmd"], ctx.get("cases") or []
     head_text = (run.get("head") or {}).get("text") or ""
     seen = "seen by the passed count" + (
@@ -4035,9 +4300,16 @@ def _count_proof(run, ctx, risen):
     counts = ("the declared test files define %d case(s) HEAD's tree does not hold "
               "identically%s and the run skipped or expected to fail %d more than "
               "HEAD's own run" % (n, named, more))
+    # Under a runner whose definitions are not taken out of a new file, a count
+    # stands in for the difference `_difference_proof` makes, and says so.
+    weaker = (" - a weaker proof than a difference between two runs: %s definition "
+              "is not taken out of a new test file for HEAD's own run, so a count of "
+              "definitions stands in for it" % (runner,)
+              if runner not in _TAKEN_OUT_RUNNERS else "")
     if n > more:
         return risen, ("%s, as %s - %d defined > %d more skipped, so at least one "
-                       "of the task's own ran and passed" % (seen, counts, n, more)), None
+                       "of the task's own ran and passed%s"
+                       % (seen, counts, n, more, weaker)), None
     if defined["uncounted"]:
         return risen, ("%s, as %s, and the definitions reading cannot count %s - so "
                        "the rise is not shown to be the task's own cases, a weaker "
@@ -4045,10 +4317,9 @@ def _count_proof(run, ctx, risen):
                        % (seen, counts, _output.some_of(defined["uncounted"]))), None
     rise = "; ".join(risen)
     if not n:
-        return [], None, ("the passed count rose (%s) while %s (0 defined), so the "
-                          "rise is made of cases HEAD already holds - a HEAD test "
-                          "class a new file imports or inherits is collected again"
-                          % (rise, counts))
+        return [], None, ("the passed count rose (%s) while %s (0 defined): %s"
+                          % (rise, counts, _no_own_reason(
+                              sorted(ctx["wt"]), ctx, "in")))
     return [], None, ("the passed count rose (%s) while %s (%d defined, %d more "
                       "skipped), so none of them is shown to have run: the rise is "
                       "made of cases HEAD already holds or of cases that did not run"
@@ -4057,13 +4328,37 @@ def _count_proof(run, ctx, risen):
 
 def _loaded_split(text, runner, failing):
     """`(cases, loads)` - the failing cases a run named, less every test module
-    the runner could not load (`_runner_output.did_not_load`, the one reading of
-    which a failure is); and those modules, each with the runner's own line
-    saying why (`load_failures`). Both verdicts read a failure through this."""
-    cases = [f for f in failing if not _runner_output.did_not_load(f)]
-    if len(cases) == len(failing):
+    the runner reported it could not load and every line of that shape quoted
+    inside another case's block (`_runner_output.failure_kind`, the one reading
+    of which a failure is, off the runner's own report); and those modules,
+    each with the runner's own line saying why (`load_failures`). Both verdicts
+    read a failure through this."""
+    kinds = [_runner_output.failure_kind(f, text) for f in failing]
+    cases = [f for f, kind in zip(failing, kinds) if kind == "case"]
+    if "load" not in kinds:
         return cases, []
     return cases, _runner_output.load_failures(text, runner)
+
+
+def _read_failures(run, tally):
+    """`{"cases", "loads", "first"}` - how a run failed, read in ONE order for
+    both verbs: the collected cases that failed or errored and the modules the
+    runner could not load (`_loaded_split`), and which of the two the run is
+    read by first. A FAILING CASE OUTRANKS A MODULE THAT DID NOT LOAD: `first`
+    is `"case"` when the run exited non-zero, collected a case and failed more
+    of them than the modules it could not load - so a collected case failed,
+    named or not - else `"load"` when a module did not load, else None. A
+    module that did not load beside a failing case is named with it, never in
+    its place."""
+    runner = tally["runner"] if tally is not None else None
+    if runner is None:
+        return {"cases": [], "loads": [], "first": None}
+    cases, loads = _loaded_split(run["text"], runner,
+                                 _failing_cases(run["text"], runner, run["cmd"]))
+    failed = (run["code"] != 0 and tally["collected"] > 0
+              and (bool(cases) or tally["failed"] > len(loads)))
+    return {"cases": cases, "loads": loads,
+            "first": "case" if failed else ("load" if loads else None)}
 
 
 def _loads_clause(loads):
@@ -4073,29 +4368,25 @@ def _loads_clause(loads):
                             for load in loads])
 
 
-def _not_green_failure(run, tally):
-    """Whether the task's run FAILED a case it collected on the base: a
-    non-zero exit, one runner's tally, at least one case collected and at least
-    one failed or errored. Not an assertion count - a test written to the new
-    code fails on the base as often by raising (a name, a key, an attribute the
-    change adds) as by asserting, and either is the finding."""
-    return (run["code"] != 0 and tally is not None and tally["runner"] is not None
-            and tally["collected"] > 0 and tally["failed"] > 0)
-
-
 def green_verdict(run, ctx):
     """`(exit, verdict, block)` - what the task's tests did on HEAD's code.
 
     `run` is `{"cmd", "code", "text", "problem", "head"}`: the task's run in the
-    throwaway and `head`, HEAD's own tests run first on the same tree, the new
-    declared test files laid over as empty files - or, for a jest or vitest
-    file, left absent and named in `head["absent"]`. `ctx` is `{"tests", "new",
-    "cases", "dropped"}` with the optional `"stages"` (the `--stage` labels the
-    task's files introduce), `"naming"`, `"deps"`, `"sized"`, `"support"` and
-    `"inline"` `red_verdict` reads too, and `"wt"` (`{rel: text}` of the
-    declared test files the task's run laid over), `"head_defs"` and
+    throwaway and `head`, HEAD's own tests run first on the same tree, each new
+    declared Python test file laid over with the task's own definitions taken
+    out (named in `ctx["taken"]`), one that does not parse, sits under a sweep,
+    or is the script a command runs with nothing of the task's to take out of
+    it laid over as an empty file (named in `ctx["new"]`), and a
+    jest or vitest file left absent and named in `head["absent"]`. `ctx` is
+    `{"tests", "new", "cases", "dropped"}` with the optional `"stages"` (the
+    `--stage` labels the task's files introduce), `"naming"`, `"deps"`,
+    `"sized"`, `"support"` and `"inline"` `red_verdict` reads too; `"taken"`
+    (`{rel: names}`) and `"taken_problem"` (why the definitions could not be
+    taken out), which `_difference_proof` reads; and `"wt"` (`{rel: text}` of
+    the declared test files the task's run laid over), `"head_defs"` and
     `"head_js"` (`head_tree`'s), which a passed count's rise is weighed
-    against (`_count_proof`) - absent, that rise is read as a count alone."""
+    against where nothing was taken out (`_count_proof`) - absent, that rise is
+    read as a count alone."""
     at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     cmd = run["cmd"]
     shown = " ".join(cmd)
@@ -4125,27 +4416,32 @@ def green_verdict(run, ctx):
     verdict, tally = classify_run(run["code"], run["text"], cmd)
     line = _decisive_line(run["text"], tally)
     if baseline is not None:
-        return cannot(verdict, "%s, but %s - %s" % (where, baseline, line))
+        return cannot(verdict, "%s, but %s%s - %s"
+                      % (where, baseline, _baseline_loads_clause(run, ctx), line))
     if ctx.get("inline"):
         return cannot(verdict, "%s, but an inline suite's test hunks are told from "
                       "its implementation only by the definitions they lie in, so "
                       "a run of them on HEAD cannot be told from a misread split - "
                       "%s" % (where, line))
-    runner = tally["runner"] if tally is not None else None
-    loads = (_loaded_split(run["text"], runner,
-                           _failing_cases(run["text"], runner, cmd))[1]
-             if runner is not None else [])
-    if loads:
+    # A collected case that failed on the base - an assertion or any exception;
+    # a test written to the new code fails as often by raising (a name, a key,
+    # an attribute the change adds) as by asserting - outranks a module that did
+    # not load, which is named beside it (`_read_failures`).
+    read = _read_failures(run, tally)
+    if read["first"] == "case":
+        loads = read["loads"]
+        return not_green(V_RED, "%s with %d of %d collected case(s) failing%s%s"
+                         % (where, tally["failed"], tally["collected"],
+                            ": %s" % (_ids(read["cases"]),) if read["cases"] else "",
+                            "; and the runner could not load %s, which is no case "
+                            "though its tally counts it" % (_loads_clause(loads),)
+                            if loads else ""))
+    if read["first"] == "load":
         return cannot(V_COLLECT, "%s, but the runner could not load %s - a test "
                       "module that did not load is no case, and an import that "
                       "fails cannot be told from the throwaway's environment by "
                       "the run, so its line says what failed - %s"
-                      % (where, _loads_clause(loads), line))
-    if _not_green_failure(run, tally):
-        failing = _failing_cases(run["text"], tally["runner"], cmd)
-        return not_green(V_RED, "%s with %d of %d collected case(s) failing%s"
-                         % (where, tally["failed"], tally["collected"],
-                            ": %s" % (_ids(failing),) if failing else ""))
+                      % (where, _loads_clause(read["loads"]), line))
     if verdict != V_GREEN:
         return cannot(verdict, "%s, but it reached no verdict (%s): %s"
                       % (where, verdict, line))
@@ -4170,6 +4466,28 @@ def green_verdict(run, ctx):
                     "; ".join(own), line, env)}
 
 
+def _baseline_loads_clause(run, ctx):
+    """`; HEAD's own run could not load X (line) ...` when HEAD's own run is not
+    green because a module did not load there - read as the task's run is
+    (`_read_failures`) - naming a new file laid over with the task's own
+    definitions taken out: what is left of it must load on the base for the
+    two runs to be compared. '' otherwise."""
+    head = run.get("head") or {}
+    if head.get("problem") or head.get("code") is None:
+        return ""
+    tally = _runner_output.read_run_tally(head.get("text") or "", run["cmd"])
+    loads = _read_failures({"cmd": run["cmd"], "code": head["code"],
+                            "text": head.get("text") or ""}, tally)["loads"]
+    if not loads:
+        return ""
+    taken = sorted(ctx.get("taken") or {})
+    return ("; HEAD's own run could not load %s%s" % (
+        _loads_clause(loads),
+        ", with the task's own definitions taken out of %s - what is left of a new "
+        "test file must load on the base for the two runs to be compared"
+        % (", ".join(taken),) if taken else ""))
+
+
 def _green_baseline_clause(head, cmd, ctx):
     """What made HEAD's own run a green baseline, for a proved basis: green on
     HEAD's code, or failing only the unknown-stage check of a stage the task's
@@ -4184,6 +4502,10 @@ def _green_baseline_clause(head, cmd, ctx):
     if stubbed:
         said += (", its declared test files new at HEAD (%s) laid over as empty "
                  "files" % (", ".join(stubbed),))
+    taken = ctx.get("taken") or {}
+    if taken:
+        said += (", its declared test files new at HEAD (%s) laid over with the "
+                 "task's own definitions taken out" % (", ".join(sorted(taken)),))
     if absent:
         said += (", its declared jest or vitest test files new at HEAD (%s) left "
                  "absent" % (", ".join(absent),))
@@ -4259,7 +4581,8 @@ def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
                   stubs=(), deps=None, texts=None):
     """`(run, copied)` - the throwaway reset to HEAD, `rels` laid over it from
     the working tree, each of `texts` (`{rel: text}`, an inline suite's
-    test-only copy) written over that, each of `stubs` written as an EMPTY
+    test-only copy, or a new test file with the task's own definitions taken
+    out) written over that, each of `stubs` written as an EMPTY
     file and the `deps` plan's directories linked in again - the reset removed
     them - and the command run in an isolated environment. With less than a
     second of the deadline left no run is made at all - not even the reset's
@@ -4274,6 +4597,9 @@ def _isolated_run(root, path, rels, cmd, deadline, timeout, env, scratch, tag,
     copied = _lay_over(root, path, rels)
     for rel, text in sorted((texts or {}).items()):
         dst = os.path.join(path, *rel.split("/"))
+        # A file new at HEAD may sit in a directory HEAD does not have.
+        if not os.path.isdir(os.path.dirname(dst)):
+            os.makedirs(os.path.dirname(dst))
         body = _in_endings_of(dst, text)
         with open(dst, "w", encoding="utf-8", newline="") as fh:
             fh.write(body)
@@ -4933,24 +5259,57 @@ def _proof_preflight(setup):
     return present, problem
 
 
-def _baseline_files(setup, cmd, present):
-    """`{"new", "absent", "stubs", "stages"}` - how HEAD's own run is handed the
-    task's test files: a file new at HEAD laid over as an empty stub, or, for a
-    jest or vitest file, left absent - the reset already removes it, and both
-    runners fail an empty suite - and the `--stage` labels the task's files
-    introduce (`new_stages`), which HEAD's run fails as unknown."""
+def _baseline_files(setup, cmd, present, take_out=None):
+    """`{"new", "absent", "stubs", "stages", "texts", "taken", "problem"}` - how
+    HEAD's own run is handed the task's test files: a file new at HEAD laid over
+    as an empty stub, or, for a jest or vitest file, left absent - the reset
+    already removes it, and both runners fail an empty suite - and the
+    `--stage` labels the task's files introduce (`new_stages`), which HEAD's run
+    fails as unknown. That is `red`'s baseline, and every caller's unless it
+    passes `take_out` - `{"defs": head_defs}`, which `green` does: then each new
+    Python test file is laid over as ITSELF with the task's own test definitions
+    taken out (`take_out_own`), its text in `texts` and the names taken out in
+    `taken`, and leaves `stubs`. Three stay empty stubs even then: a file that
+    does not parse, which nothing can be read of; every file under the sweep,
+    whose route is its per-file rows; and the script a command runs directly
+    when nothing is taken out of it - a house suite, whose route is its
+    printed ids. HEAD's definitions unread leaves every file a stub and says so
+    in `problem`, as does a removal that leaves a file that does not parse."""
     root, tests = setup["root"], setup["scope"]["tests"]
     new = sorted(set(tests) - present)
     absent = [rel for rel in new if _is_js_test_path(rel, set(tests))]
     head_texts, unread = _cat_blobs(root, tests, setup["deadline"])
-    stages = new_stages(cmd, None if unread else head_texts, _test_texts(root, tests))
+    wt_texts = _test_texts(root, tests)
+    stages = new_stages(cmd, None if unread else head_texts, wt_texts)
+    stubs = [rel for rel in new if rel not in absent]
+    texts, taken, problem = {}, {}, None
+    candidates = ([rel for rel in stubs if rel.endswith(".py")]
+                  if take_out is not None and _sweep_args(cmd) is None else [])
+    if candidates and take_out.get("defs") is None:
+        candidates, problem = [], ("HEAD's test files could not be read, so the task's "
+                                   "own definitions could not be taken out of %s"
+                                   % (", ".join(stubs),))
+    script = _as_rel(_house_script(cmd), (root,))
+    for rel in candidates:
+        text, names = take_out_own(wt_texts.get(rel), take_out["defs"])
+        if text is None or (rel == script and not names):
+            continue
+        if _parse(text) is None:
+            problem = ("taking the task's own definitions out of %s left a file "
+                       "that does not parse - the removal is at fault, not the "
+                       "file" % (rel,))
+            continue
+        texts[rel], taken[rel] = text, names
     return {"new": new, "absent": absent,
-            "stubs": [rel for rel in new if rel not in absent], "stages": stages}
+            "stubs": [rel for rel in stubs if rel not in texts], "stages": stages,
+            "texts": texts, "taken": taken, "problem": problem}
 
 
 def _baseline_run(setup, cmd, files, owed, until):
     """`(head, problem)` - the throwaway built at HEAD and HEAD's own tests run
-    in it, the stubs of `files` laid over and its absent files named on the
+    in it, the stubs of `files` laid over, each of its `texts` (a new file with
+    the task's own definitions taken out, `green`'s alone) written in place, and
+    its absent files named on the
     record (`head["absent"]`, which `baseline_problem` reads); or None and the
     reason no run was started. `owed` are the runs the proof still has to make
     before `until`: each is started only with the wall time it needs left, since
@@ -4968,7 +5327,8 @@ def _baseline_run(setup, cmd, files, owed, until):
         return None, problem
     head, _c = _isolated_run(root, path, [], cmd, until, setup["sized"]["seconds"],
                              setup["env"], setup["holder"], "baseline",
-                             stubs=files["stubs"], deps=setup["deps"])
+                             stubs=files["stubs"], deps=setup["deps"],
+                             texts=files.get("texts") or None)
     head["absent"] = files["absent"]
     return head, None
 
@@ -5194,22 +5554,26 @@ def run_green(args, cmd, out):
     env, dropped, naming = setup["env"], setup["dropped"], setup["naming"]
     holder, path, head = setup["holder"], setup["path"], setup["head"]
     run = {"cmd": cmd, "code": None, "text": "", "problem": None, "head": None}
-    files = {"new": [], "absent": [], "stubs": [], "stages": []}
+    files = {"new": [], "absent": [], "stubs": [], "stages": [], "texts": {},
+             "taken": {}, "problem": None}
     support, copied = [], []
     head_defs = head_js = None
     try:
         try:
             present, run["problem"] = _proof_preflight(setup)
             if run["problem"] is None:
-                files = _baseline_files(setup, cmd, present)
+                # What HEAD's test files define, read as `red` reads it: the
+                # task's own definitions are what HEAD does not hold
+                # identically, and those are taken out of each new test file
+                # for HEAD's own run (`take_out_own`) - or, for a runner whose
+                # definitions are not taken out, counted (`_count_proof`).
+                _f, head_defs, _m, head_js = head_tree(root, set(scope["tests"]),
+                                                       deadline)
+                files = _baseline_files(setup, cmd, present,
+                                        take_out={"defs": head_defs})
                 # A test-support module HEAD has may carry the change itself, and
                 # a pass leaning on it would be no pass on the base: HEAD's copy.
                 support = support_at_head(root, scope["tests"], present, deadline)
-                # What HEAD's test files define, read as `red` reads it, so a
-                # passed count that rises is weighed against the cases the
-                # task's files define (`_count_proof`).
-                _f, head_defs, _m, head_js = head_tree(root, set(scope["tests"]),
-                                                       deadline)
                 # `green` makes no fix run, so its two runs have the whole
                 # deadline, the time `red` holds back for one included.
                 run["head"], run["problem"] = _baseline_run(
@@ -5231,6 +5595,7 @@ def run_green(args, cmd, out):
                               % (exc or "an interrupt",))
         exit_code, verdict, block = green_verdict(run, {
             "tests": scope["tests"], "new": files["stubs"], "cases": args.case,
+            "taken": files["taken"], "taken_problem": files["problem"],
             "stages": files["stages"], "dropped": dropped, "naming": naming,
             "deps": deps, "sized": sized, "support": support,
             "inline": setup["inline"],
@@ -5247,7 +5612,8 @@ def run_green(args, cmd, out):
                "testDigest": setup["digest"], "atHead": scope["implementation"],
                "copied": copied, "supportAtHead": support, "leftovers": leftovers,
                "baseline": {"stubbed": files["stubs"], "absent": files["absent"],
-                            "newStages": files["stages"]},
+                            "newStages": files["stages"],
+                            "takenOut": files["taken"]},
                "throwaway": {"path": path, "head": head, "removed": removed,
                              "problem": unremoved},
                "run": {"argv": cmd, "exit": run["code"],
