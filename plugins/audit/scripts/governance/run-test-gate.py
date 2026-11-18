@@ -716,10 +716,18 @@ def _charge_step(step, base_steps):
     compared as a whole - introduced when the base step was green, NOT
     KNOWABLE when it was red too, because neither run says whether the same
     thing failed. A step whose suites were cut at their bound adds one
-    not-knowable entry for the suites past the cut, which no row carries."""
+    not-knowable entry for the suites past the cut, which no row carries.
+
+    A JOINED step (`_evidence_io.step_parts`) is read part by part: a suite one
+    of its affected steps' names lists is answered as a derived step's, and
+    any other is its declared entry's, answered by the base step of that
+    entry's name."""
     named = _ev.named_failing_suites([step])
     same = _base_step(base_steps, step)
-    if same is None and not (_ev.is_derived_step(step.get("name")) and named):
+    declared, derived = _ev.step_parts(step.get("name"))
+    joined = declared is not None and bool(derived)
+    if same is None and not ((_ev.is_derived_step(step.get("name")) or joined)
+                             and named):
         return [], [], ["%s (the base run has no such step)" % (step["name"],)]
     if not named:
         if not _ev._counts_as_failed(same):
@@ -731,10 +739,16 @@ def _charge_step(step, base_steps):
         unknown.append("%s (its runner named more failing suites than the row "
                        "carries, so a suite past the cut is compared with "
                        "nothing)" % (step["name"],))
+    listed = _ev.derived_step_suites(step.get("name"))
     for suite in named:
-        answering = ([same] if same is not None else
-                     [st for st in base_steps or []
-                      if _ev.step_runs_suite(st, suite)])
+        if same is not None:
+            answering = [same]
+        elif joined and _ev.resolve_named(suite, listed)[0] is None:
+            entry = _base_step(base_steps, {"name": declared})
+            answering = [] if entry is None else [entry]
+        else:
+            answering = [st for st in base_steps or []
+                         if _ev.step_runs_suite(st, suite)]
         word = (_suite_at_base(suite, step, answering) if answering
                 else "%s (no step of the base run ran it)" % (suite,))
         if word == "at-base":
@@ -769,10 +783,15 @@ def base_red(steps, head, task_id, rows):
         out["basis"] = ("git named no HEAD for this run, so no run at its base "
                         "commit can be looked up")
         return out
-    suites = [suite for st in red if _ev.is_derived_step(st.get("name"))
+    # A joined step's affected suites find a base the way a derived step's do,
+    # and its declared entry is asked for by the entry's own name.
+    suites = [suite for st in red if _ev.step_parts(st.get("name"))[1]
               for suite in _ev.named_failing_suites([st])]
-    base = _ev.base_run(rows, head, [task_id], [st.get("name") for st in red],
-                        suites=suites)
+    names = [st.get("name") for st in red]
+    names += [head_of for head_of, parts in
+              (_ev.step_parts(st.get("name")) for st in red)
+              if head_of is not None and parts and head_of not in names]
+    base = _ev.base_run(rows, head, [task_id], names, suites=suites)
     if base is None:
         out["basis"] = ("no run of this gate is recorded at base %s on a clean "
                         "tree, so whether the base is red too is not known"
@@ -3358,10 +3377,19 @@ def reused_result(identity, row, elapsed_ms, newer=None):
 def repeat_plan(commands, grading):
     """`(repeated names, measured commands)` for a gate whose `grading` entries
     name a path the identity leaves out: every other entry may be repeated, and
-    only the grading ones run. Empty names when no entry is left to repeat."""
+    only the grading ones run. Empty names when no entry is left to repeat.
+
+    A JOINED step runs every entry it carries (`_evidence_io.step_parts`), so
+    it is measured when any one of them grades - the identity's grading names
+    are the steps before the join."""
     graded = set(name for name, _what in grading or ())
-    return ([name for name, _command in commands if name not in graded],
-            [(name, command) for name, command in commands if name in graded])
+
+    def grades(name):
+        declared, derived = _ev.step_parts(name)
+        return any(part in graded
+                   for part in [name, declared] + list(derived))
+    return ([name for name, _command in commands if not grades(name)],
+            [(name, command) for name, command in commands if grades(name)])
 
 
 def repeated_step(stored, command, source):
@@ -5604,8 +5632,11 @@ def base_commands(row, manifest, phase_id, tree):
             commands.append((name, step["command"]))
             published.append(step["command"])
             continue
-        if _ev.is_derived_step(name):
-            derived, why = _derived_at_base(step, manifest, phase_id, tree)
+        declared, parts = _ev.step_parts(name)
+        if _ev.is_derived_step(name) or (declared is not None and parts):
+            reader = (_derived_at_base if declared is None
+                      else _joined_at_base)
+            derived, why = reader(step, manifest, phase_id, tree)
             commands += derived
             if why:
                 left.append({"name": name, "reason": why})
@@ -5613,6 +5644,59 @@ def base_commands(row, manifest, phase_id, tree):
         left.append({"name": name, "reason": "its row keeps a digest of the "
                                              "command, which cannot be run again"})
     return commands, published, left
+
+
+def _joined_at_base(step, manifest, phase_id, tree):
+    """`(commands, why)` - the commands that run a red JOINED step's failing
+    suites in `tree`, each under the part of the step that ran it
+    (`_evidence_io.step_parts`), or why there are none.
+
+    A suite one of its affected steps' names lists is spelled again under that
+    step, as `_derived_at_base` spells a derived step's. A suite of the
+    declared entry's own paths is run under the declared entry, spelled by the
+    plan's recorded spelling over those suites - the spelling the entry was
+    joined in. A suite neither lists, or a runner that named none, leaves the
+    step unrun with the reason."""
+    declared, derived = _ev.step_parts(str(step.get("name")))
+    named = _ev.named_failing_suites([step])
+    if not named:
+        return [], ("its runner named no failing suite, so no suite of it can "
+                    "be run again at the base")
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    phase = _phase_by_id(manifest, phase_id) or {}
+    own_paths = _affected.entry_paths(declared, phase, meta) or []
+    owed, mine, unmatched = {}, [], []
+    for suite in named:
+        part = next((p for p in derived if _ev.resolve_named(
+            suite, _ev.derived_step_suites(p))[0] is not None), None)
+        if part is not None:
+            owed.setdefault(part, []).append(suite)
+            continue
+        path, why = _ev.resolve_named(suite, own_paths)
+        if path is None:
+            unmatched.append("%s (%s)" % (suite, why))
+        elif path not in mine:
+            mine.append(path)
+    if unmatched:
+        return [], ("a failing suite its runner named is not one path its "
+                    "affected steps or its declared entry list, so it cannot be "
+                    "spelled as the joined step was: %s" % ("; ".join(unmatched),))
+    commands = []
+    if mine:
+        spelled = _affected.spelled_entry(mine, phase, meta)
+        if spelled is None:
+            return [], ("its declared entry's suites cannot be spelled again: "
+                        "the plan records no subset spelling")
+        commands.append((declared, spelled))
+    for part in derived:
+        if part not in owed:
+            continue
+        more, why = _derived_at_base(dict(step, name=part, failingSuites=owed[part]),
+                                     manifest, phase_id, tree)
+        if why:
+            return [], why
+        commands += more
+    return commands, None
 
 
 def _record_base_run(project, args, res, published, out=print):
@@ -6406,6 +6490,23 @@ def main(argv, out=print):
     if left_plan is not None and left_plan["left"] and not commands:
         return _all_left(project, args, manifest, source, subject,
                          declared_commands, left_plan["left"], out=out)
+    # ONE CALL FOR THE DECLARED ENTRY AND THE AFFECTED STEPS, when both are the
+    # plan's recorded spelling over different paths (`_affected.joined_steps`).
+    # Joined AFTER the split above, so what the setting leaves to the phase
+    # gate is decided step by step as each arm proposed it, and after the
+    # declared part was read, so the digest is the declared gate's. The
+    # identity below is taken over the steps as they stood before the join:
+    # the same two lists are the same gate whichever way they are called.
+    unjoined = commands
+    if affected_info is not None:
+        commands, joined_said = _affected.joined_steps(
+            commands, _phase_by_id(manifest, args.phase) or {},
+            manifest.get("meta"))
+        # Printed as the affected lines above are, and withheld from `--json`
+        # with them: the joined step's name in the steps says the same.
+        if not args.as_json:
+            for line in joined_said:
+                out("[run-test-gate] %s" % (line,))
     # THE HALF OF THE OVERLAP QUESTION THAT NEEDS NOTHING FROM THE RUN, asked
     # here rather than at the end of one. Both sides of it - the files the work
     # declares, and the fact that an empty declaration can be related to nothing -
@@ -6440,7 +6541,7 @@ def main(argv, out=print):
     else:
         # `group=also`: a group run and a solo run over the same files are two
         # claims, so the members a run owns are part of what a repeat must match.
-        identity = reuse_identity(project, args.manifest, manifest, commands,
+        identity = reuse_identity(project, args.manifest, manifest, unjoined,
                                   owns, group=also, tree=tree)
         if identity.get("unexcluded"):
             # A NARROWING THAT DID NOT APPLY, SAID RATHER THAN LEFT FOR A COUNT TO

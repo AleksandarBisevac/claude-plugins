@@ -4082,6 +4082,15 @@ step known to have run one of the given suites (`step_runs_suite()`). A row file
 that run under `BASE_OF_KEY`; `subject_key()` gives it no subject, so no pointer is written or
 reconciled onto it.
 
+**A joined step.** A task's declared entry and the affected steps run as one call are recorded as
+one step named `joined_step_name()` of the entry and each affected step's name, separated by
+`JOINED_STEP_SEPARATOR`. The name carries both lists, rather than a key on the step, because
+every reader of a row's steps already reads the name. `step_parts()` is the one reader of what a
+step covers - `(entry, [affected names])`, the entry only at the head of the name - and
+`declared_steps()`, `derived_step_suites()` and `step_runs_suite()` answer through it, so a joined
+step reads as its entry to the binding and as its affected suites to the base lookup, and every
+older name reads as it did (`jst1`-`jst6`).
+
 **The foreground bound.** `FOREGROUND_BOUND_MS` is the one statement of how long the Bash tool
 keeps a command in the foreground, and `outlives_foreground()` the one comparison against it:
 the writer's brief leaves a step past it to the drive's gate (`audit-lookup.py`), and the drive
@@ -4269,6 +4278,18 @@ those paths taken out, are a declared entry's command, that entry runs every sui
 the support file can reach, so no phase-gate step joins and the line names the
 entry. A path-scoped entry, the same runner with an option, or another key leaves
 the widening standing.
+
+`joined_steps()` makes the declared entry and the affected steps one call when both are the
+plan's recorded spelling over different paths: the first declared entry that is exactly that
+spelling over a list of paths (`spelled_paths()` reads the words standing where `{paths}` stands,
+every one a path) takes every affected step spelled the same way, and runs the spelling over
+`union_paths()` of their paths - the entry's first, each suite once - as one step at the entry's
+place, named `_evidence_io.joined_step_name()` of the entry and the steps. Only the recorded
+spelling is read, because its `{paths}` word says where the paths go and a sibling's entry does
+not. A build key, another runner, the same runner with an option, the phase-gate arm, or no
+affected step leaves the commands as they were, with no line (`af44`-`af52`).
+`entry_paths()` and `spelled_entry()` are the same reading for `run-test-gate.py`'s base
+measurement of a joined step's declared suites.
 
 `reach_answers()` is the gate-reach reading's half of this module: each path asked of `select()`
 ALONE (`path_reach()`), its listings run side by side first (`prefetch_listings()`), because a
@@ -4814,6 +4835,16 @@ red step that cannot run again - its runner named no failing suite, a suite it n
 one path its name lists, the plan has no path-scoped spelling, a declared step kept as a digest -
 is named in the answer's `notRun` with its reason,
 and when that is every red step nothing runs and the answer still prints, with an empty `steps`.
+A JOINED step - the declared entry and the affected steps run as one call
+(`_affected_tests.joined_steps`) - is read part by part through `_evidence_io.step_parts`: a
+failing suite one of its affected steps lists is spelled again under that step's arm and name, as
+a lone derived step's would be, and one of the entry's own paths is run under the entry's name,
+the recorded spelling over those suites (`_joined_at_base`); `_charge_step` answers each against
+the base step of the same part. The join comes after the `executor.phaseGateOnly` split, so what
+the setting leaves out is weighed step by step as each arm proposed it, and the reuse identity is
+taken over the steps before the join, so the same two lists are one identity whichever way they
+ran; `repeat_plan` measures a joined step when any entry it carries grades a left-out path. The
+`jn` cases drive the run, the repeat and the base.
 `bc1`-`bc4` and `be1`-`be5` drive the comparison; the `bod` cases the derived step's base; the
 drive's `bm`, `bdr` and `bt` cases drive `--base-of`.
 

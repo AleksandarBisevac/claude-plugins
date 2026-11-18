@@ -10961,10 +10961,12 @@ def _affected_scope_cases(check):
     code, lines, row, names = run("P1.2")
     check("as3 a narrow declared gate records the affected suites for its "
           "changed path, each under the arm that selected it, and not the "
-          "suite its own gate names: exit=%r steps=%r" % (code, names),
+          "suite its own gate names - joined to the declared entry as one "
+          "step, since both are the recorded spelling: exit=%r steps=%r"
+          % (code, names),
           code == M.E_OK and row.get("status") == "passed"
-          and names == [own, "affected/related: tests/test_other.py",
-                        "affected/python: tests/test_core.py"])
+          and names == [own + " + affected/related: tests/test_other.py"
+                              " + affected/python: tests/test_core.py"])
     states = (binds("P1.2"), binds("P1.1"))
     check("as4 ...and the green rows bind the commit with NO override - the "
           "derived steps beside the declared gate do not read as a changed "
@@ -11022,8 +11024,8 @@ def _affected_scope_cases(check):
           "the runner's own code, recorded under the walk arm: exit=%r steps=%r "
           "lines=%r" % (code, names, [ln for ln in lines if "walk" in ln]),
           code == M.E_OK
-          and names == [own, "affected/python: tests/test_core.py",
-                        "affected/walk: tools/sweep.py"]
+          and names == [own + " + affected/python: tests/test_core.py"
+                              " + affected/walk: tools/sweep.py"]
           and any("tools/sweep.py" in ln and "tests/test_own.py" in ln
                   for ln in lines))
 
@@ -11046,11 +11048,21 @@ raise SystemExit(0 if text == green else 1)
 '''
 
 
-def _derived_base_repo(prefix, base_text, task_text):
+# A declared entry that is not the plan's recorded spelling: a step the
+# affected selection adds beside it stays a step of its own.
+_LONE_GATE = "python3 tests/test_own.py"
+
+
+def _derived_base_repo(prefix, base_text, task_text, gate=None):
     """A one-task plan whose narrow gate gains `affected/related:
     tests/test_other.py` for a change to `pkg/core.py`, that step printing
     `task_text` over the change and `base_text` at HEAD: `(root, mpath, plan,
-    row)` - `row` the recorded task run, taken with the change in place."""
+    row)` - `row` the recorded task run, taken with the change in place.
+
+    `gate` is the task's one declared entry: by default the plan's recorded
+    spelling over `tests/test_own.py`, which the affected step is joined to
+    as one call; `_LONE_GATE` is another runner, beside which the affected
+    step stays a step of its own."""
     root = _harness.fixture_root(prefix)
     for sub in (("docs", "audit", "phases"), (".claude",), ("tools",),
                 ("tests",), ("pkg",), ("gate-out",)):
@@ -11073,7 +11085,7 @@ def _derived_base_repo(prefix, base_text, task_text):
                  {"id": "P1.1", "title": "narrow", "status": "in_progress",
                   "files": ["pkg/core.py", "tests/test_own.py"],
                   "tests": {"mode": "regression",
-                            "gate": [sweep + " tests/test_own.py"]}}]}
+                            "gate": [gate or sweep + " tests/test_own.py"]}}]}
     with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
               "w") as fh:
         json.dump(phase, fh)
@@ -11130,7 +11142,8 @@ def _base_of_derived_cases(check):
     derived = "%srelated: tests/test_other.py" % (_ev_io.DERIVED_STEP_PREFIX,)
     fails = {"tests/test_other.py": ("FAIL c1 a case the base fails too",)}
     red = sweep_red(fails)
-    root, mpath, plan, row = _derived_base_repo("rtg-derived-red-", red, red)
+    root, mpath, plan, row = _derived_base_repo("rtg-derived-red-", red, red,
+                                                gate=_LONE_GATE)
     task_step = ([st for st in row.get("steps") or []
                   if st.get("name") == derived] or [{}])[0]
     code, answer, lines = _base_of_answer(root, mpath, row.get("runId"))
@@ -11154,7 +11167,7 @@ def _base_of_derived_cases(check):
           and len(base_rows) == 1)
 
     g_root, g_mpath, _gp, g_row = _derived_base_repo(
-        "rtg-derived-green-", sweep_red({}), red)
+        "rtg-derived-green-", sweep_red({}), red, gate=_LONE_GATE)
     g_code, g_answer, _gl = _base_of_answer(g_root, g_mpath, g_row.get("runId"))
     g_reading = g_answer.get(_ev_io.BASE_RED_KEY) or {}
     check("bod2 THE TWIN: the same derived step green at the base is re-run "
@@ -11166,7 +11179,7 @@ def _base_of_derived_cases(check):
 
     u_root, u_mpath, _up, u_row = _derived_base_repo(
         "rtg-derived-unnamed-", red,
-        "the runner died before it named a suite\n")
+        "the runner died before it named a suite\n", gate=_LONE_GATE)
     u_code, u_answer, u_lines = _base_of_answer(u_root, u_mpath,
                                                 u_row.get("runId"))
     not_run = u_answer.get("notRun") or []
@@ -11222,6 +11235,297 @@ def _base_of_derived_cases(check):
           "suite: %r / %r" % (s_commands, s_left),
           s_commands == [] and [n.get("name") for n in s_left] == [derived]
           and "test_elsewhere.py" in str(s_left[0].get("reason")))
+
+
+# The fake sweep a joined run is counted with: it runs the suites it is handed,
+# or every one when handed none, and appends the paths it was handed to a log,
+# one line per call - so what RAN is read off the runner itself, never off the
+# row the gate writes about it. The log is OUTSIDE the tree: a file the runs
+# grow inside it would change the content every identity is taken over.
+_CALL_LOG_SWEEP = (
+    "import glob, subprocess, sys\n"
+    "paths = sys.argv[1:] or sorted(glob.glob('tests/test_*.py'))\n"
+    "with open(%r, 'a') as fh:\n"
+    "    fh.write(' '.join(sys.argv[1:]) + '\\n')\n"
+    "bad = [p for p in paths\n"
+    "       if subprocess.call([sys.executable, p]) != 0]\n"
+    "sys.exit(1 if bad else 0)\n")
+
+
+def _joined_repo():
+    """`(root, mpath, phase, build, own, log)` - a committed one-phase plan
+    whose recorded spelling is `python3 tools/sweep.py {paths}`, with a related
+    listing naming `tests/test_other.py` and `tests/test_core.py` importing
+    `pkg/core.py`. `P1.1`'s one entry is that spelling over
+    `tests/test_own.py` (`own`); `P1.2`'s is another runner (`_LONE_GATE`).
+    `log` is the sweep's call log, outside the tree."""
+    log = os.path.join(_harness.fixture_root("run-test-gate-joined-log-"),
+                       "calls.log")
+    root = _harness.fixture_root("run-test-gate-joined-")
+    for sub in (("docs", "audit", "phases"), (".claude",), ("tools",),
+                ("tests",), ("pkg",)):
+        os.makedirs(os.path.join(root, *sub))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    sweep = "python3 tools/sweep.py"
+    own = sweep + " tests/test_own.py"
+    build = {"selftests": sweep, "lint": "true"}
+    with open(mpath, "w") as fh:
+        json.dump({"meta": {"version": 3, "buildCommands": build,
+                            "phaseGate": {"derived": {
+                                "spelling": sweep + " {paths}",
+                                "listing": {"related": "printf '%s\\n' "
+                                            "tests/test_other.py # {paths}"},
+                                "verifiedOn": {"command": "echo v1",
+                                               "answer": "v1"}}}},
+                   "phases": [{"id": "P1", "title": "one",
+                               "shard": "phases/P1.json"}]}, fh)
+    files = ["pkg/core.py", "tests/test_own.py"]
+    phase = {"id": "P1", "title": "one", "status": "in_progress",
+             "testGate": ["selftests", "lint"], "tasks": [
+                 {"id": "P1.1", "title": "joined", "status": "in_progress",
+                  "files": files,
+                  "tests": {"mode": "regression", "gate": [own]}},
+                 {"id": "P1.2", "title": "another runner",
+                  "status": "in_progress", "files": files,
+                  "tests": {"mode": "regression", "gate": [_LONE_GATE]}}]}
+    with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
+              "w") as fh:
+        json.dump(phase, fh)
+    reach = "import os, sys\nsys.path.insert(0, os.getcwd())\n"
+    for rel, body in (("tools/sweep.py", _CALL_LOG_SWEEP % (log,)),
+                      ("pkg/__init__.py", ""), ("pkg/core.py", "X = 1\n"),
+                      ("tests/test_core.py", reach + "import pkg.core\n"),
+                      ("tests/test_other.py", "pass\n"),
+                      ("tests/test_own.py", "pass\n"),
+                      # `tests/test_core.py` imports `pkg.core`, and a bytecode
+                      # cache written beside it is content git would report.
+                      (".gitignore", "__pycache__/\n")):
+        with open(os.path.join(root, rel), "w", newline="\n") as fh:
+            fh.write(body)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
+    for arg in (["add", "--", "."],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
+    return root, mpath, phase, build, own, log
+
+
+def _joined_run_cases(check):
+    """A declared entry in the plan's recorded spelling and the affected suites
+    its change can break run as ONE call over the union of their paths, the
+    declared ones first, recorded as one step whose name carries both lists.
+    A declared entry in any other spelling stays its own step, and a run with
+    no affected suite is what it always was. The joined run is still the
+    task's narrowed gate, binds, keeps the identity the two calls would have
+    had, and leaves to the phase gate what the setting names before anything
+    is joined."""
+    import _verdict_binding as _vb
+    import _usage_economics as _ue
+    root, mpath, phase, build, own, log = _joined_repo()
+    evidence = os.path.join(root, "docs", "audit", "evidence")
+    rel = "affected/related: tests/test_other.py"
+    py = "affected/python: tests/test_core.py"
+    joined = own + " + " + rel + " + " + py
+
+    def calls():
+        if not os.path.exists(log):
+            return []
+        with open(log, encoding="utf-8") as fh:
+            return [ln.rstrip("\n") for ln in fh]
+
+    def run(task_id, *extra):
+        before = len(calls())
+        lines = []
+        code = M.main([mpath, "P1", "--task", task_id, "--project-dir", root,
+                       "--record"] + list(extra), out=lines.append)
+        rows = [r for r in _recorded_rows(evidence)
+                if r.get("taskId") == task_id]
+        row = rows[-1] if rows else {}
+        return (code, lines, row, [s.get("name") for s in row.get("steps") or []],
+                calls()[before:])
+
+    code, lines, row, names, ran = run("P1.1")
+    check("jn3 with no affected suite the task's run is its declared entry "
+          "alone - one step, one call handing the runner the declared path "
+          "and nothing else: exit=%r steps=%r calls=%r" % (code, names, ran),
+          code == M.E_OK and names == [own] and ran == ["tests/test_own.py"])
+
+    with open(os.path.join(root, "pkg", "core.py"), "w", newline="\n") as fh:
+        fh.write("X = 2\n")
+    code, lines, row, names, ran = run("P1.1")
+    shown = [ln for ln in lines if own in ln and rel in ln and py in ln]
+    check("jn1 a declared entry in the recorded spelling and the affected "
+          "suites run as ONE step: one call over the union, the declared path "
+          "first and each suite once, recorded under one name carrying the "
+          "declared entry and each affected step, and the printed step line "
+          "shows both lists: exit=%r steps=%r calls=%r shown=%r"
+          % (code, names, ran, shown),
+          code == M.E_OK and row.get("status") == "passed"
+          and names == [joined]
+          and ran == ["tests/test_own.py tests/test_other.py tests/test_core.py"]
+          and len(shown) >= 1)
+
+    task = phase["tasks"][0]
+    entries, source = M._mio.gate_entries(phase, task)
+    state = _vb.binding(root, {"taskId": "P1.1", "phaseId": "P1"}, entries,
+                        source, task["files"], mpath, "record it", "no gate",
+                        config=_journal_io.load_config(root),
+                        build=build)["state"]
+    compared = _ue.gate_scope_comparison(
+        [row, {"taskId": "P1.1", "gateSource": "phase",
+               "durationMs": (row.get("durationMs") or 0) + 1000}])
+    check("jn4 the joined run is still the task's own narrowed gate: "
+          "gateSource task, the digest the declared entry's alone, the row "
+          "binds the commit with no override, and the usage comparison counts "
+          "it as the narrowed run: %r"
+          % ((row.get("gateSource"), row.get("gateDigest"), state,
+              compared),),
+          row.get("gateSource") == "task"
+          and row.get("gateDigest") == M._ev.gate_digest([own], build)
+          and state == "bound" and compared.get("verdict") == "compared"
+          and [t.get("narrowedRuns") for t in compared.get("tasks") or []]
+          == [1])
+
+    # The same two lists run as two calls: the join switched off for one run.
+    held = getattr(M._affected, "joined_steps", None)
+    M._affected.joined_steps = lambda commands, *_a, **_k: (list(commands), [])
+    try:
+        _c, _l, split_row, split_names, split_ran = run("P1.1", "--no-reuse")
+    finally:
+        if held is None:
+            del M._affected.joined_steps
+        else:
+            M._affected.joined_steps = held
+    check("jn5 the reuse identity is the same for the same two lists whichever "
+          "way they ran - one joined step, or the declared entry and each "
+          "affected step one after another: %r"
+          % ((row.get("reuseKey"), split_row.get("reuseKey"), split_names,
+              split_ran),),
+          split_names == [own, rel, py] and len(split_ran) == 3
+          and bool(row.get("reuseKey"))
+          and split_row.get("reuseKey") == row.get("reuseKey"))
+
+    code, lines, row, names, ran = run("P1.2")
+    check("jn2 a declared entry in another spelling stays its own step, and the "
+          "affected suites run beside it, each under its own arm: exit=%r "
+          "steps=%r calls=%r" % (code, names, ran),
+          code == M.E_OK and names == [_LONE_GATE, rel, py]
+          and ran == ["tests/test_other.py", "tests/test_core.py"])
+
+    # What `executor.phaseGateOnly` leaves out is decided before anything is
+    # joined: the python suite is left to a phase gate that holds it, and only
+    # the related suite joins the declared entry.
+    phase["testGate"] = ["selftests", "lint",
+                         "python3 tools/sweep.py tests/test_core.py"]
+    with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
+              "w") as fh:
+        json.dump(phase, fh)
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json",
+                   "executor": {"phaseGateOnly": ["tests/test_core.py"]}}, fh)
+    code, lines, row, names, ran = run("P1.1", "--no-reuse")
+    left = [e.get("name") for e in row.get("leftToPhaseGate") or []]
+    check("jn7 a suite the project leaves to the phase gate is left out BEFORE "
+          "the join, by its own command: the joined step carries the declared "
+          "entry and the related suite only, and the row lists the python "
+          "step as left: exit=%r steps=%r left=%r calls=%r"
+          % (code, names, left, ran),
+          names == [own + " + " + rel] and left == [py]
+          and ran == ["tests/test_own.py tests/test_other.py"])
+
+
+def _joined_repeat_cases(check):
+    """A joined step under the per-step repeat: measured when its declared
+    entry or an affected step it carries grades a path the identity leaves
+    out, and, when copied, naming the run it was copied from."""
+    own = "python3 tools/sweep.py tests/test_own.py"
+    rel = "affected/related: tests/test_other.py"
+    joined = own + " + " + rel
+    union = "python3 tools/sweep.py tests/test_own.py tests/test_other.py"
+    repeated, measured = M.repeat_plan(
+        [(joined, union), ("lint", "true")],
+        [(own, "docs/audit/audit-plan.json")])
+    source = {"runId": "r-source", "ts": "2026-11-18T00:00:00Z",
+              "steps": [{"name": joined, "exit": 0}, {"name": "lint", "exit": 0}]}
+    copied = M.part_reused_result({"steps": [], "failed": []}, source, [joined],
+                                  [(joined, union)])
+    step = (copied.get("steps") or [{}])[0]
+    check("jn6 a joined step whose declared entry grades a left-out path is "
+          "measured and not repeated, the step beside it is repeated, and a "
+          "joined step that is repeated names the run it was copied from: "
+          "%r / %r / %r" % (repeated, measured, step),
+          repeated == ["lint"] and measured == [(joined, union)]
+          and step.get("name") == joined
+          and (step.get(M._ev.STEP_REUSED_KEY) or {}).get("runId")
+          == "r-source")
+
+
+def _joined_base_cases(check):
+    """`--base-of` over a red JOINED step: each failing suite is read for the
+    part of the step that ran it - an affected suite is spelled again under
+    its arm, as the lone affected step would be, and a declared suite is run
+    under the declared entry - and read against the base by that part."""
+    own = "python3 tools/sweep.py tests/test_own.py"
+    derived = "affected/related: tests/test_other.py"
+    red = sweep_red({"tests/test_other.py": ("FAIL c1 a case the base fails "
+                                             "too",)})
+    root, mpath, plan, row = _derived_base_repo("rtg-joined-red-", red, red)
+    names = [st.get("name") for st in row.get("steps") or []]
+    code, answer, _lines = _base_of_answer(root, mpath, row.get("runId"))
+    reading = answer.get(_ev_io.BASE_RED_KEY) or {}
+    check("jn8 a red joined step whose failing suite is an affected one is run "
+          "again at the base under that suite's arm and read base-only, with "
+          "nothing left unrun: steps %r / exit %r / answer %r"
+          % (names, code, answer),
+          names == [own + " + " + derived] and code == M.E_OK
+          and answer.get("notRun") == []
+          and [st.get("name") for st in answer.get("steps") or []] == [derived]
+          and reading.get("verdict") == "base-only"
+          and reading.get("atBase") == ["tests/test_other.py"])
+
+    g_root, g_mpath, _gp, g_row = _derived_base_repo(
+        "rtg-joined-green-", sweep_red({}), red)
+    g_code, g_answer, _gl = _base_of_answer(g_root, g_mpath, g_row.get("runId"))
+    g_reading = g_answer.get(_ev_io.BASE_RED_KEY) or {}
+    check("jn9 THE TWIN: the same joined step green at the base is read as the "
+          "task's own red: exit %r / answer %r" % (g_code, g_answer),
+          g_code == M.E_OK and g_answer.get("notRun") == []
+          and g_reading.get("verdict") == "introduced"
+          and g_reading.get("introduced") == ["tests/test_other.py"])
+
+    # A red the declared entry's own suite carries, end to end: the fake sweep
+    # prints the planted text naming `tests/test_own.py` only when it is handed
+    # `tests/test_other.py` too, so the joined call is red and the declared
+    # entry alone at the base is green.
+    o_root, o_mpath, _op, o_row = _derived_base_repo(
+        "rtg-joined-own-", sweep_red({}),
+        sweep_red({"tests/test_own.py": ("FAIL c1 a case of the task's own",)}))
+    o_code, o_answer, _ol = _base_of_answer(o_root, o_mpath, o_row.get("runId"))
+    o_reading = o_answer.get(_ev_io.BASE_RED_KEY) or {}
+    check("jn11 a red joined step whose failing suite is the declared entry's own "
+          "is run at the base under the entry's name, found there by that name, "
+          "and read as the task's own red: exit %r / answer %r"
+          % (o_code, o_answer),
+          o_code == M.E_OK and o_answer.get("notRun") == []
+          and [st.get("name") for st in o_answer.get("steps") or []] == [own]
+          and o_reading.get("run") == o_answer.get("runId") is not None
+          and o_reading.get("verdict") == "introduced"
+          and o_reading.get("introduced") == ["tests/test_own.py"])
+
+    task_step = (row.get("steps") or [{}])[0]
+    mine = dict(task_step, failingSuites=["tests/test_own.py"])
+    commands, _published, left = M.base_commands(dict(row, steps=[mine]),
+                                                 plan, "P1", root)
+    at, introduced, unknown = M._charge_step(mine, [{"name": own, "exit": 0}])
+    check("jn10 a failing suite in the joined step's DECLARED part is run at "
+          "the base under the declared entry, spelled by the plan, and read "
+          "against the base step of that entry - green there, so the task's "
+          "own: %r / %r / %r" % (commands, left, (at, introduced, unknown)),
+          commands == [(own, own)] and left == []
+          and (at, introduced, unknown) == ([], ["tests/test_own.py"], []))
 
 
 def _member_records_cases(check):
@@ -12914,6 +13218,9 @@ def _selftest():
         _harness.stage(check, "ag-block", _affected_cases)
         _harness.stage(check, "as-block", _affected_scope_cases)
         _harness.stage(check, "bod-block", _base_of_derived_cases)
+        _harness.stage(check, "jn-block", _joined_run_cases)
+        _joined_repeat_cases(check)
+        _harness.stage(check, "jnb-block", _joined_base_cases)
         _harness.stage(check, "rp-block", _member_records_cases)
         _harness.stage(check, "rs-block", _shared_records_cases)
         _group_cases(check)

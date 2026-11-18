@@ -4461,7 +4461,8 @@
       "P167.3",
       "P167.6-fge",
       "P168.2",
-      "P168.4"
+      "P168.4",
+      "P168.6"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -9597,7 +9598,8 @@
       "P131.1",
       "P131.2",
       "P168.2",
-      "P168.4"
+      "P168.4",
+      "P168.6"
     ],
     "plugins/audit/tests/test__verdict_binding.py": [
       "P74.3-qq5",
@@ -12669,7 +12671,8 @@
       "P167.3",
       "P167.6-fge",
       "P168.2",
-      "P168.4"
+      "P168.4",
+      "P168.6"
     ],
     "tests/test__evidence_view.py": [
       "P131.1"
@@ -13069,7 +13072,8 @@
     "tests/test__verdict_binding.py": [
       "P131.1",
       "P168.2",
-      "P168.4"
+      "P168.4",
+      "P168.6"
     ],
     "tests/test__warning_groups.py": [
       "P131.1",

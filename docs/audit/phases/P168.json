@@ -58,9 +58,23 @@
         "file": "plugins/audit/scripts/governance/drive-phase.py:6620-6631",
         "issue": "The read-back clause embeds each measured step's name, which is the gate entry's command text, unbounded and unsanitised. The outcome claims the did clauses hold no ` | ` and no `; `; that holds for the fixtures only. The signal line flattens ` | ` (_flat in did_word_clause), but a command containing `; ` is joined into a `; `-separated field, and a long command makes fit_rest drop the whole clause to `+N` in the signal line, so the detail acceptance (1)/(2) asks for survives only in the printed text.",
         "resolution": "Clip each step name in step_seconds/repeated to a fixed width and replace `; ` in names, or state in the outcome that the clause is carried whole only in the printed text."
+      },
+      {
+        "id": "P168-R6",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:6544-6560; plugins/audit/scripts/governance/drive-phase.py:6587-6591",
+        "issue": "The reuse identity is taken over the unjoined commands, so the left-out line (`left_out_line(name, path)`, printed from `identity[\"grading\"]`) names the DECLARED entry, while the recorded step is now named for the joined step (`<entry> + affected/...`). The drive's `grades_left_out(text, s.get(\"name\"))` matches the line by `startswith(form % name)` on the step's name, so for a joined step whose declared entry grades a left-out path it answers False and reports 'did not repeat ... <repeat_reason>' instead of the left-out reason. Only the explanation differs; the run itself is measured correctly (jn6 covers repeat_plan).",
+        "resolution": "Have `grades_left_out` match on `_evidence_io.step_parts(name)[0]` as well as the whole name, or print the left-out line under the step's joined name; add one drive case with a joined grading step."
+      },
+      {
+        "id": "P168-R7",
+        "severity": "low",
+        "file": "plugins/audit/scripts/manifest/_manifest_rules.py:626-628; plugins/audit/scripts/manifest/audit-task.py:15429",
+        "issue": "The diff reserves a second step-name spelling (`<entry> + affected/<arm>: <suites>`), refusing it only at bind time (`_verdict_binding.gate_mismatch`, vb42). The write-time guards that refuse a gate entry starting with `DERIVED_STEP_PREFIX` were not widened, so a plan can carry such an entry and learns it cannot bind only when a commit is attempted. The executor named this as LEFT, but the class (a reader of a step name) is open on the write side of the same boundary.",
+        "resolution": "Use `_evidence_io.step_parts(entry) != (entry, [])` beside `is_derived_step` in `_manifest_rules.py:628` and `audit-task.py:15429`, with the message naming JOINED_STEP_SEPARATOR."
       }
     ],
-    "outcome": "[findings: 5 - 0 high, 4 med, 1 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 7 - 0 high, 4 med, 3 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -651,7 +665,7 @@
     {
       "id": "P168.5",
       "title": "A task that has not started and carries the phase's wide gate for want of a subset spelling gets the narrow gate once the spelling is recorded",
-      "status": "in_progress",
+      "status": "done",
       "description": "A task added before the project recorded how to run a subset of its suites stores the whole phase gate, with a basis word saying no spelling was known. Recording the spelling later changes nothing for it: only a scope edit re-derives a gate, so the task runs the whole gate when its turn comes. The settle verb is the one writer of a plan's stale derived values; make a derived wide gate one of them. For a task that has not started, whose basis is one of the derivation's own wide words and whose derivation now gives a narrower gate, settle writes the narrow gate and its basis, the validator warns about each such task and names the verb, and record-listing prints how many tasks the new spelling leaves stale. A gate somebody declared or cleared is never touched, and a started task keeps the gate its attempt is graded against. Dependants you answer for: the existing rule that a scope edit re-derives a derived gate, which must share the one derivation function; settle's revalidate-or-roll-back and its journal row; the validator's warning groups and their counts in the doctor and the panel; every committed example plan, which must still validate with no new warning. Acceptance: (1) after record-listing stores a spelling, a pending task whose basis says no spelling was known is warned about by the validator, and settle rewrites its gate to the narrow one with the basis the derivation gives; (2) a task whose gate was declared or cleared is untouched and unwarned; (3) a started task, and one put back to pending after an attempt, is untouched; (4) a task whose derivation still gives the wide gate is untouched and unwarned; (5) settle on a plan with nothing stale writes nothing.",
       "files": [
         "plugins/audit/scripts/manifest/audit-task.py",
@@ -683,14 +697,18 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "19394dd5bfa7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Attempt 2, same worktree, everything from attempt 1 kept (settle's _narrowed_wide_gates/_settle_wide_gates over _rederive_gate, the stale-wide-gate validator warning, record-listing's count, docs, wg1-wg9 and wgv1-wgv2). Attempt 1's affected sweep was red on tests/test__deps.py ck2/ck16: phaseGate.derived.runner read as typed by governance/derive-phase-gate.py and through strip by manifest/_manifest_phases.py. Diagnosis: the strip read is the pre-existing one in _check_phase_gate_derived (unchanged since ed8b946a). The config-mirror lint walks a module's scope merging locals by name across functions, and attempt 1's _recorded_spelling binds `derived = gate.get(\"derived\")` off `meta.get(\"phaseGate\")`, so the old `derived.get(\"runner\")` became visible to it. The divergence was real: the validator called a runner blank once trimmed a shape fault while derive-phase-gate echoed it as an entry. Repair (files widened by the orchestrator for it; the plan gate allowed every write): _manifest_phases.derived_runner(derived) -> (key, problem) is the one reading - None/None when absent or null, None plus the validator's own sentence when not a string or blank once trimmed, else the key; _check_phase_gate_derived files its runner-shape finding from that problem (wording unchanged) and its unknown-key check from the key; derive-phase-gate.py calls _phases.derived_runner at both sites (the printed DERIVED line's entry, `or \"gate\"`, and testGateDerived.entry). Now only _manifest_phases reads the key, so there is no divergence and no KNOWN_CONFIG_MIRRORS row was added. I did not take the shortcuts of renaming locals or swapping .strip() for a spelling the lint does not count. tests/test_derive_phase_gate.py: dp-runner (a runner of three spaces prints `| gate over` and records no `entry`) was RED before the derive-phase-gate edit - line '| ' + blanks + ' over', entry '   ', 37/38 - and green after; dp-runner-b, the allow case, keeps `listAll` printed and recorded. Its over-fire mutation (a reader that always returns None) was not run, only reasoned: it would print `gate` and fail dp-runner-b's `| listAll over`. CHANGELOG Unreleased/Fixed has one line for the user-visible change; PLUGIN-BUILD-GUIDE's _manifest_phases section names derived_runner. Runs from the worktree, all exit 0: python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py -> '2/2 files ok, 1424 cases'; python3 tools/sweep-selftests.py tests/test__deps.py -> '1/1 files ok, 284 cases' (ck2, ck16 green); python3 tools/sweep-selftests.py tests/test_derive_phase_gate.py -> '1/1 files ok, 38 cases'. Dependants: derive-phase-gate.py's readers - same output for any runner that is a non-blank string; only a blank runner changes, from the blank to `gate`. _manifest_phases importers - derived_runner is a new public name, and _check_phase_gate_derived's codes and sentences are byte-identical. The attempt-1 answers for the other dependants stand (no signature changed; committed plans docs/audit/audit-plan.json, examples/acme-store/audit-plan.json and templates/audit-plan.starter.json validate with 0 findings and 0 stale-wide-gate warnings). The brief re-printed for this attempt still lists the original seven files (computed at attempt start, 10:15:07Z), so the widening is known from the orchestrator's message and from the plan gate allowing the two writes, not from the brief. No panel/ui file touched, so no screenshot re-capture is owed.",
+        "descriptive": "settle now rewrites a pending task's stale derived wide gate to the narrow one, the validator and record-listing name such tasks, and phaseGate.derived.runner has one reading that the validator and derive-phase-gate share."
       },
       "startedAt": "2026-11-18T10:15:06Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T10:35:15Z",
+      "verifiedBy": [
+        "wg1-wg9 (test_audit_task.py, wg-block): after record-listing, settle rewrites a pending phase-no-spelling task to the gate a freshly added task of the same scope derives, leaves a declared, cleared, started, ran-once and still-wide task unchanged, journals one plan.settle row naming only that task, and a second settle writes nothing",
+        "wgv1-wgv2 (test__manifest_phases.py): with a recorded spelling the validator warns about exactly the one stale task and names settle; with no spelling it warns about none",
+        "dp-runner, dp-runner-b (test_derive_phase_gate.py): a runner blank once trimmed prints the default `gate` and records no entry; a real key is still printed and recorded"
+      ],
       "notes": [
         {
           "at": "2026-11-18T06:46:37Z",
@@ -704,7 +722,67 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T10:01:58Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 866000,
+            "startedAt": "2026-11-18T09:47:32Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T10:12:48Z.5e76bf, ending at its startedAt",
+            "kind": "selection",
+            "ms": 21280,
+            "runId": "2026-11-18T10:12:48Z.5e76bf",
+            "startedAt": "2026-11-18T10:07:07Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T10:12:48Z.5e76bf",
+            "kind": "gate",
+            "ms": 319745,
+            "runId": "2026-11-18T10:12:48Z.5e76bf",
+            "startedAt": "2026-11-18T10:07:29Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T10:14:53Z.1ef6fb",
+            "kind": "wait",
+            "ms": 33000,
+            "startedAt": "2026-11-18T10:13:46Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T10:14:53Z.1ef6fb",
+            "kind": "base",
+            "ms": 33898,
+            "runId": "2026-11-18T10:14:53Z.1ef6fb",
+            "startedAt": "2026-11-18T10:14:19Z"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T10:23:55Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 526000,
+            "startedAt": "2026-11-18T10:15:09Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T10:35:11Z.1476bb, ending at its startedAt",
+            "kind": "selection",
+            "ms": 21100,
+            "runId": "2026-11-18T10:35:11Z.1476bb",
+            "startedAt": "2026-11-18T10:29:53Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T10:35:11Z.1476bb",
+            "kind": "gate",
+            "ms": 296163,
+            "runId": "2026-11-18T10:35:11Z.1476bb",
+            "startedAt": "2026-11-18T10:30:15Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 19394dd5bfa7",
+            "kind": "commit",
+            "ms": 1465,
+            "startedAt": "2026-11-18T10:35:12Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T09:47:26Z"
       },
       "reviewPerTask": "signals",
@@ -712,12 +790,24 @@
         "runId": "2026-11-18T10:35:11Z.1476bb",
         "status": "passed",
         "at": "2026-11-18T10:35:11Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "19394dd5bfa7",
+        "at": "2026-11-18T10:35:15Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T10:23:50Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_task.py tests/test__manifest_phases.py` in a throwaway tree at HEAD exited 1 with 6 of 1271 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - wgv1 (house FAIL), wg3 (house FAIL), wg4 (house FAIL), wg5 (house FAIL), wg7 (house FAIL), wg9 (house FAIL): SELFTEST FAILED: 1266/1271 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P168.6",
       "title": "The suites a task declares and the suites its change can break run as one call when both use the project's subset spelling",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A task gate runs the declared suites as one step and the affected suites as a second, one after the other, each a separate call of the same runner over a different list. The two lists never overlap, so nothing is run twice, but the wall time is the sum of the two calls' longest suites instead of the longest of all. When a declared entry is exactly the project's recorded subset spelling over a list of paths, and the affected step is that spelling over another list, run one step over the union, in the declared order first. The row keeps both facts: the step's name says which paths were declared and which were added as affected, so the breadth clause, the usage comparison of narrow against wide gates and the report's step list lose nothing. A declared entry in any other spelling stays its own step, and with no affected suites nothing changes. Dependants you answer for: the gate identity, which is taken over the commands that ran and must be the same for the same two lists whichever way they were split; the affected selection's own step naming, which the usage comparison and the doctor read by prefix; the per-step repeat rule; the selection time the previous phase records; the already-wide test. Acceptance: (1) a task with a declared entry in the recorded spelling and a non-empty affected list runs one step over the union and its name carries both lists; (2) a declared entry in another spelling stays a separate step beside the affected one; (3) an empty affected list leaves the run byte for byte as before; (4) the usage comparison still counts the run as a narrowed gate; (5) a suite present in both lists is passed once.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -725,7 +815,11 @@
         "tests/test_run_test_gate.py",
         "tests/test__affected_tests.py",
         "PLUGIN-BUILD-GUIDE.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "tests/test__evidence_io.py",
+        "plugins/audit/scripts/governance/_verdict_binding.py",
+        "tests/test__verdict_binding.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -746,14 +840,14 @@
       "dependsOn": [
         "P168.2"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T10:35:30Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -766,8 +860,22 @@
           "at": "2026-11-18T06:46:38Z",
           "text": "it quotes one refusal sentence of the gate runner, which this task does not edit",
           "waives": "tools/check-example-ledgers.py"
+        },
+        {
+          "at": "2026-11-18T10:39:09Z",
+          "text": "Scope widened after the executor's hand-back (2026-11-18): _evidence_io.py and _verdict_binding.py with their suites. Measured that day before going on: one sweep call costs about half a second to start (three runs of a one-suite sweep, 0.5 s each), so the gain is not the saved start; it is that the declared suites stop running alone in front of the affected ones. Over this phase's own task-gate rows the declared steps were 26.6 percent of measured task-gate time (python over docs/audit/evidence, rows of P168 with both kinds of step), which is the upper bound of what one call can return. Decisions: (1) one merged step, and ONE reader of what it covers in _evidence_io.py - whether the lists ride in the step's name or in a key on the step is the executor's choice, but declared_steps, derived_step_suites and step_runs_suite answer for a merged step through that one reader and for every older row exactly as before; (2) the verdict binding's code compares what it compared, through declared_steps - a merged row binds, a row whose merged step lacks the declared entry does not, both cased in tests/test__verdict_binding.py and the refusing one proved red-first; (3) the acceptance sentence 'its name carries both lists' is satisfied by the row carrying both lists where its readers read them - the printed step line must still show both; (4) per-step repeats, the left-to-phase-gate split and the base measurement keep reading a suite's arm from the merged step."
         }
-      ]
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T10:35:30Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T11:28:40Z.a6c1a5",
+        "status": "passed",
+        "at": "2026-11-18T11:28:40Z"
+      }
     },
     {
       "id": "P168.7",

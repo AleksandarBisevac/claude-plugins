@@ -299,7 +299,11 @@ def gate_mismatch(measured, entries, source, build=None):
     THE STEPS A TASK'S RUN ADDS ARE NOT ITS GATE: the suites a narrower task
     gate's change can break are recorded after the declared steps, and
     `_evidence_io.declared_steps` - the answer the recorder digests - says
-    which of a row's steps are declared. Only those are compared.
+    which of a row's steps are declared. Only those are compared. A declared
+    entry the run joined with the affected steps into one call is one step
+    named for the entry and each of them, and `declared_steps` reads it as the
+    entry, so it is compared as the entry; one whose name does not open with
+    the entry is not that entry and does not bind.
 
     THE ENTRIES A TASK'S RUN LEFT TO THE PHASE GATE ARE ITS GATE TOO: a row
     that lists a declared entry under `_evidence_io.LEFT_TO_PHASE_GATE_KEY`
@@ -309,18 +313,28 @@ def gate_mismatch(measured, entries, source, build=None):
     also ran, describes some other gate and does not bind.
 
     THE ONE GATE THAT CAN NEVER BIND, AND SAID AS THAT: an entry of the gate being
-    asked about that starts with `DERIVED_STEP_PREFIX` is read back as a derived
-    step, so the row it recorded is cut short of it and no run can match. The
-    generic sentence below would blame a gate that changed; this one names the
-    entry and the reserved prefix, which is the only repair.
+    asked about that `_evidence_io.step_parts` does not read back as itself - it
+    starts with `DERIVED_STEP_PREFIX`, or it is spelled as a joined step - is
+    read back as one of the steps a run adds, so the row it recorded never
+    holds it and no run can match. The generic sentence below would blame a
+    gate that changed; this one names the entry and the reserved spelling,
+    which is the only repair.
     """
-    reserved = [e for e in entries if _evidence_io.is_derived_step(e)]
-    if reserved:
-        return ("the %s gate entry %r starts with %r, which is reserved for the "
-                "steps a run adds beside the gate - such an entry is read back "
-                "as one of those, so no verdict can bind it; rename the entry"
-                % ("task" if source == "task" else "phase", reserved[0],
-                   _evidence_io.DERIVED_STEP_PREFIX))
+    which = "task" if source == "task" else "phase"
+    for entry in entries:
+        if _evidence_io.is_derived_step(entry):
+            return ("the %s gate entry %r starts with %r, which is reserved for "
+                    "the steps a run adds beside the gate - such an entry is "
+                    "read back as one of those, so no verdict can bind it; "
+                    "rename the entry"
+                    % (which, entry, _evidence_io.DERIVED_STEP_PREFIX))
+        if _evidence_io.step_parts(entry) != (entry, []):
+            return ("the %s gate entry %r carries %r, the spelling reserved for "
+                    "a step that ran a gate entry joined with the steps a run "
+                    "adds beside it - such an entry is read back as one of "
+                    "those, so no verdict can bind it; rename the entry"
+                    % (which, entry, _evidence_io.JOINED_STEP_SEPARATOR
+                       + _evidence_io.DERIVED_STEP_PREFIX))
     recorded, dropped = _evidence_io.declared_steps(
         [s.get("name") for s in (measured.get("steps") or [])
          if isinstance(s, dict)], measured.get("stepsDropped"))

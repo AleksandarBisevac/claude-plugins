@@ -4520,6 +4520,74 @@ def _gate_reach_row_cases(check):
         _harness.remove_tree(plain)
 
 
+def _joined_step_cases(check):
+    """A declared entry and the affected steps run as ONE call are recorded as
+    one step whose name is the entry followed by each affected step's name.
+    `step_parts` is the one reader of what such a step covers;
+    `declared_steps`, `derived_step_suites` and `step_runs_suite` answer for it
+    through that reader, and for every older name exactly as before. The names
+    are spelled here as a row on disk holds them - the row is the contract."""
+    prefix = M.DERIVED_STEP_PREFIX
+    parts = getattr(M, "step_parts", None)
+    writer = getattr(M, "joined_step_name", None)
+    own = "python3 tools/sweep.py tests/test_own.py"
+    rel = prefix + "related: tests/test_other.py"
+    py = prefix + "python: tests/test_core.py, tests/test_more.py"
+    joined = own + " + " + rel + " + " + py
+    tail_first = rel + " + " + own
+    read = None if parts is None else [
+        parts(joined), parts(own), parts(rel), parts(tail_first),
+        parts("lint + affected/"), parts(own + " + affected/phase-gate: lint")]
+    check("jst1 a joined step's name reads as its declared entry and the "
+          "affected steps joined to it, in order; a declared name, a derived "
+          "name, a derived name with a command after it, a tail that is no "
+          "affected step and a phase-gate tail read as they always did: %r"
+          % (read,),
+          read == [(own, [rel, py]), (own, []), (None, [rel]),
+                   (None, [tail_first]), ("lint + affected/", []),
+                   (own + " + affected/phase-gate: lint", [])])
+    spelled = writer(own, [rel, py]) if writer else None
+    check("jst2 the writer spells the name the reader reads back: %r"
+          % (spelled,),
+          spelled == joined and parts is not None
+          and parts(spelled) == (own, [rel, py]))
+    declared = [M.declared_steps([joined]), M.declared_steps([joined, "lint"]),
+                M.declared_steps([joined, prefix + "phase-gate: lint"]),
+                M.declared_steps([own, rel, py]),
+                M.declared_steps([own, rel, "lint"]),
+                M.declared_steps([tail_first])]
+    check("jst3 declared_steps reads a joined step as its declared entry, and "
+          "an older row - declared steps then derived ones, a declared-looking "
+          "step after a derived one, a derived step with a command after it - "
+          "exactly as before: %r" % (declared,),
+          declared == [([own], 0), ([own, "lint"], 0), ([own], 0), ([own], 0),
+                       ([own, rel, "lint"], 0), ([], 0)])
+    suites = [M.derived_step_suites(joined), M.derived_step_suites(rel),
+              M.derived_step_suites(own),
+              M.derived_step_suites(prefix + "phase-gate: selftests")]
+    check("jst4 derived_step_suites lists every affected suite a joined step "
+          "ran, in its name's order, and an older name's as before: %r"
+          % (suites,),
+          suites == [["tests/test_other.py", "tests/test_core.py",
+                      "tests/test_more.py"], ["tests/test_other.py"], [], []])
+    runs = [M.step_runs_suite({"name": joined}, s)
+            for s in ("tests/test_core.py", "tests/test_other.py",
+                      "tests/test_own.py")]
+    check("jst5 step_runs_suite knows a joined step ran each affected suite "
+          "its name lists, and says nothing of the declared entry's own "
+          "suites, as of any declared step: %r" % (runs,),
+          runs == [True, True, False])
+    head = "c0ffee12"
+    clean = {"head": head, "dirtyDigest": M.CLEAN_DIRTY_DIGEST}
+    lists = {"runId": "r-joined", "ts": "2026-11-01T00:00:00Z",
+             "testedState": clean, "steps": [{"name": joined, "exit": 0}]}
+    found = M.base_run([lists], head, (), [rel], suites=["tests/test_core.py"])
+    check("jst6 a base run is found by an affected suite its joined step ran, "
+          "under a name the asking run does not carry: %r"
+          % ((found or {}).get("runId"),),
+          (found or {}).get("runId") == "r-joined")
+
+
 def _base_scope_cases(check):
     """A run of a task run's red steps at its base: no subject's evidence, and
     found as a base by the suites a derived step ran, not by its name."""
@@ -4756,6 +4824,7 @@ def _selftest():
         _left_to_phase_gate_cases(check)
         _selection_time_cases(check)
         _base_scope_cases(check)
+        _joined_step_cases(check)
         _claimed_followers_cases(check)
         _tree_key_cases(check)
         _banner_cases(check)

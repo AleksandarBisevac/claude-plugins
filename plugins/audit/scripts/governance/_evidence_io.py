@@ -500,17 +500,74 @@ def is_derived_step(name):
 DERIVED_PHASE_GATE_ARM = "phase-gate"
 
 
+# A DECLARED ENTRY AND THE AFFECTED STEPS RUN AS ONE CALL. When the entry is the
+# plan's recorded subset spelling over a list of paths and the affected steps
+# are that spelling over other lists, the run makes one call over the union
+# (`_affected_tests.joined_steps`), recorded as ONE step named for the entry
+# followed by each affected step's name, joined by this separator. The name, not
+# a key on the step, carries both lists because every reader of a row's steps
+# already reads the name - the binding, the base lookup, the repeat, the printed
+# step line - so none of them has to be handed the step instead.
+#
+# `step_parts` IS THE ONE READER of what such a step covers, and
+# `declared_steps`, `derived_step_suites` and `step_runs_suite` answer through
+# it. An older name reads exactly as it did: a declared one as itself, a derived
+# one as itself, and a name whose tail is no affected step as a declared one.
+JOINED_STEP_SEPARATOR = " + "
+
+
+def joined_step_name(declared, derived):
+    """The name of one step that ran the declared entry `declared` and the
+    affected steps named `derived` as one call - what `step_parts` reads."""
+    return JOINED_STEP_SEPARATOR.join([str(declared)] + [str(d) for d in derived])
+
+
+def _joinable_part(part):
+    """Whether `part` is an affected step's name a joined step may carry: an arm,
+    then a non-empty suite list. The phase-gate arm carries a gate entry, never
+    a suite list, so it is never joined."""
+    arm, sep, listed = part[len(DERIVED_STEP_PREFIX):].partition(": ")
+    return (bool(sep) and bool(arm.strip()) and " " not in arm
+            and arm != DERIVED_PHASE_GATE_ARM and bool(listed.strip()))
+
+
+def step_parts(name):
+    """`(declared, derived)` - the declared gate entry a recorded step ran, or
+    None when it ran none, and the names of the affected steps it ran.
+
+    A declared step is `(name, [])` and a derived one `(None, [name])`. A JOINED
+    step - the declared entry, then each affected step's name, each after
+    `JOINED_STEP_SEPARATOR` - is `(entry, [names])`, and only when the entry
+    comes FIRST: a name opening with the derived prefix is a derived step
+    whatever follows it, so the declared slot is the head of the name or
+    nothing. A tail that is not an affected step's name with an arm and a suite
+    list leaves the whole name declared, as it always read."""
+    name = str(name)
+    if is_derived_step(name):
+        return None, [name]
+    head, sep, rest = name.partition(JOINED_STEP_SEPARATOR + DERIVED_STEP_PREFIX)
+    if not sep or not head.strip():
+        return name, []
+    derived = [DERIVED_STEP_PREFIX + part for part in
+               rest.split(JOINED_STEP_SEPARATOR + DERIVED_STEP_PREFIX)]
+    if not all(_joinable_part(part) for part in derived):
+        return name, []
+    return head, derived
+
+
 def derived_step_suites(name):
-    """The suite paths a derived step's name lists after its arm - the
+    """The suite paths the derived steps a step ran list after their arm - the
     `<prefix><arm>: <suite>, <suite>` spelling `_affected_tests.steps_for`
-    writes - or [] for a declared step and for the phase-gate arm, whose name
-    carries a gate entry instead."""
-    if not is_derived_step(name):
-        return []
-    arm, sep, listed = name[len(DERIVED_STEP_PREFIX):].partition(": ")
-    if not sep or arm == DERIVED_PHASE_GATE_ARM:
-        return []
-    return [part.strip() for part in listed.split(", ") if part.strip()]
+    writes, read for each derived step a joined step carries (`step_parts`) -
+    or [] for a declared step and for the phase-gate arm, whose name carries a
+    gate entry instead."""
+    out = []
+    for part in step_parts(name)[1]:
+        arm, sep, listed = part[len(DERIVED_STEP_PREFIX):].partition(": ")
+        if not sep or arm == DERIVED_PHASE_GATE_ARM:
+            continue
+        out.extend(p.strip() for p in listed.split(", ") if p.strip())
+    return out
 
 
 def declared_steps(names, dropped=0):
@@ -527,14 +584,19 @@ def declared_steps(names, dropped=0):
     derived step kept, every dropped one came after it and none was declared;
     with none kept, which of them were declared is not recorded, so all are
     counted as declared and a gate the row cannot speak for is refused.
+
+    A JOINED step is read through `step_parts` as the declared entry it ran:
+    it stands at that entry's place among the declared steps, so the declared
+    gate is the same list whether the affected steps ran joined to it or after
+    it. A step that ran no declared entry ends the declared part.
     """
     names = [str(n) for n in (names or [])]
     dropped = dropped if isinstance(dropped, int) and dropped > 0 else 0
-    cut = next((i for i, name in enumerate(names) if is_derived_step(name)),
-               len(names))
-    if any(not is_derived_step(name) for name in names[cut:]):
+    heads = [step_parts(name)[0] for name in names]
+    cut = next((i for i, head in enumerate(heads) if head is None), len(names))
+    if any(head is not None for head in heads[cut:]):
         return names, dropped
-    return names[:cut], dropped if cut == len(names) else 0
+    return heads[:cut], dropped if cut == len(names) else 0
 
 # THE BANNERS A MEASURED RUN PRINTED THAT A GREEN EXIT STILL CARRIES, kept on its
 # row so a later repeat of that verdict can print them again. Without them a
@@ -1026,9 +1088,10 @@ def base_run(rows, head, exclude_tasks=(), names=None, suites=None):
 
 def step_runs_suite(step, suite):
     """Whether a recorded step is known to have run `suite`: its runner named
-    the suite as failing, or it is a derived step whose name lists it. A
-    declared step that names no such suite may have run it green or not at
-    all, and the row cannot say which."""
+    the suite as failing, or a derived step's name lists it - the step's own,
+    or one a joined step carries (`derived_step_suites`). A declared step that
+    names no such suite may have run it green or not at all, and the row cannot
+    say which; a joined step's declared entry is such a step."""
     if not isinstance(step, dict):
         return False
     named = (NAMED_FAILING in (step.get("failingSuitesBasis") or "")

@@ -170,6 +170,55 @@ def _left_to_phase_gate_cases(check):
           and different in derived)
 
 
+def _joined_step_cases(check):
+    """A task's declared entry and the affected steps run as one call are one
+    recorded step, named for the entry followed by each affected step's name.
+    The comparison is the one it always was, through
+    `_evidence_io.declared_steps`, which reads such a step as its declared
+    entry - so the row binds when that entry is the declared one, and does not
+    when the joined step lacks it. The names are spelled as the ledger holds
+    them; a row on disk is the contract."""
+    own = "python3 tools/sweep.py tests/test_own.py"
+    rel = "affected/related: tests/test_other.py"
+    py = "affected/python: tests/test_core.py"
+    entries = [own, "lint"]
+    digest = _evidence_io.gate_digest(entries, None)
+
+    def row(steps):
+        return {"steps": [{"name": n} for n in steps], "gateSource": "task",
+                _evidence_io.GATE_DIGEST_KEY: digest}
+    joined = own + " + " + rel + " + " + py
+    bound = M.gate_mismatch(row([joined, "lint"]), entries, "task")
+    tail = M.gate_mismatch(row([joined, "lint", "affected/phase-gate: wide"]),
+                           entries, "task")
+    check("vb40 a row whose declared entry ran joined with the affected steps "
+          "binds the gate it declared, with a widened step after it or not: "
+          "%r / %r" % (bound, tail),
+          bound is None and tail is None)
+    different = "a verdict about a different gate is not this gate's verdict"
+    lacking = [
+        # the affected steps' names, the declared entry only after them
+        M.gate_mismatch(row([rel + " + " + own, "lint"]), entries, "task"),
+        # another entry in the declared slot
+        M.gate_mismatch(row(["python3 tools/sweep.py tests/test_two.py + " + rel,
+                             "lint"]), entries, "task"),
+        # nothing in the declared slot at all
+        M.gate_mismatch(row([" + " + rel, "lint"]), entries, "task"),
+    ]
+    check("vb41 THE REFUSING HALF: a joined step that lacks the declared entry "
+          "at its head - the affected names first, another entry there, or "
+          "nothing - is measured under a different gate and does not bind: %r"
+          % (lacking,),
+          all(different in (said or "") for said in lacking))
+    spelled = own + " + " + rel
+    reserved = M.gate_mismatch(row([spelled]), [spelled], "task") or ""
+    check("vb42 a gate entry spelled the way a joined step is named cannot "
+          "bind, and the refusal names the entry and the reserved spelling "
+          "rather than blaming a different gate: %r" % (reserved,),
+          repr(spelled) in reserved and "reserved" in reserved
+          and different not in reserved)
+
+
 def _cases(check):
     check("vb1 a gate measured under the same entries is not a mismatch",
           M.gate_mismatch({"steps": [{"name": "test"}]}, ["test"], "phase") is None)
@@ -179,6 +228,7 @@ def _cases(check):
     _derived_step_cases(check)
     _reserved_prefix_cases(check)
     _left_to_phase_gate_cases(check)
+    _joined_step_cases(check)
     check("vb3 a red after the last green is unanswered; a green after it retires it",
           M.red_after_green([{"ts": "1", "status": "passed"},
                              {"ts": "2", "status": "failed"}]) is not None

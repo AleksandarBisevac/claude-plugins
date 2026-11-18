@@ -59,6 +59,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   drive's view of a task's gate steps all ask one function, so the three leave out the same
   commands. The phase gate runs every entry, and an absent or empty key changes nothing.
   `COMPATIBILITY.md` records this as a change to what a set key does.
+- **A task's own suites and the suites its change can break run as one call.** When a task's
+  gate entry is exactly the plan's recorded subset spelling (`meta.phaseGate.derived.spelling`)
+  over a list of paths, the affected suites spelled the same way join it: the runner is called
+  once over the union, the entry's paths first and each suite once, instead of once for the
+  entry and once per arm after it. The evidence row records one step named for the entry
+  followed by each affected step's name (`<entry> + affected/<arm>: <suites>`), so the row
+  still says which suites were declared and which arm added the rest; the verdict binding
+  reads that step as the entry and binds it, the base measurement of a red reads each failing
+  suite against the part that ran it, and the reuse identity is the one the two calls would
+  have had. Anything left to the phase gate by `executor.phaseGateOnly` is left out before the
+  join. A gate entry in any other spelling, a build key, the same runner with an option, or a
+  run with no affected suite runs exactly as before. A gate entry spelled the way such a step
+  is named cannot bind, and the binding says so.
 
 ### Fixed
 - **A task added before the project recorded how to run a subset gets the narrow gate once it
