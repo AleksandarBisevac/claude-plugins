@@ -6022,6 +6022,15 @@ and no such key when none were named, and, once a session ran and its stream was
 empty list for a stream holding events and no such call, and no key when no stream was read or the
 stream holds no event at all — an empty stream is no reading, not a reading of none. A resumed
 run's stream holds that round's events alone, so its list names that round's calls alone.
+A run that started a session also records how long it took (`session_timing`), after those keys
+and never on the printed line, whose `stream=` runs to the end of it: the last result event's
+`duration_ms`, `duration_api_ms` and `num_turns` as `durationMs`, `durationApiMs` and `numTurns`,
+and `startedAt`, the stamp the stream's file name carries, as `YYYY-MM-DDTHH:MM:SSZ`. A figure that
+result does not carry as a finite number of zero or more — a string, a boolean, a negative — or
+every figure when no result event was read, is left out and named in `timingAbsent` with the
+reason, never written as zero; a run refused before a session started carries none of these keys.
+`read_sessions` in the drive reads none of them, so a record written before they existed is read
+as it was.
 `drive-phase.py`'s `writer_argv` adds one `--skill` per name `_areas.resolve_skills` returns, for
 the writer, the reviewer and the validation session alike; the validation session, which reviews
 at phase scope, also gets the review skill `_areas.resolve_review_skill` resolves (the

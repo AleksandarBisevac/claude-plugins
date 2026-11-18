@@ -62,6 +62,10 @@ RESUME_ID = "0f8e2a4c-1b3d-4e5f-9a7b-6c5d4e3f2a1b"
 # Two results, the first with a decoy figure: the last result is the session's.
 FIRST_COST = 0.1111
 LAST_COST = 1.2345
+# The time figures every stub result carries unless a case hands in others, in
+# the names a recorded result event uses; the first of two results carries
+# decoys that differ from each of these.
+TIMING = {"duration_ms": 48213, "duration_api_ms": 40107, "num_turns": 17}
 
 # The prompt carries a space, both quote kinds and a non-ASCII character, so a
 # prompt that went through argv or a lossy encoding cannot come back equal.
@@ -124,17 +128,25 @@ if os.environ.get("STUB_EVENTS"):
                 emit(dict(json.loads(line), session_id=sid))
 emit({"type": "assistant", "session_id": sid,
       "message": {"content": [{"type": "text", "text": "done"}]}})
+# The time figures the last result carries, as a case hands them in; the first
+# result of two carries decoys, so a reader of the first records the wrong ones.
+timing = json.loads(os.environ.get("STUB_TIMING") or "{}")
+decoy = {"duration_ms": 1111, "duration_api_ms": 2222, "num_turns": 3}
 if mode == "ok":
-    emit({"type": "result", "subtype": "success", "is_error": False,
-          "session_id": sid, "total_cost_usd": float(os.environ["STUB_FIRST"])})
-    emit({"type": "result", "subtype": "success", "is_error": False,
-          "session_id": sid, "total_cost_usd": float(os.environ["STUB_LAST"])})
+    emit(dict({"type": "result", "subtype": "success", "is_error": False,
+               "session_id": sid, "total_cost_usd": float(os.environ["STUB_FIRST"])},
+              **decoy))
+    emit(dict({"type": "result", "subtype": "success", "is_error": False,
+               "session_id": sid, "total_cost_usd": float(os.environ["STUB_LAST"])},
+              **timing))
 elif mode == "error0":
-    emit({"type": "result", "subtype": "success", "is_error": True,
-          "session_id": sid, "total_cost_usd": float(os.environ["STUB_LAST"])})
+    emit(dict({"type": "result", "subtype": "success", "is_error": True,
+               "session_id": sid, "total_cost_usd": float(os.environ["STUB_LAST"])},
+              **timing))
 elif mode == "budget":
-    emit({"type": "result", "subtype": "error_max_budget_usd", "is_error": True,
-          "session_id": sid, "total_cost_usd": float(os.environ["STUB_LAST"])})
+    emit(dict({"type": "result", "subtype": "error_max_budget_usd", "is_error": True,
+               "session_id": sid, "total_cost_usd": float(os.environ["STUB_LAST"])},
+              **timing))
 elif mode == "hang":
     # A session still working when its caller gives up on it.
     sys.stdout.flush()
@@ -236,7 +248,8 @@ def _run(root, bindir, role, extra=(), mode="ok", exit_code=0, model=MODEL, tag=
     env.update({"PATH": bindir + os.pathsep + env.get("PATH", ""),
                 "STUB_RECORD": record, "STUB_MODE": mode,
                 "STUB_SESSION": SESSION, "STUB_FIRST": repr(FIRST_COST),
-                "STUB_LAST": repr(LAST_COST), "STUB_EXIT": str(exit_code)})
+                "STUB_LAST": repr(LAST_COST), "STUB_EXIT": str(exit_code),
+                "STUB_TIMING": json.dumps(TIMING)})
     env.update(dict((name, parent_tmp) for name in ("TMPDIR", "TEMP", "TMP")))
     env.update(env_extra or {})
     argv = [sys.executable, SCRIPT, "--role", role, "--task", "P9.1",
@@ -754,9 +767,12 @@ def _cases(check):
               "this script's exit code, the directory made on the way: %r"
               % ((first[0], second[0], lines),),
               len(lines) == 2
-              and lines[0] == {"line": first[1].strip(), "exit": 0, "skillsInvoked": []}
-              and lines[1] == {"line": second[1].strip(), "exit": second[0],
-                               "skillsInvoked": []}
+              and lines[0] == dict({"line": first[1].strip(), "exit": 0,
+                                    "skillsInvoked": []},
+                                   **_timing_keys(first[1].strip()))
+              and lines[1] == dict({"line": second[1].strip(), "exit": second[0],
+                                    "skillsInvoked": []},
+                                   **_timing_keys(second[1].strip()))
               and second[0] == e_budget)
         refused = os.path.join(root, "records", "usage.jsonl")
         code, out, err, rec, dirs = _run(root, bindir, "writer", model="opus",
@@ -779,6 +795,7 @@ def _cases(check):
               code == 0 and out.startswith("session=%s " % SESSION)
               and "could not be written" in err and "Traceback" not in err)
 
+        _timing_cases(check, M, root, bindir)
         _cleanup_cases(check, root, bindir, e_io)
         _skill_cases(check, M, root, bindir, e_io)
 
@@ -1045,7 +1062,9 @@ def _skill_cases(check, M, root, bindir, e_io):
     _run(root, bindir, "writer", tag="skp", env_extra=pinned, extra=["--record", plain])
     check("ras44 a run with no skills records none: the line has no skills key, "
           "rather than an empty list standing for them",
-          [sorted(x) for x in _record_lines(plain)] == [["exit", "line", "skillsInvoked"]])
+          [sorted(x) for x in _record_lines(plain)]
+          == [sorted(["exit", "line", "skillsInvoked"] + list(TIMING_FIELDS.values())
+                     + ["startedAt"])])
 
     # --- the reviewer keeps its --agents body, and the skills ride beside it ----
     code, out, err, rec, dirs = _run(root, bindir, "reviewer", tag="skv", env_extra=pinned,
@@ -1291,6 +1310,148 @@ def _invoked_cases(check, M, root, bindir, pinned):
     check("ras68 THE OVER-FIRE TWIN: a stream holding an event and no Skill call "
           "reads as the empty list: %r" % (M.invoked_skills(calm),),
           M.invoked_skills(calm) == [])
+
+
+# The result event's time figures and the record keys each is kept under,
+# written out here rather than read from the script, so a key misspelled there
+# is a figure this suite sees missing.
+TIMING_FIELDS = {"duration_ms": "durationMs", "duration_api_ms": "durationApiMs",
+                 "num_turns": "numTurns"}
+# The keys a record carried before the time figures, in the order it wrote them.
+OLD_KEYS = ["line", "exit", "skillsInvoked"]
+# The drive's parse of the printed line, written out here: the line keeps its
+# fields, their order and their spelling, and `stream=` stays last.
+DRIVE_LINE = re.compile(r"^session=(\S+) subtype=(\S+) is_error=(\S+) "
+                        r"total_cost_usd=(\S+) exit=(\S+) stream=(.*)$")
+
+
+def _started_of(stream):
+    """The start time a stream's file name carries, as `YYYY-MM-DDTHH:MM:SSZ` -
+    read here off the name's `YYYYMMDDTHHMMSSZ` stamp, not through the script."""
+    hit = re.search(r"\.(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z\.",
+                    os.path.basename(stream or ""))
+    return "%s-%s-%sT%s:%s:%sZ" % hit.groups() if hit else None
+
+
+def _timing_keys(line, timing=None):
+    """The keys a record of the printed `line` gains from a result carrying
+    `timing` (TIMING by default): each figure under its record name, and the
+    start time the line's stream name carries."""
+    got = dict((TIMING_FIELDS[k], v) for k, v in (timing or TIMING).items())
+    got["startedAt"] = _started_of(_fields(line).get("stream"))
+    return got
+
+
+def _timing_cases(check, M, root, bindir):
+    """The record carries how long the session took, read from its own last
+    result event; a figure that result does not carry as a number is left out
+    and named, never written as zero."""
+    def recorded(tag, timing, **kw):
+        kept = os.path.join(root, "records", "t-%s.jsonl" % tag)
+        env = dict(kw.pop("env_extra", {}), STUB_TIMING=json.dumps(timing))
+        run = _run(root, bindir, "writer", tag=tag, env_extra=env,
+                   extra=["--record", kept], **kw)
+        lines = _record_lines(kept)
+        return run, (lines[-1] if len(lines) == 1 else None)
+
+    figures = ("durationMs", "durationApiMs", "numTurns")
+    run, rec = recorded("tm", TIMING)
+    line = run[1].strip()
+    stream = _fields(line).get("stream")
+    started = _started_of(stream)
+    check("ras69 a record written from a stream whose LAST result carries "
+          "duration_ms, duration_api_ms and num_turns holds the three figures "
+          "(not the first result's decoys) and the start time its stream's name "
+          "carries: %r" % ((run[0], rec, started),),
+          run[0] == 0 and rec is not None and started is not None
+          and [rec.get(k) for k in figures] == [TIMING[k] for k in TIMING_FIELDS]
+          and rec.get("startedAt") == started and "timingAbsent" not in rec)
+    hit = DRIVE_LINE.match(line)
+    check("ras69b ...the existing keys keep their order ahead of the new ones, and "
+          "the printed line still parses as the drive reads it, its stream the "
+          "real file: %r" % ((list(rec or {}), line),),
+          rec is not None and list(rec)[:len(OLD_KEYS)] == OLD_KEYS
+          and rec.get("line") == line and hit is not None
+          and hit.group(6).strip() == stream and os.path.isfile(stream or "")
+          and "durationMs" not in line and "duration_ms" not in line)
+
+    run, rec = recorded("tn", TIMING, mode="noresult")
+    absent = (rec or {}).get("timingAbsent") or {}
+    streams = [os.path.join(dp, f) for dp, _dn, fs in os.walk(run[4]["state"])
+               for f in fs if f.endswith(".jsonl")]
+    check("ras70 a stream with no result event writes a record holding none of the "
+          "three figures, naming each as absent because no result was read, a line "
+          "saying no result was read, and the start time all the same: %r"
+          % ((run[0], rec, streams),),
+          run[0] != 0 and rec is not None and len(streams) == 1
+          and not [k for k in figures if k in rec]
+          and sorted(absent) == sorted(figures)
+          and all("no result" in str(why) for why in absent.values())
+          and "no result" in str(rec.get("line"))
+          and rec.get("startedAt") == _started_of(streams[0]))
+
+    bad = [("tstr", "a string", dict(TIMING, duration_ms="48213"), "string"),
+           ("tneg", "a negative number", dict(TIMING, duration_ms=-5), "negative"),
+           ("tbool", "a boolean", dict(TIMING, duration_ms=True), "not a number")]
+    for tag, what, timing, word in bad:
+        run, rec = recorded(tag, timing)
+        absent = (rec or {}).get("timingAbsent") or {}
+        check("ras71 a result whose duration_ms is %s is recorded with no durationMs "
+              "- not zero, not the value - and the reason names it, while the other "
+              "two figures are kept: %r" % (what, (run[0], rec)),
+              run[0] == 0 and rec is not None and "durationMs" not in rec
+              and 0 not in [rec.get(k) for k in figures]
+              and sorted(absent) == ["durationMs"]
+              and word in str(absent["durationMs"]).lower()
+              and "duration_ms" in str(absent["durationMs"])
+              and rec.get("durationApiMs") == TIMING["duration_api_ms"]
+              and rec.get("numTurns") == TIMING["num_turns"])
+
+    run, rec = recorded("tnone", {})
+    absent = (rec or {}).get("timingAbsent") or {}
+    check("ras71b a result carrying none of the three figures names each as absent "
+          "with the result's own field name, and writes no figure: %r"
+          % ((run[0], rec),),
+          run[0] == 0 and rec is not None and not [k for k in figures if k in rec]
+          and sorted(absent) == sorted(figures)
+          and all(src in str(absent[dst]) for src, dst in TIMING_FIELDS.items()))
+
+    # Two refusals at two points: a usage refusal before the skills are read, and
+    # an io-error once they are and before claude starts - a figure set anywhere
+    # between reading the skills and starting the session is red on the second.
+    used, used_rec = recorded("tuse", TIMING, model="opus")
+    failed, io_rec = recorded("tio", TIMING, state_is_file=True)
+    check("ras72 THE OTHER DIRECTION: a run refused before any session started - a "
+          "usage refusal, an io-error - records no figure, no start time and no "
+          "absence: there was no session to time: %r"
+          % ((used[0], used_rec, failed[0], io_rec),),
+          used[0] == M.E_USAGE and used_rec is not None
+          and sorted(used_rec) == ["exit", "line"]
+          and failed[0] == M.E_IO and io_rec is not None
+          and sorted(io_rec) == ["exit", "line"] and failed[3] is None)
+
+    # The drive reads a record written before the time figures existed exactly as
+    # it reads one carrying them: the same reading, and the same note.
+    D = _loader.load_script("drive-phase.py", modname="drive_phase_ras73")
+    run, rec = recorded("tdr", TIMING)
+    old = dict((k, v) for k, v in (rec or {}).items() if k in OLD_KEYS)
+    paths = []
+    for name, body in (("new", rec), ("old", old)):
+        path = os.path.join(root, "records", "drive-%s.jsonl" % name)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(body) + "\n")
+        paths.append(path)
+    readings = [D.read_sessions(p) for p in paths]
+    notes = [D.session_note(1, r[0]) if len(r) == 1 else None for r in readings]
+    first = readings[1][0] if len(readings[1]) == 1 else {}
+    check("ras73 a record with none of the new keys is read by the drive as before - "
+          "the session, the cost and the stream off its line - and identically to "
+          "the same record carrying them, note included: %r" % ((readings, notes),),
+          rec is not None and sorted(old) == sorted(OLD_KEYS)
+          and readings[0] == readings[1] and notes[0] == notes[1]
+          and notes[0] is not None and first.get("session") == SESSION
+          and float(first.get("cost") or "nan") == LAST_COST
+          and first.get("stream") == _fields(run[1].strip()).get("stream"))
 
 
 def _record_lines(path):

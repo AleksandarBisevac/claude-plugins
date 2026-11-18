@@ -1066,6 +1066,12 @@
       "title": "The configured review skill reaches the phase reviewer, and a phase return that skips it is refused",
       "status": "done",
       "shard": "phases/P166.json"
+    },
+    {
+      "id": "P167",
+      "title": "Wall time per task is recorded by stage and printed",
+      "status": "in_progress",
+      "shard": "phases/P167.json"
     }
   ],
   "fileIndex": {
@@ -1397,7 +1403,12 @@
       "P156.22-3st",
       "P159.2",
       "P159.4-pue",
-      "P159.5-pue"
+      "P159.5-pue",
+      "P167.1",
+      "P167.2",
+      "P167.3",
+      "P167.4",
+      "P167.5"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1500,7 +1511,9 @@
       "P155.18-gfj",
       "P155.35-gfj",
       "P156.18-3st",
-      "P156.20-3st"
+      "P156.20-3st",
+      "P167.2",
+      "P167.3"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -2035,7 +2048,12 @@
       "P165.5",
       "P166.1",
       "P166.2",
-      "P166.3-b8m"
+      "P166.3-b8m",
+      "P167.1",
+      "P167.2",
+      "P167.3",
+      "P167.4",
+      "P167.5"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2066,7 +2084,8 @@
       "P125.95-0h5",
       "P128.34-0h5",
       "P148.15-xpz",
-      "P155.6"
+      "P155.6",
+      "P167.5"
     ],
     "SECURITY.md": [
       "P2.2",
@@ -2954,7 +2973,8 @@
       "P115.2-4yc",
       "P118.9",
       "P148.5",
-      "P148.15-xpz"
+      "P148.15-xpz",
+      "P167.5"
     ],
     "plugins/audit/commands/sync.md": [
       "P3.1",
@@ -3843,7 +3863,8 @@
       "P138.2",
       "P148.10-xpz",
       "P148.21-xpz",
-      "P155.35-gfj"
+      "P155.35-gfj",
+      "P167.2"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -4394,7 +4415,8 @@
       "P157.4",
       "P157.5",
       "P157.8-mwz",
-      "P157.11-mwz"
+      "P157.11-mwz",
+      "P167.3"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -4871,7 +4893,8 @@
       "P157.5",
       "P157.10-mwz",
       "P161.3-toy",
-      "P161.4-toy"
+      "P161.4-toy",
+      "P167.3"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -5172,7 +5195,8 @@
       "P156.5",
       "P156.14-3st",
       "P156.21-3st",
-      "P156.22-3st"
+      "P156.22-3st",
+      "P167.2"
     ],
     "plugins/audit/scripts/manifest/_manifest_rules.py": [
       "P18.2",
@@ -5252,7 +5276,8 @@
       "P155.18-gfj",
       "P155.35-gfj",
       "P156.18-3st",
-      "P156.20-3st"
+      "P156.20-3st",
+      "P167.2"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -5520,7 +5545,8 @@
       "P156.17-3st",
       "P156.18-3st",
       "P156.20-3st",
-      "P165.3"
+      "P165.3",
+      "P167.2"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -6185,7 +6211,8 @@
       "P130.40-ywo",
       "P131.1",
       "P131.2",
-      "P131.12"
+      "P131.12",
+      "P167.5"
     ],
     "plugins/audit/scripts/status/audit-doctor.py": [
       "P10.3",
@@ -6363,7 +6390,8 @@
       "P148.15-xpz",
       "P155.28-gfj",
       "P155.46-gfj",
-      "P155.49-gfj"
+      "P155.49-gfj",
+      "P167.5"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -11113,7 +11141,8 @@
       "P165.2",
       "P166.1",
       "P166.2",
-      "P166.3-b8m"
+      "P166.3-b8m",
+      "P167.4"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -12126,7 +12155,8 @@
       "P156.12-3st",
       "P156.15-3st",
       "P156.20-3st",
-      "P159.2"
+      "P159.2",
+      "P167.2"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -12554,7 +12584,8 @@
       "P157.4",
       "P157.5",
       "P157.8-mwz",
-      "P157.11-mwz"
+      "P157.11-mwz",
+      "P167.3"
     ],
     "tests/test__evidence_view.py": [
       "P131.1"
@@ -12666,7 +12697,8 @@
       "P156.18-3st",
       "P156.20-3st",
       "P156.21-3st",
-      "P156.22-3st"
+      "P156.22-3st",
+      "P167.2"
     ],
     "tests/test__manifest_rules.py": [
       "P131.1",
@@ -12883,7 +12915,8 @@
     "tests/test__status_facts.py": [
       "P131.1",
       "P131.12",
-      "P129.8-izt"
+      "P129.8-izt",
+      "P167.5"
     ],
     "tests/test__surface_digest.py": [
       "P131.1",
@@ -13033,7 +13066,8 @@
       "P155.28-gfj",
       "P155.46-gfj",
       "P155.49-gfj",
-      "P156.6"
+      "P156.6",
+      "P167.5"
     ],
     "tests/test_audit_task.py": [
       "P131.1",
@@ -13091,7 +13125,8 @@
       "P156.17-3st",
       "P156.18-3st",
       "P156.20-3st",
-      "P165.3"
+      "P165.3",
+      "P167.2"
     ],
     "tests/test_audit_usage.py": [
       "P131.1",
@@ -13272,7 +13307,8 @@
       "P165.2",
       "P166.1",
       "P166.2",
-      "P166.3-b8m"
+      "P166.3-b8m",
+      "P167.4"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -13469,7 +13505,8 @@
       "P157.5",
       "P157.10-mwz",
       "P161.3-toy",
-      "P161.4-toy"
+      "P161.4-toy",
+      "P167.3"
     ],
     "tests/test_set_priority.py": [
       "P131.1"
@@ -13605,7 +13642,8 @@
       "P142.15-6yq",
       "P148.2",
       "P157.3",
-      "P157.12-mwz"
+      "P157.12-mwz",
+      "P167.1"
     ],
     "tests/test_run_agent_session.py": [
       "P131.3",
@@ -13620,7 +13658,8 @@
       "P142.15-6yq",
       "P148.2",
       "P157.3",
-      "P157.12-mwz"
+      "P157.12-mwz",
+      "P167.1"
     ],
     "plugins/audit/scripts/governance/_clause_coverage.py": [
       "P131.7",
@@ -13879,6 +13918,12 @@
     ],
     "plugins/audit/scripts/ui/panel-css/README.md": [
       "P165.4"
+    ],
+    "plugins/audit/scripts/manifest/_task_timing.py": [
+      "P167.2"
+    ],
+    "tests/test__task_timing.py": [
+      "P167.2"
     ]
   },
   "bugs": [

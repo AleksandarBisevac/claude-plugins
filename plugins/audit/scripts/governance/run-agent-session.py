@@ -115,7 +115,14 @@ prints `io-error:` naming the path, before claude is started.
 `--record <path>` ALSO APPENDS THAT OUTCOME TO A FILE, one JSON line `{"line",
 "exit"}` per run: the line printed (a usage refusal's message prefixed `usage:`)
 and this script's exit code, with `skills` and `skillsInvoked` beside them when
-`write_record` has them. It is how the step driver learns which session ran and what it cost without
+`write_record` has them. A run that started a session also records how long it
+took, after those keys and never on the printed line, whose `stream=` runs to the
+end: the LAST result event's `duration_ms`, `duration_api_ms` and `num_turns` as
+`durationMs`, `durationApiMs` and `numTurns`, and `startedAt`, the stamp the
+stream's file name carries (`session_timing`). A figure that result does not carry
+as a finite number of zero or more - or every figure, when no result was read - is
+left out and named in `timingAbsent` with the reason, never written as zero.
+It is how the step driver learns which session ran and what it cost without
 the main loop retyping the line: the driver names the path in the command it
 prints and reads each line once at its next steps, taking a last line that
 does not parse as not written yet. A record that cannot be written is reported on stderr and
@@ -386,9 +393,10 @@ def skills_record(loaded):
 
 # --- reading the stream --------------------------------------------------------
 def read_stream(path):
-    """`{"result": event-or-None, "unparsed": n, "problem": str-or-None}` for the
-    saved stream. The result is the LAST `result` event; a result missing its
-    session id or a numeric cost is a problem, not a zero."""
+    """`{"result": event-or-None, "last": event-or-None, "unparsed": n, "problem":
+    str-or-None}` for the saved stream. `last` is the LAST `result` event, kept
+    whatever it holds; `result` is that event only when it carries a session id
+    and a numeric cost - one missing either is a problem, not a zero."""
     last, unparsed = None, 0
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
@@ -403,19 +411,79 @@ def read_stream(path):
                 if isinstance(event, dict) and event.get("type") == "result":
                     last = event
     except OSError as exc:
-        return {"result": None, "unparsed": unparsed,
+        return {"result": None, "last": None, "unparsed": unparsed,
                 "problem": "the stream could not be read: %s" % exc}
     if last is None:
-        return {"result": None, "unparsed": unparsed,
+        return {"result": None, "last": None, "unparsed": unparsed,
                 "problem": "the stream ended with no result event"}
     cost = last.get("total_cost_usd")
     if isinstance(cost, bool) or not isinstance(cost, (int, float)):
-        return {"result": None, "unparsed": unparsed,
+        return {"result": None, "last": last, "unparsed": unparsed,
                 "problem": "the last result event carries no numeric total_cost_usd"}
     if not isinstance(last.get("session_id"), str) or not last["session_id"]:
-        return {"result": None, "unparsed": unparsed,
+        return {"result": None, "last": last, "unparsed": unparsed,
                 "problem": "the last result event carries no session_id"}
-    return {"result": last, "unparsed": unparsed, "problem": None}
+    return {"result": last, "last": last, "unparsed": unparsed, "problem": None}
+
+
+# The result event's time figures, each with the record key it is kept under, in
+# the order the record writes them.
+TIMING_FIELDS = (("duration_ms", "durationMs"), ("duration_api_ms", "durationApiMs"),
+                 ("num_turns", "numTurns"))
+# The stamp `_stream_path` puts in a stream's file name: `<task>.<role>.<stamp>.<pid>`.
+_STREAM_STAMP = re.compile(r"\.(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z\.\d+\.jsonl$")
+
+
+def _figure_problem(event, key):
+    """Why the result `event` holds no usable `key` figure, or None when it does:
+    a count of milliseconds or turns is a finite number of zero or more, and JSON's
+    `true` - a bool, which Python counts as an int - is not one."""
+    if key not in event:
+        return "the result carries no %s" % key
+    value = event[key]
+    if isinstance(value, str):
+        return "the result's %s is a string (%s), not a number" % (key, json.dumps(value))
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return "the result's %s is %s, not a number" % (
+            key, "a boolean (%s)" % json.dumps(value) if isinstance(value, bool)
+            else json.dumps(value)[:40])
+    if not math.isfinite(value):
+        return "the result's %s is not finite (%r)" % (key, value)
+    if value < 0:
+        return "the result's %s is negative (%s)" % (key, json.dumps(value))
+    return None
+
+
+def started_at(stream):
+    """The session's start time, `YYYY-MM-DDTHH:MM:SSZ`, off the stamp its stream's
+    file name carries, or None when the name holds no such stamp."""
+    hit = _STREAM_STAMP.search(os.path.basename(stream or ""))
+    return "%s-%s-%sT%s:%s:%sZ" % hit.groups() if hit else None
+
+
+def session_timing(reading, stream):
+    """`{"figures": {record key: number}, "absent": {record key: why}}` for a
+    session that ran: each of `TIMING_FIELDS` the stream's LAST result event
+    (`read_stream`'s `last`) carries as a number, under its record key, and
+    `startedAt` off the stream's name. A figure that event does not carry as a
+    number, or every figure when no result event was read, is in `absent` with
+    the reason and not in `figures` - never a zero standing in for it."""
+    event = reading.get("last")
+    figures, absent = {}, {}
+    for key, name in TIMING_FIELDS:
+        why = ("no result event was read: %s" % reading.get("problem")
+               if not isinstance(event, dict) else _figure_problem(event, key))
+        if why:
+            absent[name] = why
+        else:
+            figures[name] = event[key]
+    start = started_at(stream)
+    if start:
+        figures["startedAt"] = start
+    else:
+        absent["startedAt"] = "the stream's name %s carries no start stamp" % (
+            os.path.basename(stream or ""),)
+    return {"figures": figures, "absent": absent}
 
 
 def invoked_skills(path):
@@ -699,13 +767,17 @@ def _read_prompt(args, stdin):
     return stdin.buffer.read().decode("utf-8") if hasattr(stdin, "buffer") else stdin.read()
 
 
-def write_record(path, line, code, skills=None, invoked=None):
+def write_record(path, line, code, skills=None, invoked=None, timing=None):
     """Append `{"line", "exit"}` to `path` as one JSON line, making its
     directory, with a `"skills"` key beside them when the session was started with
     skills (`skills_record`) and no such key when it was not, and a
     `"skillsInvoked"` key (`invoked_skills`, an empty list included) when a session
     ran and its stream was read and held an event - and none when it was not, since
-    no reading is not a reading of no calls. None, or why it could not be written. Appended, so the
+    no reading is not a reading of no calls. When a session ran, `timing`
+    (`session_timing`) adds its figures after those keys - `durationMs`,
+    `durationApiMs`, `numTurns`, `startedAt` - and `timingAbsent`, each figure it
+    could not record with the reason, when there is one; a run that started no
+    session carries none of them. None, or why it could not be written. Appended, so the
     same command run twice keeps both outcomes; the one reader takes a last line
     that does not parse as one not written yet."""
     body = {"line": line, "exit": code}
@@ -713,6 +785,10 @@ def write_record(path, line, code, skills=None, invoked=None):
         body["skills"] = skills
     if invoked is not None:
         body["skillsInvoked"] = invoked
+    if timing:
+        body.update(timing["figures"])
+        if timing["absent"]:
+            body["timingAbsent"] = timing["absent"]
     try:
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         with open(path, "a", encoding="utf-8", newline="\n") as fh:
@@ -740,7 +816,8 @@ def main(argv, stdin=None, out=print):
     code = _run(args, stdin, tell, refuse, ran)
     if args.record:
         problem = write_record(args.record, said[-1] if said else "", code,
-                               ran.get("skills"), ran.get("invoked"))
+                               ran.get("skills"), ran.get("invoked"),
+                               ran.get("timing"))
         if problem:
             sys.stderr.write("ERROR: %s\n" % problem)
     return code
@@ -752,7 +829,8 @@ def _run(args, stdin, out, refuse, ran):
     caller's dict for what the run learned that its printed line does not carry:
     `ran["skills"]` is `skills_record` of the skills the session was started with,
     set as soon as they are read so every later outcome is recorded with them, and
-    `ran["invoked"]` is `invoked_skills` of the saved stream, set once claude ran."""
+    `ran["invoked"]` is `invoked_skills` of the saved stream and `ran["timing"]`
+    `session_timing` of it, each set once claude ran."""
     if not is_full_model_id(args.model):
         return refuse("--model %r is not a full model id (claude-<family>-<version>); "
                       "an alias resolves to whatever is newest on the day" % args.model)
@@ -814,8 +892,9 @@ def _run(args, stdin, out, refuse, ran):
 
 def _in_session(args, prompt, claude, stream, stderr_path, prepared, out, ran):
     """The session itself, once `_prepare` made what it needs: start claude, read
-    its stream - the skills it invoked into `ran["invoked"]`, however it ended -
-    and print the one line. The caller removes the TMPDIR."""
+    its stream - the skills it invoked into `ran["invoked"]` and how long it took
+    into `ran["timing"]`, however it ended - and print the one line. The caller
+    removes the TMPDIR."""
     if prepared.get("problem"):
         out(could_not_run_line(prepared["problem"], stream, stderr_path, None, 0))
         return E_COULD_NOT_RUN
@@ -830,11 +909,12 @@ def _in_session(args, prompt, claude, stream, stderr_path, prepared, out, ran):
         out("io-error: could not start the session writing %s: %s" % (stream, exc))
         return E_IO
     ran["invoked"] = invoked_skills(stream)
+    reading = read_stream(stream)
+    ran["timing"] = session_timing(reading, stream)
     if interrupted:
         out(could_not_run_line("interrupted by %s; the session group was torn down"
                                % interrupted, stream, stderr_path, code, 0))
         return E_COULD_NOT_RUN
-    reading = read_stream(stream)
     if reading["problem"]:
         out(could_not_run_line(reading["problem"], stream, stderr_path, code,
                                reading["unparsed"]))

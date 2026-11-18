@@ -1,0 +1,264 @@
+{
+  "id": "P167",
+  "title": "Wall time per task is recorded by stage and printed",
+  "status": "in_progress",
+  "description": "Users reported that development through the plugin is slow, and a paired measurement put the plugin near three times a plain session's wall time per task while the writer alone was faster than plain. The plugin cannot say where the rest goes: a gate run records its duration, and nothing else does. A writer or reviewer session's own duration is dropped when its cost is read, the time spent selecting affected suites runs before the gate's clock starts, a dispatch for a writer or a reviewer carries no time at all, and the drive's launch stamps die with its state file when the phase ends. This phase records each stage where the plan keeps it (the task in its shard), because the evidence ledger and the drive state are due to be removed and the plan and git are what remains. Nothing here makes a task faster; it makes the next phase's choices measurable. Exit: on a task driven end to end in a fixture, the stage figures and the unattributed remainder add up to the task's whole window, and a stage with no source says so instead of printing zero.",
+  "desiredOutcome": "Every task the drive runs leaves in its shard how long each stage took: each writer round, each recorded gate run with the time spent choosing what to run, a base measurement, the review, the record commit, and the time a handed-out step waited before it started. /audit:status prints the figures and their JSON form carries them, each with the record it was read from, so wall time per task can be measured beside cost and quality.",
+  "testGate": [
+    "selftests",
+    "validate",
+    "plugin-validate",
+    "gate",
+    "report",
+    "lint",
+    "shots",
+    "interactive",
+    "vitest"
+  ],
+  "blockedBy": [],
+  "baseRef": "1892634fc66963fc987f8167a7b87339bdbe5325",
+  "branch": "audit/p167-wall-time-per-task-is-recorded",
+  "mergedAt": null,
+  "review": {
+    "tool": null,
+    "model": "sonnet",
+    "status": "pending",
+    "findings": []
+  },
+  "summary": null,
+  "tasks": [
+    {
+      "id": "P167.1",
+      "title": "A writer or reviewer session's record carries how long the session took, read from the session's own result",
+      "status": "in_progress",
+      "description": "The session runner (run-agent-session.py) reads the last result event of the session's stream for the cost and drops what the same event says about time. Its record gains the result's duration_ms, duration_api_ms and num_turns, and the session's start time (the stamp the stream file's name already carries), under the names durationMs, durationApiMs, numTurns and startedAt. A figure the result does not carry, or carries as something that is not a number, is left out and the record's line names the absence; it is never written as zero. Dependants you answer for: drive-phase.py reads this record for the session's cost and exit (note_sessions, session_note, the dispatch read-back) and must keep parsing it unchanged; the line run-agent-session.py prints is parsed by the drive and by the measurement harness outside this repository, so its existing fields keep their order and spelling and new ones are appended; every fixture in tests/test_drive_phase.py that writes a session record by hand must still load. Acceptance: (1) a record written from a stream whose result carries duration_ms, duration_api_ms and num_turns holds the three figures and the start time; (2) a stream with no result event writes a record with none of the three and a line that says no result was read; (3) a result whose duration_ms is a string or a negative number is recorded as absent, with the reason, and not as zero; (4) a record written before this change, with none of the new keys, is read by the drive exactly as before.",
+      "files": [
+        "plugins/audit/scripts/governance/run-agent-session.py",
+        "tests/test_run_agent_session.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_agent_session.py: a record carries durationMs, durationApiMs, numTurns and startedAt from the result; a missing result or a non-numeric duration leaves the figure out and names the absence instead of writing zero"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_agent_session.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-17T23:58:28Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T00:23:06Z.c00e06",
+        "status": "passed",
+        "at": "2026-11-18T00:23:06Z"
+      }
+    },
+    {
+      "id": "P167.2",
+      "title": "A task has one timing record in its shard: stages with a start, a length and the record each was read from, and a first start that survives a restart",
+      "status": "pending",
+      "description": "Add the optional task key timing: an object with firstStartedAt and stages, where a stage is kind, startedAt, ms, basis and optional round and runId. The kinds are a closed list: writer, gate, selection, base, reviewer, commit, wait. One new helper module, plugins/audit/scripts/manifest/_task_timing.py, holds the pure functions every writer and reader uses: build a stage, append it to a task, and summarize a task into per-kind totals, the whole window from firstStartedAt to completedAt, and the unattributed remainder, each with its basis and with an absent source named rather than read as zero. task.startedAt is re-stamped on every restart today, so the first start is lost; starting a task now sets timing.firstStartedAt once and never moves it. The key is additive: a plan that never writes it validates and behaves exactly as before, and COMPATIBILITY.md says so beside its other additive keys. A new module owes the five things CLAUDE.md lists for a file under scripts/ (suite, layer in tools/lints/_deps.py, tree line and section in PLUGIN-BUILD-GUIDE.md, the path preamble; it is a helper, so no entry guard). Dependants you answer for: the schema and the validator's vocabulary must agree (_manifest_vocab.py KNOWN_TASK and SCHEMA_ANCHORS, _help.schema_vocab_drift, the unknown-key warning in _manifest_phases.py); every committed example plan and rendered artifact must still validate and render byte for byte, since none carries the key; audit-task.py's start, reopen, move and cancel verbs copy or reset task fields and must carry timing the way they carry notes; the panel's writer rewrites tasks and must not drop a key it does not know. Acceptance: (1) a task carrying a well-formed timing validates with no warning, and a task without it validates exactly as today; (2) a stage with an unknown kind, a negative ms or no basis is a validator finding that names the task and the stage; (3) a restart keeps firstStartedAt while startedAt moves; (4) the summary of a task whose stages cover part of its window reports the remainder as unattributed, and the parts add up to the window; (5) the summary of a task with no completedAt, or no timing, says which is missing and gives no total; (6) move and reopen keep the record.",
+      "files": [
+        "plugins/audit/scripts/manifest/_task_timing.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/scripts/manifest/_manifest_vocab.py",
+        "plugins/audit/scripts/manifest/_manifest_phases.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test__task_timing.py",
+        "tests/test__manifest_phases.py",
+        "tests/test_audit_task.py",
+        "tools/lints/_deps.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "COMPATIBILITY.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__task_timing.py: a summary's stage totals and unattributed remainder add up to the task's window, and a missing completedAt or timing is named rather than totalled",
+          "tests/test__manifest_phases.py: a well-formed timing validates with no warning and a stage with an unknown kind, a negative ms or no basis is a finding naming the task",
+          "tests/test_audit_task.py: a restart keeps timing.firstStartedAt while startedAt moves, and move and reopen keep the record"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__task_timing.py tests/test__manifest_phases.py tests/test_audit_task.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P167.3",
+      "title": "A recorded gate run says how long choosing what to run took, beside how long the steps took",
+      "status": "pending",
+      "description": "run-test-gate.py starts its clock at the first step, so the time it spends gathering the affected suites and reading the gate's reach is in no figure at all. The recorded row gains selectionMs: the time from the start of that work to the first step, measured on the same monotonic clock. durationMs keeps its meaning, the steps alone, because other code decides on it. A run that selected nothing (a reused verdict, a gate with no derived part) records selectionMs for the work it did do, and a row written before this change carries no such key, which reads as not recorded. Dependants you answer for: _evidence_io.gate_mean_ms decides whether a gate runs in the foreground from durationMs and must give the same answer on the same rows; the doctor grades meta.gateBudgetMs from durationMs; audit-usage compares narrowed and phase gates and reused and measured runs from durationMs; the report and the panel list a row's steps and its took figure and must render a row with the new key unchanged; the row's hash chain covers the row as written, so a new key must enter the row before it is hashed; COMPATIBILITY.md lists the evidence row's additive keys and gains this one. Acceptance: (1) a recorded task gate with a derived part carries selectionMs and its durationMs equals the sum the steps took, as before; (2) gate_mean_ms over a ledger holding old and new rows returns what it returned over the same rows without the key; (3) a row without selectionMs is read as not recorded by every reader, never as zero; (4) the ledger's verifier accepts a chain holding both kinds of row.",
+      "files": [
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "tests/test_run_test_gate.py",
+        "tests/test__evidence_io.py",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_test_gate.py: a recorded task gate with a derived part carries selectionMs, and its durationMs is still the steps alone",
+          "tests/test__evidence_io.py: gate_mean_ms gives the same answer with and without the key, a row without it reads as not recorded, and the verifier accepts a chain holding both"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py tests/test__evidence_io.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P167.4",
+      "title": "The drive writes a task's stages as it reads each step back, and stamps a writer or reviewer dispatch when it hands it out",
+      "status": "pending",
+      "description": "When the drive reads a finished step back it appends one stage to the task's timing through the shared helper: a writer round from the session record (start, length, round), a recorded gate run from its ledger row (runId, start, length) with its selection time as a stage of its own, a base measurement from its row, the reviewer session from its record, and the record commit timed around the commit verb. A dispatch for a writer or a reviewer is stamped when it is handed out, the way a gate's is, and the gap between a hand-out and the step's own start is a wait stage, so time the orchestrator spent not calling next is counted rather than lost. The stages go into the shard in a write the drive already makes for that step (the session note, the verdict pointer, the close): this change adds no commit and no locked write of its own, because a metric that slows the thing it measures is wrong by construction. A source that is missing (a session record with no duration, a row that could not be read) appends nothing for that stage and the summary then reports the time as unattributed. A wave member writes its stages in its own tree's shard and integration carries them. Dependants you answer for: the drive's state file and its one-use launch marks (gateLaunched, baseMeasured, phaseGateLaunched) keep their meaning; the wait and dispatch step texts the orchestrator and the prompt hook read keep their wording apart from a since clause where one is added; commit-task-work's refusal on an unexpected shard change must not fire on a timing append; verify-invariants' commit-scope check reads what a task commit staged; tests/test_drive_phase.py holds fixtures of every step and its decision table. Do not edit plugins/audit/reference/orchestrator.md (it sits at its context ceiling); put any text the orchestrator needs into the step the drive prints. Acceptance: (1) a fixture task driven from start to done through a writer round, a green gate, a review and the commit leaves writer, selection, gate, reviewer and commit stages whose figures match their sources, and the summary's parts add up to the window; (2) a red gate followed by a base measurement and a second writer round leaves two writer stages with their rounds, two gate stages and a base stage; (3) a hand-out read back after a delay leaves a wait stage of that length; (4) a session record with no duration leaves no writer stage and the summary reports that time as unattributed; (5) the number of commits and of locked manifest writes the drive makes for the fixture task is the same as before the change; (6) a wave member's stages reach the phase tree's shard at integration.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "tests/test_drive_phase.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a task driven to done leaves writer, selection, gate, reviewer and commit stages that add up to its window with the remainder unattributed; a red gate with a base run and a second round leaves both rounds; a delayed read-back leaves a wait stage; a session with no duration leaves none; the drive makes no more commits or locked writes than before"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P167.1",
+        "P167.2",
+        "P167.3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "P167.5",
+      "title": "/audit:status prints wall time per task and per stage, and its JSON carries the same figures with their basis",
+      "status": "pending",
+      "description": "The status render gains a time column, shown only when a task in view carries a timing record, exactly as the tests column appears only when a task has recorded a run: a plan that never recorded a stage renders byte for byte as before. A task's cell is its whole window; the phase's head line gives the median task window and the split by stage over the phase's finished tasks, with the unattributed share named. The JSON rollup carries, per task, the summary the shared helper returns, and per phase the same aggregate, each with its basis; a task with no record carries no timing key rather than zeros. commands/status.md states the column in the fewest words that are true, since the main loop reads that page on every call and tools/measure-context.py holds it to a ceiling. Dependants you answer for: the three views and the fold of finished phases; --phase and --view scoping, which scope the table and never the totals; --section, which projects one top-level key of the JSON and refuses an unknown one; the gate mode, which must not read timing at all; the report and the panel, which call into _status_facts and must be unaffected. Acceptance: (1) a plan with no timing anywhere renders and serializes byte for byte as before; (2) a plan where one task carries a record shows the column, that task's window, and a dash for the others, and the dash means not recorded; (3) the phase line's stage figures add up to its tasks' windows, with the unattributed share printed; (4) the JSON carries the per-task summary and the per-phase aggregate with their basis, and a task without a record has no timing key; (5) --gate output is unchanged on a plan that carries timing.",
+      "files": [
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/commands/status.md",
+        "tests/test__status_facts.py",
+        "tests/test_audit_status.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "README.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_audit_status.py: a plan with no timing renders byte for byte as before, and a plan with one timed task shows the time column, that task's window and a dash for the rest",
+          "tests/test__status_facts.py: the per-phase stage figures add up to the tasks' windows with the unattributed share, and a task without a record carries no timing key"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_audit_status.py tests/test__status_facts.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [
+        "P167.2"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    }
+  ],
+  "request": "Brzina razvoja postaje merena metrika uz Q1 i Q2: metrika vremena po tasku. Izmereno je oko 3.3x vremena obicne sesije, pisac oko 0.9x, a razlika su gate-ovi.",
+  "openChoices": [
+    "The report page and the panel do not show the new figures in this phase: a change to either surface owes the owner a look before it lands, and he is away. /audit:status and its JSON carry them; the report follows in the surface phase.",
+    "A gate row's durationMs keeps its meaning (the steps alone), because the background-gate decision, the gate budget grading and the usage comparisons all read it; the time spent choosing what to run is a new key beside it rather than added into it."
+  ],
+  "reviewPerTask": "signals",
+  "claim": {
+    "sessionId": "2b3b3ad6-53c7-447e-9ceb-53c614bccbc5",
+    "branch": "audit/p167-wall-time-per-task-is-recorded",
+    "at": "2026-11-17T23:58:28Z"
+  },
+  "startedAt": "2026-11-17T23:58:28Z"
+}

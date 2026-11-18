@@ -1,0 +1,39 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_run_agent_session.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T00:09:10Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py` in a throwaway tree at HEAD exited 1 with 8 of 89 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ras27 (house FAIL), ras69 (house FAIL), ras70 (house FAIL), ras71 (house FAIL), ras71 (house FAIL), ras71 (house FAIL), ras71b (house FAIL), ras44 (house FAIL): SELFTEST FAILED: 81/89 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "plugins/audit/scripts/governance/run-agent-session.py: read_stream now also returns `last` (the last result event whatever it holds, additive key); new TIMING_FIELDS, _figure_problem, started_at, session_timing (pure: figures + absent-with-reason); _in_session reads the stream before the interrupted check and sets ran['timing'] only once claude ran; write_record(..., timing=None) appends durationMs, durationApiMs, numTurns, startedAt after line/exit/skills/skillsInvoked, and timingAbsent {key: reason} when any figure is missing. A figure absent, a string, a boolean, null/other, non-finite or negative is left out and named, never written as zero; no result event names every figure 'no result event was read: <problem>'. startedAt is the stream name's %Y%m%dT%H%M%SZ stamp as YYYY-MM-DDTHH:MM:SSZ. The PRINTED LINE IS UNCHANGED: the drive's _SESSION_LINE (drive-phase.py:432) ends `stream=(.*)$`, so a field appended after stream= would be read as part of the stream path; 'new ones are appended' is honoured in the record, whose new keys follow the existing ones in order (ras69b pins both). Module docstring and PLUGIN-BUILD-GUIDE.md's run-agent-session section say so. tests/test_run_agent_session.py: the stub's last result carries TIMING (STUB_TIMING env, overridable), the first of two results carries decoys; ras27/ras44 updated to the new record shape; new ras69, ras69b, ras70, ras71 (x3 fixtures), ras71b, ras72, ras73. Suite 89/89; gate `python3 tools/sweep-selftests.py tests/test_run_agent_session.py` exit 0, '1/1 files ok, 89 cases'. Mutations in a git-archive HEAD export with my two files overlaid (never the shared tree), __pycache__ purged per cycle: absent-as-zero -> ras70, ras71, ras71b red; no string check -> ras71 red; no negative check -> ras71 red; no bool check -> ras71 red; timing set before the session starts -> first SURVIVED (ras72 only drove a usage refusal, which fires before the skills load), ras72 widened with an io-error run -> red; startedAt dropped -> ras27, ras44, ras69, ras70, ras71, ras71b red; a figure appended to the printed line -> ras8, ras69b red. CHANGELOG.md not touched: no Unreleased section exists and P167.5 declares it for the phase's entry. Dependants: drive-phase.py read_sessions/session_note/note_sessions read only line, exit, skills, skillsInvoked (drive-phase.py:2259-2271) - still correct, unchanged, and ras73 loads the drive and shows an old-shape record and the same record with the new keys give identical read_sessions and session_note; tests/test_drive_phase.py:18463 calls RAS.write_record(path, line, code, skills=, invoked=) - still correct, timing is a new trailing keyword defaulting to None, so its records keep their old shape; tests/test__config_rules.py:431 uses is_full_model_id and tests/test__doctor_policy.py:466 the skill resolution - untouched; tools/affected.py and .github/sweep-costs.json name the file paths only - unchanged paths; _config_rules.py:96 names the script in prose - still correct; PLUGIN-BUILD-GUIDE.md section updated (in my files); CHANGELOG.md left to P167.5; the measurement harness outside this repo parses the printed line, which is byte-identical in shape. test_drive_phase.py itself was not run (own-tests reading).",
+    "descriptive": "A writer or reviewer session's --record line now carries durationMs, durationApiMs, numTurns and startedAt from its own last result, naming any figure it could not read instead of writing zero."
+  },
+  "testsAdded": [
+    "ras69: the last result's three figures and the stream-name start time land in the record, not the first result's decoys",
+    "ras69b: the old keys keep their order ahead of the new ones and the printed line still parses under the drive's regex with its stream intact",
+    "ras70: no result event -> none of the three figures, each named absent 'no result', start time still recorded",
+    "ras71: duration_ms as a string, a negative, a boolean -> no durationMs, never zero, reason names it, other two kept",
+    "ras71b: a result with none of the figures names each with its source field",
+    "ras72: a usage refusal and an io-error record no timing key at all",
+    "ras73: the drive reads an old-shape record identically to one carrying the new keys, note included"
+  ],
+  "casesAdded": [
+    [
+      "ras69",
+      "ras69b",
+      "ras70",
+      "ras71",
+      "ras71b",
+      "ras72",
+      "ras73"
+    ]
+  ],
+  "claims": "claims:\n1 run-agent-session.py session_timing/_figure_problem/started_at (after read_stream) produce the figures and reasons the docstring and guide passage describe; write_record's `if timing:` block appends them after the existing keys; _in_session sets ran['timing'] only after run_session returned\n2 seven mutations in a HEAD export with my files overlaid, each red (ras70/71/71b, ras71 x3, ras72 after widening, ras27/44/69/70/71/71b, ras8/69b); timing-before-session first survived, the case was widened, then red; ras72 is the over-fire twin\n3 n/a - not a fix of a reported defect; record writers: grep 'write_record(' finds main() and test_drive_phase.py:18463 only, both answered\n4 n/a - no rule to an agent\n5 n/a - no property measured; durations are read, not measured\n6 n/a - no guard\n7 n/a - no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:cc3536601e1d7b30617df6af5faf2140eb545ce35be30d18ebfffa248ac82dc7\",\"dirtyDigest\":\"sha256:2aca8ebd8986f2a5f9589dd4290c57b820ea67bef82d866f10ac70e36bfcd6ed\",\"dirtyPaths\":{\"PLUGIN-BUILD-GUIDE.md\":\"8b8413819b4d4eff\",\"plugins/audit/scripts/governance/run-agent-session.py\":\"76950e0a77f28d1f\",\"tests/test_run_agent_session.py\":\"0b3134b8ec422914\"},\"head\":\"1892634f\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/scripts/governance/run-agent-session.py\",\"tests/test_run_agent_session.py\"],\"scopeDigest\":\"sha256:7f3ff2f8bc719bc98ae191e7c7819740d8b3832eaf06d120f6bcf2856c14bffd\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
