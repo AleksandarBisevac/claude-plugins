@@ -177,10 +177,12 @@ sh tools/verify.sh --release        # the per-run slices, plus what a version bu
 
 `tools/verify.sh` groups every gate into named **slices**, and `--list` prints them -
 read off the same `run` calls a run makes, so the list cannot describe a run that does
-not happen. CI runs slices of this file and nothing else: every job in
-`.github/workflows/ci.yml` is setup plus one `tools/verify.sh --only <slices>` call, so
-the workflow says where a slice runs (which runner, which shard, which tier) and the
-runner says what it runs. The commands are therefore not listed again here; this
+not happen. CI runs slices of this file and no other gate: every job in
+`.github/workflows/ci.yml` that runs a gate is setup plus one `tools/verify.sh --only
+<slices>` call, so the workflow says where a slice runs (which runner, which shard,
+which tier) and the runner says what it runs. The one job that runs no slice,
+`verified`, asks whether the commit already passed (below). The commands are therefore
+not listed again here; this
 section says why each slice holds what it holds, and `--list` says what that is today.
 
 It exists because typing the gates by hand cost two red CI runs in one day: once by
@@ -207,10 +209,18 @@ for you yet. A dispatch with no input - the drive's CI cadence, `tools/release.p
 
 **A verified SHA is not run again.** A push to `main` asks `tools/ci-verified.py` first
 whether a run of `ci.yml` already passed that exact commit - every job `success`, a
-skipped one counting as not passed - and when one did, every other job is skipped and
-the `verified` job names that run. Another commit's run, another workflow's run, the
-asking run itself, a job list it could not read and a question it could not ask each
-refuse, and a refusal runs everything.
+skipped one counting as not passed - and when one did, every other job's gate is
+skipped and the `verified` job names that run. Another commit's run, another workflow's
+run, the asking run itself, a job list it could not read and a question it could not
+ask each refuse, and a refusal runs everything.
+
+**The browser jobs still run on that push, without their slice.** They restore Chromium
+and its system packages from GitHub's cache, and a run can read only what its own branch
+or the default branch saved. So on a verified push to `main` they skip the slice step
+and seed: their install (`.github/actions/browser-install`, the one copy both call)
+installs nothing when an entry exists for both keys, and otherwise installs and saves
+what the next `ci/` branch's first run restores. Without that, `main` would save no
+entry and every `ci/` branch's first run would miss.
 
 **`tools/gate-parity.py` holds the workflow to the list** - in the `lint` slice, with its
 own cases in the sweep: every slice a job names is one `--list` prints, every per-run

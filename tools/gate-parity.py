@@ -14,9 +14,13 @@ the copies together by reading each one's commands, the report checker's documen
 and the sweep's legs, and every CI change cost four edits plus that reader's
 fixtures.
 
-ONE EXECUTABLE DESCRIPTION NOW. Every CI job is setup plus one
+ONE EXECUTABLE DESCRIPTION NOW. Every CI job that runs a gate is setup plus one
 `tools/verify.sh --only <slices>` call, and the runner alone says what a slice
-runs - so the copies are gone rather than compared. What is left to hold is what
+runs - so the copies are gone rather than compared. A job that runs no slice (the
+commit-verified question) names no slice to hold: the slice rules read no run in
+it, while the bound, runner-image and job-cap rules read it like any job. A step's
+`if:` is read like its job's, since a job that runs on every run may still skip
+the step carrying its slice (`job_slices`). What is left to hold is what
 the workflow says ABOUT the slices, and `slice_drift()` and `shard_matrix_drift()`
 hold it against `verify.sh --list`, asked of the real runner:
 
@@ -585,9 +589,10 @@ def failmode_table_drift(repo=None):
 # ONE EXECUTABLE DESCRIPTION. ci.yml used to carry the gate set as inline shell, and
 # this file held hand-maintained copies of it together - the runner, the workflow and
 # two documents - by reading each one's commands, the report checker's documents and
-# the sweep's legs. Every CI job is now setup plus one `verify.sh --only` call, so the
-# workflow names SLICES and the runner alone says what a slice runs. What is left to
-# hold is what the workflow says about the slices:
+# the sweep's legs. Every CI job that runs a gate is now setup plus one
+# `verify.sh --only` call, so the workflow names SLICES and the runner alone says
+# what a slice runs. What is left to hold is what the workflow says about the
+# slices:
 #
 #   * every slice a job names is one `verify.sh --list` prints - a misspelt or
 #     retired name is otherwise refused by the runner on the day the job runs;
@@ -825,6 +830,49 @@ def _job_runs(lines):
     return out
 
 
+def _step_runs(lines):
+    """[(run, the `if:` of the step carrying it, or "")] for a job's lines.
+
+    A step is one item of the job's `steps:` list, and its `if:` is a key at
+    the item's own depth, so a script line that happens to read `if:` is never
+    taken for it. A job with no `steps:` block gives its runs no condition."""
+    head = next((i for i, ln in enumerate(lines)
+                 if re.match(r"^\s*steps:\s*(#.*)?$", ln)), None)
+    if head is None:
+        return [(run, "") for run in _job_runs(lines)]
+    base = len(lines[head]) - len(lines[head].lstrip(" "))
+    steps, item = [], None
+    for ln in lines[head + 1:]:
+        stripped = ln.strip()
+        if (stripped and not stripped.startswith("#")
+                and len(ln) - len(ln.lstrip(" ")) <= base):
+            break
+        dash = re.match(r"^(\s*)-\s", ln)
+        if dash and (item is None or len(dash.group(1)) == item):
+            item = len(dash.group(1))
+            steps.append([ln])
+        elif steps:
+            steps[-1].append(ln)
+    out = []
+    for step in steps:
+        own = [" " * (item + 2) + step[0][item + 2:]] + step[1:]
+        conditions = [got[2] for got in (_key_line(ln) for ln in own)
+                      if got is not None and got[0] == item + 2
+                      and got[1] == "if"]
+        out += [(run, conditions[0] if conditions else "")
+                for run in _job_runs(step)]
+    return out
+
+
+def _call_tier(job_tier, step_tier):
+    """The tier a verify.sh call runs on, from its job's and its step's: either
+    unproved makes it unproved, either release-only makes it release-only."""
+    tiers = (job_tier, step_tier)
+    if "unproved" in tiers:
+        return "unproved"
+    return "release" if "release" in tiers else "per-run"
+
+
 def _collapse(text):
     """`${{ x }}` spelled without its spaces, so one expression is one word."""
     return _EXPR.sub(lambda m: "${{%s}}" % (m.group(1).replace(" ", ""),), text)
@@ -912,6 +960,9 @@ def job_slices(text):
     which runs every per-run slice), its `--shard`, the matrix keys that
     produced it and the tiers it runs on (`_run_tiers`). A value a cell cannot
     resolve is a `problems` row naming the job, never a silently dropped run.
+    The `if:` of the step carrying a call is read the same way as the job's
+    (`_step_runs`, `_call_tier`): a job that runs on every run can still skip
+    the step its slices are in.
     """
     jobs = _workflow_jobs(text)
     if not jobs:
@@ -919,7 +970,16 @@ def job_slices(text):
                 "problem": "no top-level `jobs:` block, so no job could be read"}
     out, problems = [], []
     for job, lines in jobs:
-        calls = [args for run in _job_runs(lines) for args in _verify_args(run)]
+        calls = []
+        for run, condition in _step_runs(lines):
+            step_calls = _verify_args(run)
+            if not step_calls:
+                continue        # a step running no gate has no condition to prove
+            step_tier, step_why = _if_tier(condition)
+            if step_why is not None:
+                problems.append((job, "the step running verify.sh: %s"
+                                 % (step_why,)))
+            calls += [(args, step_tier or "unproved") for args in step_calls]
         keys = _job_keys(lines)
         tier, why = _if_tier(keys.get("if", ""))
         entry = {"job": job, "tier": tier or "unproved", "runs": [],
@@ -933,7 +993,8 @@ def job_slices(text):
         if matrix["problem"] is not None:
             problems.append((job, matrix["problem"]))
             continue
-        for words in calls:
+        for words, step_tier in calls:
+            call_tier = _call_tier(entry["tier"], step_tier)
             only, shard = _flag(words, "--only"), _flag(words, "--shard")
             for cell in matrix["cells"]:
                 resolved = [None if w is None else _collapse(_resolve(w, cell))
@@ -945,7 +1006,7 @@ def job_slices(text):
                                          "cell %r cannot resolve: %r"
                                          % (cell, values)))
                         continue
-                    tiers = _run_tiers(entry["tier"], arm)
+                    tiers = _run_tiers(call_tier, arm)
                     if not tiers:
                         continue        # an arm its job never reaches
                     entry["runs"].append({
@@ -3243,6 +3304,47 @@ def _slice_cases(check):
           % (_SLICE_CLAUSE, buf.getvalue()),
           code == 0 and "every slice ci.yml names" in buf.getvalue()
           and "3 slice(s)" in buf.getvalue())
+
+    # A STEP'S `if:` IS READ AS THE JOB'S IS. A job may run on every run and
+    # still skip the step carrying its verify.sh call; read by the job's
+    # condition alone, that step's slices are counted as run on runs that skip
+    # them. The allow case first: the guard term on the step is the same proof
+    # the job-level guard is (and is red under a reader that refuses every
+    # step condition).
+    lint_step = "      - run: sh tools/verify.sh --only lint,runner\n"
+    guarded = _SLICE_CI.replace(
+        lint_step, "      - if: ${{ needs.verified.outputs.run == '' }}\n"
+                   "        run: sh tools/verify.sh --only lint,runner\n")
+    guarded_runs = [r["tiers"] for j in job_slices(guarded)["jobs"]
+                    if j["job"] == "lint" for r in j["runs"]]
+    check("sv21 %s (THE ALLOW CASE: a verify step guarded by the verified "
+          "commit's output alone runs on every run, as a job carrying that guard "
+          "does: %r, %r)" % (_SLICE_CLAUSE, slice_drift(guarded, _SLICE_LISTED),
+                             guarded_runs),
+          _SLICE_CI.count(lint_step) == 1
+          and slice_drift(guarded, _SLICE_LISTED) == []
+          and guarded_runs == [("per-run", "release")])
+
+    pushed = _SLICE_CI.replace(
+        lint_step, "      - if: ${{ github.event_name == 'push' }}\n"
+                   "        run: sh tools/verify.sh --only lint,runner\n")
+    pushed_found = slice_drift(pushed, _SLICE_LISTED)
+    check("sv22 %s (a verify step whose own condition cannot be proved to hold "
+          "on every run is the job's finding, and the slices it carries are not "
+          "counted as run: %r)" % (_SLICE_CLAUSE, pushed_found),
+          sorted(s for s, _w in pushed_found)
+          == ["lint", "lint (job)", "runner"]
+          and any("step" in w for s, w in pushed_found if s == "lint (job)"))
+
+    tiered_step = _SLICE_CI.replace(
+        lint_step, "      - if: ${{ inputs.tier == 'release' }}\n"
+                   "        run: sh tools/verify.sh --only lint,runner\n")
+    tiered_found = slice_drift(tiered_step, _SLICE_LISTED)
+    check("sv23 %s (a verify step only a release-tier run reaches makes its "
+          "slices release-only, as the release-tier job does: %r)"
+          % (_SLICE_CLAUSE, tiered_found),
+          sorted(s for s, _w in tiered_found) == ["lint", "runner"]
+          and all("only the release tier" in w for _s, w in tiered_found))
 
 
 # THE WINDOWS PART COUNT, pinned rather than read, because the windows sweep cells
