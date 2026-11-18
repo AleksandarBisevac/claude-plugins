@@ -449,7 +449,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   the call, so the last will the documents describe was never written when the hooks ran as
   processes. That row is now appended with the switch as it stood before the call, into the
   project's own trail only, and is written once; a write made while the journal was already off
-  leaves no row, as before.
+  leaves no row, as before. The row belongs to the call that switched the journal off, by its own
+  reading before and after: its pass before, under the same tool call id, read the switch as on,
+  and its pass after reads it off. A note a writer kept from an earlier call is not that
+  reading, so after the owner switches the journal off by hand or in the panel, another session
+  switches it off, or a config is created switched off by hand, a later command, MCP read or
+  edit-tool write - by the session or a subagent - leaves no row, and the trail check still
+  warns about a hand edit an edit tool later rewrote. Two calls in flight across the flip each
+  leave theirs. A payload naming no call id marks nothing.
 
 ## [3.8.0]
 

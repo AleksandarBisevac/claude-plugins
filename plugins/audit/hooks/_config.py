@@ -5525,6 +5525,10 @@ CALL_START_FILE = "call-start-%s.json"
 # The key a per-call record keeps the call's `tool_use_id` under: the
 # call-start record here, and journal-writes.py's edit-lane slot.
 CALL_ID_KEY = "toolUseId"
+# The key the call-start record keeps the journal switch under, as the Pre
+# pass that wrote the record read it: the one reading of "the switch before
+# this call" journal-writes.py trusts, because the record names its call.
+CALL_JOURNAL_KEY = "journalOn"
 WINDOW_SLACK_SECONDS = 2
 _SAFE_KEY = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -5548,7 +5552,7 @@ def _call_start_path(root, cfg, data):
                         CALL_START_FILE % writer_key(data))
 
 
-def record_call_start(root, cfg, data, now=None, call=None):
+def record_call_start(root, cfg, data, now=None, call=None, journal_on=None):
     """PreToolUse: note when this writer's call began. Returns the file path, or
     None when it could not be written - never raises, because a hook that
     cannot note a start has lost only the window, not the tool call.
@@ -5556,17 +5560,48 @@ def record_call_start(root, cfg, data, now=None, call=None):
     `call` is the call's `tool_use_id`, kept under `CALL_ID_KEY` in the same
     record and the same write, so `call_start(..., call=)` can tell this
     call's start from one an earlier call's Pre left. A record written in two
-    steps would, between them, be a start naming no call."""
+    steps would, between them, be a start naming no call. `journal_on`, when
+    given, is the journal switch as this Pre read it, kept under
+    `CALL_JOURNAL_KEY` in that same write and read back by `call_journal_on`."""
     try:
         path = _call_start_path(root, cfg, data)
         ensure_local_dir(os.path.dirname(path))
         held = {"at": time.time() if now is None else now}
         if call is not None:
             held[CALL_ID_KEY] = call
+        if journal_on is not None:
+            held[CALL_JOURNAL_KEY] = bool(journal_on)
         atomic_write_text(path, json.dumps(held))
         return path
     except Exception:
         return None
+
+
+def _call_record(root, cfg, data, call=None):
+    """This writer's call-start record as an object, or None: no record, one
+    that is not an object, or - with `call` - one naming another call."""
+    try:
+        with open(_call_start_path(root, cfg, data), "r", encoding="utf-8") as fh:
+            held = json.load(fh)
+    except Exception:
+        return None
+    if not isinstance(held, dict):
+        return None
+    if call is not None and held.get(CALL_ID_KEY) != call:
+        return None
+    return held
+
+
+def call_journal_on(root, cfg, data, call):
+    """Did the Pre pass of the call `call` - this writer's, by its
+    `tool_use_id` - read the journal switch as on? True only when the record
+    names that call and holds the reading as True. A `call` of None, no
+    record, another call's record, or one written without the reading are
+    all False: a reading no Pre of this call took is not this call's."""
+    if call is None:
+        return False
+    held = _call_record(root, cfg, data, call=call)
+    return held is not None and held.get(CALL_JOURNAL_KEY) is True
 
 
 def call_start(root, cfg, data, call=None):
@@ -5576,14 +5611,8 @@ def call_start(root, cfg, data, call=None):
     call leaves the record of an earlier one, whose start bounds nothing
     here. A record that is not an object, or whose moment is not a number, is
     no start; never raises."""
-    try:
-        with open(_call_start_path(root, cfg, data), "r", encoding="utf-8") as fh:
-            held = json.load(fh)
-    except Exception:
-        return None
-    if not isinstance(held, dict):
-        return None
-    if call is not None and held.get(CALL_ID_KEY) != call:
+    held = _call_record(root, cfg, data, call=call)
+    if held is None:
         return None
     at = held.get("at")
     if isinstance(at, bool) or not isinstance(at, (int, float)):

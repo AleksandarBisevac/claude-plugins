@@ -819,14 +819,19 @@ def _cases(check):
             with open(cfg_abs, "w", encoding="utf-8") as fh:
                 json.dump(obj, fh)
 
+        # Both passes carry the call's `tool_use_id`, as the host sends them:
+        # the row is owed by the call whose own Pre read the switch on, and a
+        # slot is that call's reading only when it names the call (sn10 is the
+        # payload naming none).
         write_cfg_file({"journal": {"enabled": True}})
-        M.pre_cache(payload("Edit", cfg_rel, sid="pp-9"), cfg=cfg, root=pproj)
+        k1_call = dict(payload("Edit", cfg_rel, sid="pp-9"),
+                       tool_use_id="toolu-k1")
+        M.pre_cache(k1_call, cfg=cfg, root=pproj)
         write_cfg_file({"journal": {"enabled": False}})
         post_cfg = _config._deep_merge(cfg, {"journal": {"enabled": False}})
-        entries = M.post_entries(payload("Edit", cfg_rel, sid="pp-9"),
-                                 cfg=post_cfg, root=pproj)
+        entries = M.post_entries(k1_call, cfg=post_cfg, root=pproj)
         check("k1 flipping journal.enabled true->false IS journalled, with the "
-              "flip in details",
+              "flip in details, for the call whose own Pre read it on",
               len(entries) == 1 and entries[0]["action"] == "config.edit"
               and (entries[0].get("details") or {}).get("changes") ==
               [{"field": "journal.enabled", "from": True, "to": False}]
@@ -1234,10 +1239,13 @@ def _cases(check):
         # `journal.enabled` off must be journalled by its own last row, judged
         # against the PRE-IMAGE config - the same rule k1 pins for the edit lane,
         # asserted here because the Bash lane resolves `enabled` on its own.
+        # The call's own Pre runs, under the call's id: it is that pass's
+        # reading of the switch, kept with its id, that says "on before".
         f_write({"journal": {"enabled": True}}, f_cfg_abs)
-        M._write_slot(fproj, cfg, f_bash("f-10"), _config.CONFIG_REL)
+        _f10_call = dict(f_bash("f-10"), tool_use_id="toolu-f10")
+        M.pre_cache(_f10_call, cfg=cfg, root=fproj)
         f_write({"journal": {"enabled": False}}, f_cfg_abs)
-        _f10 = M.post_entries(f_bash("f-10"), cfg=post_cfg, root=fproj)
+        _f10 = M.post_entries(_f10_call, cfg=post_cfg, root=fproj)
         check("f10 flipping journal.enabled off THROUGH BASH is still journalled - "
               "the loophole k1 closed for the edit lane is judged against the "
               "pre-image config here too, so the flip cannot silence its own row",
@@ -2084,6 +2092,7 @@ def _cases(check):
     _generated_question_cases(check)
     _slot_follows_file_cases(check)
     _created_file_cases(check)
+    _harness.stage(check, "sn0 the switch-reading cases", _switch_reading_cases)
 
 
 # --- oq: the guard and the journal ask one function which file is the config ------
@@ -2568,17 +2577,23 @@ def _slot_follows_file_cases(check):
                 n += 1
                 sid = "sess-oq6-%d" % n
                 # The switch on, written through the first spelling with both
-                # passes; then the second spelling turns it off, its Pre lost.
+                # passes; then the second spelling turns it off, with its own
+                # Pre under its own call id - the row for a flip is owed only
+                # by the call whose own Pre read the switch on (sn10 is the
+                # flip whose Pre never ran). One slot per writer is what says
+                # the second spelling's Pre and Post found the first's slot.
                 _oq_put(pconf, _OQ_ON % n)
                 _oq_hook("PreToolUse", first, main, sid)
                 _oq_put(first, _OQ_ON % (n + 100))
                 post1 = _oq_hook("PostToolUse", first, main, sid)
-                _oq_put(second, _OQ_OFF)
                 data = {"hook_event_name": "PostToolUse", "tool_name": "Write",
                         "session_id": sid, "tool_use_id": "call-2-" + sid,
                         "cwd": main,
                         "tool_input": {"file_path": second,
                                        "content": _OQ_OFF}}
+                M.pre_cache(dict(data, hook_event_name="PreToolUse"),
+                            root=main)
+                _oq_put(second, _OQ_OFF)
                 got_ok, got = _harness.attempt(M.post_entries, data, root=main)
                 rows = ([(e.get("target"), e.get("summary")) for e in got]
                         if got_ok else got)
@@ -2596,11 +2611,10 @@ def _slot_follows_file_cases(check):
     want = [(_config.CONFIG_REL, "journal.enabled true->false")]
     wrong = [s for s in seen if s[2] != want or s[3] != 1 or s[4] != 0]
     check("oq6 the pre-image slot follows the file: a write of the project's "
-          "config through another spelling, then one spelled plainly whose own "
-          "Pre never ran, and the same the other way round, keep one slot per "
-          "writer and each reads the state before as the other left it - the "
-          "row the Post owes is the switch turned off, naming the config's "
-          "own path; otherwise: %r" % (wrong,),
+          "config through another spelling, then one spelled plainly that "
+          "switches the journal off, and the same the other way round, keep "
+          "one slot per writer - the row the second call owes is the switch "
+          "turned off, naming the config's own path; otherwise: %r" % (wrong,),
           len(seen) == 2 * len(others) and not wrong, repr(seen))
 
 
@@ -2937,6 +2951,386 @@ def _created_file_cases(check):
           and rows == [] and own == [] and codes == [0, 0],
           "first write %r %r, then %r %r, the nested trail %r"
           % (first, first_codes, rows, codes, own))
+
+
+# --- sn: the switch before the call is what that call's own pass read ------------
+# The row for the write that switches the journal off is owed by the call whose
+# own pass before - the same tool call id - read the switch as on, and whose pass
+# after reads it off. Every case here starts from a writer that made an EARLIER
+# call while the journal was on, so whatever that writer noted predates the
+# switch: a fresh fixture holds no note at all, and cannot tell a reading this
+# call took from one an earlier call left behind. Each case names the earlier
+# call that seeds that note.
+_SN_READ = "mcp__fs__read_text_file"
+_SN_ON2 = '{\n  "journal": {"enabled": true},\n  "planGate": "observe"\n}\n'
+_SN_OFF2 = '{\n  "journal": {"enabled": false},\n  "planGate": "off"\n}\n'
+
+
+def _sn_hook(event, project, sid, tool, tin, cid, agent=None):
+    """journal-writes.py as a process for one pass; `cid` None sends a payload
+    naming no tool call id. -> the exit code"""
+    import subprocess
+    payload = {"hook_event_name": event, "tool_name": tool, "session_id": sid,
+               "cwd": project, "tool_input": tin}
+    if cid is not None:
+        payload["tool_use_id"] = cid
+    if agent:
+        payload["agent_id"] = agent
+        payload["agent_type"] = "audit-executor"
+    if event == "PostToolUse":
+        payload["tool_response"] = {"stdout": "", "stderr": ""}
+    env = dict(os.environ)
+    env["CLAUDE_PROJECT_DIR"] = project
+    env.pop(_OQ_MARK, None)
+    return subprocess.run(
+        [sys.executable, os.path.join(_harness.HOOKS_DIR, "journal-writes.py")],
+        input=json.dumps(payload).encode("utf-8"), capture_output=True,
+        env=env, cwd=project, timeout=60).returncode
+
+
+def _sn_rows(tree, since=()):
+    """The config rows of `tree`'s trail not in `since` (a set of hashes), as
+    (session, agent, summary)."""
+    return [((r.get("actor") or {}).get("sessionId"),
+             (r.get("actor") or {}).get("agent"), r.get("summary") or "")
+            for r in _journal_io.read_all(tree)
+            if r.get("target") == _config.CONFIG_REL and r.get("hash") not in since]
+
+
+def _sn_hashes(tree):
+    return set(r.get("hash") for r in _journal_io.read_all(tree))
+
+
+def _switch_reading_cases(check):
+    """sn1-sn7: a call that did not switch the journal off leaves no row after
+    the switch went off some other way; sn8-sn11: the call that did leaves its
+    one row, and only in the trail that switch governs."""
+    proj = _cf_repo("journal-sn-")
+    rel = _config.CONFIG_REL.split("/")
+    conf = os.path.join(proj, *rel)
+    app = os.path.join(proj, "src", "app.ts")
+    seq = [0]
+    codes = []
+
+    def fresh(body=_CF_ON):
+        for sub in (os.path.join(proj, rel[0]),
+                    os.path.join(proj, "docs", "audit", "journal")):
+            if not _harness.remove_tree(sub):
+                raise RuntimeError("the fixture's %s could not be removed" % sub)
+        if body is not None:
+            _cf_put(conf, body)
+
+    def call(sid, act=None, tool="Bash", tin=None, agent=None, cid=True,
+             pre=True, post=True):
+        """One call of `tool`: its Pre pass, `act()`, its Post pass, under one
+        tool call id unless `cid` is False."""
+        seq[0] += 1
+        ident = ("sn-call-%d" % (seq[0],)) if cid else None
+        tin = tin if tin is not None else {"command": "ls"}
+        if pre:
+            codes.append(_sn_hook("PreToolUse", proj, sid, tool, tin, ident, agent))
+        if act is not None:
+            act()
+        if post:
+            codes.append(_sn_hook("PostToolUse", proj, sid, tool, tin, ident, agent))
+        return ident
+
+    def hand(body):
+        return lambda: _cf_put(conf, body)
+
+    read = {"path": app}
+
+    # (sn1) seed: the session's own `ls` while on. The owner switches the
+    # journal off by hand; three more commands by that session.
+    fresh()
+    call("sess-a")
+    hand(_CF_OFF)()
+    for _ in range(3):
+        call("sess-a")
+    got = _sn_rows(proj)
+    check("sn1 a session with an earlier call made while the journal was on, the "
+          "owner then switching it off by hand: the session's next commands "
+          "leave no row - %r" % (got,), got == [], repr(got))
+
+    # (sn2) seed: an MCP read by the session and a command by its subagent,
+    # both while on. Hand flip; each makes an MCP read.
+    fresh()
+    call("sess-a", tool=_SN_READ, tin=read)
+    call("sess-a", agent="agent0007")
+    hand(_CF_OFF)()
+    call("sess-a", tool=_SN_READ, tin=read)
+    call("sess-a", tool=_SN_READ, tin=read, agent="agent0007")
+    got = _sn_rows(proj)
+    check("sn2 after a hand flip, an MCP read by the session and by its "
+          "subagent, each with an earlier call made while on, leaves no row - %r"
+          % (got,), got == [], repr(got))
+
+    # (sn3) the edit lane. seed: the session's Write of the config while on,
+    # which leaves its own row. Hand flip; the session's Write rewrites the
+    # config. The trail check still warns about the hand edit.
+    fresh()
+    call("sess-a", act=hand(_SN_ON2), tool="Write",
+         tin={"file_path": conf, "content": _SN_ON2})
+    time.sleep(1.1)
+    hand(_CF_OFF)()
+    time.sleep(1.1)
+    call("sess-a", act=hand(_SN_OFF2), tool="Write",
+         tin={"file_path": conf, "content": _SN_OFF2})
+    got = _sn_rows(proj)
+    warns = [w for w in _journal_io.verify(proj).get("warnings") or []
+             if "never saw" in w and _config.CONFIG_REL in w]
+    check("sn3 after a hand flip, the session's edit-tool rewrite of the config - "
+          "its earlier Write made while on - leaves no row beyond that earlier "
+          "Write's own, and the trail check still warns that the config changed "
+          "with no row to explain it - rows %r, warnings %r" % (got, warns),
+          len(got) == 1 and "true->false" not in got[0][2] and len(warns) == 1,
+          repr((got, warns)))
+
+    # (sn4) the panel's route. seed: the session's command while on. The
+    # panel's writer switches it off (its own row is refused, the journal being
+    # off); the session's next command.
+    fresh()
+    call("sess-a")
+
+    def panel_off():
+        import _panel_write
+
+        def off(cfg):
+            out = dict(cfg)
+            out["journal"] = dict(out.get("journal") or {}, enabled=False)
+            return out
+
+        return _panel_write.write_config(proj, mutate=off)
+
+    ok, res = _harness.attempt(panel_off)
+    if not ok or not (res or {}).get("ok"):
+        _harness.could_not_run(check, "sn4 the panel's route",
+                               "its writer did not switch the journal off: %r"
+                               % (res,))
+    else:
+        call("sess-a")
+        got = _sn_rows(proj)
+        check("sn4 after the panel switched the journal off, the next command of "
+              "a session with an earlier call made while on leaves no row - %r"
+              % (got,), got == [], repr(got))
+
+    # (sn5) another session's flip. seed: session B's command while on. Session
+    # A's command switches it off; B's next command.
+    fresh()
+    call("sess-b")
+    call("sess-a", act=hand(_CF_OFF))
+    call("sess-b")
+    got = _sn_rows(proj)
+    check("sn5 another session switching the journal off leaves its one row, and "
+          "this session's next command - its earlier call made while on - adds "
+          "none - %r" % (got,),
+          len(got) == 1 and got[0][0] == "sess-a"
+          and "journal.enabled true->false" in got[0][2], repr(got))
+
+    # (sn6) a subagent after its session's flip. seed: the subagent's command
+    # while on. The session's command switches it off; the subagent's next.
+    fresh()
+    call("sess-a", agent="agent0007")
+    call("sess-a", act=hand(_CF_OFF))
+    call("sess-a", agent="agent0007")
+    got = _sn_rows(proj)
+    check("sn6 a subagent with an earlier call made while on adds no row after its "
+          "session switched the journal off; the session's own row stands, under "
+          "the session's name - %r" % (got,),
+          len(got) == 1 and got[0][1] != "agent0007"
+          and "journal.enabled true->false" in got[0][2], repr(got))
+
+    # (sn7) a config created switched off by hand. seed: no config, a command
+    # by session A and one by session B, each noting it absent. The owner
+    # creates the config off; A's command and B's MCP read.
+    fresh(None)
+    call("sess-a")
+    call("sess-b")
+    hand(_CF_OFF)()
+    call("sess-a")
+    call("sess-b", tool=_SN_READ, tin=read)
+    got = _sn_rows(proj)
+    check("sn7 a config the owner created switched off by hand gets no row from "
+          "the next command or MCP read of two sessions that noted it absent - %r"
+          % (got,), got == [], repr(got))
+
+    # (sn8) the call that switches it off, made by a writer with earlier calls
+    # while on - and with a second writer whose earlier call is as old: its one
+    # row, under its own name, and neither writer's next call adds one.
+    flips = []
+    for how, tool, existing in (("a command flipping it", "Bash", True),
+                                ("an MCP tool flipping it", _CF_MCP, True),
+                                ("an edit tool flipping it", "Write", True),
+                                ("a command creating it", "Bash", False),
+                                ("an edit tool creating it", "Write", False)):
+        fresh(_CF_ON if existing else None)
+        if tool == "Write" and existing:
+            # The edit lane's own note: an earlier Write of the config, on.
+            call("sess-a", act=hand(_SN_ON2), tool="Write",
+                 tin={"file_path": conf, "content": _SN_ON2})
+        call("sess-a")
+        call("sess-b")
+        since = _sn_hashes(proj)
+        tin = ({"command": "sh ./flip.sh"} if tool == "Bash"
+               else {"file_path": conf, "content": _CF_OFF} if tool == "Write"
+               else {"path": conf, "content": _CF_OFF})
+        call("sess-a", act=hand(_CF_OFF), tool=tool, tin=tin)
+        call("sess-a")
+        call("sess-b")
+        got = _sn_rows(proj, since)
+        flips.append((how, len(got) == 1 and got[0][0] == "sess-a"
+                      and "journal.enabled true->false" in got[0][2], got))
+    check("sn8 the call that switches the journal off - by a command, an MCP tool "
+          "or an edit tool, creating the config or editing it - made by a writer "
+          "with an earlier call, leaves its one row under its own name, and the "
+          "next calls of that writer and of another add none: %r"
+          % ([f for f in flips if not f[1]],),
+          len(flips) == 5 and all(f[1] for f in flips), repr(flips))
+
+    # (sn9) two calls in flight across the flip. seed: session B's command
+    # while on. B's Pre; A's whole call flips; B's Post; then B's next call.
+    fresh()
+    call("sess-b")
+    codes.append(_sn_hook("PreToolUse", proj, "sess-b", "Bash",
+                          {"command": "sleep 1"}, "sn-open-b"))
+    call("sess-a", act=hand(_CF_OFF))
+    codes.append(_sn_hook("PostToolUse", proj, "sess-b", "Bash",
+                          {"command": "sleep 1"}, "sn-open-b"))
+    both = _sn_rows(proj)
+    call("sess-b")
+    after = _sn_rows(proj)
+    sessions = sorted(str(r[0]) for r in both)
+    check("sn9 two calls in flight across the flip each leave their row - the "
+          "flipping session's under its name, the open call's naming no session "
+          "and saying the switch changed during it - and that call's next adds "
+          "none: %r then %r" % (both, after),
+          len(both) == 2 and sessions == ["None", "sess-a"]
+          and all("journal.enabled true->false" in r[2] for r in both)
+          and [r for r in both if r[0] is None
+               and "changed during" in r[2]] and after == both,
+          repr((both, after)))
+
+    # (sn10) a payload naming no tool call id, and a call with no pass before:
+    # neither marks the row, so the append refuses it with the journal off.
+    seen = []
+    for label, kw in (("no call id", {"cid": False}), ("no Pre", {"pre": False})):
+        fresh()
+        call("sess-a")
+        call("sess-a", act=hand(_CF_OFF), **kw)
+        seen.append((label, _sn_rows(proj)))
+    check("sn10 a flip whose payload names no tool call id, or whose call had no "
+          "pass before, leaves no row - the reading before is not this call's: %r"
+          % (seen,), all(s[1] == [] for s in seen), repr(seen))
+
+    # (sn11) a linked worktree outside the project. seed: the session's command
+    # in that worktree while both journals are on. The owner switches the
+    # project's journal off by hand; the session's command in the worktree then
+    # switches the worktree's own journal off. The project's switch was off
+    # before the call, and the worktree's trail is not the project's: no row in
+    # either trail.
+    fresh()
+    linked = os.path.join(os.path.dirname(proj), "sn-linked")
+    ok, why = _harness.attempt(
+        _harness.git, proj, "worktree", "add", "-q", linked, "-b", "sn/linked",
+        prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+    if not ok:
+        _harness.could_not_run(check, "sn11 the linked-worktree fixture",
+                               "it did not build: %s" % (why,))
+    else:
+        lconf = os.path.join(linked, *rel)
+        _cf_put(lconf, _CF_ON)
+        cd = "cd %s && " % (shlex.quote(linked),)
+        call("sess-a", tin={"command": cd + "true"})
+        hand(_CF_OFF)()
+        call("sess-a", act=lambda: _cf_put(lconf, _CF_OFF),
+             tin={"command": cd + "sh ./flip.sh"})
+        mine, theirs = _sn_rows(proj), _sn_rows(linked)
+        check("sn11 with the project's journal off, a command switching a linked "
+              "worktree's own journal off, outside the project, leaves no row in "
+              "either trail - project %r, worktree %r" % (mine, theirs),
+              mine == [] and theirs == [], repr((mine, theirs)))
+
+        # (sn13) the same worktree, the project's journal on. seed: the
+        # session's command in the worktree while on. One command there
+        # switches both the worktree's journal and the project's off: this
+        # call's own Pre read the project's switch on, so the project's trail
+        # owes the flip of the project's config - and the worktree's flip, on
+        # the same lane and with the same reading, is not that trail's config
+        # and reaches the append's check for it.
+        fresh()
+        _cf_put(lconf, _CF_ON)
+        if not _harness.remove_tree(os.path.join(linked, "docs", "audit",
+                                                  "journal")):
+            raise RuntimeError("the linked worktree's trail could not be removed")
+        call("sess-a", tin={"command": cd + "true"})
+
+        def both_off():
+            _cf_put(lconf, _CF_OFF)
+            _cf_put(conf, _CF_OFF)
+
+        call("sess-a", act=both_off, tin={"command": cd + "sh ./flip.sh"})
+        mine, theirs = _sn_rows(proj), _sn_rows(linked)
+        check("sn13 one command in a linked worktree outside the project "
+              "switching both that worktree's journal and the project's off "
+              "leaves the project's flip in the project's trail and nothing in "
+              "the worktree's - project %r, worktree %r" % (mine, theirs),
+              len(mine) == 1 and mine[0][0] == "sess-a"
+              and "journal.enabled true->false" in mine[0][2] and theirs == [],
+              repr((mine, theirs)))
+
+    # (sn14) a denied call's slot names that call. seed: the session's Write
+    # of the config while on, its Post never run (the tool call was denied),
+    # so the slot names that call's id. The owner switches the journal off by
+    # hand; the session's next Write of the config, both passes run.
+    fresh()
+    call("sess-a", act=None, tool="Write", post=False,
+         tin={"file_path": conf, "content": _SN_ON2})
+    hand(_CF_OFF)()
+    call("sess-a", act=hand(_SN_OFF2), tool="Write",
+         tin={"file_path": conf, "content": _SN_OFF2})
+    got = _sn_rows(proj)
+    check("sn14 after a hand flip, an edit-tool write of the config leaves no "
+          "row when the slot it finds names another call - a denied Write's "
+          "Pre, made while on - %r" % (got,), got == [], repr(got))
+
+    # (sn15) another tree's config on the edit lane. A nested worktree; seed:
+    # the session's Write of its config while on, which leaves that write's
+    # row. Then a Write of that config whose Pre runs with the project's
+    # journal on, and the owner switches the project's journal off before
+    # its Post: the write is not of the project's own config, so it owes the
+    # project's trail no last will.
+    fresh()
+    nested = os.path.join(proj, rel[0], "worktrees", "sn-n1")
+    ok, why = _harness.attempt(
+        _harness.git, proj, "worktree", "add", "-q", nested, "-b", "sn/n1",
+        prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+    if not ok:
+        _harness.could_not_run(check, "sn15 the nested-worktree fixture",
+                               "it did not build: %s" % (why,))
+    else:
+        nconf = os.path.join(nested, *rel)
+        _cf_put(nconf, _CF_ON)
+        call("sess-a", act=lambda: _cf_put(nconf, _SN_ON2), tool="Write",
+             tin={"file_path": nconf, "content": _SN_ON2})
+        since = _sn_hashes(proj)
+        ntin = {"file_path": nconf, "content": _CF_OFF}
+
+        def race():
+            hand(_CF_OFF)()
+            _cf_put(nconf, _CF_OFF)
+
+        call("sess-a", act=race, tool="Write", tin=ntin)
+        got = [r for r in _journal_io.read_all(proj)
+               if r.get("hash") not in since]
+        own = _sn_rows(nested)
+        check("sn15 an edit-tool write of a nested worktree's config, the "
+              "project's journal switched off while it ran, leaves no row in "
+              "either trail - that config is not the project's switch - "
+              "project %r, worktree %r"
+              % ([(r.get("target"), r.get("summary")) for r in got], own),
+              got == [] and own == [], repr((got, own)))
+    check("sn12 every pass of the cases above exited 0: %r"
+          % (sorted(set(codes)),), codes and set(codes) == {0}, repr(codes))
 
 
 # --- cm: a status row says when its call's baseline stood ----------------------

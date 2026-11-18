@@ -1625,10 +1625,25 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    writer never noted: absence that was not observed is not a state to compare
    with (`cf1`-`cf4`, `cq1`-`cq4` in `tests/test_journal_writes.py`). The write
    that switches the journal off, on any route and whether it edits the config
-   or creates it, leaves its row, judged by the switch as it stood before the
-   call and appended into the project's own trail with that switch; a write made
-   with the journal already off leaves none, and neither does a write of another
-   tree's config while the project's journal is off (`cf5`, `cq5`-`cq7`).
+   or creates it, leaves its row - the last will, which is the row of the call
+   that switched it off by its own reading before and after: its pass before,
+   under the same tool call id, read the switch as on or found no config, and
+   its pass after reads it off (`cf5`, `sn8`). A note an earlier call, another
+   session or a subagent left is not that reading - a denied call's included
+   (`sn14`) - and a payload naming no call id, or a call whose pass before never
+   ran, marks nothing (`sn10`). So a call
+   that did not switch it off leaves no row after the owner, the panel, another
+   session or a config created switched off by hand did, and the trail check
+   still warns about the hand edit (`sn1`-`sn7`); a write made with the journal
+   already off leaves none (`cq5`); and two calls in flight across the flip each
+   leave theirs, the one that cannot tell whose write it was naming no session
+   (`sn9`). The row is appended into the project's own trail with that switch,
+   and only for that trail's own config: a linked worktree's config switched off
+   by the same command leaves nothing in that worktree's trail (`sn13`), an
+   edit-tool write of a nested worktree's config owes the project's trail no
+   row when the project's journal went off while it ran (`sn15`), and a write
+   of another tree's config while the project's journal is off leaves no row in
+   either trail (`sn11`, `cq7`).
 4. **Test-file exemption.** Test files are exempt from plan-first so red-first
    TDD stays frictionless — the first act of a red-first fix is writing a test
    that fails, and a gate that blocks that blocks the discipline. Logic can

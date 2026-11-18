@@ -1,0 +1,112 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_journal_writes.py tests/test__config.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T20:04:08Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_journal_writes.py` in a throwaway tree at HEAD exited 1 with 11 of 199 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - sn1 (house FAIL), sn2 (house FAIL), sn3 (house FAIL), sn4 (house FAIL), sn5 (house FAIL), sn6 (house FAIL), sn7 (house FAIL), sn8 (house FAIL) and 3 more: SELFTEST FAILED: 188/199 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "MECHANISM: (i), the call's own start record. The sweep-lane Pre already writes _config.record_call_start for every Bash/MCP call before the switch is consulted, with the call's tool_use_id; it now also carries the switch as that Pre read it (record_call_start(..., journal_on=) under _config.CALL_JOURNAL_KEY 'journalOn', same single write; read back by the new _config.call_journal_on(root, cfg, data, call), True only when the record names that call id and holds True; call_start refactored onto a shared _call_record, behaviour unchanged). The edit lane needs no new state: its Pre writes a slot naming the call (CALL_ID_KEY) and only with the journal on, so a slot naming the Post's id IS that call's reading 'on' (new _own_slot; _slot_start now uses it). Chosen over (ii) because (ii) would write slots and snapshot files while the switch is off, and would still need binding to the call id; (i) adds no read, no write, no process and no listing to any Pre. WHAT THE PRE DOES WHILE OFF: before - wrote the call-start record (swept tools only), then returned. After - the same one write, now with journalOn false in it, then returns; no slot, no read. This is not the plugin working after being told to stop: the record is written whatever the switch says because guard-bash-writes reads its moment, and the reading in it lets the Post do less. POST: journal-writes.py _swept_rows (line 1286) returns before any sweep when the switch is off now and _own_switch_on is False - no slot read, none written (before: read slot + snapshot per root); post_rows (line 1507) returns [] when off now unless the target is the trail tree's own config AND _own_slot. The mark line on the edit lane lost its now-redundant rel test (the return above holds it). A PAYLOAD WITH NO tool_use_id marks nothing on either lane (call_journal_on(call=None) -> False; _own_slot needs an id). Installed Claude Code 2.1.327 sends tool_use_id on both events (strings of the binary: hook_event_name:\"PreToolUse\",tool_name:e,tool_input:o,tool_use_id:n and hook_event_name:\"PostToolUse\",...,tool_response:u,tool_use_id:n). EXISTING CASES CHANGED ON PURPOSE, each pinned the old behaviour: k1 asserted the flip row from an in-process edit-lane Pre/Post whose payload() carries no tool_use_id - now both passes carry 'toolu-k1', same assertion. f10 asserted the Bash flip row from a slot written by hand with no Pre and no id - now the call's own pre_cache runs under 'toolu-f10' before the flip, same assertion. oq6 asserted that a Post whose own Pre never ran owes the flip row - now the second spelling's write runs its own Pre (in-process pre_cache) under its id; it still asserts one slot per writer across spellings and the flip row naming the config's own path (label reworded; the Pre-never-ran half is now sn10's, which asserts no row). NEW CASES (tests/test_journal_writes.py, block _switch_reading_cases, hook as processes, each starting from a writer with an earlier call): sn1 seed: the session's ls while on; hand flip; three commands -> no row. sn2 seed: the session's MCP read and its subagent's command while on; hand flip; MCP reads by both -> none. sn3 seed: the session's Write of the config while on (its own row); hand flip; the session's Write rewrites the config -> only the seed row, and _journal_io.verify warns 'never saw' about the config once. sn4 seed: a command while on; _panel_write.write_config switches it off; next command -> none. sn5 seed: session B's command while on; session A's command flips; B's next -> only A's row under A's name. sn6 seed: the subagent's command while on; the session flips; the subagent's next -> only the session's row. sn7 seed: no config, commands by A and B noting it absent; hand-created off config; A's command and B's MCP read -> none. sn14 seed: a Write of the config whose Post never ran (slot names the denied call); hand flip; next Write -> none. sn8 seeds: earlier calls by A and B (plus an earlier Write for the edit-tool flip); A flips by command/MCP tool/Write, editing or creating -> one row under A's name, and later calls by A and B add none. sn9 seed: B's command while on; B's Pre; A's whole call flips; B's Post -> two rows, B's with sessionId None and the 'changed during this command' note; B's next adds none. sn10 seed: an earlier call while on; a flip whose payload has no tool_use_id, and one with no Pre -> no row. sn11 seed: a command in a linked worktree outside the project while on; hand flip of the project; a command there flips the worktree's config -> no row in either trail. sn13 (rule 4, sweep lane, reaches _append_rows' _same_dir check) seed: a command in that worktree while on; one command flips both the worktree's and the project's config -> the project's flip in the project's trail, nothing in the worktree's. sn15 (rule 4, edit lane): a nested worktree's config, seed Write while on; a Write whose Pre ran with the project on and the project switched off before its Post -> no row anywhere. sn12: every pass exited 0. tests/test__config.py cw7: the reading rides in the one start write, is True only for its own call, False for another call, no call, another writer, a reading of off, and a record written without a reading; call_start still returns the moment. RED on current code (before the fix): SELFTEST FAILED 186/196, sn1-sn8, sn10, sn11 FAIL (sn9, sn12 PASS). GREEN after: tests/test_journal_writes.py 199/199, tests/test__config.py 414/414. Dependant tallies (sweep --jobs 4, final tree): test__journal_io 282, test_audit_journal 186, test_hooks 247, test_guard_bash_writes 239, test_guard_edits 126, test_require_plan 245 - 8/8 files ok, 1938 cases; tools/bench-hooks.py --gate exit 0 (3.14.7 only; 3.8-3.13 not measured, no interpreter). After the documents: sweep of tests/test__deps.py tests/test__output_lints.py tests/test__refs.py 3/3 ok; tools/gate-parity.py exit 0; tools/prove-gates.py --list exit 0; ruff and vermin -t=3.8- clean on the four .py files. The unrecorded run-test-gate for SG1.49-ukq was RED once on tools/_suite.py s23 (two bare shutil.rmtree calls in my new block of tests/test_journal_writes.py, a declared file); replaced with _harness.remove_tree, raising when a tree is left; s23's suite 35/35; the re-run gate printed GATE GREEN, exit 0. ORCHESTRATOR INPUTS on the final tree: sg1.49-mine/judge.py exit 0, WRONG 0 (all ten lines OK); probe_stale.py S1, S1b one row (A's), S2 none, S3 only the earlier Write's row and verify warns 'an edit the journal never saw'; probe_stale2.py S4, S5, S6 none - 0 WRONG; probe_linked.py rows 0; with --mutate also rows 0 (the project's switch was off before the call, so the check is no longer reached there - which is why sn13 exists); sg1.47-mine/judge.py WRONG 0; sg1.44-mine/twins.py WRONG 0; review6/w/probe_e.py no warning and no finding on any line; probe_sh.py and probe_j.py identical to sg1.47-mine's .after.out once timestamps and ids are stripped; probe_states.py identical to its run on export-7fe2b5c (its (b) and (h) lines are the review's lows, outside this task). MUTATION PROBE sg1.49/mutations.py (scratchpad), run from the worktree root on a copy, exit 0, MUTATIONS ALL CAUGHT: the mark taken from whatever note exists, sweep lane -> sn1 sn2 sn4 sn5 sn6 sn7 sn11 red; same, edit lane -> sn3 sn14; the mark given without the call id matching, sweep (call_journal_on ignoring the id) -> sn10 + cw7; same, edit (a slot naming any call) -> sn14; a payload with no id read as the record's call -> sn10 + cw7; the project-trail check removed -> sn13; the edit lane's own-config check removed -> sn15; ALLOW the mark never given, sweep -> cf5 sn8 sn9 sn13; ALLOW the mark never given, edit -> cf5 sn8; ALLOW the Pre's reading never recorded -> cf5 sn8 sn9 f10; ALLOW the edit lane refusing every row once off -> cf5 sn8 k1 oq6. Every anchor matched exactly once, __pycache__ purged between rows, every restore verified. RED-FIRST command narrowed to tests/test_journal_writes.py: it holds every case both tests.add entries name; test__config.py's cw7 calls journal_on=, which HEAD's record_call_start does not accept, so on HEAD that suite would end in an exception rather than an assertion. Measured once: about 26-35 s under the sweep. DEPENDANTS: hooks.json registers journal-writes.py for both passes, unchanged. guard-bash-writes.py reads call_start(root, cfg, data), which still returns the moment from a record carrying the extra key (cw7 asserts it; test_guard_bash_writes 239/239). No hook other than journal-writes.py writes the record. Every other importer of _config: only additions (a constant, _call_record, call_journal_on, an optional keyword defaulting to None, which writes the record byte for byte as before). audit-config.schema.json, COMPATIBILITY.md: no config key added or read differently. detect-plan-skip.py, _fmt.py, close-phase.py, audit-task.py (_actor): name or basename references only, still correct. SECURITY.md: only the journal paragraph of item 3 changed; the fail-mode table is untouched, 'write, after the fact' is untouched (test_hooks 247/247). README: the last-will sentence now says whose row it is; tools/affected.py's README pointer is elsewhere. PLUGIN-BUILD-GUIDE.md: the last-will paragraph in the journal-writes section; _doctor_hygiene's line-97 pointer untouched. CHANGELOG: the unreleased entry the previous task wrote is extended rather than a Fixed entry added, since the regression never shipped. .github/sweep-costs.json lists both suites; the suite got slower (~26 s to ~31-35 s) and the table was not re-recorded (not a declared file). Floor guard: the diff changes k1, f10 and oq6 on purpose, as stated above; nothing is skipped, suppressed or deleted.",
+    "descriptive": "The journal's last-will row is now owed only by the call whose own pass before read the switch as on - a later command, MCP read or edit-tool write after a hand, panel, peer or created-off flip leaves no row, the trail check warns again, and the project-trail limit is held by a case on each lane."
+  },
+  "testsAdded": [
+    "sn1-sn7, sn14: a writer with an earlier call while the journal was on, then the switch turned off by hand, through the panel's writer, by another session, by its own session (seen from a subagent), or by a config created off by hand, leaves no row on its next command, MCP read or edit-tool write; the trail check still warns about the hand edit; a denied call's slot is not this call's reading",
+    "sn8-sn13, sn15: the flipping call by a writer with an earlier call keeps its one row under its own name and later calls add none; two calls in flight each keep theirs, the open one naming no session; a payload with no call id or no Pre marks nothing; rows land only in the project's trail for its own config (linked worktree on the sweep lane, nested worktree on the edit lane); every pass exits 0",
+    "cw7 (tests/test__config.py): the switch reading rides in the call-start record's one write and answers only for its own call id"
+  ],
+  "casesAdded": [
+    [
+      "sn1",
+      "sn2",
+      "sn3",
+      "sn4",
+      "sn5",
+      "sn6",
+      "sn7",
+      "sn14"
+    ],
+    [
+      "sn8",
+      "sn9",
+      "sn10",
+      "sn11",
+      "sn12",
+      "sn13",
+      "sn15"
+    ]
+  ],
+  "claims": "claims:\n1 journal-writes.py:522 records the Pre's reading with the call id; :1286 returns before the sweep unless _own_switch_on; :1507 returns before the edit lane's row unless own config and _own_slot; :1639 is the project-trail check sn13 reaches; _config.py:5595 call_journal_on answers only for its call. Docs: SECURITY.md item 3, README last-will sentence, PLUGIN-BUILD-GUIDE last-will paragraph and CHANGELOG unreleased entry each cite the case ids above, all of which run in tests/test_journal_writes.py\n2 red before the fix: 186/196, sn1-sn8 sn10 sn11 FAIL; mutation probe sg1.49/mutations.py: 7 deny rows and 4 ALLOW rows (the mark never given on each lane, the reading never recorded, the edit lane refusing every flip) all CAUGHT on a copy, each restore verified, exit 0\n3 grep -n '_ON_BEFORE\\] = True|was_on = |allowed = _config.journal_enabled' journal-writes.py: 4 hits - the two mark sites (1398, 1532) and the two before-readings (1346, 1520-1522), each now behind one of the two returns; grep -rn 'journal_enabled(old|journal_enabled(pre' over hooks and scripts outside this file: 0 hits. Left: the stale ABSENT note and dangling .claude link (the review's lows, out of scope by the description)\n4 n/a - no rule addressed to an agent\n5 suite and probe timings measured once; the gate and the probe were each run twice (before and after the last edit), both green/all caught\n6 decision reads this call's own Pre reading bound to its tool_use_id (record or slot), not any note; allow rows (flip row lost) shown red under the over-firing mutations\n7 no number written into the documents",
+  "stamp": "audit-stamp: {\"content\":\"sha256:2393122e1382593a34d52313ec6e3a5c2c957c64a90eb3eff57d1f79f6e5b7b5\",\"dirtyDigest\":\"sha256:dcabf40139404b8c5a0b698947fd6b95f0e7e021654441a344d4a938ee85e0b5\",\"dirtyPaths\":{\"CHANGELOG.md\":\"8c1ec146c38cb1ea\",\"PLUGIN-BUILD-GUIDE.md\":\"d5ad7b0e3263fffa\",\"SECURITY.md\":\"663bf14458eaa02b\",\"plugins/audit/README.md\":\"4d6bc86861e40be4\",\"plugins/audit/hooks/_config.py\":\"a3c9008a717be832\",\"plugins/audit/hooks/journal-writes.py\":\"e5e23af8179c43ab\",\"tests/test__config.py\":\"b50d8106da32aa2f\",\"tests/test_journal_writes.py\":\"06977e52c68e31bd\"},\"head\":\"39a2b3c6\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/README.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/journal-writes.py\",\"tests/test__config.py\",\"tests/test_journal_writes.py\"],\"scopeDigest\":\"sha256:1c0e2aa27794ae50b7d664c395b647d4384e0f9b45ed8da4170486801eb08885\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 2 of the diff's 8 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 4 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, SECURITY.md, plugins/audit/README.md; 2 file(s) that could hold a move not compared: tests/test__config.py, tests/test_journal_writes.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [
+      {
+        "path": "tests/test_journal_writes.py",
+        "from": "k1 flipping journal.enabled true->false IS journalled, with the flip in details",
+        "to": "k1 flipping journal.enabled true->false IS journalled, with the flip in details, for the call whose own Pre read it on",
+        "line": 833
+      },
+      {
+        "path": "tests/test_journal_writes.py",
+        "from": "oq6 the pre-image slot follows the file: a write of the project's config through another spelling, then one spelled plainly whose own Pre never ran, and the same the other way round, keep one slot per writer and each reads the state before as the other left it - the row the Post owes is the switch turned off, naming the config's own path; otherwise: %r",
+        "to": "oq6 the pre-image slot follows the file: a write of the project's config through another spelling, then one spelled plainly that switches the journal off, and the same the other way round, keep one slot per writer - the row the second call owes is the switch turned off, naming the config's own path; otherwise: %r",
+        "line": 2613
+      }
+    ],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "SECURITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test__config.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was only added: every statement of the base copy outside them stands in the tree copy, in order and in place, and the first added one is at tree line 2841 (`cw_writes[:] = []`); what it runs is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test_journal_writes.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 823 (`M.pre_cache(payload(\"Edit\", cfg_rel, sid=\"pp-9\"), cfg=cfg, root=pproj)`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "39a2b3c6dc64b4a2f5158348fd82351fd4d637e1"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-18T20:04:11Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

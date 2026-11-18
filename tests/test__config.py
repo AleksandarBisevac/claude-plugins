@@ -2833,6 +2833,38 @@ def _cases(check):
               "is a boolean, reads as no start for the guard and for a call, "
               "and never raises: %r" % (cw_bad,),
               cw_bad == [(True, None)] * 10)
+        # The journal switch as the call's own Pre read it rides in the same
+        # one write, and answers only for that call: another call's record, a
+        # record written without the reading, or no call id at all is no
+        # reading of this call's. The guard's reading of the start is the
+        # moment, as before, whatever else the record carries.
+        cw_writes[:] = []
+        M.atomic_write_text = cw_counting
+        try:
+            M.record_call_start(cw_root, cw_cfg, cw_sub, now=6000.0,
+                                call="toolu_on", journal_on=True)
+        finally:
+            M.atomic_write_text = cw_real_write
+        cw_on = (M.call_journal_on(cw_root, cw_cfg, cw_sub, "toolu_on"),
+                 M.call_journal_on(cw_root, cw_cfg, cw_sub, "toolu_other"),
+                 M.call_journal_on(cw_root, cw_cfg, cw_sub, None),
+                 M.call_journal_on(cw_root, cw_cfg, cw_main, "toolu_on"),
+                 M.call_start(cw_root, cw_cfg, cw_sub),
+                 M.call_start(cw_root, cw_cfg, cw_sub, call="toolu_on"))
+        M.record_call_start(cw_root, cw_cfg, cw_sub, now=6001.0,
+                            call="toolu_off", journal_on=False)
+        M.record_call_start(cw_root, cw_cfg, cw_main, now=6002.0,
+                            call="toolu_bare")
+        cw_off = (M.call_journal_on(cw_root, cw_cfg, cw_sub, "toolu_off"),
+                  M.call_journal_on(cw_root, cw_cfg, cw_main, "toolu_bare"))
+        check("cw7 the switch the call's own Pre read rides in its one start "
+              "write and is read back as on only for that call: (one write, "
+              "on for its call, other call, no call, other writer, the "
+              "moment twice) %r, (read off, recorded without a reading) %r"
+              % ((len(cw_writes),) + cw_on, cw_off),
+              len(cw_writes) == 1
+              and cw_on == (True, False, False, False, 6000.0, 6000.0)
+              and cw_off == (False, False))
         cw_file = os.path.join(cw_root, "f.txt")
         with open(cw_file, "w", encoding="utf-8") as fh:
             fh.write("x")
