@@ -1190,6 +1190,11 @@ PHASE_TIMING_BASIS = ("the sum of _task_timing.summarize over this phase's done 
 LEFT_OUT_CANCELLED = "cancelled"
 LEFT_OUT_NOT_FINISHED = "not finished"
 LEFT_OUT_NO_WINDOW = "no window"
+# A record whose stages could not be read is not a record with no window: the
+# `time` cell `audit-status.py` prints for it says `not readable`, and the JSON
+# names the same state with the same words (test__status_facts.py's tt15 asks
+# both).
+LEFT_OUT_NOT_READABLE = "not readable"
 
 
 def _left_out(status, summary):
@@ -1200,6 +1205,8 @@ def _left_out(status, summary):
     if status != "done":
         return LEFT_OUT_NOT_FINISHED
     if summary.get("windowMs") is None:
+        if _task_timing.is_unreadable(summary):
+            return LEFT_OUT_NOT_READABLE
         return LEFT_OUT_NO_WINDOW
     return None
 
@@ -1230,7 +1237,8 @@ def phase_timing(summaries, statuses):
     Summed over the DONE tasks that have a window only, so the line counts
     finished tasks and its arithmetic holds: `byKind` totals less `overrunMs`
     plus `unattributedMs` is `windowMs`, as it is per task. Every other task is
-    named in `leftOut` with the reason - cancelled, not finished, no window -
+    named in `leftOut` with the reason - cancelled, not finished, not
+    readable, no window -
     and a task whose record gives no window is still listed in `withoutWindow`
     with what it lacked; with no task summed at all, the window figures are
     None rather than zero."""

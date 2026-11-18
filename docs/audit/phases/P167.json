@@ -794,7 +794,7 @@
     {
       "id": "P167.8-fge",
       "title": "The commit stage times the commit alone, a close that changes nothing keeps its stages, and a stage the drive could not read is said so",
-      "status": "in_progress",
+      "status": "done",
       "description": "Findings of the phase review, fixed before sign-off. (a) The commit stage is timed around everything the drive's commit step does. When the commit verb refuses a path the writer touched outside the task's files and the drive sets it aside, that step runs a red-first proof and a whole gate before the second commit, and that gate is also written as a gate stage of its own. So the gate's length is counted twice, the task's stages overrun its window, and a figure of half a minute or more is presented as a measured commit under a basis that says the commit verb was timed. Time the commit verb's own calls, sum them when there are two, and let the proof and the gate between them be the stages they already are. (b) The close the no-change answer makes passes no stages and never marks them carried, so on the route where every queued stage rides the close a task closed that way loses all of them, silently. Every close the drive makes carries the queue through one function. (c) A stage whose source cannot be read (the ledger or a row unreadable, a row with no start or length, an agent hand-out with no stamp) appends nothing, which is right, and says nothing, which is not: failures to write are already visible and failures to read are not. Add a line to what the step did, naming the stage and the reason, once per source. (d) The end of an agent's stage falls back to the returned file's modification time under a basis that says no journal row files that return. For an executor that is false when the row exists and could not be read; say which happened. For a reviewer the modification time is the only source, and it moves when the file is rewritten by a stash, a branch switch or a copy: say in the basis that it is a modification time and can move later, never earlier, rather than presenting it as the moment of filing. (e) Cases with no check: nothing asserts that the journal row of a note or a close carrying a stage names the timing change, so removing that change leaves every case green; the commit stage is asserted only to be zero or more, which is why (a) was invisible; a refused note keeping its stages for the close, and a close refused and retried appending each stage once, are stated in comments and held by no case. Add each. Dependants you answer for: the decision table and step texts in tests/test_drive_phase.py; the one-use launch marks and the state file's shape across resume and drop_state; the rule that timing never blocks a gate, a commit or a close; the count of commits and locked writes per task, unchanged; the stage shapes status and the summary read. Do not edit plugins/audit/reference/orchestrator.md. Acceptance: (1) on the set-aside path the commit stage equals the commit verb's own time within the case's clock, the second gate is one gate stage, and the summary shows no overrun; (2) a task closed by the no-change answer has its queued stages in the shard; (3) an unreadable ledger at read-back leaves no gate stage and one line naming it and the reason; (4) each fallback basis says what was read and why; (5) the journal row of a note and of a close that carried a stage names the change, and removing it turns a case red; (6) a refused note's stages reach the shard at the close, once; (7) no case added or kept by this task passes with its feature removed.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -823,14 +823,23 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d36fb1811c43",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: (a) the commit stage is now the commit verb's own runs added up - `commit_verb` times each run_verb of commit-task-work.py (the refused commit, the --json re-read of its refusal, the commit made) into ctx[COMMIT_MS], close_task sums them; the set-aside's proof and second gate between them stay their own stages. Basis now `commit-task-work.py's own N run(s), timed by the drive and added up, commit <sha>`. (b) new `close_carrying` is the one way the drive closes a task: close_task's done and the no-change answer's `done --no-change` both go through it, carrying stage_args and dropping the queue only once the close is taken; prose (--intent-basis, --reason) still goes on stdin through a `_verb_with_text` call written at each call site (the mt2/mt3 argv-prose lint reads that shape). (c) new `stage_unread` says `timing: <kind> stage of <task> not recorded - <why>` on the did-line, once per stage and reason (kept under the task's timing entry as `unread`, dropped with it at close), never a warning or stop; `ledger_row` and new `gate_row_read` return (row, why) - an unreadable ledger's reason names no run, so the launch read and the repeat read of one measurement say it once; `row_stages` returns (pairs, gaps) for a row with no start or no durationMs; `agent_stage` returns (stage, why) for a hand-out with no stamp, an unreadable filing time, or a filing before its hand-out; a gate output naming no run stays silent. (d) `filed_moment` reads the journal only for ROW_FILED_ROLES (executor) and its basis says which fallback happened: journal unreadable (with the exception), no row names the file, or - for a reviewer - that no row files one and a modification time moves later, never earlier. tests/test_drive_phase.py: new staged block tm10-block (`_timing_close_cases`, `_timing_unread_cases`, `_timing_gap_cases`) with tm10-tm16. tests/test_audit_task.py: tmg8 in tmg-block. audit-task.py unchanged: its `_stage_changes` already names timing.stages on both rows; tmg8 locks it. PLUGIN-BUILD-GUIDE.md drive-phase section and CHANGELOG Unreleased bullet updated. Gate: `python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_task.py` exit 0, `2/2 files ok, 2270 cases`. First sweep had exited 1 on mt2/mt3 (the argv-prose lint flagged a (flag, text) tuple handed to close_carrying); fixed by the send-callable shape, ux-block 127/127 then the full sweep green. ruff clean; vermin min 3.8; house_style_violations and prose_number_claims/doc_prose_numbers report nothing for the changed files. Dependants: decision table and step texts unchanged (only a did-line clause added when a source cannot be read; the full suite is green); launch marks and state shape: one new `unread` list inside the TIMING_KEY entry, dropped with it at close and by drop_state with the whole state; timing never blocks - stage_unread only appends a did-line, close_carrying's stop is the done verb's own; commits and locked writes per task unchanged (tm3 green, no write added); stage shapes status and the summary read unchanged (make_stage only, basis text changed; test__status_facts holds the old basis only as fixture data). orchestrator.md not edited.",
+        "descriptive": "The commit stage times the commit alone, every close carries the queued stages, and a stage the drive could not read is said on the step's line"
       },
       "startedAt": "2026-11-18T04:49:49Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T05:30:04Z",
+      "verifiedBy": [
+        "tm10 set-aside path: commit stage within the commit verb's own runs as timed from outside, two gate stages for two runs, no overrun",
+        "tm11 no-change answer close carries every queued stage and leaves no queue",
+        "tm12 unreadable ledger at background-gate read-back: no gate/selection stage, one did-line naming the stage and reason",
+        "tm13 filed_moment bases for journal row, journal unreadable, no row, reviewer mtime",
+        "tm14 every session note refused: the close carries the stages once",
+        "tm15 close refused once then taken: each stage written once",
+        "tm16 row with no start / no length / whole row / hand-out with no stamp each say their own reason",
+        "tmg8 journal rows of a note and a close carrying a stage name timing.stages; a plain note names none"
+      ],
       "notes": [
         {
           "at": "2026-11-18T03:43:13Z",
@@ -839,7 +848,54 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T05:15:00Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1508000,
+            "startedAt": "2026-11-18T04:49:52Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T05:23:45Z.091462",
+            "kind": "wait",
+            "ms": 1000,
+            "startedAt": "2026-11-18T05:15:12Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T05:23:45Z.091462, ending at its startedAt",
+            "kind": "selection",
+            "ms": 21978,
+            "runId": "2026-11-18T05:23:45Z.091462",
+            "startedAt": "2026-11-18T05:15:13Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T05:23:45Z.091462",
+            "kind": "gate",
+            "ms": 490768,
+            "runId": "2026-11-18T05:23:45Z.091462",
+            "startedAt": "2026-11-18T05:15:35Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T05:29:48Z.ccc787, ending at its startedAt",
+            "kind": "selection",
+            "ms": 20432,
+            "runId": "2026-11-18T05:29:48Z.ccc787",
+            "startedAt": "2026-11-18T05:23:50Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T05:29:48Z.ccc787",
+            "kind": "gate",
+            "ms": 336331,
+            "runId": "2026-11-18T05:29:48Z.ccc787",
+            "startedAt": "2026-11-18T05:24:11Z"
+          },
+          {
+            "basis": "commit-task-work.py timed around by the drive, commit d36fb1811c43",
+            "kind": "commit",
+            "ms": 1725,
+            "startedAt": "2026-11-18T05:30:01Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T04:49:49Z"
       },
       "reviewPerTask": "signals",
@@ -847,6 +903,76 @@
         "runId": "2026-11-18T05:29:48Z.ccc787",
         "status": "passed",
         "at": "2026-11-18T05:29:48Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "d36fb1811c43",
+        "at": "2026-11-18T05:30:04Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T05:14:56Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_task.py` in a throwaway tree at HEAD exited 1 with 5 of 1008 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - tm10 (house FAIL), tm11 (house FAIL), tm12 (house FAIL), tm16 (house FAIL), tm13 (house FAIL): SELFTEST FAILED: 1003/1008 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
+      }
+    },
+    {
+      "id": "P167.9-fge",
+      "title": "What the session runner and the repository's stream reader each make of a stream is held by one table of streams, not by a sentence, and a line the runner cannot parse cannot end it",
+      "status": "in_progress",
+      "description": "Findings of the verification pass over the review fixes. (a) A comment in run-agent-session.py says the runner and tools/stream-cost.py share one pairing rule and differ in a single case. They differ in more: the tool sums duration and turns over any two or more results whatever the init count and drops a result repeated under one uuid, while the runner sums only when inits and results pair and counts a repeated result. The runner never records a wrong figure, since it leaves the figure absent, but the sentence is false, and this is the second sentence in this phase found claiming what the code does not do. So do not correct the sentence into another sentence: replace the claim with a table. One table of streams in the suite (paired stretches, one init with two results, a result repeated under one uuid, a single stretch, no result at all), each row holding what the runner records and what the tool reports, written as values in the case, both codes run over every row. The comment then names the case that holds the table and states only the rule the runner follows and why it is the stricter one. If a row shows the runner should follow the tool (a repeated uuid is the same event read twice, so dropping it is right), change the runner and let the table say so. (b) The runner's stream reader catches only a value error, so a deeply nested JSON line raises a recursion error and ends the runner after the session ran and was paid for, with no printed line and no record. It predates this phase and sits before the timing reading the phase hardened. A line that cannot be parsed for any reason is counted as unparsed, never fatal. (c) In the status JSON a done task whose timing record cannot be read is listed among the tasks left out of the phase line as having no window, while its cell prints not readable, and the documents define no window as a readable record with no first start or a completion before it. Use the cell's words for the same state in both. Dependants you answer for: the drive's reading of the session record; the printed result line, unchanged; tests/test_stream_cost.py, which must stay green untouched since the tool itself is not edited; the status JSON's leftOut values, which the phase added and no released reader depends on. Acceptance: (1) every row of the table states both readings and both are asserted; (2) the comment makes no claim the table does not hold; (3) a deeply nested line leaves the runner printing its line and writing its record, with the line counted as unparsed; (4) the JSON and the cell name an unreadable record with the same words; (5) no case added by this task passes with its feature removed.",
+      "files": [
+        "plugins/audit/scripts/governance/run-agent-session.py",
+        "tests/test_run_agent_session.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "tests/test__status_facts.py",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_agent_session.py: one table of streams (paired stretches, one init with two results, a result repeated under one uuid, a single stretch, no result) is run through the runner's reading and through tools/stream-cost.py, and each one's figures are written in the table; a deeply nested line is skipped as unparsed with the runner still printing its line",
+          "tests/test__status_facts.py: a done task whose record cannot be read is named in the JSON with the same words its cell prints"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test__status_facts.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-18T05:39:17Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T05:39:12Z",
+          "reader": "PLUGIN-BUILD-GUIDE.md",
+          "reads": "plugins/audit/scripts/governance/run-agent-session.py",
+          "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/governance/run-agent-session.py - a section headed by its path"
+        }
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T05:39:17Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T06:05:09Z.f3c424",
+        "status": "passed",
+        "at": "2026-11-18T06:05:09Z"
       }
     }
   ],

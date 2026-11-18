@@ -3170,7 +3170,8 @@ plan and name each row's copy, the same way for every surface that shows one.
 stage figures less the overrun plus the unattributed share are the summed windows. Cancelling
 stamps `completedAt`, so a cancelled task that was started has a window; it is left out with
 every other unsummed task, each named under `leftOut` with its reason (cancelled, not
-finished, no window). `rollup` carries the result under `timing` only when a task holds a
+finished, not readable, no window) — a done task's reason in the words its `time` cell prints
+(`tt15`, `tt16`). `rollup` carries the result under `timing` only when a task holds a
 record.
 
 ### `plugins/audit/scripts/status/_live_copy.py`
@@ -3203,7 +3204,7 @@ caller), `-` for no record, `open` for a record with no completion, `no window` 
 with no first start or a completion before it, `not readable` for stages that cannot be read
 (`_task_timing.is_unreadable`); the phase head adds the median window and the split by stage
 over the phase's done tasks with the unattributed share, and the JSON names every task it
-left out under `leftOut` (cancelled, not finished, no window). `--gate` reads no timing
+left out under `leftOut` (cancelled, not finished, not readable, no window). `--gate` reads no timing
 figure, only the validator's verdict on the record: a malformed record is a finding, so the
 default `invalid` condition can trip on it.
 `--submodules <.gitmodules> [--git-root
@@ -6107,14 +6108,21 @@ empty list for a stream holding events and no such call, and no key when no stre
 stream holds no event at all — an empty stream is no reading, not a reading of none. A resumed
 run's stream holds that round's events alone, so its list names that round's calls alone.
 A run that started a session also records how long it took (`session_timing`), after those keys
-and never on the printed line, whose `stream=` runs to the end of it: the last result event's
-`duration_ms`, `duration_api_ms` and `num_turns` as `durationMs`, `durationApiMs` and `numTurns`,
-and `startedAt`, the stamp the stream's file name carries, as `YYYY-MM-DDTHH:MM:SSZ`. A figure that
-result does not carry as a finite number of zero or more — a string, a boolean, a negative — or
-every figure when no result event was read, is left out and named in `timingAbsent` with the
-reason, never written as zero; a run refused before a session started carries none of these keys.
-`read_sessions` in the drive reads none of them, so a record written before they existed is read
-as it was.
+and never on the printed line, whose `stream=` runs to the end of it: `duration_ms` and
+`num_turns` summed over the stretches a re-invoked session runs in, `duration_api_ms` from the last
+result, as `durationMs`, `numTurns` and `durationApiMs`, and `startedAt`, the stamp the stream's
+file name carries, as `YYYY-MM-DDTHH:MM:SSZ`. A stretch is told by its `init` event, an event
+repeated under one `uuid` is read once, and the two per-stretch figures are summed only when the
+init events pair one to one with the result events. A figure a result does not carry as a finite
+number of zero or more — a string, a boolean, a negative — a per-stretch figure whose stretches
+cannot be paired, or every figure when no result event was read, is left out and named in
+`timingAbsent` with the reason, never written as zero; a run refused before a session started
+carries none of these keys. How `tools/stream-cost.py` reads the same streams is held as values in
+`STREAM_TABLE` in the suite (`ras79`), each stream run through both codes, not described here. A
+stream line that cannot be parsed for any reason — malformed, or nested past the parser's limit —
+is counted as unparsed (`_parse_line`) and never ends the run (`ras80`, `ras81`).
+`read_sessions` in the drive reads `startedAt` and `durationMs` where a record has them and None
+where it does not, so a record written before they existed is otherwise read as it was (`ras73`).
 `drive-phase.py`'s `writer_argv` adds one `--skill` per name `_areas.resolve_skills` returns, for
 the writer, the reviewer and the validation session alike; the validation session, which reviews
 at phase scope, also gets the review skill `_areas.resolve_review_skill` resolves (the

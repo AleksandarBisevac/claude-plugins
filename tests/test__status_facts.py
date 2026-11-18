@@ -2387,6 +2387,54 @@ def _cancelled_cases(check):
                               .get("windowMs"),),
           ((roll.get("tasks") or {}).get("TC.2") or {}).get("windowMs")
           == 1200000)
+    _unreadable_cases(check)
+
+
+def _unreadable_plan():
+    """One phase: TR.1 done with a window, so the phase line is not empty; TR.2
+    done with a record whose stage list is not a list; TR.3 done with a stage
+    that is not a stage; TR.4 done with a readable record and no first start."""
+    good = _timed_task("TR.1", "2026-05-01T00:00:00Z", "2026-05-01T00:10:00Z",
+                       [("writer", "2026-05-01T00:00:00Z", 400000, "w1")])
+    no_list = {"id": "TR.2", "title": "t", "status": "done",
+               "completedAt": "2026-05-01T01:00:00Z",
+               "timing": {"firstStartedAt": "2026-05-01T00:50:00Z",
+                          "stages": "not a list"}}
+    bad_stage = {"id": "TR.3", "title": "t", "status": "done",
+                 "completedAt": "2026-05-01T02:00:00Z",
+                 "timing": {"firstStartedAt": "2026-05-01T01:50:00Z",
+                            "stages": ["not a stage"]}}
+    no_first = {"id": "TR.4", "title": "t", "status": "done",
+                "completedAt": "2026-05-01T03:00:00Z",
+                "timing": {"stages": [_timing_tf.make_stage(
+                    "writer", "2026-05-01T02:59:00Z", 1000, "w4")]}}
+    return {"meta": {"version": 2},
+            "phases": [{"id": "TR", "title": "Unreadable", "status": "in_progress",
+                        "tasks": [good, no_list, bad_stage, no_first]}]}
+
+
+def _unreadable_cases(check):
+    """A done task whose record cannot be read is named in the JSON with the
+    words its `time` cell prints. The cell's words are asked of
+    `audit-status.py` itself, so the two readings are compared, not one
+    reading with a copy of its own constant."""
+    roll = M.timing_rollup(_unreadable_plan()) or {}
+    left = ((roll.get("phases") or {}).get("TR") or {}).get("leftOut") or {}
+    tasks = roll.get("tasks") or {}
+    cells = dict((tid, _CMD._time_cell(tasks.get(tid)))
+                 for tid in ("TR.2", "TR.3", "TR.4"))
+    check("tt15 a done task whose stage list is not a list, and one holding a "
+          "stage that is not a stage, are named under leftOut as 'not readable' - "
+          "the words their time cells print: %r" % ((left, cells),),
+          left.get("TR.2") == "not readable" == cells["TR.2"]
+          and left.get("TR.3") == "not readable" == cells["TR.3"])
+    # The other direction: a fix that named every done task without a window
+    # 'not readable' would hold tt15 and lose the readable record with none.
+    check("tt16 SECOND DIRECTION: a done task with a readable record and no first "
+          "start stays 'no window' in both, and the task with a window is left "
+          "out of nothing: %r" % ((left, cells),),
+          left.get("TR.4") == "no window" == cells["TR.4"]
+          and sorted(left) == ["TR.2", "TR.3", "TR.4"])
 
 
 def _selftest():

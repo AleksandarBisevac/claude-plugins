@@ -403,15 +403,31 @@ def _is_init(event):
     return event.get("type") == "system" and event.get("subtype") == "init"
 
 
+def _parse_line(line):
+    """`(True, value)` for a stream line JSON reads, `(False, None)` for one it
+    cannot - whatever stops it. A malformed line raises ValueError, but a line
+    nested past the parser's limit raises RecursionError, and either one escaping
+    a reader ends the runner after the session ran and was paid for, with no line
+    printed and no record written. The caller counts or skips the line; it is
+    never fatal."""
+    try:
+        return True, json.loads(line)
+    except Exception:  # noqa: BLE001 - the caller counts the line, never swallowed
+        return False, None
+
+
 def read_stream(path):
     """`{"result": event-or-None, "last": event-or-None, "results": [event],
     "inits": n, "unparsed": n, "problem": str-or-None}` for the saved stream.
     `results` is every `result` event in stream order and `inits` the number of
     `init` events, which `session_timing` pairs into stretches; a line that is
-    JSON but not an object is neither. `last` is the LAST `result` event, kept
-    whatever it holds; `result` is that event only when it carries a session id
-    and a numeric cost - one missing either is a problem, not a zero."""
-    results, inits, unparsed = [], 0, 0
+    JSON but not an object is neither, and an event carrying a string `uuid`
+    already read is the same event read twice and is not read again. `unparsed`
+    counts the lines `_parse_line` could not read. `last` is the LAST `result`
+    event, kept whatever it holds; `result` is that event only when it carries a
+    session id and a numeric cost - one missing either is a problem, not a
+    zero."""
+    results, inits, unparsed, seen = [], 0, 0, set()
 
     def reading(result, problem):
         return {"result": result, "last": results[-1] if results else None,
@@ -422,13 +438,17 @@ def read_stream(path):
             for line in fh:
                 if not line.strip():
                     continue
-                try:
-                    event = json.loads(line)
-                except ValueError:
+                parsed, event = _parse_line(line)
+                if not parsed:
                     unparsed += 1
                     continue
                 if not isinstance(event, dict):
                     continue
+                uid = event.get("uuid")
+                if isinstance(uid, str):
+                    if uid in seen:
+                        continue
+                    seen.add(uid)
                 if event.get("type") == "result":
                     results.append(event)
                 elif _is_init(event):
@@ -461,14 +481,16 @@ TIMING_FIELDS = (("duration_ms", "durationMs"), ("duration_api_ms", "durationApi
 # recorded re-invoked stream, as `total_cost_usd` does - is the whole session's so
 # far and is read from the last result.
 #
-# THE PAIRING RULE IS WRITTEN TWICE. `tools/stream-cost.py` (`session_result`,
-# `main_stretches`) states it for the repository's stream reader, and a shipped
-# script cannot import a repository tool, so it is written again here: a stretch
-# is told by its `init`, the init events pair one to one with the result events,
-# and a stream whose counts differ cannot be split into stretches. Where the two
-# copies part, this one is the stricter: a stream of one result and some other
-# number of inits is unpaired here, while the tool reads its one result as it is.
-# `tests/test_run_agent_session.py` reads one stream through both copies.
+# THE RULE THIS RUNNER FOLLOWS: an event repeated under one `uuid` is read once
+# (`read_stream`), a stretch is told by its `init`, and the per-stretch figures
+# are summed only when the init events pair one to one with the result events;
+# any other count leaves both absent and named. It is the stricter reading
+# because a result with no init of its own cannot be placed in a stretch, so a
+# sum taken over it is a figure nothing in the stream confirms, and the record
+# is read as a measurement. How `tools/stream-cost.py` reads the same streams is
+# not stated here: `STREAM_TABLE` in `tests/test_run_agent_session.py` (case
+# `ras79`) holds each stream with both readings written as values, and runs both
+# codes over every row.
 STRETCH_FIELDS = ("duration_ms", "num_turns")
 # The stamp `_stream_path` puts in a stream's file name: `<task>.<role>.<stamp>.<pid>`.
 _STREAM_STAMP = re.compile(r"\.(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z\.\d+\.jsonl$")
@@ -602,9 +624,8 @@ def invoked_skills(path):
         return None
     events = 0
     for line in lines:
-        try:
-            event = json.loads(line)
-        except ValueError:
+        parsed, event = _parse_line(line)
+        if not parsed:
             continue
         events += 1 if isinstance(event, dict) else 0
         if not isinstance(event, dict) or event.get("type") != "assistant" \
@@ -656,7 +677,7 @@ def exit_for(result, exit_code):
 
 
 def could_not_run_line(problem, stream, stderr_path, exit_code, unparsed):
-    tail = (" (%d line(s) of it were not JSON)" % unparsed) if unparsed else ""
+    tail = (" (%d line(s) of it could not be parsed as JSON)" % unparsed) if unparsed else ""
     return ("could-not-run: %s%s - stream %s, stderr %s, claude exit %s"
             % (problem, tail, stream, stderr_path, exit_code))
 

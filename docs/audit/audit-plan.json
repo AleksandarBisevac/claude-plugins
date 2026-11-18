@@ -2060,7 +2060,8 @@
       "P167.5",
       "P167.6-fge",
       "P167.7-fge",
-      "P167.8-fge"
+      "P167.8-fge",
+      "P167.9-fge"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -6226,7 +6227,8 @@
       "P131.2",
       "P131.12",
       "P167.5",
-      "P167.7-fge"
+      "P167.7-fge",
+      "P167.9-fge"
     ],
     "plugins/audit/scripts/status/audit-doctor.py": [
       "P10.3",
@@ -12936,7 +12938,8 @@
       "P131.12",
       "P129.8-izt",
       "P167.5",
-      "P167.7-fge"
+      "P167.7-fge",
+      "P167.9-fge"
     ],
     "tests/test__surface_digest.py": [
       "P131.1",
@@ -13672,7 +13675,8 @@
       "P157.3",
       "P157.12-mwz",
       "P167.1",
-      "P167.6-fge"
+      "P167.6-fge",
+      "P167.9-fge"
     ],
     "tests/test_run_agent_session.py": [
       "P131.3",
@@ -13690,7 +13694,8 @@
       "P157.12-mwz",
       "P167.1",
       "P167.4",
-      "P167.6-fge"
+      "P167.6-fge",
+      "P167.9-fge"
     ],
     "plugins/audit/scripts/governance/_clause_coverage.py": [
       "P131.7",

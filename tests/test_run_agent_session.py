@@ -121,6 +121,13 @@ with open(os.environ["STUB_RECORD"] + ".part", "w", encoding="utf-8") as fh:
 os.replace(os.environ["STUB_RECORD"] + ".part", os.environ["STUB_RECORD"])
 mode = os.environ.get("STUB_MODE", "ok")
 sid = os.environ.get("STUB_SESSION", "")
+# A whole stream a case hands in as a file, written verbatim in place of every
+# event below - the one way to put a shape the modes do not build on stdout.
+if os.environ.get("STUB_STREAM"):
+    with open(os.environ["STUB_STREAM"], encoding="utf-8") as fh:
+        sys.stdout.write(fh.read())
+    sys.stdout.flush()
+    raise SystemExit(int(os.environ.get("STUB_EXIT", "0")))
 def emit(event):
     sys.stdout.write(json.dumps(event) + "\n")
 emit({"type": "system", "subtype": "hook_started", "session_id": sid})
@@ -1511,6 +1518,8 @@ def _timing_cases(check, M, root, bindir):
     named = tuple(TIMING_FIELDS[k] for k in TIMING)
     _stretch_cases(check, recorded, named, summed)
     _unusable_cases(check, M, recorded, named, summed)
+    _table_cases(check, root, recorded)
+    _nested_cases(check, root, recorded)
 
 
 def _stream_reading(stream):
@@ -1618,6 +1627,159 @@ def _unusable_cases(check, M, recorded, figures, summed):
           and all("could not be read" in str(absent[k]) and "TypeError" in str(absent[k])
                   for k in figures)
           and held.get("figures") == {"startedAt": "2026-11-18T01:02:03Z"})
+
+
+# --- one table of streams, two readers ----------------------------------------
+# Each row is a stream written out event by event, what the runner's record holds
+# for it, and what tools/stream-cost.py reports for it - both as values here,
+# never asked of either code. The two readers do not have to agree, and where
+# they differ the row says how; what a row may not do is leave a reader's
+# reading unwritten, so a sentence about how the two compare has this table to
+# answer to.
+_R1 = {"duration_ms": 1000, "duration_api_ms": 900, "num_turns": 3}
+_R2 = {"duration_ms": 5000, "duration_api_ms": 4000, "num_turns": 10}
+
+
+def _ev_init(uid):
+    return {"type": "system", "subtype": "init", "session_id": SESSION,
+            "model": "x", "uuid": uid}
+
+
+def _ev_result(uid, figures, cost):
+    return dict({"type": "result", "subtype": "success", "is_error": False,
+                 "session_id": SESSION, "total_cost_usd": cost, "uuid": uid},
+                **figures)
+
+
+_EV_TEXT = {"type": "assistant", "session_id": SESSION, "uuid": "u-text",
+            "message": {"content": [{"type": "text", "text": "done"}]}}
+_FIGURES = ["durationMs", "durationApiMs", "numTurns"]
+# (tag, what the stream is, its events, the runner's figures, the names the
+# runner records as absent, the tool's (duration_ms, num_turns, paired)).
+STREAM_TABLE = [
+    ("xpair", "two paired stretches",
+     [_ev_init("u-i1"), _ev_result("u-r1", _R1, 0.5),
+      _ev_init("u-i2"), _ev_result("u-r2", _R2, 1.25)],
+     {"durationMs": 6000, "durationApiMs": 4000, "numTurns": 13}, [],
+     (6000, 13, True)),
+    # The runner is the stricter reader here: two results under one init cannot
+    # be split into stretches, so it records neither per-stretch sum, where the
+    # tool adds both results up and says the stream is unpaired.
+    ("xunp", "one init with two results",
+     [_ev_init("u-i1"), _ev_result("u-r1", _R1, 0.5), _ev_result("u-r2", _R2, 1.25)],
+     {"durationApiMs": 4000}, ["durationMs", "numTurns"],
+     (6000, 13, False)),
+    # A result repeated under one uuid is one event read twice: both readers
+    # drop the copy, so the stream is the two paired stretches again.
+    ("xdup", "two paired stretches, the last result repeated under one uuid",
+     [_ev_init("u-i1"), _ev_result("u-r1", _R1, 0.5),
+      _ev_init("u-i2"), _ev_result("u-r2", _R2, 1.25), _ev_result("u-r2", _R2, 1.25)],
+     {"durationMs": 6000, "durationApiMs": 4000, "numTurns": 13}, [],
+     (6000, 13, True)),
+    ("xone", "a single stretch",
+     [_ev_init("u-i1"), _EV_TEXT, _ev_result("u-r2", _R2, 1.25)],
+     {"durationMs": 5000, "durationApiMs": 4000, "numTurns": 10}, [],
+     (5000, 10, True)),
+    # No result: the runner names all three figures absent; the tool has no
+    # result to report and, with none to pair, does not call the stream unpaired.
+    ("xnone", "no result at all",
+     [_ev_init("u-i1"), _EV_TEXT],
+     {}, _FIGURES,
+     (None, None, True)),
+]
+
+
+def _tool_reading(stream):
+    """(duration_ms, num_turns, paired) as tools/stream-cost.py reads `stream`,
+    a stream with no result included: its result's two per-stretch counts, None
+    each when it has none, and whether its inits and results pair."""
+    SC = _stream_cost()
+    session = SC.parse(SC.load_events(stream))
+    result = session.get("result") or {}
+    return (result.get("duration_ms"), result.get("num_turns"),
+            SC.main_stretches(session)[1] is None)
+
+
+def _table_cases(check, root, recorded):
+    """Every row of STREAM_TABLE run through the runner and through the tool,
+    and both readings held to the row."""
+    os.makedirs(os.path.join(root, "streams"), exist_ok=True)
+    for tag, what, events, figures, absent, tool_want in STREAM_TABLE:
+        path = os.path.join(root, "streams", tag + ".jsonl")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("".join(json.dumps(e) + "\n" for e in events))
+        run, rec = recorded(tag, {}, env_extra={"STUB_STREAM": path})
+        rec = rec or {}
+        got = dict((k, rec.get(k)) for k in _FIGURES if k in rec)
+        gone = sorted(rec.get("timingAbsent") or {})
+        # The tool reads the file the stub wrote verbatim: a run with no result
+        # prints a could-not-run line, which carries no `stream=` field.
+        tool = _harness.attempt(lambda: _tool_reading(path))
+        check("ras79 STREAM TABLE, %s: the runner records %r with %r absent, "
+              "and tools/stream-cost.py reports %r - both as written in the "
+              "table: %r" % (what, figures, absent, tool_want,
+                             (run[0], got, gone, tool, run[2][-300:])),
+              bool(rec) and got == figures and gone == sorted(absent)
+              and tool == (True, tool_want))
+
+
+def _too_deep():
+    """(line, "RecursionError") for the shallowest nested array this interpreter
+    refuses to parse, or (line, None) when none up to the last depth tried is.
+
+    Stepped up rather than fixed: up to 3.13 the parser stops at the recursion
+    limit, while 3.14 measures its C stack and parses a line a hundred thousand
+    deep. The runner runs under this same interpreter, so the depth found here is
+    one its reader meets too - and a fixture that parsed would leave the case
+    proving nothing about a reader that catches ValueError alone."""
+    line = ""
+    for depth in (10 ** 4, 10 ** 5, 10 ** 6, 10 ** 7):
+        line = "[" * depth + "]" * depth
+        try:
+            json.loads(line)
+        except RecursionError:
+            return line, "RecursionError"
+        except ValueError:
+            return line, None
+    return line, None
+
+
+def _nested_cases(check, root, recorded):
+    """A line JSON cannot parse for a reason other than a malformed value - one
+    nested past the interpreter's limit - is a line the runner counts and reads
+    past, not one that ends it after the session ran. The line runs to megabytes
+    on 3.14, past what an environment variable carries, so it reaches the stub as
+    a stream file."""
+    deep, kind = _too_deep()
+
+    def stream(tag, lines):
+        path = os.path.join(root, "streams", tag + ".jsonl")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("".join(ln + "\n" for ln in lines))
+        return recorded(tag, {}, env_extra={"STUB_STREAM": path})
+
+    paired = [_ev_init("u-i1"), _ev_result("u-r1", _R1, 0.5),
+              _ev_init("u-i2"), _ev_result("u-r2", _R2, 1.25)]
+    run, rec = stream("tdeep", [json.dumps(paired[0]), deep]
+                      + [json.dumps(e) for e in paired[1:]])
+    line = run[1].strip()
+    check("ras80 a stream holding a line nested too deep to parse (%s, not a "
+          "ValueError) is read past it: the runner exits 0, prints its line, "
+          "and records the two paired stretches' sums: %r"
+          % (kind, (run[0], line[:200], rec, run[2][-300:])),
+          kind == "RecursionError" and run[0] == 0 and DRIVE_LINE.match(line) is not None
+          and rec is not None and rec.get("line") == line
+          and "timingAbsent" not in rec
+          and dict((k, rec.get(k)) for k in _FIGURES)
+          == {"durationMs": 6000, "durationApiMs": 4000, "numTurns": 13})
+    run, rec = stream("tdeepn", [json.dumps(paired[0]), deep, "{not json"])
+    line = run[1].strip()
+    check("ras81 ...and it is COUNTED as unparsed beside a malformed line: a "
+          "stream with no result names both lines in its printed line, which "
+          "is still printed and recorded: %r" % ((run[0], line, rec),),
+          run[0] != 0 and "2 line(s) of it could not be parsed as JSON" in line
+          and rec is not None and rec.get("line") == line)
 
 
 def _record_lines(path):
