@@ -1,0 +1,106 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_journal_writes.py tests/test_guard_edits.py tests/test__config.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T11:09:07Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_journal_writes.py tests/test_guard_edits.py tests/test__config.py` in a throwaway tree at HEAD exited 1 with 13 of 163 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cf25 (house FAIL), cf25c (house FAIL), cf26 (house FAIL), cf29 (house FAIL), cf30 (house FAIL), cf31 (house FAIL), cf31b (house FAIL), cf32 (house FAIL) and 5 more: SELFTEST FAILED: 158/163 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "(1) ONE FUNCTION: plugins/audit/hooks/_config.py gains a section 'which file is the audit config' holding audit_config_way(tree) (the public entry, the old guard-edits._is_audit_config body) and the helpers MOVED from guard-edits.py (_CONFIG_PARTS, _CONFIG_FOLDED, _stat_or_none, _config_shaped_top, _parts_below, _volume_folds, _names_audit_config), plus two new ones, _one_entry(directory, name, own) and _case_walk(top, parts). No copy stays in guard-edits.py: it keeps _CASE_BLIND, _config_verdict and the verdict words, and calls _config.audit_config_way at its two sites (edit tools, MCP). No existing _config name changed behaviour; only os calls are used, nothing imported. journal-writes._classify_placed now reads `if _config.audit_config_way(tree):` instead of `rel == _config.CONFIG_REL`; the row keeps its event name, keys and shape, target the path as placed, no key added. (2) RULE 2: for a creating write that is config-shaped once case is set aside, _case_walk walks from the tree's root one component at a time: an exact component is followed; a case-only difference is judged in the directory that holds it - by _one_entry (lstat identity) where the config's own name exists there, else by that directory's rule (_volume_folds, memoised per call), a directory the write would create taking the rule of the one it would be created in; an unanswerable question gives case-blind (held, stated words). The walk starts only after the existing string shape test and the existing early returns, so the ordinary path is untouched. (3) RULE 3: tests/test_guard_edits.py's counter (_disk_calls) wraps one table (_DISK_CALLS: os.stat/lstat/readlink/listdir/scandir/access and os.path exists/lexists/isdir/isfile/islink/ismount/realpath/samefile/getsize/getmtime), counting leaf calls; cf29 now asserts kind-for-kind equality with the sequence before the walk, zero listings, total no more than before identity, for an existing source file, a new one and a plain-folder config-named file; cf30 reads guard-edits.py and the _config functions audit_config_way reaches (AST, transitive) and names any os./os.path. call in neither _DISK_CALLS nor _NOT_DISK. Disk calls measured with that counter (SP/sg1.34/count.py, run twice with a gap, identical both times, HEAD export vs a copy of this tree at the same depth): config question existing source 24 -> 24, new source 23 -> 23, nested existing source 27 -> 27, plain-folder config name 25 -> 25 (same kinds); guard decide() 103/102/115/104 -> same; the journal's classification 47/47/53/47 -> 71/70/80/72, because the journal now asks the identity question on every edit-tool write instead of a string comparison - a cost rule 1 implies, stated in SECURITY.md and the changelog. (4) DOCS: SECURITY.md, plugins/audit/README.md (both rows), CHANGELOG.md (unreleased Security: the earlier bullet loses its unqualified hard-link claim; a new bullet) and PLUGIN-BUILD-GUIDE.md (guard-edits, _config, journal-writes sections) carry one statement: matched / not matched (incl. both hard-link exceptions and the shell route) / the journal writes its config row for exactly the edit-tool writes the guard holds, apart from a case-blind hold whose write created another file; an MCP write of a nested tree's config is held and leaves no config row (sweep lane reads only the project's and the session tree's config) - stated as a residual. Fail-mode table rows unchanged. EXISTING CASES CHANGED ON PURPOSE: cf25, cf25b, cf25c, cf25d stubbed guard-edits._volume_folds, now _config._volume_folds (same assertions); cf26 stubbed guard-edits._names_audit_config, now _config._names_audit_config (same assertion); cf29 counted stat/lstat/readlink over two source writes and asserted now <= before-identity and now == nested-half-off, now as described in (3); _with_attr gained an `on` module argument; _os_calls replaced by _disk_calls. Plain-spelling journal row before/after, Pre+write+Post through the hook as a process, chain fields blanked: identical bytes, {action: config.edit, actor{agent: main, author, sessionId, via: hook}, stateHash, summary: 'Write wrote .claude/audit.config.json', target: .claude/audit.config.json, v: 1} (SP/sg1.34/rows.before.out, rows.after.out). Real-directories case cf32/cf32b/cf32c/cf32d ran on darwin (macOS, hdiutil, a 4 MB image of the other case rule mounted at the project's .claude, under the sweep too, detached in finally - hdiutil info shows none left); a host without hdiutil gets _harness.skip by name with the reason; hdiutil present but refusing gives could_not_run. Orchestrator probes: mine.py, mine2.py, probe_hold.py exit 0 on this tree with output identical to the HEAD export's; the reviewer's probe1 payloads run through both trees: guard stdout byte-identical for every payload (SP/sg1.34/words1.out); probe4's arrangement rebuilt with my own image: HEAD allows, this tree denies (subagent) / asks (main); probe5: all four paths now a config row. Mutation probe SP/sg1.34/mutations.py: ten rows, MUTATIONS ALL CAUGHT, exit 0 (SP/sg1.34/mutations.out). FINDING outside my files: scripts/governance/_journal_io.py verify keys its drift check by the row's target spelling, so after a config write recorded under a case variant it warns that .claude/audit.config.json (or a nested tree's plain spelling) changed with no row, though the write is recorded under the other spelling (SP/sg1.34/rows.after.out, verify section); before this change the same warning stood over a true gap. No scripts reader matches action config.edit; doctor/status read other rows.",
+    "descriptive": "The guard and the journal now ask one _config function which file is the audit config; a new config's path is judged name by name in the directory holding each name; the disk-call case counts every disk call, listings included, against a table held complete."
+  },
+  "testsAdded": [
+    "journal hook run as a process over real linked worktrees: one config row, target as placed, for the project config in another case, a nested worktree's config and that in another case (plus the plain spelling as control); no row for a plain folder's config-named file, a worktree's docs, an ordinary source file",
+    "one table of paths existing and not through both hooks: guard hold iff journal config.edit; both hooks call _config.audit_config_way once per path, and its answer alone decides both",
+    "stubbed per-directory model: each component of a creating write asked of its own directory, the would-be-created directory taking its parent's rule; real directories with different case rules via a mounted disk image (macOS), skipped by name elsewhere, detached in finally",
+    "disk-call counter over one table, listings included, leaf-counted; ordinary writes equal the pre-walk sequence kind for kind, list nothing; table held complete against both sources by AST"
+  ],
+  "casesAdded": [
+    [
+      "oq1",
+      "oq1b",
+      "oq1c",
+      "oq1d",
+      "oq2",
+      "oq2b",
+      "oq2c"
+    ],
+    [
+      "oq3",
+      "oq3b"
+    ],
+    [
+      "cf31",
+      "cf31b",
+      "cf32",
+      "cf32b",
+      "cf32d",
+      "cf32c"
+    ],
+    [
+      "cf29",
+      "cf30"
+    ]
+  ],
+  "claims": "claims:\n1 _config.py audit_config_way/_names_audit_config/_case_walk implement the walk SECURITY.md describes; journal-writes._classify_placed calls audit_config_way; guard-edits calls it at both sites\n2 mutations.py: every row CAUGHT - deny rows (journal spelling comparison -> oq1..oq3b; walk collapsed -> cf31, cf32; listing -> cf29; unknown disk call -> cf30; guard own question -> cf22b, cf26, oq3) and allow rows (journal widened -> oq2, oq2b, oq3; walk widened -> cf25, cf31, cf32; identity widened -> cf31, cf32d; plain folder a config -> cf22e, cf28, oq2, oq2b; table narrowed -> cf30); red-first on HEAD: guard 105/113, journal 158/163\n3 grep for _is_audit_config/_names_audit_config/_volume_folds/_config_shaped_top/_parts_below/_stat_or_none/_CONFIG_*: hits only in guard-edits.py, tests/test_guard_edits.py, SECURITY.md, PLUGIN-BUILD-GUIDE.md and docs/audit evidence - each updated except the docs/audit evidence rows (history, not edited)\n4 n/a - no rule addressed to an agent\n5 disk counts measured twice with a gap, identical; HEAD vs this tree at equal path depth\n6 decision reads the resolved path and the disk's identity / per-directory answers, not the spelling; allow twins (plain folder, worktree docs, source file, mounted case-sensitive name) shown quiet in baseline\n7 no number written in prose; counts appear only in this outcome beside the command that printed them",
+  "stamp": "audit-stamp: {\"content\":\"sha256:ac492b04084df498155799452cd3dbd775f9491fb265ab6ab206b41051bf8e99\",\"dirtyDigest\":\"sha256:4250fe6a91eb4799a1158433efcfc55f8350f7759e85e2c393eb48cc64d31742\",\"dirtyPaths\":{\"CHANGELOG.md\":\"5de3ff985bd686f4\",\"PLUGIN-BUILD-GUIDE.md\":\"1b6340ae4a024d57\",\"SECURITY.md\":\"83f280f32e657d48\",\"plugins/audit/README.md\":\"96f252938041cc8a\",\"plugins/audit/hooks/_config.py\":\"e716ac262973770e\",\"plugins/audit/hooks/guard-edits.py\":\"558e2ff5c7a434d5\",\"plugins/audit/hooks/journal-writes.py\":\"ee1f9fd84104ecd9\",\"tests/test_guard_edits.py\":\"e7dd8230521968f2\",\"tests/test_journal_writes.py\":\"43a44e23263d4691\"},\"head\":\"efb3b0e6\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/README.md\",\"plugins/audit/hooks/_config.py\",\"plugins/audit/hooks/guard-edits.py\",\"plugins/audit/hooks/journal-writes.py\",\"tests/test__config.py\",\"tests/test_guard_edits.py\",\"tests/test_journal_writes.py\"],\"scopeDigest\":\"sha256:088757693794109863fb968d04d0a9c21e571203ab0f86bc991a54e9c470ee69\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 3 of the diff's 9 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 4 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, SECURITY.md, plugins/audit/README.md; 2 file(s) that could hold a move not compared: tests/test_guard_edits.py, tests/test_journal_writes.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "SECURITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test_guard_edits.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 644 (`def _with_attr(name, value, fn):`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      },
+      {
+        "path": "tests/test_journal_writes.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was only added: every statement of the base copy outside them stands in the tree copy, in order and in place, and the first added one is at tree line 2082 (`_one_question_cases(check)`); what it runs is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "efb3b0e6d003de336a6d6015cdba5298bb4c70f6"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-18T11:09:09Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

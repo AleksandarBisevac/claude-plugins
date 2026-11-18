@@ -309,14 +309,33 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   write to the config of a worktree nested under the project, through a directory or file name
   in another letter case, was allowed on a volume that does not tell case apart, though it opened
   that worktree's real config. One function now judges the project's config and a nested tree's:
-  where both paths exist they are compared as files (a case variant, a symlink and a hard link of
-  an existing config are the config), and a write that would create the config is compared as
-  the volume holding it compares names, asked of the volume rather than assumed from the
-  platform. On a volume that tells case apart a name differing in case is another file and stays
-  allowed; where nothing on the path can be asked, the spelling is matched without regard to
-  case and the refusal says so. A plain folder, another file of `.claude/`, a read and an
-  unrelated repository keep their answers, and an ordinary write makes no more disk calls than
-  before.
+  where both paths exist they are compared as files, and a write that would create the config is
+  compared as the directories on its path compare names, asked of the disk rather than assumed
+  from the platform. On a volume that tells case apart a name differing in case is another file
+  and stays allowed; where nothing on the path can be asked, the spelling is matched without
+  regard to case and the refusal says so. A plain folder, another file of `.claude/`, a read and
+  an unrelated repository keep their answers.
+- **The journal records a config row for every edit-tool write the config hold asks about, and
+  each name of a new config's path is judged where it is looked up.** The journal decided a
+  config write by comparing the placed path with the config's spelling, so the project's config
+  in another letter case and a nested worktree's config - writes the guard asks the owner about -
+  left no config row. Both hooks now ask one function, `_config.audit_config_way`, and the row
+  keeps its shape, its target the path as placed. **Matched:** the project's config and a linked
+  or nested worktree's config, either through a symlink; a hard link to the project's config
+  placed in the project, under any name; and a spelling differing only in letter case, where the
+  directory that name is looked up in folds case. **Not matched:** a hard link to a nested
+  tree's config under another name, a hard link placed in the project to the config of a tree
+  outside it, and the shell route, which is journalled and not refused. The journal writes its
+  config row for exactly the edit-tool writes the guard holds, apart from a hold made without
+  regard to case whose write created another file; an MCP write of a nested tree's config is
+  held and leaves no config row. A write that would create the config is now walked one
+  component at a time, each name judged in the directory that holds it, so a folder with a case
+  rule of its own - a mounted volume, a per-directory setting - no longer answers for the
+  directory above it: with the config's folder present and telling case apart inside a tree that
+  does not, a write through that folder's name in another case was allowed and created the real
+  config. The guard's disk-call case now counts every call that asks the disk, a listing
+  included, and holds its table complete against the source; an ordinary write makes the calls
+  it made before, and the journal now pays the identity question on every edit-tool write.
 
 ## [3.8.0]
 

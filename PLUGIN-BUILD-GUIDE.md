@@ -602,7 +602,19 @@ over `DEFAULTS`; **never raises**. An ABSENT config silently yields defaults; a
 PRESENT-but-malformed one yields defaults **plus a `_configError` marker** that
 detect-plan-skip surfaces once per session (a broken config must not silently drop custom
 rules). Typed getters: `state_dir`, `logs_dir`, `token_vars`, `custom_rules`,
-`extra_secret_patterns`, `tdd_reminder`. Also hosts the shared path/manifest helpers
+`extra_secret_patterns`, `tdd_reminder`. **Which file is the audit config** is answered here
+once, by `audit_config_way(tree)`, for `guard-edits.py`'s hold and `journal-writes.py`'s config
+row alike: file identity where the path and the config both exist; for a write that would
+create the config, a walk from the tree's root one component at a time (`_case_walk`), each name
+differing in case only judged in the directory that holds it — by whether both names reach one
+entry where the config's own name exists there (`_one_entry`), else by that directory's own rule,
+an existing name looked up under its case swapped (`_volume_folds`), a directory the write would
+create taking the rule of the one it would be created in. A nested tree is asked only when the
+path's last components are the config's case aside (`_config_shaped_top`, strings only) and the
+directory they hang off holds a repository, and the walk only after that string test, so an
+ordinary write makes the disk calls it made before (`cf29`, `cf30` in
+`tests/test_guard_edits.py`). What it matches and does not is the list under
+`guard-edits.py` below. Also hosts the shared path/manifest helpers
 (`rel_path`, `within_root`, `matches_exempt`, `strip_line_suffix`, `in_progress_files`,
 `in_progress_task_map` — the latter exposes each covering task's `tests.mode` for remind-tdd).
 `declared_task_map` is the `files` half of the one reading of "declared" behind that map: the
@@ -914,13 +926,15 @@ denied to a subagent (`_config.is_subagent`) and to a session the drive started 
 mark, `_drive_started`), and asked of the main session — dev checkout
 included, since that file is governance rather than plugin source; a shell-form write of it is
 the residual SECURITY.md names. Which file a path names is one function's answer,
-`_names_audit_config`, for the project's tree and a nested one alike: file identity where the
-path and the config both exist, and for a write that would create the config, the volume's own
-rule — asked by looking an existing name up under its case swapped (`_volume_folds`), compared
-without regard to case and said so in the refusal where nothing can be asked. A nested tree is
-asked only when the path's last components are the config's case aside
-(`_config_shaped_top`, strings only) and the directory they hang off holds a repository, so an
-ordinary write makes no more disk calls than before. (2) `guardEdits.customRules` (config) — each
+`_config.audit_config_way` (see `_config.py`), which `journal-writes.py` asks too; this hook
+keeps only the verdict and its words. **Matched:** the project's config and a linked or nested
+worktree's config, either through a symlink; a hard link to the project's config placed in the
+project, under any name; and a spelling differing only in letter case, where the directory that
+name is looked up in folds case. **Not matched:** a hard link to a nested tree's config under
+another name, a hard link placed in the project to the config of a tree outside it, and the
+shell route, which is journalled and not refused. The journal writes its config row for exactly
+the edit-tool writes this hook holds, apart from a hold made without regard to case whose write
+created another file. (2) `guardEdits.customRules` (config) — each
 `{pathPrefix, bannedPattern, message}` blocks its regex under its path prefix; ships EMPTY (the
 one-library listener rule that used to be hardcoded is now just an example in the config
 template). (3) Token-logging ban built dynamically from `guardEdits.tokenVars` — blocks
@@ -948,7 +962,14 @@ All tunables under config `tddReminder`. `--selftest`.
 ### `plugins/audit/hooks/journal-writes.py` (v0.29.0)
 PostToolUse (Edit|Write|MultiEdit|NotebookEdit, **Bash and `mcp__.*`**) recorder: every write
 to the manifest (index or phase shard) or to `.claude/audit.config.json` appends one row to the
-audit trail via `scripts/governance/audit-journal.py`. Bash and MCP share the **sweep lane**
+audit trail via `scripts/governance/audit-journal.py`. An edit-tool write is a config row by
+`_config.audit_config_way`'s answer and nothing else — the answer `guard-edits.py` holds the
+write by — so the config in another letter case and a nested worktree's config are config rows,
+their target the path as placed, and the row for the config spelled plainly is the one it always
+was (`oq1`–`oq3b` in `tests/test_journal_writes.py`); the one exception is a hold made without
+regard to case whose write created another file. An MCP write of a nested tree's config is held
+and leaves no config row, since the sweep lane reads the project's config and the session's own
+tree's. Bash and MCP share the **sweep lane**
 (`_swept_rows`), which needs no rule about which operations write: it compares each recorded
 path's digest against the slot the Pre pass seeded, so a read moves nothing and says nothing
 while a write gets the row an `Edit` gets. NO stdout at all — a recorder that talks turns

@@ -1478,30 +1478,57 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    and a file merely named `audit.config.json` elsewhere — under a `.claude/` of a
    plain folder that holds no repository included — are untouched.
 
-   **What is compared is which file the path names, not how it is spelled.** One
-   function (`_names_audit_config` in `guard-edits.py`) answers it for the
-   project's tree and for a tree nested under it alike. Where the written path and
-   the config both exist, they are compared as files, so a case variant, a
-   symlinked directory and a hard link of an existing config are the config, and
-   a hard link to the project's config under any name inside the project is
-   held. Where neither
-   exists — the write would create the config — the path is compared with the
-   config's relative path as the volume holding it compares names, and the volume
-   is asked, never assumed from the platform: an existing name there, looked up
-   under its case swapped, reaches the same entry or it does not. On a volume that
-   folds case a spelling differing only in case is held; on one that tells case
-   apart it names another file and is allowed. Where nothing on the path can be
-   asked (no name with a letter whose case swaps back, or the lookup errors), the
-   spelling is compared without regard to case and the refusal says so. A tree
-   nested under the project is a candidate only when the path's last components
-   are the config's relative path compared without regard to case and the
-   directory they hang off holds a repository; that string test comes first, so
-   an ordinary write makes no more disk calls than it did before identity was
-   asked (`cf29` measures it). **Not matched, stated:** a hard link to a nested
-   tree's config under a name that is not the config's. `cf23`–`cf28e` in
+   **What is compared is which file the path names, not how it is spelled, and
+   the journal asks the same question.** One function, `_config.audit_config_way`,
+   answers it for the project's tree and for a tree nested under it alike, and
+   both `guard-edits` and `journal-writes` call it. **Matched:** the project's
+   config and the config of a linked or nested worktree of it, either through a
+   symlink; a hard link to the project's config placed in the project, under any
+   name; and a spelling that differs from the config's only in letter case, where
+   the directory that name is looked up in folds case. **Not matched, stated:** a
+   hard link to a nested tree's config under another name; a hard link placed in
+   the project to the config of a tree outside it; and the shell route, which is
+   journalled and not refused (the residuals below). **The journal writes its
+   config row for exactly the edit-tool writes the guard holds**, its target the
+   path as placed (`oq1`–`oq3b` in `tests/test_journal_writes.py`, the hook run as
+   a process over real linked worktrees and one table through both hooks). It
+   asks after the write, so the one exception is a hold made without regard to
+   case whose write turned out to create another file: that is no config row.
+
+   Where the written path and the config both exist, they are compared as files.
+   Where neither exists — the write would create the config — the path is walked
+   from the tree's root one component at a time, and each name is judged in the
+   directory it is looked up in: a name spelled as the config's is followed; one
+   differing in case only is the config's name where both lookups reach one entry
+   (where the config's own name exists in that directory), or by that directory's
+   own rule (where it does not), asked of the disk and never assumed from the
+   platform: an existing name there, looked up under its case swapped, reaches the
+   same entry or it does not, and a directory none of whose names can answer is
+   answered by the nearest directory above it that can. A directory the write
+   would create takes the rule of the directory it would be created in. So a
+   folder with a case rule of its own inside a tree with another — a mounted
+   volume, a per-directory setting — answers for the names it holds, and only for
+   them. Where nothing can be asked (no name with a letter whose case swaps back,
+   or the lookup errors), the spelling is compared without regard to case and the
+   refusal says so. A tree nested under the project is a candidate only when the
+   path's last components are the config's relative path compared without regard
+   to case and the directory they hang off holds a repository; that string test
+   comes first, and the walk only after it, so an ordinary write — a source file,
+   or a file merely named like the config in a plain folder — makes the
+   question's disk calls it made before the walk existed, call for call, lists no
+   directory, and makes no more in total than before identity was asked (`cf29`
+   counts every call that asks the disk, a listing included, and `cf30` holds its
+   table complete against the source of both files). The journal used to compare
+   spellings and asked the disk nothing for this; it now pays the identity
+   question on every edit-tool write — resolving the path and its tree's root and
+   reading the file and the config. `cf23`–`cf28e` in
    `tests/test_guard_edits.py` assert each answer for the volume the suite runs
    on and print which kind it was; the other kind is driven through a stubbed
-   volume answer (`cf25`–`cf25d`).
+   volume answer (`cf25`–`cf25d`), and each component's own directory through a
+   stubbed per-directory answer (`cf31`, `cf31b`). `cf32` builds the real
+   arrangement — a disk image with the other case rule mounted at the project's
+   `.claude` — where the host has `hdiutil` (macOS), and is skipped by name with
+   the reason elsewhere.
 
    **Residuals, stated rather than hidden:** a shell-form write of the config —
    `sed -i`, a redirect, an interpreter — never reaches `guard-edits`, and no
@@ -1513,7 +1540,11 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    writes the config: a body that is one line of JSON (a whole config is naturally
    one line) or a move onto the config. The write basis is chosen to under-cover
    (`_config.mcp_payload`), so that an MCP read of the files it holds is never
-   refused; this is the cost of that choice.
+   refused; this is the cost of that choice. And an MCP write the guard does hold
+   is journalled by the sweep lane, which asks the file rather than the payload
+   and reads only the project's config and the config of the tree the session
+   stands in when that is a linked worktree beside the project: such a write of a
+   nested tree's config is held and leaves no config row.
 4. **Test-file exemption.** Test files are exempt from plan-first so red-first
    TDD stays frictionless — the first act of a red-first fix is writing a test
    that fails, and a gate that blocks that blocks the discipline. Logic can

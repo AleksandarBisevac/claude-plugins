@@ -353,6 +353,7 @@ def _cases(check):
                 os.environ["CLAUDE_PROJECT_DIR"] = _prev_tf
 
     _config_cases(check, cfg, tmp, _tf if _tf_ok else None)
+    _volume_pair_cases(check, cfg)
 
 
 # --- cf: the audit config is the owner's, not an agent's ------------------------
@@ -641,41 +642,127 @@ def _cap(name):
     return name
 
 
-def _with_attr(name, value, fn):
-    """`fn()` with `M.<name>` replaced by `value`, restored whatever happens.
-    A name the module does not define is set and then removed again, so a case
-    run against a hook without it fails on its assertion, not on a lookup."""
-    prev = getattr(M, name, _with_attr)
-    setattr(M, name, value)
+def _with_attr(name, value, fn, on=None):
+    """`fn()` with `<module>.<name>` replaced by `value`, restored whatever
+    happens - the module `on`, or the hook when None. Which file a path names is
+    `_config`'s question, so its parts are stubbed there (`on=_config`). A name
+    the module does not define is set and then removed again, so a case run
+    against a build without it fails on its assertion, not on a lookup."""
+    mod = M if on is None else on
+    prev = getattr(mod, name, _with_attr)
+    setattr(mod, name, value)
     try:
         return fn()
     finally:
         if prev is _with_attr:
-            delattr(M, name)
+            delattr(mod, name)
         else:
-            setattr(M, name, prev)
+            setattr(mod, name, prev)
 
 
-def _os_calls(fn):
-    """(result of fn(), number of stat/lstat/readlink calls it made)."""
+def _config_way(tree):
+    """`_config.audit_config_way(tree)`, or a word saying the build has none -
+    so a case run against such a build fails on its assertion."""
+    fn = getattr(_config, "audit_config_way", None)
+    if fn is None:
+        return "NO _config.audit_config_way"
+    return fn(tree)
+
+
+# --- cf: what the config question asks of the disk ---------------------------------
+# ONE TABLE: every function of `os` and `os.path` that asks the disk and that the
+# guard, or the config question it calls in `_config`, can reach - each wrapped by
+# the counter. A listing is here in both of its forms; `os.walk` is built on
+# `scandir` and is counted through it. `_NOT_DISK` is the short list of calls that
+# are string work or read the process's own directory. `cf30` reads both sources
+# and names any `os.` or `os.path.` call that is in neither list, so a call added
+# to the hook is counted or argued, never silently missed.
+_DISK_CALLS = (
+    ("os", "stat"), ("os", "lstat"), ("os", "readlink"), ("os", "listdir"),
+    ("os", "scandir"), ("os", "access"),
+    ("os.path", "exists"), ("os.path", "lexists"), ("os.path", "isdir"),
+    ("os.path", "isfile"), ("os.path", "islink"), ("os.path", "ismount"),
+    ("os.path", "realpath"), ("os.path", "samefile"), ("os.path", "getsize"),
+    ("os.path", "getmtime"),
+)
+_LISTINGS = ("os.listdir", "os.scandir")
+_NOT_DISK = ("os.path.join", "os.path.split", "os.path.dirname",
+             "os.path.basename", "os.path.normcase", "os.path.normpath",
+             "os.path.samestat", "os.path.isabs", "os.path.abspath",
+             "os.fspath")
+
+
+def _owner(name):
+    return os.path if name == "os.path" else os
+
+
+def _disk_calls(fn):
+    """(result of fn(), {call: count}) over `_DISK_CALLS`. A call counts when no
+    other counted call happened inside it - the leaf - so `realpath` counts as
+    the `lstat` and `readlink` calls it makes, and an `isdir` that asks the disk
+    itself, as it does on some platforms, counts once as `os.path.isdir`."""
     seen = []
-    saved = dict((n, getattr(os, n)) for n in ("stat", "lstat", "readlink"))
+    saved = [(owner, name, getattr(_owner(owner), name))
+             for owner, name in _DISK_CALLS if hasattr(_owner(owner), name)]
 
-    def counting(n):
-        real = saved[n]
-
+    def counting(label, real):
         def call(*a, **k):
-            seen.append(n)
-            return real(*a, **k)
+            mark = len(seen)
+            try:
+                return real(*a, **k)
+            finally:
+                if len(seen) == mark:
+                    seen.append(label)
         return call
-    for n in saved:
-        setattr(os, n, counting(n))
+    for owner, name, real in saved:
+        setattr(_owner(owner), name, counting("%s.%s" % (owner, name), real))
     try:
         out = fn()
     finally:
-        for n, real in saved.items():
-            setattr(os, n, real)
-    return out, len(seen)
+        for owner, name, real in saved:
+            setattr(_owner(owner), name, real)
+    by = {}
+    for label in seen:
+        by[label] = by.get(label, 0) + 1
+    return out, by
+
+
+def _os_calls_in(tree_node):
+    """Every `os.<name>(...)` and `os.path.<name>(...)` call under the AST node,
+    spelled `os.<name>` / `os.path.<name>`."""
+    import ast
+    out = []
+    for node in ast.walk(tree_node):
+        if not isinstance(node, ast.Call) or not isinstance(node.func,
+                                                             ast.Attribute):
+            continue
+        val = node.func.value
+        if isinstance(val, ast.Name) and val.id == "os":
+            out.append("os." + node.func.attr)
+        elif (isinstance(val, ast.Attribute) and val.attr == "path"
+              and isinstance(val.value, ast.Name) and val.value.id == "os"):
+            out.append("os.path." + node.func.attr)
+    return out
+
+
+def _question_reach(src, entry):
+    """The module-level functions of the source `src` that `entry` reaches by
+    bare-name calls, `entry` included - the part of `_config` the config
+    question runs. {} when `src` defines no `entry`."""
+    import ast
+    defs = dict((n.name, n) for n in ast.parse(src).body
+                if isinstance(n, ast.FunctionDef))
+    if entry not in defs:
+        return {}
+    reach, todo = {}, [entry]
+    while todo:
+        name = todo.pop()
+        if name in reach or name not in defs:
+            continue
+        reach[name] = defs[name]
+        todo.extend(n.func.id for n in ast.walk(defs[name])
+                    if isinstance(n, ast.Call) and isinstance(n.func, ast.Name))
+    return reach
 
 
 def _spelling_cases(check, cfg, tf, nested, _cf, _w):
@@ -734,23 +821,23 @@ def _spelling_cases(check, cfg, tf, nested, _cf, _w):
 
     # The volume's answer substituted: the half this volume cannot show.
     v_no = _with_attr("_volume_folds", lambda d: False, lambda: _cf_decide(
-        cfg, "Write", _w(dir_case), main, "agent-cf")[0])
+        cfg, "Write", _w(dir_case), main, "agent-cf")[0], on=_config)
     v_no_exact = _with_attr("_volume_folds", lambda d: False, lambda: _cf_decide(
-        cfg, "Write", _w(exact), main, "agent-cf")[0])
+        cfg, "Write", _w(exact), main, "agent-cf")[0], on=_config)
     check("cf25 STUBBED - the volume's answer substituted, not asked: "
           "told names do not fold, a creating write through a directory in "
           "another case is another file and allowed (%s), while the exact "
           "spelling is still refused (%s)" % (v_no, v_no_exact),
           v_no == "allow" and v_no_exact == "block")
     v_yes = _with_attr("_volume_folds", lambda d: True, lambda: _cf_decide(
-        cfg, "Write", _w(dir_case), main, "agent-cf")[0])
+        cfg, "Write", _w(dir_case), main, "agent-cf")[0], on=_config)
     check("cf25b STUBBED: told names fold, the same creating write is refused "
           "(%s)" % (v_yes,), v_yes == "block")
     v_none = _with_attr("_volume_folds", lambda d: None, lambda: _cf_decide(
-        cfg, "Write", _w(dir_case), main, "agent-cf"))
+        cfg, "Write", _w(dir_case), main, "agent-cf"), on=_config)
     v_none_exact = _with_attr("_volume_folds", lambda d: None,
                               lambda: _cf_decide(cfg, "Write", _w(exact), main,
-                                                 "agent-cf"))
+                                                 "agent-cf"), on=_config)
     blind = "without regard to case"
     check("cf25c STUBBED: where the volume cannot be asked, a creating write "
           "in another case is refused and the refusal says the spelling was "
@@ -763,10 +850,10 @@ def _spelling_cases(check, cfg, tf, nested, _cf, _w):
     def _raises(d):
         raise OSError("volume unreadable")
     v_err = _with_attr("_volume_folds", _raises, lambda: _cf_decide(
-        cfg, "Write", _w(dir_case), main, "agent-cf")[0])
+        cfg, "Write", _w(dir_case), main, "agent-cf")[0], on=_config)
     v_err_plain = _with_attr("_volume_folds", _raises, lambda: _cf_decide(
         cfg, "Write", _w(os.path.join(fresh, "src", "app.ts")), main,
-        "agent-cf")[0])
+        "agent-cf")[0], on=_config)
     check("cf25d an error asking the volume lands where the config's other "
           "disk errors land - a case-variant config path is still refused "
           "(%s) - while an ordinary write beside it is allowed (%s)"
@@ -784,7 +871,7 @@ def _spelling_cases(check, cfg, tf, nested, _cf, _w):
     pconf = os.path.join(main, *rel)
     got = _with_attr("_names_audit_config", _never, lambda: [
         _cf_decide(cfg, "Write", _w(p), main, "agent-cf")[0]
-        for p in (pconf, nconf)])
+        for p in (pconf, nconf)], on=_config)
     check("cf26 the project's config and a nested tree's are judged by one "
           "function: answered 'not the config', both writes are allowed (%s) "
           "and it was asked of both trees" % (got,),
@@ -838,13 +925,17 @@ def _spelling_cases(check, cfg, tf, nested, _cf, _w):
         "Write", _w(os.path.join(other, rel[0], _cap(rel[1]))),
         cwd=main)
 
-    # An ordinary write costs the disk no more than it did before the identity
-    # question existed. Two measures over one existing and one new source file:
-    # the config question's stat/lstat/readlink calls against the sequence the
-    # hook made for it before (resolve the path, resolve the config, resolve the
-    # path again, and compare the two as files when both exist), and against the
-    # same question with the nested-tree half answered "no candidate" - so the
-    # identity question about a nested tree is asked of no ordinary path.
+    # An ordinary write costs the disk what it did before the walk existed, call
+    # by call, and no more in total than before the identity question existed.
+    # Counted over every call of `_DISK_CALLS` (`_disk_calls`), for an existing and
+    # a new source file and for a file merely named like the config in a plain
+    # folder. Three references: the sequence the question made for such a write
+    # before identity (resolve the path, resolve the config, resolve the path
+    # again, compare the two as files when both exist); the sequence it made once
+    # identity was asked (`_today`: resolve both, read the path, read the config
+    # when the path exists, and ask the folder the config-shaped name hangs off
+    # whether it holds a repository); and the same question with the nested-tree
+    # half answered "no candidate". A listing on any of them is red by itself.
     def _before(target, own):
         os.path.realpath(target)
         os.path.realpath(own)
@@ -852,27 +943,278 @@ def _spelling_cases(check, cfg, tf, nested, _cf, _w):
         if os.path.exists(target) and os.path.exists(own):
             os.path.samefile(target, own)
 
+    def _shaped(real):
+        head, name = os.path.split(real)
+        head2, name2 = os.path.split(head)
+        same = (name2.casefold(), name.casefold()) == tuple(
+            p.casefold() for p in rel)
+        return head2 if same else None
+
+    def _today(target, root):
+        real = os.path.realpath(target)
+        real_root = os.path.realpath(root)
+        if _harness.attempt(os.stat, real)[0]:
+            _harness.attempt(os.stat, os.path.join(real_root, *rel))
+        top = _shaped(real)
+        if top is not None and top != real_root:
+            _config._holds_repository(top)
+
+    plain_cfg = os.path.join(main, "docs", "cf-sample", *rel)
+    os.makedirs(os.path.dirname(plain_cfg))
     costs = []
-    for src in (os.path.join(nested, "src", "app.ts"),
-                os.path.join(nested, "src", "cf-new.ts")):
+    for src, plain in ((os.path.join(nested, "src", "app.ts"), False),
+                       (os.path.join(nested, "src", "cf-new.ts"), False),
+                       (plain_cfg, True)):
         data = {"tool_name": "Write", "tool_input": _w(src), "cwd": main,
                 "agent_id": "agent-cf"}
         tree = _config.tree_for(data, src, cfg)
-        target = os.path.join(str(tree["root"]), *str(tree["rel"]).split("/"))
-        own = os.path.join(str(tree["root"]), *rel)
-        _, n_before = _os_calls(lambda: _before(target, own))
-        verdict, n_now = _os_calls(lambda: M._is_audit_config(tree))
-        _, n_no_nested = _os_calls(lambda: _with_attr(
+        root = str(tree["root"])
+        target = os.path.join(root, *str(tree["rel"]).split("/"))
+        own = os.path.join(root, *rel)
+        _, before = _disk_calls(lambda: _before(target, own))
+        _, today = _disk_calls(lambda: _today(target, root))
+        verdict, now = _disk_calls(lambda: _config_way(tree))
+        _, off = _disk_calls(lambda: _with_attr(
             "_config_shaped_top", lambda real: None,
-            lambda: M._is_audit_config(tree)))
-        costs.append((os.path.basename(src), verdict, n_before, n_now,
-                      n_no_nested))
-    check("cf29 an ordinary source write - existing and new - costs the config "
-          "question no more disk calls than before, and none for the nested "
-          "tree's identity (name, verdict, before, now, nested half off): %r"
+            lambda: _config_way(tree), on=_config))
+        listed = sum(now.get(n, 0) for n in _LISTINGS)
+        costs.append((os.path.basename(src) if not plain else "plain folder",
+                      verdict, sum(before.values()), sum(today.values()),
+                      sum(now.values()), listed,
+                      now == today and (plain or now == off)
+                      and sum(now.values()) <= sum(before.values())))
+    check("cf29 an ordinary write - an existing and a new source file, and a "
+          "file merely named like the config in a plain folder - makes the "
+          "config question's disk calls of before the walk, call for call, "
+          "lists no directory, makes no more in total than before identity was "
+          "asked, and none for the nested tree's identity (name, verdict, "
+          "before identity, before the walk, now, listings, held): %r"
           % (costs,),
-          all(not v and now <= before and now == off
-              for _n, v, before, now, off in costs) and len(costs) == 2)
+          len(costs) == 3 and all(not v and listed == 0 and held
+                                  for _n, v, _b, _t, _now, listed, held
+                                  in costs))
+
+    _table_case(check)
+    _walk_cases(check, cfg, main, fresh, rel, _w)
+
+
+def _table_case(check):
+    """cf30: the counter's table against the source it counts."""
+    import ast
+    gsrc = _harness.module_source(M)
+    reach = _question_reach(_harness.module_source(_config), "audit_config_way")
+    calls = _os_calls_in(ast.parse(gsrc))
+    for node in reach.values():
+        calls.extend(_os_calls_in(node))
+    counted = set("%s.%s" % pair for pair in _DISK_CALLS)
+    unknown = sorted(set(c for c in calls
+                         if c not in counted and c not in _NOT_DISK))
+    unwrapped = sorted("%s.%s" % (o, n) for o, n in _DISK_CALLS
+                       if not hasattr(_owner(o), n))
+    check("cf30 the disk-call counter's table is complete against the source: "
+          "every os. and os.path. call in guard-edits.py and in the part of "
+          "_config the config question reaches (%s) is counted or named as "
+          "touching no disk, and every counted name exists here - unknown %r, "
+          "unwrapped %r" % (", ".join(sorted(reach)) or "NOTHING REACHED",
+                            unknown, unwrapped),
+          "_volume_folds" in reach and "_names_audit_config" in reach
+          and calls and not unknown and not unwrapped)
+
+
+def _walk_cases(check, cfg, main, fresh, rel, _w):
+    """cf31: each component of a creating write is judged in the directory that
+    holds it - the volume's answers substituted by a model, so every host runs
+    it. `_one_entry(directory, name, own)` and `_volume_folds(directory)` are
+    answered from `model`, a directory's rule; every question is recorded."""
+    top = os.path.realpath(fresh)
+    cdir = os.path.join(top, rel[0])
+    os.makedirs(cdir)
+    with open(os.path.join(cdir, "settings.json"), "w", encoding="utf-8") as fh:
+        fh.write("{}\n")
+
+    def _run(model, path):
+        asked = {"entry": [], "rule": []}
+
+        def entry(directory, name, own):
+            asked["entry"].append((directory, name, own))
+            return bool(model.get(directory))
+
+        def rule(directory):
+            asked["rule"].append(directory)
+            return model.get(directory)
+        verdict = _with_attr("_one_entry", entry, lambda: _with_attr(
+            "_volume_folds", rule, lambda: _cf_decide(
+                cfg, "Write", _w(path), main, "agent-cf")[0], on=_config),
+            on=_config)
+        return verdict, asked
+
+    up = _cap(rel[0])
+    dir_only = os.path.join(top, up, rel[1])
+    both = os.path.join(top, up, "Audit.Config.json")
+    name_only = os.path.join(cdir, "Audit.Config.json")
+    folds_above = {top: True, cdir: False}
+    folds_below = {top: False, cdir: True}
+    seen = []
+    for label, model, path, want, entries, rules in (
+            ("dir-variant, top folds, .claude tells case apart", folds_above,
+             dir_only, "block", [(top, up, rel[0])], []),
+            ("both variant, top folds, .claude tells case apart", folds_above,
+             both, "allow", [(top, up, rel[0])], [cdir]),
+            ("dir-variant, top tells case apart, .claude folds", folds_below,
+             dir_only, "allow", [(top, up, rel[0])], []),
+            ("name-variant, top tells case apart, .claude folds", folds_below,
+             name_only, "block", [], [cdir])):
+        verdict, asked = _run(model, path)
+        seen.append((label, verdict, asked["entry"] == entries
+                     and asked["rule"] == rules))
+        if verdict != want or asked["entry"] != entries \
+                or asked["rule"] != rules:
+            seen[-1] = seen[-1] + ((want, entries, rules, asked),)
+    check("cf31 STUBBED - each component of a creating write is judged in the "
+          "directory that holds it: where the config's own component exists "
+          "there by whether both names reach one entry, where it does not by "
+          "that directory's own rule; a name in the project tree is never "
+          "asked of the .claude below it, nor the reverse: %r" % (seen,),
+          len(seen) == 4 and all(len(s) == 3 and s[1] == w and s[2]
+                                 for s, w in zip(seen, ("block", "allow",
+                                                        "allow", "block"))))
+    os.remove(os.path.join(cdir, "settings.json"))
+    os.rmdir(cdir)
+    created = []
+    for model, want in (({top: True}, "block"), ({top: False}, "allow")):
+        verdict, asked = _run(model, both)
+        created.append((model[top], verdict, asked["entry"], asked["rule"]))
+    check("cf31b STUBBED: with no .claude yet, the directory the write would "
+          "create takes the rule of the directory it would be created in - one "
+          "question of the tree, asked once, held where it folds and allowed "
+          "where it does not, and no identity question where nothing exists "
+          "(folds, verdict, identity questions, rule questions asked of): %r"
+          % ([(f, v, e, [os.path.relpath(d, main) for d in r])
+              for f, v, e, r in created],),
+          [c[1] for c in created] == ["block", "allow"]
+          and all(c[2] == [] and c[3] == [top] for c in created))
+
+
+_IMAGE_TOOL = "hdiutil"
+
+
+def _swapped_differs(directory):
+    """Whether `directory` tells case apart: a probe file made there is not
+    reached under its upper-cased name. Asked of the disk, apart from the hook."""
+    probe = os.path.join(directory, "cf-case-probe")
+    with open(probe, "w", encoding="utf-8") as fh:
+        fh.write("\n")
+    try:
+        return not os.path.exists(os.path.join(directory, "CF-CASE-PROBE"))
+    finally:
+        os.remove(probe)
+
+
+def _volume_pair_cases(check, cfg):
+    """cf32: the same question on REAL directories with different case rules - a
+    disk image mounted at the project's `.claude`, made with the rule the host's
+    own volume does not have. macOS builds it with `hdiutil`, unprivileged; a
+    host without that tool is skipped by name, and the image is detached in a
+    `finally` whatever the cases did."""
+    import shutil
+    import subprocess
+    label = ("cf32 a creating write through a name differing in case, on real "
+             "directories with different rules (a disk image mounted at the "
+             "project's .claude)")
+    tool = shutil.which(_IMAGE_TOOL)
+    if tool is None:
+        _harness.skip(check, label, "no %s on this host to build a directory "
+                      "with a case rule of its own" % (_IMAGE_TOOL,), True)
+        return
+    base = os.path.realpath(_harness.fixture_root("guard-edits-vol-"))
+    proj = os.path.join(base, "proj")
+    mount = os.path.join(proj, ".claude")
+    os.makedirs(mount)
+    host_tells = _swapped_differs(proj)
+    fs = "APFS" if host_tells else "Case-sensitive APFS"
+    image = os.path.join(base, "cf-case.dmg")
+    prev = os.environ.get("CLAUDE_PROJECT_DIR")
+    attached = False
+    try:
+        made = subprocess.run(
+            [tool, "create", "-quiet", "-size", "4m", "-fs", fs, "-volname",
+             "cfcase", "-o", image], capture_output=True, timeout=120)
+        if made.returncode == 0:
+            made = subprocess.run(
+                [tool, "attach", "-quiet", "-nobrowse", "-noautoopen",
+                 "-mountpoint", mount, image], capture_output=True,
+                timeout=120)
+            attached = made.returncode == 0
+        if not attached:
+            _harness.could_not_run(check, label, "%s refused: %s" % (
+                _IMAGE_TOOL, _harness.tail_bytes(
+                    made.stderr.decode("utf-8", "replace").strip(), 400)))
+            return
+        with open(os.path.join(mount, "settings.json"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("{}\n")
+        mount_tells = _swapped_differs(mount)
+        os.environ["CLAUDE_PROJECT_DIR"] = proj
+        rel = _config.CONFIG_REL.split("/")
+        dir_variant = os.path.join(proj, _cap(rel[0]), rel[1])
+        name_variant = os.path.join(mount, "Audit.Config.json")
+        got = [(os.path.relpath(p, proj), agent is None,
+                _cf_decide(cfg, "Write", {"file_path": p, "content": _CF_BODY},
+                           proj, agent)[0])
+               for p in (dir_variant, name_variant)
+               for agent in ("agent-cf", None)]
+        want = [(r, m, ("ask" if m else "block") if held else "allow")
+                for (r, m, _g), held in zip(got, (not host_tells,
+                                                  not host_tells,
+                                                  not mount_tells,
+                                                  not mount_tells))]
+        check("%s: the project tree tells case apart: %s, the mounted .claude "
+              "tells case apart: %s, host %s - a name is held where the "
+              "directory it is looked up in folds case, and is another file "
+              "where it does not: %r" % (label, host_tells, mount_tells,
+                                         sys.platform, got),
+              host_tells != mount_tells and got == want and len(got) == 4,
+              "want %r" % (want,))
+        check("cf32b ...and nothing was created: the config is absent after "
+              "the hook was asked", not os.path.exists(
+                  os.path.join(mount, rel[1])))
+        # A repository nested INSIDE the mounted directory, its `.claude`
+        # present: there the config's own directory exists, so a name differing
+        # in case is judged by identity, in the mount - which answers "one
+        # entry" only where the mount folds.
+        inner = os.path.join(mount, "worktrees", "cf-inner")
+        os.makedirs(os.path.join(inner, ".git"))
+        os.makedirs(os.path.join(inner, rel[0]))
+        with open(os.path.join(inner, rel[0], "settings.json"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("{}\n")
+        inner_got = [(os.path.relpath(p, proj), _cf_decide(
+            cfg, "Write", {"file_path": p, "content": _CF_BODY}, proj,
+            "agent-cf")[0])
+            for p in (os.path.join(inner, _cap(rel[0]), rel[1]),
+                      os.path.join(inner, rel[0], rel[1]))]
+        check("cf32d ...and a repository nested inside the mounted directory "
+              "is judged by that directory's rule: its config through a "
+              "directory name in another case is held only where the mount "
+              "folds, the exact spelling always (mount tells case apart: %s): "
+              "%r" % (mount_tells, inner_got),
+              [g for _r, g in inner_got]
+              == ["allow" if mount_tells else "block", "block"])
+    finally:
+        if prev is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = prev
+        if attached:
+            gone = subprocess.run([tool, "detach", "-quiet", mount],
+                                  capture_output=True, timeout=120)
+            if gone.returncode != 0:
+                gone = subprocess.run([tool, "detach", "-quiet", "-force",
+                                       mount], capture_output=True,
+                                      timeout=120)
+            check("cf32c the disk image is detached again (%s)"
+                  % (gone.stderr.decode("utf-8", "replace").strip()
+                     or "detached",), gone.returncode == 0)
 
 
 def _selftest():

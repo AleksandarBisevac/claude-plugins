@@ -15,7 +15,10 @@ spelling and the argument keys are all absent from that question, which is the
 same reason the Bash lane exists.
 
 Appends one row to the tamper-evident journal for every write to the MANIFEST
-(index or phase shard) or to `.claude/audit.config.json`, whatever made it.
+(index or phase shard) or to `.claude/audit.config.json`, whatever made it. An
+edit-tool write is a config write by `_config.audit_config_way`'s answer, the
+one guard-edits holds it by - so that config in another letter case, or a
+nested worktree's, is a config row too, its target the path as placed.
 Nothing else is recorded: the journal is the audit trail of the plan and the
 rules, not a log of the repository.
 
@@ -245,7 +248,12 @@ def _classify_placed(data, cfg, root):
 
     if rel == manifest_rel or _config.governing_lock(manifest_rel, rel):
         return ("manifest.edit", rel, tool, ti, troot)
-    if rel == _config.CONFIG_REL:
+    # The file a session of some tree of this repository loads as its config,
+    # by the answer guard-edits holds the write by and by nothing else: so a
+    # config write the guard asks about - the config in another letter case, a
+    # nested worktree's - is a config row here, and no other write is. `rel`
+    # stays the path as placed.
+    if _config.audit_config_way(tree):
         return ("config.edit", rel, tool, ti, troot)
     return (None, "not a manifest or config path", tool, ti, troot)
 

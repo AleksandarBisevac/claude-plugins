@@ -2079,6 +2079,208 @@ def _cases(check):
 
     _machine_path_value_cases(check)
     _call_mark_cases(check)
+    _one_question_cases(check)
+
+
+# --- oq: the guard and the journal ask one function which file is the config ------
+# The edit guard holds a write to the file a session of some tree of this
+# repository loads as its audit config, judged by identity and by the volume's
+# rule on letter case (`_config.audit_config_way`). The journal records a config
+# row for a write by the same answer, so a write the guard asks the owner about is
+# never one the trail is silent on, and a write it lets through never reads as a
+# config edit. Run as processes over real linked worktrees, and as one table of
+# paths through both hooks' decisions.
+_OQ_BODY = '{\n  "journal": {"enabled": true}\n}\n'
+_OQ_MARK = "AUDIT_DRIVE_SESSION"
+
+
+def _oq_hook(event, path, project, sid):
+    """journal-writes.py run as the host runs it, for a main-session Write of
+    `path` - the PreToolUse or the PostToolUse half."""
+    import subprocess
+    payload = {"hook_event_name": event, "tool_name": "Write",
+               "session_id": sid, "tool_use_id": "call-" + sid,
+               "cwd": project,
+               "tool_input": {"file_path": path, "content": _OQ_BODY}}
+    env = dict(os.environ)
+    env["CLAUDE_PROJECT_DIR"] = project
+    env.pop(_OQ_MARK, None)
+    return subprocess.run(
+        [sys.executable, os.path.join(_harness.HOOKS_DIR, "journal-writes.py")],
+        input=json.dumps(payload).encode("utf-8"), capture_output=True,
+        env=env, timeout=60)
+
+
+def _oq_write(path, project, sid):
+    """Pre, the write itself, Post - and the rows the project's trail gained,
+    as (action, target) pairs, with the two exit codes."""
+    before = set(r.get("hash") for r in _journal_io.read_all(project))
+    pre = _oq_hook("PreToolUse", path, project, sid)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(_OQ_BODY)
+    post = _oq_hook("PostToolUse", path, project, sid)
+    rows = [(r.get("action"), r.get("target"))
+            for r in _journal_io.read_all(project)
+            if r.get("hash") not in before]
+    return rows, (pre.returncode, post.returncode)
+
+
+def _oq_folds(directory):
+    """Whether names fold where `directory` sits: its last component, case-
+    swapped, reaches it. Asked of the disk, apart from both hooks."""
+    head, name = os.path.split(directory)
+    other = os.path.join(head, name.swapcase())
+    return os.path.exists(other) and os.path.samefile(other, directory)
+
+
+def _one_question_cases(check):
+    ok, tf = _harness.attempt(_harness.worktree_pair, "journal-oq-")
+    if not ok:
+        check("oq0 the worktree fixture builds (%s)" % (tf,), False)
+        return
+    main = tf["main"]
+    rel = _config.CONFIG_REL.split("/")
+    pconf = os.path.join(main, *rel)
+    os.makedirs(os.path.dirname(pconf))
+    with open(pconf, "w", encoding="utf-8") as fh:
+        fh.write(_OQ_BODY)
+    nested = os.path.join(main, ".claude", "worktrees", "agent-oq")
+    fresh = os.path.join(main, ".claude", "worktrees", "agent-oq2")
+    for at, branch in ((nested, "nested/agent-oq"), (fresh, "nested/agent-oq2")):
+        _harness.git(main, "worktree", "add", "-q", at, "-b", branch,
+                     prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+    _config.forget_git_standing()
+    nconf = os.path.join(nested, *rel)
+    os.makedirs(os.path.dirname(nconf))
+    with open(nconf, "w", encoding="utf-8") as fh:
+        fh.write(_OQ_BODY)
+    folds = _oq_folds(os.path.dirname(pconf))
+    vol = "volume folds case: %s" % (folds,)
+    up = rel[0][0] + rel[0][1].upper() + rel[0][2:]
+
+    def placed(path):
+        return _output.posix_rel(path, main)
+
+    # (1) the hook as a process: a config row for each of the writes it missed,
+    # and none for the twins.
+    for cid, label, path, held in (
+            ("oq1", "the project's config spelled in another case",
+             os.path.join(main, up, rel[1]), folds),
+            ("oq1b", "a nested worktree's config", nconf, True),
+            ("oq1c", "a nested worktree's config spelled in another case",
+             os.path.join(nested, up, rel[1].upper()), folds),
+            ("oq1d", "the project's config spelled plainly, as before", pconf,
+             True)):
+        rows, codes = _oq_write(path, main, "sess-" + cid)
+        want = [("config.edit", placed(path))] if held else []
+        check("%s the journal hook, run as a process, writes %s for %s - its "
+              "target the path as placed (%s)" % (
+                  cid, "one config row" if held else "no row", label, vol),
+              rows == want and codes == (0, 0),
+              "rows %r, exit codes %r" % (rows, codes))
+    for cid, label, path in (
+            ("oq2", "a file named like the config in a plain folder",
+             os.path.join(main, "docs", "sample", *rel)),
+            ("oq2b", "a file named like the config in a worktree's docs",
+             os.path.join(nested, "docs", *rel)),
+            ("oq2c", "an ordinary source file", os.path.join(main, "src",
+                                                             "app.ts"))):
+        rows, codes = _oq_write(path, main, "sess-" + cid)
+        check("%s ...and no row at all for %s" % (cid, label),
+              rows == [] and codes == (0, 0),
+              "rows %r, exit codes %r" % (rows, codes))
+
+    # (2) one table, both hooks: the guard holds a write as the config exactly
+    # when the journal classifies it as a config edit.
+    G = _loader.load(os.path.join(_harness.HOOKS_DIR, "guard-edits.py"),
+                     modname="guard_edits_oq")
+    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    link = os.path.join(main, "oq-link.json")
+    linked = _harness.attempt(os.link, pconf, link)[0]
+    table = (pconf, os.path.join(main, up, rel[1]),
+             os.path.join(main, rel[0], rel[1].upper()), nconf,
+             os.path.join(nested, up, rel[1]), os.path.join(fresh, *rel),
+             os.path.join(fresh, up, rel[1]),
+             os.path.join(tf["wt"], *rel),
+             os.path.join(main, "docs", "sample", *rel),
+             os.path.join(main, "docs", "sample", up, rel[1]),
+             os.path.join(nested, "docs", *rel),
+             os.path.join(main, rel[0], "settings.json"),
+             os.path.join(main, rel[0], rel[1] + ".bak"),
+             os.path.join(main, "src", "app.ts"),
+             os.path.join(main, tf["manifest_rel"]),
+             os.path.join(main, "docs", "audit", "journal", "x.jsonl"),
+             link)
+
+    def _both(path):
+        data = {"tool_name": "Write", "session_id": "sess-oq3", "cwd": main,
+                "tool_input": {"file_path": path, "content": _OQ_BODY}}
+        g_ok, g = _harness.attempt(G.decide, data, cfg=cfg)
+        j_ok, j = _harness.attempt(M.decide, data, cfg=cfg, root=main)
+        hold = g_ok and g[0] == "ask" and "audit config" in str(g[1])
+        edit = j_ok and j[0] == "journal" and j[1].get("action") == "config.edit"
+        return (placed(path), hold, edit)
+
+    prev = dict((k, os.environ.get(k)) for k in ("CLAUDE_PROJECT_DIR", _OQ_MARK))
+    os.environ["CLAUDE_PROJECT_DIR"] = main
+    os.environ.pop(_OQ_MARK, None)
+    try:
+        seen = [_both(p) for p in table]
+        held = [s for s in seen if s[1]]
+        check("oq3 over a table of paths, existing and not, the guard holds a "
+              "write as the config exactly when the journal classifies it as a "
+              "config edit (%s): %r" % (vol, [s for s in seen if s[1] != s[2]]),
+              all(s[1] == s[2] for s in seen) and len(seen) == len(table)
+              and placed(pconf) in [s[0] for s in held]
+              and placed(nconf) in [s[0] for s in held]
+              and (placed(link) in [s[0] for s in held] or not linked)
+              and placed(os.path.join(main, "src", "app.ts"))
+              not in [s[0] for s in held], repr(seen))
+
+        asked = []
+
+        def _answer(word):
+            def way(tree):
+                asked.append(tree["rel"])
+                return word
+            return way
+        quiet = (pconf, nconf, os.path.join(main, "src", "app.ts"),
+                 os.path.join(main, "docs", "sample", *rel))
+        none_seen = _with_cfg("audit_config_way", _answer(None),
+                              lambda: [_both(p) for p in quiet])
+        n_none = len(asked)
+        all_seen = _with_cfg("audit_config_way", _answer("same-file"),
+                             lambda: [_both(p) for p in quiet])
+        check("oq3b both hooks ask the one function: answered 'not the config' "
+              "neither holds nor records the project's or a nested config, "
+              "answered 'the config' both hold and record a source file - and "
+              "each asked it once per path (%r / %r, asked %d then %d times)"
+              % (none_seen, all_seen, n_none, len(asked) - n_none),
+              all(not s[1] and not s[2] for s in none_seen)
+              and all(s[1] and s[2] for s in all_seen)
+              and n_none == 2 * len(quiet) and len(asked) == 4 * len(quiet))
+    finally:
+        for k, v in prev.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def _with_cfg(name, value, fn):
+    """`fn()` with `_config.<name>` replaced by `value`, restored whatever
+    happens; a name `_config` does not define is set and removed again, so a
+    case run against a build without it fails on its assertion."""
+    prev = getattr(_config, name, _with_cfg)
+    setattr(_config, name, value)
+    try:
+        return fn()
+    finally:
+        if prev is _with_cfg:
+            delattr(_config, name)
+        else:
+            setattr(_config, name, prev)
 
 
 # --- cm: a status row says when its call's baseline stood ----------------------

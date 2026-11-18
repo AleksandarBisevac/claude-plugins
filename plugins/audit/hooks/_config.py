@@ -1448,6 +1448,225 @@ def tree_for(data, target=None, cfg=None, project=None, cache=None):
     return out
 
 
+# --- which file is the audit config ----------------------------------------------
+# The edit guard holds a write to the file a session of some tree of this
+# repository would load as its audit config, and the write journal records a
+# config row for a write; both ask `audit_config_way`, and nothing else, so the
+# two cannot disagree about which write was a config write. The disk answers it,
+# never the spelling: file identity where the path exists, and for a write that
+# would create the file, each name judged in the directory it is looked up in.
+_CONFIG_PARTS = tuple(CONFIG_REL.split("/"))
+_CONFIG_FOLDED = tuple(p.casefold() for p in _CONFIG_PARTS)
+
+
+def _stat_or_none(path):
+    """`os.stat(path)`, or None when nothing is there - the reading
+    `os.path.exists` gives, kept as a stat so a second call is not needed to
+    compare the file."""
+    try:
+        return os.stat(path)
+    except (OSError, ValueError):
+        return None
+
+
+def _config_shaped_top(real):
+    """The directory a config at the resolved path `real` would hang off, when
+    `real`'s last components are `CONFIG_REL`'s compared without regard to
+    case; None otherwise. Strings only: this is what keeps an ordinary write
+    from paying for the identity question about a nested tree."""
+    head, names = real, []
+    for _ in _CONFIG_PARTS:
+        head, name = os.path.split(head)
+        names.append(name.casefold())
+    return head if tuple(reversed(names)) == _CONFIG_FOLDED else None
+
+
+def _parts_below(real, top):
+    """The components of `real` below the directory `top`, or None when `real`
+    does not lie under it."""
+    prefix = top.rstrip(os.sep) + os.sep
+    if not os.path.normcase(real).startswith(os.path.normcase(prefix)):
+        return None
+    return tuple(real[len(prefix):].split(os.sep))
+
+
+def _volume_folds(directory):
+    """Whether the existing `directory` treats two names differing only in
+    letter case as one entry: True, False, or None when it cannot be asked
+    because no name it could ask about has a letter whose case swaps back.
+
+    Asked of the disk, never of the platform's name: an entry of `directory`,
+    then `directory` itself and each directory above it, is looked up under its
+    name case-swapped, and the directory folds when that lookup reaches the
+    same entry. An entry of `directory` is asked first, because a per-directory
+    case setting is answered by the directory the asked name sits in, and the
+    caller asks of the directory that holds the name it judges. An OSError
+    other than "nothing there" propagates: the caller reads it as a question
+    that could not be asked."""
+    def answer(head, name):
+        swapped = name.swapcase()
+        if swapped == name or swapped.swapcase() != name:
+            return None
+        try:
+            other = os.lstat(os.path.join(head, swapped))
+        except (FileNotFoundError, NotADirectoryError):
+            return False
+        return os.path.samestat(other, os.lstat(os.path.join(head, name)))
+    for name in sorted(os.listdir(directory)):
+        found = answer(directory, name)
+        if found is not None:
+            return found
+    probe = directory
+    while True:
+        head, name = os.path.split(probe)
+        if not name:
+            return None
+        found = answer(head, name)
+        if found is not None:
+            return found
+        probe = head
+
+
+def _one_entry(directory, name, own):
+    """Whether `name` and `own`, each looked up in the existing `directory`
+    where `own` exists, reach one entry - identity, so no case rule is needed
+    to answer it. False when `name` reaches nothing there."""
+    try:
+        other = os.lstat(os.path.join(directory, name))
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    return os.path.samestat(other, os.lstat(os.path.join(directory, own)))
+
+
+def _case_walk(top, parts):
+    """Which way the components `parts` below the directory `top` name the
+    config when neither it nor the written file exists yet and `parts` differ
+    from `CONFIG_REL`'s components in letter case alone: "folded",
+    "case-blind", or None for another file.
+
+    Walked from `top` down, one component at a time, each looked up in the
+    directory that holds it. A component spelled as the config's is followed.
+    One differing in case only is judged in that directory: where the config's
+    own name exists there, by whether both names reach one entry
+    (`_one_entry`); where it does not, by that directory's own rule
+    (`_volume_folds`, which falls back to the directories above it when none of
+    its own names can answer). A directory the write would itself create has no
+    rule yet and takes the answer of the directory it would be created in, so
+    that directory is asked once. A question that cannot be answered - no name
+    that can, or an error - makes the answer "case-blind", which the guard
+    holds and says so."""
+    here, rule_dir, below = top, top, False
+    rules, blind = {}, False
+    last = len(parts) - 1
+    for i, (name, own) in enumerate(zip(parts, _CONFIG_PARTS)):
+        if name != own:
+            if name.casefold() != own.casefold():
+                return None
+            if not below and os.path.lexists(os.path.join(here, own)):
+                try:
+                    if not _one_entry(here, name, own):
+                        return None
+                except OSError:
+                    blind = True
+            else:
+                if rule_dir not in rules:
+                    try:
+                        rules[rule_dir] = _volume_folds(rule_dir)
+                    except OSError:
+                        rules[rule_dir] = None
+                if rules[rule_dir] is False:
+                    return None
+                blind = blind or rules[rule_dir] is None
+        nxt = os.path.join(here, own)
+        if i < last:
+            if not below and os.path.isdir(nxt):
+                rule_dir = nxt
+            else:
+                below = True
+        here = nxt
+    return "case-blind" if blind else "folded"
+
+
+def _names_audit_config(real, top):
+    """Does the resolved path `real` name the file a session in the tree `top`
+    would load as its audit config (`top` joined with `CONFIG_REL`)?
+
+    -> "same-file"  both exist and are one file, whatever the spelling: a
+                    case variant, a symlinked directory, a hard link
+       "spelling"   neither exists, and `real` spells the config's path
+       "folded"     neither exists, and `real` differs from it in letter case
+                    only, each differing name reaching the config's in the
+                    directory that holds it (`_case_walk`)
+       "case-blind" the same, where a directory could not be asked
+       None         another file - including a name differing from the
+                    config's in case only, looked up in a directory that
+                    tells case apart
+
+    One function for the project's own tree and for a tree nested under it.
+    Where exactly one of the two exists, they are different files: a lookup
+    that reached the config under any spelling would have found it."""
+    own = os.path.join(top, *_CONFIG_PARTS)
+    st_real = _stat_or_none(real)
+    if st_real is not None:
+        st_own = _stat_or_none(own)
+        if st_own is None:
+            return None
+        return "same-file" if os.path.samestat(st_real, st_own) else None
+    parts = _parts_below(real, top)
+    if parts is None or tuple(p.casefold() for p in parts) != _CONFIG_FOLDED:
+        return None
+    if _stat_or_none(own) is not None:
+        return None
+    if parts == _CONFIG_PARTS:
+        return "spelling"
+    return _case_walk(top, parts)
+
+
+def audit_config_way(tree):
+    """Which way the path `tree` placed (`tree_for`'s answer) names the audit
+    config of a tree of this repository - `_names_audit_config`'s word - or
+    None. The one answer the edit guard holds a write by and the write journal
+    records a config row by.
+
+    Two trees are asked, by the one function: the tree the path lands in (its
+    root joined with `CONFIG_REL` is the file `load` reads), and the directory
+    the path's last components would hang off, when they are `CONFIG_REL`'s
+    without regard to case and that directory holds a repository
+    (`_holds_repository`, no git process). The second is how a linked worktree
+    placed UNDER the project is seen: the tree placement answers by containment
+    first, so its config arrives as a long relative path inside the project. A
+    plain folder holding a `.claude/audit.config.json` holds no repository and
+    is not matched; a nested repository of any kind is, since its config is the
+    one its own hooks read when a session runs there.
+
+    The comparison is over resolved paths and, where both exist, file identity,
+    so a symlinked `.claude/`, a case variant and a hard link of an existing
+    config are all the config. NOT matched, stated: a hard link to a NESTED
+    tree's config under a name that is not the config's, since the nested
+    tree's identity question is asked only of a path whose last components
+    match, which is what keeps an ordinary write at the disk calls it made
+    before; and, for the same reason, a hard link placed in the project to the
+    config of a tree outside it. An OSError or a ValueError answers None."""
+    if not tree["inside"] or not tree["rel"]:
+        return None
+    root = str(tree["root"])
+    target = os.path.join(root, *str(tree["rel"]).split("/"))
+    try:
+        real = os.path.realpath(target)
+        real_root = os.path.realpath(root)
+        found = _names_audit_config(real, real_root)
+        if found:
+            return found
+        top = _config_shaped_top(real)
+        if top is None or top == real_root:
+            return None
+        if not _holds_repository(top):
+            return None
+        return _names_audit_config(real, top)
+    except (OSError, ValueError):
+        return None
+
+
 # --- a task worktree is bound to its task ---------------------------------------
 # `tree_for` re-roots an edit in a linked worktree onto THAT worktree's own plan,
 # and a worktree cut at the phase HEAD holds the committed shard, where the task

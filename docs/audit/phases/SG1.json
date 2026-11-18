@@ -3635,7 +3635,7 @@
     {
       "id": "SG1.34-ukq",
       "title": "The guard and the journal ask one function which file is the audit config, and each name is judged where it is looked up",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A fresh review of the config hold found no write let through on an ordinary checkout and no honest write held, and three things that are not as the documents say. Each was run by the reviewer and again by the orchestrator.\n\nMEASURED on the tree as it stands.\n(a) THE JOURNAL ASKS A DIFFERENT QUESTION. The edit guard now answers which file a path names by identity and by the volume's rule on letter case; the write journal still decides that a write is a config edit by comparing the placed path with the config's spelling. For a write the guard asks the main session about - the project's config spelled in another case, a nested worktree's config, the same in another case - the journal records no config row at all, while the README says every config write leaves a hash-chained row. This predates the phase; the phase's own rule, one function for the question, is what it breaks.\n(b) ONE DIRECTORY ANSWERS FOR ANOTHER. For a write that would create the file, the case rule is asked once, of an entry of the nearest existing directory on the path. Where the name that differs is looked up in a directory with another rule, the answer is wrong: with the config's folder present and telling case apart, inside a tree that does not, a write through the folder's name in another case is allowed and creates the real config. The reviewer built it with a mounted image; a folder with its own case setting inside a checkout is the same arrangement. The function's own docstring says a per-directory setting is answered by the directory the asked name sits in.\n(c) THE CASE THAT HOLDS THE DISK-CALL CLAIM CANNOT FAIL FOR A LISTING. SECURITY.md says an ordinary write makes no more disk calls than before and names the case that measures it. That case counts three kinds of call and not a directory listing - the very call the new code makes. With the guard changed to list a directory on every ordinary write, the suite stays green.\n(d) The README and the changelog say a hard link is the config with no exception; SECURITY.md and the code except a hard link to a NESTED tree's config under another name, and neither says that a hard link placed in the project to a config of a tree OUTSIDE it is not matched.\n\nTHE RULE TO BUILD.\n1. ONE FUNCTION, TWO CALLERS. The question - does this path name the file a session in some tree of this repository would load as its audit config, and which way - is answered in one place both hooks can reach under the hook layer's import rule, and the journal classifies a write as a config edit by that answer and by nothing else. So the two cannot disagree: every write the guard holds as the config is, once made, a config row in the journal, and no other write is. The row keeps its existing shape; its path is the path as placed. The journal runs after the write and stays advisory: an error inside the question leaves the journal's fail mode as SECURITY.md's table states it, and the row for the project's own config spelled plainly is written exactly as today.\n2. EACH NAME IS JUDGED WHERE IT IS LOOKED UP. For a creating write, the path is walked from the tree's root down, one component at a time. A component spelled as the config's is followed. A component that differs from the config's in letter case only is judged in the directory that holds it: where the config's own component exists there, the two are the same when both lookups reach one entry - identity, no rule needed; where it does not exist there, by that directory's own rule, asked of an entry of that directory as today; and where that directory holds no name that can answer, through the nearest directory above that can, as today, or held without regard to case with the stated words when none can. A directory the write would itself create has no rule yet and takes the answer of the directory it would be created in. A component that differs in more than case ends the walk: another file.\n3. THE DISK-CALL CASE COUNTS EVERY CALL THAT ASKS THE DISK. The counter wraps, through one table in the case, every function of the os module the hook can reach that reads the filesystem - the three it counts today, a listing in each of its forms, and whatever else the hook file calls (derive the table's completeness in the case: every `os.` and `os.path.` call the hook's source makes is either in the table or in a short list of ones that touch no disk, and a call in neither turns the case red). The claim in SECURITY.md is then what the case measures, for an ordinary source write and for a file merely named like the config in a plain folder.\n4. THE DOCUMENTS SAY WHAT IS AND IS NOT MATCHED, THE SAME IN EACH. README, changelog, SECURITY.md and the build guide agree on the hard-link exceptions of (d) and on the journal's row for a nested or case-variant config.\n\nWHAT MUST STAY AS IT IS. Every answer the guard gives today on a volume with one case rule (the orchestrator's and the reviewers' probes, where the brief says) - same holds, same allows, same words. The disk calls of an ordinary write do not rise; the reviewer's independent count is in the brief. The hook import budget gate stays green. The fail-mode table's rows do not change.\n\nHOW TO PROVE. For (a): through the journal hook run as a process over real linked worktrees, a row for each of the three writes it missed, red before; allow twins that write no config row - a file named like the config in a plain folder, in a worktree's docs, an ordinary source file. And one case that states the agreement itself: over a table of paths, the guard's answer is a hold exactly when the journal's classification is a config edit. For (b): a case that builds a directory telling case apart inside one that does not where the host can (a disk image on macOS, skipped by name with the reason elsewhere - and say in the outcome on which hosts it ran), plus a case through a stubbed per-directory answer that runs everywhere and shows each component is asked of its own directory. For (c): the mutation that lists a directory on every ordinary write turns the case red. A mutation probe the orchestrator can run, with those rows and: the journal put back to the spelling comparison; the walk collapsed to one question of the nearest existing directory; an allow row for each (the function widened until a plain folder's file is a config must turn a twin red).\n\nNOT in this task: the shell route to the config, which stays journalled and not refused, as stated; Windows names with a trailing dot or blank; what the doctor says about the trail.\n\nAcceptance:\n(1) The journal writes a config row for the project's config spelled in another case, for a nested worktree's config, and for that in another case, and none for the allow twins.\n(2) Over a table of paths, the guard holds a write exactly when the journal classifies it as a config edit, and both call one function.\n(3) A creating write through a name differing in case is judged in the directory that holds that name, shown on a real pair of directories with different rules where the host can make one and through a stubbed per-directory answer everywhere.\n(4) The disk-call case counts listings and every other call of the hook that asks the disk, goes red when an ordinary write lists a directory, and its table is held complete against the hook's source.\n(5) Every answer the guard gave before on a volume with one case rule is unchanged, and an ordinary write makes no more disk calls than before.\n(6) README, changelog, SECURITY.md and the build guide say the same about a hard link and about the journal's row, and are true of the code.\n(7) The hook import budget gate is green and the fail-mode table is unchanged.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -3668,16 +3668,74 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T10:24:14Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T10:24:12Z",
+          "text": "it quotes the name of the security contact section of SECURITY.md; this task edits only the passage on which file the audit config hold names",
+          "waives": ".github/ISSUE_TEMPLATE/config.yml"
+        },
+        {
+          "at": "2026-11-18T10:24:12Z",
+          "text": "it quotes the sentence of SECURITY.md that the policy denies the tool, not the knowledge; this task edits only the passage on which file the audit config hold names",
+          "waives": "tests/test__panel_page.py"
+        },
+        {
+          "at": "2026-11-18T10:24:12Z",
+          "text": "it quotes the heading of SECURITY.md on the name-based secret-read guard; this task edits only the passage on which file the audit config hold names",
+          "waives": "tests/test_guard_secrets_read.py"
+        },
+        {
+          "at": "2026-11-18T10:24:12Z",
+          "text": "it quotes the phrase of SECURITY.md on a write journalled after the fact; this task edits only the passage on which file the audit config hold names and leaves that phrase as it is",
+          "waives": "tests/test_hooks.py"
+        },
+        {
+          "at": "2026-11-18T10:24:12Z",
+          "text": "it quotes a phrase of SECURITY.md's passage on committed paths; this task edits only the passage on which file the audit config hold names",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-18T10:24:12Z",
+          "text": "it quotes the phrase of SECURITY.md on a deliberately loud failure; this task edits only the passage on which file the audit config hold names",
+          "waives": "tools/check-git-pipeline.py"
+        },
+        {
+          "at": "2026-11-18T10:24:12Z",
+          "text": "it reads the fail-mode table of SECURITY.md by its heading; this task changes no row of that table - the hooks' events and fail modes stay as they are",
+          "waives": "tools/gate-parity.py"
+        },
+        {
+          "at": "2026-11-18T10:24:12Z",
+          "text": "it quotes the fail-mode row of guard-edits in SECURITY.md; this task changes which function names the config file, not the hook's event, its verdict or its fail mode, so the row stays as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T10:24:12Z",
+          "text": "a dated design note with a section on SECURITY.md as it stood; this task edits only the passage on which file the audit config hold names and the note records history",
+          "waives": "docs/research/guard-ownership-design.md"
+        },
+        {
+          "at": "2026-11-18T10:24:12Z",
+          "text": "it reads the Unreleased heading of CHANGELOG.md; this task rewords the entry on the audit config hold under that heading and leaves the heading as it is",
+          "waives": "tools/release.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T11:22:52Z.32e107",
+        "status": "passed",
+        "at": "2026-11-18T11:22:52Z"
+      }
     },
     {
       "id": "SG1.35-ukq",
@@ -4118,7 +4176,7 @@
     {
       "id": "SG1.41-ukq",
       "title": "A colon-less Acceptance label is read the same way whether its list opens on its own line or the next",
-      "status": "in_progress",
+      "status": "done",
       "description": "A narrow review of the task that made the wider Acceptance reading take a bare marker word only where a list opens under it found the strict reading untouched, every line printed before the wider reading existed still printed, plain prose quiet, the parting line always holding text, and time linear. It found one asymmetry, run by the reviewer and again by the orchestrator.\n\nMEASURED on the tree as it stands. Under a colon-less label of more than one word, a list on the NEXT line is read by the wider reading and the write says so; the same list on the label's OWN line is read by neither reading and nothing is printed - the task is held to no clause in silence. `Acceptance criteria` followed by a line-break and a two-item list prints; the same label followed by a blank and the same list does not, in every numbering form. The function that decides whether a list opens under the bare word accepts, on the word's own line, an opener only as the first thing after the word, and across a line break allows label words before it. The commit before that task said the same-line shape.\n\nTHE RULE TO BUILD. One rule for both places. After the bare word, words of a label may stand before the opener numbered one, on the word's own line as across the line break. On the word's own line, where a reference in prose and a list look alike, label words are allowed only when the list goes on: an opener numbered two, in the same form, follows the opener numbered one. An opener numbered one directly after the word stays a list as today.\nStated in the module and the conventions document as limits, not built: a bare label is read only over a list numbered from one - a colon-less heading over a list that starts at another number or is quoted or emphasised is not read and nothing is said; and a reference numbered one directly after the word in prose is read as a list.\n\nWHAT STAYS. The strict reading, to the character. Every line that printed before the wider reading existed. Prose stays quiet: the share of generated plain lists that print does not rise for the vocabularies that hold the word. Time linear.\n\nHOW TO PROVE. Cases, red before: each multi-word colon-less label the review used, with a two-item list on its own line in each numbering form, prints; the allow side, silent before and after - a prose line that begins with the word and holds one bracketed reference numbered one later in the line; a prose line beginning with the word and holding a version number; the word followed by an opener numbered one inside a code fence on the next line (no case pins that fence check today: removing it leaves the suite green). A mutation probe the orchestrator can run: label words refused on the word's own line again; the going-on condition dropped (the single-reference allow case goes red); the fence check on the next-line path removed.\n\nNOT in this task: lists under a bare label that do not start at one; other openers and markers the wider reading does not hold.\n\nAcceptance:\n(1) A colon-less label of several words with a list of two or more items on its own line is read by the wider reading and the write says so, in every numbering form the wider reading knows.\n(2) A prose line beginning with the marker word and holding a single reference numbered one later in the line prints nothing.\n(3) The fence check on the next-line path has a case that fails without it.\n(4) The strict reading and every line printed before the wider reading existed are unchanged over the committed descriptions, and the share of generated plain lists that print has not risen.\n(5) The module and the conventions document state the rule and its two limits and are true of the code.",
       "files": [
         "plugins/audit/scripts/governance/_clause_coverage.py",
@@ -4147,14 +4205,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "efb3b0e6d003",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(1) _clause_coverage.py: _list_opens_under now returns (opens, at). The direct path (an opener numbered one right after the word) and the next-line path (an opener numbered one at the start of the next line holding text, outside a fence) are unchanged byte for byte in behaviour and return at=None. A new third path, _list_after_label, takes label words on the word's own line: the first opener numbered one after a blank opens a list only when an opener numbered two, the same way, follows after a blank later on the line or at the start of the next line holding text, outside a fence. It is one pass along the line, keeping the first one of each way. New helpers: _opener (number and way of an opener), _opener_on_line, _next_text_line (the existing blank-line walk, factored out). _markers stores where such a list opens as marker['list']; _read passes it to _read_body, which reads numbers from there as if it opened the line, so the label becomes the lead-in, as it already was across a line break. The strict column never takes the bare word, so marker['list'] is always None there and the strict reading is untouched. (2) tests/test__clause_coverage.py: new stage cw-same with cw14 (60 descriptions: 5 multi-word labels x 6 numbering forms x second item on the same or the next line; the wide count comes from the construction and equals the one-word twin's count, the parting line is the label's line), cw15 (allow: 7 prose lines with a single reference numbered one later in the line, a version number directly or after label words, a (1) followed by a (3)), and cw16 (allow: the word or label words, then a backtick or tilde fence whose first line is an opener numbered one). (3) Docs: the module docstring (SILENT ONLY ON AGREEMENT), the READING_CHOICES bare row, the _markers and acceptance_reading docstrings, manifest-conventions.md, the PLUGIN-BUILD-GUIDE.md _clause_coverage section and the Unreleased CHANGELOG entry now state the rule and its two limits (a bare label is read only over a list numbered from one; a reference numbered one directly after the word in prose is read as a list). Both limits were checked against the code: 'Acceptance (1) of the handbook says so.' prints 'finds 1 item'; '## Acceptance criteria' over '> 1.'/'> 2.', 'Acceptance criteria' over '**1.**', '2. a' and '(2) a (3) b' print nothing. (4) The fence check on the next-line path is unreachable, an equivalent mutant: a bare marker word is never inside a fence (_markers skips it), so the next line holding text after its line is outside every fence or is the fence's own opening line, and that line starts with backticks or tildes and so cannot match an opener. cw16 pins the behaviour, and the fence's opening line is what stops it today. No case can fail without the check, so Acceptance item 3 cannot be met as written. Mutation row 3 shows it: 88/88 green and 0 of 40210 descriptions differ. Row 4 shows cw16 goes red once a fenced line is reachable and the check is gone. Row 5 shows the check alone keeps cw16 green when the walk does reach the fenced line. cw15 and cw16 are allow cases and pass before and after; cw14 carries the red. EVIDENCE: suite 88/88 after (85 before plus 3 new; red on HEAD's code 87/88 with cw14 failing); mutations.py exit 0; mine.py sg1.41 exit 0 (WRONG 0); sg1.39 and sg1.29 sets exit 0; p2_silent exit 0, with only the two excepted AFTER rows SILENT-WRONG; p2_plans exit 0 (zero); walk exit 0 (ITEMS CHANGED 0, none gone quiet, none newly printing, no committed description's line changed); d1_strict against ORIGIN: 0 strict diffs, 0 lines lost; against HEAD: 0 strict diffs, 0 lost, 251 of 100000 generated newly printing, and every new or reworded generated line (518) comes from the label path; d8: 0 bad; d7: 16 silent before, 0 after, and the 16 changed answers are exactly those 16; d2c shares unchanged against HEAD; d5 linear; time on the longest committed description (P75.2-j5h) 0.68 to 0.69 ms before and after. GATES RUN: python3 tools/sweep-selftests.py tests/test__clause_coverage.py, run in the unrecorded orchestrator gate (run-test-gate.py SG1 --task SG1.41-ukq): GATE GREEN, exit 0; sweep --jobs 4 over test__clause_coverage, test__output_lints and test__deps after the last edit: 3/3 files ok; sweep --jobs 4 over test__deps, test__output_lints, test__refs and test__clause_coverage: 4/4 files ok; tools/prove-gates.py --list exit 0; ruff and vermin -t=3.8- clean on both .py files. A change made after the tests were drafted: cw14 was drafted asserting two items for every form. Mid-line, a dotted, closing-bracket or square-bracketed number opens no item to either reading (_ANY_NUMBER's mid-line alternative is parenthesised only, and the one-word 'Acceptance 1. a 2. b' already reads one item), so cw14 now takes its count from the construction and holds it equal to the one-word twin's. DEPENDANTS: drive-phase.py (gap_summary and reading_line, unchanged shapes) uy-block 64/64, wl-block 15/15, rw-block 9/9: still correct. audit-task.py (reading_line, task_clauses) ar-block 11/11: still correct. audit-lookup.py (task_clauses) tests/test_audit_lookup.py 207/207: still correct. tests/test__clause_coverage.py is changed by this task (three cases added). tests/test_audit_lookup.py, unchanged: green. tests/test__refs.py 320 cases, green. PLUGIN-BUILD-GUIDE.md and CHANGELOG.md are changed by this task (the rule and limits). .github/sweep-costs.json has a file-level figure for the suite; this task adds a stage and the cost table is not in scope. No returned key changes: acceptance_reading's keys are as before, marker dicts are private and gained a 'list' key read only by _read. Sibling files reached: none.",
+        "descriptive": "A colon-less Acceptance label of several words is now read by the wider reading whether its list opens on its own line or the next, while a prose line citing a single numbered reference or a version stays quiet."
       },
       "startedAt": "2026-11-18T09:40:20Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T10:23:42Z",
+      "verifiedBy": [
+        "cw14: a multi-word colon-less label (plain, bold, with a word in brackets, lower case, heading) over a two-item list on its own line, in every numbering form, second item on that line or the next: no strict item, the line says no clause was read and gives the wide count the one-word twin gives, quoting the label's line",
+        "cw15 ALLOW: a prose line beginning with the word holding one reference numbered one later in the line (parenthesised, bracketed, closing-bracket, dotted), a version number directly or after label words, or a (1) followed by a (3): no item, nothing printed",
+        "cw16 ALLOW: the word or label words followed on the next line by a code fence (backtick or tilde) whose first line is an opener numbered one: no item, nothing printed"
+      ],
       "notes": [
         {
           "at": "2026-11-18T09:40:18Z",
@@ -4172,6 +4234,18 @@
         "runId": "2026-11-18T10:23:37Z.1c7496",
         "status": "passed",
         "at": "2026-11-18T10:23:37Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "efb3b0e6d003",
+        "at": "2026-11-18T10:23:42Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T10:08:57Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__clause_coverage.py` in a throwaway tree at HEAD exited 1 with 1 of 88 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cw14 (house FAIL): SELFTEST FAILED: 87/88 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
