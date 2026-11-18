@@ -38,6 +38,7 @@ This module carries no `--selftest` of its own; its cases live in
 `tests/test__commit_trail.py`.
 """
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -404,6 +405,9 @@ def summary(cleared):
 #     False. It is still a recorded word; folding it into passed or failed is a
 #     reader's guess this module does not make.
 #   * Keys compare case-insensitively, as git's own trailer matching does.
+#   * A message with `\r\n` line ends reads exactly as the same message with
+#     `\n`, for every key, a folded value included; a `\r` git leaves inside a
+#     value is a line break folded into one space, never part of the value.
 #   * Of two commits naming one task, `task_verdicts` takes the first that
 #     `git log --topo-order` shows - no other carrier descends from it - and
 #     names the rest under `superseded`. A plan reader does not walk at all: it
@@ -423,15 +427,31 @@ GATE_WORDS = ("passed", "failed", "gate-mutated", "no-checks", "timed-out",
 _TRAILER_FORMAT = "--format=%H%x00%(trailers:only,unfold)"
 
 
+# A carriage return and the whitespace after it, inside one trailer line of
+# git's unfolded output. Git breaks lines at `\n` alone, so a message written
+# with `\r\n` line ends - any message a Windows text-mode write produced - keeps
+# the `\r` before each fold: `a\r\n  b` unfolds to `a\r b`, where `a\n  b`
+# unfolds to `a b`. Read as the line break it is, a `\r` takes git's own unfold
+# rule: it and the indent after it become one space.
+_CARRIAGE_RETURN = re.compile("\r[ \t\r\v\f]*")
+
+
 def trailer_pairs(text):
     """`[(key, value)]` from git's parsed trailer output, in order, values
     stripped as git strips them. A line holding no separator is not a trailer
-    and is skipped: git's `only` output never prints one."""
+    and is skipped: git's `only` output never prints one.
+
+    LINES END AT `\\n` ALONE, AS GIT'S OUTPUT DOES. `str.splitlines()` also
+    breaks at a bare `\\r`, which cut a folded value from a `\\r\\n` message at
+    its fold and dropped the rest as a line with no separator. Every value then
+    reads a `\\r` as a line break folded by git's rule, so the same message reads
+    the same with either line end and no `\\r` reaches a value."""
     out = []
-    for line in (text or "").splitlines():
+    for line in (text or "").split("\n"):
         key, sep, value = line.partition(":")
         if sep and key.strip():
-            out.append((key.strip(), value.strip()))
+            out.append((key.strip(),
+                        _CARRIAGE_RETURN.sub(" ", value).strip()))
     return out
 
 
