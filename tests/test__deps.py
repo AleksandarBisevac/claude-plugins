@@ -3943,6 +3943,43 @@ def _git_path_base_cases(check):
               _named_sites(stale) == ["audit-lookup.py:gone",
                                       "audit-lookup.py:quiet", "nowhere.py:f"]
               and all("stale" in what for _rel, what in stale))
+
+        # A `--` WITH NOTHING AFTER IT hands git no path: it closes a revision
+        # list so a revision is never read as a pathspec. Anything after it the
+        # lint cannot read as a literal - a name, a starred list, a list added on
+        # - may hold a path, so it is still a listing.
+        revs = ("import subprocess\n\n"
+                "def walked(root, rev):\n"
+                "    return subprocess.run(['git', '-C', root, 'log', rev, '--'])\n\n"
+                "def literal(root):\n"
+                "    return subprocess.run(['git', '-C', root, 'log', '--', "
+                "'src/a.py'])\n\n"
+                "def variable(root, path):\n"
+                "    return subprocess.run(['git', '-C', root, 'log', '--', path])\n\n"
+                "def starred(root, paths):\n"
+                "    return subprocess.run(['git', '-C', root, 'log', '--', "
+                "*paths])\n\n"
+                "def joined(root, paths):\n"
+                "    return subprocess.run(['git', '-C', root, 'log', '--'] "
+                "+ paths)\n")
+        found = scan_with(revs, ())
+        check("gb8 %s (a `--` with NOTHING after it names no path and is not a "
+              "listing - the allow direction - while a `--` followed by a "
+              "literal path, a variable, a starred list or a list added on is "
+              "still named, because the lint cannot know those are empty: %r)"
+              % (GIT_PATH_BASE_CLAUSE, _named_sites(found)),
+              _named_sites(found) == ["audit-lookup.py:joined",
+                                      "audit-lookup.py:literal",
+                                      "audit-lookup.py:starred",
+                                      "audit-lookup.py:variable"])
+        trail = os.path.join(M._output.SCRIPTS_DIR, "manifest", "_commit_trail.py")
+        with open(trail, "r", encoding="utf-8") as fh:
+            trail_text = fh.read()
+        trail_found = scan_with(trail_text, ())
+        check("gb9 %s (the real instance: `_commit_trail.task_verdicts` closes "
+              "its revision with an empty `--` and, with NO exemption row, is "
+              "not named: %r)" % (GIT_PATH_BASE_CLAUSE, trail_found),
+              "\"--\"])" in trail_text and trail_found == [])
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 

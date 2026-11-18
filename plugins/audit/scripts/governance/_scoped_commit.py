@@ -1107,9 +1107,16 @@ def task_coauthor(manifest, models):
     return "\n".join(COAUTHOR_TRAILER % (name,) for name in names)
 
 
-def commit_message(header, coauthor, claims=None):
+def commit_message(header, coauthor, claims=None, trailers=None):
     """The message paragraphs of a scoped commit: `header`, then the executor's
-    `claims` when there are any, then the co-author trailer when there is one.
+    `claims` when there are any, then the co-author trailer when there is one,
+    with `trailers` - the verdict lines `_commit_trail.verdict_trailers` wrote
+    - after it in that same final paragraph.
+
+    ONE PARAGRAPH OF TRAILERS, because git reads trailers from the final
+    paragraph only: the verdict lines in a paragraph of their own after the
+    co-author would stop the co-author line being a trailer, and the row
+    trailer `with_row_trailer` adds still joins the end of it.
 
     A LIST RATHER THAN ONE STRING, because that is how it reaches git: one `-m`
     per paragraph, so the trailer is a trailer and not a second sentence of the
@@ -1130,8 +1137,10 @@ def commit_message(header, coauthor, claims=None):
     paragraphs = [header]
     if isinstance(claims, str) and claims.strip():
         paragraphs.append(claims)
-    if isinstance(coauthor, str) and coauthor.strip():
-        paragraphs.append(coauthor)
+    tail = [coauthor] if isinstance(coauthor, str) and coauthor.strip() else []
+    tail += [line for line in (trailers or []) if line]
+    if tail:
+        paragraphs.append("\n".join(tail))
     return paragraphs
 
 

@@ -2114,9 +2114,11 @@ GIT_PATH_BASE_EXEMPT = (
 
 
 def _argv_words(node):
-    """The string literals of one argv-shaped expression, in order: a call's
-    positional arguments or a list/tuple's elements, read through `+`
-    concatenation and `*` unpacking."""
+    """The words of one argv-shaped expression, in order: a call's positional
+    arguments or a list/tuple's elements, read through `+` concatenation and `*`
+    unpacking. A string literal is its text; anything else - a name, a starred
+    name, a call, an f-string - is `None`, a word the lint cannot read, kept in
+    its place so a reader can tell `log rev --` from `log -- path`."""
     if isinstance(node, ast.Call):
         parts = list(node.args)
     elif isinstance(node, (ast.List, ast.Tuple)):
@@ -2134,12 +2136,21 @@ def _argv_words(node):
             parts[0:0] = list(part.elts)
         elif isinstance(part, ast.Constant) and isinstance(part.value, str):
             out.append(part.value)
+        else:
+            out.append(None)
     return out
 
 
 def _git_listing_form(words):
-    """The path-listing form an argv's words spell, or None."""
-    if "status" in words and any(w.startswith("--porcelain") for w in words):
+    """The path-listing form an argv's words spell, or None.
+
+    A `--` lists paths only when a word follows it: with nothing after it, it
+    closes the revision list so a revision is never read as a pathspec, and git
+    is handed no path to spell from anywhere. Any word after it counts - one the
+    lint cannot read (`None`) included - since a name or a starred list may hold
+    a path, and an unreadable word must not be what excuses a listing."""
+    if "status" in words and any(w.startswith("--porcelain") for w in words
+                                 if w is not None):
         return "status --porcelain"
     if "diff-tree" in words:
         return "diff-tree"
@@ -2153,7 +2164,8 @@ def _git_listing_form(words):
     named = [w for w in words if w in _GIT_NAME_FLAGS]
     if named:
         return "%s %s" % (words[verbs[0]], named[0])
-    if "--" in words[verbs[0] + 1:]:
+    tail = words[verbs[0] + 1:]
+    if "--" in tail and tail.index("--") < len(tail) - 1:
         return "%s -- <pathspec>" % (words[verbs[0]],)
     return None
 
@@ -2236,8 +2248,8 @@ def git_path_base_violations(script_dir=None, hooks_dir=None, exempt=None):
     WHAT IS READ. Every `.py` under `scripts/` and `hooks/`, by the shared walk.
     A listing call is any call or list/tuple literal whose string words spell one
     of the forms `_git_listing_form` knows: `status --porcelain*`, a `diff`,
-    `show` or `log` with `--name-only`/`--name-status` or a `--` pathspec after
-    the verb, `diff-tree`, `ls-files`, or `ls-tree --name-only`. Its function is
+    `show` or `log` with `--name-only`/`--name-status` or a `--` after the verb
+    with any word after it - a bare trailing `--` names no path - `diff-tree`, `ls-files`, or `ls-tree --name-only`. Its function is
     named `<basename>:<function>` unless the function reaches the pair (directly,
     or through a function of its own file) or `GIT_PATH_BASE_EXEMPT` - `exempt`
     in a fixture - holds a row for it with a reason. `_config.py` defines the

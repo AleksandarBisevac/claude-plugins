@@ -44,6 +44,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   without a record has no entry. A plan that never recorded a stage renders and serializes
   exactly as before. `--gate` reads no timing figure, only the validator's verdict on the
   record, so a malformed record can trip the default `invalid` condition.
+- **A task's verdict is in its commit.** The commit `commit-task-work.py` makes for a task now
+  carries `Audit-Task: <task id>`, and - for the run its verdict binding bound, or the run an
+  override went over - `Audit-Gate: <status> <gate digest>` and `Audit-Run: <runId>`, plus
+  `Audit-Override: <reason>` verbatim when the commit is made over its verdict. The values are
+  the binding's own answer, so a commit made in the phase tree after a wave member's work was
+  integrated names the run that graded the phase tree. A task no gate measures carries
+  `Audit-Task` alone, which reads as no verdict recorded, never as passed. An override reason
+  holding a line break is refused before anything is staged, naming the line, because git
+  reads a trailer as one line and would join it with a space. `Audit-Row` and the co-author
+  trailer are unchanged, and a refusal over bytes the bound run did not grade is unchanged.
+  `_commit_trail.py` reads the trailers back through git's own trailer parser, from git alone:
+  a clone with no evidence directory reads the same task, status, digest and run. A commit with
+  no `Audit-Task` - every earlier commit and every hand-made one - reads as before. The report
+  reads a done task's verdict at its recorded commit from the trailers, and says so in the
+  badge's sentence; the status rollup takes the same reading when its caller hands it one.
+  `COMPATIBILITY.md` section 3 makes those names read keys, and says what is not promised.
 
 ### Changed
 - **`executor.phaseGateOnly` now reaches a task's recorded gate, not only the writer's prompt.**

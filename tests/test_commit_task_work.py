@@ -1229,10 +1229,12 @@ def _claims_cases(check, repos):
     psha = _head(plain)
     pparagraphs = _message(plain, psha).split("\n\n")
     check("cl2 SECOND DIRECTION: a filed return WITHOUT `claims` gives today's "
-          "message - the subject and the row trailer, nothing between: %r"
-          % (pparagraphs,),
+          "message - the subject and the paragraph of trailers ending in the row "
+          "trailer, nothing between: %r" % (pparagraphs,),
           pcode == 0 and len(pparagraphs) == 2
-          and pparagraphs[1].startswith(_invariants.ROW_TRAILER + ": "))
+          and _scoped_commit.is_trailer_paragraph(pparagraphs[1])
+          and pparagraphs[1].splitlines()[-1].startswith(
+              _invariants.ROW_TRAILER + ": "))
 
     # THE CHECKED READ: the row `drive-phase.py submit` appends after a filing
     # records the return's digest, and the commit reads the return through it.
@@ -4780,6 +4782,149 @@ def _coauthor_cases(check, repos):
           and "Fable" not in _message(st, ssha))
 
 
+# --- the verdict the commit carries in its own trailers ------------------------
+def _git_parsed(fx, sha):
+    """`git interpret-trailers --parse` over `sha`'s message, as `(key, value)`
+    pairs - git's own reading of the trailer block, not a line scan."""
+    body = TI._git(fx["root"], "log", "-1", "--format=%B", sha)
+    out = subprocess.run(["git", "-C", fx["root"], "interpret-trailers",
+                          "--parse"], input=body.encode("utf-8"),
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.DEVNULL).stdout.decode("utf-8")
+    return [tuple(part.strip() for part in ln.split(":", 1))
+            for ln in out.splitlines() if ":" in ln]
+
+
+def _keys(pairs, key):
+    return [value for name, value in pairs if name == key]
+
+
+@_own_repos
+def _verdict_trailer_cases(check, repos):
+    import _commit_trail
+    # THE BOUND RUN, after a red one the binding does not bind.
+    fx = repos.make()
+    _dirty_work(fx)
+    _set_task(fx, gate=["false"])
+    _gate(fx)
+    red = _newest_row(fx)
+    _set_task(fx, gate=["test"])
+    _gate(fx)
+    green = _newest_row(fx)
+    code, text = _run(fx)
+    sha = _head(fx)
+    parsed = _git_parsed(fx, sha)
+    check("ctv1 the commit the verb makes carries Audit-Task, Audit-Gate and "
+          "Audit-Run naming the run the binding BOUND - the newest, green one, "
+          "never the red run before it - and `git interpret-trailers --parse` "
+          "returns them: %r / %r" % (parsed, (red.get("runId"),
+                                              green.get("runId"))),
+          code == 0 and red.get("runId") != green.get("runId")
+          and green.get("gateDigest")
+          and _keys(parsed, "Audit-Task") == [TASK]
+          and _keys(parsed, "Audit-Gate") == ["passed %s"
+                                              % (green.get("gateDigest"),)]
+          and _keys(parsed, "Audit-Run") == [green.get("runId")]
+          and _keys(parsed, "Audit-Override") == [])
+    rows = _task_rows(fx)
+    nonce = ((rows[-1].get("details") or {}).get(_invariants.NONCE_KEY)
+             if rows else None)
+    body = _message(fx, sha).splitlines()
+    check("ctv2 ...and Audit-Row is UNCHANGED: one trailer naming the row's "
+          "nonce, still the message's last line, under the header a task commit "
+          "opens with - the shape the drive's own_commit finds a task's commit "
+          "by: %r" % (body,),
+          nonce is not None and _keys(parsed, "Audit-Row") == [nonce]
+          and body[-1] == "Audit-Row: %s" % (nonce,)
+          and re.match(r"^[a-z]+\(%s\): " % (re.escape(TASK),), body[0]))
+
+    clone = _clone_at(fx, sha, repos.scratch("ctv-clone"))
+    _harness.remove_tree(os.path.join(clone, "docs", "audit", "evidence"))
+    found, why = _commit_trail.verdicts_at(clone, [sha])
+    read = (found or {}).get(sha) or {}
+    check("ctv3 in a CLONE of that fixture with the evidence directory removed, "
+          "the reader returns the same task, status, digest and run as the row "
+          "the binding bound: %r" % ((read, why),),
+          not os.path.isdir(os.path.join(clone, "docs", "audit", "evidence"))
+          and [read.get(k) for k in ("task", "status", "digest", "run")]
+          == [TASK, "passed", green.get("gateDigest"), green.get("runId")])
+
+    # AN OVERRIDE, its reason verbatim.
+    fx = repos.make()
+    _dirty_work(fx)
+    _set_task(fx, gate=["false"])
+    _gate(fx)
+    red = _newest_row(fx)
+    reason = "known flake: outside  this task #7 ü"
+    code, text = _run(fx, TASK, "--override-verdict", reason)
+    sha = _head(fx)
+    parsed = _git_parsed(fx, sha)
+    read = (_commit_trail.verdicts_at(fx["root"], [sha])[0] or {}).get(sha) or {}
+    check("ctv4 a commit made over its verdict carries Audit-Override with the "
+          "reason VERBATIM, beside the run it went over and that run's own word "
+          "- never `passed`: %r / %r" % (parsed, read),
+          code == 0 and _keys(parsed, "Audit-Override") == [reason]
+          and read.get("override") == reason
+          and _keys(parsed, "Audit-Gate") == ["failed %s"
+                                              % (red.get("gateDigest"),)]
+          and _keys(parsed, "Audit-Run") == [red.get("runId")])
+
+    # A REASON HOLDING A LINE BREAK: git would unfold it, so it is refused.
+    fx = repos.make()
+    _dirty_work(fx)
+    _set_task(fx, gate=["false"])
+    _gate(fx)
+    before = _head(fx)
+    found_index = _index_entries(fx)
+    code, text = _run(fx, TASK, "--override-verdict", "line one\nline two")
+    overrides = [r for r in _journal_io.read_all(fx["root"])
+                 if r.get("action") == _const("ACTION_VERDICT_OVERRIDDEN")]
+    check("ctv5 an override reason holding a LINE BREAK is refused before "
+          "anything is staged or journalled, naming the line - git reads a "
+          "trailer as one line and would join the two with a space, which is a "
+          "reason not carried verbatim: %r / %r" % (code, text),
+          code == 1 and _head(fx) == before and _index_entries(fx) == found_index
+          and "line 2" in text and overrides == [])
+
+    # A TREE THE BOUND RUN DID NOT GRADE is still refused.
+    fx = repos.make()
+    _dirty_work(fx)
+    _gate(fx)
+    _write(os.path.join(fx["root"], OWNED), "a = 3  # edited after the gate\n")
+    before = _head(fx)
+    code, text = _run(fx)
+    walked, _why = _commit_trail.task_verdicts(fx["root"])
+    check("ctv6 a commit over bytes the bound run did not grade is REFUSED as "
+          "before, and no commit naming the task is made - the trailers do not "
+          "weaken the digest refusal: %r / %r" % (code, sorted(walked or {})),
+          code == 1 and "scopeDigest" in text and _head(fx) == before
+          and TASK not in (walked or {}))
+
+    # NO GATE AT ALL: the task alone, which reads as no verdict recorded.
+    fx = repos.make()
+    _dirty_work(fx)
+    _set_task(fx, gate=[], phase_gate=[])
+    code, text = _run(fx)
+    sha = _head(fx)
+    parsed = _git_parsed(fx, sha)
+    read = (_commit_trail.verdicts_at(fx["root"], [sha])[0] or {}).get(sha) or {}
+    check("ctv7 a task no gate measures commits with Audit-Task alone - no "
+          "Audit-Gate it did not earn - and the reader says no verdict recorded: "
+          "%r / %r" % (parsed, read),
+          code == 0 and _keys(parsed, "Audit-Task") == [TASK]
+          and _keys(parsed, "Audit-Gate") == [] and read.get("recorded") is False)
+
+    # THE STATE COMMIT carries none of them.
+    fx = repos.make(leave_dirty=True)
+    _exhaust(fx)
+    scode, _stext = _state(fx)
+    st = _git_parsed(fx, _head(fx))
+    check("ctv8 a STATE commit names no task and carries no verdict trailer - "
+          "it commits the plan's record, which no gate graded: %r" % (st,),
+          scode == 0 and _keys(st, "Audit-Task") == []
+          and _keys(st, "Audit-Gate") == [])
+
+
 STAGES = (("nm-block", "_no_maintenance_cases"),
           ("fg-block", "_fixture_git_cases"),("or-block", "_ordinary_cases"),("dc-block", "_declared_cases"),
           ("rc-block", "_records_cases"), ("ix-block", "_index_cases"),
@@ -4809,7 +4954,8 @@ STAGES = (("nm-block", "_no_maintenance_cases"),
           ("tr-block", "_state_terse_cases"),
           ("lk-block", "_index_lock_cases"),
           ("lj-block", "_lock_json_cases"),
-          ("co-block", "_coauthor_cases"))
+          ("co-block", "_coauthor_cases"),
+          ("vt-block", "_verdict_trailer_cases"))
 
 
 if __name__ == "__main__":

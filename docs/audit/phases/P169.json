@@ -60,7 +60,7 @@
     {
       "id": "P169.1",
       "title": "The browser jobs' time bound is about the slice: the Chromium install is timed by step and cached, and each bound's basis is re-measured",
-      "status": "in_progress",
+      "status": "done",
       "description": "The `browser (report)` job is bounded at 19 minutes on a recorded longest run of about nine, and on three runs in one day it took 17m44s once and was cut at the bound twice, the second time with the slice's VERIFY OK printed in the same second. Two costs sit in that job and in `browser (panel)` beside it. The install step (`npm ci`, then `npx playwright install --with-deps chromium`) took between six and nine minutes. The slice took over eleven where its recorded longest whole job was nine.\n\nMeasure before changing: split the install into steps that each print their own duration (the package install, the browser download, the system packages) and read one run. Then remove what can be removed: cache the browser download keyed by the pinned playwright version in the lock file, and install only the system packages the runner image lacks. A cache miss must still install and pass; a cache hit must not skip a version change. For the slice: read its per-step seconds from the run's log (verify.sh prints them) and compare with the run the `longest` line names; if a step grew, name it and the commit range in the outcome and file what you find rather than fixing a product regression inside this task.\n\nThen re-record: each browser job's `longest` line names a run measured after this change, and its bound is two to three times that, which is the rule tools/gate-parity.py holds. Do not raise a bound to make room for a cost you did not measure.\n\nACCEPTANCE.\n1. One dispatched run (the orchestrator dispatches it on the phase's CI branch; say in the outcome which lines to read) shows the install by step, and a second shows the cached path with its seconds.\n2. `python3 tools/gate-parity.py` is green: every job's bound is backed by its `longest` line.\n3. The outcome states the job's whole duration before and after, each with its run id, and what remains of the slice's growth.\n4. Nothing in the slice itself is skipped, narrowed or moved to the release tier to buy time.\n\nDEPENDANTS to answer for by name: tools/gate-parity.py's job bounds and its matrix rules, tools/verify.sh's slices (unchanged), CONTRIBUTING.md and CLAUDE.md where they describe CI's shape, and the release-tier jobs that share the install step.",
       "files": [
         ".github/workflows/ci.yml",
@@ -88,13 +88,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "77021b949c23",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Only .github/workflows/ci.yml changed. (1) The single `npm ci && npx playwright install --with-deps chromium` step in browser (panel) and browser (report) is now seven steps, identical in both jobs: npm ci; read the playwright-core pin from package-lock.json and ImageOS/ImageVersion (exits 1 if any is missing); actions/cache@v6 on <home>/.cache/ms-playwright keyed by runner os/arch and the playwright-core version; `npx playwright install chromium`, run on a hit as well so a version change is never skipped; derive the packages `playwright install-deps --dry-run chromium` names that dpkg-query does not report installed (exits 1 if no install line or no package); actions/cache@v6 on <home>/.cache/chromium-sysdeps keyed by the image version and a hash of that list; then `apt-get update` plus `--download-only` only for a .deb the restored set lacks, followed by `dpkg -i` on the set. Only the packages the image lacks are named, so mesa is no longer upgraded. (2) Measured on head 55d48673. Run 44363694425 missed both caches: panel 17:53:48-17:59:19 = 5m31s, report 17:53:48-18:05:59 = 12m11s, install 21s and 26s, mirror fast ('Fetched 21.1 MB in 0s'/'in 1s'). Run 44366022835 hit both ('every package the image lacks is in the restored set; no archive is asked'): panel 18:06:27-18:12:04 = 5m37s, report 18:06:27-18:19:04 = 12m37s, install 12s and 15s. Before the change: report 17m44s (run 44341247041) and 17m57s (run 44270291891); runs 44318839994 and 44356971266 were cut at the bound; panel 11m36s (44341247041) and 14m49s (42283005055); install 3m25s to 9m05s in the four runs read today, nearly all of it the apt fetch (for example 32.1 MB in 8m11s at 65.4 kB/s, job 134852070227). (3) The `longest` lines now read browser-panel 5m37s and browser-report 12m37s (both run 44366022835, start and end given), and the PROVISIONAL marking is gone. The bounds are 16 (panel; allowed 11m14s-16m51s, set above the minimum to hold a slow miss) and 26 (report; minimum 25m14s). A comment says what a slow miss still costs: the fetch of the packages the image lacks, 19.1 MB in 9m22s at 34.0 kB/s in run 42283005055, about nine minutes added to either job. The two measured runs had a fast mirror, so they show no saving on a slow day; the comment says so. (4) The slice is unchanged and still the remaining pole. The report slice took 11m25s (miss) and 12m04s (hit), against 8m13s in run 41322244766, the run the old `longest` line named (its log is still readable). Growth there: interactive-check steps 1m00s -> 3m00s, one-status 47s -> 2m18s, live plan 6m18s -> 5m47s; checks per page about tripled (acme-store 200 -> 584). Source: tools/check-report-interactive.mjs, commits 03f4114d (P163.1) through 1d0e3673 (P165.5). Filed in the fault register by the orchestrator, not fixed here. The report job is now about 12.5 minutes against the ten-minute workflow budget; the panel is about 5.5. (5) The cache helps only within one branch, or across branches when main holds a saved entry. Main's push runs skip the browser jobs once a commit is verified, so main rarely saves one; seeding it is the owner's call. (6) Process note: in stage two three Edit calls were refused with 'File has not been read yet' (file state was lost on resume). A `sed -i` for the two timeout values had been sent in the same parallel batch, so it ran (30->16, 36->26); after re-reading the file, the comment edits were made with Edit. Checks: `python3 tools/gate-parity.py` exit 0; Ruby YAML parse; the shell blocks run against stubs (miss, hit, partial set, three refusals). Dependants: tools/gate-parity.py unchanged and still correct (its bound rule holds the new lines; no job added or renamed, so the matrix and job-cap rules are unaffected); tools/verify.sh slices unchanged; CONTRIBUTING.md unchanged and still correct (every job is still setup plus one verify.sh --only call); CLAUDE.md not edited and still correct for the same reason; no release-tier job shares the install (resample has none, lint's npm ci is untouched). The pgo7 failures in both probe runs are tests/test_run_test_gate.py, a separate fault, not caused by this change.",
+        "descriptive": "The browser jobs' install drops from 3-9 minutes to 12-26 seconds (cached browser and only the font packages the image lacks), and their bounds are re-recorded from a post-change run; the report slice's own growth (now about 12 minutes) is the remaining long pole."
       },
       "startedAt": "2026-11-18T17:39:54Z",
-      "completedAt": null,
+      "completedAt": "2026-11-18T18:27:12Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -114,7 +114,46 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T18:22:02Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 2522000,
+            "startedAt": "2026-11-18T17:40:00Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T18:22:59Z.630db2",
+            "kind": "wait",
+            "ms": 8000,
+            "startedAt": "2026-11-18T18:22:10Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T18:22:59Z.630db2, ending at its startedAt",
+            "kind": "selection",
+            "ms": 446,
+            "runId": "2026-11-18T18:22:59Z.630db2",
+            "startedAt": "2026-11-18T18:22:18Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T18:22:59Z.630db2",
+            "kind": "gate",
+            "ms": 40428,
+            "runId": "2026-11-18T18:22:59Z.630db2",
+            "startedAt": "2026-11-18T18:22:19Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-18T18:26:40Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 218000,
+            "startedAt": "2026-11-18T18:23:02Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 77021b949c23",
+            "kind": "commit",
+            "ms": 1660,
+            "startedAt": "2026-11-18T18:27:09Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T17:39:54Z"
       },
       "reviewPerTask": "signals",
@@ -122,6 +161,17 @@
         "runId": "2026-11-18T18:23:01Z.c904d6",
         "status": "passed",
         "at": "2026-11-18T18:23:01Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "77021b949c23",
+        "at": "2026-11-18T18:27:12Z",
+        "return": "docs/audit/evidence/returns/P169.1/20261118T173954Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression mode with tests.expectRedFirst false and tests.add empty: the task adds no test, so no red was owed. The bound rule's response to the new lines was shown instead, in memory: job_bound_evidence reports report=25 (under 2x 12m37s), panel=17 (over 3x 5m37s) and panel=11 (under 2x), and gives no finding for the file as written",
+        "at": "n/a - no red-first helper run"
       }
     },
     {
@@ -142,7 +192,13 @@
         "COMPATIBILITY.md",
         "CHANGELOG.md",
         "PLUGIN-BUILD-GUIDE.md",
-        "tests/test__scoped_commit.py"
+        "tests/test__scoped_commit.py",
+        "tools/lints/_deps.py",
+        "tests/test__deps.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "tests/test_audit_status.py",
+        "plugins/audit/scripts/panel/_panel_state.py",
+        "tests/test__panel_state.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -167,14 +223,14 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 1,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": "2026-11-18T17:40:01Z",
+      "startedAt": "2026-11-18T18:27:30Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -241,9 +297,9 @@
       },
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-11-18T18:14:44Z.ce7901",
-        "status": "failed",
-        "at": "2026-11-18T18:14:44Z"
+        "runId": "2026-11-18T18:57:34Z.cfc4f4",
+        "status": "passed",
+        "at": "2026-11-18T18:57:34Z"
       }
     },
     {
@@ -921,7 +977,8 @@
       "description": "One case of tests/test_run_test_gate.py, pgo7, failed once on a Windows CI runner (run 44363694425, job \"selftests (windows, plain 2)\") over product code that passed it on the same runner image in two other runs the same day. The case runs a task's gate once with executor.phaseGateOnly absent and once with it empty and asserts that the two print the same lines once ids and times are masked. In the failing run both exited 0 with the same steps and the same row keys, so the difference is in the printed lines, and the failure message does not show them. A case that reddens a green tree once in three runs is how a CI verdict stops being read.\n\nDo this in order. First, make the case's failure say what differed: when the masked line lists are unequal, the message carries the first differing pair of lines (and the lengths if they differ), so the next red of this case names its own cause. Second, read the failing job's log (gh run view --job with the job's id from that run, read-only) for anything the run printed around the case, and read the case's mask against every line the gate prints: a duration that changes unit between two runs (ms to s), a count of workers or slots, a path under a temp directory with a random part, a line that appears only when a step crosses a time threshold, the order of two lines written by different streams. Third, fix the cause where it is: if a line legitimately varies with time, the mask must cover its whole varying part; if a line appears or not depending on timing, the two runs are not comparable on that line and the case must say so rather than compare it; if the product prints something nondeterministic that a user would also see vary, that is a product fix and belongs in run-test-gate.py.\n\nACCEPTANCE.\n1. With the two line lists made to differ in one line (a mutation in a scratch copy, restored in the same command), the failure message names that line pair.\n2. The cause is named in the outcome with the evidence that it is the cause (the log line, or the unmasked form found by reading), or stated as not established with what was ruled out; a mask widened without a named cause is not accepted.\n3. The case still fails when executor.phaseGateOnly set to an empty list changes what a task's run prints: prove it by mutation.\n4. The suite is green under the sweep and under the cp1252 leg locally (python3 tools/sweep-selftests.py tests/test_run_test_gate.py, and the same with --encoding cp1252).\n\nDEPENDANTS: the suite's other cases that share pgo7's masking helper, if it is shared.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
-        "tests/test_run_test_gate.py"
+        "tests/test_run_test_gate.py",
+        "PLUGIN-BUILD-GUIDE.md"
       ],
       "tests": {
         "mode": "regression",
@@ -956,6 +1013,66 @@
         {
           "at": "2026-11-18T18:20:16Z",
           "text": "Second sighting the same evening: run 44366022835, job 'selftests (linux, stress 1)', the same case and the same message shape, over the same product code. So it is not Windows-only: it failed on two of four runs of that product code that day, once on Windows plain and once under the Linux stress leg, which runs the sweep under load. Read the stress job's log as well; a cause that depends on how long a step took fits both sightings."
+        },
+        {
+          "at": "2026-11-18T18:28:19Z",
+          "reader": "PLUGIN-BUILD-GUIDE.md",
+          "reads": "plugins/audit/scripts/governance/run-test-gate.py",
+          "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/governance/run-test-gate.py - a section headed by its path"
+        }
+      ]
+    },
+    {
+      "id": "P169.11-6l3",
+      "title": "A branch's first CI run restores the browser install: the default branch seeds the cache, the install is written once, a partial set fetches what it names and a bad entry heals",
+      "status": "pending",
+      "description": "The browser jobs now restore the Chromium download and the system packages the runner image lacks from a cache, and the first measurement shows what that buys and what it does not. A cache entry is saved only by a job that succeeded, and an entry is readable by the branch that saved it and by branches cut from the default branch's entries. The default branch's push runs skip the browser jobs when the commit is already verified, so the default branch saves no entry, and every phase's CI branch misses both caches on its first run. On a miss the archive is asked for about as many megabytes as before the change (the package index plus the font packages), so on a day the runner's mirror is slow the first run of a branch still pays minutes; the two runs measured so far had a fast mirror and differ by seconds. The review of that change also found three things in its shell.\n\nMake a hit the ordinary case, and make the steps do what their names say:\n1. Seed. The default branch holds a saved entry for both keys after any push that changes a key's inputs (the playwright pin in the lock file, the runner image version, the list of packages the image lacks), so a branch's first run restores it. Do it with the least new machinery that is honest: a job that runs only the install steps and saves the caches, on the default branch, when no entry for the key exists. It carries a time bound and a `longest` line like every job, and tools/gate-parity.py's rules must hold it (a job outside the slices: say how the parity rules read it, and extend them if they cannot).\n2. One install, written once. The two browser jobs and the seeding job run the same steps; today the block is written out twice with a comment asking that both be changed together. Put it in one place the three jobs call (a composite action under .github/actions/ is the established form), or hold the copies to one text with a gate-parity rule that names a difference. A prose rule is not enough.\n3. A partial set fetches what it names. When some but not all packages are in the restored set, the step downloads the missing ones and their dependencies and nothing else, and the check that decides a package is present covers the dependencies the install needs, not only the packages named. The step's title and log line say what the code does.\n4. A bad entry heals. The system-packages key carries the runner's architecture as the browser key does. When installing from a restored set fails, the step falls back once to fetching from the archive and says so; a job is red only when that also fails. A manual version token in the key lets an operator retire an entry.\n\nACCEPTANCE.\n1. The orchestrator dispatches runs for you as before (hand back READY-FOR-RUN with what to read, do not file): a run on the default-branch path that saves the entries, and a first run of a fresh branch that restores both. State what each line of each log must show.\n2. Proven on stubs in your outcome, as the first change was: a full hit, a miss, a partial set (one package missing, one dependency missing), a restored set with a truncated package (the fallback runs once and the step passes), and the fallback failing (the step is red).\n3. `python3 tools/gate-parity.py` is green and each job's bound is backed by its `longest` line; the seeding job's line names a measured run.\n4. No slice is skipped, narrowed or moved; the release tier's jobs are unchanged.\n5. The outcome says what a branch's first run costs after the change on a slow mirror, with the basis, and what it cost before.\n\nDEPENDANTS to answer for by name: tools/gate-parity.py's job-bound, slice and matrix rules, tools/verify.sh's slices (unchanged), CONTRIBUTING.md and CLAUDE.md where they describe CI's shape (CLAUDE.md is outside this task's files: say what sentence there, if any, is no longer exact), and the push-to-default-branch path that skips work for a verified commit.",
+      "files": [
+        ".github/workflows/ci.yml",
+        ".github/actions/browser-install/action.yml",
+        "tools/gate-parity.py",
+        "CONTRIBUTING.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/gate-parity.py",
+          "python3 tools/sweep-selftests.py tools/gate-parity.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T18:28:20Z",
+          "text": "it quotes the shard matrix line from the workflow; this task changes the browser jobs' install and adds a seeding job, and leaves the sharded jobs' matrix as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T18:28:20Z",
+          "text": "it quotes 'print it with' from CONTRIBUTING.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-18T18:28:20Z",
+          "text": "it quotes 'refuses to start' from CONTRIBUTING.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tools/sweep-selftests.py"
         }
       ]
     }

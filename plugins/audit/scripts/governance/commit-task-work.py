@@ -133,6 +133,17 @@ printed instead and `/audit:task done <taskId> --commit <sha>` records it, ridin
 along with the next commit exactly as step 4c already says. Two verbs, one each
 for the thing git owns and the thing the plan owns.
 
+THE VERDICT IS INSIDE THE COMMIT TOO. A task commit carries `Audit-Task: <id>`,
+and, when the binding bound a run - or the commit goes over the run it refused -
+`Audit-Gate: <status> <gate digest>` and `Audit-Run: <runId>` naming THAT run and
+no other, plus `Audit-Override: <reason>` over a refused verdict
+(`_commit_trail.verdict_trailers`). They are written from the one answer
+`verdict_binding` gave, so a commit made in a phase tree after a wave member's
+bytes were integrated names the run that graded the phase tree's bytes. A task
+no gate measures carries `Audit-Task` alone, which reads as no verdict recorded.
+An override reason holding a line break is refused before anything is staged:
+git would unfold it into one line, so it could not be carried verbatim.
+
 THE ROW NAMING THE COMMIT IS INSIDE IT. `audit.task.committed` - and, for an
 override, the row recording it - is written before the commit, keyed by the
 nonce the commit message carries as its `Audit-Row` trailer, and carried by the
@@ -203,6 +214,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 _output.install_path()
 
 import _claude_home  # noqa: E402  (a usage error names this copy and a newer installed one)
+import _commit_trail  # noqa: E402  (the verdict trailers a task commit carries, written as they are read)
 import _evidence_io  # noqa: E402  (where the evidence ledger lives)
 import _filed_returns  # noqa: E402  (the executor's filed return, for its `claims`)
 import _invariants  # noqa: E402  (the git root, the manifest file pair, the under-test)
@@ -1255,6 +1267,16 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
         return E_FAIL, answer
     if verdict["state"] == "no-gate":
         skipped = skipped + [verdict["sentence"]]
+    # THE VERDICT'S TRAILERS, from that same answer and still before staging: the
+    # run the binding bound, or the one an override goes over - never another.
+    trailers, why = _commit_trail.verdict_trailers(
+        task_id, verdict.get("row") if verdict["state"] == "bound" or overriding
+        else None, override if overriding else None)
+    if why:
+        answer = _scoped_commit.answer(skipped, refused=(
+            "%s. Nothing was staged" % (why,)))
+        answer["verdict"] = verdict
+        return E_FAIL, answer
     # The executor's filed return for the task's current start, for its
     # `claims`. Still before staging: a return that is there and will not parse
     # refuses with nothing to undo, rather than committing as if none was filed.
@@ -1293,7 +1315,8 @@ def _commit_work(manifest, phase, task, manifest_path, project, git_root,
     done = _scoped_commit.commit_with_rows(
         git_root, carrying["paths"], carrying["kinds"],
         _scoped_commit.commit_message(
-            *message_parts(task_id, subject, manifest, models), claims=claims),
+            *message_parts(task_id, subject, manifest, models), claims=claims,
+            trailers=trailers),
         lambda paths: foreign_refusal(paths, targets), rows,
         lambda nonce, why: _scoped_commit.withdraw(
             project, config, nonce, "commit-task-work",

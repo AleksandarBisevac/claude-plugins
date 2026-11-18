@@ -120,6 +120,7 @@ import _proposals                      # noqa: E402  (proposals, rule AND read s
 import _report_html                    # noqa: E402  (the report's naming rule)
 import _evidence_io                    # noqa: E402  (WHEN this plan could first
 #                                        have recorded a run at all)
+import _commit_trail                   # noqa: E402  (the verdict a done task's commit carries)
 
 discover = _panel_discovery.discover
 CONFIG_REL = _paths.CONFIG_REL
@@ -546,11 +547,20 @@ def build_state(project, run=None, full_run_cache=None, live=None):
             # parallel `--record` could grow between two reads.
             boundary = _evidence_io.boundary_for(mpath, project)
             view = _live_view(as_, manifest, mpath, project, live)
+            # THE COMMIT TRAIL BY `/audit:status`'s OWN RULE
+            # (`_status_facts.TRAIL_ERROR_KEY` states it), at this panel's one
+            # git root: a done task's verdict is the one its commit carries,
+            # and git unable to answer travels as `trailError` rather than a
+            # count that only looks read from the commits.
+            trail, trail_error = _commit_trail.plan_verdicts(
+                view["plan"], _git_root(project, config))
             rollup = as_.rollup(view["plan"], m_findings, m_warn,
                                 boundary=boundary, copies=view["copies"],
-                                own=view["own"])
+                                own=view["own"], trail=trail)
             if view["note"]:
                 rollup["liveCopyError"] = view["note"]
+            if trail is None:
+                rollup[as_.TRAIL_ERROR_KEY] = trail_error
             rollup["phaseTaskStatus"] = as_.phase_task_status(view["plan"])
             # THE LEDGER IS READ ONCE, HERE, AND HANDED TO BOTH THE EVIDENCE
             # TAB AND THE THIRD PLACE'S ANCESTRY CHECK - `boundary`'s pattern

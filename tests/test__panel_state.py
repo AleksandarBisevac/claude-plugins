@@ -719,11 +719,97 @@ def _pill_sums(rollup):
     return out
 
 
+def _trail_project(project, with_repo):
+    """`(plan, git_root)` - a project, itself the repository, whose plan has
+    P1.1 done at a commit carrying `Audit-Gate: failed` while its pointer says
+    `passed`, and P1.2 done at a commit carrying no verdict, pointer `passed`.
+    With no repo the plan names the same SHAs and git cannot answer."""
+    import _commit_trail
+    os.makedirs(project)
+    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+           "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+    _harness.git(project, "init", "-q", prefix=git)
+    shas = {}
+    for name, message in (
+            ("plain", "chore: no verdict\n"),
+            ("verdict", "feat(P1.1): audit - x\n\n%s: P1.1\n%s: failed "
+                        "sha256:aa\n%s: R1\n"
+                        % (_commit_trail.TASK_TRAILER,
+                           _commit_trail.GATE_TRAILER,
+                           _commit_trail.RUN_TRAILER))):
+        with open(os.path.join(project, name), "w", encoding="utf-8") as fh:
+            fh.write(name)
+        msg = project + ".msg-" + name
+        with open(msg, "w", encoding="utf-8") as fh:
+            fh.write(message)
+        _harness.git(project, "add", "--", name, prefix=git)
+        _harness.git(project, "commit", "-q", "--cleanup=verbatim", "-F", msg,
+                     prefix=git)
+        shas[name] = _harness.git(project, "rev-parse", "HEAD",
+                                  prefix=git).strip()
+    if not with_repo:
+        _harness.remove_tree(os.path.join(project, ".git"))
+
+    def task(tid, sha):
+        return {"id": tid, "title": tid, "status": "done", "commit": sha,
+                "tests": {"mode": "tdd", "gate": ["pytest"]},
+                "testEvidence": {"runId": "R-" + tid, "status": "passed",
+                                 "at": "2026-08-01T09:00:00Z"}}
+    plan = {"meta": {"version": 2}, "phases": [{
+        "id": "P1", "title": "Trail", "status": "in_progress", "tasks": [
+            task("P1.1", shas["verdict"]), task("P1.2", shas["plain"]),
+            {"id": "P1.3", "title": "P1.3", "status": "pending"}]}]}
+    _mio.atomic_write_json(M._manifest_path(project, M.read_config(project)),
+                           plan)
+    return plan, M._git_root(project, M.read_config(project))
+
+
+def _trail_cases(check):
+    """The panel's rollup reads a done task's verdict from its commit and names
+    the source, and a git that cannot answer is carried as `trailError`."""
+    import tempfile
+    import _commit_trail
+    root = tempfile.mkdtemp(prefix="panel-state-trail-")
+    try:
+        _trail_project(os.path.join(root, "a"), True)
+        state = M.build_state(os.path.join(root, "a"))
+        rollup = state.get("rollup") or {}
+        te = rollup.get("testEvidence") or {}
+        check("ptr1 the panel rollup counts a done task by the `Audit-Gate` "
+              "word its commit carries, over the pointer's, names the source "
+              "`trailers` on its row, and carries no trailError",
+              te.get("byStatus") == {"failed": 1, "passed": 1}
+              and [(r.get("id"), r.get("source")) for r in te.get("failing")
+                   or []] == [("P1.1", "trailers")]
+              and "trailError" not in rollup,
+              "byStatus=%r failing=%r trailError=%r"
+              % (te.get("byStatus"), te.get("failing"),
+                 rollup.get("trailError")))
+
+        plan, git_root = _trail_project(os.path.join(root, "b"), False)
+        found, why = _commit_trail.plan_verdicts(plan, git_root)
+        rollup2 = (M.build_state(os.path.join(root, "b")).get("rollup") or {})
+        te2 = rollup2.get("testEvidence") or {}
+        check("ptr2 with git unable to answer, the panel rollup carries git's "
+              "reason verbatim as trailError and counts the pointers alone - "
+              "no row claims the commit as its source",
+              found is None and bool(why)
+              and rollup2.get("trailError") == why
+              and te2.get("byStatus") == {"passed": 2}
+              and not [r for r in te2.get("failing") or []
+                       if r.get("source") == "trailers"],
+              "found=%r why=%r trailError=%r byStatus=%r"
+              % (found, why, rollup2.get("trailError"), te2.get("byStatus")))
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _full_run_cases(check)
         _harness.stage(check, "pl", _live_copy_cases)
+        _harness.stage(check, "ptr", _trail_cases)
     return _harness.run(body)
 
 

@@ -24,6 +24,13 @@ owns - is read off the row that run wrote. A pointer naming a run this checkout
 does not hold is therefore its own state, `Pointer without evidence`, and not a
 silence: the plan is referring to a record that is not here, and that is news.
 
+A DONE TASK'S COMMIT OUTRANKS BOTH. When the commit the plan records for a done
+task carries a recorded verdict in its trailers (`_commit_trail.plan_verdicts`,
+`_status_facts.trail_verdict`), the word rendered is the trailer's, the view's
+`source` is `trailers` and its sentence names the commit; the ledger row of the
+run the trailer names still supplies that run's observations when it is here.
+Every other view's `source` is `ledger` when the plan points at a run, else None.
+
 This module carries no `--selftest` of its own; its cases live in
 `tests/test__evidence_view.py` - see `tests/_harness.py`.
 """
@@ -52,6 +59,7 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
+import _commit_trail  # noqa: E402  (plan_verdicts: the verdict a done task's commit carries)
 import _evidence_io  # noqa: E402  (where a run's record lives, and how to read it)
 import _manifest_io as _mio  # noqa: E402  (declared_gate_entries: the one reading of a gate)
 import _report_html  # noqa: E402  (the vocabulary and the view, decided once)
@@ -121,8 +129,40 @@ def _rows_for(rows, scope, subject_id):
     return list(reversed(_evidence_io.oldest_first(mine)))
 
 
+def _trail_view(read, by_run, configured):
+    """The view of a verdict read from a done task's commit trailers.
+
+    The ledger row of the run the trailer names is used for its observations
+    only when it records the same word; otherwise the row is built from the
+    trailers alone, and the sentence says the ledger disagrees. The trailer's
+    word wins because it is what graded the commit."""
+    run = read.get("run")
+    ledger = by_run.get(str(run)) if run else None
+    same = isinstance(ledger, dict) and ledger.get("status") == read["status"]
+    row = ledger if same else {"runId": run, "status": read["status"],
+                               "gateDigest": read.get("digest")}
+    view = _report_html.tev_view({"runId": run, "status": read["status"]}, row,
+                                 configured)
+    said = ["read from the %s trailer of commit %s - run %s"
+            % (_commit_trail.GATE_TRAILER, str(read.get("sha") or "")[:12],
+               run if run else "not named")]
+    if same:
+        said.append("the ledger's row for that run supplies its observations")
+    elif isinstance(ledger, dict):
+        said.append("the ledger's row for that run records `%s`"
+                    % (ledger.get("status"),))
+    if read.get("override"):
+        said.append("committed over its verdict: %s" % (read["override"],))
+    sentence = "; ".join(said)
+    view["why"] = (sentence if view.get("known")
+                   else "%s; %s" % (view.get("why") or "", sentence))
+    view["source"] = _status_facts.SOURCE_TRAILERS
+    view["trail"] = read
+    return view
+
+
 def _view_for(holder, phase, scope, by_run, rows, boundary=None,
-              read_error=None):
+              read_error=None, trail=None):
     """One holder's view, with the runs before it attached.
 
     The current run is dropped from the history by RUN ID rather than by position:
@@ -140,6 +180,9 @@ def _view_for(holder, phase, scope, by_run, rows, boundary=None,
 
     `read_error` is the caller's failed ledger read, handed to `tev_view` so a
     pointer whose run could not be looked up says so instead of dangling.
+
+    `trail` is the verdict the subject's commit carries; whether it is read is
+    `_status_facts.trail_verdict`'s decision, the one the status rollup takes.
     """
     pointer = _report_html.tev_pointer(holder)
     row = by_run.get(str(pointer.get("runId"))) if pointer else None
@@ -147,10 +190,16 @@ def _view_for(holder, phase, scope, by_run, rows, boundary=None,
     # an all-blank `testGate` runs nothing, so it is no gate here either.
     configured = (_report_html.tev_configured(holder, phase) if scope == "task"
                   else bool(_mio.declared_gate_entries(holder.get("testGate"))))
-    view = _report_html.tev_view(
-        pointer, row, configured,
-        gap=_status_facts.evidence_gap(holder, scope, boundary),
-        basis=(boundary or {}).get("basis"), read_error=read_error)
+    read = _status_facts.trail_verdict(holder, scope, trail)
+    if read:
+        view = _trail_view(read, by_run, configured)
+        row = view.get("row")
+    else:
+        view = _report_html.tev_view(
+            pointer, row, configured,
+            gap=_status_facts.evidence_gap(holder, scope, boundary),
+            basis=(boundary or {}).get("basis"), read_error=read_error)
+        view["source"] = "ledger" if pointer else None
     # A GROUP MEMBER'S POINTER IS ITS CARRIER'S RUN, and saying so is the whole
     # difference between "graded" and "measured here": rendered bare it would
     # claim a sign-off run for this phase that nobody made.
@@ -215,7 +264,7 @@ def load_evidence(manifest, manifest_path, project_dir=None, boundary=None,
     """Everything the report says about test execution, or None when it says none.
 
     `{"tasks", "phases", "keys", "flags", "rows", "files", "unreadable",
-    "readError"}`:
+    "readError", "trailError"}`:
 
       tasks   {taskId: view}  - one per task, whether or not it points at a run
       phases  {phaseId: {"own": view, "rollup": [(key, label, count), ...][,
@@ -254,9 +303,15 @@ def load_evidence(manifest, manifest_path, project_dir=None, boundary=None,
     byte-identical.
     """
     tasks, phases = subjects(manifest)
-    if not _pointed_at_anything(tasks, phases):
+    pointed = _pointed_at_anything(tasks, phases)
+    if not pointed and not _commit_trail.done_commits(manifest):
         return None
     project, config = _project_and_config(manifest_path, project_dir)
+    trail, trail_error = _trail_of(manifest, project)
+    if not pointed and not any(
+            _status_facts.trail_verdict(task, "task", trail.get(str(task.get("id"))))
+            for task, _phase in tasks):
+        return None
     read_error = None
     try:
         read = _evidence_io.read_rows(project, config=config)
@@ -273,7 +328,8 @@ def load_evidence(manifest, manifest_path, project_dir=None, boundary=None,
         tid = task.get("id")
         if tid:
             task_views[str(tid)] = _view_for(task, phase, "task", by_run, rows,
-                                             boundary, read_error)
+                                             boundary, read_error,
+                                             trail.get(str(tid)))
     phase_views = {}
     for phase in phases:
         pid = phase.get("id")
@@ -302,7 +358,20 @@ def load_evidence(manifest, manifest_path, project_dir=None, boundary=None,
                        else (read.get("unreadable") or 0)),
         "readError": (None if read_error is None
                       else _report_html.tev_read_error(read_error)),
+        # Why the done tasks' commits could not be read, or None when they were
+        # read or there was none to read; every view then reads the ledger.
+        "trailError": trail_error,
     }
+
+
+def _trail_of(manifest, project):
+    """`(trail, error)` - `{task id: verdict}` read at each done task's commit,
+    and the sentence when git could not be asked (the map is then empty, so
+    every view reads its pointer as before)."""
+    found, why = _commit_trail.plan_verdicts(manifest, project)
+    if found is None:
+        return {}, why or "the done tasks' commits could not be read"
+    return found, None
 
 
 def _ordered(present, vocabulary):

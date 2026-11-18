@@ -101,6 +101,7 @@ import _proposals  # noqa: E402  (the proposal READ side: one derivation of the 
 #                                  all print)
 import _status_facts  # noqa: E402  (what the manifest SAYS: rollup, readiness, the gate)
 import _invariants  # noqa: E402  (what GIT says: the post-hoc check behind --fail-on invariant-breach)
+import _commit_trail  # noqa: E402  (the verdict a done task's own commit carries)
 import _evidence_io  # noqa: E402  (where a run's record lives - and WHEN this
 #                                   plan could first have recorded one at all)
 import _filed_returns as _fr  # noqa: E402  (where the phase driver keeps its state)
@@ -174,6 +175,12 @@ GAP_UNDATED = _status_facts.GAP_UNDATED
 # spells it unqualified and the suite drives it by hand to reproduce the exact
 # payload the command prints.
 boundary_for = _evidence_io.boundary_for
+
+
+# --- the verdict a done task's commit carries --------------------------------------
+TRAIL_ERROR_KEY = _status_facts.TRAIL_ERROR_KEY
+# What a `tests` cell read from the commit carries after the word.
+TRAIL_CELL_MARK = " (commit)"
 
 
 def invariants_block(manifest, manifest_path, project=None):
@@ -922,7 +929,7 @@ def _short(sha):
 EVIDENCE_CELL_MAX = max(len(w) for w in KNOWN_EVIDENCE)
 
 
-def _evidence_cell(holder):
+def _evidence_cell(holder, verdict=None):
     """The `tests` cell: the word the manifest recorded, or `-` for no record.
 
     THE RAW WORD, NEVER A TRANSLATION OF IT, and the three distinctions that survive
@@ -942,9 +949,21 @@ def _evidence_cell(holder):
     checkout's evidence ledger holds it is `verify-invariants.py`'s question and
     `/audit:doctor`'s -- so this cell reports what the manifest SAYS and is worded
     as no more than that.
+
+    `verdict` is the verdict the task's own commit carries (`plan_verdicts`),
+    and `_status_facts.evidence_row` decides whether it is read - a done task
+    with a recorded `Audit-Gate`. Read, the cell is the commit's word followed
+    by `TRAIL_CELL_MARK`, so a reader can always tell which record a word came
+    from; otherwise it is the pointer's word, unmarked, as before trailers.
     """
-    status = evidence_status(holder)
-    return _clip(status, EVIDENCE_CELL_MAX) if status else "-"
+    row = _status_facts.evidence_row(holder, "task", verdict)
+    status = row["status"]
+    if not status:
+        return "-"
+    cell = _clip(status, EVIDENCE_CELL_MAX)
+    if row["source"] == _status_facts.SOURCE_TRAILERS:
+        return cell + TRAIL_CELL_MARK
+    return cell
 
 
 def _time_cell(summary):
@@ -1004,7 +1023,7 @@ def _time_clause(aggregate):
 
 
 def render_status(manifest, summary, width=18, only_phase=None, pt=None,
-                  view=None, own=None, manifest_path=None):
+                  view=None, own=None, manifest_path=None, trail=None):
     """Plain-ASCII status report. Printed verbatim by /audit:status.
 
     Pure ASCII, no ANSI, no box-drawing — the same constraint audit-usage.py's
@@ -1022,12 +1041,17 @@ def render_status(manifest, summary, width=18, only_phase=None, pt=None,
     over it; the BUGS block and RESUMABLE read it, because a bug is open until
     its fix lands here and RESUMABLE offers to resume a run here. None means
     `manifest` is this checkout's own.
+
+    `trail` is `_commit_trail.plan_verdicts`' map, the one `summary` was
+    rolled up with;
+    None (every caller that read no commits) renders every `tests` cell from
+    its pointer, byte for byte as before trailers.
     """
     pt = pt or _cli_fmt.PLAIN
     here = own if own is not None else manifest
     lines = _header_lines(manifest, summary, width, pt=pt,
                           manifest_path=manifest_path)
-    lines += _phase_table_lines(manifest, summary, only_phase, view)
+    lines += _phase_table_lines(manifest, summary, only_phase, view, trail)
     lines += _ready_lines(manifest, summary, pt=pt)
     lines += _area_lines(summary, pt=pt)
     lines += _bug_lines(here, summary, pt=pt)
@@ -1163,7 +1187,8 @@ def _header_lines(manifest, summary, width=18, pt=None, manifest_path=None):
     return out
 
 
-def _phase_table_lines(manifest, summary, only_phase=None, view=None):
+def _phase_table_lines(manifest, summary, only_phase=None, view=None,
+                       trail=None):
     """The phase-by-phase table: one header row, then a block per phase.
 
     Column widths are computed across EVERY task, then the header is printed
@@ -1216,7 +1241,11 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None):
     # column no task in it fills. Asked of the TASKS in the rendered scope, because
     # the cells are theirs -- a phase's own verdict has its own clause on the phase
     # head below, which is conditional in its own right.
-    show_tests = any(evidence_status(t)
+    trail = trail or {}
+
+    def tests_cell(t):
+        return _evidence_cell(t, trail.get(str(t.get("id"))))
+    show_tests = any(tests_cell(t) != "-"
                      for pe in shown_phases
                      for t in ((by_id.get(pe.get("id")) or {}).get("tasks") or [])
                      if isinstance(t, dict))
@@ -1246,7 +1275,7 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None):
                 _clip(", ".join(unmet.get(tid, [])) or "-", 26),
             ]
             if show_tests:
-                cells.append(_evidence_cell(t))
+                cells.append(tests_cell(t))
             if show_time:
                 cells.append(_time_cell(timed.get(str(tid))))
             cells += [_short(t.get("commit")),
@@ -1389,6 +1418,19 @@ def _phase_table_lines(manifest, summary, only_phase=None, view=None):
                        for p in hidden)
             out.append("  --view %s hides %d phase(s) and %d task row(s) - "
                        "--view all shows them" % (view, len(hidden), rows))
+    # WHICH RECORD THE `tests` WORDS CAME FROM, said under the table. The mark's
+    # meaning only where a marked cell is on screen; a trail git could not read
+    # whenever the rollup says so, with git's reason, because then every cell is
+    # the pointer's even where the commit may say otherwise.
+    if show_tests and any(r[cols.index("tests")].endswith(TRAIL_CELL_MARK)
+                          for rows in all_rows.values() for r in rows):
+        out.append("  tests: a cell marked%s is the Audit-Gate trailer of the "
+                   "task's own commit; an unmarked one is the plan's "
+                   "testEvidence pointer" % (TRAIL_CELL_MARK,))
+    if summary.get(TRAIL_ERROR_KEY):
+        out.append("  tests: the verdicts on the task commits could not be "
+                   "read - %s; every tests word is the plan's testEvidence "
+                   "pointer" % (summary[TRAIL_ERROR_KEY],))
     return out
 
 
@@ -2477,13 +2519,20 @@ def main(argv):
     plan = live["plan"]
     laid = live["own"] is not None
     boundary = boundary_for(manifest_path) if want_boundary else None
+    # Every mode reads the trail, by `_status_facts.TRAIL_ERROR_KEY`'s rule, at
+    # the git root the plan names.
+    git_root = _invariants.git_root_for(manifest, project)
+    trail, trail_error = _commit_trail.plan_verdicts(plan, git_root)
     summary = rollup(plan, findings, warnings,
                      usage=usage_summary(plan, manifest_path,
                                          full=(want_json or want_gate)),
-                     boundary=boundary, copies=live["copies"], own=live["own"])
+                     boundary=boundary, copies=live["copies"], own=live["own"],
+                     trail=trail)
     rolled_keys = set(summary)
     if live["note"]:
         summary["liveCopyError"] = live["note"]
+    if trail is None:
+        summary[TRAIL_ERROR_KEY] = trail_error
 
     if want_discovery:
         # The plan's own project root, not the manifest's directory - which
@@ -2555,10 +2604,14 @@ def main(argv):
     if want_gate and laid:
         # This checkout's own rollup, with every block injected above carried
         # over as it is: those were asked of this checkout already.
+        # Its trail is this checkout's own plan's commits, read by the same
+        # rule; a refusal is the overlay's, carried over below.
         gate_view = rollup(manifest, findings, warnings,
                            usage=usage_summary(manifest, manifest_path,
                                                full=True),
-                           boundary=boundary)
+                           boundary=boundary,
+                           trail=_commit_trail.plan_verdicts(manifest,
+                                                             git_root)[0])
         gate_view.update((k, v) for k, v in summary.items()
                          if k not in rolled_keys)
     gate_task = args.task or None
@@ -2628,7 +2681,7 @@ def main(argv):
                         else "all")
             print(render_status(plan, summary, only_phase=only_phase, pt=pt,
                                 view=view, own=manifest,
-                                manifest_path=manifest_path))
+                                manifest_path=manifest_path, trail=trail))
 
     if want_gate:
         # WHERE THE VERDICT GOES. The machine-readable verdict is already whole in

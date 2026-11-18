@@ -1014,8 +1014,95 @@ def _moment_order_cases(check):
           got == ["R-frac", "R-later"])
 
 
+def _trail_commit(root, name, message):
+    """Commit one file in the repository at `root` under `message`, given whole.
+    Returns the SHA."""
+    import subprocess
+
+    def git(*args):
+        return subprocess.run(["git", "-C", root] + list(args),
+                              stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL).stdout.decode().strip()
+    if not os.path.isdir(os.path.join(root, ".git")):
+        git("init", "-q")
+        git("config", "user.email", "t@example.com")
+        git("config", "user.name", "Test User")
+    with open(os.path.join(root, name), "w", encoding="utf-8") as fh:
+        fh.write(name)
+    msg = os.path.join(root, ".git", "msg-" + name)
+    with open(msg, "w", encoding="utf-8") as fh:
+        fh.write(message)
+    git("add", "--", name)
+    git("commit", "-q", "--cleanup=verbatim", "-F", msg)
+    return git("rev-parse", "HEAD")
+
+
+def _trail_view_cases(check):
+    """The report reads a done task's verdict at its commit from the trailers,
+    and the verdict it renders is the one the ledger row gives."""
+    root = _harness.fixture_root("evidence-view-trail")
+    try:
+        green = _trail_commit(root, "green", "feat(P1.1): audit - x\n\n"
+                              "Audit-Task: P1.1\nAudit-Gate: passed sha256:aa\n"
+                              "Audit-Run: R1\nAudit-Row: 0011\n")
+        silent = _trail_commit(root, "silent", "feat(P1.3): audit - x\n\n"
+                               "Audit-Task: P1.3\n")
+        plan = _plan()
+        tasks = plan["phases"][0]["tasks"]
+        tasks[2]["commit"] = silent
+        path = _write_project(root, plan, _rows())
+        by_row = M.load_evidence(plan, path, project_dir=root)["tasks"]["P1.1"]
+        tasks[0]["commit"] = green
+        both = M.load_evidence(plan, path, project_dir=root)["tasks"]["P1.1"]
+        _harness.remove_tree(os.path.join(root, ".claude", "audit", "evidence"))
+        gone = M.load_evidence(plan, path, project_dir=root)["tasks"]
+        by_trail = gone["P1.1"]
+        check("evt1 ONE FIXTURE READ BOTH WAYS: the task's verdict read from its "
+              "commit's trailers - with the ledger present, and with the "
+              "evidence directory removed - is the verdict its ledger row "
+              "renders, and each view names the source it read: %r"
+              % ([(v.get("key"), v.get("source")) for v in (by_row, both,
+                                                             by_trail)],),
+              by_row.get("key") == both.get("key") == by_trail.get("key")
+              == "passed"
+              and by_row.get("label") == by_trail.get("label")
+              and by_row.get("source") == "ledger"
+              and both.get("source") == by_trail.get("source") == "trailers")
+        check("evt2 ...the trailer-read view says WHERE it read the word, naming "
+              "the commit and the run, so a badge with no ledger behind it is not "
+              "mistaken for one read off a row: %r" % (by_trail.get("why"),),
+              green[:12] in (by_trail.get("why") or "")
+              and "R1" in (by_trail.get("why") or "")
+              and "Audit-Gate" in (by_trail.get("why") or ""))
+        check("evt3 ...and with the ledger present the run's own observations "
+              "still come from its row, so reading the trailer costs the report "
+              "no marker it had: %r / %r" % (both.get("flags"), by_row.get("flags")),
+              both.get("flags") == by_row.get("flags"))
+        check("evt4 a commit naming the task with NO Audit-Gate gives no verdict - "
+              "never passed: with the ledger gone the pointer is read as before "
+              "and says its run is not here: %r" % (gone["P1.3"].get("key"),),
+              gone["P1.3"].get("key") == "dangling"
+              and gone["P1.3"].get("source") == "ledger")
+        bare = json.loads(json.dumps(plan))
+        for phase in bare["phases"]:
+            phase.pop("testEvidence", None)
+            for task in phase["tasks"]:
+                task.pop("testEvidence", None)
+        loaded = M.load_evidence(bare, path, project_dir=root)
+        check("evt5 a plan with NO pointer at all still earns the column when a "
+              "done task's commit carries its verdict - the trailer is a "
+              "recorded run, and None would say there was none: %r"
+              % ((loaded or {}).get("tasks", {}).get("P1.1"),),
+              loaded is not None
+              and loaded["tasks"]["P1.1"].get("key") == "passed"
+              and loaded["tasks"]["P1.1"].get("source") == "trailers")
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
+        _harness.stage(check, "evt", _trail_view_cases)
         _cases(check)
         _graded_cases(check)
         _full_run_cases(check)

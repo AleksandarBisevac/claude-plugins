@@ -1208,7 +1208,8 @@
       "P151.7-3z1",
       "P155.5",
       "P155.9",
-      "P169.1"
+      "P169.1",
+      "P169.11-6l3"
     ],
     ".gitignore": [
       "P4.4",
@@ -1648,7 +1649,8 @@
       "P168.8-icj",
       "P168.18-icj",
       "P168.19-icj",
-      "P169.1"
+      "P169.1",
+      "P169.11-6l3"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -2123,7 +2125,8 @@
       "P169.6",
       "P169.7",
       "P169.8",
-      "P169.9"
+      "P169.9",
+      "P169.10-6l3"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -5891,7 +5894,8 @@
       "P130.5",
       "P130.8",
       "P131.1",
-      "P131.2"
+      "P131.2",
+      "P169.2"
     ],
     "plugins/audit/scripts/panel/_panel_ui.py": [
       "P11.1",
@@ -6528,7 +6532,8 @@
       "P155.46-gfj",
       "P155.49-gfj",
       "P167.5",
-      "P167.7-fge"
+      "P167.7-fge",
+      "P169.2"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -9056,7 +9061,8 @@
       "P156.6",
       "P156.8-3st",
       "P159.2",
-      "P169.1"
+      "P169.1",
+      "P169.11-6l3"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -12327,7 +12333,8 @@
       "P167.2",
       "P168.7",
       "P168.8-icj",
-      "P169.8"
+      "P169.8",
+      "P169.2"
     ],
     "tools/lints/_refs.py": [
       "P130.8",
@@ -12693,7 +12700,8 @@
       "P167.2",
       "P168.7",
       "P168.8-icj",
-      "P169.8"
+      "P169.8",
+      "P169.2"
     ],
     "tests/test__doctor_ado.py": [
       "P131.1"
@@ -12961,7 +12969,8 @@
       "P168.4"
     ],
     "tests/test__panel_state.py": [
-      "P131.1"
+      "P131.1",
+      "P169.2"
     ],
     "tests/test__panel_ui.py": [
       "P131.1",
@@ -13273,7 +13282,8 @@
       "P155.49-gfj",
       "P156.6",
       "P167.5",
-      "P167.7-fge"
+      "P167.7-fge",
+      "P169.2"
     ],
     "tests/test_audit_task.py": [
       "P131.1",
@@ -14208,6 +14218,9 @@
     ],
     "tools/ui-tests/confirm-write.test.mjs": [
       "P168.13-icj"
+    ],
+    ".github/actions/browser-install/action.yml": [
+      "P169.11-6l3"
     ]
   },
   "bugs": [

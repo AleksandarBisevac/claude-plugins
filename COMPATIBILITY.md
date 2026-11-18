@@ -30,10 +30,13 @@ That is the trade, made on purpose.
 | MINOR | no | new commands, new config keys, a new `meta.version`, new behaviour |
 | PATCH | no | fixes |
 
-Two surfaces are under the promise, and only two: the **manifest** you keep in your
-repository, and the **config** you keep in `.claude/audit.config.json`. Both are
-files *you* own and the plugin reads. That is the whole basis for the choice — an
-upgrade must never invalidate a file you wrote.
+The promise covers these surfaces and no others: the **manifest** you keep in your
+repository, the **config** you keep in `.claude/audit.config.json`, and the **verdict
+trailers** a task commit carries in your repository's history (section 3). Each is a
+record *you* own and the plugin reads. That is the whole basis for the choice — an
+upgrade must never invalidate a record you hold. The third is history rather than a
+file, which is why it joins the promise: a commit cannot be rewritten to suit a newer
+reader.
 
 ## 1. The manifest schema version — `meta.version`
 
@@ -728,6 +731,59 @@ depending on an implementation:
 If you need one of these to be stable, say so in an issue; the answer is a promise
 added here, not an assumption held quietly.
 
+## 3. The verdict trailers on a task commit
+
+From the release that introduced them, the commit `commit-task-work.py` makes for a task
+carries the verdict it was bound to in its trailer block, and the plugin reads that verdict
+back from git alone - no evidence directory, no journal
+(`plugins/audit/scripts/manifest/_commit_trail.py`, `verdict_trailers` writes and
+`verdicts_at` reads). `/audit:status` and the report read a done task's verdict at its
+recorded commit from them, and say that is where they read it.
+
+### Promised
+
+- **These trailer names are read keys from this release on**, and a later release in the
+  same major line keeps reading every one of them:
+  - `Audit-Task: <task id>` - the task the commit carries. A commit with no `Audit-Task`
+    is not a trailer commit, and its verdict is read the way it was before trailers
+    existed - so every commit made before this release, and every commit made by hand,
+    reads exactly as it did;
+  - `Audit-Gate: <status> <gate digest>` - the word of the run the commit was bound to, and
+    that run's `gateDigest`; the status alone when the run recorded no digest;
+  - `Audit-Run: <runId>` - that run;
+  - `Audit-Override: <reason>` - present only on a commit made over its verdict with
+    `--override-verdict`, carrying the reason verbatim. A reason holding a line break is
+    refused before anything is committed, because git reads a trailer as one line.
+- **Absence keeps its meaning.** `Audit-Task` with no `Audit-Gate` reads as *no verdict
+  recorded* - the shape a task no gate measures is committed with - and never as passed.
+  Reversing that is a major.
+- **A status word is read as itself.** A word the reading release does not know is reported
+  as that word, never folded into passed or failed - the rule the `testEvidence.status`
+  enum already carries in section 1.
+- **`Audit-Row` and the `Co-Authored-By` trailer are unchanged.** `Audit-Row: <nonce>` still
+  joins a task commit to the journal row it carries and is still the message's last line
+  whenever a row was written;
+  the co-author trailer still follows `meta.commit.coauthor` as section 1 states. Neither
+  is added to this promise by this section, and neither is moved by it.
+
+### Not promised
+
+- **The order of the trailers within the block**, or where in the block a name sits. Read
+  them by name through git's own trailer parser (`git interpret-trailers --parse`, or
+  `git log --format='%(trailers:key=Audit-Gate,valueonly)'`), never by position.
+- **The digest's length or algorithm.** It is the run's `gateDigest` as the recorder wrote
+  it, today `sha256:<hex>`; compare it for equality with another digest, never parse it.
+- **That `Audit-Run` resolves.** A run id names a run in the evidence ledger, and a clone
+  without that ledger still reads the trailer; that the run is still recorded somewhere is
+  not part of the promise.
+- **That every task commit carries them.** A `--state` commit carries none - it commits
+  the plan's record, which no gate graded - and a commit made by hand carries what its
+  author wrote.
+- **Which commit wins when two name one task.** The status and the report read the commit
+  the plan records for a done task; a reader that walks history instead (`task_verdicts`)
+  takes the first `git log --topo-order` shows and names the rest, and that rule may be
+  refined.
+
 ## How the promise is checked
 
 A promise nothing checks is a sentence. These run on every push:
@@ -741,6 +797,10 @@ A promise nothing checks is a sentence. These run on every push:
   as.
 - `tests/test__manifest_rules.py` pins that `meta` keys from named
   earlier releases stay silent, and that an unrecognised key warns rather than fails.
+- `tests/test__commit_trail.py` pins the trailer reading against `git interpret-trailers
+  --parse` on real commits - folded, repeated, empty and unknown-word trailers included -
+  and `tests/test_commit_task_work.py` pins that the verb's own commit carries those
+  names and reads back from a clone with no evidence directory.
 - The config key sets are owned in one place, and the control panel's Settings
   coverage is **derived** from them rather than hand-listed — so a key the plugin
   reads has a control, or a declared exemption whose reason is itself pinned. That

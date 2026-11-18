@@ -887,13 +887,15 @@ def _gap_of(row, boundary):
     return GAP_BEFORE if finished < started else GAP_SINCE
 
 
-def evidence_gap(holder, scope, boundary):
+def evidence_gap(holder, scope, boundary, trail=None):
     """Which evidence gap one phase or task has, or None when it has none.
 
     THE DOOR THE REPORT AND THE PANEL CALL, so that "is this absence excused" is
     answered by the rule the gate bucketed by rather than by a second opinion
     rendered beside it. `scope` is `"phase"` or `"task"`; `boundary` is
-    `_evidence_io.boundary_of`'s block, or None when nobody computed one.
+    `_evidence_io.boundary_of`'s block, or None when nobody computed one;
+    `trail` is `evidence_row`'s, so a verdict read at the task's commit is not
+    a gap.
 
     None means there is nothing to explain -- the subject carries a pointer, or
     the plan does not call it done. Otherwise one of `GAP_CLASSES`.
@@ -906,14 +908,57 @@ def evidence_gap(holder, scope, boundary):
     if scope not in FINISHED_KEY:
         raise ValueError("%r is not a subject scope; the scopes are %s"
                          % (scope, ", ".join(sorted(FINISHED_KEY))))
-    row = evidence_row(holder, scope)
+    row = evidence_row(holder, scope, trail)
     if row["status"] is not None or row["subjectStatus"] != "done":
         return None
     return _gap_of(row, boundary)
 
 
-def evidence_row(holder, scope):
+# WHICH RECORD A ROW'S `status` WAS READ FROM: the verdict trailers of a done
+# task's commit, or the plan's `testEvidence` pointer. A row with no status has
+# no source.
+SOURCE_TRAILERS = "trailers"
+SOURCE_POINTER = "testEvidence"
+# WHEN A SURFACE READS THE TRAIL, the one rule `/audit:status` and the panel
+# both keep: on every call, for every done task's commit the plan records
+# whatever the view folds - `_commit_trail.plan_verdicts`, one `git log` -
+# because the counts and the gate this module rolls up are whole-plan, and a
+# count taken from commits for the shown tasks and from pointers for the rest
+# would be two readings of one plan. The read is the caller's (this module asks
+# no git); its map is `rollup(trail=)`. When git cannot answer, the map is None,
+# every row reads its pointer, and the caller puts git's reason on the rollup
+# under this key - so no surface prints a verdict as if the commit were read.
+TRAIL_ERROR_KEY = "trailError"
+
+
+def trail_verdict(holder, scope, verdict):
+    """`verdict` - `_commit_trail.plan_verdicts`' answer for this subject - when
+    it is a RECORDED verdict at a DONE task's commit, else None.
+
+    Only a done task is read at its commit: its commit is the one the plan
+    recorded when the work closed, and a running task's is not yet its verdict.
+    A trailer commit with no `Audit-Gate` is not recorded, so it is never read
+    as a verdict here - the pointer is read instead, exactly as before trailers
+    existed."""
+    if scope != "task" or not isinstance(holder, dict) \
+            or holder.get("status") != "done":
+        return None
+    if not isinstance(verdict, dict) or verdict.get("recorded") is not True:
+        return None
+    status = verdict.get("status")
+    return verdict if isinstance(status, str) and status else None
+
+
+def evidence_row(holder, scope, trail=None):
     """The `evidence_rows` row for ONE phase or task.
+
+    `trail` is the verdict the task's commit carries (`trail_verdict` decides
+    whether it is read). When it is, `status` is its word and `source` is
+    `SOURCE_TRAILERS`, with the commit's `override` reason beside it when the
+    commit was made over its verdict; otherwise `status` is the pointer's and
+    `source` is `SOURCE_POINTER`, or None with no status. The commit wins over
+    the pointer because the commit is what the verdict graded, and the pointer
+    is a cache.
 
     EXTRACTED SO THE ROW HAS ONE SHAPE. The walk below built it twice, once per
     scope, and `evidence_gap` needs the same row for a single subject a surface
@@ -926,8 +971,12 @@ def evidence_row(holder, scope):
     nothing and claims nothing.
     """
     holder = holder if isinstance(holder, dict) else {}
-    return {"scope": scope, "id": holder.get("id"),
-            "status": evidence_status(holder),
+    read = trail_verdict(holder, scope, trail)
+    status = read["status"] if read else evidence_status(holder)
+    row = {"scope": scope, "id": holder.get("id"),
+            "status": status,
+            "source": (SOURCE_TRAILERS if read else
+                       SOURCE_POINTER if status is not None else None),
             "subjectStatus": holder.get("status"),
             # The stamp that DATES the subject, carried on the row rather than
             # looked up again later: the boundary comparison and the walk that
@@ -938,6 +987,9 @@ def evidence_row(holder, scope):
             # of a group sign-off carries the carrier's pointer, and a surface
             # rendering it as the member's run would claim a gate nobody ran.
             "gradedBy": graded_by(holder)}
+    if read and read.get("override"):
+        row["override"] = read["override"]
+    return row
 
 
 def graded_by(holder):
@@ -948,8 +1000,11 @@ def graded_by(holder):
     return str(value) if isinstance(value, str) and value else None
 
 
-def evidence_rows(manifest):
+def evidence_rows(manifest, trail=None):
     """One row per phase and per task the plan carries, in document order.
+
+    `trail` is `{task id: verdict}` (`_commit_trail.plan_verdicts`), or None
+    when nobody read the commits - every row then reads its pointer.
 
     `{"scope", "id", "status", "subjectStatus", "finishedAt"}`. `status` is the
     recorded verdict, None where none is recorded; `subjectStatus` is the subject's
@@ -974,11 +1029,12 @@ def evidence_rows(manifest):
         for t in (ph.get("tasks") or []):
             if not isinstance(t, dict):
                 continue
-            rows.append(evidence_row(t, "task"))
+            rows.append(evidence_row(t, "task",
+                                     (trail or {}).get(str(t.get("id")))))
     return rows
 
 
-def test_evidence_summary(manifest, boundary=None):
+def test_evidence_summary(manifest, boundary=None, trail=None):
     """What the plan's `testEvidence` pointers SAY -- the block `rollup` carries.
 
     ALWAYS PRESENT AND ALWAYS COMPLETE, every list included even when empty, for the
@@ -1020,11 +1076,14 @@ def test_evidence_summary(manifest, boundary=None):
     plan could have carried evidence. Collapsing the two would make an upgrade
     silently pass builds nobody asked it to pass.
 
-    NOTHING IS RESOLVED AGAINST THE LEDGER. Every row is what the manifest says
-    about itself; whether a `runId` names a run this checkout holds is asked by
+    `trail` is `evidence_rows`': a done task whose commit carries its verdict
+    is counted by that word, and its row says `source: trailers`.
+
+    NOTHING IS RESOLVED AGAINST THE LEDGER. Every row is what the manifest - or
+    a done task's own commit - says about itself; whether a `runId` names a run this checkout holds is asked by
     `verify-invariants.py` and `_doctor_completions`, and answered nowhere near here.
     """
-    rows = evidence_rows(manifest)
+    rows = evidence_rows(manifest, trail)
     recorded = [r for r in rows if r["status"] is not None]
     missing = [r for r in rows
                if r["status"] is None and r["subjectStatus"] == "done"]
@@ -1298,7 +1357,7 @@ def timing_rollup(manifest):
 
 
 def rollup(manifest, findings, warnings, usage=None, boundary=None,
-           copies=None, own=None):
+           copies=None, own=None, trail=None):
     """The machine-readable summary --json, render-report and the panel consume.
 
     `usage` is the optional block from `usage_summary()`; it is passed in rather
@@ -1320,6 +1379,11 @@ def rollup(manifest, findings, warnings, usage=None, boundary=None,
     open until its fix lands here - and carries `elsewhere`, each open bug
     whose fix a live copy shows (`bugs_fixed_elsewhere`). Without `own` the
     bugs are counted from `manifest` and no `elsewhere` key is written.
+
+    `trail` is `{task id: verdict}` read at each done task's commit
+    (`_commit_trail.plan_verdicts`), passed in for `usage`'s reason - which
+    commit carries what is a git question. None is nobody read them, and every
+    subject's evidence is its pointer, as it was before trailers existed.
 
     `boundary` is `_evidence_io`'s block and arrives the same way for the same
     reason, with one extra: that module is this one's LAYER-MATE, so reading it
@@ -1471,7 +1535,7 @@ def rollup(manifest, findings, warnings, usage=None, boundary=None,
         # empty `failing` list and a block nobody computed must not look alike, and
         # the CLI, the report and the panel all read the one key rather than each
         # walking the plan for it.
-        "testEvidence": test_evidence_summary(manifest, boundary),
+        "testEvidence": test_evidence_summary(manifest, boundary, trail),
         # "parked" is every entry whose status AS WRITTEN is 'proposed', payload
         # or not — `is_parked_proposal` holds the decision and says why. It used
         # to require a payload as well, which is a count of what

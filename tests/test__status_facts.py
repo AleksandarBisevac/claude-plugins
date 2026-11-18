@@ -2437,8 +2437,120 @@ def _unreadable_cases(check):
           and sorted(left) == ["TR.2", "TR.3", "TR.4"])
 
 
+def _trail_repo(tmp):
+    """A real repository holding the commits the trail cases read: one per
+    trailer shape, each message given whole. Returns `(root, {name: sha})`."""
+    root = os.path.join(tmp, "repo")
+    os.makedirs(root)
+
+    def git(*args):
+        return subprocess.run(["git", "-C", root] + list(args),
+                              stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL).stdout.decode().strip()
+    git("init", "-q")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "Test User")
+    messages = {
+        "passed": "feat(P1.1): audit - x\n\nAudit-Task: P1.1\n"
+                  "Audit-Gate: passed sha256:aa\nAudit-Run: R1\nAudit-Row: 0011\n",
+        "nogate": "feat(P1.2): audit - x\n\nAudit-Task: P1.2\n",
+        "odd": "feat(P1.3): audit - x\n\nAudit-Task: P1.3\n"
+               "Audit-Gate: shimmering sha256:bb\nAudit-Run: R3\n",
+    }
+    shas = {}
+    for name in sorted(messages):
+        with open(os.path.join(root, name), "w", encoding="utf-8") as fh:
+            fh.write(name)
+        msg = os.path.join(tmp, "msg-" + name)
+        with open(msg, "w", encoding="utf-8") as fh:
+            fh.write(messages[name])
+        git("add", "--", name)
+        git("commit", "-q", "--cleanup=verbatim", "-F", msg)
+        shas[name] = git("rev-parse", "HEAD")
+    return root, shas
+
+
+def _trail_plan(shas, pointers):
+    """Three done tasks at those commits and one running; `pointers` keeps the
+    testEvidence of the two whose commits record a verdict. The one whose commit
+    names no gate has no pointer either way, so the two readings of the plan
+    differ only in where a recorded word comes from."""
+    def task(tid, sha, run, status):
+        t = {"id": tid, "title": tid, "status": "done", "commit": sha,
+             "tests": {"mode": "tdd", "gate": ["pytest"]}}
+        if pointers and run is not None:
+            t["testEvidence"] = {"runId": run, "status": status,
+                                 "at": "2026-08-01T09:00:00Z"}
+        return t
+    return {"meta": {"version": 2}, "phases": [{
+        "id": "P1", "title": "One", "status": "in_progress", "tasks": [
+            task("P1.1", shas["passed"], "R1", "passed"),
+            task("P1.2", shas["nogate"], None, None),
+            task("P1.3", shas["odd"], "R3", "shimmering"),
+            {"id": "P1.4", "title": "running", "status": "in_progress",
+             "commit": shas["passed"]}]}]}
+
+
+def _trail_cases(check):
+    import _commit_trail
+    tmp = _harness.fixture_root("status-trail-")
+    try:
+        root, shas = _trail_repo(tmp)
+        with_rows = _trail_plan(shas, pointers=True)
+        bare = _trail_plan(shas, pointers=False)
+        trail, why = _commit_trail.plan_verdicts(bare, root)
+        trail = trail or {}
+        by_row = M.rollup(with_rows, [], [])["testEvidence"]
+        by_trail = M.rollup(bare, [], [], trail=trail)["testEvidence"]
+        row_p11 = M.evidence_row(with_rows["phases"][0]["tasks"][0], "task")
+        trail_p11 = M.evidence_row(bare["phases"][0]["tasks"][0], "task",
+                                   trail=trail.get("P1.1"))
+        check("stt1 ONE FIXTURE READ BOTH WAYS: a done task's verdict read from "
+              "its commit's trailers, with no testEvidence pointer at all, is the "
+              "verdict the pointer gives - and each row names the source it read: "
+              "%r / %r" % (row_p11, trail_p11),
+              why == "" and row_p11.get("status") == trail_p11.get("status")
+              == "passed" and row_p11.get("source") == "testEvidence"
+              and trail_p11.get("source") == "trailers")
+        check("stt2 ...and the rollup's evidence block counts it the same way: "
+              "passed once, not missing on a done task: %r / %r"
+              % (by_row.get("byStatus"), by_trail.get("byStatus")),
+              by_trail.get("byStatus") == by_row.get("byStatus")
+              and by_row.get("byStatus", {}).get("passed") == 1
+              and "P1.1" not in [r["id"] for r in by_trail["missingOnDone"]])
+        nogate = M.evidence_row(bare["phases"][0]["tasks"][1], "task",
+                                trail=trail.get("P1.2"))
+        check("stt3 a commit naming the task with NO Audit-Gate is no verdict "
+              "recorded - never passed: with no pointer either, the task is "
+              "missing evidence on a done task: %r" % (nogate,),
+              nogate.get("status") is None
+              and "P1.2" in [r["id"] for r in by_trail["missingOnDone"]])
+        check("stt4 a status word this build does not know, read from a "
+              "trailer, is UNRECOGNISED - in neither failing nor passed: %r"
+              % (by_trail.get("unrecognised"),),
+              [r["id"] for r in by_trail["unrecognised"]] == ["P1.3"]
+              and "P1.3" not in [r["id"] for r in by_trail["failing"]])
+        running = M.evidence_row(bare["phases"][0]["tasks"][3], "task",
+                                 trail=trail.get("P1.1"))
+        check("stt5 a verdict is read at a DONE task's commit only: a task "
+              "still running is handed nothing from the trail: %r" % (running,),
+              running.get("status") is None and running.get("source") is None)
+        check("stt6 the gap reading agrees: a done task with no pointer whose "
+              "commit carries its verdict has no evidence gap, and without the "
+              "trail it has one: %r"
+              % (M.evidence_gap(bare["phases"][0]["tasks"][0], "task", None,
+                                trail=trail.get("P1.1")),),
+              M.evidence_gap(bare["phases"][0]["tasks"][0], "task", None,
+                             trail=trail.get("P1.1")) is None
+              and M.evidence_gap(bare["phases"][0]["tasks"][0], "task",
+                                 None) is not None)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _selftest():
     def body(check):
+        _harness.stage(check, "st", _trail_cases)
         _harness.stage(check, "tt", _timing_cases)
         _harness.stage(check, "gx", _gate_exemption_cases)
         _harness.stage(check, "iu", _intent_unanswered_cases)

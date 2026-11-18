@@ -5165,8 +5165,114 @@ def _timing_cell_cases(check):
           and _fmt.human_duration(3930000) == "65 m 30 s")
 
 
+def _trail_project(root, with_repo):
+    """`(mpath, plan)` - a plan whose P1.1 is done at a commit carrying the
+    verdict `failed` in its trailers while its pointer says `passed`, and whose
+    P1.2 is done at a commit carrying none, pointer `passed`. The two words
+    differ so the cell tells which record it was read from. With no repo the
+    plan names the same SHAs and git cannot answer for any of them."""
+    import _commit_trail
+    repo = os.path.join(root, "repo")
+    os.makedirs(repo)
+    git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+           "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+    _harness.git(repo, "init", "-q", prefix=git)
+    shas = {}
+    for name, message in (
+            ("plain", "chore: no verdict\n"),
+            ("verdict", "feat(P1.1): audit - x\n\n%s: P1.1\n%s: failed "
+                        "sha256:aa\n%s: R1\n"
+                        % (_commit_trail.TASK_TRAILER,
+                           _commit_trail.GATE_TRAILER,
+                           _commit_trail.RUN_TRAILER))):
+        with open(os.path.join(repo, name), "w", encoding="utf-8") as fh:
+            fh.write(name)
+        msg = os.path.join(root, "msg-" + name)
+        with open(msg, "w", encoding="utf-8") as fh:
+            fh.write(message)
+        _harness.git(repo, "add", "--", name, prefix=git)
+        _harness.git(repo, "commit", "-q", "--cleanup=verbatim", "-F", msg,
+                     prefix=git)
+        shas[name] = _harness.git(repo, "rev-parse", "HEAD", prefix=git).strip()
+    if not with_repo:
+        _harness.remove_tree(os.path.join(repo, ".git"))
+
+    def task(tid, sha):
+        return {"id": tid, "title": tid, "status": "done", "commit": sha,
+                "tests": {"mode": "tdd", "gate": ["pytest"]},
+                "testEvidence": {"runId": "R-" + tid, "status": "passed",
+                                 "at": "2026-08-01T09:00:00Z"}}
+    plan = {"meta": {"version": 2}, "phases": [{
+        "id": "P1", "title": "Trail", "status": "in_progress", "tasks": [
+            task("P1.1", shas["verdict"]), task("P1.2", shas["plain"]),
+            {"id": "P1.3", "title": "P1.3", "status": "pending"}]}]}
+    mpath = os.path.join(repo, "docs", "audit", "audit-plan.json")
+    os.makedirs(os.path.dirname(mpath))
+    _mio.atomic_write_json(mpath, plan)
+    return mpath, plan
+
+
+def _trail_render_cases(check):
+    """The status render reads a done task's verdict from its commit and says
+    so, and a git that cannot answer is said as such - never a verdict printed
+    as if the commit had been read."""
+    import tempfile
+    import _commit_trail
+    root = tempfile.mkdtemp(prefix="audit-status-trail-")
+    try:
+        mpath, plan = _trail_project(os.path.join(root, "a"), True)
+        repo = os.path.dirname(os.path.dirname(os.path.dirname(mpath)))
+        _c, text, _e = _in_project(repo, [mpath])
+        _cj, js, _ej = _in_project(repo, [mpath, "--json"])
+        doc = json.loads(js) if js.strip().startswith("{") else {}
+        te = doc.get("testEvidence") or {}
+        check("trs1 a done task whose commit carries `Audit-Gate: failed` "
+              "renders `failed (commit)` in its tests cell over the pointer's "
+              "`passed`, a task whose commit carries none renders its pointer's "
+              "word unmarked, the render says what the mark means, and --json "
+              "counts the commit's word with `source: trailers` and no "
+              "trailError",
+              _column_cell(text, "P1.1", "tests") == "failed (commit)"
+              and _column_cell(text, "P1.2", "tests") == "passed"
+              and "Audit-Gate trailer" in text
+              and "could not be read" not in text
+              and te.get("byStatus") == {"failed": 1, "passed": 1}
+              and [(r.get("id"), r.get("source")) for r in te.get("failing")
+                   or []] == [("P1.1", "trailers")]
+              and "trailError" not in doc,
+              "cells %r/%r byStatus=%r failing=%r trailError=%r\n%s"
+              % (_column_cell(text, "P1.1", "tests"),
+                 _column_cell(text, "P1.2", "tests"), te.get("byStatus"),
+                 te.get("failing"), doc.get("trailError"), text))
+
+        mpath2, plan2 = _trail_project(os.path.join(root, "b"), False)
+        repo2 = os.path.dirname(os.path.dirname(os.path.dirname(mpath2)))
+        _found, why = _commit_trail.plan_verdicts(plan2, repo2)
+        _c2, text2, _e2 = _in_project(repo2, [mpath2])
+        _cj2, js2, _ej2 = _in_project(repo2, [mpath2, "--json"])
+        doc2 = json.loads(js2) if js2.strip().startswith("{") else {}
+        te2 = doc2.get("testEvidence") or {}
+        check("trs2 with git unable to answer for the plan's commits, the "
+              "render says the trail could not be read and gives git's reason "
+              "verbatim, every tests cell falls back to its pointer unmarked, "
+              "and --json carries that reason as trailError beside counts read "
+              "from the pointers alone",
+              _found is None and bool(why)
+              and "could not be read" in text2 and why in text2
+              and _column_cell(text2, "P1.1", "tests") == "passed"
+              and "(commit)" not in text2
+              and doc2.get("trailError") == why
+              and te2.get("byStatus") == {"passed": 2},
+              "found=%r why=%r cell=%r trailError=%r byStatus=%r\n%s"
+              % (_found, why, _column_cell(text2, "P1.1", "tests"),
+                 doc2.get("trailError"), te2.get("byStatus"), text2))
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(record):
+        _harness.stage(record, "trs", _trail_render_cases)
         _harness.stage(record, "tc", _timing_render_cases)
         _cases(record)
         _resolve_cases(record)

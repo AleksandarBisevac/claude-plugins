@@ -23,6 +23,14 @@ read as intact when it is not. `clear()` therefore sets the SHA to `null` and
 hands the caller what was lost, so the caller can record it; the manifest then
 says *this commit is no longer reachable*, which is true.
 
+THE VERDICT A TASK COMMIT CARRIES lives here too, for the same reason: it is a
+question about a recorded commit, and git alone answers it. The commit verb writes
+`Audit-Task`, `Audit-Gate`, `Audit-Run` and, over a refused verdict,
+`Audit-Override` into the commit's trailer block (`verdict_trailers`), and
+`verdicts_at` / `task_verdicts` / `plan_verdicts` read them back through git's own
+trailer parser - no evidence directory, no journal. The writer and the reader sit
+side by side so neither can learn a spelling the other does not.
+
 Reads git, never writes it. The caller owns the lock, the journal row and the
 revalidation — this module answers and returns.
 
@@ -131,12 +139,12 @@ def referenced(manifest):
     return out
 
 
-def _git(git_root, args, timeout=15):
+def _git(git_root, args, timeout=15, stdin=None):
     """(returncode, stdout) or (None, "") when git could not be asked."""
     try:
         out = subprocess.run(["git", "-C", git_root] + list(args),
-                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                             timeout=timeout)
+                             input=stdin, stdout=subprocess.PIPE,
+                             stderr=subprocess.DEVNULL, timeout=timeout)
         return out.returncode, out.stdout.decode("utf-8", "replace")
     except Exception:
         return None, ""
@@ -374,6 +382,273 @@ def summary(cleared):
             % (len(tasks), names, "" if len(tasks) <= 4 else ", ...",
                ("; and the fixedIn of %s, which held one of them"
                 % (", ".join(c["bugId"] for c in bugs),)) if bugs else ""))
+
+
+# --- the verdict a task commit carries ------------------------------------------
+# THE RULE, property by property; `tests/test__commit_trail.py` holds a case for
+# each.
+#
+#   * A TRAILER COMMIT is one whose trailer block, AS GIT PARSES IT, carries an
+#     `Audit-Task` key. Git is the parser (`%(trailers:only,unfold)`, which is
+#     `git interpret-trailers --parse`): a line git does not read as a trailer -
+#     one in a paragraph a later paragraph follows - is not one here either. Any
+#     other commit is not a trailer commit, and its verdict is read as it was
+#     before trailers existed: this module answers nothing for it.
+#   * `Audit-Task` with no `Audit-Gate` is NO VERDICT RECORDED (`recorded`
+#     False, `status` None) - never passed.
+#   * A key given more than once with one value reads as that value; with two
+#     values, or empty, it reads as nothing for that key, and `problems` names
+#     it. An `Audit-Gate` value is `<status>` or `<status> <digest>`; anything
+#     else is nothing recorded, named the same way.
+#   * A status word outside `GATE_WORDS` is returned as itself with `known`
+#     False. It is still a recorded word; folding it into passed or failed is a
+#     reader's guess this module does not make.
+#   * Keys compare case-insensitively, as git's own trailer matching does.
+#   * Of two commits naming one task, `task_verdicts` takes the first that
+#     `git log --topo-order` shows - no other carrier descends from it - and
+#     names the rest under `superseded`. A plan reader does not walk at all: it
+#     reads each done task at the commit the plan records (`plan_verdicts`).
+TASK_TRAILER = "Audit-Task"
+GATE_TRAILER = "Audit-Gate"
+RUN_TRAILER = "Audit-Run"
+OVERRIDE_TRAILER = "Audit-Override"
+VERDICT_TRAILERS = (TASK_TRAILER, GATE_TRAILER, RUN_TRAILER, OVERRIDE_TRAILER)
+
+# The status words this build knows: the schema's `testEvidence.status` enum,
+# which a case reads back out of the schema rather than trusting this copy.
+GATE_WORDS = ("passed", "failed", "gate-mutated", "no-checks", "timed-out",
+              "cancelled", "could-not-run", "empty-gate")
+
+# git's own reading of a commit's trailer block, one commit per record.
+_TRAILER_FORMAT = "--format=%H%x00%(trailers:only,unfold)"
+
+
+def trailer_pairs(text):
+    """`[(key, value)]` from git's parsed trailer output, in order, values
+    stripped as git strips them. A line holding no separator is not a trailer
+    and is skipped: git's `only` output never prints one."""
+    out = []
+    for line in (text or "").splitlines():
+        key, sep, value = line.partition(":")
+        if sep and key.strip():
+            out.append((key.strip(), value.strip()))
+    return out
+
+
+def _one_value(pairs, name):
+    """`(value, problem)` for one trailer key: the value when every occurrence
+    agrees and it is not empty, else None and the sentence saying why."""
+    values = [v for k, v in pairs if k.lower() == name.lower()]
+    distinct = sorted(set(values))
+    if not values:
+        return None, None
+    if len(distinct) > 1:
+        return None, ("%s is given %d different values (%s), so none of them "
+                      "is read" % (name, len(distinct), ", ".join(
+                          repr(v) for v in distinct)))
+    if not distinct[0]:
+        return None, "%s is empty" % (name,)
+    return distinct[0], None
+
+
+def verdict_of(pairs):
+    """The verdict `pairs` (one commit's trailers) record, or None when they
+    name no task - not a trailer commit.
+
+    `{"task", "status", "digest", "run", "override", "recorded", "known",
+    "problems"}`: `recorded` is True only when a task and a status were both
+    read; `known` says whether the status is one of `GATE_WORDS` (None with no
+    status); `problems` names every key that was present and could not be read.
+    """
+    if not any(k.lower() == TASK_TRAILER.lower() for k, _v in pairs):
+        return None
+    problems = []
+    read = {}
+    for name in VERDICT_TRAILERS:
+        value, problem = _one_value(pairs, name)
+        read[name] = value
+        if problem:
+            problems.append(problem)
+    status = digest = None
+    gate = read[GATE_TRAILER]
+    if gate is not None:
+        words = gate.split()
+        if len(words) in (1, 2):
+            status = words[0]
+            digest = words[1] if len(words) == 2 else None
+        else:
+            problems.append("%s %r is not `<status>` or `<status> <digest>`"
+                            % (GATE_TRAILER, gate))
+    recorded = read[TASK_TRAILER] is not None and status is not None
+    return {"task": read[TASK_TRAILER], "status": status if recorded else None,
+            "digest": digest if recorded else None, "run": read[RUN_TRAILER],
+            "override": read[OVERRIDE_TRAILER], "recorded": recorded,
+            "known": (status in GATE_WORDS) if recorded else None,
+            "problems": problems}
+
+
+def _records(out):
+    """`[(sha, trailer text)]` from a `-z` log in `_TRAILER_FORMAT`."""
+    parts = out.split("\x00")
+    return [(parts[i].strip(), parts[i + 1])
+            for i in range(0, len(parts) - 1, 2) if parts[i].strip()]
+
+
+def verdicts_at(git_root, shas):
+    """`(found, why)` - `{sha: verdict}` for each SHA in `shas` that names a
+    trailer commit, keyed by the SHA as it was ASKED (an abbreviation is
+    matched by prefix). A SHA git does not hold, and a commit carrying no
+    `Audit-Task`, are absent. `found` is None when git could not be asked, and
+    `why` says so - an empty map would read as "no commit carries a verdict".
+
+    ONE `git log` for every SHA, fed on stdin so a long plan cannot outgrow a
+    command line. No SHA asks nothing: `git log` handed no revision reads HEAD.
+    """
+    wanted = [str(s).strip() for s in (shas or ()) if s and str(s).strip()]
+    if not wanted:
+        return {}, ""
+    if not (git_root and shutil.which("git")):
+        return None, ("git is not on PATH or there is no git root, so the "
+                      "verdicts task commits carry could not be read")
+    code, out = _git(git_root, ["log", "--no-walk=unsorted", "--ignore-missing",
+                                "--stdin", "-z", _TRAILER_FORMAT],
+                     stdin=("\n".join(wanted) + "\n").encode("utf-8"))
+    if code != 0:
+        return None, ("git would not read the commits' trailers in %s, so the "
+                      "verdicts task commits carry are not known" % (git_root,))
+    by_sha = dict((sha, verdict_of(trailer_pairs(text)))
+                  for sha, text in _records(out))
+    found = {}
+    for asked in wanted:
+        for sha, verdict in by_sha.items():
+            if verdict is not None and sha.startswith(asked.lower()):
+                found[asked] = verdict
+                break
+    return found, ""
+
+
+def task_verdicts(git_root, rev="HEAD"):
+    """`(found, why)` - `{task id: verdict}` over the history `rev` reaches,
+    each verdict carrying `sha` and `superseded` (the other commits naming the
+    task, in log order). The winner is the first `git log --topo-order` shows,
+    which no other carrier descends from. `found` is None when git could not be
+    asked.
+
+    `--grep` narrows the walk to messages mentioning the key at all; which of
+    them are trailer commits is still git's trailer parse, never the grep.
+
+    THE TRAILING `--` CLOSES THE REVISION LIST WITH AN EMPTY PATHSPEC. It
+    carries no path, plan-relative or git-relative, and the output holds SHAs
+    and trailer text only, so a project in a subdirectory of its repository
+    walks the same whole history. What it buys is that `rev` is only ever a
+    revision: without it, a `rev` naming a directory is read as a pathspec and
+    git answers, exit 0, with the history of that directory alone."""
+    if not (git_root and shutil.which("git")):
+        return None, ("git is not on PATH or there is no git root, so no "
+                      "history could be read for task verdicts")
+    code, out = _git(git_root, ["log", "--topo-order", "-z", "-i",
+                                "--fixed-strings", "--grep=" + TASK_TRAILER,
+                                _TRAILER_FORMAT, rev, "--"])
+    if code != 0:
+        return None, ("git would not walk %s in %s for task verdicts"
+                      % (rev, git_root))
+    found = {}
+    for sha, text in _records(out):
+        verdict = verdict_of(trailer_pairs(text))
+        if verdict is None or verdict["task"] is None:
+            continue
+        held = found.get(verdict["task"])
+        if held is not None:
+            held["superseded"].append(sha)
+            continue
+        found[verdict["task"]] = dict(verdict, sha=sha, superseded=[])
+    return found, ""
+
+
+def done_commits(manifest):
+    """`{task id: sha}` for every DONE task that records a commit, the shape a
+    plan's verdict read asks for."""
+    out = {}
+    for phase in _phase_blocks(manifest):
+        for task in (phase.get("tasks") or []):
+            if isinstance(task, dict) and task.get("status") == "done" \
+                    and task.get("commit") and task.get("id") is not None:
+                out[str(task["id"])] = str(task["commit"])
+    return out
+
+
+def plan_verdicts(manifest, git_root):
+    """`(found, why)` - `{task id: verdict}` for the plan's done tasks, each
+    read at the commit the plan records (`done_commits`); a task whose commit
+    carries no `Audit-Task` is absent. A commit naming ANOTHER task is not this
+    task's verdict: it comes back `recorded` False with the mismatch in
+    `problems`, so one task's green is never lent to another. `found` is None
+    when git could not be asked."""
+    commits = done_commits(manifest)
+    by_sha, why = verdicts_at(git_root, sorted(set(commits.values())))
+    if by_sha is None:
+        return None, why
+    found = {}
+    for task_id, sha in sorted(commits.items()):
+        verdict = by_sha.get(sha)
+        if verdict is None:
+            continue
+        if verdict["task"] != task_id:
+            verdict = dict(verdict, status=None, digest=None, recorded=False,
+                           known=None, problems=list(verdict["problems"]) + [
+                               "commit %s names task %s, not %s"
+                               % (sha[:12], verdict["task"], task_id)])
+        found[task_id] = dict(verdict, sha=sha)
+    return found, ""
+
+
+def _line_break_refusal(name, value):
+    """The sentence refusing `value` for trailer `name` when it holds a line
+    break, naming the line after the first one, else None."""
+    lines = str(value).replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    if len(lines) == 1:
+        return None
+    return ("the %s value holds a line break before line 2 (%r) - git reads a "
+            "trailer as one line and would join the lines with a space, so it "
+            "would not be carried verbatim; give it on one line"
+            % (name, lines[1][:60]))
+
+
+def verdict_trailers(task_id, row=None, override=None):
+    """`(lines, refusal)` - the trailer lines a task commit carries for the
+    verdict it was bound to: `Audit-Task`, then, when `row` (the evidence row
+    the binding bound, or went over) is given, `Audit-Gate: <status>[ <digest>]`
+    and `Audit-Run`, then `Audit-Override` with `override` when the commit is
+    made over its verdict. With no row the task alone is written, which reads
+    as no verdict recorded.
+
+    A VALUE THE READER WOULD NOT READ BACK IS REFUSED, never written altered:
+    `refusal` is the sentence and `lines` is empty. A line break is refused
+    rather than folded because git unfolds a folded trailer into one line with a
+    space, which is not the reason that was given; an empty value, and a status
+    or digest holding whitespace, would read as nothing recorded.
+    """
+    values = [(TASK_TRAILER, task_id)]
+    if isinstance(row, dict):
+        status, digest = row.get("status"), row.get("gateDigest")
+        gate = ("%s %s" % (status, digest) if digest else "%s" % (status,))
+        for name, part in (("gate status", status), ("gate digest", digest)):
+            if part is not None and len(str(part).split()) != 1:
+                return [], ("the %s %r is not one word, so `%s` would not read "
+                            "back as `<status> <digest>`"
+                            % (name, part, GATE_TRAILER))
+        values.append((GATE_TRAILER, gate))
+        if row.get("runId"):
+            values.append((RUN_TRAILER, row.get("runId")))
+    if override is not None:
+        values.append((OVERRIDE_TRAILER, override))
+    for name, value in values:
+        refusal = _line_break_refusal(name, value)
+        if refusal:
+            return [], refusal
+        if not str(value).strip():
+            return [], "the %s value is empty, which reads as nothing" % (name,)
+    return ["%s: %s" % (name, str(value).strip()) for name, value in values], None
 
 
 # --- cli ----------------------------------------------------------------------

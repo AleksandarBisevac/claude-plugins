@@ -387,7 +387,7 @@ L5:
   _ado_fetch -> _ado_drift, _excerpt, _output
   _doctor_ado -> _ado_drift, _ado_tracked, _doctor_report, _output
   _doctor_hygiene -> _branch, _locks, _output, _worktrees
-  _evidence_view -> _evidence_io, _manifest_io, _output, _report_html, _status_facts
+  _evidence_view -> _commit_trail, _evidence_io, _manifest_io, _output, _report_html, _status_facts
   _gate_derive -> _evidence_io, _manifest_io, _manifest_phases, _manifest_vocab, _output, _runner_collects
   _manifest_rules -> _branch, _evidence_io, _json_schema, _manifest_ado, _manifest_crossrefs, _manifest_io, _manifest_phases, _manifest_typos, _manifest_vocab, _output, _status_facts
   _panel_discovery -> _help, _manifest_io, _output, _policy
@@ -417,7 +417,7 @@ L6:
   _usage_overview -> _fmt, _output, _ui_theme, _usage_economics, _usage_viz
 
 L7:
-  _panel_state -> _evidence_io, _help, _journal_io, _manifest_io, _manifest_rules, _output, _panel_composition, _panel_discovery, _panel_paths, _panel_policy, _panel_runstate, _panel_usage, _panel_viewer, _proposals, _report_html
+  _panel_state -> _commit_trail, _evidence_io, _help, _journal_io, _manifest_io, _manifest_rules, _output, _panel_composition, _panel_discovery, _panel_paths, _panel_policy, _panel_runstate, _panel_usage, _panel_viewer, _proposals, _report_html
   _report_md -> _output, _report_html, _usage_markdown
   _report_usage -> _output, _usage_detail, _usage_load, _usage_markdown, _usage_overview, _usage_viz
   _scoped_commit -> _excerpt, _invariants, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _task_outputs
@@ -435,13 +435,13 @@ L9:
   audit-lock -> _claude_home, _locks, _output
   audit-logs -> _claude_home, _gate_feed, _output
   audit-lookup -> _areas, _claude_home, _clause_coverage, _config_rules, _evidence_io, _excerpt, _filed_returns, _gate_feed, _impact, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _scoped_commit
-  audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _filed_returns, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _task_timing, _ui_theme, _worktrees
+  audit-status -> _areas, _claude_home, _cli_fmt, _commit_trail, _evidence_io, _filed_returns, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _task_timing, _ui_theme, _worktrees
   audit-task -> _affected_tests, _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _impact, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _task_timing, _tree_stamp, _utc_stamp, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
   close-phase -> _branch, _claude_home, _config_rules, _evidence_io, _excerpt, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_rules, _output, _panel_write, _proposals, _scoped_commit, _tree_stamp, _utc_stamp, _verdict_binding, _worktrees
-  commit-task-work -> _claude_home, _evidence_io, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_vocab, _output, _panel_write, _scoped_commit, _verdict_binding, usage_ledger
+  commit-task-work -> _claude_home, _commit_trail, _evidence_io, _filed_returns, _invariants, _journal_io, _loader, _manifest_io, _manifest_vocab, _output, _panel_write, _scoped_commit, _verdict_binding, usage_ledger
   derive-phase-gate -> _claude_home, _evidence_io, _gate_derive, _invariants, _loader, _machine_paths, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _utc_stamp
   drive-phase -> _affected_tests, _areas, _claude_home, _clause_coverage, _config_rules, _doctor_setup, _evidence_io, _excerpt, _filed_returns, _gate_derive, _invariants, _journal_io, _loader, _locks, _manifest_io, _manifest_phases, _output, _proc_group, _runner_collects, _scope_companions, _scoped_commit, _skill_places, _status_facts, _task_outputs, _task_timing, _tree_stamp, _usage_core, _verdict_binding, _wave, _worktrees
   explain-ado-drift -> _ado_drift, _manifest_io, _output
@@ -1446,6 +1446,19 @@ manifest says *this commit is no longer reachable* — which is true. Report mod
 and writes nothing; `--apply` takes the index lock, revalidates before saving, and refuses rather
 than leave a half-repaired manifest. Where a commit is merely unreachable, the report says so and
 points at **restoring a branch onto it** first — clearing is the fallback, not the first move.
+
+**The verdict a task commit carries is read here too**, because it is a question about a recorded
+commit that git alone answers. `verdict_trailers()` writes the lines `commit-task-work.py` puts in
+a task commit's trailer block - `Audit-Task`, `Audit-Gate: <status> <gate digest>`, `Audit-Run`,
+and `Audit-Override` over a refused verdict - and refuses a value it would not read back, a line
+break above all, since git unfolds a folded trailer into one line. `verdicts_at()`,
+`task_verdicts()` and `plan_verdicts()` read them back through git's own trailer parser
+(`%(trailers:only,unfold)`, which is `git interpret-trailers --parse`), never a line scan and never
+the evidence directory or the journal. A commit with no `Audit-Task` is not a trailer commit and
+reads as before; `Audit-Task` with no `Audit-Gate` is no verdict recorded; a repeated key with two
+values, an empty one and a malformed `Audit-Gate` read as nothing recorded with the defect named;
+an unknown status word is returned as itself. The writer and the reader share one module so
+neither can learn a spelling the other does not. `COMPATIBILITY.md` section 3 is the promise.
 
 ### `plugins/audit/scripts/manifest/repair-tests-add.py`
 The migration behind the `tests.add` shape rule. The schema asks for
@@ -3172,7 +3185,11 @@ share it — `_panel_state` (rollup), `audit-doctor` (submodules) and `render-re
 `KNOWN_LAYER_DEBT` then carried. `usage_summary` and `discovery_block` do read the world, so they
 stayed with the command. `live_view`, `row_copies` and `ready_counts` are the pure half of
 reading a phase in flight elsewhere: `_live_copy` reads the copies, and these lay them over the
-plan and name each row's copy, the same way for every surface that shows one.
+plan and name each row's copy, the same way for every surface that shows one. `rollup`'s `trail`
+(the verdicts `_commit_trail.plan_verdicts` read at each done task's commit, handed in for the
+same reason as `usage`) lets a done task's evidence row read its word from its commit's trailers;
+`trail_verdict` decides when it is read, and each row's `source` says which record it came from
+(`trailers` or `testEvidence`).
 `task_timing`, `phase_timing` and `timing_rollup` read a task's `timing` record through
 `_task_timing.summarize` and sum it per phase over the DONE tasks that have a window, so the
 stage figures less the overrun plus the unattributed share are the summed windows. Cancelling
@@ -4415,6 +4432,14 @@ the work was already done — and what a paragraph gets in that position is gene
 scope breaches on one program came from widening two words of it: a file "obviously" part of the
 change, a sibling the editor had also touched, the shared index because the phase file was
 allowed. Prose cannot refuse; this can.
+
+**What a task commit says about its verdict.** Its trailer block carries `Audit-Task`, and for
+the run the verdict binding bound - or the run an override goes over - `Audit-Gate: <status>
+<gate digest>` and `Audit-Run`, with `Audit-Override: <reason>` over a refused verdict
+(`_commit_trail.verdict_trailers`, fed `verdict_binding`'s own answer). They join the co-author
+line in the one paragraph of trailers, before `Audit-Row`, which stays last. A task no gate
+measures carries `Audit-Task` alone. An override reason holding a line break is refused before
+anything is staged.
 
 **What a task commit stages.** Exactly these, each named in the output (`stage_targets`):
 the task's own `files` (a `:line-range` suffix stripped, because git has never heard of one) with
@@ -7060,6 +7085,14 @@ directory over: resolving off the config would attribute one plan's runs to anot
 The vocabulary and the view derivation itself live in `_report_html.py` — the badge is the STATUS
 and the observations are separate marks beside it, because a gate can fail *and* rewrite the tree
 and one word cannot carry both.
+
+**A done task's commit outranks the pointer.** When the commit the plan records for a done task
+carries a recorded verdict in its trailers (`_commit_trail.plan_verdicts`, read here because this
+is the module that touches the world, and `_status_facts.trail_verdict` deciding whether it is
+read), the badge's word is the trailer's, the view's `source` is `trailers` and its sentence names
+the commit and the run; the ledger row of that run still supplies its observations when it is
+there. A plan with no pointer at all earns the column when such a commit exists. Every other view's
+`source` is `ledger` when the plan points at a run.
 
 It also takes the **evidence boundary** as an argument and hands it, unread, to
 `_status_facts.evidence_gap` — the same function `rollup` buckets the `no-test-evidence` verdict

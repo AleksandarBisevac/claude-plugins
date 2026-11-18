@@ -24,6 +24,7 @@ import subprocess
 import sys
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
+import _output                                     # noqa: E402
 from _output import safe_stdio                     # noqa: E402
 import _commit_trail as M                          # noqa: E402
 
@@ -316,8 +317,318 @@ def _cases(check):
         _harness.remove_tree(tmp)
 
 
+# --- the verdict a commit carries in its trailers ------------------------------
+# THE RULE, as properties, before any case:
+#   * a TRAILER COMMIT is one whose trailer block - as git itself parses it -
+#     carries an `Audit-Task` key; any other commit is not one, and its verdict is
+#     read the way it was before trailers existed;
+#   * `Audit-Task` with no `Audit-Gate` is NO VERDICT RECORDED, never passed;
+#   * a key repeated with one value reads as that value; repeated with different
+#     values, empty, or an `Audit-Gate` that is not `<status>[ <digest>]`, reads
+#     as nothing recorded for that key, with the defect named;
+#   * a status word this build does not know is returned as itself;
+#   * keys compare case-insensitively, as git's own trailer matching does;
+#   * of two commits naming one task, the first `git log --topo-order` shows
+#     wins (no other carrier descends from it), and the others are named.
+SCHEMA = os.path.join(_output.PLUGIN_ROOT, "schema", "audit-plan.schema.json")
+
+
+def _commit(repo, name, message):
+    """Commit one new file under `message`, given whole through `-F`."""
+    with open(os.path.join(repo, name), "w", encoding="utf-8") as fh:
+        fh.write(name)
+    msg = os.path.join(repo, ".git", "msg-%s" % (name,))
+    with open(msg, "w", encoding="utf-8") as fh:
+        fh.write(message)
+    _git(repo, "add", "--", name)
+    _git(repo, "commit", "-q", "--cleanup=verbatim", "-F", msg)
+    return _git(repo, "rev-parse", "HEAD").stdout.decode().strip()
+
+
+def _parsed(repo, sha):
+    """`git interpret-trailers --parse` over the commit's message: git's own
+    reading, as `(key, value)` lines."""
+    body = _git(repo, "log", "-1", "--format=%B", sha).stdout
+    out = subprocess.run(["git", "-C", repo, "interpret-trailers", "--parse"],
+                         input=body, stdout=subprocess.PIPE,
+                         stderr=subprocess.DEVNULL).stdout.decode()
+    return [tuple(part.strip() for part in ln.split(":", 1))
+            for ln in out.splitlines() if ":" in ln]
+
+
+def _gate_enum():
+    """The `testEvidence.status` enum the schema declares."""
+    import json
+    with open(SCHEMA, "r", encoding="utf-8") as fh:
+        doc = json.load(fh)
+    found = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            if node.get("enum") and "passed" in node["enum"] \
+                    and "empty-gate" in node["enum"]:
+                found.append(tuple(node["enum"]))
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+    walk(doc)
+    return found
+
+
+def _verdict_cases(check):
+    tmp = _harness.fixture_root("qg-trailers-")
+    try:
+        repo, _shas = _repo(tmp, "vt")
+        full = _commit(repo, "full", "feat(P1.1): audit - the work\n\n"
+                       "Audit-Task: P1.1\nAudit-Gate: passed sha256:abc1\n"
+                       "Audit-Run: run-1\nAudit-Row: 00aa\n")
+        nogate = _commit(repo, "nogate", "feat(P1.2): audit - x\n\n"
+                         "Audit-Task: P1.2\nAudit-Row: 00bb\n")
+        unknown = _commit(repo, "unknown", "feat(P1.3): audit - x\n\n"
+                          "Audit-Task: P1.3\nAudit-Gate: shimmering sha256:d\n"
+                          "Audit-Run: run-3\n")
+        prose = _commit(repo, "prose", "feat(P1.4): audit - x\n\n"
+                        "Audit-Task: P1.4\nAudit-Gate: passed sha256:e\n\n"
+                        "a closing paragraph that is not a trailer\n")
+        same = _commit(repo, "same", "x\n\nAudit-Task: P1.5\n"
+                       "Audit-Gate: passed sha256:f\nAudit-Gate: passed sha256:f\n")
+        split = _commit(repo, "split", "x\n\nAudit-Task: P1.6\n"
+                        "Audit-Gate: passed sha256:g\nAudit-Gate: failed sha256:g\n")
+        empty = _commit(repo, "empty", "x\n\nAudit-Task: P1.7\nAudit-Gate:\n")
+        malformed = _commit(repo, "malformed", "x\n\nAudit-Task: P1.8\n"
+                            "Audit-Gate: passed sha256:h and more\n")
+        folded = _commit(repo, "folded", "x\n\nAudit-Task: P1.9\n"
+                         "Audit-Gate: failed sha256:i\n"
+                         "Audit-Override: first half\n  second  half\n")
+        lower = _commit(repo, "lower", "x\n\naudit-task: P1.10\n"
+                        "audit-gate: failed sha256:j\n")
+        bare = _commit(repo, "bare", "x\n\nAudit-Task: P1.11\n"
+                       "Audit-Gate: passed\n")
+        every = [full, nogate, unknown, prose, same, split, empty, malformed,
+                 folded, lower, bare]
+        got, why = M.verdicts_at(repo, every + ["0" * 40, full[:12]])
+        v = got or {}
+
+        def at(sha):
+            return v.get(sha) or {}
+
+        agree = []
+        for sha in every:
+            mine = M.trailer_pairs(_git(
+                repo, "log", "-1", "--format=%(trailers:only,unfold)",
+                sha).stdout.decode())
+            agree.append(mine == _parsed(repo, sha))
+        check("vt1 the reader's trailers are git's: for every fixture commit "
+              "the pairs it reads equal `git interpret-trailers --parse` of the "
+              "same message, the folded and repeated ones included: %r"
+              % (agree,), all(agree) and len(agree) == len(every))
+        check("vt2 a commit carrying every verdict name reads back its task, status, "
+              "digest and run, as recorded and known: %r" % (at(full),),
+              why == "" and at(full).get("task") == "P1.1"
+              and at(full).get("status") == "passed"
+              and at(full).get("digest") == "sha256:abc1"
+              and at(full).get("run") == "run-1"
+              and at(full).get("recorded") is True
+              and at(full).get("known") is True)
+        check("vt3 Audit-Task with NO Audit-Gate is no verdict recorded - "
+              "status None and recorded False, never passed: %r" % (at(nogate),),
+              at(nogate).get("task") == "P1.2" and at(nogate).get("status") is None
+              and at(nogate).get("recorded") is False)
+        check("vt4 a status word this build does not know is returned AS ITSELF "
+              "and marked unknown, never folded into passed or failed: %r"
+              % (at(unknown),),
+              at(unknown).get("status") == "shimmering"
+              and at(unknown).get("known") is False
+              and at(unknown).get("recorded") is True)
+        check("vt5 a commit whose Audit-Task line is not in its trailer block - "
+              "prose followed by another paragraph - is NOT a trailer commit, "
+              "because git does not read it as one: %r"
+              % ((prose in v, M.verdict_of(_parsed(repo, prose))),),
+              prose not in v and M.verdict_of(_parsed(repo, prose)) is None)
+        check("vt6 a key repeated with ONE value reads as that value; repeated "
+              "with two values reads as nothing recorded, the key named in the "
+              "problem rather than either value picked: %r / %r"
+              % (at(same), at(split)),
+              at(same).get("status") == "passed" and at(same).get("recorded")
+              and at(split).get("status") is None
+              and at(split).get("recorded") is False
+              and any("Audit-Gate" in p for p in at(split).get("problems") or []))
+        check("vt7 an EMPTY Audit-Gate and one that is not `<status>[ "
+              "<digest>]` are no verdict recorded, each with its defect named: "
+              "%r / %r" % (at(empty), at(malformed)),
+              at(empty).get("recorded") is False
+              and at(malformed).get("recorded") is False
+              and at(empty).get("problems") and at(malformed).get("problems"))
+        parsed_override = [val for key, val in _parsed(repo, folded)
+                           if key == "Audit-Override"]
+        check("vt8 a FOLDED trailer reads as git unfolds it - the line break and "
+              "its indent become one space - which is why the writer refuses a "
+              "reason holding a line break rather than folding it: %r / %r"
+              % (at(folded).get("override"), parsed_override),
+              at(folded).get("override") == "first half second  half"
+              and parsed_override == [at(folded).get("override")])
+        check("vt9 keys compare case-insensitively, as git's own trailer "
+              "matching does: %r" % (at(lower),),
+              at(lower).get("task") == "P1.10" and at(lower).get("status") == "failed")
+        check("vt10 an Audit-Gate of the status alone is a recorded verdict with "
+              "no digest - the shape a row with no gate digest writes: %r"
+              % (at(bare),),
+              at(bare).get("status") == "passed" and at(bare).get("digest") is None
+              and at(bare).get("recorded") is True)
+        check("vt11 the batch read keys each answer by the SHA it was asked "
+              "for: an abbreviated one is answered, a SHA git does not hold is "
+              "absent rather than an error, and a plain commit is absent: %r"
+              % (sorted(v),),
+              at(full[:12]).get("task") == "P1.1" and "0" * 40 not in v
+              and _shas[0] not in v)
+        none_got, none_why = M.verdicts_at(os.path.join(tmp, "nowhere"), [full])
+        check("vt12 a place git cannot read answers None with the sentence, "
+              "never an empty map that reads as 'no commit carries a verdict': "
+              "%r" % ((none_got, none_why),),
+              none_got is None and isinstance(none_why, str) and none_why)
+        check("vt13 asked about no commit at all it asks git nothing and answers "
+              "empty - `git log` given no revision would read HEAD instead",
+              M.verdicts_at(repo, []) == ({}, ""))
+
+        # --- which of two commits naming one task -----------------------------
+        older = _commit(repo, "older", "x\n\nAudit-Task: P9.1\n"
+                        "Audit-Gate: failed sha256:k\nAudit-Run: r-old\n")
+        newer = _commit(repo, "newer", "x\n\nAudit-Task: P9.1\n"
+                        "Audit-Gate: passed sha256:k\nAudit-Run: r-new\n")
+        tv, twhy = M.task_verdicts(repo)
+        p91 = (tv or {}).get("P9.1") or {}
+        check("vt14 of two commits naming one task the one `git log "
+              "--topo-order` shows first wins - no other carrier descends from "
+              "it - and the other is NAMED, never dropped: %r" % (p91,),
+              twhy == "" and p91.get("sha") == newer and p91.get("run") == "r-new"
+              and p91.get("superseded") == [older])
+        check("vt15 ...and the walk lists only trailer commits: the prose "
+              "commit's task is absent: %r" % (sorted(tv or {}),),
+              "P1.4" not in (tv or {}) and "P1.1" in (tv or {}))
+
+        # --- a project in a subdirectory of its repository ---------------------
+        # The reader carries no path to git, so asked from a subdirectory it must
+        # read exactly what it reads from the top.
+        sub = os.path.join(repo, "nested", "project")
+        os.makedirs(sub)
+        with open(os.path.join(sub, "plan.json"), "w", encoding="utf-8") as fh:
+            fh.write("{}")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "the nested project")
+        sub_at, sub_why = M.verdicts_at(sub, [full, nogate])
+        sub_tv, _stw = M.task_verdicts(sub)
+        sub_plan, _spw = M.plan_verdicts(
+            {"phases": [{"id": "P1", "tasks": [
+                {"id": "P1.1", "status": "done", "commit": full}]}]}, sub)
+        top_tv, _ttw = M.task_verdicts(repo)
+        check("vt19 a PROJECT IN A SUBDIRECTORY of its repository reads the same "
+              "verdicts as the repository's top - by SHA, by task walk and by "
+              "plan - because no path, the plan's or git's, is handed to git: "
+              "%r / %r" % (sorted(sub_tv or {}), sorted(top_tv or {})),
+              sub_why == "" and (sub_at or {}).get(full) == at(full)
+              and (sub_at or {}).get(nogate) == at(nogate)
+              and sub_tv == top_tv and "P9.1" in (sub_tv or {})
+              and (sub_plan or {}).get("P1.1", {}).get("run") == "run-1")
+        dir_tv, dir_why = M.task_verdicts(repo, "nested")
+        check("vt20 a revision naming a DIRECTORY is refused, never read as a "
+              "pathspec - the history of that directory alone would come back "
+              "as if it were the walk asked for: %r" % ((dir_tv, dir_why),),
+              dir_tv is None and isinstance(dir_why, str) and "nested" in dir_why)
+
+        # --- a clone with no evidence directory --------------------------------
+        ev_dir = os.path.join(repo, "docs", "audit", "evidence")
+        os.makedirs(ev_dir)
+        with open(os.path.join(ev_dir, "2026-11.x.jsonl"), "w",
+                  encoding="utf-8") as fh:
+            fh.write('{"runId": "run-1", "status": "failed"}\n')
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "the ledger")
+        clone = os.path.join(tmp, "clone")
+        _git(tmp, "clone", "-q", repo, clone)
+        _harness.remove_tree(os.path.join(clone, "docs", "audit", "evidence"))
+        cv, _cwhy = M.verdicts_at(clone, [full])
+        mine = (cv or {}).get(full) or {}
+        check("vt16 in a CLONE whose evidence directory is removed - and whose "
+              "ledger, while it was there, said otherwise - the reader returns "
+              "the same task, status, digest and run: it reads git alone: %r"
+              % (mine,),
+              [mine.get(k) for k in ("task", "status", "digest", "run")]
+              == ["P1.1", "passed", "sha256:abc1", "run-1"]
+              and not os.path.isdir(os.path.join(clone, "docs", "audit",
+                                                 "evidence")))
+
+        # --- the plan's done tasks, read at their commits ----------------------
+        plan = {"phases": [{"id": "P1", "tasks": [
+            {"id": "P1.1", "status": "done", "commit": full},
+            {"id": "P1.2", "status": "done", "commit": nogate},
+            {"id": "P1.3", "status": "in_progress", "commit": unknown},
+            {"id": "P1.9", "status": "done", "commit": full},
+            {"id": "P1.12", "status": "done", "commit": _shas[0]}]}]}
+        pv, pwhy = M.plan_verdicts(plan, repo)
+        pv = pv or {}
+        check("vt17 a plan's DONE tasks are read at their recorded commits: a "
+              "task whose commit carries its verdict has it, one whose commit "
+              "names no gate has no verdict recorded, a task not done is not "
+              "read, and a commit with no trailers gives nothing: %r"
+              % (sorted(pv),),
+              pwhy == "" and pv.get("P1.1", {}).get("status") == "passed"
+              and pv.get("P1.2", {}).get("recorded") is False
+              and "P1.3" not in pv and "P1.12" not in pv)
+        check("vt18 a commit naming ANOTHER task is not this task's verdict: "
+              "recorded False and the mismatch named, rather than one task's "
+              "green lent to another: %r" % (pv.get("P1.9"),),
+              pv.get("P1.9", {}).get("recorded") is False
+              and any("P1.1" in p for p in pv.get("P1.9", {}).get("problems")
+                      or []))
+
+        # --- the writer, which must write only what this reader reads back -----
+        row = {"runId": "run-7", "status": "passed", "gateDigest": "sha256:ff"}
+        lines, refusal = M.verdict_trailers("P1.1", row)
+        check("wt1 the writer names the task, the bound run's status and gate "
+              "digest, and its run, in that order: %r" % (lines,),
+              refusal is None and lines == ["Audit-Task: P1.1",
+                                            "Audit-Gate: passed sha256:ff",
+                                            "Audit-Run: run-7"])
+        lines, refusal = M.verdict_trailers("P1.1", None)
+        check("wt2 with no bound run it names the task alone - which the reader "
+              "reads as no verdict recorded: %r" % (lines,),
+              refusal is None and lines == ["Audit-Task: P1.1"])
+        lines, refusal = M.verdict_trailers("P1.1", row, "first line\nsecond")
+        check("wt3 an override reason holding a line break is REFUSED, the line "
+              "named - git unfolds a folded trailer into one line, so the reason "
+              "could not be carried verbatim: %r" % ((lines, refusal),),
+              lines == [] and isinstance(refusal, str) and "line 2" in refusal)
+        lines, refusal = M.verdict_trailers("P1.1", row, "carriage\rreturn")
+        check("wt4 ...a carriage return the same way", lines == []
+              and isinstance(refusal, str) and refusal)
+        reason = "a: known flake  #42 - ok ü"
+        lines, refusal = M.verdict_trailers("P1.1", row, reason)
+        rt = _commit(repo, "roundtrip", "feat(P1.1): audit - x\n\n%s\n"
+                     % ("\n".join(lines),))
+        back = (M.verdicts_at(repo, [rt])[0] or {}).get(rt) or {}
+        check("wt5 ROUND TRIP through git: what the writer writes, git parses "
+              "and the reader reads back as the same task, status, digest, run "
+              "and the override reason VERBATIM: %r" % (back,),
+              refusal is None
+              and [back.get(k) for k in ("task", "status", "digest", "run",
+                                         "override")]
+              == ["P1.1", "passed", "sha256:ff", "run-7", reason])
+        check("wt6 the status words the reader knows are the schema's "
+              "`testEvidence.status` enum, pinned by reading the schema: %r"
+              % (_gate_enum(),),
+              _gate_enum() and all(set(e) == set(M.GATE_WORDS)
+                                   for e in _gate_enum()))
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _verdict_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":
