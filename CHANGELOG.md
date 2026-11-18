@@ -45,6 +45,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   exactly as before. `--gate` reads no timing figure, only the validator's verdict on the
   record, so a malformed record can trip the default `invalid` condition.
 
+### Changed
+- **`executor.phaseGateOnly` now reaches a task's recorded gate, not only the writer's prompt.**
+  A command the key names is left out of a task's recorded run (`run-test-gate.py --task`)
+  when the phase's own `testGate` runs it, whichever arm proposed it - a declared entry or a
+  step the affected selection added - and the run prints a line for each. The evidence row
+  lists each under `leftToPhaseGate` with the key as its basis; the reuse identity is taken
+  over the steps that ran, the `gateDigest` stays the declared gate's, and the verdict binding
+  reads the list as part of the declaration, so such a row binds a commit. A task gate of
+  nothing but such commands records `no-checks`, never `passed`. A named command the phase
+  gate does not hold still runs, with a line saying it would otherwise run nowhere, and the
+  writer's prompt lists it with the same reason. The writer's prompt, the recorded run and the
+  drive's view of a task's gate steps all ask one function, so the three leave out the same
+  commands. The phase gate runs every entry, and an absent or empty key changes nothing.
+  `COMPATIBILITY.md` records this as a change to what a set key does.
+
 ### Fixed
 - **A gate step listing a suite named after the evidence or journal module is repeated again.**
   The test-gate runner decided that a step graded a path its verdict identity leaves out (the

@@ -6373,18 +6373,23 @@ def runnable_entries(manifest, entries):
     return [e for e in entries or () if not _phases.review_only_entry(e, build)]
 
 
-def task_gate_steps(manifest, phase, task_id):
+def task_gate_steps(manifest, phase, task_id, left=()):
     """`(names, joins)` - the steps `run-test-gate.py --task` runs for the task
     as far as they are known before it runs, and why more may join them.
 
     `names` are its gate's entries (`_mio.gate_entries`, the runner's own
     reading of whose gate it is) less the review-only ones the runner says and
-    never runs (`_phases.review_only_entry`). To a gate that runs anything the
-    runner adds the suites the task's change can break, found by a gathering
-    it runs itself - unless the gate is its phase's, or already carries the phase's
-    wide gate (`_affected_tests.already_wide`, the runner's own test). `joins`
-    is None in those cases, else the reason the steps that join are not known
-    here. `phase` answers for a task the plan does not hold.
+    never runs (`_phases.review_only_entry`), and less the ones the runner
+    leaves to the phase gate: `left` is `executor.phaseGateOnly`, and which
+    entries it leaves out is `_config_rules.phase_gate_only_split` against
+    `_evidence_io.phase_gate_steps` - the runner's own reading. To a gate that
+    runs anything the runner adds the suites the task's change can break,
+    found by a gathering it runs itself - unless the gate is its phase's, or
+    already carries the phase's wide gate (`_affected_tests.already_wide`, the
+    runner's own test, asked of the declared entries before any is left out,
+    as the runner asks it). `joins` is None in those cases, else the reason
+    the steps that join are not known here. `phase` answers for a task the
+    plan does not hold.
 
     The runner's step list itself is not asked for: it is built inside the
     run, after a gathering that may run the project's own listings, and
@@ -6397,9 +6402,16 @@ def task_gate_steps(manifest, phase, task_id):
             owner, task = each, found[0]
             break
     entries, source = _mio.gate_entries(owner, task)
-    names = runnable_entries(manifest, entries)
-    if not names or source != "task" \
-            or _affected.already_wide(names, _mio.gate_entries(owner)[0]):
+    declared = runnable_entries(manifest, entries)
+    names = declared
+    if left:
+        # Asked only when the project names something, as the runner asks it:
+        # an absent or empty setting reads nothing more than it did before.
+        names = [name for name, _command in _config_rules.phase_gate_only_split(
+            _evio.resolved_commands(manifest, declared),
+            _evio.phase_gate_steps(manifest, owner), left)["kept"]]
+    if not declared or source != "task" \
+            or _affected.already_wide(declared, _mio.gate_entries(owner)[0]):
         return names, None
     return names, ("run-test-gate.py adds to it the affected suites - the ones "
                    "this task's change can break - and which those are is known "
@@ -6449,7 +6461,10 @@ def chosen_task_gate(ctx, state, phase, task, tree=None, manifest=None):
     if not isinstance(_marked(state, GATE_LAUNCH_KEY, task), dict):
         if manifest is None:
             manifest = _mio.load_manifest(ctx["manifest"])
-        names, joins = task_gate_steps(manifest, phase, task["id"])
+        # A setting the reader cannot use leaves nothing out here; the runner
+        # refuses it by name, so the refusal reaches the operator either way.
+        left, _problem = _config_rules.phase_gate_only_setting(ctx.get("config"))
+        names, joins = task_gate_steps(manifest, phase, task["id"], left)
         due, why = gate_in_background(ctx, names, joins)
         if not due:
             return None, task_gate(ctx, state, phase, task, tree)

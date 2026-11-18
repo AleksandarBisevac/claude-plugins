@@ -169,6 +169,8 @@ import _affected_tests as _affected  # noqa: E402  (which suites a task's change
 import _invariants  # noqa: E402  (record_rels/is_record_path: the one definition of
 #                                  which paths are the plan's records, shared with
 #                                  integrate-task, audit-task and commit-task-work)
+import _config_rules  # noqa: E402  (phase_gate_only_split: the one reading of
+#                                    executor.phaseGateOnly, the writer's too)
 
 E_OK, E_FAIL, E_ASK = 0, 1, 2
 # A `--record` run that measured and stored nothing. Its own code because it is
@@ -3514,6 +3516,67 @@ def empty_gate_result(source, basis):
     }
 
 
+# --- what a task's run leaves to the phase gate ---------------------------------
+# `executor.phaseGateOnly` names commands the project leaves to the phase gate.
+# A task-scope run leaves out a step it names when the phase's own gate holds
+# it - whichever arm proposed the step, a declared entry or the affected
+# selection's widening - and runs one the phase gate lacks, saying why. The
+# rule is `_config_rules.phase_gate_only_split`, the one the writer's prompt
+# and the drive's view of a task's steps read, so the three agree. The phase
+# gate itself never asks it.
+def phase_gate_only_plan(commands, phase_commands, names):
+    """`{run, left, unheld}` for a task-scope run of `commands` against its
+    phase's own gate (`phase_commands`, `_ev.phase_gate_steps`) under the
+    setting's `names`: the steps to run, in order; one row record
+    (`_ev.left_to_phase_gate_record`) per step left to the phase gate; and
+    `(name, command, matched)` per named step the phase gate does not hold,
+    which stays in `run`."""
+    split = _config_rules.phase_gate_only_split(commands, phase_commands, names)
+    return {"run": split["kept"],
+            "left": [_ev.left_to_phase_gate_record(
+                name, matched, _config_rules.PHASE_GATE_ONLY_KEY)
+                for name, _command, matched in split["left"]],
+            "unheld": split["unheld"]}
+
+
+def phase_gate_only_lines(plan, phase_id):
+    """The line each left-out and each unheld step earns, in that order."""
+    lines = ["[run-test-gate] %s is left to the phase gate: %s names %s and "
+             "phase %s's gate runs it, so this task's run does not"
+             % (rec["name"], rec["basis"], rec["matched"], phase_id)
+             for rec in plan["left"]]
+    lines += ["[run-test-gate] %s is named by %s (%s), but phase %s's gate does "
+              "not hold it, so it runs here - left out, it would otherwise run "
+              "nowhere" % (name, _config_rules.PHASE_GATE_ONLY_KEY, matched,
+                           phase_id)
+              for name, _command, matched in plan["unheld"]]
+    return lines
+
+
+def all_left_result(source, left, phase_id):
+    """`run_gate`'s shape for a task gate whose every step is left to the phase
+    gate: `no-checks`, the word a gate that counted nothing earns, with the
+    reason in its basis - never `passed`, which would claim a measurement, and
+    never `empty-gate`, which says the gate declares nothing when it declares
+    entries another gate runs."""
+    names = ", ".join(rec["name"] for rec in left)
+    why = ("every step of this gate (%s) is left to the phase gate by %s, and "
+           "phase %s's gate runs it at sign-off - nothing ran here"
+           % (names, _config_rules.PHASE_GATE_ONLY_KEY, phase_id))
+    return {
+        "status": "no-checks", "gateSource": source,
+        "failed": [], "steps": [], "durationMs": 0,
+        "treeMutated": None, "treeBasis": "%s, so the tree was not bracketed"
+                                          % (why,),
+        "treeMutatedOwned": None, "treeMutatedForeign": None,
+        "ranTotal": 0, "countsBasis": "%s, so no check was counted" % (why,),
+        "sharedCounts": [], "notAttributable": None, "attributionBasis": None,
+        "cancelledBy": None, "overlap": None,
+        "coverageBasis": "%s, so no runner named a path" % (why,),
+        _ev.LEFT_TO_PHASE_GATE_KEY: list(left),
+    }
+
+
 def render_reuse(res, out=print):
     """Print a verdict nothing here measured, and return the code it earns.
 
@@ -6028,6 +6091,29 @@ def wave_tree_refusal(project, args):
             "evidence. Remedy: pass `--tree %s`." % (args.task, tree, tree))
 
 
+def _all_left(project, args, manifest, source, subject, declared, left,
+              out=print):
+    """A task run whose every step is left to the phase gate: recorded as
+    `no-checks` (`all_left_result`) under the declared gate's digest, said,
+    and red - a run that measured nothing is not a verdict to commit on."""
+    res = all_left_result(source, left, args.phase)
+    res["subject"] = subject
+    res[_ev.GATE_DIGEST_KEY] = _ev.gate_digest(
+        [name for name, _command in declared or []],
+        (manifest.get("meta") or {}).get("buildCommands"))
+    if args.record:
+        res["recorded"] = _record_run(project, args, res, source, declared,
+                                      manifest, out=out)
+    if args.as_json:
+        out(json.dumps(res, indent=2, sort_keys=True))
+        return E_FAIL
+    out("NO CHECK RAN: %s. That is not a verdict, and it cannot sign this task "
+        "off - give the task a gate entry of its own that runs here, or take "
+        "the command out of %s." % (res["countsBasis"],
+                                    _config_rules.PHASE_GATE_ONLY_KEY))
+    return E_FAIL
+
+
 def main(argv, out=print):
     p = argparse.ArgumentParser(prog="run-test-gate.py", add_help=True)
     p.add_argument("manifest")
@@ -6287,6 +6373,39 @@ def main(argv, out=print):
     # the part a later comparison recovers, never over a second split of it.
     declared_commands = commands[:len(_ev.declared_steps(
         [name for name, _command in commands])[0])]
+    # WHAT THIS TASK'S RUN LEAVES TO THE PHASE GATE (`phase_gate_only_plan`),
+    # asked after the affected steps joined, so a step any arm proposed is
+    # weighed, and after the declared part was read, so the digest above stays
+    # the declared gate's - the binding compares it with the plan. Everything
+    # below - the identity, the reach, the steps run - is taken over what is
+    # left to run. A task-scope recorded or plain run only: the phase gate
+    # ignores the setting, and `--own` runs the task's own suites alone.
+    left_plan = None
+    if args.task is not None and not args.own:
+        _cfg_project, config = _ev.project_config_for(args.manifest,
+                                                      args.project_dir)
+        named, problem = _config_rules.phase_gate_only_setting(config)
+        if problem:
+            out("[run-test-gate] %s - this task's run cannot tell which of its "
+                "commands the project leaves to the phase gate; fix the config "
+                "key, or remove it to run every command" % (problem,))
+            return E_ASK
+        if named:
+            left_plan = phase_gate_only_plan(
+                commands, _ev.phase_gate_steps(
+                    manifest, _phase_by_id(manifest, args.phase)), named)
+            say = _say_on_stderr if args.as_json else out
+            for line in phase_gate_only_lines(left_plan, args.phase):
+                say(line)
+            commands = left_plan["run"]
+            if reach_args is not None:
+                ran = set(name for name, _command in commands)
+                reach_args = reach_args[:4] + (
+                    [s for s in reach_args[4] if s[0] in ran],
+                    [s for s in reach_args[5] if s[0] in ran]) + reach_args[6:]
+    if left_plan is not None and left_plan["left"] and not commands:
+        return _all_left(project, args, manifest, source, subject,
+                         declared_commands, left_plan["left"], out=out)
     # THE HALF OF THE OVERLAP QUESTION THAT NEEDS NOTHING FROM THE RUN, asked
     # here rather than at the end of one. Both sides of it - the files the work
     # declares, and the fact that an empty declaration can be related to nothing -
@@ -6456,6 +6575,8 @@ def main(argv, out=print):
     # ledger and the other stays a fact of this process's own output.
     res["gateSource"] = source
     res["subject"] = subject
+    if left_plan is not None and left_plan["left"]:
+        res[_ev.LEFT_TO_PHASE_GATE_KEY] = left_plan["left"]
     if res.get(_ev.VERDICT_SOURCE) != _ev.REUSED:
         res["banners"] = verdict_banners(res)
     if also:

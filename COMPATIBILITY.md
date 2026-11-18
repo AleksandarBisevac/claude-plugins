@@ -481,6 +481,24 @@ is still true of a nested key.
   runs. `/audit:init` writes `"waveWidth": "auto"` into a config it *creates*, and never
   into one that already exists, so waves are new behaviour only for a project set up
   from this release on.
+
+  **`executor.phaseGateOnly` keeps it for absence and changes what a set value does,
+  which is a major-section change.** Absent or empty, nothing differs: every row and every
+  printed line is what it was. A project that set it was told only that the writer's prompt
+  leaves the named commands to the phase gate; from this release a task's recorded gate
+  (`run-test-gate.py --task`) leaves them out too, when the phase's own `testGate` runs the
+  same command, whichever arm proposed the step - a declared entry or one the affected
+  selection added. The row lists each under `leftToPhaseGate` with the key as its basis,
+  its reuse identity is taken over the steps that ran, and its `gateDigest` stays the
+  declared gate's; the verdict binding reads the list as part of the declaration, so such
+  a row binds and a row short a step for any other reason does not. A task gate of nothing
+  but such commands records `no-checks`, which is red, where it used to run them. A named
+  command the phase gate does not hold is still run, with a line saying why, and the
+  phase gate runs every entry whatever the key says. No value restores the writer-only
+  reading: remove the key to run every command in every task again. Nothing enforces
+  this paragraph against the code; `tests/test_run_test_gate.py` (`pgo`) and
+  `tests/test__verdict_binding.py` (`vb38`, `vb39`) are what hold the behaviour it
+  describes.
 - **When two keys can express the same thing, which one wins is written down.**
   `planGate` beats `enforce`, and that precedence does not change without a major
   release. A superseded key is kept and documented, never silently reinterpreted.

@@ -478,7 +478,8 @@
         "tests/test__verdict_binding.py",
         "plugins/audit/README.md",
         "plugins/audit/scripts/panel/_panel_settings.py",
-        "tests/test__panel_settings.py"
+        "tests/test__panel_settings.py",
+        "docs/screenshots/captured-at.json"
       ],
       "tests": {
         "mode": "tdd",
@@ -544,6 +545,10 @@
         {
           "at": "2026-11-18T08:53:17Z",
           "text": "Scope widened after the executor's hand-back (2026-11-18): _evidence_io.py and _verdict_binding.py with their suites, plugins/audit/README.md (the config reference row lives there; the root README stays declared but owes nothing unless it names the key), and the panel's settings help text with its suite. Decisions for the re-dispatch: (1) one matcher in _config_rules.py, called by the writer brief, the recorder and the drive's view of a task's steps; (2) the gate digest is taken over the full declared list and the row carries the entries left out, each with the setting as its basis, and the verdict binding reads that key as part of the declaration, so a row with one step fewer for that reason binds and a row with a step missing for any other reason still does not; (3) the setting names commands, so a task-scope run leaves a named command to the phase gate whichever arm proposed it, the affected selection's widening included, and the row says which arm proposed it; the exception is unchanged - a named command the phase gate does not hold is run and noted; (4) row keys are not in the plan schema, so the demo generator owes nothing for a new row key; (5) the panel change is the help sentence and label for this one setting, text only - no layout, no new control."
+        },
+        {
+          "at": "2026-11-18T09:41:21Z",
+          "text": "The panel help-text change moved the panel page's digest, so the committed screenshots' record owed a re-capture (tests/test__refs.py sc1). Re-captured by the orchestrator in the task tree with node tools/capture-screenshots.mjs --only panel on 2026-11-18: the only file that changed is docs/screenshots/captured-at.json; no PNG changed, so no picture differs."
         }
       ],
       "timing": {
@@ -552,9 +557,9 @@
       },
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-11-18T09:34:54Z.84f0e1",
-        "status": "failed",
-        "at": "2026-11-18T09:34:54Z"
+        "runId": "2026-11-18T09:47:01Z.6cf0aa",
+        "status": "passed",
+        "at": "2026-11-18T09:47:01Z"
       }
     },
     {
@@ -1057,7 +1062,7 @@
     {
       "id": "P168.13-icj",
       "title": "Every file the panel gate runs confirms a write through one shared helper, and a unit test refuses a confirm followed by a fixed wait",
-      "status": "in_progress",
+      "status": "done",
       "description": "The task that made the panel gate read a confirmed save's outcome when the save has answered converted the sites in tools/capture-screenshots.mjs and stopped at its file boundary. tools/ui-checks/stage-tabs.mjs, which the tool imports and runs in the same gate and in repro mode, still confirms a policy save twice and reads the result after a fixed 900 ms. The reviewer of that task found it and the executor had disclosed it. Finish the class and close it. Move the helper that confirms a write and waits for its answer into a module both files import (a file of its own under tools/ui-checks/, since the checks cannot import the tool that imports them), keep its behaviour and its failure sentences as they are, and use it at the two policy-save sites and at any other confirm-then-read site in tools/ui-checks/. Then make the shape impossible to bring back unseen: a unit test beside the existing wait test in tools/ui-tests/ reads the gate's source files and fails, naming file and line, when a click on the dialog's confirm button is followed by a fixed wait before the next read without going through the helper; a Discard or any confirm that sends no request is named in an allow list with its reason, in the manner the existing wait allowance table uses, and an allow row that matches nothing fails too. Prove the test red on the two sites as they stand before converting them. Do not run the browser gate yourself; the task's gate runs it. If a new file under tools/ owes an entry anywhere (an enumeration, a lint's table), add the file that holds it to the hand-back instead of editing outside the declared files. Dependants you answer for: tools/ui-tests/gate-card-wait.test.mjs, which reads the tool's wait allowance table and its waits; the repro mode, which shares these legs; tests/test__panel_page.py, which pins text of the checks. Acceptance: (1) no file the gate runs reads the result of a confirmed write after a fixed wait; (2) one helper, in one module, imported by both; (3) the new unit test is red on a reintroduced click-then-sleep and on a stale allow row; (4) vitest and the browser gate are green.",
       "files": [
         "tools/ui-checks/stage-tabs.mjs",
@@ -1086,16 +1091,49 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "80760793afbc",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "New tools/ui-checks/confirm-write.mjs holds confirmWrite (moved out of tools/capture-screenshots.mjs with its body and failure sentences unchanged; the only signature change is a fourth parameter `during`, the run's progress marker it used to close over), the three write descriptors COMPOSITION_WRITE/CONFIG_WRITE/PROPOSAL_WRITE, CONFIRM_ANSWER_MS, and CONFIRM_WAIT_ALLOWED (file/find/sites/reason rows, all Discards: comp, discardBtn, guards, ado x2 in the tool; policy in stage-tabs). capture-screenshots.mjs imports them, passes `during` at its nine call sites, adds `during` to stageCtx, and drops the POLL_WAIT_ALLOWED row `timeout: CONFIRM_ANSWER_MS`, whose wait left the file (gate-card-wait.test.mjs would otherwise report it stale). stage-tabs.mjs imports confirmWrite, CONFIG_WRITE (the policy save PUTs /api/config, policy-view.js) and CONFIRM_ANSWER_MS; both policy saves (old lines 978 and 1016, each click + waitForTimeout(900)) go through confirmWrite. The successful save toasts BEFORE it re-reads /api/policy and repaints, so it is followed by a waitForFunction on POLICY.stored.skills.deny naming the subject (or a findings.err box), bounded by CONFIRM_ANSWER_MS; on timeout the existing fail sentences get a clause saying the page never took the re-read. The refused save paints findings then toasts, so the helper alone is enough there. New tools/ui-tests/confirm-write.test.mjs: derives the gate's files from capture-screenshots.mjs's relative imports (transitively), tokenises each (comments, strings, regex literals), splits statements at bracket depth zero, and reports a data-cfgo click whose next awaited statement is waitForTimeout/setTimeout/sleepPollWindow as `file:line (fixed wait at line N)`, except inside confirmWrite's body in the helper module and except sites a CONFIRM_WAIT_ALLOWED row's find matches (matched against the code from the dialog's opener through the wait). Cases cw1-cw5. Mutation probes in throwaway copies of the test (deleted afterwards): isFixedWait->false reddens cw1-cw4; stale filter->[] reddens cw3; helper-body skip removed reddens cw4; isConfirmClick->any click (over-fire) reddens cw1, cw2; a non-await statement ending the scan reddens cw2, cw4. Runs: `npx vitest run` exit 0, 58 files / 858 tests, twice (before and after a header reflow); `node --check` on all three .mjs exit 0; tests/test__panel_page.py --selftest 490/490 exit 0; tests/test__refs.py --selftest 292/292 exit 0. The browser gate was not run, per the brief. Dependants: tools/ui-tests/gate-card-wait.test.mjs - still correct, green in the full vitest run: it reads POLL_WAIT_ALLOWED and the waits of capture-screenshots.mjs only, and the one row whose wait moved out was removed; it no longer polices the helper's waitForFunction, which now lives in confirm-write.mjs and is policed instead by confirm-write.test.mjs's structure (not by poll-dependence). Repro mode - shares the legs through the same functions and stageCtx, so it gets the converted sites; not run (it is the browser gate). tests/test__panel_page.py - still correct, 490/490: it names stage-tabs.mjs only in a comment. tools/check-report-interactive.mjs, armed-reason/capture-provenance/gate-reasons tests - import exports of capture-screenshots.mjs that are unchanged; green in vitest. plugins/audit/scripts/ui/panel/overview.js and tools/ui-tests/overview-outcome.test.mjs - name stage-tabs.mjs in comments only. docs/screenshots/captured-at.json, _evidence_io.py, panel-server.py, tests/test__refs.py, tools/check-committed-pii.py - name the tool by path/prose; nothing they read changed. Owed entries: none found - tools/affected.py routes tools/ui-checks/ by prefix (line 956), wiring.mjs reads the directory and only tracks assert* functions (the new module declares none), and the vitest include glob already covers tools/ui-tests/. Not done, out of scope: blank() in gate-card-wait.test.mjs and strip() here are two tokenisers of the same JS source; extracting one shared scanner module under tools/ui-tests/ would need a file outside this task's files.",
+        "descriptive": "Every file the panel gate runs now confirms a write through one helper in tools/ui-checks/confirm-write.mjs, the policy saves no longer read after a fixed 900 ms, and a unit test fails a confirm-then-sleep by file and line."
       },
       "startedAt": "2026-11-18T08:48:57Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T09:35:24Z",
+      "verifiedBy": [
+        "cw1: the gate's own files, derived from the tool's imports, carry no unexcused confirm-then-fixed-wait, and every allow row excuses exactly its stated count with a reason (rows proven load-bearing)",
+        "cw2: a click-then-sleep put back into a copy of the tool or of stage-tabs, in three click shapes and three wait shapes, is reported with the file and the click's line",
+        "cw3: an allow row matching nothing (or naming a file outside the gate) is stale, a row matching more than it says is broad, a row with a blank reason is unreasoned",
+        "cw4: a confirm followed by an answer-waiting read, a confirmWrite call followed by a wait, a wait inside a following block, and the helper's own click are not reported; a non-await statement between click and wait does not hide the wait; an unclosed string makes the tokeniser throw",
+        "cw5: confirmWrite is declared once, in ui-checks/confirm-write.mjs, and both the tool and stage-tabs import it from there and call it at two or more sites"
+      ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T08:58:18Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 556000,
+            "startedAt": "2026-11-18T08:49:02Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T09:18:48Z.a4060b, ending at its startedAt",
+            "kind": "selection",
+            "ms": 13057,
+            "runId": "2026-11-18T09:18:48Z.a4060b",
+            "startedAt": "2026-11-18T08:58:28Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T09:18:48Z.a4060b",
+            "kind": "gate",
+            "ms": 1206341,
+            "runId": "2026-11-18T09:18:48Z.a4060b",
+            "startedAt": "2026-11-18T08:58:42Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 80760793afbc",
+            "kind": "commit",
+            "ms": 1912,
+            "startedAt": "2026-11-18T09:35:21Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T08:48:57Z"
       },
       "reviewPerTask": "signals",
@@ -1103,6 +1141,18 @@
         "runId": "2026-11-18T09:35:19Z.87e689",
         "status": "passed",
         "at": "2026-11-18T09:35:19Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "80760793afbc",
+        "at": "2026-11-18T09:35:24Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T08:58:17Z",
+        "basis": "`npx vitest run tools/ui-tests/confirm-write.test.mjs` in a throwaway tree at HEAD exited 1 on \"Cannot find module '../ui-checks/confirm-write.mjs' imported from <outside-repo>\" (read as node), and the missing module is tools/ui-checks/confirm-write.mjs, which the task declares: tools/ui-checks/confirm-write.mjs is absent from HEAD and present in the working tree; a second run with the working tree's implementation copied in exited 0 without that error, its tests reaching their assertions; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {

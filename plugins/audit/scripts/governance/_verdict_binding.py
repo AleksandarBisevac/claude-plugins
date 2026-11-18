@@ -301,6 +301,13 @@ def gate_mismatch(measured, entries, source, build=None):
     `_evidence_io.declared_steps` - the answer the recorder digests - says
     which of a row's steps are declared. Only those are compared.
 
+    THE ENTRIES A TASK'S RUN LEFT TO THE PHASE GATE ARE ITS GATE TOO: a row
+    that lists a declared entry under `_evidence_io.LEFT_TO_PHASE_GATE_KEY`
+    (`executor.phaseGateOnly`, with the phase gate holding it) is one step short
+    for that stated reason, so the comparison is made against the declaration
+    less those entries. A listed name the gate does not declare, or one the row
+    also ran, describes some other gate and does not bind.
+
     THE ONE GATE THAT CAN NEVER BIND, AND SAID AS THAT: an entry of the gate being
     asked about that starts with `DERIVED_STEP_PREFIX` is read back as a derived
     step, so the row it recorded is cut short of it and no run can match. The
@@ -318,8 +325,13 @@ def gate_mismatch(measured, entries, source, build=None):
         [s.get("name") for s in (measured.get("steps") or [])
          if isinstance(s, dict)], measured.get("stepsDropped"))
     now = list(entries)
-    same_steps = (recorded == now[:len(recorded)]
-                  and len(recorded) + dropped == len(now))
+    # Nothing else is asked of a listed name: one the gate does not declare
+    # leaves `ran_now` whole, so the recorded steps fall short of it, and one
+    # the row also ran is a step `ran_now` no longer holds.
+    left = _evidence_io.left_to_phase_gate_names(measured)
+    ran_now = [e for e in now if e not in left]
+    same_steps = (recorded == ran_now[:len(recorded)]
+                  and len(recorded) + dropped == len(ran_now))
     was_source = measured.get("gateSource")
     was_digest = measured.get(_evidence_io.GATE_DIGEST_KEY)
     same_digest = (was_digest is None
@@ -332,10 +344,12 @@ def gate_mismatch(measured, entries, source, build=None):
                 "resolved it then, and the same entries resolve to different "
                 "commands now - a verdict about a different gate is not this "
                 "gate's verdict" % (", ".join(recorded),))
-    return ("it was measured under the gate [%s]%s, and the %s declares "
+    return ("it was measured under the gate [%s]%s%s, and the %s declares "
             "[%s] (%s gate) now - a verdict about a different gate is not this "
             "gate's verdict"
             % (", ".join(recorded),
+               " leaving [%s] to the phase gate" % (", ".join(left),)
+               if left else "",
                " (%s gate)" % (was_source,) if was_source else "",
                "task" if source == "task" else "phase",
                ", ".join(entries), source))

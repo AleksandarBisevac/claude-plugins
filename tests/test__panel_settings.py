@@ -114,6 +114,15 @@ def _cases(check):
           and "left to the phase gate" in M.FIELD_HELP.get(
               "executor.phaseGateOnly", "")
           and "none" in M.FIELD_HELP.get("executor.phaseGateOnly", ""))
+    _pg_help = M.FIELD_HELP.get("executor.phaseGateOnly", "")
+    check("pgs2 the help and the label say the key reaches a task's recorded "
+          "gate as well as the writer, and only for a command the phase gate "
+          "holds - one the phase gate lacks still runs: %r / %r"
+          % (_pg_fields[0]["label"] if _pg_fields else None, _pg_help),
+          len(_pg_fields) == 1
+          and "writer" not in _pg_fields[0]["label"].lower()
+          and "recorded gate" in _pg_help and "writer" in _pg_help
+          and "does not hold" in _pg_help)
     check("no path is bound twice (a duplicate would render two controls writing "
           "the same key)", len(M._settings_paths()) == len(_bound))
     # Named by what they DO, with the key beside them. Every heading used to BE a

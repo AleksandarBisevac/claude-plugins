@@ -466,7 +466,7 @@ L9:
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
   run-agent-session -> _claude_home, _help, _manifest_io, _output, _proc_group, _skill_places
-  run-test-gate -> _affected_tests, _claude_home, _evidence_io, _fmt, _invariants, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _task_outputs, _tree_stamp, _worktrees
+  run-test-gate -> _affected_tests, _claude_home, _config_rules, _evidence_io, _fmt, _invariants, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _task_outputs, _tree_stamp, _worktrees
   set-priority -> _claude_home, _manifest_io, _output, _panel_write, _priority, _warning_groups
   stamp-verification -> _claude_home, _evidence_io, _filed_returns, _invariants, _locks, _manifest_io, _output, _proc_group, _runner_output, _task_outputs, _tree_stamp, _worktrees
   validate-config -> _config_rules, _output
@@ -4609,6 +4609,21 @@ alone; coverage and owed followers join the source's. The run prints `part_reuse
 left to repeat, with no source row, or under `--no-reuse`, every entry is measured; a gate naming
 no left-out path repeats whole exactly as before.
 
+**A task's run leaves to the phase gate what the project said it may.** Under `--task` (not
+`--own`), once the affected steps have joined and the declared part has been read for the digest,
+`phase_gate_only_plan` asks `_config_rules.phase_gate_only_split` which steps
+`executor.phaseGateOnly` names and the phase's own gate (`_evidence_io.phase_gate_steps`) runs -
+by entry name or by resolved command, so a widened `affected/phase-gate:` step is held by the
+phase entry it copies. Those are left out, each printed (`phase_gate_only_lines`) and kept on the
+result as one `_evidence_io.left_to_phase_gate_record` under `leftToPhaseGate`: its name, the arm
+that proposed it, the key as its basis and the name it matched. A named step the phase gate lacks
+runs, with a line saying it would otherwise run nowhere. The identity, the reach and the steps run
+are taken over what is left; `gateDigest` stays the declared gate's, because the binding compares
+it with the plan. A task gate of nothing but left-out steps is `_all_left`: a `no-checks` row
+(`all_left_result`) whose bases say why, exit 1. An unusable key is refused by name before anything
+runs. The phase-scope run never asks. The `pgo` cases in `tests/test_run_test_gate.py` drive each
+arm through `main`.
+
 **`observations.countsBasis` is written here for the first time.** It has been copied into every
 evidence row by `_evidence_io.row_for` and rendered by the report and the panel since the ledger
 existed, while nothing ever set it — a three-valued count shipping without the basis that
@@ -5032,7 +5047,10 @@ is) is past `_evidence_io.FOREGROUND_BOUND_MS`, or that no run has measured, is 
 one measured under it runs inline and costs the main loop no turn, and so does a gate of no steps,
 which runs nothing. The steps weighed are the ones the run will take (`task_gate_steps`, and
 `runnable_entries` for the phase's): the entries `_manifest_io.gate_entries` names, less the
-review-only ones the runner never runs. A task's own gate that does not already carry its phase's
+review-only ones the runner never runs, and - for a task - less the ones the runner leaves to the
+phase gate under `executor.phaseGateOnly` (`_config_rules.phase_gate_only_split`, read off
+`ctx["config"]`; `gc11` and `gc12` compare the two). A task's own gate whose declared entries do
+not already carry its phase's
 wide gate (`_affected_tests.already_wide`) is joined by the affected suites the runner gathers
 itself, which nothing knows before it runs, so it is weighed as unmeasured. The step prints
 `dispatch-gate`, whose `run:` line is the command `gate_args` (or `phase_gate_args`) spells for the
@@ -5644,7 +5662,10 @@ cannot hold it. `binding()` takes the subject's ids, the gate entries that measu
 source, its declared files and the caller's own sentences, and answers `bound`, `no-gate` or
 `refused` with a sentence naming the run: the newest row for the subject, never the plan's
 pointer; a repeat graded through `reusedFrom`, while a `part-reused` row binds as measured and its
-sentence names the steps it copied and their run (`repeated_clause()`); a gate changed after the run; a red nothing
+sentence names the steps it copied and their run (`repeated_clause()`); a row listing declared
+entries under `leftToPhaseGate` (`_evidence_io.left_to_phase_gate_names`) compared against the
+declaration less those entries, so it binds one step short for that reason and for no other
+(`vb38`, `vb39`); a gate changed after the run; a red nothing
 retired; an unparseable line that could be the subject's; the digest with the recorder's paths
 left out on both sides. Every refusal carries the `arm` that produced it, and a close reads the
 arm rather than the sentence: `close_refusal()` refuses a close on every arm in
@@ -7247,6 +7268,13 @@ reads, so the form can never offer a value the validator rejects. Three modules 
 and all three used to load `validate-config.py` through `_loader` — including
 `_panel_settings` from beside this module, the deepest inversion `KNOWN_LAYER_DEBT`
 then carried, which is why `_panel_settings` moved up a layer in the same change.
+
+It also holds the one reading of `executor.phaseGateOnly`: `phase_gate_only_setting` reads the
+key, `phase_gate_only_match` and `left_to_phase_gate` match a name against a command's words,
+and `phase_gate_only_split` divides a task's steps into kept, left (named, and held by the phase
+gate by name or by command) and unheld (named, not held, still kept). The writer's prompt in
+`audit-lookup.py`, the recorded task gate in `run-test-gate.py` and the drive's
+`task_gate_steps` all call it, so none of them can leave out a step the others run.
 
 ### `plugins/audit/scripts/config/validate-config.py`
 The command over those rules: read the file, print `WARNING:`/`FINDING:` lines, exit 0

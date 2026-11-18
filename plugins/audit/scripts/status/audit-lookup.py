@@ -973,24 +973,14 @@ WRITER_COMMIT_LINE = ("Fix whatever does not pass. When everything is green, "
                       "leave the changes uncommitted: the drive commits them.")
 
 
-def _command_words(text):
-    """The words of a command or an entry, quotes off and each reduced to its
-    basename, so `"./scripts/verify.sh"` and `verify.sh` are the same word."""
-    return [w.strip("\"'").rsplit("/", 1)[-1] for w in str(text or "").split()]
+# `executor.phaseGateOnly`'s matcher is `_config_rules`', the one the recorded
+# task gate and the drive's view of a task's steps read too.
+left_to_phase_gate = _config_rules.left_to_phase_gate
 
-
-def left_to_phase_gate(command, names):
-    """Whether a resolved gate command is one the project named in
-    `executor.phaseGateOnly`: the words of some entry appear in the command's
-    words in a row. No name is built in - `verify.sh` is also a user project's own
-    gate - so an empty `names` is False for every command."""
-    words = _command_words(command)
-    for name in names:
-        token = _command_words(name)
-        if token and any(words[i:i + len(token)] == token
-                         for i in range(len(words))):
-            return True
-    return False
+# What a command the setting names says beside itself when the phase gate does
+# not hold it: it stays on the list, and why.
+UNHELD_NOTE = ("executor.phaseGateOnly names it, but the phase gate does not "
+               "hold it: left out here, it runs nowhere")
 
 
 # The clause list is `_clause_coverage`'s: the closing line below asks for an
@@ -1394,11 +1384,16 @@ def compose_writer_prompt(manifest, phase, task, dependants=None,
     sets none, which is the default).
 
     A gate entry that names no `meta.buildCommands` key is a literal command, as
-    the gate itself runs it (`_evio.resolved_commands`); one the project named in
-    `phase_gate_only` is left out of the commands to run and listed, once, as left
-    to the phase gate - the only thing the sentence says, since nothing here
-    knows who runs it. A plan whose gate has no such entry gets no sentence:
-    naming commands the task does not have would be a claim with no basis.
+    the gate itself runs it (`_evio.resolved_commands`). Which entries the
+    project's `phase_gate_only` leaves to the phase gate is
+    `_config_rules.phase_gate_only_split`'s answer against the phase's own gate
+    (`_evio.phase_gate_steps`) - the one the recorded task gate acts on, so
+    the writer is told to leave out exactly what that run leaves out. Such an
+    entry is left out of the commands to run and listed, once, as left to the
+    phase gate; one the setting names that the phase gate does not hold stays
+    on the list with `UNHELD_NOTE` beside it. A plan whose gate has no such
+    entry gets no sentence: naming commands the task does not have would be a
+    claim with no basis.
 
     `slow` is `gate_step_readings`' answer - `(name, mean_ms, runs)` per gate
     entry, by the step name the ledger records. An entry whose mean outlives
@@ -1430,23 +1425,29 @@ def compose_writer_prompt(manifest, phase, task, dependants=None,
     meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
     build = meta.get("buildCommands") if isinstance(meta.get("buildCommands"), dict) else {}
     steps = [(name, build.get(name, name)) for name, _c in resolved]
+    split = _config_rules.phase_gate_only_split(
+        resolved, _evio.phase_gate_steps(manifest, phase), phase_gate_only)
+    to_phase = set(name for name, _command, _matched in split["left"])
+    unheld = set(name for name, _command, _matched in split["unheld"])
     listed = []
     for name, command in resolved:
         mean_ms, runs = readings.get(name, (None, None))
+        notes = [UNHELD_NOTE] if name in unheld else []
         if _evio.outlives_foreground(mean_ms):
             slowed = True
             left.append("%s (%s)" % (command, _slow_basis(mean_ms, runs)))
             cut = own_suite_command(command, own_files)
             if cut is not None and cut not in own:
                 own.append(cut)
-        elif left_to_phase_gate(command, phase_gate_only):
+            continue
+        if name in to_phase:
             left.append(command)
-        elif name in readings and mean_ms is None:
-            plain.append("%s (%s)" % (command, UNMEASURED_NOTE))
-            listed.append(build.get(name, name))
-        else:
-            plain.append(command)
-            listed.append(build.get(name, name))
+            continue
+        if name in readings and mean_ms is None:
+            notes.append(UNMEASURED_NOTE)
+        plain.append("%s (%s)" % (command, "; ".join(notes)) if notes
+                     else command)
+        listed.append(build.get(name, name))
     lines = ["Implement the following task in this repository.", "",
              "Task: %s" % (task.get("title"),), ""]
     lines += _verbatim(task.get("description"), "The task records no description.")

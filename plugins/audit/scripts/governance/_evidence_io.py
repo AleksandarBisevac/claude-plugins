@@ -186,6 +186,57 @@ def full_gate_commands(manifest):
     return [command for _name, command in full_gate(manifest)["commands"]]
 
 
+def phase_gate_steps(manifest, phase):
+    """`[(name, command)]` - the phase's own `testGate` as its sign-off run
+    executes it: resolved once (`resolved_commands`), less the review-only
+    entries, which are said and never run.
+
+    WHAT `executor.phaseGateOnly` IS ASKED AGAINST. A task-scope run leaves a
+    command the setting names to the phase gate only when this list holds it,
+    and the writer's prompt, the recorder and the drive's view of a task's
+    steps all read it here, so the three agree on what the phase gate runs."""
+    manifest = manifest if isinstance(manifest, dict) else {}
+    meta = manifest.get("meta") if isinstance(manifest.get("meta"), dict) else {}
+    build = meta.get("buildCommands")
+    entries = _mio.gate_entries(phase if isinstance(phase, dict) else {})[0]
+    keep = [e for e in entries
+            if not _manifest_vocab.review_only_entry(e, build)]
+    return resolved_commands(manifest, keep)
+
+
+# --- what a task's run left to the phase gate --------------------------------
+# A task-scope run leaves out a command `executor.phaseGateOnly` names when the
+# phase's own gate holds it (`_config_rules.phase_gate_only_split`). The row
+# lists each one under this key, so the run is one step short of its declared
+# gate for a reason the row itself states: the verdict binding reads the key
+# as part of the declaration (`left_to_phase_gate_names`), and a reader of the
+# row sees what the run did not measure. `arm` is `declared` for an entry of
+# the task's gate, else the arm of the derived step that proposed it.
+LEFT_TO_PHASE_GATE_KEY = "leftToPhaseGate"
+LEFT_DECLARED_ARM = "declared"
+LEFT_TO_PHASE_GATE_FIELDS = ("name", "arm", "basis", "matched")
+
+
+def left_to_phase_gate_record(name, matched, basis):
+    """One entry of `LEFT_TO_PHASE_GATE_KEY`: the step `name`, the arm that
+    proposed it (`LEFT_DECLARED_ARM`, or a derived step's arm), `basis` - the
+    setting that left it out - and the setting's entry it `matched`."""
+    arm = LEFT_DECLARED_ARM
+    if is_derived_step(name):
+        arm = name[len(DERIVED_STEP_PREFIX):].partition(": ")[0]
+    return {"name": name, "arm": arm, "basis": basis, "matched": matched}
+
+
+def left_to_phase_gate_names(row):
+    """The DECLARED gate entries `row` lists as left to the phase gate, in the
+    order it lists them; [] for a row with no such key. A step another arm
+    proposed is not a declared entry, so it never stands in for one."""
+    listed = row.get(LEFT_TO_PHASE_GATE_KEY) if isinstance(row, dict) else None
+    return [str(e.get("name")) for e in (listed if isinstance(listed, list) else [])
+            if isinstance(e, dict) and e.get("arm") == LEFT_DECLARED_ARM
+            and e.get("name")]
+
+
 # --- where it lives -----------------------------------------------------------
 def evidence_dir(project, config=None):
     """Absolute path of the evidence directory.
@@ -1254,6 +1305,17 @@ def row_for(project, result, scope, ids, identity, published=None):
     # when the writer computed one.
     if result.get(GATE_DIGEST_KEY) is not None:
         row[GATE_DIGEST_KEY] = str(result[GATE_DIGEST_KEY])
+    # WHAT THIS RUN LEFT TO THE PHASE GATE (`LEFT_TO_PHASE_GATE_KEY`): the
+    # fields `LEFT_TO_PHASE_GATE_FIELDS` names per entry and nothing else, cut
+    # at `MAX_STEPS` as `steps` is.
+    # Written only when the run left something out, so a run under an absent
+    # or empty `executor.phaseGateOnly` writes the row it always wrote.
+    left = [e for e in (result.get(LEFT_TO_PHASE_GATE_KEY) or [])
+            if isinstance(e, dict)][:MAX_STEPS]
+    if left:
+        row[LEFT_TO_PHASE_GATE_KEY] = [
+            dict((k, str(e[k])) for k in LEFT_TO_PHASE_GATE_FIELDS
+                 if e.get(k) is not None) for e in left]
     # THE IDENTITY THE NEXT RUN COMPARES ITSELF AGAINST. It is not derivable from
     # anything else on the row and it never will be: `testedState` holds a digest
     # of WHICH paths were dirty, which is silent about their contents, so a

@@ -5402,6 +5402,8 @@ def _cases(check):
     # on both would mean asserting a `cancelled` row nothing cancelled.
     _harness.stage(check, "ru0 the verdict-reuse block", _reuse_cases)
     _harness.stage(check, "pr0 the part-repeat block", _part_reuse_cases)
+    _harness.stage(check, "pgo0 the phase-gate-only block",
+                   _phase_gate_only_cases)
     _harness.stage(check, "ur0 the unrecorded-run block", _unrecorded_cases)
     _harness.stage(check, "nv0 the no-verdict block", _no_verdict_cases)
     _harness.stage(check, "ce0 the empty-and-retry block",
@@ -8767,6 +8769,208 @@ def _part_reuse_cases(check):
           and row_h.get("steps") == []
           and "GATE VERDICT REUSED" in text_h
           and "measured here:" not in text_h)
+
+
+def _pgo_fixture(setting, phase_gate, task_gate):
+    """`(root, mp, evdir, runs)` - a committed project whose phase gate and
+    whose one task's own gate are `phase_gate` and `task_gate`, over two
+    build keys: `sweep`, and `browser`, which stands for a slow browser check.
+    Each step appends its name to an ignored log, so what RAN is counted off
+    the commands themselves, never off the row the runner writes about them.
+    `setting` is `executor.phaseGateOnly` as the config holds it, or None for
+    a config that does not name the key."""
+    root = _harness.fixture_root("run-test-gate-pgo-")
+    os.makedirs(os.path.join(root, "docs", "audit", "phases"))
+    os.makedirs(os.path.join(root, ".claude"))
+    os.makedirs(os.path.join(root, "src"))
+    config = {"manifestPath": "docs/audit/audit-plan.json"}
+    if setting is not None:
+        config["executor"] = {"phaseGateOnly": setting}
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump(config, fh)
+    for name in ("sweep", "browser"):
+        with open(os.path.join(root, "%s.py" % (name,)), "w") as fh:
+            fh.write("with open('runs.log', 'a') as fh:\n"
+                     "    fh.write('%s\\n')\n" % (name,))
+    with open(os.path.join(root, ".gitignore"), "w") as fh:
+        fh.write("runs.log\n")
+    with open(os.path.join(root, "src", "a.py"), "w") as fh:
+        fh.write("declared = 1\n")
+    mp = os.path.join(root, "docs", "audit", "audit-plan.json")
+    with open(mp, "w") as fh:
+        json.dump({"meta": {"version": 3, "buildCommands": _PGO_BUILD},
+                   "phases": [{"id": "P1", "title": "one",
+                               "shard": "phases/P1.json"}]}, fh)
+    with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
+              "w") as fh:
+        json.dump({"id": "P1", "title": "one", "status": "in_progress",
+                   "testGate": list(phase_gate), "tasks": [
+                       {"id": "P1.1", "title": "t", "status": "in_progress",
+                        "files": ["src/a.py"],
+                        "tests": {"gate": list(task_gate)}}]}, fh)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
+    for arg in (["add", "--", ".gitignore", "docs", ".claude", "src",
+                 "sweep.py", "browser.py"],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
+
+    def runs():
+        path = os.path.join(root, "runs.log")
+        if not os.path.exists(path):
+            return []
+        with open(path) as fh:
+            return fh.read().split()
+    return root, mp, os.path.join(root, "docs", "audit", "evidence"), runs
+
+
+_PGO_BUILD = {"sweep": "python3 sweep.py", "browser": "python3 browser.py"}
+
+
+def _pgo_run(root, mp, evdir, *extra):
+    """`(code, text, newest row)` of one recorded run of the gate."""
+    lines = []
+    code = M.main([mp, "P1", "--project-dir", root, "--record"] + list(extra),
+                  out=lines.append)
+    rows = _recorded_rows(evdir) if os.path.isdir(evdir) else []
+    return code, "\n".join(lines), (rows[-1] if rows else {})
+
+
+def _pgo_masked(root, text):
+    """`text` with what differs between two fixtures of one shape - the
+    fixture's path, run ids, stamps and durations - masked, so two runs of the
+    same gate compare byte for byte on everything else."""
+    text = text.replace(root, "<root>")
+    # A run id is a stamp followed by random characters, and a stamp alone
+    # dates the boundary: both are masked whole, as one token.
+    text = re.sub(r"\b\d{4}-\d\d-\d\dT\S+", "<stamp>", text)
+    text = re.sub(r"\b[0-9a-f]{12,}\b", "<id>", text)
+    return re.sub(r"\d+", "N", text)
+
+
+def _phase_gate_only_cases(check):
+    """(pgo) `executor.phaseGateOnly` names commands the project leaves to the
+    phase gate. A task's recorded gate leaves out an entry it names when the
+    phase's own gate holds that entry, lists it on the row with the setting as
+    its basis, and says so; an entry it names that the phase gate lacks is run,
+    with the line saying why. A task gate of nothing but such entries is
+    `no-checks`, never `passed`. The phase gate runs every entry whatever the
+    setting says, and an absent or empty setting changes no byte."""
+    both = ["sweep", "browser"]
+    root, mp, evdir, runs = _pgo_fixture(["browser.py"], both, both)
+    code, text, row = _pgo_run(root, mp, evdir, "--task", "P1.1")
+    left = row.get("leftToPhaseGate")
+    check("pgo1 a task gate of a sweep and a browser check, the browser check "
+          "named by the setting and held by the phase gate, RUNS THE SWEEP "
+          "ALONE: its row records one step and lists the browser check as left "
+          "to the phase gate with the setting as its basis, and the run says "
+          "so: exit=%r runs=%r steps=%r left=%r status=%r"
+          % (code, runs(), [s.get("name") for s in row.get("steps") or []],
+             left, row.get("status")),
+          code == M.E_OK and runs() == ["sweep"]
+          and [s.get("name") for s in row.get("steps") or []] == ["sweep"]
+          and row.get("status") == "passed"
+          and left == [{"name": "browser", "arm": "declared",
+                        "basis": "executor.phaseGateOnly",
+                        "matched": "browser.py"}]
+          and "browser is left to the phase gate" in text
+          and "executor.phaseGateOnly" in text)
+    manifest = M._mio.load_manifest(mp)
+    owns = M.owned_files(manifest, "P1", "P1.1")[0]
+    ran_only = M.reuse_identity(root, mp, manifest,
+                                [("sweep", _PGO_BUILD["sweep"])], owns)["key"]
+    check("pgo2 the row's gate digest is the DECLARED gate's, both entries, so "
+          "the binding still compares it with the plan; its reuse identity is "
+          "taken over the entry that RAN: digest=%r identity matches=%r"
+          % (row.get("gateDigest"), row.get("reuseKey") == ran_only),
+          row.get("gateDigest") == _ev_io.gate_digest(both, _PGO_BUILD)
+          and row.get("reuseKey") == ran_only and ran_only is not None)
+    code_r, text_r, row_r = _pgo_run(root, mp, evdir, "--task", "P1.1")
+    check("pgo3 asked again over the unchanged tree, the verdict is repeated "
+          "and the browser check still never runs: exit=%r runs=%r source=%r"
+          % (code_r, runs(), row_r.get("verdictSource")),
+          code_r == M.E_OK and runs() == ["sweep"]
+          and row_r.get("verdictSource") == _ev_io.REUSED)
+
+    root, mp, evdir, runs = _pgo_fixture(["browser.py"], ["sweep"], both)
+    code, text, row = _pgo_run(root, mp, evdir, "--task", "P1.1")
+    check("pgo4 the same task gate with the browser check ABSENT from the phase "
+          "gate runs BOTH, lists nothing as left out, and says the named entry "
+          "runs here because it would otherwise run nowhere: exit=%r runs=%r "
+          "left=%r said=%r"
+          % (code, runs(), row.get("leftToPhaseGate"),
+             [ln for ln in text.splitlines() if "browser" in ln][:2]),
+          code == M.E_OK and sorted(runs()) == ["browser", "sweep"]
+          and "leftToPhaseGate" not in row
+          and "would otherwise run nowhere" in text
+          and "browser is left to the phase gate" not in text)
+
+    root, mp, evdir, runs = _pgo_fixture(["browser.py"], both, ["browser"])
+    code, text, row = _pgo_run(root, mp, evdir, "--task", "P1.1")
+    check("pgo5 a task gate holding ONLY left-out entries records `no-checks` "
+          "with the reason - never `passed`, never the empty gate - runs "
+          "nothing, lists the entry on the row, and exits red: exit=%r runs=%r "
+          "status=%r left=%r basis=%r"
+          % (code, runs(), row.get("status"), row.get("leftToPhaseGate"),
+             (row.get("observations") or {}).get("countsBasis")),
+          code == M.E_FAIL and runs() == []
+          and row.get("status") == "no-checks"
+          and [e.get("name") for e in row.get("leftToPhaseGate") or []]
+          == ["browser"]
+          and "executor.phaseGateOnly" in str(
+              (row.get("observations") or {}).get("countsBasis"))
+          and "GATE GREEN" not in text)
+
+    root, mp, evdir, runs = _pgo_fixture(["browser.py"], both, both)
+    code, text, row = _pgo_run(root, mp, evdir)
+    check("pgo6 the PHASE gate ignores the setting: it runs every entry and "
+          "lists none as left out: exit=%r runs=%r left=%r"
+          % (code, runs(), row.get("leftToPhaseGate")),
+          code == M.E_OK and sorted(runs()) == ["browser", "sweep"]
+          and "leftToPhaseGate" not in row
+          and "left to the phase gate" not in text)
+
+    # ABSENT AND EMPTY ARE THE OLD BEHAVIOUR, BYTE FOR BYTE. The two fixtures
+    # differ only in the config; every printed line and every row field but the
+    # ids, stamps and durations must agree, and nothing may be left out. The
+    # fixture names `browser.py` in neither, so an always-firing split shows.
+    said = {}
+    for setting in (None, []):
+        root, mp, evdir, runs = _pgo_fixture(setting, both, both)
+        code, text, row = _pgo_run(root, mp, evdir, "--task", "P1.1")
+        said[repr(setting)] = (code, sorted(runs()), _pgo_masked(root, text),
+                               sorted(row))
+    check("pgo7 with the setting ABSENT or EMPTY a task's run is the run it was "
+          "before: both entries run, no row key lists anything as left out, "
+          "and the two print the same lines once ids and times are masked: %r"
+          % (dict((k, v[:2] + (v[3],)) for k, v in said.items()),),
+          said["None"][:2] == (M.E_OK, ["browser", "sweep"])
+          and said["None"] == said["[]"]
+          and "leftToPhaseGate" not in said["None"][3]
+          and "phase gate" not in said["None"][2].replace(
+              "the phase's gate", ""))
+
+    # THE OTHER ARM: a step the affected selection's widening proposes is a
+    # command too, so one the setting names is left to the phase gate as well,
+    # and its record says which arm proposed it.
+    plan = getattr(M, "phase_gate_only_plan", None)
+    widened = ("%s%s: browser" % (_ev_io.DERIVED_STEP_PREFIX,
+                                  _ev_io.DERIVED_PHASE_GATE_ARM),
+               _PGO_BUILD["browser"])
+    got = (plan([("sweep", _PGO_BUILD["sweep"]), widened],
+                [("sweep", _PGO_BUILD["sweep"]),
+                 ("browser", _PGO_BUILD["browser"])], ("browser.py",))
+           if plan is not None else None)
+    check("pgo8 a widened phase-gate step the setting names is left out too, "
+          "and its record names the arm that proposed it: %r" % (got,),
+          got is not None
+          and got["run"] == [("sweep", _PGO_BUILD["sweep"])]
+          and got["left"] == [{"name": widened[0],
+                               "arm": _ev_io.DERIVED_PHASE_GATE_ARM,
+                               "basis": "executor.phaseGateOnly",
+                               "matched": "browser.py"}]
+          and got["unheld"] == [])
 
 
 _KILLERS = ("kill", "killpg", "terminate", "send_signal", "tear_down",

@@ -2709,6 +2709,43 @@ def _part_repeat_cases(check):
           and whole == (True, "R-measured") and unknown == (True, None))
 
 
+def _left_to_phase_gate_cases(check):
+    """(ltp) the entries a task's run left to the phase gate cross onto its
+    row - name, the arm that proposed it, the setting as its basis and the
+    name that matched - and no other field; a run that left nothing
+    out writes no key at all, so a row of the old shape is the same bytes.
+    The key is spelled as the ledger holds it."""
+    left = [{"name": "browser", "arm": "declared",
+             "basis": "executor.phaseGateOnly", "matched": "browser.py",
+             "extra": "dropped"},
+            {"name": "affected/phase-gate: e2e", "arm": "phase-gate",
+             "basis": "executor.phaseGateOnly", "matched": "playwright test"}]
+    base = {"status": "passed", "durationMs": 5,
+            "steps": [{"name": "sweep", "exit": 0, "durationMs": 5}]}
+    written = _harness.attempt(lambda: M.row_for(
+        "/nonexistent-project", dict(base, leftToPhaseGate=left), "task",
+        {"taskId": "P1.1", "phaseId": "P1"}, {"runId": "R-left"}))
+    plain = _harness.attempt(lambda: M.row_for(
+        "/nonexistent-project", dict(base), "task",
+        {"taskId": "P1.1", "phaseId": "P1"}, {"runId": "R-plain"}))
+    row = written[1] if written[0] else {}
+    check("ltp1 the row lists each entry left to the phase gate with its arm, "
+          "the setting as its basis and the matching name, and nothing else; "
+          "a run that left nothing out has no such key: %r / %r"
+          % (row.get("leftToPhaseGate"),
+             sorted(plain[1]) if plain[0] else plain),
+          row.get("leftToPhaseGate") == [dict((k, v) for k, v in e.items()
+                                              if k != "extra") for e in left]
+          and plain[0] and "leftToPhaseGate" not in plain[1])
+    reader = getattr(M, "left_to_phase_gate_names", None)
+    names = (_harness.attempt(lambda: reader(row)) if reader else None,
+             _harness.attempt(lambda: reader({})) if reader else None)
+    check("ltp2 the reader the binding asks gives the DECLARED entries a row "
+          "left out, never a step another arm proposed, and none for a row "
+          "with no key: %r" % (names,),
+          names == ((True, ["browser"]), (True, [])))
+
+
 def _pin_suite_cases(check):
     """(ps) one tracked path for a runner's spelling, and the one own-miss
     reading every third-place reader shares."""
@@ -4716,6 +4753,7 @@ def _selftest():
         _cases(check)
         _foreground_bound_cases(check)
         _part_repeat_cases(check)
+        _left_to_phase_gate_cases(check)
         _selection_time_cases(check)
         _base_scope_cases(check)
         _claimed_followers_cases(check)

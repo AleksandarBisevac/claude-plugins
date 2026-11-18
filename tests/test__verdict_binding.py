@@ -124,6 +124,52 @@ def _reserved_prefix_cases(check):
           and "reserved" not in plain)
 
 
+def _left_to_phase_gate_cases(check):
+    """A task's recorded run leaves out an entry `executor.phaseGateOnly` names
+    when the phase gate holds it, and lists it on the row under the left-out
+    key. The row is one step short of the declaration for that reason alone,
+    so it binds; a row one step short for any other reason - nothing listed,
+    or a different entry listed - still does not. The key is spelled as the
+    ledger holds it; a row on disk is the contract."""
+    entries = ["sweep", "browser"]
+    digest = _evidence_io.gate_digest(entries, None)
+
+    def row(steps, left=None):
+        measured = {"steps": [{"name": n} for n in steps], "gateSource": "task",
+                    _evidence_io.GATE_DIGEST_KEY: digest}
+        if left is not None:
+            measured["leftToPhaseGate"] = [
+                {"name": n, "arm": "declared", "basis": "executor.phaseGateOnly",
+                 "matched": "browser.py"} for n in left]
+        return measured
+    bound = M.gate_mismatch(row(["sweep"], ["browser"]), entries, "task")
+    every = M.gate_mismatch(row([], ["sweep", "browser"]), entries, "task")
+    check("vb38 a row one step short of the declared gate BECAUSE the step is "
+          "listed as left to the phase gate binds - and so does a row that left "
+          "every entry: %r / %r" % (bound, every),
+          bound is None and every is None)
+    short = M.gate_mismatch(row(["sweep"]), entries, "task") or ""
+    wrong = M.gate_mismatch(row(["sweep"], ["lint"]), entries, "task") or ""
+    twice = M.gate_mismatch(row(["sweep", "browser"], ["browser"]), entries,
+                            "task") or ""
+    derived = M.gate_mismatch(
+        {"steps": [{"name": "sweep"}], "gateSource": "task",
+         _evidence_io.GATE_DIGEST_KEY: digest,
+         "leftToPhaseGate": [{"name": "affected/phase-gate: browser",
+                              "arm": "phase-gate",
+                              "basis": "executor.phaseGateOnly",
+                              "matched": "browser.py"}]},
+        entries, "task") or ""
+    different = "a verdict about a different gate is not this gate's verdict"
+    check("vb39 THE REFUSING HALF: a row one step short with nothing listed, "
+          "with a DIFFERENT entry listed, with the listed entry ALSO run, or "
+          "with only a widened step of another arm listed, is still measured "
+          "under a different gate: %r / %r / %r / %r"
+          % (short, wrong, twice, derived),
+          different in short and different in wrong and different in twice
+          and different in derived)
+
+
 def _cases(check):
     check("vb1 a gate measured under the same entries is not a mismatch",
           M.gate_mismatch({"steps": [{"name": "test"}]}, ["test"], "phase") is None)
@@ -132,6 +178,7 @@ def _cases(check):
                                        "phase") or ""))
     _derived_step_cases(check)
     _reserved_prefix_cases(check)
+    _left_to_phase_gate_cases(check)
     check("vb3 a red after the last green is unanswered; a green after it retires it",
           M.red_after_green([{"ts": "1", "status": "passed"},
                              {"ts": "2", "status": "failed"}]) is not None

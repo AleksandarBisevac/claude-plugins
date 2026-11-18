@@ -1907,6 +1907,68 @@ def _gate_choice_cases(check):
           "with no gate run inside next: %r" % ((code, line, calls),),
           code == 0 and _signal_head(line) == ("dispatch", "P1.1")
           and "run-test-gate.py" in line and not calls)
+    _phase_gate_only_view_cases(check, M)
+
+
+def _pgo_plan(phase_gate, task_gate):
+    """An in-memory plan: one phase whose gate is `phase_gate`, one task whose
+    own gate is `task_gate`, over a sweep and a browser check."""
+    return {"meta": {"version": 3, "buildCommands": {
+        "sweep": "python3 sweep.py", "browser": "python3 browser.py"}},
+        "phases": [{"id": "P1", "title": "one", "status": "in_progress",
+                    "testGate": list(phase_gate), "tasks": [
+                        {"id": "P1.1", "title": "t", "status": "in_progress",
+                         "files": ["src/a.py"],
+                         "tests": {"gate": list(task_gate)}}]}]}
+
+
+def _phase_gate_only_view_cases(check, M):
+    """(gc11) The drive's view of a task's gate steps leaves out the entries
+    the recorder leaves out (`executor.phaseGateOnly`), so the background
+    decision and the step text never weigh or name an entry that will not
+    run. Both sides are asked of the same plan; the recorder's answer is its
+    own `phase_gate_only_plan`, never a copy of the rule here."""
+    rtg = _loader.load_script("run-test-gate.py", "rtg_pgo_view", cache=False)
+    both = ["sweep", "browser"]
+    named = ("browser.py",)
+    seen = {}
+    for label, phase_gate in (("held", both), ("unheld", ["sweep"])):
+        plan = _pgo_plan(phase_gate, both)
+        phase = plan["phases"][0]
+        try:
+            drive = M.task_gate_steps(plan, phase, "P1.1", left=named)
+        except TypeError as exc:
+            drive = ("TypeError", str(exc))
+        recorder = getattr(rtg, "phase_gate_only_plan", None)
+        resolve = rtg._ev.resolved_commands
+        got = (recorder(resolve(plan, both), resolve(plan, phase_gate), named)
+               if recorder is not None else None)
+        seen[label] = (drive, None if got is None
+                       else [n for n, _c in got["run"]])
+    check("gc11 the drive's view of a task's gate steps leaves out the entry "
+          "the recorder leaves out - the browser check the setting names and "
+          "the phase gate holds - and keeps it when the phase gate lacks it, "
+          "where the recorder runs it too; the already-wide reading is taken "
+          "over the declared entries, so nothing is said to join: %r" % (seen,),
+          seen["held"] == ((["sweep"], None), ["sweep"])
+          and seen["unheld"] == ((both, None), both))
+    plan = _pgo_plan(both, both)
+    weighed = []
+    held = (M.gate_in_background, M.task_gate)
+    M.gate_in_background = lambda ctx, names, joins=None: (
+        weighed.append(list(names)) or (False, None))
+    M.task_gate = lambda *_a, **_k: (0, "", "")
+    try:
+        for config in ({"executor": {"phaseGateOnly": list(named)}}, {}):
+            M.chosen_task_gate({"config": config, "project": "/nonexistent"},
+                               {}, plan["phases"][0],
+                               plan["phases"][0]["tasks"][0], None, plan)
+    finally:
+        M.gate_in_background, M.task_gate = held
+    check("gc12 ...and the gate choice reads the setting off the project's "
+          "config: the steps it weighs leave the browser check out when the "
+          "config names it, and keep it when the config is silent: %r"
+          % (weighed,), weighed == [["sweep"], both])
 
 
 def _gate_choice_follow_cases(check):
