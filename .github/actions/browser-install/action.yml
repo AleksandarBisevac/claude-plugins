@@ -1,0 +1,235 @@
+name: browser install
+description: >-
+  Chromium, and the system packages it needs that the runner image lacks, each
+  restored from a cache keyed by what decides its contents. ci.yml's two browser
+  jobs and its seeding job call this, so the install is written once.
+
+# ONE STEP PER COST, so the log says where the minutes went. The job's step list
+# shows this action as one step; each step below opens a log group whose title is
+# its script's first line (a `# install: ...` comment), and the log's timestamps
+# give each one's time.
+#
+# WHAT EACH KEY HOLDS, and why each part of it is there:
+#   - The browser download (~/.cache/ms-playwright), keyed by the runner's OS and
+#     architecture and the playwright-core version package-lock.json pins.
+#     `playwright install chromium` runs on a hit as well: it fetches nothing when
+#     the restored build is the pinned one, and the pinned one when it is not.
+#   - The system packages' set (~/.cache/chromium-sysdeps): `debs/`, every .deb the
+#     install needs - the packages `playwright install-deps --dry-run` names that
+#     dpkg reports not installed, and every dependency of theirs the image lacks -
+#     and `lists/`, the apt index those files were resolved against. Keyed by the
+#     runner image's version and architecture and the list of packages the image
+#     lacks. A hit installs from the set and asks the archive for nothing, index
+#     included; the archive fetch is the cost on a day its mirror is slow
+#     (ci.yml's comment above the browser jobs carries the measurements).
+#   - Both keys end in BROWSER_CACHE_VERSION (the `pins` step). An entry is never
+#     overwritten - GitHub refuses a second save under a key that exists - so a bad
+#     one is retired by bumping that number, which moves both keys.
+#
+# The `path` each cache step names is part of the entry's version, so a lookup that
+# names another path finds nothing: the seed's lookups below name the same two
+# paths as the restores.
+inputs:
+  seed:
+    description: >-
+      "true" in the seeding job: once both keys are known, an entry that exists for
+      both ends the action, so a seed with nothing to save installs nothing.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        # install: JavaScript dev dependencies (npm ci)
+        npm ci
+
+    - id: pins
+      shell: bash
+      env:
+        BROWSER_CACHE_VERSION: "1"
+      run: |
+        # install: read the playwright pin, the runner image and the cache version
+        v=$(node -e "const p=require('./package-lock.json').packages['node_modules/playwright-core'];if(!p||!p.version){console.error('package-lock.json pins no playwright-core');process.exit(1)}console.log(p.version)")
+        if [ -z "${ImageOS:-}" ] || [ -z "${ImageVersion:-}" ]; then
+          echo "the runner exports no ImageOS/ImageVersion, so no cache key names its image" >&2
+          exit 1
+        fi
+        echo "browser-key=playwright-browsers-$RUNNER_OS-$RUNNER_ARCH-$v-v$BROWSER_CACHE_VERSION" >> "$GITHUB_OUTPUT"
+        echo "sysdeps-prefix=chromium-sysdeps-$ImageOS-$ImageVersion-$RUNNER_ARCH" >> "$GITHUB_OUTPUT"
+        echo "version=v$BROWSER_CACHE_VERSION" >> "$GITHUB_OUTPUT"
+
+    - id: sysdeps
+      shell: bash
+      env:
+        PREFIX: ${{ steps.pins.outputs.sysdeps-prefix }}
+        VERSION: ${{ steps.pins.outputs.version }}
+      run: |
+        # install: name the system packages Chromium needs that the image lacks
+        out=$(npx playwright install-deps --dry-run chromium)
+        case "$out" in
+          *--no-install-recommends*) ;;
+          *) printf 'install-deps --dry-run printed no apt-get install line:\n%s\n' "$out" >&2; exit 1 ;;
+        esac
+        wanted=$(printf '%s\n' "$out" | sed -n 's/.*--no-install-recommends//p' | tr -d '"')
+        if [ -z "$(echo $wanted)" ]; then
+          echo "the apt-get install line names no package" >&2
+          exit 1
+        fi
+        missing=""
+        for p in $wanted; do
+          s=$(dpkg-query -W -f='${Status}' "$p" 2>/dev/null || true)
+          [ "$s" = "install ok installed" ] || missing="$missing $p"
+        done
+        missing=$(echo $missing)
+        echo "playwright names $(echo $wanted | wc -w) packages; the image lacks: ${missing:-none of them}"
+        echo "missing=$missing" >> "$GITHUB_OUTPUT"
+        echo "key=$PREFIX-$(printf '%s' "$missing" | sha256sum | cut -c1-16)-$VERSION" >> "$GITHUB_OUTPUT"
+
+    - id: seen-browser
+      name: "seed: is there an entry for the browser key?"
+      if: ${{ inputs.seed == 'true' }}
+      uses: actions/cache/restore@v6
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ steps.pins.outputs.browser-key }}
+        lookup-only: true
+
+    - id: seen-sysdeps
+      name: "seed: is there an entry for the system packages' key?"
+      if: ${{ inputs.seed == 'true' && steps.sysdeps.outputs.missing != '' }}
+      uses: actions/cache/restore@v6
+      with:
+        path: ~/.cache/chromium-sysdeps
+        key: ${{ steps.sysdeps.outputs.key }}
+        lookup-only: true
+
+    - id: plan
+      shell: bash
+      env:
+        SEED: ${{ inputs.seed }}
+        BROWSER_SEEN: ${{ steps.seen-browser.outputs.cache-hit }}
+        SYSDEPS_SEEN: ${{ steps.seen-sysdeps.outputs.cache-hit }}
+        MISSING: ${{ steps.sysdeps.outputs.missing }}
+      run: |
+        # install: decide whether this job installs (a seed with an entry for both keys does not)
+        if [ "$SEED" != "true" ]; then
+          echo "install=true" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        lacking=""
+        [ "$BROWSER_SEEN" = "true" ] || lacking="the browser key"
+        if [ -n "$MISSING" ] && [ "$SYSDEPS_SEEN" != "true" ]; then
+          lacking="${lacking:+$lacking and }the system packages' key"
+        fi
+        if [ -z "$lacking" ]; then
+          echo "seed: an entry exists for every key this image needs, so nothing is installed and nothing is saved"
+          echo "install=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "seed: no entry exists for $lacking, so the install runs and this job saves what it fetched"
+          echo "install=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: "install: restore the browser download"
+      if: ${{ steps.plan.outputs.install == 'true' }}
+      uses: actions/cache@v6
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ steps.pins.outputs.browser-key }}
+
+    - if: ${{ steps.plan.outputs.install == 'true' }}
+      shell: bash
+      run: |
+        # install: Chromium (fetched only when the restored build is not the pinned one)
+        npx playwright install chromium
+
+    - name: "install: restore the system packages' set"
+      if: ${{ steps.plan.outputs.install == 'true' && steps.sysdeps.outputs.missing != '' }}
+      uses: actions/cache@v6
+      with:
+        path: ~/.cache/chromium-sysdeps
+        key: ${{ steps.sysdeps.outputs.key }}
+
+    # WHAT THE SET LACKS IS APT'S ANSWER, not a file-name match: `--print-uris`,
+    # resolved against the set's own index, lists every file the install needs that
+    # is not in `debs/` at the size that index gives it - a named package or a
+    # dependency, and a short file, which apt deletes and lists again (apt's
+    # pkgAcqArchive::QueueNext). Those, and nothing else, are fetched. A set whose
+    # install still fails - a file of the right size that dpkg cannot read, an index
+    # naming a file the archive has since dropped - is thrown away and the whole set
+    # fetched from the archive once; the step is red only when that fails as well.
+    # The fallback cannot repair the entry (an entry is never overwritten), so it
+    # warns, and BROWSER_CACHE_VERSION retires the entry.
+    - id: sysdeps-install
+      if: ${{ steps.plan.outputs.install == 'true' && steps.sysdeps.outputs.missing != '' }}
+      shell: bash
+      env:
+        MISSING: ${{ steps.sysdeps.outputs.missing }}
+      run: |
+        # install: system packages (the archive is asked only for the files the restored set lacks - every file, when nothing was restored)
+        d="$HOME/.cache/chromium-sysdeps"
+        apt_set() {
+          sudo apt-get -o Dir::Cache::Archives="$d/debs/" -o Dir::State::Lists="$d/lists/" -o APT::Sandbox::User=root "$@"
+        }
+        # The archive path: a fresh index, snapshotted into the set, and every file
+        # the install needs fetched into an empty `debs/`.
+        fetch_all() {
+          sudo rm -rf "$d" &&
+            mkdir -p "$d/debs/partial" "$d/lists" &&
+            sudo apt-get update &&
+            eval "$(apt-config shell sys_lists Dir::State::Lists/d)" &&
+            sudo cp -a "$sys_lists/." "$d/lists/" &&
+            sudo rm -rf "$d/lists/lock" "$d/lists/partial" &&
+            mkdir -p "$d/lists/partial" &&
+            apt_set install -y --download-only --no-install-recommends $MISSING
+        }
+        install_set() {
+          apt_set install -y --no-download --no-install-recommends $MISSING
+        }
+        why=""
+        if [ -d "$d/debs" ] && ls "$d/lists/"*_Packages* >/dev/null 2>&1; then
+          mkdir -p "$d/debs/partial" "$d/lists/partial"
+          if ! uris=$(apt_set install -y --no-install-recommends --print-uris $MISSING); then
+            why="apt could not resolve the install against the restored set's index"
+          else
+            lacking=$(printf '%s\n' "$uris" | sed -n "s/^'[^']*' \([^ ]*\) .*/\1/p")
+            if [ -z "$lacking" ]; then
+              echo "the restored set holds every file the install needs, dependencies included; the archive is asked for nothing"
+            else
+              set -- $lacking
+              echo "the restored set lacks $# of the files the install needs, so the archive is asked for these and nothing else: $*"
+              apt_set install -y --download-only --no-install-recommends $MISSING ||
+                why="fetching the files the restored set lacks failed"
+            fi
+          fi
+          if [ -z "$why" ] && ! install_set; then
+            why="installing from the restored set failed"
+          fi
+        else
+          echo "no restored set: the archive is asked for its index and for every file the install needs"
+          if ! fetch_all; then
+            echo "::error::fetching the system packages from the archive failed"
+            exit 1
+          fi
+          if ! install_set; then
+            echo "::error::installing the system packages just fetched from the archive failed"
+            exit 1
+          fi
+        fi
+        if [ -n "$why" ]; then
+          echo "::warning::$why, so the set is thrown away and every file is fetched from the archive, once. The entry is not repaired (an entry is never overwritten); bump BROWSER_CACHE_VERSION in .github/actions/browser-install/action.yml to retire it."
+          if ! fetch_all; then
+            echo "::error::the fallback's fetch from the archive failed too"
+            exit 1
+          fi
+          if ! install_set; then
+            echo "::error::installing the fallback's fresh fetch failed too"
+            exit 1
+          fi
+          echo "the fallback installed the system packages from a fresh fetch"
+        fi
+        # The cache's post step saves the set as the runner user; apt wrote it as
+        # root, and its lock files and partial/ directories are not part of it.
+        sudo rm -rf "$d/debs/lock" "$d/debs/partial" "$d/lists/lock" "$d/lists/partial"
+        sudo chown -R "$(id -u):$(id -g)" "$d"

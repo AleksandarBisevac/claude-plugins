@@ -14,9 +14,12 @@ the copies together by reading each one's commands, the report checker's documen
 and the sweep's legs, and every CI change cost four edits plus that reader's
 fixtures.
 
-ONE EXECUTABLE DESCRIPTION NOW. Every CI job is setup plus one
+ONE EXECUTABLE DESCRIPTION NOW. Every CI job that runs a gate is setup plus one
 `tools/verify.sh --only <slices>` call, and the runner alone says what a slice
-runs - so the copies are gone rather than compared. What is left to hold is what
+runs - so the copies are gone rather than compared. A job that runs no slice (the
+commit-verified question, the browser cache seed) names no slice to hold: the
+slice rules read no run in it, while the bound, runner-image and job-cap rules
+read it like any job. What is left to hold is what
 the workflow says ABOUT the slices, and `slice_drift()` and `shard_matrix_drift()`
 hold it against `verify.sh --list`, asked of the real runner:
 
@@ -585,9 +588,10 @@ def failmode_table_drift(repo=None):
 # ONE EXECUTABLE DESCRIPTION. ci.yml used to carry the gate set as inline shell, and
 # this file held hand-maintained copies of it together - the runner, the workflow and
 # two documents - by reading each one's commands, the report checker's documents and
-# the sweep's legs. Every CI job is now setup plus one `verify.sh --only` call, so the
-# workflow names SLICES and the runner alone says what a slice runs. What is left to
-# hold is what the workflow says about the slices:
+# the sweep's legs. Every CI job that runs a gate is now setup plus one
+# `verify.sh --only` call, so the workflow names SLICES and the runner alone says
+# what a slice runs. What is left to hold is what the workflow says about the
+# slices:
 #
 #   * every slice a job names is one `verify.sh --list` prints - a misspelt or
 #     retired name is otherwise refused by the runner on the day the job runs;
