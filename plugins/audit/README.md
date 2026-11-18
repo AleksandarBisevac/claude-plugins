@@ -290,24 +290,32 @@ page behind it, read against the form rather than instead of it. All of it is
     journal and lock classes are not graded — they carry their own evidence.
   - `remind-tdd.py` (PostToolUse: edits) — **non-blocking** nudge when source
     changes with no test touched in the session; throttled, manifest-aware, configurable.
-  - `journal-writes.py` (PreToolUse: edits — PostToolUse: edits + Bash) — appends one
+  - `journal-writes.py` (PreToolUse: edits — PostToolUse: edits + Bash) — **with
+    `journal.enabled` true**, appends one
     hash-chained row to the **audit trail** for every write to the manifest or to
     `.claude/audit.config.json`, **whatever tool made it**: who, when, what, and the
-    state it left behind. The
+    state it left behind. Unset — the default — it records no call and keeps no
+    pre-image file, and the plugin's own commands and the panel still write their
+    rows; the one call it still judges is a write to the config that turns the key
+    off, which it records as the trail's last row. The
     Pre pass caches the file's pre-image so the Post pass can record a **field-level
     diff** (`P2.3: status in_progress->done, completedAt set`) and emit the
     **completion records** (`task.complete`, `task.commit`, `phase.signoff`) —
     hook-emitted only, never appended by hand. Silent, never blocking. It is a hook
     rather than an instruction because a model that forgets to log a change leaves a
     gap indistinguishable from one somebody hid. See [Audit trail](#audit-trail).
-  - Stale session state (incl. forgotten armed bypasses) is garbage-collected after 7 days.
+  - Stale session state (incl. forgotten armed bypasses) is garbage-collected after 7 days,
+    and `meter-usage.py` clears an ended session's state files — and, with
+    `journal.enabled` not true, every pre-image file but a running session's copy of the
+    config — when the next session starts.
 - **`schema/audit-plan.schema.json`** — a JSON Schema (draft 2020-12) for the manifest, so
   editors and CI validate it — plus `scripts/manifest/validate-manifest.py`, a dependency-free
   referential validator (unique ids, dependency **cycles**, reciprocal bug↔task links,
   bidirectional fileIndex, typo warnings; exit 0 valid / 1 findings / 2 unreadable) the
   commands run after every manifest mutation.
-- **Audit trail** — `scripts/governance/audit-journal.py`: an append-only, hash-chained record of every
-  write to the plan and to the config, `verify`-able from the CLI, from `/audit:doctor` and
+- **Audit trail** — `scripts/governance/audit-journal.py`: an append-only, hash-chained record of what
+  the plugin's own commands and the panel write to the plan and to the config — and, with
+  `journal.enabled` true, of every tool call that writes either — `verify`-able from the CLI, from `/audit:doctor` and
   from CI. **Tamper-evident, not tamper-proof**, and it says so in every place it is
   described. See [Audit trail](#audit-trail).
 - **Test evidence** — `scripts/governance/run-test-gate.py --record`: the run of a task's or a
@@ -366,7 +374,7 @@ are the table in [SECURITY.md](../../SECURITY.md#fail-modes-by-design).
 | The audit trail is append-only — no hand edits | `guard-edits.py` | **deny**. Nothing legitimate writes those files with an edit tool, or with an MCP write tool — both are refused. A *read* of a journal file is not: the trail is committed and meant to be read |
 | A non-trivial edit is covered by an `in_progress` task, or by a live single-use bypass | `require-plan.py` — PreToolUse edits **and `mcp__.*`**, an MCP call decided on the path `_mcp_plan_target` resolves | graded on evidence: it observes with no plan, warns with a manifest holding no phase, **denies** past the free file when the plan holds phases and none runs, and **denies** while a phase runs (`/audit:doctor` prints the active tier). `planGate` pins one tier by hand |
 | A manifest or shard write while another **live** session holds the governing lock | `require-plan.py`, reading the lock `scripts/governance/audit-lock.py` wrote | **deny**, naming the holder. An abandoned lock allows, with a notice — [the full verdict table](../../SECURITY.md#the-one-denial-that-is-not-about-the-plan-0270) |
-| Every write to the manifest or the config leaves a hash-chained row — including the derived `task.complete`, `task.commit` and `phase.signoff` rows — **whichever tool made it**, a shell command inside a `Bash` call and an MCP server's write tool included | `journal-writes.py` — PreToolUse and PostToolUse on edits, `Bash` and `mcp__.*` | records; never blocks. It is the **only** writer of those actions, which is why the orchestrator must not append them. The Post pass refreshes the pre-image it just recorded, so the baseline is the manifest as of the last row rather than as of the last edit |
+| With `journal.enabled` true, every write to the manifest or the config leaves a hash-chained row — including the derived `task.complete`, `task.commit` and `phase.signoff` rows — **whichever tool made it**, a shell command inside a `Bash` call and an MCP server's write tool included | `journal-writes.py` — PreToolUse and PostToolUse on edits, `Bash` and `mcp__.*` | records; never blocks. It is the **only** writer of those actions, which is why the orchestrator must not append them. The Post pass refreshes the pre-image it just recorded, so the baseline is the manifest as of the last row rather than as of the last edit |
 | Token spend is attributed to a phase and a task | `meter-usage.py` — Stop / SubagentStop / SessionEnd | records; never blocks. Ledger rows carry `phaseId`, `taskId` and `model` |
 | A shell write that no tool edit and no `in_progress` task accounts for is reported — **where a plan exists**, and **in the one tree the guard watches**, graded on the same evidence as the plan gate | `guard-bash-writes.py` — PostToolUse `Bash` + edits | non-blocking `additionalContext`. PostToolUse cannot undo the write — the model is told, in-band, that it sidestepped the gate. With no manifest the class is silent: "no task covers this" is true of every file, so it carries nothing. `enforce`/`planGate` restores it. A command that ran in a **different working tree** is told so instead of being blamed for the watched tree's dirt — to guard a worktree, open its own session there (`/audit:worktree` prints the command). A command that only *walks* into one (`cd <worktree> && …`) is not caught by that notice, because the payload names the session's directory rather than the shell's; there the `cd` is the evidence, and the finding is reported with the authorship claim withdrawn. The same withdrawal covers a peer **agent** of this session — agents share one `session_id` and therefore one state file, so the per-session evidence cannot see them; the payload's `agent_id` is what names the writers inside a session |
 | Source changed with no test touched this session | `remind-tdd.py` — PostToolUse edits | non-blocking nudge, throttled and manifest-aware |
@@ -707,7 +715,7 @@ refuse to run until it parses). Read by the hooks from `${CLAUDE_PROJECT_DIR}`.
 | `usage.currency` / `pricingAsOf` | Currency label, and the date this file's `usage.pricing` was accurate. Every cost names the table that priced it, with that table's date: the shipped table's date and page when the shipped table priced the rows, this date when `usage.pricing` here did, `meta.usage.pricingAsOf` when the plan's own table did. **"Rates undated" is said only of a project table that carries no date**, and a date beside no table dates nothing — the report's stale-price notice reads the same date the cost line does | `USD` / the shipped table's date |
 | `usage.bands` | `{highUSD, outlierUSD}` absolute cost bands; both unset → calibrate from this project's own completed tasks | both unset |
 | `usage.pricing` | Model id → either a flat `{in, out, cacheW5m, cacheW1h, cacheR}` row (in currency per **million** tokens, in effect for every date) or a list of `{effectiveFrom, rates}` rows for a rate that changed on a known date — `rates_for(model, table, at)` picks the row in effect on `at`. **Which table prices a project** is one decision every surface shares (`usage_ledger.resolve_pricing` — the report, `/audit:usage` and its `--backfill`, the panel and the meter hook all ask it): the manifest's `meta.usage.pricing` when it declares a non-empty table; else this key; else the shipped table. A declared table, from either place, is laid over the shipped table **model by model** — a model it names replaces that model's shipped row whole (so give every rate; an omitted one prices at zero), and every model it does not name keeps its shipped row. An empty table declares nothing. The shipped table carries no `_default` row: an unrecognized model with no row of its own — shipped, declared, or a project's own `_default` — is **unpriced**, never priced at a guess, and every surface that prints a cost says so rather than printing a fabricated figure. **A row is stamped at write time** with the rate it was priced at, that rate's own `effectiveFrom` (dated rows only), and the table's `asOf`/source, so a later rate change can never rewrite what an old row claims it cost: a stamped row is re-summed from its own stamp at read time, never re-resolved. An older, unstamped row is priced again at read time against the resolved table, at the rate in effect **on that row's own date** rather than today's; a row that cannot be priced again that way keeps its stored figure — the rate phrase beside the cost counts those rows rather than mixing two tables silently, and the meter hook's outlier advisory and session line, which print no rate phrase, count them in their own words | shipped table |
-| `journal.enabled` | Record every manifest / config write in the tamper-evident audit trail | `true` |
+| `journal.enabled` | Which rows the tamper-evident audit trail holds. Unset: the plugin's own commands and the panel write theirs, and no row is written per tool call and no pre-image file kept. `true`: every manifest / config write is recorded as well, whichever tool made it. `false`: no row at all. See [`reference/config.md`](reference/config.md) | unset |
 | `journal.dir` | Where the trail's monthly per-writer `.jsonl` files live; unset → beside the manifest, so one commit carries both the change and the record of it | unset |
 | `journal.strictManifestState` | Opt-in confirmation prompt when an edit changes manifest **state** (a task/phase `status`, `completedAt`, `commit`, `attempts`): `off` \| `ask` — deliberately no `deny`, the orchestrator writes through the same tools | `off` |
 | `ui.theme` | The look of the panel and the report: a shipped preset name (`slate-teal`) or a path to a theme file, absolute or relative to the project dir. Unset -> search `.claude/audit.theme.json` in the project, then `~/.claude/audit.theme.json`, then the built-in preset; every surface says which of the four it is wearing, and a path that is not a file is reported rather than silently ignored. Edited in the panel's **Appearance** tab | unset |
@@ -1271,11 +1279,14 @@ little there is.
 
 ## Audit trail
 
-Who changed the plan, when, and to what. Every edit-tool write to the manifest (index or
-phase shard) and to `.claude/audit.config.json` appends one row to an append-only,
-hash-chained journal — the `journal-writes.py` hook records tool writes, panel saves record
-their own, and each row carries the change, the person, the session, how the write arrived,
-and a hash of the document it left behind.
+Who changed the plan, when, and to what. The plugin's own commands and the panel's saves
+append a row to an append-only, hash-chained journal for each change they make to the
+manifest (index or phase shard) and to `.claude/audit.config.json`; with `journal.enabled`
+true the `journal-writes.py` hook also appends one for every tool call that writes either.
+Each row carries the change, the person, the session, how the write arrived, and a hash of
+the document it left behind. Unset is the default, and it records no tool call: a write no
+command made shows up to `verify` as a document that changed since the last row that recorded
+it, not as a row.
 
 ```
 docs/audit/journal/2026-08.<writerId>.jsonl        # one file per writer per month
@@ -1376,9 +1387,12 @@ committed; an ignored journal quietly downgrades the trail from three anchors to
 (`/audit:doctor` warns when journal files sit uncommitted for more than a week.) Edits to it
 are refused by `guard-edits.py`;
 a shell write into it cannot be refused, so `guard-bash-writes.py` reports it after the fact.
-Turn it off with `journal.enabled: false` — the flip itself is journalled as a final
-`config.edit` row (the last will), and `/audit:doctor` will say the trail was running and
-has been turned off. For extra friction, `journal.strictManifestState: "ask"` surfaces a
+`journal.enabled` takes three values. Unset (the default) keeps the commands' and the panel's
+rows and records no tool call; `true` records every tool call's write as well, which is what
+the completion records above and the field-level diffs of an edit need; `false` writes no row
+at all. Turning it from `true` to unset or to `false` by an edit is itself journalled as a
+final `config.edit` row (the last will), and `/audit:doctor` says per-call recording is off
+and which of the two put it there, or that the trail was running and has been turned off. For extra friction, `journal.strictManifestState: "ask"` surfaces a
 confirmation prompt on any edit that changes manifest state.
 
 **Growth.** The journal grows one file per writer (session) per month, and only for sessions

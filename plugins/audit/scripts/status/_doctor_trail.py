@@ -1087,6 +1087,35 @@ def journal_warning_advice(warnings):
 
 
 ANCHOR_CHECK = "journal anchor"
+PER_CALL_CHECK = "journal calls"
+
+
+def _per_call_row(rep, cfg, cfg_mod):
+    """Whether each tool call's write gets a row, and what the config says.
+
+    ALWAYS AN OK LINE. Off is the default and the user's own switch, so a
+    trail with no per-call rows is what the config asked for and never a
+    finding; the line exists so the reader of `verify`'s drift warnings knows
+    whether an edit no command made could have left a row at all. The basis is
+    the key as written: unset, false, or a value that is not a bool and so
+    reads as unset."""
+    block = (cfg or {}).get("journal") if isinstance(cfg, dict) else None
+    raw = block.get("enabled") if isinstance(block, dict) else None
+    if cfg_mod.journal_records_calls(cfg):
+        rep.ok(PER_CALL_CHECK,
+               "per-call recording on (journal.enabled true): every tool call "
+               "that writes the plan or the config gets a row")
+        return
+    if raw is False:
+        basis = "journal.enabled is false, so no row is written at all"
+    elif raw is None:
+        basis = ("journal.enabled is unset, the default - the commands' and "
+                 "the panel's rows are written, tool calls are not")
+    else:
+        basis = ("journal.enabled is %r, not a bool, so it reads as unset - the "
+                 "commands' and the panel's rows are written, tool calls are "
+                 "not" % (raw,))
+    rep.ok(PER_CALL_CHECK, "per-call recording off: %s" % basis)
 
 
 def _anchor_row(rep, res):
@@ -1160,7 +1189,9 @@ def check_journal(rep, project, cfg, cfg_mod, git_root):
 
     AND WHAT THE VERDICT WAS CHECKED AGAINST IS A ROW OF ITS OWN, because it is
     a different question with a different answer: `_anchor_row` carries it, and
-    until it existed only `audit-journal.py verify` ever said which."""
+    until it existed only `audit-journal.py verify` ever said which. So is which
+    WRITES get a row, and `_per_call_row` carries that one."""
+    _per_call_row(rep, cfg, cfg_mod)
     if not cfg_mod.journal_enabled(cfg):
         # Disabled is the user's own switch and never a finding. But rows on
         # disk mean the trail WAS running: saying plain OK graded "someone
@@ -1179,8 +1210,9 @@ def check_journal(rep, project, cfg, cfg_mod, git_root):
             rep.warn("journal",
                      "audit trail was running and has been turned off -- "
                      "completion records are no longer being written",
-                     "set journal.enabled true to resume the trail; the "
-                     "recorded history stays where it is")
+                     "remove journal.enabled false to resume the commands' "
+                     "rows, or set it true to record each tool call as well; "
+                     "the recorded history stays where it is")
         else:
             rep.ok("journal",
                    "audit trail disabled in config (journal.enabled false)")

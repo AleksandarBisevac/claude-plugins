@@ -17895,6 +17895,11 @@ def _hook_driven_echo_cases(check):
     def project(name):
         proj = os.path.join(tmp, name)
         os.makedirs(os.path.join(proj, "docs", "audit"))
+        # The hook records calls only with journal.enabled true.
+        os.makedirs(os.path.join(proj, ".claude"))
+        with open(os.path.join(proj, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump({"journal": {"enabled": True}}, fh)
         _harness.git(None, "init", "-q", proj)
         return proj
 

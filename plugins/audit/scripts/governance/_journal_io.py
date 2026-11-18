@@ -2,9 +2,11 @@
 """
 The audit trail itself: reading, appending to and verifying the hash-chained record.
 
-An append-only record of every change to the plan and the config -- dependency-free
-(stdlib). `audit-journal.py` is the command around this; every subcommand it has is
-an adapter onto a function here.
+An append-only record of the changes made to the plan and the config -- by the
+plugin's own verbs always, and by every Edit and Bash call only when
+`journal.enabled` is true (see `enabled`). Dependency-free (stdlib).
+`audit-journal.py` is the command around this; every subcommand it has is an
+adapter onto a function here.
 
 WHY THIS IS NOT `audit-journal.py` ANY MORE. Two modules that are not commands
 needed the trail: `_help` normalises one row to show the reader what a
@@ -416,8 +418,14 @@ def load_config(project):
 
 
 def enabled(config):
-    """`journal.enabled`, default true. A non-bool is ignored rather than trusted --
-    the same rule the plan gate applies to `enforce`."""
+    """Whether the trail is kept: on unless `journal.enabled` is false. A non-bool
+    is ignored rather than trusted -- the same rule the plan gate applies to
+    `enforce`.
+
+    THIS IS THE VERBS' ROWS, and they are written when the key is unset. The
+    per-call rows journal-writes.py makes are the other reading of the same key,
+    off unless it is true (`_config.journal_records_calls`): unset is the
+    default, and the drive finds a task's commit through the rows written here."""
     try:
         block = (config or {}).get("journal")
         if isinstance(block, dict) and isinstance(block.get("enabled"), bool):

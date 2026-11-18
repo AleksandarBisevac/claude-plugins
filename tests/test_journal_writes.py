@@ -37,6 +37,7 @@ import json
 import os
 import shlex
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -52,13 +53,26 @@ import _journal_io                                 # noqa: E402  (the details al
 M = _loader.load(os.path.join(_harness.HOOKS_DIR, "journal-writes.py"),
                  modname="journal_writes")
 
+# The recorder is off unless `journal.enabled` is true, so every fixture that
+# exercises what it records says so; `_default_off_cases` holds the default.
+_RECORDING = {"journal": {"enabled": True}}
+
+
+def _recording_config(proj):
+    """Write `_RECORDING` as `proj`'s config, for a case that drives `main()`
+    and so reads the config from disk."""
+    os.makedirs(os.path.join(proj, ".claude"), exist_ok=True)
+    with open(os.path.join(proj, _config.CONFIG_REL), "w",
+              encoding="utf-8") as fh:
+        json.dump(_RECORDING, fh)
+
 
 # --- cases --------------------------------------------------------------------
 def _cases(check):
     tmp = tempfile.mkdtemp(prefix="journal-writes-selftest-")
     prev_env = os.environ.get("CLAUDE_PROJECT_DIR")
     os.environ["CLAUDE_PROJECT_DIR"] = tmp
-    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    cfg = _config._deep_merge(_config.DEFAULTS, _RECORDING)
 
     def payload(tool, path, *, sid="sess-1", edits=None, agent=None):
         if tool == "NotebookEdit":
@@ -246,6 +260,7 @@ def _cases(check):
         # way through the real module, and the chain is then verified.
         proj = os.path.join(tmp, "e2e")
         os.makedirs(os.path.join(proj, "docs", "audit"))
+        _recording_config(proj)
         with open(os.path.join(proj, "docs", "audit", "audit-plan.json"), "w",
                   encoding="utf-8") as fh:
             fh.write('{"meta":{"version":3}}')
@@ -831,6 +846,21 @@ def _cases(check):
               and (entries[0].get("details") or {}).get("changes") ==
               [{"field": "journal.enabled", "from": True, "to": False}]
               and "journal.enabled" in entries[0]["summary"], repr(entries))
+        # The same last will for the flip the new default makes likeliest: the
+        # key DELETED, which turns the per-call recorder off without a false.
+        write_cfg_file({"journal": {"enabled": True}})
+        M.pre_cache(payload("Edit", cfg_rel, sid="pp-9b"), cfg=cfg, root=pproj)
+        write_cfg_file({})
+        unset_cfg = _config._deep_merge(_config.DEFAULTS, {})
+        entries = M.post_entries(payload("Edit", cfg_rel, sid="pp-9b"),
+                                 cfg=unset_cfg, root=pproj)
+        check("k1b deleting a journal.enabled that said true IS journalled as "
+              "the flip it is - per-call recording true->off, read off the "
+              "pre-image: %r" % (entries,),
+              len(entries) == 1 and entries[0]["action"] == "config.edit"
+              and (entries[0].get("details") or {}).get("changes") ==
+              [{"field": "journal.enabled", "from": True, "to": False}]
+              and entries[0]["summary"] == "journal.enabled true->unset")
         write_cfg_file({"journal": {"enabled": False}})
         check("k2 a config edit while the journal was already off records "
               "nothing - the user's switch is honoured",
@@ -1341,6 +1371,7 @@ def _cases(check):
         # over stdin, with a Bash payload and no `file_path` in it.
         eproj = os.path.join(tmp, "f194-e2e")
         os.makedirs(os.path.join(eproj, "docs", "audit"))
+        _recording_config(eproj)
         _e_man = os.path.join(eproj, man_rel)
 
         def _e_write(obj):
@@ -1586,6 +1617,7 @@ def _cases(check):
         # --- w: the wiring - main() routes by hook_event_name ------------------
         wproj = os.path.join(tmp, "wire")
         os.makedirs(os.path.join(wproj, "docs", "audit"))
+        _recording_config(wproj)
         wman = os.path.join(wproj, "docs", "audit", "audit-plan.json")
 
         def wwrite(status):
@@ -1721,7 +1753,7 @@ def _cases(check):
     else:
         _prev_tf = os.environ.get("CLAUDE_PROJECT_DIR")
         os.environ["CLAUDE_PROJECT_DIR"] = _tf["main"]
-        _tf_cfg = _config._deep_merge(_config.DEFAULTS, {})
+        _tf_cfg = _config._deep_merge(_config.DEFAULTS, _RECORDING)
         _tf_man = os.path.join(_tf["wt"], _tf["manifest_rel"])
         # Through getattr so a build without it is a failing case, not a
         # suite that stops at the first reference.
@@ -1813,7 +1845,7 @@ def _cases(check):
         sg_rel = "docs/audit/audit-plan.json"
         sg_abs = os.path.join(sg, sg_rel)
         os.makedirs(os.path.dirname(sg_abs))
-        sg_cfg = _config._deep_merge(_config.DEFAULTS, {})
+        sg_cfg = _config._deep_merge(_config.DEFAULTS, _RECORDING)
 
         def sg_doc(stored="in_progress", verdict=None, task="done"):
             ph = {"id": "P1", "title": "p", "status": stored,
@@ -1940,7 +1972,7 @@ def _cases(check):
         so_rel = "docs/audit/audit-plan.json"
         so_abs = os.path.join(so, so_rel)
         os.makedirs(os.path.dirname(so_abs))
-        so_cfg = _config._deep_merge(_config.DEFAULTS, {})
+        so_cfg = _config._deep_merge(_config.DEFAULTS, _RECORDING)
         so_state = os.path.join(so, str(so_cfg["stateDir"]))
 
         def so_doc(task="in_progress", tag="0"):
@@ -2079,6 +2111,213 @@ def _cases(check):
 
     _machine_path_value_cases(check)
     _call_mark_cases(check)
+    _default_off_cases(check)
+
+
+# --- do: the default records no call ---------------------------------------------
+# A fresh interpreter loads the hook, notes what is imported, drives `main()`
+# over the payloads it is handed (a `write` step changes a file between them)
+# and prints what the calls imported beyond the load. Run as a child so the
+# suite's own imports cannot hide a module the hook pulls in.
+_IMPORT_PROBE = r'''
+import io, json, os, sys
+hooks, proj, steps = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
+sys.path.insert(0, hooks)
+import importlib.util as iu
+spec = iu.spec_from_file_location("journal_writes_probe",
+                                  os.path.join(hooks, "journal-writes.py"))
+mod = iu.module_from_spec(spec)
+spec.loader.exec_module(mod)
+base = set(sys.modules)
+real_in, real_out = sys.stdin, sys.stdout
+for step in steps:
+    if "write" in step:
+        with open(os.path.join(proj, step["write"]), "w") as fh:
+            fh.write(step["text"])
+        continue
+    sys.stdin, sys.stdout = io.StringIO(json.dumps(step)), io.StringIO()
+    try:
+        mod.main()
+    except SystemExit:
+        pass
+    finally:
+        sys.stdin, sys.stdout = real_in, real_out
+print(json.dumps(sorted(m for m in set(sys.modules) - base if "." not in m)))
+'''
+
+
+def _do_project(root, name, config=None):
+    """A project holding a one-task manifest and, when `config` is given, a
+    `.claude/audit.config.json` of exactly that object."""
+    proj = os.path.join(root, name)
+    os.makedirs(os.path.join(proj, "docs", "audit"))
+    if config is not None:
+        os.makedirs(os.path.join(proj, ".claude"))
+        with open(os.path.join(proj, _config.CONFIG_REL), "w",
+                  encoding="utf-8") as fh:
+            json.dump(config, fh)
+    _do_manifest(proj, "pending")
+    return proj
+
+
+def _do_manifest(proj, status):
+    with open(os.path.join(proj, "docs", "audit", "audit-plan.json"), "w",
+              encoding="utf-8") as fh:
+        fh.write(_do_manifest_text(status))
+
+
+def _do_manifest_text(status):
+    return json.dumps({"meta": {"version": 3}, "phases": [
+        {"id": "P1", "title": "p", "status": "in_progress",
+         "tasks": [{"id": "P1.1", "title": "t", "status": status}]}]})
+
+
+def _do_steps(proj):
+    """An Edit of the manifest and an unsandboxed Bash call that rewrites it,
+    each a Pre and a Post with the write between them - every lane the
+    per-call recorder has."""
+    man = "docs/audit/audit-plan.json"
+
+    def call(event, tool, ti, n):
+        return {"hook_event_name": event, "tool_name": tool, "tool_input": ti,
+                "session_id": "do-sess", "cwd": proj,
+                "tool_use_id": "toolu_do_%d" % n}
+
+    edit = {"file_path": os.path.join(proj, man), "old_string": "pending",
+            "new_string": "in_progress"}
+    bash = {"command": "python3 rewrite.py", "dangerouslyDisableSandbox": True}
+    return [call("PreToolUse", "Edit", edit, 1),
+            {"write": man, "text": _do_manifest_text("in_progress")},
+            call("PostToolUse", "Edit", edit, 1),
+            call("PreToolUse", "Bash", bash, 2),
+            {"write": man, "text": _do_manifest_text("done")},
+            call("PostToolUse", "Bash", bash, 2)]
+
+
+def _do_drive(proj, steps):
+    """Run `steps` through this process's `main()`; -> the stdout each printed."""
+    import io
+    printed = []
+    prev_env = os.environ.get("CLAUDE_PROJECT_DIR")
+    real_in, real_out = sys.stdin, sys.stdout
+    os.environ["CLAUDE_PROJECT_DIR"] = proj
+    try:
+        for step in steps:
+            if "write" in step:
+                with open(os.path.join(proj, step["write"]), "w",
+                          encoding="utf-8") as fh:
+                    fh.write(step["text"])
+                continue
+            cap = io.StringIO()
+            sys.stdin, sys.stdout = io.StringIO(json.dumps(step)), cap
+            try:
+                M.main()
+            except SystemExit:
+                pass
+            finally:
+                sys.stdin, sys.stdout = real_in, real_out
+            printed.append(cap.getvalue())
+    finally:
+        if prev_env is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = prev_env
+    return printed
+
+
+def _do_left(proj):
+    """(journal rows, pre-image files) a project holds after the calls."""
+    jmod = _config._load_journal_lib()
+    state = os.path.join(proj, str(_config.DEFAULTS["stateDir"]))
+    try:
+        names = sorted(os.listdir(state))
+    except OSError:
+        names = []
+    return (jmod.read_all(proj),
+            [n for n in names if n.startswith("journal-preimage-")])
+
+
+def _default_off_cases(check):
+    """`journal.enabled` absent is the default, and under it the per-call
+    recorder writes nothing: no row, no pre-image file. Set true, it writes
+    and verifies as it always did - the second direction, which is the case a
+    recorder switched off for good would fail."""
+    root = tempfile.mkdtemp(prefix="jw-default-off-")
+    try:
+        off = _do_project(root, "absent")
+        _do_drive(off, _do_steps(off))
+        rows, slots = _do_left(off)
+        check("do1 under the default configuration an Edit of the manifest and "
+              "an unsandboxed Bash call that rewrites it write no journal row "
+              "and no pre-image file: rows %r, slots %r"
+              % ([r.get("action") for r in rows], slots),
+              rows == [] and slots == [])
+
+        on = _do_project(root, "on", {"journal": {"enabled": True}})
+        printed = _do_drive(on, _do_steps(on))
+        rows, slots = _do_left(on)
+        res = _config._load_journal_lib().verify(on)
+        actions = sorted(set(r.get("action") for r in rows))
+        man_slot = "journal-preimage-do-sess.%s.json" % hashlib.sha256(
+            b"docs/audit/audit-plan.json").hexdigest()[:12]
+        check("do2 with journal.enabled true the same calls write their rows - "
+              "the manifest edits, the derived completion and the unsandboxed "
+              "run - keep the manifest's pre-image, print nothing, and the "
+              "chain verifies: %r, slots %r, findings %r"
+              % (actions, slots, res.get("findings")),
+              {"manifest.edit", "bash.unsandboxed",
+               "task.complete"}.issubset(actions)
+              and man_slot in slots and res["ok"] and not res["findings"]
+              and printed == [""] * len(printed))
+
+        # The flip is read per call: a config that drops the key goes from
+        # recording to not, so its own last row records that.
+        will = _do_project(root, "will", {"journal": {"enabled": True}})
+        cfg_abs = os.path.join(will, _config.CONFIG_REL)
+
+        def cfg_call(event):
+            return {"hook_event_name": event, "tool_name": "Edit",
+                    "tool_input": {"file_path": cfg_abs, "old_string": "x",
+                                   "new_string": "y"},
+                    "session_id": "do-will", "cwd": will,
+                    "tool_use_id": "toolu_do_will"}
+
+        _do_drive(will, [cfg_call("PreToolUse"),
+                         {"write": _config.CONFIG_REL,
+                          "text": json.dumps({"journal": {"dir": None}})},
+                         cfg_call("PostToolUse")])
+        rows, _slots = _do_left(will)
+        changes = [(r.get("details") or {}).get("changes") for r in rows
+                   if r.get("action") == "config.edit"]
+        check("do3 removing journal.enabled from a config that set it true is "
+              "the switch going off, and is journalled as its own last row "
+              "with the flip in details: %r" % (changes,),
+              changes == [[{"field": "journal.enabled", "from": True,
+                            "to": False}]])
+        _do_drive(will, _do_steps(will))
+        check("do3b ...and the calls after it are recorded no more",
+              len(_do_left(will)[0]) == len(rows))
+
+        # What the disabled path costs, in modules: nothing beyond what loading
+        # the hook already pulled - not the trail's library, not git.
+        probe = _do_project(root, "probe")
+        out = subprocess.run(
+            [sys.executable, "-c", _IMPORT_PROBE, _harness.HOOKS_DIR, probe,
+             json.dumps(_do_steps(probe))],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env=dict(os.environ, CLAUDE_PROJECT_DIR=probe))
+        try:
+            extra = json.loads(out.stdout.decode("utf-8", "replace"))
+        except ValueError:
+            extra = None
+        check("do4 the disabled path imports nothing beyond what loading the "
+              "hook already imported - every call above, in a fresh "
+              "interpreter: %r (exit %s, stderr %r)"
+              % (extra, out.returncode,
+                 out.stderr.decode("utf-8", "replace")[-300:]),
+              out.returncode == 0 and extra == [])
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 
 
 # --- cm: a status row says when its call's baseline stood ----------------------
@@ -2092,12 +2331,13 @@ def _call_mark_cases(check):
     tmp = tempfile.mkdtemp(prefix="jw-call-marks-")
     prev_env = os.environ.get("CLAUDE_PROJECT_DIR")
     real_in, real_out = sys.stdin, sys.stdout
-    cfg = _config._deep_merge(_config.DEFAULTS, {})
+    cfg = _config._deep_merge(_config.DEFAULTS, _RECORDING)
     try:
         proj = os.path.join(tmp, "cm")
         man_rel = "docs/audit/audit-plan.json"
         man_abs = os.path.join(proj, man_rel)
         os.makedirs(os.path.dirname(man_abs))
+        _recording_config(proj)
 
         def write(status, title="t"):
             with open(man_abs, "w", encoding="utf-8") as fh:
@@ -2289,6 +2529,7 @@ def _machine_path_value_cases(check):
         man_rel = "docs/audit/audit-plan.json"
         man_abs = os.path.join(proj, man_rel)
         os.makedirs(os.path.dirname(man_abs))
+        _recording_config(proj)
 
         def doc(outcome):
             task = {"id": "P1.1", "title": "t", "status": "in_progress"}
@@ -2389,7 +2630,8 @@ def _machine_path_value_cases(check):
         wn_rel = "docs/audit/audit-plan.json"
         wn_abs = os.path.join(wn, wn_rel)
         os.makedirs(os.path.dirname(wn_abs))
-        wn_cfg = _config._deep_merge(_config.DEFAULTS, {})
+        _recording_config(wn)
+        wn_cfg = _config._deep_merge(_config.DEFAULTS, _RECORDING)
 
         def wn_doc(tag, done=False):
             return {"meta": {"version": 3}, "phases": [

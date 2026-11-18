@@ -513,6 +513,29 @@ is still true of a nested key.
   this paragraph against the code; `tests/test_run_test_gate.py` (`pgo`) and
   `tests/test__verdict_binding.py` (`vb38`, `vb39`) are what hold the behaviour it
   describes.
+
+  **`journal.enabled` breaks this promise in 4.0.0, a major.** The key is still read,
+  and `true` and `false` mean what they always meant. What changes is absence: a config
+  that does not set the key used to record every Edit, Write and Bash call that touched
+  the plan or this config as a journal row, keeping a pre-image file per session and
+  target under `stateDir`; it now records none of those calls and keeps no pre-image.
+  The rows the plugin's own verbs write — a task started or closed, a bug filed, the row
+  a task commit's `Audit-Row` trailer names — are written exactly as before, so the drive
+  still finds a task's commit. What you see the first time: no new journal rows from
+  edits and shell commands, and a plan file changed by one of them rather than by a verb
+  is reported by `audit-journal.py verify` as changed since the last row that recorded it
+  — a warning, which `/audit:doctor` reports as out-of-band drift — until a verb's next
+  row on that file records its state again. The derived `task.complete`, `task.commit`
+  and `phase.signoff` rows and the `bash.unsandboxed` row are no longer written either.
+  And the next session start clears the state directory: every pre-image but the
+  running session's and a still-running session's copy of the config, and every state
+  file of a session whose end the plugin recorded.
+  `"journal": {"enabled": true}` restores the previous behaviour exactly; `false` still
+  stops the verbs' rows as well. It changed because those pre-images grew a busy
+  checkout's state directory into gigabytes. `tests/test_journal_writes.py` (`do1`-`do4`),
+  `tests/test__config.py` (`jrc1`, `jrc2`), `tests/test__journal_io.py` (`vr1`, `vr2`)
+  and `tests/test_meter_usage.py` (`sw1`-`sw4`) hold the behaviour this paragraph
+  describes; nothing checks the paragraph itself against them.
 - **When two keys can express the same thing, which one wins is written down.**
   `planGate` beats `enforce`, and that precedence does not change without a major
   release. A superseded key is kept and documented, never silently reinterpreted.

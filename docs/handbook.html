@@ -1729,8 +1729,9 @@ GATE FAILED: failing-tests (2 subject(s): task P2.3 failed; task BF1.1 no-checks
       <h2>What the trail records</h2>
     </div>
 
-    <p>Every change to the plan and the config appends one hash-chained row to a journal beside the
-      manifest. It is meant to be <strong>committed</strong> &mdash; that is what makes it evidence
+    <p>Every change the plugin's own commands and the panel make to the plan and the config appends
+      one hash-chained row to a journal beside the manifest &mdash; and with
+      <code>journal.enabled</code> true, every tool call's write does too. It is meant to be <strong>committed</strong> &mdash; that is what makes it evidence
       rather than a log &mdash; and that single fact decides everything else about what a row may
       hold.</p>
 

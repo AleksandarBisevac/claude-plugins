@@ -391,9 +391,56 @@ def _retired_rung_cases(check):
           not _found, "found: %r" % _found)
 
 
+def _journal_switch_cases(check):
+    """What the panel's payload says about a `journal.enabled` the file never set.
+
+    The form draws its box from the payload's `defaults`, so the payload is what
+    decides whether an unset key reads as recording or not. It ships unset (null)
+    rather than true, because the per-call recorder is off unless the key is
+    true; and the words beside the box say what unset means, that the commands'
+    own rows are still written, and that false is a third state."""
+    import _panel_state
+    import _panel_ui
+    root = _harness.fixture_root("panel-settings-journal-")
+    try:
+        state = json.loads(json.dumps(_panel_state.build_state(root)))
+    finally:
+        _harness.remove_tree(root)
+    _dj = (state.get("defaults") or {}).get("journal") or {}
+    _cj = (state.get("config") or {}).get("journal")
+    check("js1 the settings payload of a project that never set journal.enabled "
+          "carries it as null in the defaults and absent from the config - an "
+          "unset key, not a true one: defaults %r, config %r" % (_dj, _cj),
+          "enabled" in _dj and _dj["enabled"] is None
+          and not (_cj or {}).get("enabled"))
+    _h = M.FIELD_HELP["journal.enabled"]
+    _lbl = [f["label"] for g in M.SETTINGS_GROUPS for f in g["fields"]
+            if f["path"] == "journal.enabled"]
+    check("js2 the help beside the box says unset is the default, shown "
+          "unticked, records no call, still writes the commands' own rows, and "
+          "that false writes nothing; the label names per-call recording: %r"
+          % (_lbl,),
+          "Unset - the default, shown unticked - records no call" in _h
+          and "own commands and panel saves still write their rows" in _h
+          and "false in the file writes no row at all" in _h
+          and _lbl == ["Also record each tool call's plan and config writes"])
+    # A property of the source, and labelled as one: the box's default is read
+    # from that payload by this one expression, under which null is unticked.
+    # Only a browser can show the box painted unticked; this holds the reading.
+    _page = _panel_ui.raw_template()
+    check("js3 the panel's checkbox reads a default as ticked only when it is "
+          "true or absent, so the payload's null draws journal.enabled "
+          "unticked, and a tick back restores what the file held",
+          "dv=getPath(d,f.path),def=dv===undefined||dv===true;" in _page
+          and "if(cb.checked===held&&cur!==undefined)setPath(cfg,f.path,cur);"
+          in _page
+          and "def=getPath(d,f.path)!==false" not in _page)
+
+
 def _selftest():
     return _harness.run(lambda check: (_cases(check), _ladder_cases(check),
-                                       _retired_rung_cases(check)))
+                                       _retired_rung_cases(check),
+                                       _journal_switch_cases(check)))
 
 
 if __name__ == "__main__":

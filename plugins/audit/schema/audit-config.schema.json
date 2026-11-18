@@ -397,12 +397,12 @@
     },
     "journal": {
       "type": "object",
-      "description": "The tamper-evident audit trail (scripts/governance/audit-journal.py + hooks/journal-writes.py): an append-only, hash-chained record of every write to the manifest and to this config, whichever tool made it. Tamper-EVIDENT, not tamper-proof - editing, deleting or reordering a row breaks the chain and `audit-journal.py verify` names it, but with no secret key a forger who rewrites the whole file produces a chain that verifies. See SECURITY.md.",
+      "description": "The tamper-evident audit trail (scripts/governance/audit-journal.py + hooks/journal-writes.py): an append-only, hash-chained record of what the plugin's own commands and the panel write to the manifest and to this config - and, with enabled true, of every tool call that writes either, whichever tool made it. Tamper-EVIDENT, not tamper-proof - editing, deleting or reordering a row breaks the chain and `audit-journal.py verify` names it, but with no secret key a forger who rewrites the whole file produces a chain that verifies. See SECURITY.md.",
       "additionalProperties": true,
       "properties": {
         "enabled": {
           "type": "boolean",
-          "description": "Record manifest and config writes. Default true."
+          "description": "Unset (the default): the plugin's own commands and the panel write their rows - a task started, committed or closed, a phase signed off, a setting saved - and no row is written per tool call and no pre-image file is kept. true: every tool call that writes the manifest or this config is recorded as well, a shell command inside a Bash call included. false: no row is written at all."
         },
         "dir": {
           "type": [

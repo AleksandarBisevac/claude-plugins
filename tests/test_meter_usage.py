@@ -738,8 +738,217 @@ def _cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+# --- sw: the session-start sweep -----------------------------------------------
+_SW_LIVE, _SW_GONE, _SW_PEER = ("live-0001", "gone-0002", "peer-0003")
+
+
+def _sw_names(sid):
+    """One file under each of the plugin's own per-session state names for
+    `sid` - its subagents' keys and a pre-image slot included."""
+    return ["plan-gate-%s.json" % sid, "tdd-reminder-%s.json" % sid,
+            "bash-writes-%s.json" % sid, "bash-writes-plugin-%s.json" % sid,
+            "running-plugin-%s.json" % sid, "call-start-%s.json" % sid,
+            "call-start-%s-a1b2c3.json" % sid, "owner-note-%s.json" % sid,
+            "journal-preimage-%s.0123456789ab.json" % sid,
+            "journal-preimage-%s-a1b2c3.ba9876543210.json" % sid,
+            "journal-preimage-%s.%s.json" % (sid, _config.CONFIG_PREIMAGE_DIGEST)]
+
+
+def _sw_peer_kept_when_off(name):
+    """A running peer's file the sweep keeps while calls are not recorded:
+    everything but its pre-images, and of those its config slot, which its
+    Post pass may still read to write the last will."""
+    return (not name.startswith("journal-preimage-")
+            or name.endswith(".%s.json" % _config.CONFIG_PREIMAGE_DIGEST))
+
+
+# Names the sweep must leave whoever they seem to belong to: a name that is not
+# the plugin's own, an ended id's longer neighbour, a non-json file, and a file
+# inside a directory of the state tree.
+_SW_FOREIGN = ["release-bypass-%s.json" % _SW_GONE, "notes-%s.json" % _SW_GONE,
+               "writer-token.json", "plan-gate-%s9.json" % _SW_GONE,
+               "plan-gate-%s.txt" % _SW_GONE, "plan-gate-no-session.json",
+               os.path.join("briefs", "plan-gate-%s.json" % _SW_GONE)]
+
+
+def _sw_project(root, name, config=None):
+    proj = os.path.join(root, name)
+    state = os.path.join(proj, ".claude", "state")
+    os.makedirs(os.path.join(state, "briefs"))
+    if config is not None:
+        with open(os.path.join(proj, ".claude", "audit.config.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump(config, fh)
+    for sid in (_SW_LIVE, _SW_GONE, _SW_PEER):
+        for name_ in _sw_names(sid):
+            with open(os.path.join(state, name_), "w", encoding="utf-8") as fh:
+                fh.write("{}")
+    for name_ in _SW_FOREIGN:
+        with open(os.path.join(state, name_), "w", encoding="utf-8") as fh:
+            fh.write("{}")
+    return proj, state
+
+
+def _sw_main(proj, event, sid):
+    """Drive the hook's own `main()` with one payload; -> what it printed."""
+    import io
+    real_in, real_out = sys.stdin, sys.stdout
+    prev = os.environ.get("CLAUDE_PROJECT_DIR")
+    os.environ["CLAUDE_PROJECT_DIR"] = proj
+    cap = io.StringIO()
+    try:
+        sys.stdin = io.StringIO(json.dumps({
+            "hook_event_name": event, "session_id": sid, "cwd": proj,
+            "source": "startup", "reason": "other"}))
+        sys.stdout = cap
+        try:
+            M.main()
+        except SystemExit:
+            pass
+    finally:
+        sys.stdin, sys.stdout = real_in, real_out
+        if prev is None:
+            os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        else:
+            os.environ["CLAUDE_PROJECT_DIR"] = prev
+    return cap.getvalue()
+
+
+def _sw_left(state):
+    out = []
+    for base, _dirs, files in os.walk(state):
+        out.extend(os.path.relpath(os.path.join(base, f), state) for f in files)
+    return sorted(n for n in out if n != ".gitignore")
+
+
+def _sweep_cases(check):
+    """A session's end is recorded by the hook at SessionEnd; the next
+    SessionStart removes that session's state and every pre-image no call can
+    read, and keeps the live session's. Nothing outside the plugin's own
+    per-session names is touched, and the usage meter's cursors, which live
+    outside the state directory, are not in its reach."""
+    root = tempfile.mkdtemp(prefix="meter-sweep-")
+    try:
+        proj, state = _sw_project(root, "default")
+        cursor = os.path.join(str(_config.ledger_dir(
+            Path(proj), _config.load(proj))), ".cursors", "%s.json" % _SW_GONE)
+        os.makedirs(os.path.dirname(cursor))
+        with open(cursor, "w", encoding="utf-8") as fh:
+            fh.write("{}")
+        ended_out = _sw_main(proj, "SessionEnd", _SW_GONE)
+        started_out = _sw_main(proj, "SessionStart", _SW_LIVE)
+        want = sorted(
+            _sw_names(_SW_LIVE)
+            + [n for n in _sw_names(_SW_PEER) if _sw_peer_kept_when_off(n)]
+            + _SW_FOREIGN)
+        left = _sw_left(state)
+        check("sw1 under the default configuration the session-start sweep "
+              "removes every state file of a session whose end was recorded "
+              "and every pre-image but the live session's and a running "
+              "peer's config slot, keeps the live session's files and a "
+              "running peer's, and removes no name "
+              "that is not the plugin's own (extra %r, missing %r)"
+              % (sorted(set(left) - set(want)), sorted(set(want) - set(left))),
+              left == want)
+        check("sw2 ...the meter's cursor for the ended session, outside the "
+              "state directory, is untouched, and neither event printed a "
+              "word: %r / %r" % (ended_out, started_out),
+              os.path.isfile(cursor) and ended_out == "" and started_out == "")
+
+        # The second direction: with the per-call recorder on, a running
+        # peer's pre-image is its next diff's baseline and stays.
+        proj_on, state_on = _sw_project(root, "on",
+                                        {"journal": {"enabled": True}})
+        _sw_main(proj_on, "SessionEnd", _SW_GONE)
+        _sw_main(proj_on, "SessionStart", _SW_LIVE)
+        want_on = sorted(_sw_names(_SW_LIVE) + _sw_names(_SW_PEER)
+                         + _SW_FOREIGN)
+        left_on = _sw_left(state_on)
+        check("sw3 with journal.enabled true the ended session's files still "
+              "go, and a running peer keeps its pre-image (extra %r, "
+              "missing %r)" % (sorted(set(left_on) - set(want_on)),
+                               sorted(set(want_on) - set(left_on))),
+              left_on == want_on)
+
+        # A resumed session starts under the id whose end was recorded: it is
+        # the live one again and keeps everything.
+        proj_re, state_re = _sw_project(root, "resumed")
+        _sw_main(proj_re, "SessionEnd", _SW_LIVE)
+        _sw_main(proj_re, "SessionStart", _SW_LIVE)
+        # ...and stays live: a session started beside it later must not read
+        # the end recorded before the resume.
+        _sw_main(proj_re, "SessionStart", "later-0004")
+        left_re = _sw_left(state_re)
+        kept = [n for n in _sw_names(_SW_LIVE)
+                if not n.startswith("journal-preimage-")]
+        check("sw4 a session resumed under the id whose end was recorded is "
+              "the live session again and keeps its state, also through the "
+              "next session's start: missing %r"
+              % (sorted(set(kept) - set(left_re)),),
+              set(kept).issubset(left_re))
+
+        # A resume AFTER another session started: that start read the end
+        # marker and removed the ended session's state, so the resumed
+        # session begins with none - a fresh session's view - and its own
+        # start clears nothing of anyone else's.
+        proj_rr, state_rr = _sw_project(root, "resumed-late")
+        _sw_main(proj_rr, "SessionEnd", _SW_GONE)
+        _sw_main(proj_rr, "SessionStart", _SW_LIVE)
+        before = _sw_left(state_rr)
+        resumed_out = _sw_main(proj_rr, "SessionStart", _SW_GONE)
+        after = _sw_left(state_rr)
+        gone_left = [n for n in after if _SW_GONE in n
+                     and n not in _SW_FOREIGN]
+        removed = sorted(set(before) - set(after))
+        # The session that started in between is a running peer now, so of
+        # its files the resumed start takes only what sw1 takes of a peer's.
+        peer_taken = sorted(n for n in _sw_names(_SW_LIVE)
+                            if not _sw_peer_kept_when_off(n))
+        check("sw6 a session resumed after another session's start finds its "
+              "state already removed and starts without it, and its own start "
+              "removes only the pre-images sw1 removes of a running peer: "
+              "left of it %r, removed %r" % (gone_left, removed),
+              gone_left == [] and removed == peer_taken
+              and set(after) <= set(before) and resumed_out == "")
+
+        # The peer that DID record calls when its edit began: its Pre pass
+        # ran with journal.enabled true and cached the config, the edit then
+        # deleted the key, and a session started before its Post pass. The
+        # sweep reads the config as it now stands - unset - and the Post
+        # reads the cached config to write the last will.
+        jw = _loader.load(os.path.join(_harness.HOOKS_DIR, "journal-writes.py"),
+                          modname="journal_writes_for_sw5", cache=False)
+        proj_f = os.path.join(root, "flip")
+        os.makedirs(os.path.join(proj_f, ".claude"))
+        cfg_f = os.path.join(proj_f, _config.CONFIG_REL)
+        with open(cfg_f, "w", encoding="utf-8") as fh:
+            json.dump({"journal": {"enabled": True}}, fh)
+        edit = {"tool_name": "Edit", "session_id": _SW_PEER, "cwd": proj_f,
+                "tool_input": {"file_path": _config.CONFIG_REL,
+                               "old_string": "x", "new_string": "y"}}
+        slot = jw.pre_cache(edit, cfg=_config.load(proj_f), root=proj_f)
+        with open(cfg_f, "w", encoding="utf-8") as fh:
+            json.dump({}, fh)
+        swept = _sw_main(proj_f, "SessionStart", _SW_LIVE)
+        rows = jw.post_entries(edit, cfg=_config.load(proj_f), root=proj_f)
+        check("sw5 a running peer whose edit began with journal.enabled true "
+              "and turned it off keeps its config pre-image through another "
+              "session's start, so its Post pass still writes the last will: "
+              "slot %r kept %r, rows %r"
+              % (slot and os.path.basename(slot),
+                 bool(slot) and os.path.isfile(slot), rows),
+              bool(slot) and os.path.isfile(slot) and swept == ""
+              and [r.get("summary") for r in rows]
+              == ["journal.enabled true->unset"])
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _sweep_cases(check)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

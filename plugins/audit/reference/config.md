@@ -67,3 +67,38 @@ writer uses:
 
 `usage.enabled: false` writes no ledger rows, so a task started while it is off
 commits with no trailer.
+
+## `journal.enabled` — which rows the trail holds
+
+One key, three values, and the default is the middle one:
+
+| Value | The verbs' own rows | Each Edit, Write and Bash call |
+|---|---|---|
+| unset (default) | written | not recorded: no row, no pre-image file |
+| `true` | written | recorded, as every release before 4.0.0 did unset |
+| `false` | not written | not recorded |
+
+The verbs' own rows are what the driver reads: a task's start, a close, a bug
+filed, and the row whose nonce a task commit's `Audit-Row` trailer carries - how
+`drive-phase.py` finds a commit it already made of a task. They are written
+whenever the key is not `false` (`_journal_io.enabled`). The per-call rows are
+`journal-writes.py`'s: a `manifest.edit` or `config.edit` row per write, the
+`task.complete`, `task.commit` and `phase.signoff` rows derived from it, and a
+`bash.unsandboxed` row for a Bash call run outside the sandbox. The hook keeps a
+pre-image of each target it records under `stateDir`, which is what grew a busy
+checkout's state directory into gigabytes; they are made only when the key is
+`true` (`_config.journal_records_calls`).
+
+What turning it on restores: every row and pre-image an unset key used to make
+before 4.0.0, verified by `audit-journal.py verify` as before. Removing the key
+from a config that set it `true` is recorded as the switch going off, by the
+config edit's own last row. With it unset, a plan file changed by an edit tool or
+a shell command rather than by a verb has no row explaining it, and
+`audit-journal.py verify` warns that it changed since the last row that recorded
+it until a verb's next row records its state again.
+
+Each session start also clears `stateDir` of what is no longer read: the
+plugin's own state files of every session whose end the usage hook recorded,
+and, while calls are not recorded, every pre-image but the running session's - except a
+still-running session's copy of the config, which an edit that turns recording off reads to
+record that it did.

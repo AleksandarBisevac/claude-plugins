@@ -56,9 +56,10 @@ flag are all covered now, and the class is not: a test harness that loads dotenv
 a script that reads the file itself, any program that already has the value.
 
 So the ceiling here is FRICTION plus EVIDENCE, not containment. Containment is
-the harness sandbox's job and always was — which is why (d) exists at all, and why
-journal-writes records every unsandboxed Bash run whether or not this hook refused
-it. SECURITY.md says the same thing in the same words; keep the two in step.
+the harness sandbox's job and always was — which is why (d) exists at all, and why,
+with `journal.enabled` true, journal-writes records every unsandboxed Bash run
+whether or not this hook refused it (unset, the default, records none). SECURITY.md
+says the same thing in the same words; keep the two in step.
 
 Plan-first backstop for Bash WRITES (this is the only hook that sees Bash).
 GRADED, and the ONLY graded rule in this file: both forms below are judged on
@@ -3002,7 +3003,8 @@ def _decide_core(data, root, cfg):
                     "performs, so a value loaded indirectly (direnv, dotenv, a "
                     "test harness) would print with nothing here able to stop it. "
                     "Run it sandboxed, or ask the user to paste the one value you "
-                    "need. The unsandboxed run is journalled either way.")
+                    "need. With journal.enabled true the unsandboxed run is "
+                    "journalled either way.")
         # Over what a shell would RUN, not over the whole text. P0-S un-anchored
         # the dump verb, correctly, but implemented "any command position" as "any
         # substring", so a word in an `echo` argument or a commit-message heredoc

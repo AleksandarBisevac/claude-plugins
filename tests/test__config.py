@@ -685,12 +685,61 @@ def _cases(check):
     tmp_j = Path(tempfile.mkdtemp(prefix="config-journal-"))
     try:
         cfg_j = M._deep_merge(M.DEFAULTS, {})
-        check("j1 journal.enabled defaults true", M.journal_enabled({}) is True
-              and M.DEFAULTS["journal"]["enabled"] is True)
+        # TWO QUESTIONS ON ONE KEY, and the default answers them differently.
+        # `journal_enabled` is the trail the plugin's own verbs write - on
+        # unless the key says false. `journal_records_calls` is the per-call
+        # recorder (journal-writes.py's rows and pre-image files) - off unless
+        # the key says true. DEFAULTS therefore holds no value for the key: a
+        # bool there would be merged into every config and absent could no
+        # longer be told from either answer.
+        check("j1 the verbs' trail is on unless journal.enabled says false, and "
+              "DEFAULTS states no value for the key, so a merged config keeps "
+              "absent apart from true: %r"
+              % (M.DEFAULTS["journal"].get("enabled"),),
+              M.journal_enabled({}) is True and M.journal_enabled(cfg_j) is True
+              and M.DEFAULTS["journal"].get("enabled") is None)
         check("j2 an explicit false is honoured",
               M.journal_enabled({"journal": {"enabled": False}}) is False)
         check("j3 a non-bool is ignored rather than trusted (the `enforce` rule)",
               M.journal_enabled({"journal": {"enabled": "no"}}) is True)
+        # The per-call recorder, both directions in one table: a reader that
+        # always said off and one that kept the old default both fail a row.
+        _jc = [({}, False), (cfg_j, False),
+               ({"journal": {}}, False),
+               ({"journal": {"enabled": True}}, True),
+               ({"journal": {"enabled": False}}, False),
+               ({"journal": {"enabled": "yes"}}, False),
+               ({"journal": {"enabled": 1}}, False),
+               (M._deep_merge(M.DEFAULTS, {"journal": {"enabled": True}}), True)]
+        _jc_bad = [(c, want, M.journal_records_calls(c)) for c, want in _jc
+                   if M.journal_records_calls(c) is not want]
+        check("jrc1 an absent journal.enabled reads as OFF for the per-call "
+              "recorder, a set true reads as on and a set false as off, and a "
+              "non-bool is read as unset rather than trusted (wrong: %r)"
+              % (_jc_bad,), not _jc_bad)
+        # Through the loader a hook actually calls, from a file on disk: the
+        # merge is where a default would have been folded in.
+        _jc_proj = tmp_j / "jc2"
+        (_jc_proj / ".claude").mkdir(parents=True)
+        (_jc_proj / ".claude" / "audit.config.json").write_text(
+            json.dumps({"journal": {"dir": None}}), encoding="utf-8")
+        _jc_absent = M.load(_jc_proj)
+        (_jc_proj / ".claude" / "audit.config.json").write_text(
+            json.dumps({"journal": {"enabled": True}}), encoding="utf-8")
+        _jc_true = M.load(_jc_proj)
+        check("jrc2 loaded from disk, a config that does not set the key "
+              "records no calls while the verbs' trail stays on, and one "
+              "that sets it true turns both on: %r / %r"
+              % (_jc_absent.get("journal"), _jc_true.get("journal")),
+              M.journal_records_calls(_jc_absent) is False
+              and M.journal_enabled(_jc_absent) is True
+              and M.journal_records_calls(_jc_true) is True
+              and M.journal_enabled(_jc_true) is True)
+        import hashlib
+        check("jrc3 the config pre-image digest the sweep spares is the one "
+              "journal-writes names the config's slot by: sha256 of CONFIG_REL",
+              M.CONFIG_PREIMAGE_DIGEST
+              == hashlib.sha256(M.CONFIG_REL.encode("utf-8")).hexdigest()[:12])
         jd = M.journal_dir(tmp_j, cfg_j)
         check("j4 the journal sits beside the manifest by default",
               jd is not None and str(jd) == str(
@@ -999,12 +1048,13 @@ def _cases(check):
                    if p.name.endswith(".tmp")] == [],
               repr(sorted(p.name for p in kld.iterdir())))
 
-        # The helper's `tempfile` import is function-local on purpose: every
-        # hook imports THIS module on every tool call, and one Edit starts seven
-        # of them. Measured cold on 3.14: 18.2ms to import _config, 23.1ms with
-        # `import tempfile` at module scope - ~5ms x 7 processes x every tool
-        # call, to serve a rewrite that fires almost never. A subprocess is the
-        # only way to ask: this selftest imported tempfile at its own top.
+        # The helper imports no `tempfile` at all: every hook imports THIS
+        # module on every tool call, and one Edit starts seven of them. Measured
+        # cold on 3.14 when the import was moved out of module scope: 18.2ms to
+        # import _config, 23.1ms with `import tempfile` at module scope. Every
+        # Bash call's Pre now writes through the helper, so it builds its own
+        # unique name instead. A subprocess is the only way to ask: this
+        # selftest imported tempfile at its own top.
         # `Path(__file__).resolve().parent` meant "the directory _config.py
         # lives in" while this case sat inside _config.py. From `tests/` it
         # names `tests/`, and the child's `import _config` would fail - loud
@@ -1022,6 +1072,21 @@ def _cases(check):
               _probe.returncode == 0
               and _probe.stdout.decode("utf-8", "replace").strip() == "False",
               repr(_probe.stdout[-80:]) + repr(_probe.stderr[-200:]))
+        _kw = tmp_k / "k10b" / "rec.json"
+        _probe_w = subprocess.run(
+            [sys.executable, "-c",
+             "import sys; sys.path.insert(0, %r); import _config; "
+             "_config.atomic_write_text(%r, 'ok'); "
+             "print('tempfile' in sys.modules, open(%r).read())"
+             % (str(Path(M.__file__).resolve().parent), str(_kw), str(_kw))],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        check("k10b ...nor does a WRITE through it - every Bash call's Pre "
+              "writes one, so the helper pays for its unique name itself: %r"
+              % (_probe_w.stdout[-80:],),
+              _probe_w.returncode == 0
+              and _probe_w.stdout.decode("utf-8", "replace").split()
+              == ["False", "ok"],
+              repr(_probe_w.stderr[-200:]))
     finally:
         shutil.rmtree(tmp_k, ignore_errors=True)
 

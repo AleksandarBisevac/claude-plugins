@@ -119,7 +119,8 @@ they are not a modification of anything published.
 cost an extra step and a refusal the human sees. Evidence: a Bash
 call carrying `dangerouslyDisableSandbox` — the documented per-call escape hatch,
 which switches off the only layer that *can* contain a read — appends a
-`bash.unsandboxed` row to the journal: a **digest** of the command, its byte
+`bash.unsandboxed` row to the journal when `journal.enabled` is true (unset, the
+default, records no call): a **digest** of the command, its byte
 length, its program name, and the cwd relative to the repo. That stops
 nothing; `PostToolUse` is after the fact. It makes the bypass **countable**, which
 is the same bargain the audit trail strikes below: a smoke detector, not a vault.
@@ -185,10 +186,10 @@ commit and the command above does not.
 | `require-plan` (state commit) | PostToolUse edits | silent | no-op |
 | `guard-bash-writes` | PostToolUse Bash + edits | silent | no-op |
 | `remind-tdd` | PostToolUse edits | silent | no-op |
-| `journal-writes` | PreToolUse edits **+ Bash**, PostToolUse edits + Bash | silent | no-op |
+| `journal-writes` | PreToolUse edits **+ Bash**, PostToolUse edits + Bash — records only with `journal.enabled` true; unset (the default) it writes no row and no pre-image | silent | no-op |
 | `detect-plan-skip` | UserPromptSubmit | silent | no-op |
 | `drive-without-model` | UserPromptSubmit | silent | no-op |
-| `meter-usage` | Stop / SubagentStop / SessionEnd / SessionStart | silent | no-op |
+| `meter-usage` | Stop / SubagentStop / SessionEnd / SessionStart — SessionEnd records the session's end; SessionStart removes ended sessions' state and, while calls are not recorded, every pre-image but the live session's and a running session's config slot | silent | no-op |
 
 **`drive-without-model` is a no-op in the direction that sends the prompt on.** Every failure
 on its internal path (`hooks/drive-without-model.py`'s `main()` catches them, and a case in
@@ -875,7 +876,15 @@ straight answer:
 
 ## The audit trail: tamper-evident, not tamper-proof
 
-Since 0.29.0 every write to the manifest or to
+**What is recorded depends on `journal.enabled`, and the default records the least.**
+Unset - the default from 4.0.0 - the trail holds the rows the plugin's own verbs and
+the panel's saves write: a task started or closed, a bug filed, the row a task commit's
+`Audit-Row` trailer names. The `journal-writes` hook records no call and keeps no
+pre-image file (`_config.journal_records_calls`). Set `true`, the hook records as it
+did before 4.0.0, and what follows describes that. Set `false`, nothing is written at
+all, the verbs' rows included.
+
+With `journal.enabled` true, every write to the manifest or to
 `.claude/audit.config.json` — whichever tool made it, a shell command inside a
 `Bash` call included — appends a row to an append-only, hash-chained journal
 (`scripts/governance/audit-journal.py`, written by the `journal-writes` hook and by the

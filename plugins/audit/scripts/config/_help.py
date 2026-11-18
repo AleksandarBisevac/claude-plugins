@@ -616,8 +616,10 @@ def _journal_topic():
     return {
         "id": "journal",
         "title": "The audit trail — what a row is, and what verify can see",
-        "summary": "An append-only, hash-chained record of every write to the plan "
-                   "and to the config. Tamper-evident, not tamper-proof.",
+        "summary": "An append-only, hash-chained record of what the plugin's own "
+                   "commands and the panel write to the plan and to the config - "
+                   "and of every tool call's write too with journal.enabled true. "
+                   "Tamper-evident, not tamper-proof.",
         "paragraphs": [
             "Each row carries: %s. `hash` covers the canonical JSON of the row "
             "without it, `prev` is the row before, and the first row's `prev` is "
@@ -627,6 +629,11 @@ def _journal_topic():
             "`stateHash` is the target as it stood immediately after the write, "
             "which is what lets `verify` notice a document that changed with no "
             "row to explain it.",
+            "`journal.enabled` decides which writes get a row. Unset, the default: "
+            "the plugin's commands and the panel record theirs and no tool call is "
+            "recorded, so an edit no command made is seen only as that drift. "
+            "true: every tool call that writes the plan or the config gets a row "
+            "of its own. false: no row is written at all.",
             "An edited, deleted or reordered row is a FINDING. A torn tail — a row "
             "half-written by a process that died — and out-of-band drift are "
             "WARNINGS, because a `git checkout` produces the second and nobody's "

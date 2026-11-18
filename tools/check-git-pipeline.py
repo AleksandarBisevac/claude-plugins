@@ -380,6 +380,13 @@ def build_fixture(root):
         return {"problem": "the fixture has no HEAD after its first commit, so "
                            "there is no history to fork: %s" % (out or "").strip()}
     fx["head"] = out.strip()
+    # g8-g10 exercise the per-call recorder, which records only with
+    # journal.enabled true. Written after the seed commit and left out of it:
+    # g15 grades that commit's scope, and a config it carried is a breach.
+    os.makedirs(os.path.join(root, ".claude"))
+    with io.open(os.path.join(root, ".claude", "audit.config.json"), "w",
+                 encoding="utf-8") as fh:
+        fh.write(u'{"journal": {"enabled": true}}\n')
     return fx
 
 
@@ -509,6 +516,37 @@ def check_rewrite_denies_force_push(fx):
     ok = code == 0 and decision == "deny"
     return ok, "exit %r decision=%r reason=%r" % (code, decision,
                                                   (reason or "")[:160])
+
+
+def check_journal_default_records_no_call(fx):
+    """`journal-writes.py` through the launcher under the DEFAULT config: the same
+    two passes and the same edit leave no row and no pre-image file.
+
+    The fixture's config turns per-call recording on for the checks after this
+    one; it is set aside here so the hook reads what a project that never wrote
+    the key reads, and put back under `finally`."""
+    cfg = os.path.join(fx["root"], ".claude", "audit.config.json")
+    aside = cfg + ".aside"
+    state = os.path.join(fx["root"], ".claude", "state")
+    reset_journal(fx)
+    os.replace(cfg, aside)
+    try:
+        write_manifest(fx, manifest_body(task_status="in_progress"))
+        target = os.path.join(fx["root"], MANIFEST_REL.replace("/", os.sep))
+        codes = [hook(fx, "journal-writes.py", "open",
+                      edit_payload(fx, target, "PreToolUse"))[0]]
+        write_manifest(fx, manifest_body(commit=fx["head"], task_status="done"))
+        codes.append(hook(fx, "journal-writes.py", "open",
+                          edit_payload(fx, target, "PostToolUse"))[0])
+        slots = sorted(n for n in (os.listdir(state) if os.path.isdir(state)
+                                   else [])
+                       if n.startswith("journal-preimage-"))
+        rows = journal_rows(fx)
+    finally:
+        os.replace(aside, cfg)
+    ok = codes == [0, 0] and rows == [] and slots == []
+    return ok, "exits %r, rows %r, pre-images %r" % (
+        codes, [r.get("action") for r in rows], slots)
 
 
 def check_journal_wiring(fx):
@@ -2076,6 +2114,9 @@ CHECKS = (
      check_rewrite_denies_orphaning_reset),
     ("g7  a force-push is refused while a SHA is recorded",
      check_rewrite_denies_force_push),
+    ("g8z journal-writes under the DEFAULT config: both passes, no row and "
+     "no pre-image",
+     check_journal_default_records_no_call),
     ("g8  journal-writes is WIRED: both passes, three chained rows",
      check_journal_wiring),
     ("g9  committing the journal is not itself a finding",

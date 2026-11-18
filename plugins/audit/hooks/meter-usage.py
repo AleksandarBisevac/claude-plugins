@@ -4,6 +4,11 @@ Stop / SubagentStop / SessionEnd meter — records token usage, blocks nothing.
 Also answers SessionStart: whether the new session's model - off the payload,
 or the previous session's as a labelled fallback - is priced at all (see
 `session_start_check`) - no network call, silent when it is.
+And keeps the state directory from growing for ever: SessionEnd records that
+the session ended, and SessionStart removes what every session whose end was
+recorded left there, plus every pre-image no call can read - which spares a
+running session's copy of the config, the last will's baseline
+(`sweep_ended_state`). Both are silent.
 
 Claude Code hands hooks a `transcript_path` but no token counts. The transcript
 JSONL has them: every `assistant` entry carries `message.model` and a
@@ -540,6 +545,39 @@ def meter(data, ul=None, cfg=None, root=None, notices=None):
     return written
 
 
+# --- ended sessions' state ------------------------------------------------------
+# This hook is the plugin's only SessionStart and SessionEnd handler, so the
+# record of a session's end and the sweep that reads it live here; what counts as
+# a session's state, and what may be removed, is `_config.sweep_session_state`'s.
+# Neither touches the usage ledger's cursors, which live under `ledgerDir` and
+# never under `stateDir`.
+def _project_state(data, cfg=None, root=None):
+    home = _config.tree_for(data, _config.PROJECT_ONLY, cfg, project=root)
+    return _config.state_dir(Path(home["project"]), home["cfg"]), home["cfg"]
+
+
+def record_session_end(data, cfg=None, root=None):
+    """SessionEnd: mark this session ended. -> the marker's path, or None.
+    Never raises."""
+    try:
+        state, _cfg = _project_state(data, cfg, root)
+        return _config.mark_session_ended(state, (data or {}).get("session_id"))
+    except Exception:
+        return None
+
+
+def sweep_ended_state(data, cfg=None, root=None):
+    """SessionStart: remove what ended sessions left in the state directory,
+    and every pre-image no call can read. -> the names removed. Never raises."""
+    try:
+        state, cfg = _project_state(data, cfg, root)
+        return _config.sweep_session_state(
+            state, (data or {}).get("session_id"),
+            _config.journal_records_calls(cfg))
+    except Exception:
+        return []
+
+
 # --- cli ----------------------------------------------------------------------
 def main():
     try:
@@ -560,6 +598,7 @@ def main():
             note = session_start_check(data)
         except Exception:
             note = None
+        sweep_ended_state(data)
         if note:
             try:
                 sys.stdout.write(json.dumps({"hookSpecificOutput": {
@@ -569,6 +608,8 @@ def main():
                 pass
         sys.exit(0)
 
+    if (data or {}).get("hook_event_name") == "SessionEnd":
+        record_session_end(data)
     notices = []
     try:
         meter(data, notices=notices)

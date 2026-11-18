@@ -864,8 +864,9 @@ hook reads `dangerouslyDisableSandbox` off `tool_input` and refuses the COMBINAT
 sandbox being off with a command that reaches the environment layer — bounded to the
 combination, because an unsandboxed run is legitimate and denying all of them gets the plugin
 switched off. **The class is not closed and cannot be**: these matchers read tool-call text and
-never observe I/O, so the ceiling is friction plus evidence — `journal-writes` records every
-other unsandboxed run, and SECURITY.md states the boundary in full.
+never observe I/O, so the ceiling is friction plus evidence — with `journal.enabled` true,
+`journal-writes` records every other unsandboxed run (unset, the default, records none), and
+SECURITY.md states the boundary in full.
 
 ### `plugins/audit/hooks/guard-history-rewrite.py`
 Refuses a git command that would orphan a commit the manifest records. `task.commit` holds each
@@ -923,7 +924,8 @@ stream — that ordering is the whole mechanism). Throttled (once per file + glo
 All tunables under config `tddReminder`. `--selftest`.
 
 ### `plugins/audit/hooks/journal-writes.py` (v0.29.0)
-PostToolUse (Edit|Write|MultiEdit|NotebookEdit, **Bash and `mcp__.*`**) recorder: every write
+PostToolUse (Edit|Write|MultiEdit|NotebookEdit, **Bash and `mcp__.*`**) recorder: with
+`journal.enabled` true, every write
 to the manifest (index or phase shard) or to `.claude/audit.config.json` appends one row to the
 audit trail via `scripts/governance/audit-journal.py`. Bash and MCP share the **sweep lane**
 (`_swept_rows`), which needs no rule about which operations write: it compares each recorded
@@ -934,6 +936,20 @@ cannot be written must not break the write it was recording. A hook rather than 
 instruction on purpose: a model that forgets to log a change leaves a gap that looks exactly
 like a covered-up one. Config `journal.enabled`. `--selftest` (incl. an end-to-end
 append + verify).
+
+**Off unless `journal.enabled` is true.** `_config.journal_records_calls` is the one reader
+this hook asks; unset, every pass returns before it writes a row or a pre-image, and before it
+places a path or asks where the journal lives, so the disabled path imports nothing beyond
+what loading the hook did (`tests/test_journal_writes.py`'s `do4` runs it in a fresh
+interpreter). The exception is the config itself - an edit naming it, or a sweep-lane call
+while a pre-image of it exists - which is placed and diffed so that a pre-image saying the
+switch was on still yields the last will below; removing a `true` is the same flip as
+writing `false`.
+The verbs' own rows read the other half of the key, `_config.journal_enabled` /
+`_journal_io.enabled`, on unless false - which is how a task commit's `Audit-Row` row is
+still written under the default. The Pre pass still notes a sweep-lane call's start
+(`_config.record_call_start`), because `guard-bash-writes` reads that window whatever the
+switch says.
 
 **Whose write it was, when the file moved during the call.** On the sweep lane the
 Pre pass also notes when the call began (`_config.record_call_start`, shared with
@@ -1010,6 +1026,18 @@ to a phase/task, and appends aggregated rows — never blocking, and driven by f
 it stays correct regardless of which of the three events fired. Config lives under
 `.claude/audit.config.json` -> `usage` (enabled/ledgerDir/authorMode/backfillOnFirstRun/
 maxScanBytes/pricing); the mechanics (dedup, attribution precedence) live in `usage_ledger.py`.
+
+**It also keeps `stateDir` from growing for ever**, as the plugin's only SessionStart and
+SessionEnd handler. SessionEnd writes a `session-ended-<id>.json` marker
+(`_config.mark_session_ended`); SessionStart removes the plugin's own per-session state files
+of every session a marker names, and every pre-image but the live session's while calls are
+not recorded (`_config.sweep_session_state`) - except a session's config slot while no marker
+names it, because a Pre pass that ran with recording on is what the Post pass of an edit
+turning recording off reads to write the last will. The end is evidence, never an age: a session
+waiting on its user is still running, so a session that died without a SessionEnd keeps its
+files until `detect-plan-skip.py`'s week-old age-out. Only a `.json` directly in `stateDir`,
+named by one of `_config.SESSION_STATE_PREFIXES` and a session's key, is ever removed; the
+ledger's cursors live under `ledgerDir` and are out of its reach.
 
 ### `plugins/audit/scripts/manifest/_branch.py`
 Where a phase's branch comes from and what it is called — the two questions that used to have

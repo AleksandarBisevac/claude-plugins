@@ -6,6 +6,33 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
 
 ## [Unreleased]
 
+### Breaking — an unset `journal.enabled` no longer records every call
+- **A config that does not set `journal.enabled` records no Edit, Write or Bash call and
+  keeps no pre-image file; `"journal": {"enabled": true}` restores the previous behaviour
+  exactly.** The key is still read and `true` and `false` mean what they meant; absence used
+  to mean "record every call" and now means "record the verbs' rows only". The rows the
+  plugin's own verbs write - a task started or closed, a bug filed, the row a task commit's
+  `Audit-Row` trailer names - are written as before, so the drive still finds a task's
+  commit. The hook's own rows stop: the per-call `manifest.edit` and `config.edit` rows, the
+  `task.complete`, `task.commit` and `phase.signoff` rows it derived from them, and the
+  `bash.unsandboxed` row. What you see the first time: a plan file changed by an edit tool
+  or a shell command rather than by a verb is reported by `audit-journal.py verify` as
+  changed since the last row that recorded it, a warning `/audit:doctor` reports as
+  out-of-band drift, until a verb's next row on that file records its state again. Removing
+  a `true` from the config is journalled as the switch going off, like setting `false`.
+  This is a MAJOR change: COMPATIBILITY.md section 2 records it as a broken "absence keeps
+  meaning the documented default" promise.
+- **The next session start clears what ended sessions left in `stateDir`.** The usage hook
+  now records a session's end, and the next session start removes the plugin's own state
+  files of every session whose end was recorded, and - while calls are not recorded - every
+  pre-image file but the running session's and a still-running session's copy of the config,
+  which its edit may still need to record the switch being turned off. The age-out of
+  week-old state reads the same list of names. A session that died without ending keeps its
+  files until the week-old age-out removes them. A name the plugin does not write, a
+  directory, and the usage ledger's cursors are never touched. Writing a call's start record
+  no longer imports `tempfile`, so with calls not recorded the journal hook imports nothing
+  beyond what loading it already imported.
+
 ### Added
 - **A task can record where its wall time went.** The optional task key `timing` holds
   `firstStartedAt` and a list of `stages` - each a `kind` (writer, gate, selection, base,

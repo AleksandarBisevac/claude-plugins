@@ -66,20 +66,11 @@ import _config  # noqa: E402
 
 
 # --- state gc -----------------------------------------------------------------
-_GC_PREFIXES = ("plan-gate-", "tdd-reminder-", "bash-writes-",
-                "config-error-notified-", "plan-bypass-",
-                # journal-writes.py's Pre-pass slot: it holds pre-image BYTES
-                # and its normal lifecycle (Post pass consumes it) never runs
-                # when a session dies between the two passes.
-                "journal-preimage-",
-                # require-plan.py's ownership-advisory throttle (v0.34 D2):
-                # which area tags this session has already been nudged about.
-                "owner-note-",
-                # This hook's own stamp of which plugin copy is executing the
-                # hooks. It is rewritten on every prompt, so a slot that
-                # ages past the line below belongs to a session that ended -
-                # exactly what the rest of this tuple means.
-                _config.RUNNING_STAMP_PREFIX)
+# The names a session's state files start with are the ones the session-start
+# sweep reads too, so both read one tuple: a prefix added there is aged out here
+# without a second list to forget. A session that dies keeps its slots until one
+# of the two removes them.
+_GC_PREFIXES = _config.SESSION_STATE_PREFIXES
 _GC_MAX_AGE = 7 * 86400  # seconds
 
 

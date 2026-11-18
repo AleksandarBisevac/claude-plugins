@@ -589,7 +589,7 @@ The journal's **completion-record actions**:
 
 **Each action has exactly ONE writer**, and which one differs — never append any of them by hand,
 because two writers means duplicate rows and a doctor that can no longer trust the count.
-The `journal-writes` hook emits `manifest.edit`, `config.edit` and the four derived completion
+With `journal.enabled` true, the `journal-writes` hook emits `manifest.edit`, `config.edit` and the four derived completion
 records (`task.complete`, `task.blocked`, `task.commit`, `phase.signoff`) plus `ado.link`.
 **A derived row the journal already holds is not written again.** A `git merge`, rebase or
 pull moves the plan by another branch's history, and it brings that branch's journal files with
@@ -619,7 +619,7 @@ Tokens are deliberately absent from these rows (metering lands on Stop/SessionEn
 spend is joined from the ledger by `taskId`.
 
 **How they come to exist, and why the tool that wrote the manifest is not part of the
-answer.** The hook keeps a pre-image of each recorded path in a per-(session, target)
+answer.** With `journal.enabled` true, the hook keeps a pre-image of each recorded path in a per-(session, target)
 slot: a PreToolUse pass snapshots it before an edit-tool write, and the PostToolUse pass
 diffs old against new, emits the rows above, then **refreshes the slot** to the state it
 just recorded. That refresh is what makes the derivation tool-agnostic — the baseline is

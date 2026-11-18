@@ -83,7 +83,9 @@ Config keys (all optional; defaults in DEFAULTS below):
         currency (str), pricingAsOf (str), pricing (obj: model -> USD per MTok),
         bands (obj: highUSD / outlierUSD, both null = calibrate from the project)
   journal                 obj   — the tamper-evident audit trail (audit-journal.py,
-        journal-writes.py): enabled (bool), dir (str or null = beside the manifest)
+        journal-writes.py): enabled (bool, unset by default: the verbs' own rows
+        are written unless false, the per-call rows only when true), dir (str or
+        null = beside the manifest)
   priority                obj   — phase prioritisation (_priority.py, set-priority.py):
         maxTier (int) — the highest tier the panel offers. Advisory; nothing is
         clamped to it, and no hook reads it.
@@ -323,7 +325,16 @@ DEFAULTS = {
     # `strictManifestState` ("off" | "ask", default off) is guard-edits' opt-in
     # confirmation prompt on manifest STATE edits (status/completedAt/commit/
     # attempts) -- never "deny": the orchestrator writes through the same tools.
-    "journal": {"enabled": True, "dir": None, "strictManifestState": "off"},
+    #
+    # `enabled` is None - UNSET - and not a bool, because the key answers two
+    # questions and the unset value answers them differently. The rows the
+    # plugin's own verbs write (a task started, a bug filed, the row a task
+    # commit's `Audit-Row` names) are written unless the key says false:
+    # `journal_enabled` below. The rows and pre-image files journal-writes.py
+    # makes on every Edit and Bash call are made only when it says true:
+    # `journal_records_calls`. A bool here would be merged into every loaded
+    # config, and an unset key could then no longer be told from either answer.
+    "journal": {"enabled": None, "dir": None, "strictManifestState": "off"},
     # Where the test-evidence record lives -- an append-only NDJSON row per gate
     # run, one file per writer per month, COMMITTED beside the manifest like the
     # journal rather than kept as local scratch like the usage ledger: it is
@@ -1986,15 +1997,32 @@ def _load_journal_lib():
     return _JOURNAL_LIB["mod"]
 
 
-def journal_enabled(cfg):
-    """`journal.enabled`, default true (a non-bool is ignored, not trusted)."""
+def _journal_switch(cfg):
+    """`journal.enabled` as written: True, False, or None when it is unset or
+    not a bool (a non-bool is ignored, not trusted)."""
     try:
         block = (cfg or {}).get("journal")
         if isinstance(block, dict) and isinstance(block.get("enabled"), bool):
             return block["enabled"]
     except Exception:
         pass
-    return bool(DEFAULTS["journal"]["enabled"])
+    return None
+
+
+def journal_enabled(cfg):
+    """Whether the trail is kept at all - the rows the plugin's own verbs
+    write. On unless `journal.enabled` is false. `_journal_io.enabled` is the
+    same reading on the scripts side."""
+    return _journal_switch(cfg) is not False
+
+
+def journal_records_calls(cfg):
+    """Whether journal-writes.py records each Edit and Bash call - its rows and
+    the pre-image file it keeps per writer and target. Off unless
+    `journal.enabled` is true: those files grew a project's state directory
+    into gigabytes, and the verbs' own rows (`journal_enabled`) are what the
+    drive reads."""
+    return _journal_switch(cfg) is True
 
 
 def journal_dir(root, cfg):
@@ -5157,10 +5185,10 @@ def ask_payload(reason):
 # --- atomic local writes ------------------------------------------------------
 def atomic_write_text(path, text):
     """Replace `path`'s whole contents with `text`, atomically: a UNIQUE temp
-    file created in the SAME directory (mkstemp), written, then os.replace'd
-    into place. The temp file is never left behind, and failures RAISE — the
-    caller owns the fail-open decision, because a writer that silently swallows
-    is how a hook reports success over a file it never wrote.
+    file created in the SAME directory, written, then os.replace'd into place.
+    The temp file is never left behind, and failures RAISE — the caller owns
+    the fail-open decision, because a writer that silently swallows is how a
+    hook reports success over a file it never wrote.
 
     Both halves are load-bearing and both have been wrong in this tree:
 
@@ -5175,20 +5203,25 @@ def atomic_write_text(path, text):
     - **Same directory.** os.replace is only atomic within one filesystem, so
       the temp cannot go to the system temp dir.
 
-    `tempfile` is imported here rather than at module scope on purpose: it costs
-    ~8ms to import, EVERY hook imports this module on EVERY tool call, and this
-    function is reached only on the rare rewrite. Keeping the import local is
-    what lets guard-capabilities.py share this code without paying that cost on
-    the calls that never write anything.
+    THE NAME IS `mkstemp`'s CONTRACT WITHOUT `tempfile`: random bytes from the
+    kernel, created with O_EXCL and mode 0600 in the target's own directory, so
+    a name another process holds is a raise and never a shared file. `tempfile`
+    is not imported at all: it drags `random`, `shutil` and their own imports,
+    every hook imports this module on every tool call, and this is reached on
+    every Bash call's Pre (`record_call_start`) - a cost that call paid whether
+    or not anything it recorded was ever read.
 
     The plugin's other atomic writer is scripts/_manifest_io.atomic_write_json,
     which hooks/ may not import at all (the layer rule) — hence a second, smaller
     statement of the same pattern here rather than one shared home."""
-    import tempfile
     target = str(path)
     d = os.path.dirname(target) or "."
     os.makedirs(d, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
+    tmp = os.path.join(d, ".%s.%s.tmp" % (os.path.basename(target),
+                                          os.urandom(8).hex()))
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                 | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0),
+                 0o600)
     try:
         # LF on every platform: a JSONL feed rewritten here keeps the line
         # endings its appender wrote.
@@ -5542,4 +5575,157 @@ def running_plugin_stamps(state_dir):
                        "mtime": mtime})
     stamps.sort(key=lambda s: (-s["mtime"], s["session"]))
     return {"stamps": stamps, "unreadable": unreadable}
+
+
+# --- ended sessions' state ------------------------------------------------------
+# A session's state files outlive it: nothing in a session's own life removes
+# its plan-gate slot, its call-start record or its pre-image files, and the
+# prompt hook's age-out (detect-plan-skip.py) waits a week. A checkout that runs
+# several sessions a day carried tens of thousands of them. So the end of a
+# session is RECORDED - meter-usage.py writes a marker on SessionEnd - and the
+# next SessionStart removes what every session whose end was recorded left.
+#
+# THE END IS EVIDENCE, NOT AN AGE. A session waiting on its user for hours is
+# still running, and the state directory is shared by every session open on the
+# checkout; reading idleness as an end would take a running session's plan-gate
+# slot and its baselines. A session that died without a SessionEnd keeps its
+# files until the week-old age-out takes them.
+#
+# PRE-IMAGES ARE THE ONE EXCEPTION, and only while no call is recorded
+# (`journal_records_calls` false): nothing reads a pre-image then, so every one
+# but the live session's goes whether or not its session ended. With calls
+# recorded, a running peer's pre-image is its next diff's baseline and stays.
+#
+# A CLOSED LIST OF NAMES. Only a `.json` file directly in the state directory,
+# named by one of these prefixes followed by a session's key and then `.` or
+# `-` (a subagent's key, or a pre-image's target digest), is ever removed. A
+# name this plugin does not write - a project's own hook state, a directory - is
+# not read as anybody's.
+SESSION_ENDED_PREFIX = "session-ended-"
+JOURNAL_PREIMAGE_PREFIX = "journal-preimage-"
+# `sha256(CONFIG_REL)[:12]`, the digest journal-writes names the config's
+# pre-image slot by. Written out rather than computed so the sweep imports no
+# hash module at session start; `jrc3` holds it to the hash of CONFIG_REL.
+CONFIG_PREIMAGE_DIGEST = "ced1fd23371e"
+SESSION_STATE_PREFIXES = (
+    "plan-gate-", "plan-gate-observed-", "plan-gate-warned-", "plan-bypass-",
+    "tdd-reminder-", "bash-writes-", "bash-writes-plugin-",
+    "config-error-notified-", "owner-note-", "call-start-",
+    JOURNAL_PREIMAGE_PREFIX, RUNNING_STAMP_PREFIX, SESSION_ENDED_PREFIX)
+
+
+def _session_keys(session_id):
+    """The spellings a session's id takes in a state file's name: each writer
+    reduces it to a file-name-safe class of its own (`writer_key`'s and the
+    trivial slot's), and an id that is already safe - a UUID - is all of them."""
+    sid = str(session_id or "")
+    if not sid:
+        return set()
+    keys = {sid, _SLOT_UNSAFE.sub("_", sid)[:_SLOT_ID_MAX],
+            _SAFE_KEY.sub("-", sid).strip("-.")[:40]}
+    return set(k for k in keys if k)
+
+
+def _owned_by(name, keys):
+    """Is the state file `name` one of the session `keys`'s?"""
+    for prefix in SESSION_STATE_PREFIXES:
+        if not name.startswith(prefix):
+            continue
+        rest = name[len(prefix):]
+        for key in keys:
+            if rest.startswith(key) and rest[len(key):len(key) + 1] in (".", "-"):
+                return True
+    return False
+
+
+def mark_session_ended(state_dir, session_id):
+    """SessionEnd: record that `session_id` ended, for the next SessionStart's
+    sweep. Returns the marker's path, or None when there is no id to record or
+    it could not be written - never raises, because it runs inside a hook that
+    must not break the session's end."""
+    sid = str(session_id or "")
+    if not sid:
+        return None
+    try:
+        ensure_local_dir(str(state_dir))
+        path = os.path.join(str(state_dir), "%s%s.json" % (
+            SESSION_ENDED_PREFIX, _SLOT_UNSAFE.sub("_", sid)[:_SLOT_ID_MAX]))
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump({"session": sid}, fh)
+        return path
+    except Exception:
+        return None
+
+
+def _ended_sessions(state_dir, names):
+    """{marker name: the ended session's id} - the id the marker holds, or its
+    name's own key when the marker cannot be read."""
+    out = {}
+    for name in names:
+        if not (name.startswith(SESSION_ENDED_PREFIX) and name.endswith(".json")):
+            continue
+        sid = name[len(SESSION_ENDED_PREFIX):-len(".json")]
+        try:
+            with open(os.path.join(str(state_dir), name), "r",
+                      encoding="utf-8") as fh:
+                held = json.load(fh).get("session")
+            if isinstance(held, str) and held:
+                sid = held
+        except Exception:
+            pass
+        out[name] = sid
+    return out
+
+
+def _sweepable(name, live, ended, records_calls):
+    """Does the sweep remove the state file `name`? `live` and `ended` are
+    session keys (`_session_keys`)."""
+    if not name.endswith(".json"):
+        return False
+    if _owned_by(name, live):
+        # The live session's files stay; a marker of its end goes, because a
+        # session started under that id is running again.
+        return name.startswith(SESSION_ENDED_PREFIX)
+    if _owned_by(name, ended):
+        return True
+    # A session with no end marker may still be between the two passes of an
+    # edit to the config that turns recording off - its Pre ran while the key
+    # was true - and its Post reads that pre-image to write the last will. So
+    # its config slot stays until the session's end is recorded; its other
+    # pre-images are read only while recording is on, which it is not now.
+    return (not records_calls and name.startswith(JOURNAL_PREIMAGE_PREFIX)
+            and not name.endswith(".%s.json" % CONFIG_PREIMAGE_DIGEST))
+
+
+def sweep_session_state(state_dir, live_session, records_calls):
+    """SessionStart: remove the state files of every session whose end was
+    recorded, and - when `records_calls` is false - every pre-image but the
+    live session's and a not-ended session's config slot. The live session's
+    files are never removed, a marker naming it included: a resumed session is
+    running again.
+
+    -> the names removed, sorted. Never raises; a file that will not go is
+    left and not listed."""
+    try:
+        names = sorted(os.listdir(str(state_dir)))
+    except Exception:
+        return []
+    live = _session_keys(live_session)
+    ended = set()
+    for sid in _ended_sessions(state_dir, names).values():
+        ended |= _session_keys(sid)
+    ended -= live
+    removed = []
+    for name in names:
+        if not _sweepable(name, live, ended, records_calls):
+            continue
+        path = os.path.join(str(state_dir), name)
+        try:
+            if os.path.islink(path) or not os.path.isfile(path):
+                continue
+            os.remove(path)
+            removed.append(name)
+        except OSError:
+            continue
+    return removed
 

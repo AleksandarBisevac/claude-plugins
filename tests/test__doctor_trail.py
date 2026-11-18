@@ -318,6 +318,38 @@ def _cases(check):
               and "1 row(s) in 1 file(s)" in _detail(rep, "journal")
               and "chain intact" in _detail(rep, "journal"))
 
+        # Which writes get a row is its own line, and off is never a fault:
+        # over the same intact one-row trail, each value of the key is read.
+        _pc = {}
+        for _name, _cfg in (("unset", {}),
+                            ("merged", cfgmod._deep_merge(cfgmod.DEFAULTS, {})),
+                            ("true", {"journal": {"enabled": True}}),
+                            ("false", {"journal": {"enabled": False}}),
+                            ("odd", {"journal": {"enabled": "yes"}})):
+            rep = base.Report()
+            M.check_journal(rep, tmp, _cfg, cfgmod, None)
+            _pc[_name] = (_levels(rep, M.PER_CALL_CHECK),
+                          _detail(rep, M.PER_CALL_CHECK),
+                          _levels(rep, "journal"))
+        check("dt13b per-call recording off is an OK line naming its basis - "
+              "unset, the default, as written or merged - and the journal "
+              "beside it carries no finding for the per-call rows it lacks: %r"
+              % ({k: _pc[k] for k in ("unset", "merged")},),
+              all(_pc[k][0] == ["OK"]
+                  and "per-call recording off: journal.enabled is unset, the "
+                      "default" in _pc[k][1]
+                  and "FINDING" not in _pc[k][2] and "WARNING" not in _pc[k][2]
+                  for k in ("unset", "merged")))
+        check("dt13c ...the other way: true says per-call recording is on, false "
+              "says off with false as its basis, and a value that is not a bool "
+              "is named and read as unset: %r"
+              % ({k: _pc[k][:2] for k in ("true", "false", "odd")},),
+              _pc["true"][0] == ["OK"]
+              and "per-call recording on (journal.enabled true)" in _pc["true"][1]
+              and _pc["false"][0] == ["OK"]
+              and "journal.enabled is false, so no row is written" in _pc["false"][1]
+              and "'yes', not a bool, so it reads as unset" in _pc["odd"][1])
+
         # ------------------------------------------ _journal_never_committed
         jdir = _journal_io.journal_dir(tmp)
         have_git = bool(shutil.which("git"))

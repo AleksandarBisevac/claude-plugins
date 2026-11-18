@@ -929,7 +929,7 @@ What it writes — exactly the fields step 4 prescribes, and nothing besides:
   for a phase already under way. Set `review.perTask: always` to keep the rule above.
 - **journal** → one `task.done` row carrying the SHA in its summary and `details`.
   It is deliberately **not** `task.complete`: that action and `task.commit` are derived
-  by `hooks/journal-writes.py` from the write itself and step 4c forbids appending them
+  by `hooks/journal-writes.py` from the write itself when `journal.enabled` is true, and step 4c forbids appending them
   by hand, so this row is the verb's own — and it is what records the close on a machine
   where no hook is watching.
 - Same index lock, same revalidate-from-disk, same byte-for-byte rollback on findings as
@@ -2081,7 +2081,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest/audit-task.py" signoff <phaseId>
 It writes `review.status` (the verdict), `review.outcome`, `summary`, the status that record
 derives (on the shard and, sharded, the index stub), clears `claim`, and appends a
 `phase.verdict` journal row, under the index lock with revalidate-or-roll-back (`phase.signoff` is
-the row the journal-writes hook derives once the phase reaches done). It refuses a phase
+the row the journal-writes hook derives once the phase reaches done, with `journal.enabled` true). It refuses a phase
 with open work (naming the open tasks), a phase with no task, one already signed off, and one
 already `done` or `cancelled`. Its output says what the phase now reads: `done` for a phase with no
 branch, and "done once `<branch>` lands" for one with a branch - `close-phase.py` then merges it

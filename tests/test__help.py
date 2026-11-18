@@ -366,6 +366,16 @@ def _cases(check):
               for p in tps["journal"]["paragraphs"])
           and any("smoke detector, not a vault" in p
                   for p in tps["journal"]["paragraphs"]))
+    _jtext = " ".join([tps["journal"]["summary"]] + tps["journal"]["paragraphs"])
+    check("t11b ...and it names unset as journal.enabled's default, recording "
+          "the commands' own rows and no tool call, with true and false each "
+          "said apart - never 'every write' as the default: %r"
+          % (tps["journal"]["summary"],),
+          "Unset, the default: the plugin's commands and the panel record theirs "
+          "and no tool call is recorded" in _jtext
+          and "true: every tool call" in _jtext
+          and "false: no row is written at all" in _jtext
+          and "record of every write" not in _jtext)
     check("t12 every topic is JSON-serialisable - it is served over HTTP",
           isinstance(json.dumps(M.topics()), str))
 

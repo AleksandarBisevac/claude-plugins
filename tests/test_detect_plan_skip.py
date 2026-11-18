@@ -24,6 +24,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -37,6 +38,23 @@ import _config                                     # noqa: E402
 
 M = _loader.load(os.path.join(_harness.HOOKS_DIR, "detect-plan-skip.py"),
                  modname="detect_plan_skip")
+
+
+_STATE_NAME = re.compile(r"""["']([a-z][a-z0-9-]*-)%s[^"'\n]*\.json["']""")
+
+
+def _written_state_prefixes():
+    """The prefix of every `"<prefix>%s....json"` literal under hooks/ and
+    scripts/ - the per-session state names the plugin spells out to write."""
+    found = set()
+    for top in (_harness.HOOKS_DIR, _harness.SCRIPTS_DIR):
+        for base, _dirs, files in os.walk(top):
+            for name in files:
+                if not name.endswith(".py"):
+                    continue
+                with open(os.path.join(base, name), encoding="utf-8") as fh:
+                    found.update(_STATE_NAME.findall(fh.read()))
+    return sorted(found)
 
 
 # --- cases --------------------------------------------------------------------
@@ -89,6 +107,28 @@ def _cases(check):
     os.utime(stale_stamp, (old, old))
     check("g7 a stale running-plugin stamp is swept with the rest",
           M._gc_state(tmp, now=now) == 1 and not stale_stamp.exists())
+    # g8: the prefixes are DERIVED off what the plugin writes, not listed again
+    # here: every `"<prefix>%s....json"` name literal in hooks/ and scripts/ is a
+    # per-session state file, and each must be a prefix the shared tuple holds
+    # and this sweep therefore ages out - the case a second list let go stale.
+    written = _written_state_prefixes()
+    gc_dir = tmp / "g8"
+    gc_dir.mkdir()
+    for prefix in written:
+        aged = gc_dir / ("%sdead-session.json" % prefix)
+        aged.write_text("{}", encoding="utf-8")
+        os.utime(aged, (old, old))
+    M._gc_state(gc_dir, now=now)
+    left = sorted(p.name for p in gc_dir.iterdir())
+    outside = [p for p in written
+               if not p.startswith(_config.SESSION_STATE_PREFIXES)]
+    check("g8 every state-file prefix the plugin writes is one the shared tuple "
+          "holds, the age-out reads that tuple and no list of its own, and an "
+          "aged file under each is removed: written %r, outside %r, left %r"
+          % (written, outside, left),
+          {"bash-writes-", "journal-preimage-", "plan-gate-"} <= set(written)
+          and not outside and not left
+          and M._GC_PREFIXES is _config.SESSION_STATE_PREFIXES)
 
     # (h) the observe tally is reported once and then stays quiet.
     sid = "obs-session"

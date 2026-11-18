@@ -549,6 +549,9 @@ def _cases(check):
         '{"meta":{"version":3}}', encoding="utf-8")
     ksd = kproj / ".claude" / "state"
     kcfg = _config._deep_merge(_config.DEFAULTS, {})
+    # k1 and k2 are about the hook's OWN append, which it makes only when the
+    # project records each call. The guard itself is judged on the default.
+    kcfg_rec = _config._deep_merge(kcfg, {"journal": {"enabled": True}})
     ksid = "bw-k1"
     kdata = {"tool_name": "Edit", "session_id": ksid,
              "tool_input": {"file_path": "docs/audit/audit-plan.json",
@@ -559,16 +562,16 @@ def _cases(check):
         for _sid in (ksid, "bw-k2"):
             seed(_sid, use_cfg=kcfg, state_dir=ksd, cwd=kproj)
         _jmod = _config._load_journal_lib()
-        _entries = _jw.post_entries(kdata, cfg=kcfg, root=str(kproj))
+        _entries = _jw.post_entries(kdata, cfg=kcfg_rec, root=str(kproj))
         _written = []
         for _e in _entries:
-            _p = _jmod.append(str(kproj), _e, config=kcfg)
+            _p = _jmod.append(str(kproj), _e, config=kcfg_rec)
             if _p:
                 # exactly the wiring journal-writes' main() performs after a
                 # successful append; getattr so the RED run (before the
                 # sidecar exists) fails the case instead of crashing the suite
                 getattr(_jw, "record_plugin_write",
-                        lambda *a: None)(str(kproj), kcfg, kdata, _p)
+                        lambda *a: None)(str(kproj), kcfg_rec, kdata, _p)
                 _written.append(_p)
         _jrel = (_config.rel_path(kproj, _written[0]) if _written
                  else "append-failed")
@@ -594,6 +597,18 @@ def _cases(check):
         check("k3 the journal warning tells the reader how to read a clean "
               "verify: a fresh chained row was likely the plugin itself",
               "likely the plugin itself" in M.JOURNAL_TEMPLATE)
+        # The default twin: unset, the hook makes no append for the same edit,
+        # so it leaves nothing in the trail for the guard to blame on a shell
+        # and no claim of its own. What a user gets by default from the
+        # plugin's appends is the CLI's and the panel's, held by cw and pw.
+        _k4 = {"tool_name": "Edit", "session_id": "bw-k4",
+               "tool_input": dict(kdata["tool_input"]), "cwd": str(kproj)}
+        _k4_rows = _jw.post_entries(_k4, cfg=kcfg, root=str(kproj))
+        check("k4 under the default configuration the same edit makes no "
+              "append and leaves no claim, so there is no journal write for "
+              "the next Bash pass to report: %r / %r"
+              % (_k4_rows, sorted(M._plugin_wrote(ksd, "bw-k4"))),
+              _k4_rows == [] and M._plugin_wrote(ksd, "bw-k4") == set())
     finally:
         os.environ["CLAUDE_PROJECT_DIR"] = str(tmp)
 
@@ -1885,6 +1900,9 @@ def _cases(check):
     (srsub / "src").mkdir(parents=True, exist_ok=True)
     plant_plan(srp)
     cfg_sr = _config._deep_merge(_config.DEFAULTS, {"gitRoot": "sub"})
+    # sr3 drives the journal hook's own append, which it makes only when the
+    # project records each call; sr1 and sr2 judge the guard on the default.
+    cfg_sr_rec = _config._deep_merge(cfg_sr, {"journal": {"enabled": True}})
     _sr_real = srp / ".claude" / "state"
     _sr_narrowed = srsub / ".claude" / "state"
     os.environ["CLAUDE_PROJECT_DIR"] = str(srp)
@@ -1931,10 +1949,11 @@ def _cases(check):
                    "tool_input": {"file_path": "docs/audit/audit-plan.json",
                                   "new_string": "x"}, "cwd": str(srp)}
         _srjrel = None
-        for _e in _jw.post_entries(_srdata, cfg=cfg_sr, root=str(srp)):
-            _p = _config._load_journal_lib().append(str(srp), _e, config=cfg_sr)
+        for _e in _jw.post_entries(_srdata, cfg=cfg_sr_rec, root=str(srp)):
+            _p = _config._load_journal_lib().append(str(srp), _e,
+                                                    config=cfg_sr_rec)
             if _p:
-                _jw.record_plugin_write(str(srp), cfg_sr, _srdata, _p)
+                _jw.record_plugin_write(str(srp), cfg_sr_rec, _srdata, _p)
                 _srjrel = _config.rel_path(srp, _p)
         _sr(_srsid)
         _slots = [d / ("bash-writes-%s.json" % _srsid)

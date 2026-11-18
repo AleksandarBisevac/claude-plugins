@@ -4629,11 +4629,56 @@ def _last_word_cases(check):
               len(files) == 2 and got == {"T1": set(["reopen", "confirm"])})
 
 
+def _verb_row_default_cases(check):
+    """Under the default configuration the per-call recorder is off and the
+    plugin's own verbs still write their rows: a task commit's row is appended,
+    the chain verifies, and the commit carrying its `Audit-Row` trailer is
+    found by the reader the drive asks."""
+    import _invariants
+    root = _harness.fixture_root("journal-verb-default-")
+    try:
+        cfg = M.load_config(root)
+        per_call = M._config_mod().journal_records_calls(cfg)
+        nonce = "vr-nonce-0001"
+        landed = M.append_from_cli(root, {
+            "action": "audit.task.committed", "target": "P1.1",
+            "actor": {"sessionId": "vr-sess", "via": "commit-task-work"},
+            "summary": "P1.1's work was committed",
+            "details": {_invariants.NONCE_KEY: nonce, "taskId": "P1.1",
+                        "phaseId": "P1"}})
+        rows = M.read_all(root)
+        res = M.verify(root)
+        check("vr1 with no journal.enabled set the per-call recorder is off "
+              "(%r) and a verb's own row is still written and verifies: %r"
+              % (per_call, [r.get("action") for r in rows]),
+              per_call is False and bool(landed)
+              and [(r.get("details") or {}).get(_invariants.NONCE_KEY)
+                   for r in rows] == [nonce]
+              and res["ok"] and not res["findings"])
+        git = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+               "-c", "commit.gpgsign=false", "-C", root]
+        _harness.git(None, "init", "-q", prefix=git)
+        _harness.git(None, "add", "-A", prefix=git)
+        _harness.git(None, "commit", "-qm",
+                     "feat(P1.1): work\n\n%s: %s"
+                     % (_invariants.ROW_TRAILER, nonce), prefix=git)
+        found, why = _invariants.trailer_carriers(root, [nonce])
+        carriers = (found or {}).get(nonce) or []
+        check("vr2 ...and the commit carrying that row's trailer is found by "
+              "the reader the drive asks, in its last paragraph: %r %s"
+              % (carriers, why),
+              len(carriers) == 1 and carriers[0]["inLast"]
+              and carriers[0]["subject"] == "feat(P1.1): work")
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _moment_order_cases(check)
         _last_word_cases(check)
+        _verb_row_default_cases(check)
     return _harness.run(body)
 
 

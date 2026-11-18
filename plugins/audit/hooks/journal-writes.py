@@ -14,10 +14,19 @@ the row an Edit produces because something did. The server's name, the operation
 spelling and the argument keys are all absent from that question, which is the
 same reason the Bash lane exists.
 
-Appends one row to the tamper-evident journal for every write to the MANIFEST
-(index or phase shard) or to `.claude/audit.config.json`, whatever made it.
+With `journal.enabled` true, appends one row to the tamper-evident journal for
+every write to the MANIFEST (index or phase shard) or to
+`.claude/audit.config.json`, whatever made it.
 Nothing else is recorded: the journal is the audit trail of the plan and the
 rules, not a log of the repository.
+
+OFF UNLESS `journal.enabled` IS TRUE (`_config.journal_records_calls`). Unset,
+this hook writes no row and no pre-image file - on a busy checkout those
+pre-images filled the state directory by the gigabyte - while the rows the
+plugin's own verbs write (a task started, a bug filed, the row a task commit's
+`Audit-Row` trailer names) are written all the same, because those are what
+the drive reads. The one write it still makes when off is the call-start
+record `_config.record_call_start` keeps for guard-bash-writes.
 
 WHICH TOOL WROTE IT IS NO LONGER THE QUESTION. The derived rows below used
 to exist only for a write that arrived through an edit tool, because
@@ -97,8 +106,9 @@ THE DISABLE LOOPHOLE, CLOSED. `journal.enabled` used to be read from the config
 AFTER the write, so flipping it true->false silenced the very row that would
 have recorded the flip. The Post pass now judges `enabled` against the PRE-IMAGE
 config when the config itself is the target, so the flip is journalled as a
-final config.edit row -- the last will. Nothing overrides the user's switch:
-once off, edits record nothing.
+final config.edit row -- the last will. Removing the key from a config that set
+it true is the same flip. Nothing overrides the user's switch: once off, edits
+record nothing.
 
 Fail-open at every step: no cache, unparseable JSON, an over-the-cap file --
 each falls back to today's generic "<tool> wrote <path>" summary, never to a
@@ -291,7 +301,7 @@ def decide(data, *, cfg=None, root=None):
     action, rel, tool, ti, troot = _classify_placed(data, cfg, root)
     if action is None:
         return ("skip", rel)
-    if not _config.journal_enabled(cfg):
+    if not _config.journal_records_calls(cfg):
         return ("skip", "journal disabled")
     return ("journal", _entry(action, rel, tool, ti, data, troot, cfg))
 
@@ -432,7 +442,7 @@ def pre_cache(data, *, cfg=None, root=None):
             # is on. One small write, no read; the call's id rides in it.
             _config.record_call_start(root, cfg, data,
                                       call=_tool_use_id(data))
-        if not _config.journal_enabled(cfg):
+        if not _config.journal_records_calls(cfg):
             return None            # on Pre, the config on disk IS the pre-image
         if _swept_tool(data.get("tool_name")):
             last = None
@@ -786,16 +796,24 @@ def semantic_diff(old_obj, new_obj):
 
 def _journal_flip(old_obj, new_obj):
     """Did `journal.enabled` move between two config documents? Judged on the
-    EFFECTIVE value (absent = true), so deleting the key reads as the flip it
-    is. Returns one change dict, or None."""
+    EFFECTIVE value for this recorder (absent = off), so deleting a key that
+    said true reads as the flip it is. Returns one change dict, or None."""
     try:
-        ov = _config.journal_enabled(old_obj if isinstance(old_obj, dict) else {})
-        nv = _config.journal_enabled(new_obj if isinstance(new_obj, dict) else {})
+        ov = _config.journal_records_calls(
+            old_obj if isinstance(old_obj, dict) else {})
+        nv = _config.journal_records_calls(
+            new_obj if isinstance(new_obj, dict) else {})
         if ov != nv:
             return {"field": "journal.enabled", "from": ov, "to": nv}
     except Exception:
         pass
     return None
+
+
+def _switch_word(obj):
+    """`journal.enabled` as one config document holds it: true, false or unset."""
+    value = _config._journal_switch(obj if isinstance(obj, dict) else {})
+    return "unset" if value is None else str(value).lower()
 
 
 # --- the unsandboxed Bash run ------------------------------------------------
@@ -839,14 +857,14 @@ def unsandboxed_entries(data, *, cfg=None, root=None):
     layer; everything else is recorded here, and a recorded bypass is a bypass
     somebody can audit.
 
-    The user's switch still wins: `journal.enabled` false records nothing, exactly
-    as for an edit."""
+    The user's switch still wins: `journal.enabled` anything but true records
+    nothing, exactly as for an edit."""
     ti = data.get("tool_input", {}) or {}
     if not sandbox_disabled(ti):
         return []
     home = _config.tree_for(data, _config.PROJECT_ONLY, cfg, project=root)
     root, cfg = home["project"], home["cfg"]
-    if not _config.journal_enabled(cfg):
+    if not _config.journal_records_calls(cfg):
         return []
     command = str(ti.get("command", ""))
     return [{
@@ -1028,8 +1046,11 @@ def _config_rows(entry, old_obj, new_obj):
     flip = (_journal_flip(old_obj, new_obj)
             if old_obj is not None and new_obj is not None else None)
     if flip is not None:
+        # The words are the key as each document HAS it: an unset key and a
+        # false one both stop the per-call recorder, but only false stops the
+        # commands' own rows, so a deletion is not reported as a false.
         row["summary"] = ("journal.enabled %s->%s"
-                          % (str(flip["from"]).lower(), str(flip["to"]).lower()))
+                          % (_switch_word(old_obj), _switch_word(new_obj)))
         row["details"] = {"changes": [flip]}
     return row, []
 
@@ -1126,7 +1147,17 @@ def _swept_rows(data, *, cfg=None, root=None):
     # by a person deciding whether they recognise the write.
     tool = str(data.get("tool_name") or "Bash")
     rows = [(root, e) for e in unsandboxed_entries(data, cfg=cfg, root=root)]
-    enabled = _config.journal_enabled(cfg)
+    enabled = _config.journal_records_calls(cfg)
+    if not enabled and _read_preimage(root, cfg, data,
+                                      _config.CONFIG_REL) is None:
+        # Off, and no baseline of the config: nothing can owe a row. The last
+        # will needs that slot, and a sweep-lane Pre made while recording was
+        # on seeds it, since recording on means the project's config exists
+        # and says so. Returning here is also what keeps the default path off
+        # the trail's library and off git: placing the command's tree and
+        # asking where the journal lives both cost imports this call never
+        # needed.
+        return rows
     for troot in _sweep_roots(data, cfg, root):
         rows.extend(_swept_tree(data, cfg, troot, tool, enabled, project=root))
     return rows
@@ -1170,7 +1201,7 @@ def _swept_tree(data, cfg, root, tool, enabled, project=None):
         is_cfg = (rel == _config.CONFIG_REL)
         allowed = enabled
         if is_cfg and old_obj is not None:
-            allowed = _config.journal_enabled(old_obj)
+            allowed = _config.journal_records_calls(old_obj)
         if not allowed:
             continue
         # A STATE A ROW ALREADY ACCOUNTS FOR WAS WRITTEN BY WHOEVER WROTE THAT ROW.
@@ -1272,6 +1303,15 @@ def post_entries(data, *, cfg=None, root=None):
     return [entry for _root, entry in post_rows(data, cfg=cfg, root=root)]
 
 
+def _may_be_config(data):
+    """Could this edit-tool write be to the config? Its file name alone, so it
+    answers before the path is placed - a write it says yes to is placed and
+    judged in full by `_classify_placed`."""
+    tool = (data or {}).get("tool_name", "")
+    name = os.path.basename(_target_of(tool, (data or {}).get("tool_input")))
+    return name == os.path.basename(_config.CONFIG_REL)
+
+
 def post_rows(data, *, cfg=None, root=None):
     """`post_entries`' pass, each row with the tree whose journal it belongs to.
 
@@ -1284,6 +1324,12 @@ def post_rows(data, *, cfg=None, root=None):
             return _swept_rows(data, cfg=cfg, root=root)
         home = _config.tree_for(data, _config.PROJECT_ONLY, cfg, project=root)
         root, cfg = home["project"], home["cfg"]
+        if not (_config.journal_records_calls(cfg)
+                or _may_be_config(data)):
+            # Off: only the config's own last will can still owe a row, so a
+            # write to anything else is answered before it is placed - which
+            # is what keeps the default path off the trail's library.
+            return []
         action, rel, tool, ti, troot = _classify_placed(data, cfg, root)
         if action is None:
             return []
@@ -1296,11 +1342,11 @@ def post_rows(data, *, cfg=None, root=None):
         # SAW, which is what lets the next write be diffed whatever makes it. The
         # current config gates it, not the pre-image judgement below: once the
         # switch is off there is no next row for a baseline to serve.
-        enabled = _config.journal_enabled(cfg)
+        enabled = _config.journal_records_calls(cfg)
         if enabled:
             _write_slot(root, cfg, data, rel)
         if action == "config.edit" and old_obj is not None:
-            enabled = _config.journal_enabled(
+            enabled = _config.journal_records_calls(
                 old_obj if isinstance(old_obj, dict) else {})
         if not enabled:
             return []

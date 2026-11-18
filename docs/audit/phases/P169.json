@@ -798,7 +798,7 @@
     {
       "id": "P169.4",
       "title": "Every reader of recorded runs goes through one reader over the shard records and the older rows, and answers the same from either",
-      "status": "in_progress",
+      "status": "done",
       "description": "`_evidence_io.read_rows` is the seam every reader of recorded runs already goes through (count its callers with grep before you start and put the count's command in the outcome). Make what it returns the union of the frozen ledger rows and the `lastRun` records of the plan's subjects, each record presented in the row's shape, one entry per runId (a run present as both is one entry). Then prove that nothing downstream needs the ledger: for a fixture holding records only and the same fixture holding rows only, each of these gives the same answer - the verdict binding (_verdict_binding.binding, with its reused row followed to the measured source), the step repeat (reusable_run, repeated_step_sources, step_parts) and its part-reused result, the reading of a red against the base (base_run), latest_by_subject, row_by_run, the gate's mean, the drive's read-back of a run it launched (green and red, with no commit made, and a red read back runs no step), close-phase's reading of a branch's runs (it reads the branch's ledger texts through git today; it must read the branch's shards the same way), and audit-task's --failing-from and couple --basis-run (resolve against records and rows, or refuse naming both places).\n\nThe drive finds the record of the run it launched by the launch token, not by comparing the subject's run ids against a list kept in its own state.\n\nWith one record per subject, a rule written over 'the newest row for the identity' has only one candidate; where a branch can no longer be reached (a newer row for the same identity), delete it and its case rather than leaving it unreachable, and name each deleted branch in the outcome.\n\nACCEPTANCE.\n1. The table: every reader named above, records-only against rows-only, same answer.\n2. A second ask on an unchanged tree, with records only, measures exactly the steps the left-out reading names and copies every other, each copy naming a run that measured it.\n3. A record whose reuse key is not the current key repeats nothing.\n4. The drive's decision read from the record equals the run's own --json for green and for red, with no commit made; reading a red back runs no gate step.\n5. A reader of history that finds no older directory says so with a basis; it never prints a zero as if it had counted.\n6. A plan and ledger as the previous release wrote them (use a committed example or build the fixture from real rows) give the same status, report and gate-condition answers before and after this change.\n\nDEPENDANTS to answer for by name: every caller of read_rows, row_by_run, latest_by_subject and oldest_first (the callers span the drive, the gate runner, audit-task.py, audit-lookup.py, full-gate.py, the doctor's trail and completion checks, the report, the panel, usage economics, propose-gates.py, validate-manifest.py's suite keys, record-outside-run.py, tools/plan-window.py, tools/gate-parity.py, tools/check-example-ledgers.py and the release guard under .claude/hooks). A caller that reads `rowFiles` or `files` to name where a run lives must still be able to: say what those mean for an entry that came from a shard.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
@@ -853,14 +853,21 @@
       ],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0f9710ce496d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "ATTEMPT 2 (base 70f42d27). Callers counted with: grep -rn --include='*.py' -E 'read_rows\\(|row_by_run\\(|latest_by_subject\\(|oldest_first\\(' plugins .claude/hooks tools | grep -v 'def ' - 24 files outside tests. WHAT CHANGED, ATTEMPT 1 (kept): _evidence_io.read_rows returns the union of ledger rows and every lastRun record the plan holds, one entry per runId, the ledger row winning and the record's launch merged onto it (with_records); new keys rowSources (ROW_FROM_LEDGER/ROW_FROM_RECORD), records, unreadablePlanFiles, ledgerAbsent (a sentence naming the missing evidence directory, None when it exists); files/unreadable/unreadableFiles stay the ledger's; a record entry's rowFiles is the repo-relative plan file. New record_row, records_of_bodies (gradedBy copy read under its carrier; a repeat's source emitted before the repeat since oldest_first gives a tie to the later entry), plan_bodies, plan_file_of, run_by_launch. _verdict_binding: plan_records/subject_runs; binding, phase_binding, member_red read the union. close-phase: tip_bodies/branch_records read the plan at the branch tip plus the worktree. drive-phase: launch_token/with_launch; both launch marks hold {at, argv, launch}; new_gate_row finds the subject's run carrying the token (run_by_launch over read_rows); a token-less mark from an older drive is relaunched (task) or forgotten and re-chosen (phase). audit-task _ledger_run's refusal names the evidence dir (and that it does not exist) and the plan file. run-test-gate _run_record_of fetches the source for PART_REUSED too. DELETED AS UNREACHABLE: drive-phase subject_run_ids, task_run_ids, the known-list comparison in new_gate_row, the ledger-unreadable stops at the top of launch_gate/launch_phase_gate; nothing else became unreachable (the frozen ledger is still read). ATTEMPT 2, per the coordinator's items: (1) ctw64 - DECIDED BY THE RULE: binding from the record is correct. For a repeat's SOURCE run _verdict_binding compares: step names and stepsDropped (declared_steps), leftToPhaseGate, gateSource, gateDigest (gate_mismatch), testedState.scopeDigest and scopeListDigest (digest_binding), and the steps' reusedFrom (repeated_clause). All are in RECORD_ROW_KEYS/RECORD_STEP_KEYS/RECORD_STATE_KEYS and run_record(source) writes them into repeatedRun. The premise moved, so in tests/test_commit_task_work.py br-block: ctw64 removes the measured run from BOTH the ledger and the record's repeatedRun and still sees exit 1 'not in the ledger nor in any record the plan holds'; ctw64b removes only the ledger row, asserts the carried run's compared fields equal the ledger row's (steps ['test'], gateSource task, same gateDigest, scopeDigest, scopeListDigest) and binds from the record alone (exit 0, commit made); ctw64c (second direction) edits the declared file after the run and is refused 'CONTENTS have changed since it was measured', naming the record's scopeDigest. br-block 14/14. commit-task-work.py needed no edit (it binds through _verdict_binding). (2) s23: tests/test_run_test_gate.py:14019 bare shutil.rmtree -> _harness.remove_tree; the same at the two other bare removals my diff added (test_drive_phase _lt_drop_ledger, test__evidence_io ri-block finally); no exemption row; tools/_suite.py 35 cases ok. (3) import-evidence: the old behaviour for a run the local ledger already held was a REFUSAL (exit 1 naming the id and the holding file, nothing written - i13-i16), not a skip or an equality check. A run held only as a record now meets the same refusal with the plan file as holder: new i45 (exit 1, 'runId run-rec1 already in docs/audit/audit-plan.json', --json duplicates [{runId run-rec1, file docs/audit/audit-plan.json}], new id not named, no evidence directory written) and allow twin i46 (a shard whose runs the record does not hold imports, exit 0). Nothing changed in kind: the shipped release has no records, so a held run could only be a row and was already refused; against HEAD i45 would have imported. Docstrings of import-evidence.py (module, held_runs) and the guide paragraph updated. Left: an unreadable plan file (unreadablePlanFiles) does not block an import as an unreadable ledger file does - the importer's remedy text is about ledger files. For a later task: once a phase's CI run is recorded in its shard, importing that CI ledger file meets this refusal. (4) schema $defs/lastRun: descriptions only, no type constraints, nothing accepted is refused - top level muted, groupWith, baseRed, repeatedRun; testedState scopeDigest, scopeListDigest; steps measured, failingBasis, failingSuites, failingSuitesBasis, suiteReader, muted, command; launch's description names the drive's read-back. test__manifest_vocab 69 ok. The demo generator's SCHEMA_EXEMPTIONS (tools/demo/gen-demo-manifest.py, now in my files) gained four reasoned rows - lastRun.muted (meta.muted exempt, no suite muted), lastRun.groupWith (no group signed off), lastRun.baseRed (no base measured), lastRun.repeatedRun (no demo run repeats another's, lastRun.reusedFrom's reason) - each checked by grep (no baseRed, BASE_RED, groupWith or record mute in the generator; meta.muted exempt at line 1004). test_gen_demo_manifest 140 ok. check-rendered-artifacts --before-commit exit 0 after the generator moved: every committed page still matches, none went stale. (5) repeatedRun stays as the ONE field run_record adds; its readers: _verdict_binding.binding grading a repeat by its source (ctw64b/c, vb44), and run-test-gate's reusable_run/repeated_step_sources copying a step only from a run that measured it (rpr1: the third ask's tree copy names the FIRST run, which only repeatedRun still holds, because each run replaces the subject's record). The widened allow-lists are run_record output too, each for a named reader: muted (reusable_run), baseRed (base_red_why, lt3), groupWith (group runs), failingSuites/failingSuitesBasis (--failing-from, rrd1), suiteReader (suite_keys), measured/command (tallies), scopeDigest/scopeListDigest (digest_binding). write_record, write_pointer and reconcile untouched, no lock pinned. (6) ui/panel/overview.js untouched. (7) runs, each in the background and waited for: declared gate exit 0 '6/6 files ok, 3701 cases'; the dependants sweep (test_commit_task_work, test_import_evidence, test__panel_composition, test__evidence_view, test__manifest_vocab, test_gen_demo_manifest, tools/_suite.py, test__deps, test__output_lints, test__refs, test__doctor_completions, test__doctor_trail - the two doctor suites of seven that import _evidence_io) '11/12 files ok, 1554 cases', its one red test_gen_demo_manifest's exemption check, then green after the rows ('2/2 files ok, 209 cases' with test__manifest_vocab); check-rendered-artifacts exit 0; ruff and vermin clean; no import line added, g1 green, no _deps --write-map. (8) red-first: the helper is given 'python3 tests/test__evidence_io.py --selftest' (about 6 s), the suite holding the ri-block, the central claim. (9) every attempt-2 edit went through Read+Edit. ATTEMPT 1 DISCLOSURE kept: the ri-block was first inserted via a python heredoc after an Edit refusal, and one lt3 assertion was rewritten the same way. CRITERION 6 (attempt 1, code unchanged in that path since): HEAD exported by git archive, examples/acme-store (no lastRun) in two identical non-git copies; audit-status --json, the human render, --gate with every condition but stranded-skills, and render-report byte-identical between HEAD's code and this tree. DEPENDANTS BY NAME: drive-phase (new_gate_row, ledger_row, read_back, base_red_why/measure_base, gate_mean_ms) - lt, ge, gs and the full suite green; run-test-gate (reusable_run, repeated_step_sources, step_parts, _run_record_of, _say_who_else_was_running - a run both hold is one entry; the full post-pass reads full scope, and no record is full scope) green; audit-task (_ledger_run, signoff) green; _verdict_binding and its callers commit-task-work (249 cases ok), audit-task done/signoff, close-phase green; import-evidence as item 3; _panel_composition (files stays the ledger's count; runs found from records too) and _evidence_view (rows include record entries) ok; _doctor_completions and _doctor_trail ok; guard-release (full scope only), validate-manifest (phase_gate_suite_gap), record-outside-run, propose-gates, derive-phase-gate, full-gate, audit-lookup, audit-status, audit-usage, _panel_state, _panel_usage, render-report read the union - unchanged for a record-free plan (criterion 6), and with records each record is the run its row already was. tools/check-example-ledgers.py has its own read_rows; tools/plan-window.py and tools/gate-parity.py call none of the four; tools/demo/gen-demo-manifest.py calls latest_by_subject over rows it builds. WRITER FINDINGS: (2) a reused record with no steps is read as a repeat (ri8 pins only that, that its source is not invented and that reusable_run finds nothing in it), never pinned as steps == []; (3) none of my readers chooses between testEvidence and lastRun - the union reads the record; the panel reads the pointer only to choose which runIds to show.",
+        "descriptive": "Every reader of recorded runs reads the plan's lastRun records beside the ledger and answers the same from either; a repeat binds from its record only while the run it copied is carried there; the importer refuses a record-held run as it refuses a held row; the schema describes what a record carries."
       },
       "startedAt": "2026-11-18T21:56:43Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T22:25:06Z",
+      "verifiedBy": [
+        "test__evidence_io ri-block: records-only and rows-only fixtures answer latest_by_subject, row_by_run, reusable_run, repeated_step_sources, step_parts, base_run and gate_mean_ms the same (ri1), non-vacuously (ri2); another reuse key repeats nothing (ri3); one entry per run with its source (ri4); an absent evidence directory is a sentence, not a zero (ri5); the second direction (ri6); a group member's copy read once under its carrier (ri7); a bare repeat stays a repeat and invents nothing (ri8)",
+        "test__verdict_binding vb-record-block: the binding table answers the same records-only as rows-only (vb43), non-vacuously (vb44)",
+        "test_run_test_gate rpr-block: records only, a second and third ask measure only the left-out plan step and copy the tree step naming the FIRST run (rpr1); a moved declared file measures both and copies none (rpr2)",
+        "test_drive_phase lt-block: the dispatch carries --launch and the mark holds the token and no known list (lt1); another token's run is not the drive's own (lt2); a red read back from the record with no ledger is decided as its --json said, asks the gate nothing again, no commit (lt3); the green twin (lt4)",
+        "test_close_phase lr-block: a branch whose shard records a red refuses naming it with no ledger (cr33); a one-file branch plan's green lands bound (cr34)",
+        "test_audit_task rr-block: --failing-from (rrd1) and couple --basis-run (rrd2) resolve a record-only run; an unknown id is refused naming the evidence dir and the plan file (rrd3)"
+      ],
       "notes": [
         {
           "at": "2026-11-18T17:39:27Z",
@@ -907,6 +914,49 @@
             "ms": 349179,
             "basis": "durationMs in run 2026-11-18T22:16:11Z.832da8's record (run-test-gate --record)",
             "runId": "2026-11-18T22:16:11Z.832da8"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T21:46:52Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 2708000,
+            "startedAt": "2026-11-18T21:01:44Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T21:55:18Z.a7959f",
+            "kind": "wait",
+            "ms": 0,
+            "startedAt": "2026-11-18T21:47:37Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T21:56:08Z.26d830",
+            "kind": "wait",
+            "ms": 2000,
+            "startedAt": "2026-11-18T21:55:20Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T21:56:08Z.26d830",
+            "kind": "base",
+            "ms": 45819,
+            "runId": "2026-11-18T21:56:08Z.26d830",
+            "startedAt": "2026-11-18T21:55:22Z"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T22:08:56Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 728000,
+            "startedAt": "2026-11-18T21:56:48Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T22:16:11Z.832da8",
+            "kind": "wait",
+            "ms": 1000,
+            "startedAt": "2026-11-18T22:09:51Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 0f9710ce496d",
+            "kind": "commit",
+            "ms": 2453,
+            "startedAt": "2026-11-18T22:25:01Z"
           }
         ],
         "firstStartedAt": "2026-11-18T21:01:37Z"
@@ -946,6 +996,18 @@
         "runId": "2026-11-18T22:16:28Z.7db7df",
         "status": "passed",
         "at": "2026-11-18T22:16:28Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "0f9710ce496d",
+        "at": "2026-11-18T22:25:06Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T22:08:54Z",
+        "basis": "`python3 tests/test__evidence_io.py --selftest` in a throwaway tree at HEAD exited 1 with 7 of 369 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ri1 (house FAIL), ri2 (house FAIL), ri4 (house FAIL), ri5 (house FAIL), ri6 (house FAIL), ri7 (house FAIL), ri8 (house FAIL): SELFTEST FAILED: 362/369 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -1343,7 +1405,7 @@
     {
       "id": "P169.9",
       "title": "Under the default configuration no per-call journal row and no preimage file is written, and a session's start clears what ended sessions left",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The hook that journals every Edit and Bash call writes a hash-chained row and, for a write, a preimage file. On this repository's own checkout the state directory they fill is measured in gigabytes and tens of thousands of files (print `du -sk .claude/state` and the file count in the outcome, before and after). Turn the per-call rows and the preimage files off by default: `journal.enabled` absent means off, true writes rows and verifies exactly as before, and the key keeps being read. The rows the plugin's own verbs write when they change the plan (a task moved, a bug filed, the commit's Audit-Row) are not per-call rows and are unchanged by this task: a task's commit must still be found by the drive under the default configuration, and a case holds that. The session-start sweep removes preimage files and the state files of sessions that have ended and keeps the live session's.\n\nACCEPTANCE.\n1. Under the default configuration an Edit and a Bash call write no journal row and no preimage file.\n2. With journal.enabled true the rows are written and verify as before.\n3. tools/bench-hooks.py --gate is green, and the disabled path imports only what the hook floor already imports.\n4. After the sweep, a fixture state directory holding files of ended sessions and of the live one holds only the live one's; nothing outside the plugin's own state names is removed.\n5. A verb's own journal row and a task commit's Audit-Row are written under the default configuration, and the drive finds that commit.\n6. COMPATIBILITY.md records the changed default in the major section without removing the key; SECURITY.md's fail-mode table and the config reference say what the default now is and what turning it on restores.\n\nDEPENDANTS to answer for by name: every reader of journal.enabled (hooks/_config.py's defaults, the doctor's trail checks, the panel's settings and help text, the config schema and the example config), restore points if they read preimages (say whether they do, with the grep), verify-invariants.py's checks that read per-call rows, the usage meter's session files, and any document that tells a user the journal records every tool call.",
       "files": [
         "plugins/audit/hooks/journal-writes.py",
@@ -1360,7 +1422,53 @@
         "tests/test__journal_io.py",
         "tests/test_meter_usage.py",
         "tests/test__config.py",
-        "tests/test_hooks.py"
+        "tests/test_hooks.py",
+        "tests/test_audit_task.py",
+        "tests/test_guard_bash_writes.py",
+        "tools/check-git-pipeline.py",
+        "plugins/audit/scripts/ui/panel/settings.js",
+        "plugins/audit/scripts/panel/_panel_settings.py",
+        "tests/test__panel_settings.py",
+        "plugins/audit/schema/audit-config.schema.json",
+        "plugins/audit/templates/audit.config.example.json",
+        "plugins/audit/README.md",
+        "plugins/audit/scripts/config/_help.py",
+        "tests/test__help.py",
+        "plugins/audit/hooks/detect-plan-skip.py",
+        "tests/test_detect_plan_skip.py",
+        "plugins/audit/scripts/status/_doctor_trail.py",
+        "tests/test__doctor_trail.py",
+        "plugins/audit/hooks/guard-secrets-read.py",
+        "plugins/audit/reference/execute-task.md",
+        "plugins/audit/reference/manifest-conventions.md",
+        "plugins/audit/reference/verbs-in-full.md",
+        "docs/handbook.html",
+        "docs/screenshots/areas.png",
+        "docs/screenshots/authors.png",
+        "docs/screenshots/captured-at.json",
+        "docs/screenshots/dark.png",
+        "docs/screenshots/expanded.png",
+        "docs/screenshots/filtered.png",
+        "docs/screenshots/filters.png",
+        "docs/screenshots/mobile.png",
+        "docs/screenshots/overview.png",
+        "docs/screenshots/panel-appearance.png",
+        "docs/screenshots/panel-blocks.png",
+        "docs/screenshots/panel-composition-expanded.png",
+        "docs/screenshots/panel-composition.png",
+        "docs/screenshots/panel-confirm.png",
+        "docs/screenshots/panel-dark.png",
+        "docs/screenshots/panel-gate.png",
+        "docs/screenshots/panel-guards.png",
+        "docs/screenshots/panel-help.png",
+        "docs/screenshots/panel-mobile.png",
+        "docs/screenshots/panel-monthly.png",
+        "docs/screenshots/panel-overview.png",
+        "docs/screenshots/panel-person.png",
+        "docs/screenshots/panel-policy-expanded.png",
+        "docs/screenshots/panel-policy.png",
+        "docs/screenshots/panel-proposals.png",
+        "docs/screenshots/panel-usage.png"
       ],
       "tests": {
         "mode": "tdd",
@@ -1385,14 +1493,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T22:25:16Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1472,7 +1580,93 @@
           "reads": "SECURITY.md",
           "text": "declared to answer a reading: tests/test_hooks.py reads SECURITY.md - quotes its text beside its path: 'write, after the fact'"
         }
-      ]
+      ],
+      "timing": {
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-18T23:36:02Z",
+            "ms": 31607,
+            "basis": "selectionMs in run 2026-11-18T23:42:32Z.21489d's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-18T23:42:32Z.21489d"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-18T23:36:34Z",
+            "ms": 357386,
+            "basis": "durationMs in run 2026-11-18T23:42:32Z.21489d's record (run-test-gate --record)",
+            "runId": "2026-11-18T23:42:32Z.21489d"
+          }
+        ],
+        "firstStartedAt": "2026-11-18T22:25:16Z"
+      },
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-18T23:42:52Z.32537e",
+        "durationMs": 373,
+        "selectionMs": 18250,
+        "status": "passed",
+        "failed": [],
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-18T23:42:32Z.21489d",
+          "ts": "2026-11-18T23:42:32Z",
+          "status": "passed"
+        },
+        "reuseKey": "1:sha256:c3cf2c683551656e92b212cd4de76278fef2b7aadf86087d8580a310b1590695",
+        "gateDigest": "sha256:1d60be689e85ea926ea9a7f50a69d8b7e3069e05543c726ca5e8eab4fff35d67",
+        "gateSource": "task",
+        "banners": [],
+        "at": "2026-11-18T23:42:52Z",
+        "steps": [
+          {
+            "name": "python3 tools/sweep-selftests.py tests/test_journal_writes.py tests/test_meter_usage.py tests/test__journal_io.py tests/test__config.py tests/test_hooks.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_io.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_phase.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_import_evidence.py, tests/test_integrate_task.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_outside_run.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_run_test_gate.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/gate-parity.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+            "exit": 0,
+            "ran": null,
+            "measured": "not-knowable",
+            "suiteReader": "none",
+            "reusedFrom": {
+              "runId": "2026-11-18T23:42:32Z.21489d",
+              "ts": "2026-11-18T23:42:32Z"
+            }
+          }
+        ],
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "runId": "2026-11-18T23:42:32Z.21489d",
+          "startedAt": "2026-11-18T23:36:34Z",
+          "durationMs": 357386,
+          "selectionMs": 31607,
+          "status": "passed",
+          "failed": [],
+          "reuseKey": "1:sha256:c3cf2c683551656e92b212cd4de76278fef2b7aadf86087d8580a310b1590695",
+          "gateDigest": "sha256:1d60be689e85ea926ea9a7f50a69d8b7e3069e05543c726ca5e8eab4fff35d67",
+          "gateSource": "task",
+          "banners": [],
+          "at": "2026-11-18T23:42:32Z",
+          "testedState": {
+            "head": "0f9710ce",
+            "dirtyDigest": "sha256:7cf8d1e30c75a3a083325b2281b6168a6a0a03c8bc3b3e95094a1e378826e8f9",
+            "scopeDigest": "sha256:23c7055b9b408ad33a1c648819c2e9230578672f22bc90270cc9888a68b05ddd",
+            "scopeListDigest": "sha256:1088da41a1336548b9c85c14928b3bf80dc1d2d8fc204131b44aa1c97ff2497f"
+          },
+          "steps": [
+            {
+              "name": "python3 tools/sweep-selftests.py tests/test_journal_writes.py tests/test_meter_usage.py tests/test__journal_io.py tests/test__config.py tests/test_hooks.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_io.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_phase.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_import_evidence.py, tests/test_integrate_task.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_outside_run.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_run_test_gate.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/gate-parity.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "suiteReader": "none",
+              "durationMs": 357319
+            }
+          ]
+        }
+      },
+      "testEvidence": {
+        "runId": "2026-11-18T23:42:52Z.32537e",
+        "status": "passed",
+        "at": "2026-11-18T23:42:52Z"
+      }
     },
     {
       "id": "P169.10-6l3",
@@ -1481,8 +1675,7 @@
       "description": "One case of tests/test_run_test_gate.py, pgo7, failed once on a Windows CI runner (run 44363694425, job \"selftests (windows, plain 2)\") over product code that passed it on the same runner image in two other runs the same day. The case runs a task's gate once with executor.phaseGateOnly absent and once with it empty and asserts that the two print the same lines once ids and times are masked. In the failing run both exited 0 with the same steps and the same row keys, so the difference is in the printed lines, and the failure message does not show them. A case that reddens a green tree once in three runs is how a CI verdict stops being read.\n\nDo this in order. First, make the case's failure say what differed: when the masked line lists are unequal, the message carries the first differing pair of lines (and the lengths if they differ), so the next red of this case names its own cause. Second, read the failing job's log (gh run view --job with the job's id from that run, read-only) for anything the run printed around the case, and read the case's mask against every line the gate prints: a duration that changes unit between two runs (ms to s), a count of workers or slots, a path under a temp directory with a random part, a line that appears only when a step crosses a time threshold, the order of two lines written by different streams. Third, fix the cause where it is: if a line legitimately varies with time, the mask must cover its whole varying part; if a line appears or not depending on timing, the two runs are not comparable on that line and the case must say so rather than compare it; if the product prints something nondeterministic that a user would also see vary, that is a product fix and belongs in run-test-gate.py.\n\nACCEPTANCE.\n1. With the two line lists made to differ in one line (a mutation in a scratch copy, restored in the same command), the failure message names that line pair.\n2. The cause is named in the outcome with the evidence that it is the cause (the log line, or the unmasked form found by reading), or stated as not established with what was ruled out; a mask widened without a named cause is not accepted.\n3. The case still fails when executor.phaseGateOnly set to an empty list changes what a task's run prints: prove it by mutation.\n4. The suite is green under the sweep and under the cp1252 leg locally (python3 tools/sweep-selftests.py tests/test_run_test_gate.py, and the same with --encoding cp1252).\n\nDEPENDANTS: the suite's other cases that share pgo7's masking helper, if it is shared.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
-        "tests/test_run_test_gate.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "tests/test_run_test_gate.py"
       ],
       "tests": {
         "mode": "regression",
@@ -1523,6 +1716,11 @@
           "reader": "PLUGIN-BUILD-GUIDE.md",
           "reads": "plugins/audit/scripts/governance/run-test-gate.py",
           "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/governance/run-test-gate.py - a section headed by its path"
+        },
+        {
+          "at": "2026-11-18T22:26:18Z",
+          "text": "its section headed by run-test-gate.py describes what the runner does; this task makes one suite case say which printed line differed and fixes that case's mask or the one line it compares, which the section does not describe. If the fix turns out to change what the runner prints, the executor stops before filing and the guide is added then",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
         }
       ]
     },
@@ -1786,8 +1984,7 @@
       "description": "One case of tests/test__commit_trail.py, vt8, is red on Windows CI and green everywhere else: it failed in \"selftests (windows, plain 2)\" in both runs that carried the verdict-trailers commit (44379408461 and 44380971983), with \"FAIL vt8 a FOLDED trailer reads as git unfolds it - the line break and its indent become one space - which is why the writer refuses a reason holding a line break rather than folding it: 'first half' / ['first half']\". So on that runner the reader returned only the first line of a folded trailer value, where the case expects git's unfolded value. The reader asks git for `%(trailers:only,unfold)`; what differs on Windows is not established: the git version on the runner image, a carriage return in the commit message the fixture writes (a `\\r\\n` line end makes the continuation line something other than a folded line), or how the fixture hands the message to git there.\n\nThis matters beyond the case: the product's reader of a commit's verdict must read the same value on every platform a plan is driven on, and a reason that the WRITER refuses to fold can still arrive folded from a commit written by hand or by another tool.\n\nDo this in order. First establish the cause with evidence, without a Windows machine: read the failing job's log for the git version (read-only gh calls on those two runs), read how the fixture writes the message (text mode, newline translation, `-F` file against `-m`), and reproduce the Windows shape here by writing the same bytes Windows would write (a `\\r\\n` message through `git commit -F`, and `core.autocrlf` as the runner sets it) and reading it back with the reader. Second, fix where the cause is: if the reader must tolerate a carriage return in a trailer block, it does so for every trailer it reads and not only the reason; if the fixture is what differs, the fixture writes bytes; if the runner's git does not support the unfold option the reader asks for, the reader says so as a reason it could not read, rather than returning half a value. Third, a case that is red here, on this platform, for the cause you found (the reproduction above), so the next regression does not need a Windows runner to be seen.\n\nACCEPTANCE.\n1. The cause is named with its evidence in the outcome, or stated as not established with what was ruled out; a case skipped or loosened on Windows is not accepted.\n2. A case reproducing the Windows shape on any platform is red at HEAD and green after the fix.\n3. The reader returns the same verdict for a commit whose message uses `\\r\\n` line ends as for the same message with `\\n`, for every trailer name it reads; proven by a case.\n4. The orchestrator dispatches CI for you: hand back READY-FOR-RUN when the suite is green here, and say which job must show vt8 passing. File only after that run is read.\n\nDEPENDANTS to answer for by name: status and the panel (they print what the reader returns), the commit writer's refusal of a line break in a reason (it relies on the reader's unfolding rule), the doctor's trail checks and `_invariants.trailer_carriers`.",
       "files": [
         "plugins/audit/scripts/manifest/_commit_trail.py",
-        "tests/test__commit_trail.py",
-        "PLUGIN-BUILD-GUIDE.md"
+        "tests/test__commit_trail.py"
       ],
       "tests": {
         "mode": "regression",
@@ -1819,6 +2016,11 @@
           "reader": "PLUGIN-BUILD-GUIDE.md",
           "reads": "plugins/audit/scripts/manifest/_commit_trail.py",
           "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/manifest/_commit_trail.py - a section headed by its path"
+        },
+        {
+          "at": "2026-11-18T22:26:20Z",
+          "text": "its section headed by _commit_trail.py describes the trailers the reader reads; this task makes the reader return the same value for a carriage-return or folded message, which the section already states as the behaviour. If the fix changes what the section says, the executor stops before filing and the guide is added then",
+          "waives": "PLUGIN-BUILD-GUIDE.md"
         }
       ]
     },

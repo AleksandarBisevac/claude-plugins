@@ -246,16 +246,20 @@ FIELD_HELP = {
         "completed tasks (median and p90), which needs no guess to mean something. "
         "Set both to band by a real budget instead.",
     "journal.enabled":
-        "Record every write to the plan and to this config in an append-only, "
-        "hash-chained journal: who, when, what changed, and the state it left "
-        "behind. Panel saves are recorded, and so is every write to the plan "
-        "whichever tool made it - a shell command inside a Bash call included, "
-        "which the hook catches by comparing the file's digest with the one it "
-        "last recorded. A write by something that is not a tool call at all still "
-        "shows up as a document that changed with no row to explain it. "
-        "Tamper-EVIDENT, not tamper-proof - `audit-journal.py verify` names an "
-        "edited, deleted or reordered row, but nothing here can stop someone "
-        "rewriting the whole file.",
+        "Whether each tool call's write to the plan and to this config gets a row "
+        "of its own in the append-only, hash-chained journal. Unset - the "
+        "default, shown unticked - records no call and keeps no pre-image file, "
+        "while the plugin's own commands and panel saves still write their rows: "
+        "a task started, committed or closed, a phase signed off, a setting "
+        "saved. Ticked (true) also records every write to the plan whichever tool "
+        "made it - a shell command inside a Bash call included, which the hook "
+        "catches by comparing the file's digest with the one it last recorded. "
+        "false in the file writes no row at all; the box shows it unticked, and "
+        "ticking and unticking puts false back rather than unset. Either way a "
+        "write no row explains shows up as a document that changed since the "
+        "last row that recorded it. Tamper-EVIDENT, not tamper-proof - "
+        "`audit-journal.py verify` names an edited, deleted or reordered row, "
+        "but nothing here can stop someone rewriting the whole file.",
     "journal.dir":
         "Where the monthly per-writer .jsonl files live. Empty keeps them beside "
         "the manifest, which is what lets one commit carry both the change and the "
@@ -642,14 +646,17 @@ SETTINGS_GROUPS = (
         "topic": "journal",
         # No backticks in a blurb: it is rendered as text, not as markdown, and the
         # other four say their command names plainly for the same reason.
-        "blurb": "An append-only, hash-chained record of every change to the plan "
-                 "and to these settings. Tamper-EVIDENT, not tamper-proof: editing, "
+        "blurb": "An append-only, hash-chained record of what the plugin's own "
+                 "commands and this panel change in the plan and in these "
+                 "settings - and, with the first box ticked, of every tool call "
+                 "that writes either. Tamper-EVIDENT, not tamper-proof: editing, "
                  "deleting or reordering a row breaks the chain and audit-journal.py "
                  "verify names it - but with no secret key to keep on your own "
                  "machine, nothing here can stop someone rewriting the whole file. "
                  "It is a smoke detector, not a vault.",
         "fields": (
-            {"path": "journal.enabled", "label": "Record plan and config writes",
+            {"path": "journal.enabled",
+             "label": "Also record each tool call's plan and config writes",
              "kind": "bool"},
             {"path": "journal.dir", "label": "Where the record is kept",
              "kind": "text", "placeholder": "beside the manifest"},

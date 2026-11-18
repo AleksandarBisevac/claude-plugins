@@ -834,9 +834,11 @@ verb writes and refuses, and what the run commands leave behind, is
           is a rebase this document forbids. The script commits with `-- <the paths it staged>`
           and refuses outright when the index already holds something else, so neither half of
           that is yours to remember any more.
-        - **Completion rows are hook-emitted.** The `journal-writes` hook derives `task.complete`,
-          `task.commit` and `phase.signoff` rows from your manifest writes — whichever tool made them,
-          a shell command inside a `Bash` call included — NEVER append those actions by hand (two
+        - **Completion rows are hook-emitted.** With `journal.enabled` true, the `journal-writes` hook
+          derives `task.complete`, `task.commit` and `phase.signoff` rows from your manifest writes —
+          whichever tool made them, a shell command inside a `Bash` call included (unset, the
+          default, it derives none; the verbs' own rows are written either way) — NEVER append
+          those actions by hand (two
           writers means duplicate rows and a doctor that cannot trust the count).
         - **Declare BOTH halves of anything `git mv` moved.** `git mv` stages the file at its
           **pre-edit** content, so a task that moves a file and then edits it would commit the OLD

@@ -323,7 +323,14 @@ function renderSettings(){closeCombo();
  * Absent reads as ON: a default this form cannot find is treated as true, and so
  * is any stored value that is not exactly false. That keeps a hand-edited config
  * holding some other truthy value from being redrawn as off and then saved that
- * way.
+ * way. A default the defaults DO carry is read as itself, and a null one is off:
+ * `journal.enabled` ships unset, and unset there means the per-call recorder is
+ * off, so a box drawn ticked for it would claim a recording nothing makes.
+ *
+ * Ticking a box back to what the file held puts the held value back rather than
+ * clearing the key. For a key whose unset and false mean different things - an
+ * unset `journal.enabled` still writes the commands' own rows, a false one writes
+ * nothing - clearing it would change the setting while the box looked untouched.
  *
  * @param {object} cfg - the config draft; mutated as the box is toggled
  * @param {object} d - the shipped defaults, which decide what an unset box shows
@@ -335,10 +342,12 @@ function renderSettings(){closeCombo();
  *   it by id
  */
 function boolField(cfg,d,f,tip){
- const cur=getPath(cfg,f.path),def=getPath(d,f.path)!==false;
+ const cur=getPath(cfg,f.path),dv=getPath(d,f.path),def=dv===undefined||dv===true;
+ const held=cur===undefined?def:cur!==false;
  const cb=el('input',{type:'checkbox',id:fieldId(f.path)});
- cb.checked=cur===undefined?def:cur!==false;
- cb.onchange=()=>{if(cb.checked===def)delPath(cfg,f.path);else setPath(cfg,f.path,cb.checked);};
+ cb.checked=held;
+ cb.onchange=()=>{if(cb.checked===held&&cur!==undefined)setPath(cfg,f.path,cur);
+  else if(cb.checked===def)delPath(cfg,f.path);else setPath(cfg,f.path,cb.checked);};
  // The checkbox bound its label already -- it is the first labelable descendant,
  // ahead of the i. What it did NOT have was a clean name. Same shape as every
  // other field now: the control, then the words pointing at it by id.
