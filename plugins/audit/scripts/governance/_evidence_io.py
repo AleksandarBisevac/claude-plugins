@@ -391,12 +391,18 @@ RUNNER_WORDS = (RUNNER_GATE, RUNNER_OUTSIDE)
 # says so in its basis. A derivation presented as a record is how a cheap read
 # comes to be trusted like a measurement.
 STARTED_KEY = "startedAt"
-# HOW LONG CHOOSING WHAT TO RUN TOOK, beside `durationMs` and never inside it:
-# the gathering of a task's affected suites, the reuse lookup and the reach
-# reading all happen before the first step, on the same monotonic clock.
-# `durationMs` stays the steps alone because `gate_mean_ms`, the doctor's gate
-# budget and the usage comparisons all decide on it, and a figure that grew a
-# second meaning would move every one of their answers. ABSENT IS NOT ZERO: a
+# HOW LONG CHOOSING WHAT TO RUN TOOK, beside `durationMs` and never inside it,
+# on the same monotonic clock. On a measured run it runs from the start of the
+# gathering to the first step, so it holds the gathering of a task's affected
+# suites, the identity and the reuse lookup, the reach reading, and the reading
+# of the tree `run_gate` takes before its first command. On a repeat, which runs
+# no step, it runs from the start of the gathering to the identity, and the
+# identity and the lookup are the repeat's `durationMs`; on either path the two
+# figures meet without overlapping (`run-test-gate.py`'s selection clock).
+# On a measured run `durationMs` stays the steps alone because `gate_mean_ms`,
+# the doctor's gate budget and the usage comparisons all decide on it, and a
+# figure that grew a second meaning would move every one of their answers.
+# ABSENT IS NOT ZERO: a
 # row written before the key existed measured no selection, and
 # `selection_ms` is the one reader that keeps those two apart.
 SELECTION_KEY = "selectionMs"

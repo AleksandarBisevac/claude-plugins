@@ -4169,7 +4169,9 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     gets one line, once per step, that the exemption was not applied.
     `selection_started` is the caller's `time.monotonic()` reading from when it
     began choosing what to run; `res["selectionMs"]` is the time from it to the
-    reading `durationMs` starts from, and None when no caller timed a selection.
+    reading `durationMs` starts from - taken after this function's own reading
+    of the tree before the first command, so that reading is in the selection -
+    and None when no caller timed a selection.
     """
     runner = runner or _shell
     today = _vocab.mute_today() if today is None else today
@@ -5983,11 +5985,13 @@ def main(argv, out=print):
     if terr:
         out("[run-test-gate] %s" % terr)
         return E_ASK
-    # THE SELECTION'S CLOCK: from here to the first step - gathering the
-    # affected suites, the reuse lookup, the reach reading - is `selectionMs`
-    # (`_evidence_io.SELECTION_KEY`), read by `run_gate` where its own step
-    # clock starts, or here when a repeat runs no step. It is never added to
-    # `durationMs`, which stays the steps alone.
+    # THE SELECTION'S CLOCK: on a measured run, from here to the first step -
+    # gathering the affected suites, the identity and the reuse lookup, the
+    # reach reading, and `run_gate`'s reading of the tree before its first step
+    # - is `selectionMs` (`_evidence_io.SELECTION_KEY`), read by `run_gate`
+    # where its own step clock starts; on a repeat, which runs no step, from
+    # here to the identity, whose time and the lookup's are the repeat's
+    # `durationMs`. The two never overlap on either path.
     selection_started = time.monotonic()
     # THE TASK'S OWN GATE, AND WHAT ITS CHANGE CAN BREAK. The declared part is
     # what the gate digest binds a commit to, while the affected steps are
@@ -6098,10 +6102,17 @@ def main(argv, out=print):
                                      identity["key"], REUSABLE_STATUS)
             newer = _ev.newer_for_identity(ledger, identity["key"], prior)
     if prior is not None:
-        res = reused_result(identity, prior, _elapsed_ms(started), newer=newer)
-        # A repeat chose too - it gathered, identified and looked up - and
-        # runs no step, so its selection ends here.
-        res[_ev.SELECTION_KEY] = _elapsed_ms(selection_started)
+        # A REPEAT'S TWO FIGURES SPLIT ONE WINDOW AT `started`, read off one end
+        # reading: its selection is the gathering, up to the identity, and its
+        # `durationMs` the identity and the lookup that found the row it repeats -
+        # so the two add up to the time from the start of gathering to here and
+        # neither holds any of the other.
+        ended = time.monotonic()
+        chose = int((started - selection_started) * 1000)
+        res = reused_result(identity, prior,
+                            int((ended - selection_started) * 1000) - chose,
+                            newer=newer)
+        res[_ev.SELECTION_KEY] = chose
     else:
         # ARMED AROUND THE MEASUREMENT AND NOWHERE ELSE. This is the window a stop
         # signal actually lands in - a gate step is where the wall clock goes - and

@@ -1408,7 +1408,10 @@
       "P167.2",
       "P167.3",
       "P167.4",
-      "P167.5"
+      "P167.5",
+      "P167.6-fge",
+      "P167.7-fge",
+      "P167.8-fge"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1513,7 +1516,8 @@
       "P156.18-3st",
       "P156.20-3st",
       "P167.2",
-      "P167.3"
+      "P167.3",
+      "P167.7-fge"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -2053,7 +2057,10 @@
       "P167.2",
       "P167.3",
       "P167.4",
-      "P167.5"
+      "P167.5",
+      "P167.6-fge",
+      "P167.7-fge",
+      "P167.8-fge"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2974,7 +2981,8 @@
       "P118.9",
       "P148.5",
       "P148.15-xpz",
-      "P167.5"
+      "P167.5",
+      "P167.7-fge"
     ],
     "plugins/audit/commands/sync.md": [
       "P3.1",
@@ -3864,7 +3872,8 @@
       "P148.10-xpz",
       "P148.21-xpz",
       "P155.35-gfj",
-      "P167.2"
+      "P167.2",
+      "P167.7-fge"
     ],
     "plugins/audit/scripts/_deps.py": [
       "P15.1",
@@ -4416,7 +4425,8 @@
       "P157.5",
       "P157.8-mwz",
       "P157.11-mwz",
-      "P167.3"
+      "P167.3",
+      "P167.6-fge"
     ],
     "plugins/audit/scripts/governance/_invariants.py": [
       "P22.5",
@@ -4894,7 +4904,8 @@
       "P157.10-mwz",
       "P161.3-toy",
       "P161.4-toy",
-      "P167.3"
+      "P167.3",
+      "P167.6-fge"
     ],
     "plugins/audit/scripts/governance/stamp-verification.py": [
       "P43.4",
@@ -5547,7 +5558,8 @@
       "P156.20-3st",
       "P165.3",
       "P167.2",
-      "P167.4"
+      "P167.4",
+      "P167.8-fge"
     ],
     "plugins/audit/scripts/manifest/merge-manifest.py": [
       "P60.2",
@@ -6213,7 +6225,8 @@
       "P131.1",
       "P131.2",
       "P131.12",
-      "P167.5"
+      "P167.5",
+      "P167.7-fge"
     ],
     "plugins/audit/scripts/status/audit-doctor.py": [
       "P10.3",
@@ -6392,7 +6405,8 @@
       "P155.28-gfj",
       "P155.46-gfj",
       "P155.49-gfj",
-      "P167.5"
+      "P167.5",
+      "P167.7-fge"
     ],
     "plugins/audit/scripts/status/audit-version.py": [
       "P67.1",
@@ -11143,7 +11157,8 @@
       "P166.1",
       "P166.2",
       "P166.3-b8m",
-      "P167.4"
+      "P167.4",
+      "P167.8-fge"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -12587,7 +12602,8 @@
       "P157.5",
       "P157.8-mwz",
       "P157.11-mwz",
-      "P167.3"
+      "P167.3",
+      "P167.6-fge"
     ],
     "tests/test__evidence_view.py": [
       "P131.1"
@@ -12919,7 +12935,8 @@
       "P131.1",
       "P131.12",
       "P129.8-izt",
-      "P167.5"
+      "P167.5",
+      "P167.7-fge"
     ],
     "tests/test__surface_digest.py": [
       "P131.1",
@@ -13070,7 +13087,8 @@
       "P155.46-gfj",
       "P155.49-gfj",
       "P156.6",
-      "P167.5"
+      "P167.5",
+      "P167.7-fge"
     ],
     "tests/test_audit_task.py": [
       "P131.1",
@@ -13130,7 +13148,8 @@
       "P156.20-3st",
       "P165.3",
       "P167.2",
-      "P167.4"
+      "P167.4",
+      "P167.8-fge"
     ],
     "tests/test_audit_usage.py": [
       "P131.1",
@@ -13312,7 +13331,8 @@
       "P166.1",
       "P166.2",
       "P166.3-b8m",
-      "P167.4"
+      "P167.4",
+      "P167.8-fge"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -13327,7 +13347,8 @@
       "P131.1",
       "P131.2",
       "P165.5",
-      "P167.2"
+      "P167.2",
+      "P167.7-fge"
     ],
     "tests/test_gen_demo_usage.py": [
       "P131.1",
@@ -13511,7 +13532,8 @@
       "P157.10-mwz",
       "P161.3-toy",
       "P161.4-toy",
-      "P167.3"
+      "P167.3",
+      "P167.6-fge"
     ],
     "tests/test_set_priority.py": [
       "P131.1"
@@ -13649,7 +13671,8 @@
       "P148.2",
       "P157.3",
       "P157.12-mwz",
-      "P167.1"
+      "P167.1",
+      "P167.6-fge"
     ],
     "tests/test_run_agent_session.py": [
       "P131.3",
@@ -13666,7 +13689,8 @@
       "P157.3",
       "P157.12-mwz",
       "P167.1",
-      "P167.4"
+      "P167.4",
+      "P167.6-fge"
     ],
     "plugins/audit/scripts/governance/_clause_coverage.py": [
       "P131.7",
@@ -13927,10 +13951,12 @@
       "P165.4"
     ],
     "plugins/audit/scripts/manifest/_task_timing.py": [
-      "P167.2"
+      "P167.2",
+      "P167.7-fge"
     ],
     "tests/test__task_timing.py": [
-      "P167.2"
+      "P167.2",
+      "P167.7-fge"
     ]
   },
   "bugs": [

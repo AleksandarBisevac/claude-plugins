@@ -10308,6 +10308,39 @@ def _affected_cases(check):
           and chose >= sleep_ms
           and isinstance(took, int) and 0 <= took - step_sum < sleep_ms)
 
+    # THE REPEAT OF THAT RUN: the same gate over the same tree, the reuse lookup
+    # allowed. Its gathering sleeps the listing's sleep again, and its identity
+    # is made to take a second sleep of its own, so the two windows are each
+    # long and told apart: a duration that also lies inside the selection makes
+    # their sum exceed the wall time the whole call took.
+    identity_ms = 600
+    held_identity = M.reuse_identity
+
+    def slow_identity(*args, **kwargs):
+        time.sleep(identity_ms / 1000.0)
+        return held_identity(*args, **kwargs)
+    M.reuse_identity = slow_identity
+    try:
+        began = time.monotonic()
+        M.main([mpath, "P1", "--task", "P1.2", "--project-dir", root, "--record"],
+               out=[].append)
+        wall_ms = int((time.monotonic() - began) * 1000)
+    finally:
+        M.reuse_identity = held_identity
+    rows = _recorded_rows(os.path.join(root, "docs", "audit", "evidence"))
+    again = rows[-1] if rows else {}
+    took, chose = again.get("durationMs"), again.get("selectionMs")
+    check("ag7 a REPEATED run's selectionMs and durationMs do not overlap: the "
+          "selection holds the gathering's %d ms sleep, the duration the "
+          "identity's %d ms, and the two add up to no more than the %r ms the "
+          "whole call took: repeat=%r selectionMs=%r durationMs=%r"
+          % (sleep_ms, identity_ms, wall_ms,
+             again.get(M._ev.VERDICT_SOURCE), chose, took),
+          again.get(M._ev.VERDICT_SOURCE) == M._ev.REUSED
+          and isinstance(chose, int) and isinstance(took, int)
+          and chose >= sleep_ms and took >= identity_ms
+          and chose + took <= wall_ms)
+
 
 def _affected_scope_cases(check):
     """The affected selection as a task's gate, end to end, over one tree.

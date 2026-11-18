@@ -385,7 +385,7 @@
     {
       "id": "P167.5",
       "title": "/audit:status prints wall time per task and per stage, and its JSON carries the same figures with their basis",
-      "status": "in_progress",
+      "status": "done",
       "description": "The status render gains a time column, shown only when a task in view carries a timing record, exactly as the tests column appears only when a task has recorded a run: a plan that never recorded a stage renders byte for byte as before. A task's cell is its whole window; the phase's head line gives the median task window and the split by stage over the phase's finished tasks, with the unattributed share named. The JSON rollup carries, per task, the summary the shared helper returns, and per phase the same aggregate, each with its basis; a task with no record carries no timing key rather than zeros. commands/status.md states the column in the fewest words that are true, since the main loop reads that page on every call and tools/measure-context.py holds it to a ceiling. Dependants you answer for: the three views and the fold of finished phases; --phase and --view scoping, which scope the table and never the totals; --section, which projects one top-level key of the JSON and refuses an unknown one; the gate mode, which must not read timing at all; the report and the panel, which call into _status_facts and must be unaffected. Acceptance: (1) a plan with no timing anywhere renders and serializes byte for byte as before; (2) a plan where one task carries a record shows the column, that task's window, and a dash for the others, and the dash means not recorded; (3) the phase line's stage figures add up to its tasks' windows, with the unattributed share printed; (4) the JSON carries the per-task summary and the per-phase aggregate with their basis, and a task without a record has no timing key; (5) --gate output is unchanged on a plan that carries timing.",
       "files": [
         "plugins/audit/scripts/status/_status_facts.py",
@@ -418,14 +418,17 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8cbdafcefab2",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_status_facts.py: new section `wall time by stage` - task_timing(task) (None for no record, else _task_timing.summarize), phase_timing(summaries) (sum over tasks WITH a window: tasks, windowMs, medianWindowMs, byKind {ms, stages, basis[] as given}, attributedMs, unattributedMs, overrunMs, windowBasis, basis, withoutWindow {id: missing}), timing_rollup(manifest) ({tasks, phases} or None); rollup() adds `timing` only when timing_rollup is not None; imports _task_timing. audit-status.py: _time_cell (window via _fmt.human_duration, `-` no record, `open` record without completedAt, `no window` otherwise) and _time_clause (head clause: median window per task over N finished tasks, then byKind in KINDS order, unattributed, overrun when non-zero); _phase_table_lines adds a `time` column (before `commit`, after `tests`) only when a task in the shown scope is in summary['timing']['tasks'] - read off the rollup, not re-derived. Docs: commands/status.md one clause in the column paragraph; PLUGIN-BUILD-GUIDE.md section text for both modules plus the module-map line `_status_facts -> ... _task_timing ...` (test__deps g1 went red on the new import edge until that line matched `_deps.py --render`); README.md plugin row; CHANGELOG.md Unreleased/Added entry. Tests: tests/test_audit_status.py stage `tc` (_timing_render_cases, tc1-tc12) and tests/test__status_facts.py stage `tt` (_timing_cases, tt1-tt10), drafted before reading the implementation; first run on HEAD code: tc3,tc4,tc5,tc6,tc8,tc9,tc10,tc12 FAIL and the tt block raised AttributeError (no timing_rollup) - tc1,tc2,tc7,tc11,tt10 are second-direction cases that pass on HEAD by construction. In-process monkeypatch mutations (scratch script, tree untouched): timing_rollup never None -> tt10 red; overrun dropped -> tt3 red; untimed cell '0 ms' -> tc5 red; unattributed dropped -> tc6,tc8 red; clause on every phase -> tc1,tc7 red; open read as dash -> tc9 red. Gate: `python3 tools/sweep-selftests.py tests/test_audit_status.py tests/test__status_facts.py` exit 0, 2/2 files ok, 621 cases (423 + 198). Dependants swept: test__deps (exit 0, 284 cases, after the map line), test__doctor_trail 155, test__evidence_io 342, test__evidence_view 79, test__help_lints 14, test__live_copy 9, test__output_lints 183, test__panel_state 39, test__refs 292, test__report_html 181, test__task_timing 14, test_render_report 317 - all ok. ruff exit 0, vermin -t=3.8- exit 0, tools/measure-context.py --gate exit 0. Live: audit-status.py --phase P167 on this repo's plan shows `time` 29 m 05 s / 74 m 11 s for P167.3/.4, `-` for .1/.2 (no record), `open` for .5, head `time median 51 m 38 s per task over 2 finished tasks: unattributed 103 m 16 s` (those records hold no stages). DEPENDANTS: tools/gate-parity.py, tools/prove-gates.py, tools/measure-context.py, _help_lints/test__help_lints, test__refs name status.md - still correct, only one prose clause added, their suites/gate green. _status_facts importers (drive-phase, full-gate, run-test-gate, _manifest_rules, audit-task, _panel_composition, _panel_paths, _evidence_view, _panel_state, render-report) - still correct: rollup's existing keys unchanged, `timing` appears only on a plan carrying a record; the panel's state payload passes that extra key through to the browser, which reads none of it; render-report reads named keys. --gate: evaluate_gate reads no timing; rollup still computes the block in gate mode (summarize is total over malformed input) and tc11 pins gate stdout/stderr/exit identical with and without timing. --section: `timing` becomes a valid section only on a plan carrying a record; elsewhere it is refused as unknown as before. Views/fold: the column is decided off the same shown_phases list the table lists, so --view and --phase scope it and never the totals (tc10). tests/test__status_facts.py and tests/test_audit_status.py: affected.py and sweep-costs.json name them by path; the new `tc`/`tt` blocks have no cost figure and fall back to the suite's figure over its blocks. README.md/CHANGELOG.md/PLUGIN-BUILD-GUIDE.md: prose lints in test__output_lints and test__deps green.",
+        "descriptive": "/audit:status now shows each task's wall-time window in a time column and a per-phase median and stage split, and --json carries the per-task summary and per-phase aggregate with their basis, while untimed plans render byte for byte as before."
       },
       "startedAt": "2026-11-18T03:03:59Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T03:31:04Z",
+      "verifiedBy": [
+        "tests/test_audit_status.py tc1-tc12: untimed plan's phase table equals the pre-feature golden and its JSON has no timing key; one timed task grows one `time` column, its cell is its window, others `-`; phase head carries median, each recorded kind and unattributed; Agent-route shape prints only writer; a record without completion reads `open`; --phase scopes the column; --gate output identical with and without timing; --json --section timing carries per-task and per-phase entries",
+        "tests/test__status_facts.py tt1-tt10: untimed task has no entry; per-task entry equals _task_timing.summarize; phase stage figures minus overrun plus unattributed equal the summed windows (both correction terms non-zero); median over windowed tasks; both routes' bases carried as given; recorded task without a window named under withoutWindow; aggregate states windowBasis and basis; untimed phase has no aggregate; rollup carries the block; untimed plan has no timing key"
+      ],
       "notes": [
         {
           "at": "2026-11-18T00:24:28Z",
@@ -439,7 +442,48 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T03:24:02Z.904cc5",
+            "kind": "wait",
+            "ms": 5000,
+            "startedAt": "2026-11-18T03:15:55Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T03:24:02Z.904cc5, ending at its startedAt",
+            "kind": "selection",
+            "ms": 24767,
+            "runId": "2026-11-18T03:24:02Z.904cc5",
+            "startedAt": "2026-11-18T03:16:00Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T03:24:02Z.904cc5",
+            "kind": "gate",
+            "ms": 456707,
+            "runId": "2026-11-18T03:24:02Z.904cc5",
+            "startedAt": "2026-11-18T03:16:25Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T03:31:00Z.c8f984, ending at its startedAt",
+            "kind": "selection",
+            "ms": 28445,
+            "runId": "2026-11-18T03:31:00Z.c8f984",
+            "startedAt": "2026-11-18T03:24:08Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T03:31:00Z.c8f984",
+            "kind": "gate",
+            "ms": 383003,
+            "runId": "2026-11-18T03:31:00Z.c8f984",
+            "startedAt": "2026-11-18T03:24:37Z"
+          },
+          {
+            "basis": "commit-task-work.py timed around by the drive, commit 8cbdafcefab2",
+            "kind": "commit",
+            "ms": 1493,
+            "startedAt": "2026-11-18T03:31:01Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T03:03:59Z"
       },
       "reviewPerTask": "signals",
@@ -447,7 +491,212 @@
         "runId": "2026-11-18T03:31:00Z.c8f984",
         "status": "passed",
         "at": "2026-11-18T03:31:00Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "8cbdafcefab2",
+        "at": "2026-11-18T03:31:04Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T03:15:37Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_audit_status.py tests/test__status_facts.py` in a throwaway tree at HEAD exited 1 with 8 of 423 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - tc3 (house FAIL), tc4 (house FAIL), tc5 (house FAIL), tc6 (house FAIL), tc8 (house FAIL), tc9 (house FAIL), tc10 (house FAIL), tc12 (house FAIL): SELFTEST FAILED: 415/423 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "P167.6-fge",
+      "title": "A session's recorded duration covers every stretch of the session, an oversized figure cannot crash the runner, and a repeated gate's selection time holds none of its duration",
+      "status": "in_progress",
+      "description": "Findings of the phase review, fixed before sign-off. (a) run-agent-session.py reads the time figures of the LAST result event alone. A headless session woken by a background task writes one init and one result per stretch, and duration_ms and num_turns are per stretch (tools/stream-cost.py states this and sums them; only the cost is a whole-session figure on the last result). So a ten-minute session whose last stretch took five seconds is recorded as five seconds, with nothing saying one stretch was read. Record the whole session: sum the per-stretch figures the way tools/stream-cost.py pairs init and result events, and when the stretches cannot be paired, leave the figure out and name it in timingAbsent with that reason. A shipped script cannot import a repository tool, so the pairing rule is written in the runner and both copies are pinned to one fixture stream by a case; say so in the docstring. (b) A JSON integer too large for a float makes the finiteness test raise, and nothing catches it: the runner dies after the session ran and was paid for, with no printed line and no record. Such a figure is not a usable number: record it as absent with the reason, and make the timing reading unable to take the runner down whatever the stream holds, with the failure named in timingAbsent rather than swallowed. (c) On a repeated gate run, durationMs is measured from the identity lookup and selectionMs from the earlier start of gathering, both to the same end, so the repeat's duration lies inside its selection and a reader adding the two counts it twice; the key's own comment says beside, never inside. Make the two disjoint on every path. (d) On a measured run the selection figure also holds the reading of the tree taken before the first step; say so where the key is defined instead of listing only the gathering, the lookup and the reach reading. (e) The start stamp is when the runner named the stream file, before it prepares and launches the session; the docstrings that call it the session's start say what it is. (f) The case that holds gate_mean_ms unchanged by the key cannot fail against the defect it is named for, and the case that only checks the key's spelling asserts nothing: replace each with a case that fails when selection time is folded into a step's duration, or remove it and say which case carries the claim. Dependants you answer for: the drive's read_sessions, session_note and session_stages, which read durationMs and startedAt from the record; the printed result line, unchanged; the ledger row's hash, taken after the key is set; tests/test_stream_cost.py if a shared fixture stream is added there. Acceptance: (1) a stream of two paired stretches records the sums of duration and turns; (2) stretches that cannot be paired leave the figures out with the reason; (3) an integer too large for a float is absent with the reason, and the runner prints its line and writes its record; (4) a repeated run's selectionMs plus durationMs equals the time from the start of gathering to the end, with no overlap; (5) every docstring this task touches states what the code does; (6) no case added or kept by this task passes with its feature removed.",
+      "files": [
+        "plugins/audit/scripts/governance/run-agent-session.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "tests/test_run_agent_session.py",
+        "tests/test_run_test_gate.py",
+        "tests/test__evidence_io.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_run_agent_session.py: a stream of two stretches records the sum of their durations and turns, a stream whose stretches cannot be paired names the figure as absent, and an integer too large for a float is recorded as absent with the runner still printing its line and writing its record",
+          "tests/test_run_test_gate.py: a repeated run's selectionMs and durationMs do not overlap"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_agent_session.py tests/test_run_test_gate.py tests/test__evidence_io.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 1,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": "2026-11-18T03:43:15Z",
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T03:43:11Z",
+          "text": "it quotes the Unreleased heading of CHANGELOG.md, and this task adds an entry under that heading and leaves the heading alone",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T03:43:11Z",
+          "text": "it quotes one refusal sentence of the gate runner, and this task changes how a repeated run's two time figures are measured and leaves that sentence alone",
+          "waives": "tools/check-example-ledgers.py"
+        }
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T03:43:15Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T04:17:18Z.dffc51",
+        "status": "passed",
+        "at": "2026-11-18T04:17:18Z"
+      }
+    },
+    {
+      "id": "P167.7-fge",
+      "title": "The phase's time line counts finished tasks only, a record that cannot be read is named instead of shown as unattributed time, and long windows print in hours",
+      "status": "pending",
+      "description": "Findings of the phase review, fixed before sign-off. (a) The phase's time line says it is taken over finished tasks, and takes every task that has a window. Cancelling a task stamps its completedAt, so a cancelled task that was once started enters the median, the totals and the count: a phase with one task done and one cancelled reads as two finished tasks, beside a progress bar that says one. Take the line over tasks whose status is done; name the tasks left out and why (cancelled, not finished, no window) in the JSON aggregate, and say cancelled tasks are left out where the line is documented. (b) summarize reads a stages value that is not a list as no stages, so the whole window is returned and printed as unattributed time with nothing named missing, against the module's own rule that an unreadable source is named. Name it under missing and give no attributed or unattributed figure; the same for a stage that fails stage_problems, which today is summed or skipped without a word. Status then prints the cell as not readable rather than as a measured window. (c) The documents say the gate reads none of the record. A malformed record is a validator finding, and invalid is a default gate condition, so it can turn the gate red. Say what is true: the gate reads no timing figure, only the validator's verdict on the record. (d) The time cell has a third value, no window, that no document lists and no case renders; neither does any case render the overrun clause. Document the value and what produces it (a record whose first start is absent, or a completion before the first start) and add a case for each. (e) A reopened task's window runs from its first start to its new completion, so the time it sat closed is unattributed and enters the median. That follows the rule that the first start never moves; state it where the window is documented, since the median is read as time worked. (f) The schema is looser than the Python check: runId may be empty, basis may be blank, ms may be 1.0, and the two stamps carry no pattern. Tighten the schema to what the Python check accepts, so a plan an external validator passes is one the plugin passes. (g) A window past an hour prints as a count of minutes (a day and a quarter reads 1840 m 00 s). Print hours, and days past a day, in the time column and the phase line only: the shared duration formatter keeps its output for every other caller, byte for byte. (h) Cases that cannot fail on their claim: the per-task entry compared with the same function's output, a basis accepted when merely non-empty, a byte-for-byte case that asserts only an absent key, a stage order checked by substring, and the demo's sum identity that holds by construction. Give each a value written in the case, or remove it and name the case that carries the claim. Dependants you answer for: a plan with no timing renders and serializes byte for byte as before in every view and mode (the golden case); the JSON timing key's shape, which gains keys and loses none; commands/status.md's size ceiling; the panel and the report, which call into _status_facts and must not change output; every committed example plan and rendered artifact; the drive, which builds stages through make_stage and must still pass the tightened schema. Acceptance: (1) a phase of one done and one cancelled timed task reports one finished task, with the cancelled one named as left out; (2) a non-list stages value and a failing stage are named under missing, and status prints no window figure for that task; (3) the corrected sentence about the gate is the only claim the documents make about it; (4) the no-window cell and the overrun clause each have a case that renders them; (5) the reopen rule is stated beside the window's definition; (6) every record the drive and the demo generator write validates under the tightened schema, and each of the four loosenesses is refused by it; (7) a window past an hour prints hours in the time column and nowhere else changes; (8) no case added or kept by this task passes with its feature removed.",
+      "files": [
+        "plugins/audit/scripts/manifest/_task_timing.py",
+        "plugins/audit/scripts/status/_status_facts.py",
+        "plugins/audit/scripts/status/audit-status.py",
+        "plugins/audit/schema/audit-plan.schema.json",
+        "plugins/audit/commands/status.md",
+        "tests/test__task_timing.py",
+        "tests/test__status_facts.py",
+        "tests/test_audit_status.py",
+        "tests/test_gen_demo_manifest.py",
+        "COMPATIBILITY.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__status_facts.py: a cancelled task that carries a record is left out of the phase's median, totals and finished count and named beside them; the per-task entry is compared with figures written in the case, not with a second call of the same function",
+          "tests/test__task_timing.py: a stages value that is not a list, and a stage that fails its own check, are named under missing and give no unattributed figure; a negative window is named",
+          "tests/test_audit_status.py: the time cell's no-window value and the overrun clause each render from a fixture, a window past an hour prints hours, and the stage order on the phase line is fixed"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test__status_facts.py tests/test__task_timing.py tests/test_audit_status.py tests/test_gen_demo_manifest.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T03:43:12Z",
+          "text": "it quotes the Unreleased heading of CHANGELOG.md, and this task adds an entry under that heading and leaves the heading alone",
+          "waives": "tools/release.py"
+        },
+        {
+          "at": "2026-11-18T03:43:12Z",
+          "text": "it quotes the red-first enum of the plan schema and the view flag's usage text of the status page, and this task tightens the timing stage's properties and adds sentences about the time column, leaving both quoted texts alone",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T03:43:12Z",
+          "text": "it quotes a config sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        },
+        {
+          "at": "2026-11-18T03:43:12Z",
+          "text": "it quotes the two-keys sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-18T03:43:12Z",
+          "text": "it quotes the validation-stays-additive sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-18T03:43:12Z",
+          "text": "it quotes a manifest sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "tests/test__manifest_phases.py"
+        }
+      ]
+    },
+    {
+      "id": "P167.8-fge",
+      "title": "The commit stage times the commit alone, a close that changes nothing keeps its stages, and a stage the drive could not read is said so",
+      "status": "pending",
+      "description": "Findings of the phase review, fixed before sign-off. (a) The commit stage is timed around everything the drive's commit step does. When the commit verb refuses a path the writer touched outside the task's files and the drive sets it aside, that step runs a red-first proof and a whole gate before the second commit, and that gate is also written as a gate stage of its own. So the gate's length is counted twice, the task's stages overrun its window, and a figure of half a minute or more is presented as a measured commit under a basis that says the commit verb was timed. Time the commit verb's own calls, sum them when there are two, and let the proof and the gate between them be the stages they already are. (b) The close the no-change answer makes passes no stages and never marks them carried, so on the route where every queued stage rides the close a task closed that way loses all of them, silently. Every close the drive makes carries the queue through one function. (c) A stage whose source cannot be read (the ledger or a row unreadable, a row with no start or length, an agent hand-out with no stamp) appends nothing, which is right, and says nothing, which is not: failures to write are already visible and failures to read are not. Add a line to what the step did, naming the stage and the reason, once per source. (d) The end of an agent's stage falls back to the returned file's modification time under a basis that says no journal row files that return. For an executor that is false when the row exists and could not be read; say which happened. For a reviewer the modification time is the only source, and it moves when the file is rewritten by a stash, a branch switch or a copy: say in the basis that it is a modification time and can move later, never earlier, rather than presenting it as the moment of filing. (e) Cases with no check: nothing asserts that the journal row of a note or a close carrying a stage names the timing change, so removing that change leaves every case green; the commit stage is asserted only to be zero or more, which is why (a) was invisible; a refused note keeping its stages for the close, and a close refused and retried appending each stage once, are stated in comments and held by no case. Add each. Dependants you answer for: the decision table and step texts in tests/test_drive_phase.py; the one-use launch marks and the state file's shape across resume and drop_state; the rule that timing never blocks a gate, a commit or a close; the count of commits and locked writes per task, unchanged; the stage shapes status and the summary read. Do not edit plugins/audit/reference/orchestrator.md. Acceptance: (1) on the set-aside path the commit stage equals the commit verb's own time within the case's clock, the second gate is one gate stage, and the summary shows no overrun; (2) a task closed by the no-change answer has its queued stages in the shard; (3) an unreadable ledger at read-back leaves no gate stage and one line naming it and the reason; (4) each fallback basis says what was read and why; (5) the journal row of a note and of a close that carried a stage names the change, and removing it turns a case red; (6) a refused note's stages reach the shard at the close, once; (7) no case added or kept by this task passes with its feature removed.",
+      "files": [
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tests/test_drive_phase.py",
+        "tests/test_audit_task.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CHANGELOG.md"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test_drive_phase.py: a commit refused once, with a path set aside and the gate run again, leaves a commit stage of the commit's own length and a gate stage for the second run, and the task's stages do not overrun its window; a task closed by the no-change answer carries its queued stages; an unreadable ledger leaves no gate stage and a line saying which stage was not recorded and why; a refused note keeps its stages for the close",
+          "tests/test_audit_task.py: the journal row of a note or a close that carried a stage names the timing change"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_audit_task.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T03:43:13Z",
+          "text": "it quotes the Unreleased heading of CHANGELOG.md, and this task adds an entry under that heading and leaves the heading alone",
+          "waives": "tools/release.py"
+        }
+      ]
     }
   ],
   "request": "Brzina razvoja postaje merena metrika uz Q1 i Q2: metrika vremena po tasku. Izmereno je oko 3.3x vremena obicne sesije, pisac oko 0.9x, a razlika su gate-ovi.",

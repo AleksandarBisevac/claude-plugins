@@ -4524,11 +4524,12 @@ def _selection_time_cases(check):
     doctor's budget and the usage comparisons all read `durationMs` as the
     steps alone, and a row written before the key existed carries none, which
     is a run whose selection was not measured rather than one that took no
-    time."""
-    key = getattr(M, "SELECTION_KEY", None)
+    time.
+
+    The key's spelling has no case of its own: sel3 writes `selectionMs` on a
+    result and reads it back off the row under that literal, so a writer that
+    spelled the key any other way is red there."""
     read = getattr(M, "selection_ms", None)
-    check("sel1 the key is named once, in the writer's module, and is "
-          "`selectionMs`: %r" % (key,), key == "selectionMs")
 
     # The two zero-like spellings a reader must keep apart: an absent key, and
     # a recorded zero. A reader using `row.get(key) or 0` passes the first half
@@ -4576,26 +4577,28 @@ def _selection_time_cases(check):
         check("sel4 ...and a value that is not a duration is not carried: %r"
               % (bad.get("selectionMs"),), "selectionMs" not in bad)
 
-        # gate_mean_ms over a mixed ledger answers what it answered over the
-        # same rows with the key stripped - and the selection figure is large
-        # here so that a mean which summed it in would move visibly.
-        def _mixed(with_key):
-            rows = []
-            for i, ms in enumerate((1000, 3000)):
-                row = {"status": "passed",
-                       "steps": [{"name": "unit", "durationMs": ms}]}
-                if with_key and i:
-                    row["selectionMs"] = 50000
-                rows.append(row)
-            return rows
-        with_key = _harness.attempt(
-            lambda: M.gate_mean_ms(_mixed(True), ["unit"]))
-        without = _harness.attempt(
-            lambda: M.gate_mean_ms(_mixed(False), ["unit"]))
-        check("sel5 gate_mean_ms over old and new rows gives the answer it gives "
-              "over the same rows without the key - (2000, 2): %r / %r"
-              % (with_key, without),
-              with_key == without == (True, (2000, 2)))
+        # ROWS AS THE WRITER BUILDS THEM, each from a result whose selection
+        # is far larger than its step, so a writer that folded the selection
+        # into a step's duration moves the steps' figures and the mean the
+        # foreground decision reads by tens of seconds.
+        written = []
+        for i, ms in enumerate((1000, 3000)):
+            res = dict(base, durationMs=ms, selectionMs=50000,
+                       steps=[dict(base["steps"][0], durationMs=ms)])
+            written.append(M.row_for(proj, res, "task",
+                                     {"taskId": "P1.1", "phaseId": "P1"},
+                                     dict(ident, runId="M%d" % i),
+                                     published=["pytest -q"]))
+        steps_ms = [[s.get("durationMs") for s in r.get("steps") or []]
+                    for r in written]
+        meaned = _harness.attempt(lambda: M.gate_mean_ms(written, ["unit"]))
+        check("sel5 rows written from results carrying a 50 s selection keep "
+              "each step's own duration, so gate_mean_ms over them is the steps' "
+              "mean - (2000, 2) - with the selection beside it on each row: "
+              "%r / %r / %r" % (steps_ms, meaned,
+                                [r.get("selectionMs") for r in written]),
+              steps_ms == [[1000], [3000]] and meaned == (True, (2000, 2))
+              and [r.get("selectionMs") for r in written] == [50000, 50000])
 
         # The chain: an old-shaped row, then a new one, in one file.
         old_path = M.append_row(proj, M.row_for(
