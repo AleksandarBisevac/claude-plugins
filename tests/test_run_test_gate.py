@@ -10279,6 +10279,35 @@ def _affected_cases(check):
           and any("exited 3" in ln and "phase gate" in ln
                   for ln in failed_lines))
 
+    # The selection is made slow on purpose - the related listing sleeps before
+    # it answers - so a selection figure starting at the first step reads near
+    # zero, and a durationMs that swallowed the selection reads past the sleep.
+    sleep_ms = 600
+    plan["meta"]["phaseGate"]["derived"]["listing"]["related"] = (
+        "sleep %s; printf '%%s\\n' tests/smoke_test.sh # {paths}"
+        % (sleep_ms / 1000.0,))
+    with open(mpath, "w") as fh:
+        json.dump(plan, fh)
+    M.main([mpath, "P1", "--task", "P1.2", "--project-dir", root, "--no-reuse",
+            "--record"], out=[].append)
+    rows = _recorded_rows(os.path.join(root, "docs", "audit", "evidence"))
+    timed = rows[-1] if rows else {}
+    steps = timed.get("steps") or []
+    step_sum = sum(s.get("durationMs") or 0 for s in steps)
+    took, chose = timed.get("durationMs"), timed.get("selectionMs")
+    check("ag6 a recorded task gate with a derived part carries selectionMs - "
+          "the time from the start of choosing what to run to the first step, "
+          "which here holds the listing's %d ms sleep - while durationMs is "
+          "still the steps alone, no part of that sleep: selectionMs=%r "
+          "durationMs=%r steps=%r"
+          % (sleep_ms, chose, took, [(s.get("name"), s.get("durationMs"))
+                                     for s in steps]),
+          [s.get("name") for s in steps]
+          == ["sh tests/i18n_test.sh", "affected/related: tests/smoke_test.sh"]
+          and isinstance(chose, int) and not isinstance(chose, bool)
+          and chose >= sleep_ms
+          and isinstance(took, int) and 0 <= took - step_sum < sleep_ms)
+
 
 def _affected_scope_cases(check):
     """The affected selection as a task's gate, end to end, over one tree.

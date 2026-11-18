@@ -391,6 +391,15 @@ RUNNER_WORDS = (RUNNER_GATE, RUNNER_OUTSIDE)
 # says so in its basis. A derivation presented as a record is how a cheap read
 # comes to be trusted like a measurement.
 STARTED_KEY = "startedAt"
+# HOW LONG CHOOSING WHAT TO RUN TOOK, beside `durationMs` and never inside it:
+# the gathering of a task's affected suites, the reuse lookup and the reach
+# reading all happen before the first step, on the same monotonic clock.
+# `durationMs` stays the steps alone because `gate_mean_ms`, the doctor's gate
+# budget and the usage comparisons all decide on it, and a figure that grew a
+# second meaning would move every one of their answers. ABSENT IS NOT ZERO: a
+# row written before the key existed measured no selection, and
+# `selection_ms` is the one reader that keeps those two apart.
+SELECTION_KEY = "selectionMs"
 # The identity that has to match for one run to stand in for another. It is
 # recorded on the row rather than re-derived, because it is a statement about the
 # tree AT THAT MOMENT and the moment is gone.
@@ -1231,6 +1240,13 @@ def row_for(project, result, scope, ids, identity, published=None):
         row[RUNNER_KEY] = str(identity[RUNNER_KEY])
     if identity.get(STARTED_KEY) is not None:
         row[STARTED_KEY] = str(identity[STARTED_KEY])
+    # WRITTEN ONLY WHEN THE RUN MEASURED ITS SELECTION, and only as a duration:
+    # a written zero for a run that never timed it would read as a selection
+    # that took no time. On the row before `append_row` hashes it, like every
+    # key above.
+    selection = selection_ms(result)
+    if selection is not None:
+        row[SELECTION_KEY] = selection
     # PRESENT ONLY WHEN SOMETHING WENT. A count that appears solely when non-zero
     # cannot be told from a count nobody computed, so its ABSENCE has to mean
     # "nothing was cut" and never "nobody looked".
@@ -2443,6 +2459,20 @@ def runner_of(row):
     if value is None:
         return RUNNER_GATE
     return str(value)
+
+
+def selection_ms(row):
+    """The milliseconds a run spent choosing what to run, or None when the row
+    did not record it - a row from before `SELECTION_KEY` existed, or a value
+    that is not a whole non-negative duration. None and never 0: a reader
+    summing or comparing selection times must see the rows that cannot answer,
+    not fold them in as instant selections."""
+    if not isinstance(row, dict):
+        return None
+    value = row.get(SELECTION_KEY)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
 
 
 def window_of(row):

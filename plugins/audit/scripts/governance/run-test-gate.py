@@ -4119,7 +4119,7 @@ def observed_step(name, command, code, text, facts, duration_ms):
 def run_gate(project, commands, runner=None, owns=None, timeout=None,
              recorded=None, task_scope=False, keep_text=False,
              derived_check=None, muted=None, today=None, preamble=None,
-             withheld=None, task=None, say=print):
+             withheld=None, task=None, say=print, selection_started=None):
     """Run each command bracketed by a working-tree snapshot; return the answer.
 
     A dict rather than an exit code, for `verify-invariants.py`'s reason: a
@@ -4167,6 +4167,9 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     whose gate it is grading, while the row keeps the declared command. A step
     that runs another copy of `audit-status.py` is run as declared and `say`
     gets one line, once per step, that the exemption was not applied.
+    `selection_started` is the caller's `time.monotonic()` reading from when it
+    began choosing what to run; `res["selectionMs"]` is the time from it to the
+    reading `durationMs` starts from, and None when no caller timed a selection.
     """
     runner = runner or _shell
     today = _vocab.mute_today() if today is None else today
@@ -4180,6 +4183,10 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
     # this is taken; `commit-task-work` grades the row with the same set.
     state = _tree_stamp.tested_state(project, owns, before, excluded=recorded)
     started = time.monotonic()
+    # One clock, read at the one origin both figures share: the selection ends
+    # exactly where `durationMs` begins, so neither holds any of the other.
+    selection = (None if selection_started is None
+                 else int((started - selection_started) * 1000))
     # THE WALL CLOCK BESIDE THE MONOTONIC ONE, and both are needed for different
     # questions. `started` measures how long this run took and is immune to a
     # clock that moves under it; `started_at` says WHEN it was happening, which
@@ -4407,6 +4414,8 @@ def run_gate(project, commands, runner=None, owns=None, timeout=None,
             "sharedCounts": shared,
             "durationMs": _elapsed_ms(started),
             "startedAt": started_at,
+            # None when no caller timed a selection, so the row omits it.
+            "selectionMs": selection,
             # THE PATHS AND THE SENTENCE TRAVEL TOGETHER OR NOT AT ALL. Both are
             # None on the ordinary run, which is this file's shape for a claim
             # nobody is making: a basis with no claim under it is noise, and a
@@ -5974,6 +5983,12 @@ def main(argv, out=print):
     if terr:
         out("[run-test-gate] %s" % terr)
         return E_ASK
+    # THE SELECTION'S CLOCK: from here to the first step - gathering the
+    # affected suites, the reuse lookup, the reach reading - is `selectionMs`
+    # (`_evidence_io.SELECTION_KEY`), read by `run_gate` where its own step
+    # clock starts, or here when a repeat runs no step. It is never added to
+    # `durationMs`, which stays the steps alone.
+    selection_started = time.monotonic()
     # THE TASK'S OWN GATE, AND WHAT ITS CHANGE CAN BREAK. The declared part is
     # what the gate digest binds a commit to, while the affected steps are
     # measured, never declared.
@@ -6084,6 +6099,9 @@ def main(argv, out=print):
             newer = _ev.newer_for_identity(ledger, identity["key"], prior)
     if prior is not None:
         res = reused_result(identity, prior, _elapsed_ms(started), newer=newer)
+        # A repeat chose too - it gathered, identified and looked up - and
+        # runs no step, so its selection ends here.
+        res[_ev.SELECTION_KEY] = _elapsed_ms(selection_started)
     else:
         # ARMED AROUND THE MEASUREMENT AND NOWHERE ELSE. This is the window a stop
         # signal actually lands in - a gate step is where the wall clock goes - and
@@ -6115,6 +6133,7 @@ def main(argv, out=print):
                            preamble=declared_preamble(manifest),
                            withheld=withheld_mutes(manifest, args.task),
                            task=args.task,
+                           selection_started=selection_started,
                            # `--json` keeps stdout parseable, so its note goes
                            # to stderr instead of being dropped.
                            say=(_say_on_stderr if args.as_json else out))

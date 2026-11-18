@@ -4518,10 +4518,125 @@ def _foreground_bound_cases(check):
           still == (True, (4500, 1)) and unmeasured == (True, None))
 
 
+def _selection_time_cases(check):
+    """(sel) the time a gate run spent choosing what to run is a key of its own
+    beside `durationMs`, never folded into it: the foreground decision, the
+    doctor's budget and the usage comparisons all read `durationMs` as the
+    steps alone, and a row written before the key existed carries none, which
+    is a run whose selection was not measured rather than one that took no
+    time."""
+    key = getattr(M, "SELECTION_KEY", None)
+    read = getattr(M, "selection_ms", None)
+    check("sel1 the key is named once, in the writer's module, and is "
+          "`selectionMs`: %r" % (key,), key == "selectionMs")
+
+    # The two zero-like spellings a reader must keep apart: an absent key, and
+    # a recorded zero. A reader using `row.get(key) or 0` passes the first half
+    # and fails the second; one using `row.get(key, 0)` fails the first.
+    readings = None
+    if read is not None:
+        readings = [_harness.attempt(lambda r=r: read(r))
+                    for r in ({}, {"selectionMs": 0}, {"selectionMs": 250},
+                              {"selectionMs": True}, {"selectionMs": -5},
+                              {"selectionMs": "250"}, None)]
+    check("sel2 a row without the key reads as NOT RECORDED (None), a recorded "
+          "zero stays zero, and a bool, a negative or a string is not a "
+          "duration: %r" % (readings,),
+          readings == [(True, None), (True, 0), (True, 250), (True, None),
+                       (True, None), (True, None), (True, None)])
+
+    tmp = _harness.fixture_root("audit-evidence-selection-")
+    try:
+        proj = _project(os.path.join(tmp, "p"), {})
+        base = {"status": "passed", "durationMs": 900, "failed": [],
+                "ranTotal": None, "coverageBasis": "c", "treeBasis": "t",
+                "treeMutated": [], "overlap": [],
+                "steps": [{"name": "unit", "command": "pytest -q", "exit": 0,
+                           "ran": None, "durationMs": 900}]}
+        ident = {"runId": "S1", "attempt": 1, "via": "orchestrator"}
+        timed = dict(base, selectionMs=420)
+        new_row = M.row_for(proj, timed, "task", {"taskId": "P1.1",
+                                                  "phaseId": "P1"}, ident,
+                            published=["pytest -q"])
+        old_row = M.row_for(proj, base, "task", {"taskId": "P1.1",
+                                                 "phaseId": "P1"},
+                            dict(ident, runId="S0"), published=["pytest -q"])
+        check("sel3 a result carrying selectionMs puts it on the row, and "
+              "durationMs is the steps' figure untouched; a result without it "
+              "gets NO key - absent, not a written zero: %r"
+              % ((new_row.get("selectionMs"), new_row.get("durationMs"),
+                  "selectionMs" in old_row),),
+              new_row.get("selectionMs") == 420
+              and new_row.get("durationMs") == 900
+              and "selectionMs" not in old_row
+              and read is not None and read(old_row) is None)
+        bad = M.row_for(proj, dict(base, selectionMs=True), "task",
+                        {"taskId": "P1.1", "phaseId": "P1"},
+                        dict(ident, runId="S2"), published=["pytest -q"])
+        check("sel4 ...and a value that is not a duration is not carried: %r"
+              % (bad.get("selectionMs"),), "selectionMs" not in bad)
+
+        # gate_mean_ms over a mixed ledger answers what it answered over the
+        # same rows with the key stripped - and the selection figure is large
+        # here so that a mean which summed it in would move visibly.
+        def _mixed(with_key):
+            rows = []
+            for i, ms in enumerate((1000, 3000)):
+                row = {"status": "passed",
+                       "steps": [{"name": "unit", "durationMs": ms}]}
+                if with_key and i:
+                    row["selectionMs"] = 50000
+                rows.append(row)
+            return rows
+        with_key = _harness.attempt(
+            lambda: M.gate_mean_ms(_mixed(True), ["unit"]))
+        without = _harness.attempt(
+            lambda: M.gate_mean_ms(_mixed(False), ["unit"]))
+        check("sel5 gate_mean_ms over old and new rows gives the answer it gives "
+              "over the same rows without the key - (2000, 2): %r / %r"
+              % (with_key, without),
+              with_key == without == (True, (2000, 2)))
+
+        # The chain: an old-shaped row, then a new one, in one file.
+        old_path = M.append_row(proj, M.row_for(
+            proj, base, "task", {"taskId": "P1.1", "phaseId": "P1"},
+            dict(ident, runId="C0"), published=["pytest -q"]))
+        M.append_row(proj, M.row_for(
+            proj, timed, "task", {"taskId": "P1.1", "phaseId": "P1"},
+            dict(ident, runId="C1"), published=["pytest -q"]))
+        with io.open(old_path, encoding="utf-8") as fh:
+            written = [json.loads(ln) for ln in fh.read().splitlines()]
+        verdict = M.verify(proj)
+        check("sel6 the verifier accepts a chain holding a row without the key "
+              "and a row with it, and the key was on the row BEFORE it was "
+              "hashed - the stored hash is the hash of the row as written: %r"
+              % ((verdict.get("ok"), verdict.get("rows"),
+                  verdict.get("findings"),
+                  [r.get("selectionMs") for r in written]),),
+              verdict.get("ok") is True and verdict.get("rows") == 2
+              and verdict.get("findings") == []
+              and [r.get("selectionMs") for r in written] == [None, 420]
+              and written[1]["hash"] == _journal_io.row_hash(written[1]))
+        # The pair for sel6: the key is INSIDE the hash, so rewriting it is a
+        # finding - a key carried beside the chain would verify either way.
+        with io.open(old_path, encoding="utf-8") as fh:
+            text = fh.read()
+        with io.open(old_path, "w", encoding="utf-8") as fh:
+            fh.write(text.replace('"selectionMs":420', '"selectionMs":1'))
+        forged = M.verify(proj)
+        check("sel7 ...and a rewritten selectionMs breaks the chain: %r"
+              % ((forged.get("ok"), len(forged.get("findings") or [])),),
+              text.count('"selectionMs":420') == 1
+              and forged.get("ok") is False and forged.get("findings"))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _foreground_bound_cases(check)
+        _selection_time_cases(check)
         _base_scope_cases(check)
         _claimed_followers_cases(check)
         _tree_key_cases(check)

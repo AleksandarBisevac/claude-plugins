@@ -304,6 +304,10 @@ current. Neither is legacy, and a mutating command does not nudge you off either
 - **The evidence row's `outcomeBasis` and `derivedGap` step keys are additive.** A row written
   before either existed carries neither key, which is the true reading for it, and a passed
   step's row is unchanged.
+- **The evidence row's `selectionMs` key is additive.** It is how long a recorded gate run
+  spent choosing what to run before its first step. A row written before it existed carries
+  none, which `_evidence_io.selection_ms` reads as not recorded, never as zero. `durationMs`
+  keeps its meaning, the steps alone, so every reader deciding on it answers as before.
 - **A task's `timing` key is additive.** A plan that never writes it validates and behaves
   exactly as before: the validator asks nothing of a task without it, and absent means
   "nothing measured", never zero. `/audit:task start` writes `timing.firstStartedAt` once

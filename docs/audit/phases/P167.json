@@ -94,7 +94,7 @@
     {
       "id": "P167.2",
       "title": "A task has one timing record in its shard: stages with a start, a length and the record each was read from, and a first start that survives a restart",
-      "status": "in_progress",
+      "status": "done",
       "description": "Add the optional task key timing: an object with firstStartedAt and stages, where a stage is kind, startedAt, ms, basis and optional round and runId. The kinds are a closed list: writer, gate, selection, base, reviewer, commit, wait. One new helper module, plugins/audit/scripts/manifest/_task_timing.py, holds the pure functions every writer and reader uses: build a stage, append it to a task, and summarize a task into per-kind totals, the whole window from firstStartedAt to completedAt, and the unattributed remainder, each with its basis and with an absent source named rather than read as zero. task.startedAt is re-stamped on every restart today, so the first start is lost; starting a task now sets timing.firstStartedAt once and never moves it. The key is additive: a plan that never writes it validates and behaves exactly as before, and COMPATIBILITY.md says so beside its other additive keys. A new module owes the five things CLAUDE.md lists for a file under scripts/ (suite, layer in tools/lints/_deps.py, tree line and section in PLUGIN-BUILD-GUIDE.md, the path preamble; it is a helper, so no entry guard). Dependants you answer for: the schema and the validator's vocabulary must agree (_manifest_vocab.py KNOWN_TASK and SCHEMA_ANCHORS, _help.schema_vocab_drift, the unknown-key warning in _manifest_phases.py); every committed example plan and rendered artifact must still validate and render byte for byte, since none carries the key; audit-task.py's start, reopen, move and cancel verbs copy or reset task fields and must carry timing the way they carry notes; the panel's writer rewrites tasks and must not drop a key it does not know. Acceptance: (1) a task carrying a well-formed timing validates with no warning, and a task without it validates exactly as today; (2) a stage with an unknown kind, a negative ms or no basis is a validator finding that names the task and the stage; (3) a restart keeps firstStartedAt while startedAt moves; (4) the summary of a task whose stages cover part of its window reports the remainder as unattributed, and the parts add up to the window; (5) the summary of a task with no completedAt, or no timing, says which is missing and gives no total; (6) move and reopen keep the record.",
       "files": [
         "plugins/audit/scripts/manifest/_task_timing.py",
@@ -134,14 +134,19 @@
       "dependsOn": [],
       "attempts": 2,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "481cc30a1798",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Retry 2 of P167.2. Attempt 1's work in the tree is kept unchanged (_task_timing.py, schema $defs timing/timingStage, KNOWN_TASK 'timing', _manifest_phases timing findings and key warnings, audit-task start writes timing.firstStartedAt via first_start, COMPATIBILITY/PLUGIN-BUILD-GUIDE/CHANGELOG, _deps LAYERS row; see attempt 1's outcome). The red gate was tests/test_gen_demo_manifest.py: the schema-coverage case listed task.timing, timing.* and timingStage.* as fields the demo fixture neither carries nor exempts. Fixed the preferred way per the task's newest note - the fixture now CARRIES the record: tools/demo/gen-demo-manifest.py imports _task_timing and gains _stamp_timing(manifest, rows), called last in generate() after _stamp_since (draws nothing from rng, no wall clock). Every done task gets timing = first_start({}, startedAt) plus a writer stage (round 1, startedAt, a third of the startedAt->completedAt window, basis 'the writer session's own result (duration_ms)') and, when the task has a recorded run (latest_by_subject over the same pointer rows), a gate stage whose ms is that row's durationMs, whose runId is that row's runId (= the task's testEvidence.runId), and which ends at the row's ts (start rounded up to whole seconds). Done tasks with no run (the pre-recording phase, the ungraded task) carry the writer stage alone; unfinished tasks carry none. No exemption was added. Byte check: python3 tools/check-rendered-artifacts.py --before-commit EXIT=0 'OK: 3 committed artifact(s) match a fresh render' (docs/demo-large.html included); verify.sh's ledger_compare re-done by hand (gen-demo-usage on examples/acme-store, cmp each committed .jsonl) LEDGER_DIFF_EXIT=0; gen-demo-manifest --phases 40 --tasks 5 then validate-manifest.py EXIT=0 '(40 phases, 200 tasks, 6 bugs)', 71 timed tasks, 66 with a gate stage, timing_problems empty for all. New suite cases tmd1-tmd3 in tests/test_gen_demo_manifest.py, mutation-proved in-process (no shared-tree write, by monkeypatching M._task_timing.make_stage / M._stamp_timing): gate ms+1 -> tmd2 red; writer ms = whole window -> tmd3 red; stamping in-progress tasks -> tmd1+tmd3 red; no stamping -> tmd1+tmd2 red; restored -> all green; tmd3 then tightened to refuse an empty set (it was vacuously true under no-stamp). Gate as the brief names it: python3 tools/sweep-selftests.py tests/test__task_timing.py tests/test__manifest_phases.py tests/test_audit_task.py tests/test__manifest_vocab.py tests/test__deps.py EXIT=0 '5/5 files ok, 1776 cases'. Not gates, run as dependant checks: sweep over test_gen_demo_manifest, test__output_lints, test_validate_manifest, test__json_schema EXIT=0 '4/4 files ok, 390 cases'; python3 tests/test_gen_demo_manifest.py --selftest 'ALL PASS: 137/137'; ruff EXIT=0 and vermin -t=3.8- EXIT=0 on both edited files. Dependants: gen-demo-manifest's readers (check-rendered-artifacts, verify.sh scale_demo_valid and the one-status plan step, gen-demo-usage) still correct - artifacts byte-identical, fixture validates; _task_timing gains one importer (gen-demo-manifest, under tools/demo, outside _deps.LAYERS like its other scripts/ imports); every other dependant answered in attempt 1's outcome is unchanged by this retry (no file of attempt 1 was edited). Not done: the drive's real writers of stages and the status surfaces (later P167 tasks); reference/execute-task.md still names only status/startedAt/attempts for a hand promotion (not in this task's files).",
+        "descriptive": "A task can carry a timing record (first start that survives restarts, stages with basis), validated and summarized, and the demo fixture now shows it on finished tasks without moving any committed artifact."
       },
       "startedAt": "2026-11-18T00:56:57Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T01:20:19Z",
+      "verifiedBy": [
+        "tests/test__task_timing.py tt1-tt13: summary totals plus unattributed remainder add up to the window; missing completedAt, timing or firstStartedAt named, no total; builder/grader/schema agreement",
+        "tests/test__manifest_phases.py tm1-tm4: well-formed timing validates with no warning, absent key asks nothing, bad stage kind/ms/basis and malformed timing are findings naming the task",
+        "tests/test_audit_task.py tmg1-tmg5: first start writes firstStartedAt, restart keeps it while startedAt moves, move/reopen/cancel keep the record",
+        "tests/test_gen_demo_manifest.py tmd1-tmd3: the demo's finished tasks carry a clean timing record whose gate stage is the length and id of the run its pointer names, with an unattributed remainder"
+      ],
       "notes": [
         {
           "at": "2026-11-18T00:23:44Z",
@@ -183,12 +188,24 @@
         "runId": "2026-11-18T01:20:15Z.32d1ce",
         "status": "passed",
         "at": "2026-11-18T01:20:15Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "481cc30a1798",
+        "at": "2026-11-18T01:20:19Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T01:06:07Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__task_timing.py tests/test__manifest_phases.py tests/test_audit_task.py tests/test__manifest_vocab.py tests/test__deps.py` in a throwaway tree at HEAD exited 1 with 4 of 1259 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code but for the sweep grading the empty file laid where the task adds tests/test__task_timing.py red for printing no contract: tests/test__task_timing.py did not exist at HEAD, which is red for every case it adds, its declared test files new at HEAD (tests/test__task_timing.py) laid over as empty files), each passing with the working tree's implementation - tm1 (house FAIL), tm3 (house FAIL), tm4 (house FAIL), tmg1 (house FAIL): SELFTEST FAILED: 1258/1259 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P167.3",
       "title": "A recorded gate run says how long choosing what to run took, beside how long the steps took",
-      "status": "pending",
+      "status": "in_progress",
       "description": "run-test-gate.py starts its clock at the first step, so the time it spends gathering the affected suites and reading the gate's reach is in no figure at all. The recorded row gains selectionMs: the time from the start of that work to the first step, measured on the same monotonic clock. durationMs keeps its meaning, the steps alone, because other code decides on it. A run that selected nothing (a reused verdict, a gate with no derived part) records selectionMs for the work it did do, and a row written before this change carries no such key, which reads as not recorded. Dependants you answer for: _evidence_io.gate_mean_ms decides whether a gate runs in the foreground from durationMs and must give the same answer on the same rows; the doctor grades meta.gateBudgetMs from durationMs; audit-usage compares narrowed and phase gates and reused and measured runs from durationMs; the report and the panel list a row's steps and its took figure and must render a row with the new key unchanged; the row's hash chain covers the row as written, so a new key must enter the row before it is hashed; COMPATIBILITY.md lists the evidence row's additive keys and gains this one. Acceptance: (1) a recorded task gate with a derived part carries selectionMs and its durationMs equals the sum the steps took, as before; (2) gate_mean_ms over a ledger holding old and new rows returns what it returned over the same rows without the key; (3) a row without selectionMs is read as not recorded by every reader, never as zero; (4) the ledger's verifier accepts a chain holding both kinds of row.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -216,14 +233,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T01:20:40Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -251,8 +268,23 @@
           "at": "2026-11-18T00:24:27Z",
           "text": "it quotes a manifest sentence of COMPATIBILITY.md, which this task does not edit",
           "waives": "tests/test__manifest_phases.py"
+        },
+        {
+          "at": "2026-11-18T01:20:34Z",
+          "text": "it quotes the Unreleased heading of CHANGELOG.md, and this task adds an entry under that heading and leaves the heading alone",
+          "waives": "tools/release.py"
         }
-      ]
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T01:20:40Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T01:49:40Z.9eb7f7",
+        "status": "passed",
+        "at": "2026-11-18T01:49:40Z"
+      }
     },
     {
       "id": "P167.4",
@@ -294,7 +326,14 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T01:20:35Z",
+          "text": "it quotes the Unreleased heading of CHANGELOG.md, and this task adds an entry under that heading and leaves the heading alone",
+          "waives": "tools/release.py"
+        }
+      ]
     },
     {
       "id": "P167.5",
@@ -345,6 +384,11 @@
           "at": "2026-11-18T00:24:28Z",
           "text": "it quotes the view flag's usage text of the status command page, and this task adds a sentence about the time column and leaves the usage text alone",
           "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T01:20:36Z",
+          "text": "it quotes the Unreleased heading of CHANGELOG.md, and this task adds an entry under that heading and leaves the heading alone",
+          "waives": "tools/release.py"
         }
       ]
     }
