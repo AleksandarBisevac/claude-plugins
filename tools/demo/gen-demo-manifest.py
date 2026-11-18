@@ -89,6 +89,7 @@ import _journal_io  # noqa: E402  (the canonical line spelling, and which month 
 import _manifest_io as _mio  # noqa: E402  (recorded_attempt: one reading of `attempts`, shared with the recorder)
 import _loader  # noqa: E402  (the one way scripts/ loads a sibling script as a library)
 import _demo_cast  # noqa: E402  (the demo's author identities, shared with gen-demo-usage)
+import _task_timing  # noqa: E402  (the one builder of a task's `timing` record and its stages)
 
 # --- demo vocab -----------------------------------------------------------------
 # No wall-clock anywhere: every timestamp is derived from this.
@@ -901,6 +902,11 @@ def generate(n_phases=50, n_tasks=20, seed=11, repo="demo", with_claim=False):
     # could have produced, and a boundary typed here would be a second answer to
     # what `meta.evidenceSince` is.
     _stamp_since(manifest, pointer_rows)
+    # ...and where each finished task's wall time went, off the same rows: a gate
+    # stage is the length of the run the task's pointer names, never a figure
+    # typed here. Last, for the same reason as the two above: nothing in it draws
+    # on `rng`, so no byte generated before it moves.
+    _stamp_timing(manifest, pointer_rows)
     return manifest
 
 
@@ -2295,6 +2301,56 @@ def _stamp_since(manifest, rows):
     if block is not None:
         manifest["meta"][_evidence_io.SINCE_KEY] = block
     return block
+
+
+def _stamp_timing(manifest, rows):
+    """Give every finished task its `timing` record; returns the ids stamped.
+
+    BUILT BY `_task_timing`, the module every writer of the record uses, so the
+    fixture cannot publish a stage shape the validator would grade differently.
+
+    THE GATE STAGE IS READ OFF THE TASK'S OWN NEWEST RUN: its length is that row's
+    `durationMs`, it ends at the row's `ts`, and it names the row's `runId` - so
+    the stage and the run its pointer names cannot disagree. A finished task with
+    no row (the phase before recording began, the one ungraded task) carries the
+    writer stage alone, which is the honest state for work no run measured, and
+    keeps both shapes on the page.
+
+    The writer stage opens the window and runs a fixed fraction of it, so every
+    record leaves part of `firstStartedAt -> completedAt` unattributed: a fixture
+    whose stages tiled the window exactly would never show the remainder
+    `summarize` exists to report. Only finished tasks carry it - a task still
+    running has no window to account for yet.
+    """
+    best = _evidence_io.latest_by_subject(rows)
+    stamped = []
+    for phase in (manifest.get("phases") or []):
+        for task in (phase.get("tasks") or []):
+            started, done = task.get("startedAt"), task.get("completedAt")
+            if task.get("status") != "done" or not started or not done:
+                continue
+            window_ms = int((_epoch(done) - _epoch(started)) * 1000)
+            stages = [_task_timing.make_stage(
+                "writer", started, window_ms // 3,
+                "the writer session's own result (duration_ms)", round=1)]
+            row = best.get(("task", str(task.get("id"))))
+            if row is not None and isinstance(row.get("durationMs"), int):
+                ms = row["durationMs"]
+                # Whole seconds before the run's stamp, rounded UP: a stamp
+                # carries no fraction, and rounding down would end the stage
+                # after the moment its own run was recorded.
+                stages.append(_task_timing.make_stage(
+                    "gate", _iso(datetime.datetime.strptime(
+                        row["ts"], "%Y-%m-%dT%H:%M:%SZ")
+                        - datetime.timedelta(seconds=(ms + 999) // 1000)),
+                    ms, "the recorded gate run's durationMs",
+                    run_id=row.get("runId")))
+            timing = _task_timing.first_start({}, started)
+            for stage in stages:
+                timing = _task_timing.append_stage({"timing": timing}, stage)
+            task["timing"] = timing
+            stamped.append(task.get("id"))
+    return stamped
 
 
 def write_evidence(manifest, out_dir):

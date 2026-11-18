@@ -1,0 +1,56 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__task_timing.py tests/test__manifest_phases.py tests/test_audit_task.py tests/test__manifest_vocab.py tests/test__deps.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T01:06:07Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__task_timing.py tests/test__manifest_phases.py tests/test_audit_task.py tests/test__manifest_vocab.py tests/test__deps.py` in a throwaway tree at HEAD exited 1 with 4 of 1259 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code but for the sweep grading the empty file laid where the task adds tests/test__task_timing.py red for printing no contract: tests/test__task_timing.py did not exist at HEAD, which is red for every case it adds, its declared test files new at HEAD (tests/test__task_timing.py) laid over as empty files), each passing with the working tree's implementation - tm1 (house FAIL), tm3 (house FAIL), tm4 (house FAIL), tmg1 (house FAIL): SELFTEST FAILED: 1258/1259 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "Retry 2 of P167.2. Attempt 1's work in the tree is kept unchanged (_task_timing.py, schema $defs timing/timingStage, KNOWN_TASK 'timing', _manifest_phases timing findings and key warnings, audit-task start writes timing.firstStartedAt via first_start, COMPATIBILITY/PLUGIN-BUILD-GUIDE/CHANGELOG, _deps LAYERS row; see attempt 1's outcome). The red gate was tests/test_gen_demo_manifest.py: the schema-coverage case listed task.timing, timing.* and timingStage.* as fields the demo fixture neither carries nor exempts. Fixed the preferred way per the task's newest note - the fixture now CARRIES the record: tools/demo/gen-demo-manifest.py imports _task_timing and gains _stamp_timing(manifest, rows), called last in generate() after _stamp_since (draws nothing from rng, no wall clock). Every done task gets timing = first_start({}, startedAt) plus a writer stage (round 1, startedAt, a third of the startedAt->completedAt window, basis 'the writer session's own result (duration_ms)') and, when the task has a recorded run (latest_by_subject over the same pointer rows), a gate stage whose ms is that row's durationMs, whose runId is that row's runId (= the task's testEvidence.runId), and which ends at the row's ts (start rounded up to whole seconds). Done tasks with no run (the pre-recording phase, the ungraded task) carry the writer stage alone; unfinished tasks carry none. No exemption was added. Byte check: python3 tools/check-rendered-artifacts.py --before-commit EXIT=0 'OK: 3 committed artifact(s) match a fresh render' (docs/demo-large.html included); verify.sh's ledger_compare re-done by hand (gen-demo-usage on examples/acme-store, cmp each committed .jsonl) LEDGER_DIFF_EXIT=0; gen-demo-manifest --phases 40 --tasks 5 then validate-manifest.py EXIT=0 '(40 phases, 200 tasks, 6 bugs)', 71 timed tasks, 66 with a gate stage, timing_problems empty for all. New suite cases tmd1-tmd3 in tests/test_gen_demo_manifest.py, mutation-proved in-process (no shared-tree write, by monkeypatching M._task_timing.make_stage / M._stamp_timing): gate ms+1 -> tmd2 red; writer ms = whole window -> tmd3 red; stamping in-progress tasks -> tmd1+tmd3 red; no stamping -> tmd1+tmd2 red; restored -> all green; tmd3 then tightened to refuse an empty set (it was vacuously true under no-stamp). Gate as the brief names it: python3 tools/sweep-selftests.py tests/test__task_timing.py tests/test__manifest_phases.py tests/test_audit_task.py tests/test__manifest_vocab.py tests/test__deps.py EXIT=0 '5/5 files ok, 1776 cases'. Not gates, run as dependant checks: sweep over test_gen_demo_manifest, test__output_lints, test_validate_manifest, test__json_schema EXIT=0 '4/4 files ok, 390 cases'; python3 tests/test_gen_demo_manifest.py --selftest 'ALL PASS: 137/137'; ruff EXIT=0 and vermin -t=3.8- EXIT=0 on both edited files. Dependants: gen-demo-manifest's readers (check-rendered-artifacts, verify.sh scale_demo_valid and the one-status plan step, gen-demo-usage) still correct - artifacts byte-identical, fixture validates; _task_timing gains one importer (gen-demo-manifest, under tools/demo, outside _deps.LAYERS like its other scripts/ imports); every other dependant answered in attempt 1's outcome is unchanged by this retry (no file of attempt 1 was edited). Not done: the drive's real writers of stages and the status surfaces (later P167 tasks); reference/execute-task.md still names only status/startedAt/attempts for a hand promotion (not in this task's files).",
+    "descriptive": "A task can carry a timing record (first start that survives restarts, stages with basis), validated and summarized, and the demo fixture now shows it on finished tasks without moving any committed artifact."
+  },
+  "testsAdded": [
+    "tests/test__task_timing.py tt1-tt13: summary totals plus unattributed remainder add up to the window; missing completedAt, timing or firstStartedAt named, no total; builder/grader/schema agreement",
+    "tests/test__manifest_phases.py tm1-tm4: well-formed timing validates with no warning, absent key asks nothing, bad stage kind/ms/basis and malformed timing are findings naming the task",
+    "tests/test_audit_task.py tmg1-tmg5: first start writes firstStartedAt, restart keeps it while startedAt moves, move/reopen/cancel keep the record",
+    "tests/test_gen_demo_manifest.py tmd1-tmd3: the demo's finished tasks carry a clean timing record whose gate stage is the length and id of the run its pointer names, with an unattributed remainder"
+  ],
+  "casesAdded": [
+    [
+      "tt1",
+      "tt2",
+      "tt3",
+      "tt4",
+      "tt5",
+      "tt6",
+      "tt7",
+      "tt8",
+      "tt9",
+      "tt10",
+      "tt10b",
+      "tt11",
+      "tt12",
+      "tt13"
+    ],
+    [
+      "tm1",
+      "tm2",
+      "tm3",
+      "tm4"
+    ],
+    [
+      "tmg1",
+      "tmg2",
+      "tmg3",
+      "tmg4",
+      "tmg5"
+    ]
+  ],
+  "claims": "claims:\n1 gen-demo-manifest.py _stamp_timing docstring: gate stage ms/runId/end read off latest_by_subject's row (the make_stage call with row['durationMs'], row.get('runId')); only status done with startedAt and completedAt is stamped (the continue guard); tmd1/tmd2 assert both\n2 in-process monkeypatch: gate ms+1 -> tmd2 False; writer=window -> tmd3 False; stamp in-progress -> tmd1,tmd3 False; no stamp -> tmd1,tmd2 False; restored -> all True; tmd3 hardened against the empty set it passed vacuously\n3 the class is 'schema field the fixture lacks'; schema_coverage() is the derived check over every field, and after the change it reports no gap and no stale exemption (test_gen_demo_manifest 137/137)\n4 n/a - no rule to an agent\n5 n/a - no property recorded; artifact equality is a byte comparison, not a timing\n6 n/a - no guard\n7 counts in the outcome carry the command that printed them; no number written into code or docs prose (the case labels compute theirs with %d)",
+  "stamp": "audit-stamp: {\"content\":\"sha256:eb5d2eb8f9554d9d5b2976af0c693868a1205585556cdfe6e92a6612d4c08e72\",\"dirtyDigest\":\"sha256:05ef43b812cd817e776f67ae49f7bdad3cb490ad3c3db8d14327d9f33e4d8744\",\"dirtyPaths\":{\"CHANGELOG.md\":\"453e950687169111\",\"COMPATIBILITY.md\":\"5dda9bb1d1955572\",\"PLUGIN-BUILD-GUIDE.md\":\"7a69669067730087\",\"plugins/audit/schema/audit-plan.schema.json\":\"54fc889d3db70ae7\",\"plugins/audit/scripts/manifest/_manifest_phases.py\":\"211584cdda77ca25\",\"plugins/audit/scripts/manifest/_manifest_vocab.py\":\"8e7ea65926be4ddb\",\"plugins/audit/scripts/manifest/_task_timing.py\":\"e20f0833f3c9cfdc\",\"plugins/audit/scripts/manifest/audit-task.py\":\"783ea7eb1a1ff7ab\",\"tests/test__manifest_phases.py\":\"985caa6a3619d6f6\",\"tests/test__task_timing.py\":\"4b89bec8f70fed45\",\"tests/test_audit_task.py\":\"da6d55040cb9f882\",\"tests/test_gen_demo_manifest.py\":\"50b8994942f9a2c9\",\"tools/demo/gen-demo-manifest.py\":\"4b493e9e02b8039c\",\"tools/lints/_deps.py\":\"f0e6bcc1afaef719\"},\"head\":\"50ae8981\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"COMPATIBILITY.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/schema/audit-plan.schema.json\",\"plugins/audit/scripts/manifest/_manifest_phases.py\",\"plugins/audit/scripts/manifest/_manifest_vocab.py\",\"plugins/audit/scripts/manifest/_task_timing.py\",\"plugins/audit/scripts/manifest/audit-task.py\",\"tests/test__deps.py\",\"tests/test__manifest_phases.py\",\"tests/test__manifest_vocab.py\",\"tests/test__task_timing.py\",\"tests/test_audit_task.py\",\"tests/test_gen_demo_manifest.py\",\"tools/demo/gen-demo-manifest.py\",\"tools/lints/_deps.py\"],\"scopeDigest\":\"sha256:9d00a2da5319f9ad3a4a1cfafb2753f53226285893991cc88cc0d55a1450c823\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

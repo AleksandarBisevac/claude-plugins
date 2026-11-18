@@ -1604,6 +1604,75 @@
         "adoParent": {
           "$ref": "#/$defs/adoParent",
           "description": "The existing work item THIS task hangs under when meta.ado.phaseWorkItems is false. INERT while phaseWorkItems is on (the task hangs under its phase's work item) — /audit:sync warns rather than ignoring it silently."
+        },
+        "timing": {
+          "$ref": "#/$defs/timing"
+        }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Where this task's wall time went. Optional and additive: a plan that never writes it validates and behaves exactly as before, and absent means 'nothing measured', never zero. `scripts/manifest/_task_timing.py` is the one builder and reader of it; its `summarize()` reports per-kind totals, the window from `firstStartedAt` to the task's `completedAt`, and the remainder no stage accounts for - and names the source it lacked instead of giving a total when any of those is missing. `/audit:task move`, `reopen` and `cancel` carry it unchanged.",
+      "properties": {
+        "firstStartedAt": {
+          "type": "string",
+          "description": "ISO timestamp of the FIRST start of this task, set once by `/audit:task start` and never moved. `startedAt` beside it is re-stamped by every restart, so it cannot open the task's window; this does."
+        },
+        "stages": {
+          "type": "array",
+          "description": "One entry per measured stretch of the task's work, appended in the order they were recorded.",
+          "items": {
+            "$ref": "#/$defs/timingStage"
+          }
+        }
+      }
+    },
+    "timingStage": {
+      "type": "object",
+      "required": [
+        "kind",
+        "startedAt",
+        "ms",
+        "basis"
+      ],
+      "additionalProperties": true,
+      "description": "One measured stretch of a task's work: what it was, when it began, how long it took, and the record the length was read from.",
+      "properties": {
+        "kind": {
+          "description": "A closed list, the same one `_task_timing.KINDS` holds: writer (a writer round), gate (a recorded gate run), selection (choosing what a gate runs), base (a base measurement), reviewer (the review), commit (the record commit), wait (the time a handed-out step waited before it started).",
+          "enum": [
+            "writer",
+            "gate",
+            "selection",
+            "base",
+            "reviewer",
+            "commit",
+            "wait"
+          ]
+        },
+        "startedAt": {
+          "type": "string",
+          "description": "ISO timestamp the stage began."
+        },
+        "ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The stage's length in milliseconds."
+        },
+        "basis": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The record the length was read from - a session's own result, a journal row, a ledger run - so the figure can be checked against its source."
+        },
+        "round": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Which writer or review round this stage belongs to, when the task ran more than one."
+        },
+        "runId": {
+          "type": "string",
+          "description": "The recorded run this stage measured, when it measured one (a gate run's ledger id)."
         }
       }
     },

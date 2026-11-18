@@ -304,6 +304,12 @@ current. Neither is legacy, and a mutating command does not nudge you off either
 - **The evidence row's `outcomeBasis` and `derivedGap` step keys are additive.** A row written
   before either existed carries neither key, which is the true reading for it, and a passed
   step's row is unchanged.
+- **A task's `timing` key is additive.** A plan that never writes it validates and behaves
+  exactly as before: the validator asks nothing of a task without it, and absent means
+  "nothing measured", never zero. `/audit:task start` writes `timing.firstStartedAt` once
+  and no later start moves it; `move`, `reopen` and `cancel` carry the record unchanged. A
+  stage's `kind` **may gain members** under the standing enum exclusion below, so a reader
+  switching on it needs a default arm.
 - **A ledger written before the evidence rows were hash-chained keeps verifying.**
   Rows now carry `prev` and `hash`; rows written by an earlier release carry neither,
   and `audit-journal.py verify` reports those as a **counted warning naming what is

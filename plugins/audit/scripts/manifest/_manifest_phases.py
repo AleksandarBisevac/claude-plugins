@@ -76,6 +76,7 @@ import _task_outputs as _touts  # noqa: E402  (what an `outputs` pattern may be 
 #                                              all read)
 import _ado_parent as _parent  # noqa: E402  (what an `adoParent` declaration may say)
 import _ado_tracked as _tracked  # noqa: E402  (and what an `adoTracked` one may say)
+import _task_timing as _timing  # noqa: E402  (what a task's `timing` record may hold)
 
 # Thin module-level aliases, not copies: the bodies below were moved out of
 # `_manifest_rules.py` unchanged, and an alias keeps them reading the same names
@@ -91,6 +92,20 @@ _check_ado = _vocab._check_ado
 _require_fields = _vocab._require_fields
 _safe_list = _vocab._safe_list
 _unknown_keys = _vocab._unknown_keys
+
+
+def _check_timing_keys(timing, twhere, warnings):
+    """The unknown-key warning at the two levels inside a task's `timing`,
+    against `_task_timing`'s tables - the same warning every other level
+    gets, so a misspelled `firstStartedAt` is named rather than read as a
+    record with no first start."""
+    if not isinstance(timing, dict):
+        return
+    _unknown_keys(timing, _timing.TIMING_KEYS, "%s timing" % (twhere,), warnings)
+    stages = timing.get("stages")
+    for i, stage in enumerate(stages if isinstance(stages, list) else []):
+        _unknown_keys(stage, _timing.STAGE_KEYS,
+                      "%s timing.stages[%d]" % (twhere, i), warnings)
 
 
 # --- what a phase carries --------------------------------------------------------
@@ -1926,6 +1941,14 @@ def _walk_phases(phases, build_keys=()):
                          % (twhere, type(outputs).__name__)))
             for _entry, why in _touts.output_problems(outputs):
                 f.append(_output.finding("phases.walk_phases.outputs", "%s: outputs %s" % (twhere, why)))
+            # `timing` is additive: a task without it is asked nothing. A
+            # malformed record is a FINDING, because a stage with no basis or a
+            # kind outside the closed list is a figure nobody can check, and
+            # every summary of it would be read as measured.
+            if "timing" in task:
+                for why in _timing.timing_problems(task["timing"]):
+                    f.append(_output.finding("phases.walk_phases.timing", "%s: timing: %s" % (twhere, why)))
+                _check_timing_keys(task["timing"], twhere, w)
             if task.get("status") not in STATUS:
                 f.append(_output.finding("phases.walk_phases.task-status", "%s: status %r not in %s" % (twhere, task.get("status"), list(STATUS))))
             if (phase.get("status") == "pending"

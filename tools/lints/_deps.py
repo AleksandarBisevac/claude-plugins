@@ -275,6 +275,12 @@ LAYERS = (
      # nothing on the hook path reaches it, and a path rule is not vocabulary.
      # It reaches nothing but `_output` and `fnmatch`.
      "_task_outputs",
+     # `_task_timing` builds, grades and sums a task's `timing` record. The
+     # validator one layer up grades every record through it, and the verbs
+     # and status surfaces above that write and print one, so a stage is
+     # checked and summed one way. It reaches `_output` and `_usage_core`'s
+     # timestamp reading below it, nothing else.
+     "_task_timing",
      # `_filed_returns` is where an agent's filed return lives, the shape each
      # role owes and the write-once create. Its three readers - `audit-task`,
      # `audit-lookup` and `commit-task-work` - are entry points that may

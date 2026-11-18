@@ -1508,7 +1508,52 @@ def _full_row_cases(check):
           and [s["command"] for s in with_steps[0]] == plain)
 
 
+def _timing_cases(check):
+    """A finished task's timing record agrees with the run its pointer names."""
+    m = M.generate(n_phases=12, n_tasks=6, seed=11)
+    tt = M._task_timing
+    rows = M._evidence_io.latest_by_subject(
+        M.evidence_rows(m, M.EVIDENCE_POINTER_ROOT))
+    tasks = [t for p in m["phases"] for t in p["tasks"]]
+    done = [t for t in tasks if t["status"] == "done"]
+    timed = [t for t in tasks if "timing" in t]
+    check("tmd1 every finished task, and only a finished one, carries a timing "
+          "record that grades clean and opens at the task's start "
+          "(%d finished, %d timed)" % (len(done), len(timed)),
+          bool(done) and [t["id"] for t in timed] == [t["id"] for t in done]
+          and all(not tt.timing_problems(t["timing"])
+                  and t["timing"]["firstStartedAt"] == t["startedAt"]
+                  for t in timed))
+    gated, bad = [], []
+    for t in timed:
+        gates = [s for s in t["timing"]["stages"] if s["kind"] == "gate"]
+        row = rows.get(("task", t["id"]))
+        if row is None:
+            if gates:
+                bad.append((t["id"], "gate stage with no run"))
+            continue
+        gated.append(t["id"])
+        if not (len(gates) == 1 and gates[0]["ms"] == row["durationMs"]
+                and gates[0]["runId"] == row["runId"]
+                == t["testEvidence"]["runId"]):
+            bad.append((t["id"], gates, row["durationMs"], row["runId"]))
+    # Both shapes, counted: a fixture where every finished task had a run, or
+    # none did, would show only one of the two states a reader meets.
+    check("tmd2 a gate stage is the length and id of the run the task's "
+          "pointer names, and a task no run measured carries none "
+          "(%d gated of %d timed): %r" % (len(gated), len(timed), bad[:2]),
+          not bad and 0 < len(gated) < len(timed))
+    sums = [tt.summarize(t) for t in timed]
+    check("tmd3 every record leaves part of its window unattributed, and the "
+          "parts add up to the window",
+          bool(sums) and all(not s["missing"] and s["unattributedMs"] > 0
+              and s["attributedMs"] + s["unattributedMs"] == s["windowMs"]
+              for s in sums),
+          repr(sums[:1]))
+
+
 def _all_cases(check):
+    _timing_cases(check)
     _full_row_cases(check)
     _newline_cases(check)
     _cases(check)

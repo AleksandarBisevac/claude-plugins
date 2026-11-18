@@ -153,6 +153,7 @@ claude-plugins/                           # this repo (personal, public)
           _manifest_vocab.py              # the manifest's words + the shape checks every level shares
           _json_schema.py                 # the published JSON Schema, read as ajv reads it, with the stdlib alone
           _task_outputs.py                # what a task's `outputs` pattern may be, and what an honoured one reaches
+          _task_timing.py                 # a task's `timing` record: build a stage, grade it, sum the window
           _filed_returns.py               # an agent's filed return: its derived path, the shape its role owes, the write-once create
           _manifest_phases.py             # the one walk over phases/tasks, and what a phase carries
           _manifest_ado.py                # meta.ado: the connector config, one front door with the panel
@@ -352,6 +353,7 @@ L3:
   _runner_output -> _output
   _skill_places -> _output
   _task_outputs -> _output
+  _task_timing -> _output, _usage_core
   _ui_theme -> _output
   _worktrees -> _loader, _output
 
@@ -365,7 +367,7 @@ L4:
   _id_shape -> _branch, _loader, _manifest_io, _manifest_vocab, _output
   _manifest_ado -> _ado_conventions, _ado_fields, _manifest_vocab, _output
   _manifest_crossrefs -> _ado_parent, _id_refs, _json_schema, _manifest_io, _manifest_vocab, _output, _priority
-  _manifest_phases -> _ado_parent, _ado_tracked, _areas, _manifest_io, _manifest_vocab, _output, _task_outputs
+  _manifest_phases -> _ado_parent, _ado_tracked, _areas, _manifest_io, _manifest_vocab, _output, _task_outputs, _task_timing
   _manifest_typos -> _areas, _manifest_vocab, _output
   _panel_ui -> _output, _ui_theme
   _proc_group -> _locks, _output
@@ -434,7 +436,7 @@ L9:
   audit-logs -> _claude_home, _gate_feed, _output
   audit-lookup -> _areas, _claude_home, _clause_coverage, _config_rules, _evidence_io, _excerpt, _filed_returns, _gate_feed, _impact, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _scoped_commit
   audit-status -> _areas, _claude_home, _cli_fmt, _evidence_io, _filed_returns, _fmt, _invariants, _live_copy, _loader, _manifest_io, _manifest_rules, _manifest_vocab, _output, _panel_discovery, _proposals, _status_facts, _ui_theme, _worktrees
-  audit-task -> _affected_tests, _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _impact, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _tree_stamp, _utc_stamp, _verdict_binding, _warning_groups, _worktrees
+  audit-task -> _affected_tests, _areas, _branch, _claude_home, _commit_trail, _config_rules, _evidence_io, _filed_returns, _gate_derive, _id_refs, _id_shape, _impact, _invariants, _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _proposals, _scope_companions, _scoped_commit, _status_facts, _task_outputs, _task_timing, _tree_stamp, _utc_stamp, _verdict_binding, _warning_groups, _worktrees
   audit-usage -> _areas, _claude_home, _cli_fmt, _evidence_io, _fmt, _loader, _locks, _output, _ui_theme, _usage_economics
   audit-version -> _claude_home, _output
   check-ado-item -> _ado_conventions, _ado_fields, _ado_parent, _output
@@ -2460,6 +2462,25 @@ nothing on the per-tool-call hook path loads it — a premise `mv37` walks the r
 to hold — and a rule the plan gate must ask spent that premise for an unrelated reason. It
 sits beside `_locks` for `_locks`' argument word for word: the smaller the module a hook resolves
 by path on every tool call, the better.
+
+### `plugins/audit/scripts/manifest/_task_timing.py`
+A task's **`timing`** record: `firstStartedAt`, which `/audit:task start` sets once and no
+restart moves — `startedAt` is re-stamped on every restart, so it cannot open the task's
+window — and `stages`, one entry per measured stretch (`kind`, `startedAt`, `ms`, `basis`, and
+`round`/`runId` when they apply). The kinds are a closed list, `KINDS`; the schema's
+`$defs/timingStage` enum states the same list, and `tests/test__task_timing.py` holds the two,
+and both key sets, to agreeing.
+
+**One module, every writer and every reader.** `make_stage` and `append_stage` build a stage
+and the record it joins, returning new values rather than editing the task; `first_start` is
+the stamp the start verb writes; `timing_problems` is what `_manifest_phases._walk_phases`
+reports as a finding naming the task and the stage; `summarize` gives the per-kind totals,
+the window from `firstStartedAt` to `completedAt`, and the remainder no stage accounts for.
+
+**A missing source is named, never read as zero.** With no record, no first start, a stage it
+cannot read or no `completedAt`, `summarize` lists what it lacked under `missing` and gives no
+window and no total; a kind no stage recorded is absent from the totals rather than present
+at zero.
 
 ### `plugins/audit/scripts/manifest/_manifest_phases.py`
 The **one walk** over every phase and every task, and the three checks it makes on

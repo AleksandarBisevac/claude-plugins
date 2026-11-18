@@ -23451,6 +23451,94 @@ def _gate_reach_cases(check):
         _harness.remove_tree(tmp)
 
 
+# --- a task's timing record across the verbs that copy or reset a task ----------
+def _timing_cases(check):
+    """`start` sets timing.firstStartedAt once; `move`, `reopen` and `cancel`
+    carry the record the way they carry notes.
+
+    THE FIXTURE'S FIRST START IS DAYS BEFORE ITS startedAt, so a verb that
+    re-derived the first start from `startedAt` (or from the clock) writes a
+    value the case can tell apart from the one it was handed."""
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, run_on_stdin, base_manifest, mk, mk_empty, task_in, _pin, _unpin,
+     _PD_SHA, pd_fixture, pd_repo, git) = _at_kit(tmp)
+    first = "2025-12-01T00:00:00Z"
+    record = {"firstStartedAt": first, "stages": [
+        {"kind": "writer", "startedAt": first, "ms": 90000,
+         "basis": "result:writer", "round": 1},
+        {"kind": "gate", "startedAt": "2025-12-01T00:01:30Z", "ms": 4000,
+         "basis": "journal:gate.run", "runId": "r1"}]}
+    try:
+        fx = base_manifest()
+        fx["phases"][1]["tasks"].append(
+            {"id": "P2.4", "title": "fresh", "status": "pending",
+             "attempts": 0, "maxAttempts": 3, "startedAt": None,
+             "completedAt": None})
+        proj, mp = mk("tmg-start", fx)
+        code1, txt1 = run(["start", "P2.4", "--project-dir", proj])
+        t1 = task_in(mp, "P2.4") or {}
+        check("tmg1 a first start writes timing.firstStartedAt equal to the "
+              "startedAt it stamps, with no stages invented: %r"
+              % ((code1, t1.get("startedAt"), t1.get("timing")),),
+              code1 == 0 and isinstance(t1.get("startedAt"), str)
+              and t1.get("timing") == {"firstStartedAt": t1.get("startedAt"),
+                                       "stages": []})
+
+        fx2 = base_manifest()
+        fx2["phases"][1]["tasks"].append(
+            {"id": "P2.4", "title": "running", "status": "in_progress",
+             "attempts": 1, "maxAttempts": 3,
+             "startedAt": "2025-12-03T00:00:00Z", "completedAt": None,
+             "timing": json.loads(json.dumps(record))})
+        proj2, mp2 = mk("tmg-restart", fx2)
+        code2, txt2 = run(["start", "P2.4", "--project-dir", proj2])
+        t2 = task_in(mp2, "P2.4") or {}
+        check("tmg2 a RESTART moves startedAt and keeps timing.firstStartedAt "
+              "- and the stages already recorded - as they were: %r"
+              % ((code2, t2.get("startedAt"), t2.get("timing")),),
+              code2 == 0 and t2.get("attempts") == 2
+              and t2.get("startedAt") not in (None, "2025-12-03T00:00:00Z")
+              and t2.get("timing") == record)
+
+        fx3 = base_manifest()
+        fx3["phases"][1]["tasks"][1]["timing"] = json.loads(json.dumps(record))
+        proj3, mp3 = mk("tmg-move", fx3)
+        code3, txt3 = run(["move", "P2.3", "--to", "P3", "--project-dir", proj3])
+        moved = [t for t in _mio.tasks_by_id(_mio.load_manifest(mp3)).values()
+                 if (t.get("movedFrom") or {}).get("id") == "P2.3"]
+        check("tmg3 `move` carries the timing record to the renumbered task "
+              "unchanged: %r" % ((code3, [m.get("timing") for m in moved]),),
+              code3 == 0 and len(moved) == 1 and moved[0].get("timing") == record)
+
+        fx4 = base_manifest()
+        fx4["phases"][1]["tasks"][0].update(
+            commit=_PD_SHA, completedAt="2025-12-02T00:00:00Z", attempts=1,
+            timing=json.loads(json.dumps(record)))
+        proj4, mp4 = mk("tmg-reopen", fx4)
+        code4, txt4 = run(["reopen", "P2.1", "--reason", "regressed",
+                           "--project-dir", proj4])
+        t4 = task_in(mp4, "P2.1") or {}
+        check("tmg4 `reopen` clears the close and keeps the timing record - the "
+              "time already spent stays on the task, and the next start keeps "
+              "its first start: %r" % ((code4, t4.get("status"),
+                                         t4.get("timing")),),
+              code4 == 0 and t4.get("status") == "pending"
+              and t4.get("completedAt") is None and t4.get("timing") == record)
+
+        fx5 = base_manifest()
+        fx5["phases"][1]["tasks"][1]["timing"] = json.loads(json.dumps(record))
+        proj5, mp5 = mk("tmg-cancel", fx5)
+        code5, txt5 = run(["cancel", "P2.3", "--reason", "not needed",
+                           "--project-dir", proj5])
+        t5 = task_in(mp5, "P2.3") or {}
+        check("tmg5 `cancel` keeps the timing record on the cancelled task: %r"
+              % ((code5, t5.get("status"), t5.get("timing")),),
+              code5 == 0 and t5.get("status") == "cancelled"
+              and t5.get("timing") == record)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("at3-block", "_flag_cases"), ("at4-block", "_start_cases"),
           ("at5-block", "_close_cases"), ("at6-block", "_group_cases"),
@@ -23484,7 +23572,8 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("dd-block", "_dependant_dispatch_cases"),
           ("gk-block", "_gate_keep_cases"),
           ("lr-block", "_list_flag_cases"),
-          ("grt-block", "_gate_reach_cases"))
+          ("grt-block", "_gate_reach_cases"),
+          ("tmg-block", "_timing_cases"))
 
 
 if __name__ == "__main__":

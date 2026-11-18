@@ -740,6 +740,13 @@ KNOWN_TASK = {"id", "title", "status", "model", "skills", "blockedBy",
               # `phase` close `not-asked`. The words of the first are the
               # schema enum's, for `redFirst`'s reason above.
               "reviewPerTask", "fixes",
+              # Where the task's wall time went: the first start, which a
+              # restart's `startedAt` cannot keep, and one entry per measured
+              # stage. Its kinds and keys are `_task_timing`'s tables, not a
+              # set here - one module builds, grades and sums the record, and
+              # its suite holds those tables to the schema's `timing` and
+              # `timingStage` definitions.
+              "timing",
               # not in the schema; reason in `OFF_SCHEMA` below:
               "details"}
 KNOWN_BUG = {"id", "title", "status", "severity", "reportedAt", "reportedBy",

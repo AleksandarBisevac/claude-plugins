@@ -30,7 +30,7 @@
     {
       "id": "P167.1",
       "title": "A writer or reviewer session's record carries how long the session took, read from the session's own result",
-      "status": "in_progress",
+      "status": "done",
       "description": "The session runner (run-agent-session.py) reads the last result event of the session's stream for the cost and drops what the same event says about time. Its record gains the result's duration_ms, duration_api_ms and num_turns, and the session's start time (the stamp the stream file's name already carries), under the names durationMs, durationApiMs, numTurns and startedAt. A figure the result does not carry, or carries as something that is not a number, is left out and the record's line names the absence; it is never written as zero. Dependants you answer for: drive-phase.py reads this record for the session's cost and exit (note_sessions, session_note, the dispatch read-back) and must keep parsing it unchanged; the line run-agent-session.py prints is parsed by the drive and by the measurement harness outside this repository, so its existing fields keep their order and spelling and new ones are appended; every fixture in tests/test_drive_phase.py that writes a session record by hand must still load. Acceptance: (1) a record written from a stream whose result carries duration_ms, duration_api_ms and num_turns holds the three figures and the start time; (2) a stream with no result event writes a record with none of the three and a line that says no result was read; (3) a result whose duration_ms is a string or a negative number is recorded as absent, with the reason, and not as zero; (4) a record written before this change, with none of the new keys, is read by the drive exactly as before.",
       "files": [
         "plugins/audit/scripts/governance/run-agent-session.py",
@@ -56,25 +56,45 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "50ae8981dc9c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "plugins/audit/scripts/governance/run-agent-session.py: read_stream now also returns `last` (the last result event whatever it holds, additive key); new TIMING_FIELDS, _figure_problem, started_at, session_timing (pure: figures + absent-with-reason); _in_session reads the stream before the interrupted check and sets ran['timing'] only once claude ran; write_record(..., timing=None) appends durationMs, durationApiMs, numTurns, startedAt after line/exit/skills/skillsInvoked, and timingAbsent {key: reason} when any figure is missing. A figure absent, a string, a boolean, null/other, non-finite or negative is left out and named, never written as zero; no result event names every figure 'no result event was read: <problem>'. startedAt is the stream name's %Y%m%dT%H%M%SZ stamp as YYYY-MM-DDTHH:MM:SSZ. The PRINTED LINE IS UNCHANGED: the drive's _SESSION_LINE (drive-phase.py:432) ends `stream=(.*)$`, so a field appended after stream= would be read as part of the stream path; 'new ones are appended' is honoured in the record, whose new keys follow the existing ones in order (ras69b pins both). Module docstring and PLUGIN-BUILD-GUIDE.md's run-agent-session section say so. tests/test_run_agent_session.py: the stub's last result carries TIMING (STUB_TIMING env, overridable), the first of two results carries decoys; ras27/ras44 updated to the new record shape; new ras69, ras69b, ras70, ras71 (x3 fixtures), ras71b, ras72, ras73. Suite 89/89; gate `python3 tools/sweep-selftests.py tests/test_run_agent_session.py` exit 0, '1/1 files ok, 89 cases'. Mutations in a git-archive HEAD export with my two files overlaid (never the shared tree), __pycache__ purged per cycle: absent-as-zero -> ras70, ras71, ras71b red; no string check -> ras71 red; no negative check -> ras71 red; no bool check -> ras71 red; timing set before the session starts -> first SURVIVED (ras72 only drove a usage refusal, which fires before the skills load), ras72 widened with an io-error run -> red; startedAt dropped -> ras27, ras44, ras69, ras70, ras71, ras71b red; a figure appended to the printed line -> ras8, ras69b red. CHANGELOG.md not touched: no Unreleased section exists and P167.5 declares it for the phase's entry. Dependants: drive-phase.py read_sessions/session_note/note_sessions read only line, exit, skills, skillsInvoked (drive-phase.py:2259-2271) - still correct, unchanged, and ras73 loads the drive and shows an old-shape record and the same record with the new keys give identical read_sessions and session_note; tests/test_drive_phase.py:18463 calls RAS.write_record(path, line, code, skills=, invoked=) - still correct, timing is a new trailing keyword defaulting to None, so its records keep their old shape; tests/test__config_rules.py:431 uses is_full_model_id and tests/test__doctor_policy.py:466 the skill resolution - untouched; tools/affected.py and .github/sweep-costs.json name the file paths only - unchanged paths; _config_rules.py:96 names the script in prose - still correct; PLUGIN-BUILD-GUIDE.md section updated (in my files); CHANGELOG.md left to P167.5; the measurement harness outside this repo parses the printed line, which is byte-identical in shape. test_drive_phase.py itself was not run (own-tests reading).",
+        "descriptive": "A writer or reviewer session's --record line now carries durationMs, durationApiMs, numTurns and startedAt from its own last result, naming any figure it could not read instead of writing zero."
       },
       "startedAt": "2026-11-17T23:58:28Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T00:23:10Z",
+      "verifiedBy": [
+        "ras69: the last result's three figures and the stream-name start time land in the record, not the first result's decoys",
+        "ras69b: the old keys keep their order ahead of the new ones and the printed line still parses under the drive's regex with its stream intact",
+        "ras70: no result event -> none of the three figures, each named absent 'no result', start time still recorded",
+        "ras71: duration_ms as a string, a negative, a boolean -> no durationMs, never zero, reason names it, other two kept",
+        "ras71b: a result with none of the figures names each with its source field",
+        "ras72: a usage refusal and an io-error record no timing key at all",
+        "ras73: the drive reads an old-shape record identically to one carrying the new keys, note included"
+      ],
       "reviewPerTask": "signals",
       "testEvidence": {
         "runId": "2026-11-18T00:23:06Z.c00e06",
         "status": "passed",
         "at": "2026-11-18T00:23:06Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "50ae8981dc9c",
+        "at": "2026-11-18T00:23:10Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T00:09:10Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_run_agent_session.py` in a throwaway tree at HEAD exited 1 with 8 of 89 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - ras27 (house FAIL), ras69 (house FAIL), ras70 (house FAIL), ras71 (house FAIL), ras71 (house FAIL), ras71 (house FAIL), ras71b (house FAIL), ras44 (house FAIL): SELFTEST FAILED: 81/89 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P167.2",
       "title": "A task has one timing record in its shard: stages with a start, a length and the record each was read from, and a first start that survives a restart",
-      "status": "pending",
+      "status": "in_progress",
       "description": "Add the optional task key timing: an object with firstStartedAt and stages, where a stage is kind, startedAt, ms, basis and optional round and runId. The kinds are a closed list: writer, gate, selection, base, reviewer, commit, wait. One new helper module, plugins/audit/scripts/manifest/_task_timing.py, holds the pure functions every writer and reader uses: build a stage, append it to a task, and summarize a task into per-kind totals, the whole window from firstStartedAt to completedAt, and the unattributed remainder, each with its basis and with an absent source named rather than read as zero. task.startedAt is re-stamped on every restart today, so the first start is lost; starting a task now sets timing.firstStartedAt once and never moves it. The key is additive: a plan that never writes it validates and behaves exactly as before, and COMPATIBILITY.md says so beside its other additive keys. A new module owes the five things CLAUDE.md lists for a file under scripts/ (suite, layer in tools/lints/_deps.py, tree line and section in PLUGIN-BUILD-GUIDE.md, the path preamble; it is a helper, so no entry guard). Dependants you answer for: the schema and the validator's vocabulary must agree (_manifest_vocab.py KNOWN_TASK and SCHEMA_ANCHORS, _help.schema_vocab_drift, the unknown-key warning in _manifest_phases.py); every committed example plan and rendered artifact must still validate and render byte for byte, since none carries the key; audit-task.py's start, reopen, move and cancel verbs copy or reset task fields and must carry timing the way they carry notes; the panel's writer rewrites tasks and must not drop a key it does not know. Acceptance: (1) a task carrying a well-formed timing validates with no warning, and a task without it validates exactly as today; (2) a stage with an unknown kind, a negative ms or no basis is a validator finding that names the task and the stage; (3) a restart keeps firstStartedAt while startedAt moves; (4) the summary of a task whose stages cover part of its window reports the remainder as unattributed, and the parts add up to the window; (5) the summary of a task with no completedAt, or no timing, says which is missing and gives no total; (6) move and reopen keep the record.",
       "files": [
         "plugins/audit/scripts/manifest/_task_timing.py",
@@ -88,7 +108,11 @@
         "tools/lints/_deps.py",
         "PLUGIN-BUILD-GUIDE.md",
         "COMPATIBILITY.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "tests/test__manifest_vocab.py",
+        "tests/test__deps.py",
+        "tools/demo/gen-demo-manifest.py",
+        "tests/test_gen_demo_manifest.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -99,7 +123,7 @@
         ],
         "expectRedFirst": true,
         "gate": [
-          "python3 tools/sweep-selftests.py tests/test__task_timing.py tests/test__manifest_phases.py tests/test_audit_task.py"
+          "python3 tools/sweep-selftests.py tests/test__task_timing.py tests/test__manifest_phases.py tests/test_audit_task.py tests/test__manifest_vocab.py tests/test__deps.py"
         ],
         "gateBasis": "tests.add"
       },
@@ -108,16 +132,58 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 2,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T00:56:57Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T00:23:44Z",
+          "text": "it quotes the red-first enum of the schema, and this task adds one task property and leaves that enum's text alone",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T00:23:44Z",
+          "text": "it quotes the related-listing sentence of the build guide, and this task adds a tree line and a section of its own",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-18T00:23:44Z",
+          "text": "it quotes the doctor's copy-age sentence of the build guide, which this task does not edit",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-18T00:23:44Z",
+          "text": "it quotes a drive section marker of the build guide, which this task does not edit",
+          "waives": "tests/test_drive_phase.py"
+        },
+        {
+          "at": "2026-11-18T00:23:44Z",
+          "text": "it quotes a config sentence of COMPATIBILITY.md, and this task adds one sentence beside the additive manifest keys",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        },
+        {
+          "at": "2026-11-18T00:23:44Z",
+          "text": "it quotes the two-keys sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-18T00:57:17Z",
+          "text": "Retry after a red gate: tests/test_gen_demo_manifest.py fails because the new schema fields (task.timing, timing.*, timingStage.*) are neither carried by the demo fixture nor named in gen-demo-manifest.SCHEMA_EXEMPTIONS. tools/demo/gen-demo-manifest.py and its suite are now declared files of this task. Prefer carrying the record on the fixture's finished tasks (fixed values, no wall clock) if every committed rendered artifact stays byte for byte the same (python3 tools/check-rendered-artifacts.py --before-commit, and the demo ledger diff verify.sh runs); if carrying it changes a committed artifact, exempt the fields instead, with the reason that no rendered surface reads them yet. The work already in the tree stays; do not rewrite it."
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T01:20:15Z.32d1ce",
+        "status": "passed",
+        "at": "2026-11-18T01:20:15Z"
+      }
     },
     {
       "id": "P167.3",
@@ -159,7 +225,34 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T00:24:27Z",
+          "text": "it quotes one refusal sentence of the gate runner, and this task adds a timing key to the row and leaves that sentence alone",
+          "waives": "tools/check-example-ledgers.py"
+        },
+        {
+          "at": "2026-11-18T00:24:27Z",
+          "text": "it quotes a config sentence of COMPATIBILITY.md, and this task adds one key to the evidence row's additive list",
+          "waives": "plugins/audit/scripts/config/_config_rules.py"
+        },
+        {
+          "at": "2026-11-18T00:24:27Z",
+          "text": "it quotes the two-keys sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "plugins/audit/scripts/manifest/_branch.py"
+        },
+        {
+          "at": "2026-11-18T00:24:27Z",
+          "text": "it quotes the validation-stays-additive sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "plugins/audit/scripts/manifest/_manifest_vocab.py"
+        },
+        {
+          "at": "2026-11-18T00:24:27Z",
+          "text": "it quotes a manifest sentence of COMPATIBILITY.md, which this task does not edit",
+          "waives": "tests/test__manifest_phases.py"
+        }
+      ]
     },
     {
       "id": "P167.4",
@@ -246,7 +339,14 @@
       },
       "startedAt": null,
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T00:24:28Z",
+          "text": "it quotes the view flag's usage text of the status command page, and this task adds a sentence about the time column and leaves the usage text alone",
+          "waives": "tools/prove-gates.py"
+        }
+      ]
     }
   ],
   "request": "Brzina razvoja postaje merena metrika uz Q1 i Q2: metrika vremena po tasku. Izmereno je oko 3.3x vremena obicne sesije, pisac oko 0.9x, a razlika su gate-ovi.",

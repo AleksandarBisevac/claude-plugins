@@ -432,6 +432,8 @@ import _loader                # noqa: E402  (load_hooks_config: where the driver
 import _filed_returns as _fr  # noqa: E402  (a filed return's path, shape and
                               # write-once create, shared with the brief and the commit;
                               # and the landing property, shared with close-phase.py)
+import _task_timing as _timing  # noqa: E402  (first_start: the one stamp of a task's
+                                #                first start, which a restart keeps)
 import _config_rules          # noqa: E402  (review_per_task_mode: the one reading of
                               # `review.perTask`, refused rather than defaulted)
 import _affected_tests as _affected  # noqa: E402  (_python_arm: the import graph a
@@ -5072,6 +5074,14 @@ def _start_task(task, now):
     but that is a question about the prescription, and answering it differently
     here in silence is how one field comes to mean two things.
 
+    THE FIRST START IS KEPT BESIDE IT, not in it: `timing.firstStartedAt` is
+    set by the first start this verb makes and never moved by a later one
+    (`_task_timing.first_start`), so a reader that needs the task's whole
+    window reads that field and `startedAt` keeps the meaning step 2 gives it.
+    A task promoted by a hand edit, or started before the field existed, has
+    no first start recorded until this verb starts it, and a summary of it
+    names the field as missing rather than borrowing `startedAt`.
+
     THE STAMP IS `_filed_returns.next_start_at`'s, not `now` as read: a start's
     `startedAt` is its identity to every place that keys by start, at
     one-second resolution, so a re-start inside the second of the start it
@@ -5088,6 +5098,7 @@ def _start_task(task, now):
            "blockedReason": task.get("blockedReason")}
     task["status"] = "in_progress"
     task["startedAt"] = _fr.next_start_at(was["startedAt"], now)
+    task["timing"] = _timing.first_start(task, task["startedAt"])
     task["attempts"] = (was["attempts"] or 0) + 1
     # A running task is not waiting, so the reason `block` recorded goes with the
     # status it explained; the task.start row keeps it as the `from` half.

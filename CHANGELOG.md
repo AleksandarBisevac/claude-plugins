@@ -4,6 +4,17 @@ All notable changes to the `quality-gates` marketplace and its `audit` plugin.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are the
 `audit` plugin's `plugin.json` version, tagged `v<version>` on this repo.
 
+## [Unreleased]
+
+### Added
+- **A task can record where its wall time went.** The optional task key `timing` holds
+  `firstStartedAt` and a list of `stages` - each a `kind` (writer, gate, selection, base,
+  reviewer, commit or wait), a start, a length in milliseconds and the record the length was
+  read from. `/audit:task start` sets `firstStartedAt` once and a restart no longer loses it;
+  `move`, `reopen` and `cancel` keep the record. A stage with an unknown kind, a negative length
+  or no basis is a validation finding naming the task and the stage. A plan without the key
+  validates and behaves exactly as before.
+
 ## [3.9.0]
 
 ### Fixed
