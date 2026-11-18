@@ -69,13 +69,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   is taken out. What is left of a file must pass on the base, or the baseline is not green and
   the basis names the module or the case and what was taken out: a helper the task changed in a
   file HEAD holds so that HEAD's cases fail there gives `could-not-prove`, unless the task's run
-  fails a case too, which is `not-green` first. **Why a baseline is not green is measured, not
-  read off where it failed**: only then, the verb runs the command once more on HEAD's own tree
-  with nothing of the task's laid, under the same deadline. Red there, the basis says the command
-  is red at HEAD, with that run's line, and advises narrowing it to the task's cases; green there,
-  it says the command is green at HEAD and stops being green once the declared files are laid with
-  the task's own definitions taken out, naming each file something was taken out of; a run that
-  cannot be read leaves the cause not measured, and says why. No basis says what the task's cases
+  fails a case too, which is `not-green` first. **Why a baseline is not green is worded by one
+  more run, not read off where it failed**: only then, the verb runs the command once more on
+  HEAD's own tree with each new declared test file an empty stub and nothing else of the task's
+  laid, under the same deadline, and describes that run as it was laid. Red there, the basis says
+  the command was red on a run of HEAD's own tree as well, with that run's line, and advises
+  narrowing it to the task's cases. Green there, it says what the two runs showed - not green
+  with the declared files laid, green on one run of HEAD's own tree - and that they do not choose
+  between two readings: what was laid causes the failure, or the command does not give the same
+  answer twice; it names each file something was taken out of as what was laid, and says no file
+  fails or does not load beyond what the baseline's own line names. A run that cannot be read, or
+  that raises, leaves the cause not measured, and says why. No basis says what the task's cases
   can or cannot do before the change, the status never reads that run, and a green baseline makes
   no third run. `red` keeps its empty-file baseline and its words. Two limits
   are `could-not-prove` although a case ran: a case overriding an inherited test of the same

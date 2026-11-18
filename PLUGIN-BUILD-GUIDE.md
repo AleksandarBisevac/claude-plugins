@@ -6097,17 +6097,22 @@ verb does not trust the list: `_isolated_run` reads each declared path once laid
 the baseline alters on purpose (`gs3`), or a file something was taken out of that does not differ
 (`gc6`). It compares the declared paths and nothing else. A declared path the task deleted is
 called deleted in a proved basis; one neither tree holds is called absent from both. **A baseline
-that is not green is explained by one more run, made only then** (`_green_cause_run`): HEAD's own
-tree with nothing of the task's laid - `red`'s baseline, a new declared test file an empty stub and
-one HEAD holds at HEAD's copy - under the same deadline and isolation, tagged `head`. Where a
-failure lies cannot say whose it is, since a failing case in the baseline is never one of the
-task's own: HEAD's own red case sits in a file the task adds to, and a new file fails to load
-because the take-out removed a helper it imports. So `_baseline_cause` words the cause by that run
-alone: red there, the command is red at HEAD without anything of the task's, with that run's
-failing cases and line, and the advice to narrow it to the task's cases; green there, the command
-is green at HEAD and stops being green once the declared files are laid with the task's own
-definitions taken out, naming each file something was taken out of with what went, and no advice;
-not readable or out of time, the cause was not measured, and why. No basis says what the task's
+that is not green gets one more run, made only then** (`_green_cause_run`): HEAD's own tree with
+each new declared test file an empty stub and nothing else of the task's laid - `red`'s baseline,
+one HEAD holds at HEAD's copy - under the same deadline and isolation, tagged `head`, and described
+in the basis as it was laid (`_cause_run_said`), stubs named. Where a failure lies cannot say whose
+it is, since a failing case in the baseline is never one of the task's own: HEAD's own red case
+sits in a file the task adds to, and a new file fails to load because the take-out removed a
+helper it imports. So `_baseline_cause` words the cause by that run alone: red there, the command
+was red on a run of HEAD's own tree as well, with that run's failing cases and line, and the advice
+to narrow it to the task's cases; green there, the basis says what the two runs showed - not green
+with the declared files laid, green on one run of HEAD's own tree - and that they do not choose
+between two readings, what was laid causing the failure or a command that does not give the same
+answer twice (`gc7`, its red twin `gc8`), naming each file something was taken out of with what
+went as what was laid, no file as failing beyond the baseline's own line, and no advice; not
+readable, out of time, or raising - an exception inside that run alone is caught by
+`_cause_or_raised` and named (`gc9`), the two runs the status reads still fail loud - the cause
+was not measured, and why. No basis says what the task's
 cases can or cannot do before the change. The status is decided before that run and never reads
 it, and a green baseline makes no third run (`gc4`). **What follows for a file HEAD holds:** a
 helper or fixture the task changed there runs at HEAD's own run on HEAD's code, so a change that

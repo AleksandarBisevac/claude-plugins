@@ -10825,15 +10825,16 @@ def _green_same_cases(check):
         "        self.assertEqual(CACHE['v'], 1)\n"), head_test=primed_head)
     check("gs5 a baseline failing only once the TASK'S FILES ARE LAID - a new file "
           "importing new code at module level, and a held file whose own case is "
-          "taken out - is said green at HEAD by the run of HEAD's own tree, with the "
-          "baseline's line and each file something was taken out of, and carries "
+          "taken out - is said as two readings by a green run of HEAD's own tree, with "
+          "the baseline's line and each file something was taken out of as what was "
+          "laid, never as failing or not loading on HEAD's code, and carries "
           "neither the advice to narrow nor a word on what the task's cases can do: "
           "loads %s; primed %s" % (_gd_short(loads), _gd_short(primed)),
           all(g[:2] == (M.E_CANNOT_PROVE, "could-not-prove") for g in (loads, primed))
           and "cannot import name 'new_api'" in loads[2]
           and "tests/test_new.py: N.test_a" in loads[2]
           and "tests/test_mine.py: T.test_a_prime" in primed[2] and "test_old" in primed[2]
-          and all(_GC_GREEN in g[2] and _GC_RED not in g[2]
+          and all(_GC_GREEN in g[2] and _GC_RED not in g[2] and _GC_FACT not in g[2]
                   and _GC_ADVICE not in g[2]
                   and _gc_silent_on_what_cases_do(g[2]) for g in (loads, primed)))
     untouched = _gs_verb("stamp-gs-untouched-", {_U_NEW: _GD_HEADER + (
@@ -10841,10 +10842,10 @@ def _green_same_cases(check):
         "        self.assertTrue(mine.v)\n")}, committed=(_GS_UNTOUCHED,))
     both = _gs_verb("stamp-gs-both-", {_U_NEW: _GS_NEW_API}, committed=(_GS_UNTOUCHED,))
     check("gs6 THE ALLOW TWIN of gs5: a command red at HEAD in a file the task did not "
-          "touch is said red at HEAD by the run of HEAD's own tree, naming that run's "
+          "touch is said red on a run of HEAD's own tree as well, naming that run's "
           "failing case, and advises narrowing; where the baseline also fails in the "
           "task's new file, that run is still red and the same answer is given, never "
-          "green at HEAD: untouched %s; both %s"
+          "the two readings: untouched %s; both %s"
           % (_gd_short(untouched), _gd_short(both)),
           all(g[:2] == (M.E_CANNOT_PROVE, "could-not-prove") for g in (untouched, both))
           and all(_GC_RED in g[2] and _GC_ADVICE in g[2] and "test_u" in g[2]
@@ -10856,11 +10857,18 @@ def _green_same_cases(check):
 # --- green: why a baseline is not green, measured by a run of HEAD's own tree ---
 # Every case below runs the REAL `green` verb on a git fixture. A failing case in
 # the baseline is never one of the task's own - those were taken out - so the
-# file it lies in cannot say whose it is; a third run of HEAD's own tree with
-# nothing of the task's laid (`red`'s baseline: a new declared test file an empty
-# stub) can, and is made only when the baseline is not green.
-_GC_RED = "is red at HEAD"
-_GC_GREEN = "is green at HEAD"
+# file it lies in cannot say whose it is. A third run of HEAD's own tree - each
+# new declared test file an empty stub and nothing else of the task's laid,
+# `red`'s baseline - is made only when the baseline is not green. Red, it shows
+# the command red without the task; green, it does not choose between two
+# readings: what was laid causes the failure, or the command does not give the
+# same answer twice.
+_GC_RED = "was red on a run of HEAD's own tree as well"
+_GC_GREEN = "does not give the same answer twice"
+# The cause stated as fact of the files laid - what no pair of runs measures.
+_GC_FACT = "fails or does not load on HEAD's code"
+_GC_STUB = "as an empty stub"
+_GC_NOTHING = "with nothing of the task's laid"
 _GC_UNMEASURED = "the cause was not measured"
 # The advice alone, which `red`'s hedged sentence (`NARROW`) ends with too - so
 # a case holding it reads the same words in either verb.
@@ -10898,8 +10906,9 @@ def _green_cause_cases(check):
                         tail=["-k", "test_added"])
     check("gc1 a case of HEAD's own red at HEAD in the file the task adds a passing case "
           "to, and a file of HEAD's that already fails to load at HEAD, keep their "
-          "status and are said to be red at HEAD - that run's own line named - with "
-          "the advice to narrow, never as the task's own file failing; the command "
+          "status and are said to be red on a run of HEAD's own tree as well - that "
+          "run's own line named - with the advice to narrow, never as the task's own "
+          "file failing nor as two readings; the command "
           "narrowed to the added case is `proved`: red %s; gone %s; narrowed %s"
           % (_gd_short(head_red), _gd_short(head_gone), _gd_short(narrowed)),
           head_red[:2] == (M.E_NOT_GREEN, "not-green")
@@ -10925,13 +10934,15 @@ def _green_cause_cases(check):
     three = (loads, helper, raising)
     check("gc2 a new file that does not load on HEAD's code - importing the change's "
           "new code, a helper the take-out removed, an untouched module that raises - "
-          "is `could-not-prove`, said green at HEAD and not green once the declared "
-          "files are laid, naming each file something was taken out of with what was "
-          "taken out, with no advice to narrow and nothing on what its cases can do: "
+          "is `could-not-prove`, said not green with the declared files laid and green "
+          "on one run of HEAD's own tree, as two readings the runs do not choose "
+          "between, naming each file something was taken out of with what was taken "
+          "out as what was laid, never as failing or not loading beyond the baseline's "
+          "own line, with no advice to narrow and nothing on what its cases can do: "
           "loads %s; helper %s; raising %s" % tuple(_gd_short(g) for g in three),
           all(g[:2] == (M.E_CANNOT_PROVE, "could-not-prove") for g in three)
-          and all(_GC_GREEN in g[2] and _GC_RED not in g[2]
-                  and _GC_ADVICE not in g[2]
+          and all(_GC_GREEN in g[2] and _GC_RED not in g[2] and _GC_FACT not in g[2]
+                  and _GC_ADVICE not in g[2] and "what was laid" in g[2]
                   and _gc_silent_on_what_cases_do(g[2]) and _U_NEW in g[2]
                   and "N.test_" in g[2] and "taken out" in g[2] for g in three)
           and "cannot import name 'new_api'" in loads[2]
@@ -11013,6 +11024,96 @@ def _green_cause_cases(check):
           and "absent from both" in ghost[2] and "tests/test_ghost.py" in ghost[2]
           and "deleted" not in ghost[2]
           and "deleted" in moved[2] and "absent from both" not in moved[2])
+    _green_readings_cases(check, loads, head_red)
+
+
+def _gc_flaky(fail_on):
+    """A committed test failing on the invocations in `fail_on` (0-based), its
+    count kept in a file outside every tree - so a red baseline and a green run
+    of HEAD's own tree can come from one command that does not give the same
+    answer twice, with nothing the task laid touching it."""
+    count = os.path.join(_harness.fixture_root("stamp-gc-count-"), "n")
+    return ("tests/test_flaky.py",
+            "import os, unittest\nC = %r\n\n\nclass F(unittest.TestCase):\n"
+            "    def test_flaky(self):\n"
+            "        n = int(open(C).read()) if os.path.exists(C) else 0\n"
+            "        with open(C, 'w') as fh:\n            fh.write(str(n + 1))\n"
+            "        self.assertNotIn(n, %r)\n" % (count, tuple(fail_on)))
+
+
+def _gc_raising(fn, *args, **kw):
+    """`fn(*args, **kw)` with the extra run of HEAD's own tree - the run tagged
+    `head` - raising, and the two proving runs left as they are. A verb the
+    raise aborts answers `(None, None, <what escaped>, {})`, so the abort is the
+    case's own failure rather than its block's."""
+    real = M._isolated_run
+
+    def spy(*a, **k):
+        if a[8] == "head":
+            raise RuntimeError("forced in the run of HEAD's own tree")
+        return real(*a, **k)
+    M._isolated_run = spy
+    try:
+        return fn(*args, **kw)
+    except Exception as exc:  # noqa: BLE001 - the abort is what the case reports
+        return None, None, "the verb aborted: %s: %s" % (type(exc).__name__, exc), {}
+    finally:
+        M._isolated_run = real
+
+
+def _green_readings_cases(check, loads, head_red):
+    own = {_U_NEW: _GD_HEADER + ("class N(unittest.TestCase):\n    def test_pos(self):\n"
+                                 "        self.assertTrue(mine.v > 0)\n")}
+    once = _gs_verb("stamp-gc-once-", own, committed=(_gc_flaky((0,)),))
+    check("gc7 a test of HEAD's failing on its first invocation only, beside a new "
+          "passing file, is `could-not-prove` and said as what the two runs showed - "
+          "the baseline's own line, one green run of HEAD's own tree - and as two "
+          "readings the runs do not choose between, naming the new file as what was "
+          "laid and never saying it fails or does not load, with no advice to narrow "
+          "and no word of red: %s" % (_gd_short(once),),
+          once[:2] == (M.E_CANNOT_PROVE, "could-not-prove")
+          and _GC_GREEN in once[2] and _GC_FACT not in once[2]
+          and "does not load" not in once[2] and "test_flaky" in once[2]
+          and "one run of HEAD's own tree" in once[2]
+          and "what was laid" in once[2] and "tests/test_new.py: N.test_pos" in once[2]
+          and _GC_RED not in once[2] and _GC_ADVICE not in once[2]
+          and _gc_silent_on_what_cases_do(once[2]))
+    twice = _gs_verb("stamp-gc-twice-", own, committed=(_gc_flaky((0, 2)),))
+    # The allow twin of gc7, there for the mutation that prints the two readings
+    # whatever the extra run answered: a red run of HEAD's own tree chose one.
+    check("gc8 THE ALLOW TWIN of gc7: the same test failing in the run of HEAD's own "
+          "tree too is said to be red on a run of HEAD's own tree as well, naming that "
+          "run's failing case, with the advice to narrow and without the two readings: "
+          "%s" % (_gd_short(twice),),
+          twice[:2] == (M.E_CANNOT_PROVE, "could-not-prove")
+          and _GC_RED in twice[2] and _GC_ADVICE in twice[2]
+          and twice[2].count("test_flaky") == 2
+          and _GC_GREEN not in twice[2] and _GC_FACT not in twice[2]
+          and _gc_silent_on_what_cases_do(twice[2]))
+    raised = _gc_raising(_gs_verb, "stamp-gc-raised-", {_U_NEW: _GS_NEW_API})
+    raised_red = _gc_raising(_gh_verb, "stamp-gc-raisedred-", _GC_BAD + _GS_ADDED,
+                             head_test=_GC_BAD)
+    check("gc9 a run of HEAD's own tree that RAISES leaves the cause unmeasured, naming "
+          "the exception, and every status what the same fixture gets without it - "
+          "`could-not-prove` and `not-green` alike - with no traceback, no green, red "
+          "or advice: raised %s (unforced %s); red %s (unforced %s)"
+          % (_gd_short(raised), _gd_short(loads), _gd_short(raised_red),
+             _gd_short(head_red)),
+          raised[:2] == loads[:2] == (M.E_CANNOT_PROVE, "could-not-prove")
+          and raised_red[:2] == head_red[:2] == (M.E_NOT_GREEN, "not-green")
+          and all(_GC_UNMEASURED in g[2]
+                  and "RuntimeError: forced in the run of HEAD's own tree" in g[2]
+                  and "Traceback" not in g[2] and _GC_GREEN not in g[2]
+                  and _GC_RED not in g[2] and _GC_ADVICE not in g[2]
+                  for g in (raised, raised_red)))
+    check("gc10 the run of HEAD's own tree is described as it is laid: each new "
+          "declared test file named as an empty stub where one exists - a green run "
+          "and a red one alike - and nothing of the task's laid where none does: "
+          "once %s; twice %s; loads %s; held %s"
+          % (_gd_short(once), _gd_short(twice), _gd_short(loads), _gd_short(head_red)),
+          all("%s (%s)" % (_GC_STUB, _U_NEW) in g[2]
+              and _GC_NOTHING not in g[2] for g in (once, twice, loads))
+          and _GC_NOTHING in head_red[2] and _GC_STUB not in head_red[2])
 
 
 def _reached(source, name):

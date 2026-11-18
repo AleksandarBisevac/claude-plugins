@@ -1415,7 +1415,8 @@
       "SG1.41-ukq",
       "SG1.42-ukq",
       "SG1.43-ukq",
-      "SG1.44-ukq"
+      "SG1.44-ukq",
+      "SG1.45-ukq"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -2093,7 +2094,8 @@
       "SG1.41-ukq",
       "SG1.42-ukq",
       "SG1.43-ukq",
-      "SG1.44-ukq"
+      "SG1.44-ukq",
+      "SG1.45-ukq"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2605,7 +2607,8 @@
       "SG1.35-ukq",
       "SG1.36-ukq",
       "SG1.43-ukq",
-      "SG1.44-ukq"
+      "SG1.44-ukq",
+      "SG1.45-ukq"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -8973,7 +8976,8 @@
       "P156.8-3st",
       "P159.2",
       "SG1.25-ukq",
-      "SG1.36-ukq"
+      "SG1.36-ukq",
+      "SG1.45-ukq"
     ],
     "tools/harvest-worktree.py": [
       "P43.3"
@@ -13933,7 +13937,8 @@
       "SG1.26-ukq",
       "SG1.31-ukq",
       "SG1.35-ukq",
-      "SG1.36-ukq"
+      "SG1.36-ukq",
+      "SG1.45-ukq"
     ],
     "tests/test__floor_guard.py": [
       "SG1.4",
@@ -13943,7 +13948,8 @@
       "SG1.26-ukq",
       "SG1.31-ukq",
       "SG1.35-ukq",
-      "SG1.36-ukq"
+      "SG1.36-ukq",
+      "SG1.45-ukq"
     ],
     "plugins/audit/evals/bugfix/scaffold.sh": [
       "SG1.9",

@@ -4003,12 +4003,14 @@ def red_verdict(run, ctx):
 # read off the runner's own report block by `_runner_output.failure_kind`,
 # never off a line quoted inside a case's block - is no case and is
 # `could-not-prove` with the runner's line. A baseline that is not green is
-# explained by a THIRD run, of HEAD's own tree with nothing of the task's laid,
-# made only then (`_green_cause_run`, `_baseline_cause`): red there, the
-# command is red at HEAD and is to be narrowed; green there, it stops being
-# green once the declared files are laid with the task's own definitions taken
-# out, naming those files; unreadable, the cause was not measured. Its answer
-# words the basis and never the status. Zero collected, a compile or import
+# worded by a THIRD run, of HEAD's own tree with each new declared test file an
+# empty stub and nothing else of the task's laid, made only then
+# (`_green_cause_run`, `_baseline_cause`): red there, the command was red on a
+# run of HEAD's own tree as well and is to be narrowed; green there, the two
+# runs are said as two readings they do not choose between - what was laid
+# causes the failure, or the command does not give the same answer twice -
+# naming what was laid; unreadable or raising, the cause was not measured. Its
+# answer words the basis and never the status. Zero collected, a compile or import
 # error, a run that could not start, output no reader reads, two runners' tallies and a
 # refusal are `could-not-prove` with the reason verbatim.
 # The words are the schema's `greenFirst.status` enum less the one no run gives
@@ -4563,18 +4565,30 @@ def green_verdict(run, ctx):
 # A failure in the baseline is never one of the task's own cases - those were
 # taken out - so the file it lies in cannot say whose it is: HEAD's own failing
 # case sits in a file the task adds to, and a new file fails to load because the
-# take-out removed a helper it imports. So the cause is MEASURED: when the
-# baseline is not green, `run_green` makes one run more (`_green_cause_run`) of
-# HEAD's own tree with nothing of the task's laid - `red`'s baseline, a new
-# declared test file an empty stub and one HEAD holds at HEAD's copy - under
-# the same deadline and isolation, and words the cause by that run alone
-# (`_cause_answer`): red there, the command is red at HEAD and is to be
-# narrowed; green there, it is green at HEAD and stops being green once the
-# declared files are laid with the task's own definitions taken out, naming
-# those files; unreadable or out of time, the cause was not measured, and why.
-# The status never reads that run: it is decided before it, as it was.
+# take-out removed a helper it imports. So one run more is made: when the
+# baseline is not green, `run_green` runs HEAD's own tree once more
+# (`_green_cause_run`) - `red`'s baseline, each new declared test file an empty
+# stub, one HEAD holds at HEAD's copy, nothing else of the task's - under the
+# same deadline and isolation, and words the cause by that run alone
+# (`_cause_answer`), described as it was laid (`_cause_run_said`). Red there,
+# the command was red on a run of HEAD's own tree as well and is to be
+# narrowed. Green there, the basis says what the two runs showed and no more:
+# one red run with the declared files laid and one green run without them do
+# not choose between two readings - what was laid causes the failure, or the
+# command does not give the same answer twice - so it names what was laid and
+# says nothing of which file fails beyond the baseline's own line. Unreadable,
+# out of time, or raising, the cause was not measured, and why. The status
+# never reads that run: it is decided before it, as it was.
 # A green baseline makes no third run.
-CAUSE_RUN = "a run of HEAD's own tree with nothing of the task's laid"
+def _cause_run_said(stubbed, article="a"):
+    """The run `_green_cause_run` makes, as it was laid: HEAD's own tree with
+    each new declared test file it laid as an empty stub (`stubbed`) named, and
+    nothing else of the task's."""
+    if not stubbed:
+        return "%s run of HEAD's own tree with nothing of the task's laid" % (article,)
+    return ("%s run of HEAD's own tree with each new declared test file as an empty "
+            "stub (%s) and nothing else of the task's laid"
+            % (article, ", ".join(stubbed)))
 
 
 def _green_cause_run(setup, cmd, present, until):
@@ -4589,6 +4603,19 @@ def _green_cause_run(setup, cmd, present, until):
         return {"code": None, "text": "", "problem": problem, "seconds": 0.0,
                 "absent": files["absent"]}, files["stubs"]
     return _head_run(setup, cmd, files, until, tag="head"), files["stubs"]
+
+
+def _cause_or_raised(setup, cmd, present, until):
+    """`_green_cause_run`, with an exception raised inside it kept as the
+    record's `raised` (its name and message) and no stubs, rather than left to
+    abort the verb: that run words the basis and never the status, so its
+    failure leaves the cause unmeasured and nothing else. The two runs the
+    status reads are not wrapped - they fail loud."""
+    try:
+        return _green_cause_run(setup, cmd, present, until)
+    except Exception as exc:
+        return {"code": None, "text": "", "problem": None, "seconds": 0.0,
+                "absent": [], "raised": "%s: %s" % (type(exc).__name__, exc)}, []
 
 
 def _failed_clause(head, cmd):
@@ -4606,19 +4633,25 @@ def _failed_clause(head, cmd):
 def _cause_answer(cause, cmd, stages, stubbed):
     """`(answer, said)` - what `_green_cause_run`'s run showed: `"red"` with
     what it failed, `"green"` with its line, or `"unmeasured"` with why it
-    cannot be read - not made, no exit code, or output carrying no tally a
+    cannot be read - not made, raised (`raised`, the exception's name and
+    message, laid by `run_green`), no exit code, or output carrying no tally a
     reader reads. Green and red are `baseline_problem`'s own reading, the one
     `red` gives its baseline."""
+    said = _cause_run_said(stubbed)
     if cause is None:
-        return "unmeasured", "%s was not made" % (CAUSE_RUN,)
+        return "unmeasured", "%s was not made" % (said,)
+    if cause.get("raised"):
+        # Raised before or while laying it, so how it was laid is not known.
+        return "unmeasured", "%s, raised making a run of HEAD's own tree" % (
+            cause["raised"],)
     if cause.get("problem") or cause.get("code") is None:
         return "unmeasured", "%s could not be made or read (%s)" % (
-            CAUSE_RUN, cause.get("problem") or "it gave no exit code")
+            said, cause.get("problem") or "it gave no exit code")
     text = cause.get("text") or ""
     tally = _runner_output.read_run_tally(text, cmd)
     if (tally is None or tally["runner"] is None) and not _js_none_found(cause, tally):
         return "unmeasured", "%s exited %d with output carrying no tally a reader reads (%s)" % (
-            CAUSE_RUN, cause["code"], _decisive_line(text, tally))
+            said, cause["code"], _decisive_line(text, tally))
     if baseline_problem(cause, cmd, stages, stubbed) is None:
         return "green", _decisive_line(text, tally)
     return "red", _failed_clause(cause, cmd)
@@ -4628,25 +4661,30 @@ def _baseline_cause(run, ctx):
     """What a baseline that is not green is said to be: what HEAD's own run
     failed, then the cause as `_cause_answer` reads the run made to measure it.
     Nothing here says what the task's own cases can or cannot do before the
-    change - no run measures that."""
+    change - no run measures that - and a green run of HEAD's own tree is said
+    as two readings, never as a file of the task's failing: one red run and one
+    green run cannot tell what was laid causing the failure from a command
+    that does not give the same answer twice."""
     cmd = run["cmd"]
-    told = "HEAD's own run is not green on HEAD's code (%s)" % (
-        _failed_clause(run.get("head") or {}, cmd),)
-    answer, said = _cause_answer(run.get("cause"), cmd, ctx.get("stages") or (),
-                                 ctx.get("cause_stubbed") or [])
+    failed = _failed_clause(run.get("head") or {}, cmd)
+    stubbed = ctx.get("cause_stubbed") or []
+    answer, said = _cause_answer(run.get("cause"), cmd, ctx.get("stages") or (), stubbed)
     if answer == "red":
-        return ("%s, and neither is %s (%s): the command is red at HEAD without "
-                "anything of the task's - %s" % (told, CAUSE_RUN, said, NARROW_ADVICE))
+        return ("HEAD's own run is not green on HEAD's code (%s), and neither is %s "
+                "(%s): the command was red on a run of HEAD's own tree as well - %s"
+                % (failed, _cause_run_said(stubbed), said, NARROW_ADVICE))
     if answer == "unmeasured":
-        return "%s; the cause was not measured: %s" % (told, said)
+        return ("HEAD's own run is not green on HEAD's code (%s); the cause was not "
+                "measured: %s" % (failed, said))
     cut = dict((rel, names) for rel, names in (ctx.get("taken") or {}).items() if names)
-    left = ("what is left of the files something was taken out of (%s)"
-            % (_taken_clause(cut),) if cut else
-            "the declared files as laid there (%s)" % (", ".join(ctx.get("tests") or []),))
-    return ("%s, while %s is green (%s): the command is green at HEAD and stops being "
-            "green once the declared files are laid with the task's own definitions "
-            "taken out - %s fails or does not load on HEAD's code"
-            % (told, CAUSE_RUN, said, left))
+    laid = ("the declared files, each file something was taken out of named with "
+            "what was taken out (%s)" % (_taken_clause(cut),) if cut else
+            "the declared files (%s)" % (", ".join(ctx.get("tests") or []),))
+    return ("HEAD's own run, the declared files laid, is not green on HEAD's code (%s), "
+            "while %s is green (%s): the two runs do not choose between two "
+            "readings - what was laid causes the failure, or the command does not "
+            "give the same answer twice; what was laid is %s"
+            % (failed, _cause_run_said(stubbed, "one"), said, laid))
 
 
 def _baseline_said(ctx):
@@ -5919,7 +5957,7 @@ def run_green(args, cmd, out):
             # it, where that reading is reached - gets the run that says why.
             if run["problem"] is None and laid_problem is None and baseline_problem(
                     run["head"], cmd, files["stages"], files["stubs"]) is not None:
-                run["cause"], cause_stubbed = _green_cause_run(setup, cmd, present,
+                run["cause"], cause_stubbed = _cause_or_raised(setup, cmd, present,
                                                                deadline)
         except KeyboardInterrupt as exc:
             run["problem"] = ("interrupted by %s before the run finished; the "

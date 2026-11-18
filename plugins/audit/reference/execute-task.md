@@ -135,11 +135,15 @@ verb writes and refuses, and what the run commands leave behind, is
        is left of a file must pass on the base, or the baseline is not green: a helper the task
        changed in a file HEAD holds so that HEAD's cases fail there is `could-not-prove` with
        the runner's line, unless the task's run fails a case too, which is `not-green` first.
-       A baseline that is not green is explained by one more run, made only then, of HEAD's
-       own tree with nothing of the task's laid (`_green_cause_run`): red there, the command
-       is red at HEAD and the basis advises narrowing it; green there, the declared files as
-       laid fail or do not load on HEAD's code, naming each file something was taken out of;
-       unreadable, the cause was not measured. That run words the basis, never the status.
+       A baseline that is not green gets one more run, made only then, of HEAD's own tree
+       with each new declared test file an empty stub and nothing else of the task's laid
+       (`_green_cause_run`), described in the basis as it was laid: red there, the command
+       was red on a run of HEAD's own tree as well and the basis advises narrowing it; green
+       there, the basis gives what the two runs showed and two readings they do not choose
+       between - what was laid causes the failure, or the command does not give the same
+       answer twice - naming each file something was taken out of as what was laid, and no
+       file as failing beyond the baseline's own line; unreadable, out of time or raising,
+       the cause was not measured. That run words the basis, never the status.
        Two limits are `could-not-prove`, for a file HEAD holds as for a new one,
        although a case of the task's own ran: one overriding an inherited test of the same
        name, and one generated at import (`setattr`, `type()`, `load_tests`). Under jest,
