@@ -1,7 +1,7 @@
 {
   "id": "P168",
   "title": "A task's gate is measured once and runs what the task can break",
-  "status": "in_progress",
+  "status": "done",
   "description": "A paired measurement put the plugin near four times a plain session's wall time per task, with the task gate carrying almost all of the difference and the writer none of it. More than half of the gate time was a second full measurement of a tree the first run had just called green: the drive reads a background gate back by asking the recorded gate again, and that ask is refused a repeat whenever any entry names the plan, an evidence file or a journal file, or merely a test file whose name contains one of those words. Beyond the repeat, a task's recorded gate runs entries the project's own configuration says belong to the phase gate, tasks minted before a subset spelling was recorded keep the whole phase gate, and the declared suites and the affected suites run as two calls one after the other. Entry: the stage record of the previous phase is on main, so each change here is read from a task's own timing rather than from a ledger query. Exit: replaying the recorded gate of the measured tasks on the phase's head shows no second measurement of a tree-grading step, and the per-task gate time printed by status is at or under a third of what it was on the same tasks.",
   "desiredOutcome": "A green task gate is not measured a second time when nothing it graded has changed, an entry the project leaves to the phase gate is not run by a task's recorded gate, a task whose wide gate was stored before the project recorded how to run a subset gets the narrow one, and the suites a task declares and the suites its change can break run as one call. On the recorded pairs the task gate's share of the gap to a plain session falls to what one narrow run costs.",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "5ab35ff3038963392e8891f457c5a522705fede9",
   "branch": "audit/p168-a-task-s-gate-is-measured-once",
-  "mergedAt": null,
+  "mergedAt": "2026-11-18T17:16:58Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -2698,5 +2698,6 @@
     "runId": "2026-11-18T17:08:35Z.9b8312",
     "status": "passed",
     "at": "2026-11-18T17:08:35Z"
-  }
+  },
+  "mergedHead": "b3d808109ef4fc2e48750eaf943602415f826a5f"
 }
