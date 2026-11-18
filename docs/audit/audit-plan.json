@@ -8747,7 +8747,8 @@
       "P163.17-d6t",
       "P164.1",
       "P165.4",
-      "P168.10-icj"
+      "P168.10-icj",
+      "P168.11-icj"
     ],
     "tools/check-committed-pii.py": [
       "P51.4",

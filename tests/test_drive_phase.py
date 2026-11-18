@@ -11811,12 +11811,34 @@ def _auto_scripted(M, root, mpath, steps, args=()):
             "nexts": len(calls)}
 
 
-def _auto_marks(path):
+def _auto_mark_lines(path):
     try:
         with open(path, encoding="utf-8") as fh:
             return [ln.rstrip("\n") for ln in fh if ln.strip()]
     except OSError:
         return []
+
+
+def _auto_marks(where):
+    """The lines `_AUTO_CHILD` children appended, from one mark file, a list of
+    them, or a directory holding one per child - in file-name order, each
+    file's lines in the order they were written.
+
+    Commands one step after another share ONE file, and its order is what a
+    case may assert: every case of `_auto_cases`, and au36/au37 in
+    `_auto_wave_cases`. Commands one step starts together - a wave's members,
+    which `auto_run` starts at once - each get a file of their OWN in a
+    directory, read here as one list: au30, au30b and au31. Two children
+    appending to one file at once can lose a line where an append is a seek
+    followed by a write, as on windows, so a wave sharing one file is a case
+    that can fail while the loop under it is right."""
+    if isinstance(where, (list, tuple)):
+        paths = list(where)
+    elif os.path.isdir(where):
+        paths = [os.path.join(where, n) for n in sorted(os.listdir(where))]
+    else:
+        paths = [where]
+    return [ln for p in paths for ln in _auto_mark_lines(p)]
 
 
 def _auto_cases(check):
@@ -12175,8 +12197,11 @@ _AUTO_NOT_RUNNABLE = ("wait-writer", "wait-gate", "wait-reviewer-session",
 
 def _auto_wave_member(M, step, subject, marks, word):
     """A member as `advance` hands one to `wave_said`: its own step, and a
-    `run:` command unless it is a recipe the drive never runs."""
-    runs = [] if step == "follow-browser" else [_auto_command(marks, 0, word)]
+    `run:` command unless it is a recipe the drive never runs. `marks` is a
+    directory, and the member's child marks a file of its own in it, named
+    for its subject - the members of a wave run at once (`_auto_marks`)."""
+    own = os.path.join(marks, "%s.log" % (subject,))
+    runs = [] if step == "follow-browser" else [_auto_command(own, 0, word)]
     return M.instruction("dispatch", ["%s %s: a member's line" % (step, subject)],
                          M.signal_of(step, subject, "a basis", "wait", runs=runs))
 
@@ -12187,7 +12212,11 @@ def _auto_wave_of(M, ctx, members):
 
 
 def _auto_clear(path):
-    if os.path.exists(path):
+    """Empty a mark file away, or every mark file in a directory of them."""
+    if os.path.isdir(path):
+        for name in os.listdir(path):
+            os.remove(os.path.join(path, name))
+    elif os.path.exists(path):
         os.remove(path)
 
 
@@ -12199,7 +12228,11 @@ def _auto_wave_cases(check):
         check("au30 the driver loads: %r" % (why,), False)
         return
     root, mpath = _repo("auto-wave", task_ids=TASKS[:2])
-    marks = os.path.join(root, "marks.log")
+    # A wave's members run at once, so each marks a file of its own in this
+    # directory; the steps after au31 run one at a time and share `serial`.
+    marks = os.path.join(root, "marks")
+    os.makedirs(marks)
+    serial = os.path.join(root, "marks.log")
     ctx = _step_ctx()
     held = []
     for kind in _AUTO_NOT_RUNNABLE:
@@ -12231,11 +12264,23 @@ def _auto_wave_cases(check):
         _auto_wave_member(M, "dispatch-writer", "P1.1", marks, "first"),
         _auto_wave_member(M, "dispatch-gate", "P1.2", marks, "second")])
     both = _auto_scripted(M, root, mpath, [wave, _auto_said(M, "done-task")])
+    own = [os.path.join(marks, "%s.log" % (t,)) for t in ("P1.1", "P1.2")]
     check("au31 THE TWIN: a wave whose every member is a dispatch with a run: "
-          "command runs each once and asks next again: %r"
-          % ((both, _auto_marks(marks)),),
+          "command runs each once and asks next again, each member's mark in "
+          "its own file: %r"
+          % ((both, _auto_marks(marks), [_auto_marks(p) for p in own]),),
           both["code"] == AUTO_DONE and both["nexts"] == 2
-          and sorted(_auto_marks(marks)) == ["0 first", "0 second"])
+          and sorted(_auto_marks(marks)) == ["0 first", "0 second"]
+          and [_auto_marks(p) for p in own] == [["0 first"], ["0 second"]])
+    # The mark files the wave's commands name, read off the step the loop is
+    # handed rather than off the fixture's own intent: a fixture that went back
+    # to one shared file names one path twice here.
+    named = [shlex.split(r)[3] for r in (wave.get("runs") or [])]
+    check("au31c the two members of a wave that run at once are handed two "
+          "different mark files, one each, and the marks read from them together "
+          "are the two the wave wrote: %r" % ((named, _auto_marks(named)),),
+          len(named) == 2 and len(set(named)) == 2
+          and sorted(_auto_marks(named)) == ["0 first", "0 second"])
 
     _auto_clear(marks)
     real_run = M.auto_run
@@ -12246,7 +12291,7 @@ def _auto_wave_cases(check):
     M.auto_run = unreaped
     try:
         stranded = _auto_scripted(M, root, mpath, [
-            _auto_said(M, "dispatch-writer", runs=[_auto_command(marks, 0, "kept")])])
+            _auto_said(M, "dispatch-writer", runs=[_auto_command(serial, 0, "kept")])])
     finally:
         M.auto_run = real_run
     check("au36 a child still running when the run ended is the stop answer with "
@@ -12257,7 +12302,7 @@ def _auto_wave_cases(check):
 
     warning = "gate P1.1 run r9 was cancelled before a verdict; launched again"
     warned_step = dict(_auto_said(M, "dispatch-writer",
-                                  runs=[_auto_command(marks, 0, "w")]),
+                                  runs=[_auto_command(serial, 0, "w")]),
                        warnings=[warning])
     done = _auto_scripted(M, root, mpath, [warned_step, _auto_said(
         M, "done-task", explain="done-task P1.1: closed\nthe rule under it")])
