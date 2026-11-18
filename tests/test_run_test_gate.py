@@ -7946,6 +7946,7 @@ def _left_word_cases(check):
 
     _spaced_word_cases(check, root, excluded)
     _literal_reading_cases(check, excluded)
+    _plan_reader_cases(check, excluded)
 
 
 def _grading_or_raise(gate, excluded, directories=()):
@@ -8090,17 +8091,136 @@ def _literal_reading_cases(check, excluded):
             ("ancestor", "python3 v.py docs/audit"),
             ("dot", "python3 v.py ."),
             ("cd", "cd docs/audit && ls journal"),
-            ("brace", "python3 v.py docs/audit/audit-{plan,x}.json")]
+            ("brace", "python3 v.py docs/audit/audit-{plan,x}.json"),
+            # A suite that opens the plan's phases itself, run by a gate that
+            # runs no plan reader: nothing in the command says the plan.
+            ("suite", "python3 tools/sweep-selftests.py tests/test_reads_tasks.py")]
     read = [("quoted", "python3 v.py docs/audit/audit-\"plan\".json"),
             ("dotted", "ls docs/audit/phases/../journal/x.jsonl")]
     got = (_grading_or_raise(kept, excluded, directories=dirs),
            _grading_or_raise(read, excluded, directories=dirs))
     check("lw22 the limits the reading documents are what it does: a "
           "variable, a glob, an ancestor directory, a directory's bare name "
-          "after a cd and a brace expansion name nothing, while a name "
-          "assembled from quoted pieces and a path through `..` are read: %r"
+          "after a cd, a brace expansion and a suite that opens the plan "
+          "itself name nothing, while a name assembled from quoted pieces and "
+          "a path through `..` are read: %r"
           % (got,),
           got == ([], [("quoted", plan), ("dotted", "docs/audit/journal")]))
+
+
+def _plan_reader_cases(check, excluded):
+    """More names for the one search: a script the plugin ships, a name in
+    another case, a backslash a shell drops, the directory the shards live in.
+
+    Each was a stale green a review probe drove on an export of the phase: a
+    gate entry running `audit-status.py --gate` reads the plan through the
+    configured path and names none of it; `AUDIT-PLAN.JSON` is the plan on a
+    file system that folds case; `audit-pl\\an.json` is the plan once a shell
+    has dropped the backslash; `ls docs/audit/phases` lists the shards. Every
+    repair has its allow case beside it, because the cheap repair - grade any
+    mention - passes every repair case and repeats nothing at all.
+    """
+    plan = "docs/audit/audit-plan.json"
+    dirs = ["docs/audit/evidence", "docs/audit/journal"]
+    names = M.plugin_script_names()
+    check("lw23 the script names the reading searches are the ones the plugin "
+          "ships, asked of the module that resolves scripts by basename rather "
+          "than typed into the runner: same=%r readers=%r"
+          % (sorted(names) == sorted(_loader.script_index()),
+             [n for n in ("audit-status.py", "validate-manifest.py")
+              if n in names]),
+          len(names) > 0 and sorted(names) == sorted(_loader.script_index())
+          and "audit-status.py" in names and "validate-manifest.py" in names)
+
+    readers = [("status", "python3 plugins/audit/scripts/status/audit-status.py "
+                          "--gate"),
+               ("validate",
+                "python3 plugins/audit/scripts/manifest/validate-manifest.py"),
+               ("bare", "validate-manifest.py -q")]
+    got = _grading_or_raise(readers, excluded, directories=dirs)
+    check("lw24 an entry running one of the plugin's own scripts with no path "
+          "argument - `audit-status.py --gate`, `validate-manifest.py` - grades "
+          "the plan it reads, and says which script: %r" % (got,),
+          got == [("status", "%s through audit-status.py" % (plan,)),
+                  ("validate", "%s through validate-manifest.py" % (plan,)),
+                  ("bare", "%s through validate-manifest.py" % (plan,))])
+    line = (M.left_out_line("status", got[0][1])
+            if isinstance(got, list) and got else "")
+    check("lw25 ...and its line is the sentence the drive matches by prefix: "
+          "%r" % (line,),
+          line.startswith("[run-test-gate] status names ")
+          and "audit-status.py" in line and "MEASURED and not repeated" in line)
+
+    suites = [("suite", "python3 tools/sweep-selftests.py "
+                        "tests/test_run_test_gate.py tests/test_audit_status.py "
+                        "tests/test_validate_manifest.py tests/test__evidence_io.py"),
+              ("near", "python3 my-audit-status.py audit-status.pyc "
+                       "x/validate-manifest.py.bak")]
+    got = _grading_or_raise(suites, excluded, directories=dirs)
+    check("lw26 THE ALLOW CASE: a suite whose file name merely contains a "
+          "script's name - `test_run_test_gate.py` does not name "
+          "`run-test-gate.py`, `test__evidence_io.py` does not name "
+          "`_evidence_io.py` - and a script name run on into a longer one "
+          "grade nothing: %r" % (got,),
+          got == [])
+
+    folded = [("upper", "cat DOCS/AUDIT/AUDIT-PLAN.JSON"),
+              ("mixed", "ls docs/audit/Evidence/x.jsonl"),
+              ("script", "python3 C:\\Plugin\\Audit-Status.py --gate")]
+    got = _grading_or_raise(folded, excluded, directories=dirs)
+    check("lw27 a name written in another case is the same file on a file "
+          "system that folds case - the plan, a left-out directory, a "
+          "script: %r" % (got,),
+          got == [("upper", plan), ("mixed", "docs/audit/evidence"),
+                  ("script", "%s through audit-status.py" % (plan,))])
+    near = [("near", "cat MY-AUDIT-PLAN.JSON docs/audit/EVIDENCE-OLD/x"),
+            ("suite", "python3 tools/sweep-selftests.py TESTS/TEST__EVIDENCE_IO.PY "
+                      "TESTS/TEST_AUDIT_STATUS.PY"),
+            ("k", "pytest -k Journal tests/")]
+    got = _grading_or_raise(near, excluded, directories=dirs)
+    check("lw28 THE ALLOW CASE: folded, a sibling whose name runs on past a "
+          "left-out one, a suite named after a module, and a bare selector "
+          "still grade nothing: %r" % (got,),
+          got == [])
+
+    dropped = [("file", "cat docs/audit/audit-pl\\an.json"),
+               ("dir", "ls docs/audit/evi\\dence/x.jsonl"),
+               ("script", "python3 vali\\date-manifest.py")]
+    got = _grading_or_raise(dropped, excluded, directories=dirs)
+    check("lw29 a backslash a shell drops before a letter hides no name: the "
+          "plan, a left-out directory and a script each grade: %r" % (got,),
+          got == [("file", plan), ("dir", "docs/audit/evidence"),
+                  ("script", "%s through validate-manifest.py" % (plan,))])
+    glued = [("near", "cat docs/audit/audit-pl\\an.json.bak"),
+             ("sibling", "printf 'a\\b' evi\\dence-old/x"),
+             ("win", "type C:\\repo\\tests\\test__evidence_io.py")]
+    got = _grading_or_raise(glued, excluded, directories=dirs)
+    check("lw30 THE ALLOW CASE: with its backslashes dropped, a backup, a "
+          "sibling directory and a Windows suite path still grade nothing: %r"
+          % (got,),
+          got == [])
+
+    shards = [("dir", "ls docs/audit/phases"),
+              ("slash", "ls docs/audit/phases/"),
+              ("glob", "cat docs/audit/phases/P1*.json"),
+              ("win", "dir docs\\audit\\phases")]
+    got = _grading_or_raise(shards, excluded, directories=dirs)
+    check("lw31 the directory holding the shards is a left-out directory: "
+          "named bare, with a trailing separator, under a glob or with "
+          "Windows separators, it grades: %r" % (got,),
+          got == [(tag, "docs/audit/phases") for tag, _c in shards])
+    apart = [("k", "pytest -k phases tests/"),
+             ("near", "ls docs/audit/phases-old/ src/phases.py")]
+    beside = [("plugin", "ruff check plugins/audit tools"),
+              ("ls", "ls docs/audit/")]
+    got = (_grading_or_raise(apart, excluded, directories=dirs),
+           _grading_or_raise(beside, ["docs/audit/audit-plan.json",
+                                      "docs/audit/P1.json"]))
+    check("lw32 THE ALLOW CASE: a bare selector and a sibling of the shards' "
+          "directory grade nothing, and a shard kept beside the plan makes no "
+          "left-out directory of the plan's own - `plugins/audit` would "
+          "otherwise grade on every repository: %r" % (got,),
+          got == ([], []))
 
 
 def _spaced_word_cases(check, root, excluded):
@@ -8260,6 +8380,7 @@ def _reuse_cases(check):
           == [("v", "docs/audit/audit-plan.json")])
 
     _left_word_cases(check)
+    _symlinked_plan_cases(check)
 
     root = _harness.fixture_root("run-test-gate-reuse-")
     os.makedirs(os.path.join(root, "docs", "audit", "phases"))
@@ -8312,6 +8433,11 @@ def _reuse_cases(check):
                          "nodePreamble": "source ~/.nvm/nvm.sh && nvm use"}}
     plain_key = M.reuse_identity(root, mp, declared, [("ok", "true")],
                                  ["src/a.py"])
+    # ONE MANIFEST ON BOTH SIDES: the plan's meta is in the key, so a pair whose
+    # manifests differed in `nodePreamble` would differ there and this case
+    # would stop asking about the executed string at all.
+    plain_pre = M.reuse_identity(root, mp, prefixed, [("ok", "true")],
+                                 ["src/a.py"])
     pre_key = M.reuse_identity(
         root, mp, prefixed,
         [("ok", "source ~/.nvm/nvm.sh && nvm use && true")], ["src/a.py"])
@@ -8320,9 +8446,28 @@ def _reuse_cases(check):
           "carries `meta.nodePreamble` in front - and they are the same gate, so "
           "they share an identity. Comparing what was executed would make two "
           "operators whose shell preludes differ unable to ever agree: %r"
-          % (plain_key["key"] == pre_key["key"],),
-          plain_key["key"] is not None
-          and plain_key["key"] == pre_key["key"])
+          % (plain_pre["key"] == pre_key["key"],),
+          plain_pre["key"] is not None
+          and plain_pre["key"] == pre_key["key"])
+
+    # THE PLAN'S META IS IN THE KEY. A step can read the plan without naming
+    # it - this repository's own sweep holds suites that read the live plan's
+    # meta - so an edit to any meta block must measure. The one meta key a
+    # recorded run writes itself, the evidence boundary, is not an edit.
+    def _meta(extra):
+        body = {"buildCommands": {"ok": "true"}}
+        body.update(extra)
+        return M.reuse_identity(root, mp, {"meta": body}, [("ok", "true")],
+                                ["src/a.py"])["key"]
+    meta_a = _meta({"defaultSkills": ["writing-python"]})
+    meta_b = _meta({"defaultSkills": ["no-silent-pass"]})
+    meta_since = _meta({"defaultSkills": ["writing-python"],
+                        _ev_io.SINCE_KEY: {"at": "2026-01-01T00:00:00Z"}})
+    check("ru50 an edit to a meta block the gate does not declare moves the "
+          "key, while the evidence boundary a recorded run writes into meta "
+          "does not: edit moves=%r boundary moves=%r"
+          % (meta_a != meta_b, meta_a != meta_since),
+          meta_a is not None and meta_a != meta_b and meta_a == meta_since)
 
     remapped = M.reuse_identity(root, mp, {"meta": {"buildCommands":
                                                     {"ok": "pytest -q"}}},
@@ -8364,8 +8509,10 @@ def _reuse_cases(check):
                               _ev_io.DERIVED_PHASE_GATE_ARM)
     reads_plan = {"meta": {"buildCommands": {
         "validate": "python3 v.py docs/audit/audit-plan.json"}}}
-    by_key = M.reuse_identity(root, mp, reads_plan,
-                              [(arm, "python3 v.py docs/audit/audit-plan.json")],
+    # THE RUNNING COMMAND HOLDS NO PLAN, so only the declared reading - the
+    # key's command - can grade this step, and a reading that dropped it fails
+    # the first conjunct below.
+    by_key = M.reuse_identity(root, mp, reads_plan, [(arm, "true")],
                               ["src/a.py"])
     run_only = M.reuse_identity(
         root, mp, declared,
@@ -8375,8 +8522,9 @@ def _reuse_cases(check):
     names_nothing = M.reuse_identity(root, mp, {"meta": {"buildCommands": {
         "validate": "pytest -q tests/"}}}, [(arm, "pytest -q tests/")],
         ["src/a.py"])
-    check("ru46 a phase-gate arm step whose build key validates the plan, and "
-          "a derived step whose running command names it, each grade the "
+    check("ru46 a phase-gate arm step whose build key validates the plan while "
+          "its running command names nothing, and a derived step whose "
+          "running command names it, each grade the "
           "plan; an arm step whose key names nothing left out grades nothing: "
           "%r" % ((by_key["grading"], run_only["grading"],
                    names_nothing["grading"]),),
@@ -8511,8 +8659,24 @@ def _reuse_cases(check):
           and "stays inside the content identity" in _sibling_text)
 
     # --- through `main`, which is where the wiring lives --------------------
+    with open(mp) as fh:
+        meta_before = json.load(fh).get("meta") or {}
     code_one, text_one = _run()
+    with open(mp) as fh:
+        meta_after = json.load(fh).get("meta") or {}
     code_two, text_two = _run()
+    check("ru51 THE REPEAT THE PHASE EXISTS FOR SURVIVES THE META HALF: the "
+          "first recorded run on this plan wrote the evidence boundary into "
+          "meta and changed nothing else there, and the ask straight after it "
+          "repeated: added=%r rest same=%r repeated=%r"
+          % (sorted(set(meta_after) - set(meta_before)),
+             dict((k, v) for k, v in meta_after.items()
+                  if k != _ev_io.SINCE_KEY) == meta_before,
+             "GATE VERDICT REUSED" in text_two),
+          sorted(set(meta_after) - set(meta_before)) == [_ev_io.SINCE_KEY]
+          and dict((k, v) for k, v in meta_after.items()
+                   if k != _ev_io.SINCE_KEY) == meta_before
+          and "GATE VERDICT REUSED" in text_two)
     rows = _recorded_rows(evdir)
     first, second = rows[0], rows[1]
     check("ru6 THE REQUIREMENT: a second run over an unchanged tree REPEATS the "
@@ -8887,6 +9051,48 @@ def _reuse_cases(check):
           == seeded.get("runId"))
 
 
+def _symlinked_plan_cases(check):
+    """A plan reached through a symlink is graded under both of its names.
+
+    The recorder leaves the plan out under its RESOLVED name, so an entry
+    naming the plan the way the project configures it - the link - was read as
+    naming nothing left out, and its green was repeated over a plan nobody had
+    validated. The link is built here, relative, the way a repository that
+    moved its plan keeps the old path working; a platform that will not make
+    one skips by name.
+    """
+    root = os.path.realpath(_harness.fixture_root("run-test-gate-symplan-"))
+    for rel in ("plans", os.path.join("docs", "audit"), ".claude"):
+        os.makedirs(os.path.join(root, rel))
+    with open(os.path.join(root, "plans", "main.json"), "w") as fh:
+        json.dump({"meta": {"version": 3, "buildCommands": {}}, "phases": []}, fh)
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    link = os.path.join(root, "docs", "audit", "audit-plan.json")
+    try:
+        os.symlink(os.path.join("..", "..", "plans", "main.json"), link)
+    except (OSError, NotImplementedError, AttributeError):
+        print("SKIP ru48-ru49 (this platform will not create a symlink here)")
+        return
+    gate = [("configured", "python3 v.py docs/audit/audit-plan.json"),
+            ("target", "python3 v.py plans/main.json"),
+            ("plain", "pytest -q tests/")]
+    got = M.reuse_identity(root, link, {"meta": {}}, gate,
+                           ["src/a.py"])["grading"]
+    check("ru48 a symlinked plan is graded by an entry naming its configured "
+          "path and by one naming its target: %r" % (got,),
+          got == [("configured", "docs/audit/audit-plan.json"),
+                  ("target", "plans/main.json")])
+    near = [("bak", "cat docs/audit/audit-plan.json.bak plans/main.json.orig"),
+            ("dir", "ls plans/ docs/audit/")]
+    got = M.reuse_identity(root, link, {"meta": {}}, near,
+                           ["src/a.py"])["grading"]
+    check("ru49 THE ALLOW CASE: a backup of either name, and the directories "
+          "the two names sit in, grade nothing - the target's directory is not "
+          "a shards' directory: %r" % (got,),
+          got == [])
+
+
 def _part_reuse_cases(check):
     """A gate holding a step that grades the TREE and a step that grades the
     PLAN repeats the first and measures the second.
@@ -8931,11 +9137,14 @@ def _part_reuse_cases(check):
     build = {"tree": "python3 tree.py",
              "plan": "python3 plan.py docs/audit/audit-plan.json"}
 
-    def _plan(gate, title="one"):
-        """The index and the shard; the manifest is outside the identity, so
-        a title change moves nothing a repeat is keyed on."""
+    def _plan(gate, title="one", meta=None):
+        """The index and the shard; the manifest is outside the identity
+        but for its meta, so a title change moves nothing a repeat is keyed
+        on, and `meta` - more keys for the meta block - does."""
+        body = {"version": 3, "buildCommands": build}
+        body.update(meta or {})
         with open(mp, "w") as fh:
-            json.dump({"meta": {"version": 3, "buildCommands": build},
+            json.dump({"meta": body,
                        "phases": [{"id": "P1", "title": title,
                                    "shard": "phases/P1.json"}]}, fh)
         with open(os.path.join(root, "docs", "audit", "phases", "P1.json"),
@@ -9079,6 +9288,42 @@ def _part_reuse_cases(check):
           and row_h.get("steps") == []
           and "GATE VERDICT REUSED" in text_h
           and "measured here:" not in text_h)
+
+    # AN EDIT TO THE PLAN'S META MEASURES, whole run and per step. The tree
+    # step names no plan and reads none here, and that is the point: a step
+    # can read the plan's meta without naming it, so nothing the command
+    # says may decide this.
+    _plan(["tree"], meta={"defaultSkills": ["writing-python"]})
+    code_i, text_i, row_i = _run()
+    runs_i = _runs()
+    code_j, text_j, row_j = _run()
+    check("pr9 an edit to a meta block MEASURES a gate that would repeat as a "
+          "whole - the tree step runs again - and the ask straight after it "
+          "repeats again: runs=%r/%r source=%r/%r"
+          % (runs_i, _runs(), row_i.get("verdictSource"),
+             row_j.get("verdictSource")),
+          runs_i == (5, 6) and _runs() == (5, 6)
+          and row_i.get("verdictSource") is None
+          and "GATE VERDICT REUSED" not in text_i
+          and row_j.get("verdictSource") == _ev_io.REUSED
+          and "GATE VERDICT REUSED" in text_j)
+
+    _plan(["tree", "plan"], meta={"defaultSkills": ["writing-python"]})
+    _run()
+    code_k, _text_k, row_k = _run()
+    runs_k = _runs()
+    _plan(["tree", "plan"], meta={"defaultSkills": ["no-silent-pass"]})
+    code_l, text_l, row_l = _run()
+    check("pr10 ...and per step: with the tree step repeated on the ask before "
+          "it, an edit to a meta block measures EVERY step and the row repeats "
+          "nothing: runs=%r/%r before=%r after=%r"
+          % (runs_k, _runs(), _source(row_k, "tree"),
+             row_l.get("verdictSource")),
+          _source(row_k, "tree") is not None
+          and _runs() == (runs_k[0] + 1, runs_k[1] + 1)
+          and row_l.get("verdictSource") is None
+          and not any("reusedFrom" in s for s in row_l.get("steps") or [])
+          and "GATE VERDICT REUSED" not in text_l)
 
 
 def _pgo_fixture(setting, phase_gate, task_gate):

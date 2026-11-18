@@ -167,8 +167,10 @@
         "severity": "med",
         "file": "tools/affected.py:583-588 (_spells), comment at :313",
         "issue": "The edge of the rule that reads a script's path as text rather than a run is pinned by no case. The comment says a value handed to a call other than shlex.quote is still a run, and that only a percent format spells; two mutations that widen the rule (the flag passing through any call; any binary operator counting as a format) leave the tool's suite green. A later edit can therefore drop a real run edge, after which a change to the named script no longer selects the suites that run it, with the build green.",
-        "resolution": "A case for each side of the edge: a percent format whose operand is another call wrapping the resolver, and a non-percent operator, each still a run; proved by the two mutations going red.",
-        "fixTask": "P168.19-icj"
+        "resolution": "fixed in P168.19-icj (ff6456dd12ed): A case for each side of the edge: a percent format whose operand is another call wrapping the resolver, and a non-percent operator, each still a run; proved by the two mutations going red.",
+        "fixTask": "P168.19-icj",
+        "commit": "ff6456dd12ed",
+        "status": "fixed"
       },
       {
         "id": "P168-R17",
@@ -201,7 +203,7 @@
         "resolution": "The runner's three and ru46 with the fix above; the drive's two to the low batch."
       }
     ],
-    "outcome": "[findings: 20 - 0 high, 11 med, 9 low; 11 with a recorded fix commit]"
+    "outcome": "[findings: 20 - 0 high, 11 med, 9 low; 12 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2258,7 +2260,7 @@
     {
       "id": "P168.19-icj",
       "title": "The edge of the selector's text-not-run reading is held by cases that fail when it is widened, and a comparison selector's faults stay its own",
-      "status": "in_progress",
+      "status": "done",
       "description": "This repository's test selector (tools/affected.py) was narrowed in this phase: a path obtained from the script resolver and then spelled into a percent format or handed to shlex.quote is read as text, not as a run of that script. A review found the narrowing sound on the tree as it stands (every such site in product code is text nobody executes) and found that nothing holds its edge: two mutations that widen it leave the tool's own cases green.\n\nACCEPTANCE.\n1. tools/affected.py gains a case for each side of the edge the comment above TEXT_RESOLVERS and the docstring of the spelled reading state: a percent format whose operand is another call wrapping the resolver is still a run; an operator other than percent is still a run. Each is proved by its mutation going red: the call branch of the spelled reading returning the flag instead of False, and the operator test accepting any binary operator. Deliver both mutations as a probe file run against an in-memory copy or an export, never the checkout.\n2. tools/measure-affected-miss.py gains a case for the branch that still sweeps a commit whose default selection is the full set when the comparison selector is narrower; proved by reverting that guard.\n3. The window line of that tool does not say of the comparison selector what holds only for the default one: with a comparison selector given, the full-set commits can miss for it.\n4. A comparison selector that cannot be read does not cost the default selector its measurement for that commit: the default's reading is kept and the comparison's is reported as not measured, by name.\n5. CONTRIBUTING.md says where the command and the date behind the narrowing really sit.\n6. The listings the plan records (one path per line from --list-related and --list-all) do not change by a byte; say how you checked.\n\nDEPENDANTS. The plugin's gate runner reads --list-related and --list-all through the plan's recorded listing commands; tools/verify.sh and CI read --json; tests/test__output_lints.py pins the prose-scan exemption row for tools/measure-affected-miss.py's fixtures by the tool's path, so keep the tool at its path and keep its fixtures. Both tools carry their own cases and are run by the sweep as tools/affected.py and tools/measure-affected-miss.py; no file under tests/ is added.",
       "files": [
         "tools/affected.py",
@@ -2284,14 +2286,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "ff6456dd12ed",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Applied <scratchpad>/p168-18.patch (git apply --check exit 0, git apply exit 0, plain form, index untouched) and reviewed every hunk against the acceptance; nothing needed changing. (1) tools/affected.py: cases a21f (a percent operand that is os.path.realpath wrapping _loader.script_path is still a run) and a21g (a `+` join is still a run), with the comment above TEXT_RESOLVERS naming a21e/a21f/a21g as the two sides of the edge. Only comment and _cases lines changed, so no listing or --json code path changed. (2) tools/measure-affected-miss.py: m23b (a full default with a narrower comparison is still swept: the default misses nothing, the comparison misses test_b). (3) The window line counts the full-set commits per selection when a comparison is given (m23c); without one it keeps its single count. (4) An unreadable comparison selector no longer turns the commit into could-not-measure: measure_in_tree keeps the default's reading and records compare_why; render prints `NOT MEASURED (compare)  <sha>  <reason>`, the compare headline counts only commits it was read on and adds `, N not measured for it`, and _compare_part says nothing for that commit (m23d). The docstring's WHAT IT DOES NOT SAY says this, and the full-set bullet now says the selection can't miss only for itself. (5) CONTRIBUTING.md:593-594 now says the command and date are in the comment above TEXT_RESOLVERS (tools/affected.py:318-324) and that the docstring (tools/affected.py:68-69) only points there. (6) Both listings are byte-identical between a pure HEAD export and the same export with the three files laid over it: `--list-all` cmp exit 0 (196 lines); `--list-related <p>` for 157 paths (every tracked .py under plugins/audit/scripts and plugins/audit/hooks, the three declared files and Makefile), differ 0, every exit 0, no listing empty, 18832 lines in total (script <scratchpad>/p168-19-listings.py, exit 0). Gate: python3 tools/sweep-selftests.py tools/affected.py tools/measure-affected-miss.py exit 0 (68 + 31 cases). Also run as ordered: python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py tests/test__refs.py exit 0 (284 + 183 + 292 cases); ruff check on both tools exit 0. measure-affected-miss.py's replay was not run. No number was written into a comment or docstring. DEPENDANTS. tools/affected.py: .github/sweep-costs.json, tools/bench-hooks.py and tools/lints/_refs.py name it by path, which is unchanged - still correct. tests/test__affected_tests.py (reached_by, reach_graph) and tools/prove-gates.py (_call_name, reach_graph, _rel) use functions not touched - still correct. tests/test__gate_derive.py and tests/test_derive_phase_gate.py read the listings, which are byte-identical (see 6) - still correct. tests/test__refs.py stays green: fixture names are built by _fx. tools/gate-parity.py and tools/verify.sh name it in prose, and --json is unchanged because only cases and a comment changed - still correct. tools/measure-affected-miss.py: tests/test__output_lints.py pins its prose-scan exemption by path; the path and fixtures are kept and that suite is green - still correct. tools/lints/_output_lints.py: green - still correct. .github/sweep-costs.json uses the path - still correct, though the new cases add a little run time. PLUGIN-BUILD-GUIDE.md (counterparts) and tests/test_stamp_verification.py (a same-named platform_only) are untouched - still correct. tools/affected.py imports _t and _cases, which are unchanged - still correct. Records gain one additive key, compare_why; nothing outside the tool reads its records. CONTRIBUTING.md: one paragraph changed by one net line after line 579. tests/test__areas.py:579 is a comment there, not a pin. tests/test__deps.py and tests/test__output_lints.py, which scan its prose, are green. The other files that name it by basename read no text of that paragraph - still correct.",
+        "descriptive": "The selector's spelled-text edge and the comparison replay's full-set sweep are now held by cases that go red when widened or reverted, and an unreadable comparison selector costs only its own reading."
       },
       "startedAt": "2026-11-18T15:34:43Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T15:55:13Z",
+      "verifiedBy": [
+        "tools/affected.py a21f: a percent-format operand that is another call wrapping the resolver is still a run",
+        "tools/affected.py a21g: a non-percent operator (+) joining the resolver's value is still a run",
+        "tools/measure-affected-miss.py m23b: a commit whose default selection is the full set is still swept for a narrower comparison selector",
+        "tools/measure-affected-miss.py m23c: with a comparison the window line counts full-set commits per selection",
+        "tools/measure-affected-miss.py m23d: an unreadable comparison selector leaves the default's measurement standing and is named NOT MEASURED (compare), outside the comparison's count"
+      ],
       "notes": [
         {
           "at": "2026-11-18T15:18:38Z",
@@ -2321,7 +2329,46 @@
         "P168-R16"
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T15:47:39Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 772000,
+            "startedAt": "2026-11-18T15:34:47Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T15:51:28Z.09ae9a",
+            "kind": "wait",
+            "ms": 0,
+            "startedAt": "2026-11-18T15:47:50Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T15:51:28Z.09ae9a, ending at its startedAt",
+            "kind": "selection",
+            "ms": 11375,
+            "runId": "2026-11-18T15:51:28Z.09ae9a",
+            "startedAt": "2026-11-18T15:47:50Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T15:51:28Z.09ae9a",
+            "kind": "gate",
+            "ms": 205854,
+            "runId": "2026-11-18T15:51:28Z.09ae9a",
+            "startedAt": "2026-11-18T15:48:02Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-18T15:55:00Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 199000,
+            "startedAt": "2026-11-18T15:51:41Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit ff6456dd12ed",
+            "kind": "commit",
+            "ms": 1818,
+            "startedAt": "2026-11-18T15:55:10Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T15:34:43Z"
       },
       "reviewPerTask": "signals",
@@ -2329,12 +2376,23 @@
         "runId": "2026-11-18T15:51:40Z.1e9963",
         "status": "passed",
         "at": "2026-11-18T15:51:40Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "ff6456dd12ed",
+        "at": "2026-11-18T15:55:13Z",
+        "return": "docs/audit/evidence/returns/P168.19-icj/20261118T153443Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "regression task, expectRedFirst false: the new cases pin an edge the selector already keeps and live in the tools they test, so no red exists at HEAD to prove. Each case was proved instead by its mutation, in an export (git archive HEAD with the three declared files laid over it), never in the checkout: probe <scratchpad>/p168-19-probe.py exit 0 - baselines 68/68 and 31/31 green; call branch `else False`->`else spelled` FAIL ['a21f'] only; `isinstance(node.op, ast.Mod)`->`True` FAIL ['a21g'] only; guard -> `if sel[\"full\"]:` FAIL ['m23b'] only; window line forced to the single count FAIL ['m23c'] only; unreadable comparison restored to could-not-measure FAIL ['m23d'] only. Each anchor asserted to occur exactly once, restored from memory, __pycache__ purged, bytecode off.",
+        "at": "2026-11-18, probe run after the patch was applied (no helper run; none owed)"
       }
     },
     {
       "id": "P168.20-icj",
       "title": "A step that reads the plan without naming it is measured: the plan's meta is in the reuse key, and a command naming one of the plugin's own scripts grades the plan",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The runner repeats a gate step's earlier verdict unless the step grades something the tree identity leaves out. After this phase's earlier work the reading holds for a path a command NAMES. A second review found what is left: reads that name nothing, and three cheap under-reads. All are the unsafe direction (a stale green); reading more is always acceptable here.\n\nWHAT IS WRONG TODAY, each shown by a reviewer's probe:\n(1) A step that reads the plan without naming it is repeatable. The key holds the gate commands and the declared scope and nothing of the plan. Since steps repeat one by one, this repository's own phase gate measures validate, gate and report and repeats the sweep beside them, though suites in that sweep read the live plan's meta. And a gate entry that runs one of the plugin's own plan readers with no path argument (audit-status.py --gate, validate-manifest.py) is never graded: a bug filed between two asks leaves a stale green.\n(2) A manifest reached through a symlink is left out under its resolved name only, so an entry naming the plan by its configured path is not graded.\n(3) Case is not folded, though macOS and Windows file systems fold it; a backslash a shell drops before a letter hides a name; the shards' directory named as a directory is not graded.\n(4) Case ru46's first conjunct cannot fail under either single mutation.\n\nACCEPTANCE.\n1. The reuse key holds a digest of the plan's meta as it stands at the ask, so an edit to any meta block measures every step, whole run and per step. Say in the outcome which meta keys the runner or the drive write during a phase (a reading done while planning found only the evidence boundary, written once) and show by a case that a second ask straight after a recorded run still repeats: this must not cost the repeat the phase exists for.\n2. A command that holds, as a whole name, the name of a script the plugin ships grades the plan. The list of names is derived from what the plugin ships, never typed out. A case for audit-status.py --gate and validate-manifest.py with no path argument, and an allow case for a suite whose file name merely contains a script's name (test_run_test_gate.py does not name run-test-gate.py).\n3. A symlinked plan is graded by an entry naming either its configured path or its target; a case builds the symlink (skipped by name with its reason where the platform cannot make one).\n4. Names are compared case-folded; a reading with every backslash dropped is searched beside the two there are; the directory holding the shards counts as a left-out directory. A case each, and the allow cases that prove none over-fires onto a sibling name.\n5. What still cannot be seen is stated beside the other limits, in the code and in the guide, with its direction: a suite that opens the plan's phases or tasks itself, in a gate that runs no plan reader.\n6. ru46 is given a running command that does not hold the plan, so its declared reading can fail.\n7. Mutations as a probe file on an in-memory copy; the reviewers' probes pass on your tree.\n\nDEPENDANTS. drive-phase.py matches the runner's two left-out sentences by prefix and is not in this task's files: keep them byte for byte. A row recorded before this change keys differently once (one measurement, never a stale repeat): say so in the outcome and in CHANGELOG.md only if a sentence there already describes the key. The per-step repeat, the joined step and the entries left to the phase gate all read this key. _evidence_io.py is imported by most of the tree; do the symlink reading in the runner, from the manifest path it was handed, and hand back if it can only live in _evidence_io.py.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -2361,14 +2419,14 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T15:55:15Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -2393,7 +2451,17 @@
       "fixes": [
         "P168-R18",
         "P168-R19"
-      ]
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T15:55:15Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T16:33:14Z.5823cb",
+        "status": "passed",
+        "at": "2026-11-18T16:33:14Z"
+      }
     }
   ],
   "request": "Brzina razvoja postaje merena metrika: task gate pokrece samo pogodjene testove, ceo suite ide na sign-off-u faze. Izmereno: task gate je 93% razlike prema obicnoj sesiji, a polovina toga je ponovljeno merenje vec zelenog stabla.",

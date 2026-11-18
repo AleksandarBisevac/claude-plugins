@@ -4617,19 +4617,34 @@ and not *none*, and the reuse path says so.
 read off its text, not off shell words.** `grades_left_out` asks whether the command holds the
 left-out path's last component as a whole name — no letter or digit runs on into it through the
 characters that join a name — and, for a path that is a directory on disk, with a separator of
-either kind beside it (`_holds_name`). The text is searched as written and once more as a shell's
-quote removal leaves it (`_quote_removed`), so no quote, escape, option glue, delimiter or
-whitespace kind can hide the path, a backslash-separated Windows path is read on every host, and
-nothing in the reading can fail or recurse. A name only containing the left-out one inside a longer
-file name does not grade, so a sweep listing `tests/test__evidence_io.py` stays repeatable, and a
-bare `-k journal` is no reading of the journal directory. Reading more than a shell would is the
-accepted direction; what it reads less — a variable, a glob, an ancestor directory, a directory's
-bare name after a `cd`, a brace expansion — is listed beside `UNREADABLE`, and `lw22` holds the
-list to what the reading does. Each step is read under its declared command and under the command
-that runs (`_grading_steps`), so a step widened onto the phase gate is read through its entry's
-build command (`declared_gate`). A command that is not text is reported as naming one, with
-`UNREADABLE` as the reason (`left_out_line`), because the other guess repeats a verdict nobody
-measured.
+either kind beside it (`_holds_name`). The text is searched as written, as a shell's quote removal
+leaves it (`_quote_removed`) and with every backslash then dropped, all three case-folded, so no
+quote, escape, option glue, delimiter, whitespace kind or letter case can hide the path, a
+backslash-separated Windows path is read on every host, and nothing in the reading can fail or
+recurse. The same search holds more names (`_search_names`): the directory holding the shards, as
+a directory; every spelling of the plan the runner was handed (`plan_spellings` — a symlinked plan
+is excluded under its target, and an entry naming the configured link reads the same bytes); and
+every script this plugin ships (`plugin_script_names`, read off `_loader.script_index`), which
+grades the plan, because `audit-status.py --gate` and `validate-manifest.py` find it through the
+config with no path at all. A name only containing the left-out one inside a longer file name does
+not grade, so a sweep listing `tests/test__evidence_io.py` or `tests/test_run_test_gate.py` stays
+repeatable, and a bare `-k journal` is no reading of the journal directory. Reading more than a
+shell would is the accepted direction; what it reads less — a variable, a glob, an ancestor
+directory, a directory's bare name after a `cd`, a brace expansion or ANSI-C quoting, a name a
+program assembles in its own code, and a suite that opens the plan's phases, tasks or bugs itself
+in a gate that runs no plan reader (a stale green: only the plan's meta is in the key) — is listed
+beside `UNREADABLE`, and `lw22` holds the list to what the reading does. Each step is read under
+its declared command and under the command that runs (`_grading_steps`), so a step widened onto
+the phase gate is read through its entry's build command (`declared_gate`). A command that is not
+text is reported as naming one, with `UNREADABLE` as the reason (`left_out_line`), because the
+other guess repeats a verdict nobody measured.
+
+**The plan's meta is in the key** (`meta_part`), because a step can read the plan without naming
+it: this repository's own sweep holds suites that read the live plan's meta. An edit to any meta
+block measures every step, whole run and per step. The one meta key a recorded run writes itself,
+the evidence boundary (`RECORDER_META`, the writer's own `SINCE_KEY`), is left out of it, or the
+ask after a plan's first recorded run could never repeat; `ru51` drives that pair. A row recorded
+before the meta joined the key keys differently once: one measurement, never a stale repeat.
 
 **It is the entry that is measured, not the whole gate.** `repeat_plan` splits the gate: the
 entries `grades_left_out` names run, and every other entry is repeated from the newest row that

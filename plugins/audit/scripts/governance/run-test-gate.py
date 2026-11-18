@@ -3017,8 +3017,8 @@ def affected_lines(info):
 
 
 # --- a verdict already measured on these bytes --------------------------------
-# WHAT MAKES TWO GATE RUNS THE SAME RUN. Three things, and the identity is the
-# digest of all three together:
+# WHAT MAKES TWO GATE RUNS THE SAME RUN. The things below, and the identity is
+# the digest of all of them together:
 #
 #   * THE TREE'S CONTENT, through `_tree_stamp.content_digest`. Not
 #     `testedState`: that block's dirty digest records WHICH paths were dirty and
@@ -3037,15 +3037,28 @@ def affected_lines(info):
 #     ownership split, the coverage answer and the excused red are all read
 #     against that list, so two runs over one tree with different declared files
 #     reach different verdicts and are not one run.
+#   * THE PLAN'S META AS IT STANDS AT THE ASK (`meta_part`), because a step can
+#     read the plan without naming it: a suite reading the live plan's meta, run
+#     by a sweep that names no plan, is graded by bytes the tree half leaves out.
+#     So an edit to any meta block measures every step. The keys a recorded run
+#     writes into meta itself (`RECORDER_META`) are not an edit, or the run
+#     after the first one recorded on a plan could never repeat.
 #
 # WHAT THE IDENTITY DOES NOT ESTABLISH IS PRINTED BESIDE IT, in `REUSE_LIMIT`.
-REUSE_LIMIT = ("the tree's content and the gate the manifest declares - not that "
-               "the machine is the one that measured. A file git ignores, an "
-               "installed package, an environment variable, the clock, the "
-               "network and a check that answers differently twice are all "
-               "outside it, and so are this plugin's own records: the manifest, "
-               "its shards, the ledger and the trail are left out because a "
-               "recorded run rewrites them")
+REUSE_LIMIT = ("the tree's content, the gate the manifest declares and the "
+               "plan's meta - not that the machine is the one that measured. A "
+               "file git ignores, an installed package, an environment "
+               "variable, the clock, the network and a check that answers "
+               "differently twice are all outside it, and so are this plugin's "
+               "own records: the manifest's phases and tasks, its shards, the "
+               "ledger and the trail are left out because a recorded run "
+               "rewrites them")
+
+# THE META KEYS A RECORDED RUN WRITES ITSELF, named by their writer's own
+# constant: the evidence boundary, stamped once by the first recorded run on a
+# plan (`_evidence_io.write_evidence_since`). No other meta key is written by
+# this runner or by the drive; every other writer is a verb an operator runs.
+RECORDER_META = (_ev.SINCE_KEY,)
 
 # WHICH VERDICTS SURVIVE BEING REPEATED, and it is a short list on purpose.
 # `passed` and `failed` are statements about the work under test that the same
@@ -3086,10 +3099,18 @@ def subject_ids(phase_id, task_id, source):
 # text holds that path's last component as a whole name - no letter or digit
 # runs on into it, through the characters that join a name (`_NAME_JOINERS`),
 # on either side - and, for a path known to be a directory, with a path
-# separator of either kind directly beside it. The text is searched as written
-# and once more as a shell's quote removal leaves it (`_quote_removed`), never
-# split into words, so no quote, escape, delimiter or whitespace kind can hide
-# an occurrence, and nothing in the reading can fail or recurse.
+# separator of either kind directly beside it. The text is searched as written,
+# as a shell's quote removal leaves it (`_quote_removed`) and with every
+# backslash then dropped, all three case-folded, never split into words, so no
+# quote, escape, delimiter, whitespace kind or letter case can hide an
+# occurrence, and nothing in the reading can fail or recurse.
+#
+# MORE NAMES FOR THE SAME SEARCH (`_search_names`). Beside each left-out path:
+# the directory holding the plan's shards, as a directory; every spelling of
+# the plan the runner was handed, a symlink's and its target's; and the name of
+# every script this plugin ships (`plugin_script_names`), which grades the
+# plan, because the plugin's own readers find the plan through the project's
+# config and are routinely run with no path at all (`audit-status.py --gate`).
 #
 # WHICH WAY EACH THING IT CANNOT READ FAILS. A command that is not text grades
 # (`UNREADABLE`): measured, the safe direction. Reading more than a shell would
@@ -3101,7 +3122,13 @@ def subject_ids(phase_id, task_id, source):
 # through a variable (`"$PLAN"`), a glob (`docs/audit/*.json`), a word naming an
 # ancestor directory of a left-out path (`docs/audit`, `.`), a left-out
 # directory named by its bare last component after a `cd` (`ls journal`), and
-# a last component a shell assembles by brace expansion (`audit-{plan,x}.json`).
+# a last component a shell assembles by brace expansion (`audit-{plan,x}.json`)
+# or ANSI-C quoting (`audit-$'plan'.json`), a name a program assembles in its
+# own code (`'audit-' + 'plan.json'`, a directory joined from its components),
+# and a suite that opens the plan's phases, tasks or bugs itself, in a gate that
+# runs no plan reader and names no plan path - its command holds nothing of the
+# plan, and only the plan's meta is in the key, so that green repeats over a
+# plan whose phases changed under it.
 # One assembled only from quoted pieces is read (`audit-"plan".json`), and so
 # is a path through `..`, since its last component is still written. The
 # earlier readings split the entry into shell words and matched words, and each
@@ -3186,6 +3213,69 @@ def _last_name(path):
     return path if name in ("", ".", "..") else name
 
 
+def plugin_script_names():
+    """The base name of every script this plugin ships, as the module that
+    resolves scripts by basename indexes them (`_loader.script_index`) - so
+    the list is what is on disk, never one typed here."""
+    return sorted(_loader.script_index())
+
+
+def _parent(path):
+    """`path`'s parent, `/`-separated; empty for a path with none."""
+    return path.replace("\\", "/").rstrip("/").rpartition("/")[0]
+
+
+def _depth(path):
+    """How many components `path` has, either separator."""
+    return len([p for p in re.split(r"[/\\]", path) if p])
+
+
+def _plan_among(paths, dirs):
+    """The left-out path read as the plan when the caller named none: the
+    shallowest `.json` file, the first of a tie, since shards resolve under the
+    plan's own directory. None when no left-out path is a file."""
+    files = [p for p in paths if p not in dirs]
+    candidates = [p for p in files if p.lower().endswith(".json")] or files
+    return min(candidates, key=_depth) if candidates else None
+
+
+def _shard_directories(paths, dirs, plans):
+    """The directories holding the plan's shards: the parent of each left-out
+    `.json` file, unless that parent is the directory of a spelling of the plan
+    or one above it - which leaves the plan itself and a symlinked plan's
+    target out, and a shard kept beside the plan, which would otherwise make a
+    left-out directory of `docs/audit`, whose `audit` is written in every path
+    under `plugins/audit`."""
+    plan_dirs = [_parent(p) for p in plans]
+    found = []
+    for path in paths:
+        if path in dirs or not path.lower().endswith(".json"):
+            continue
+        parent = _parent(path)
+        if (not parent or parent in found or parent in dirs or parent in paths
+                or any(d == parent or d.startswith(parent + "/")
+                       for d in plan_dirs)):
+            continue
+        found.append(parent)
+    return found
+
+
+def _search_names(paths, dirs, plans):
+    """`[(name, is_dir, what)]`: every name the rule searches for and what an
+    entry holding it grades - each left-out path by its last component, the
+    shards' directory, and each script this plugin ships, which grades the
+    plan (`plans[0]`, or the plan read off `paths`)."""
+    plan = plans[0] if plans else _plan_among(paths, dirs)
+    names = [(_last_name(p), p in dirs, p) for p in paths]
+    names.extend((_last_name(d), True, d)
+                 for d in _shard_directories(paths, dirs,
+                                             plans or [p for p in [plan] if p]))
+    names.extend((script, False, "%s through %s"
+                  % (plan if plan else "the plan", script))
+                 for script in plugin_script_names())
+    return [(name.casefold(), is_dir, what) for name, is_dir, what in names]
+
+
 def left_out_line(name, what):
     """The line saying why an entry naming a left-out path is measured, not
     repeated: the entry, and the path it names or the reason it was read as
@@ -3203,7 +3293,7 @@ def left_out_line(name, what):
             "thing it graded" % (name, what))
 
 
-def grades_left_out(gate, excluded, directories=()):
+def grades_left_out(gate, excluded, directories=(), plan=()):
     """The gate entries whose command NAMES a path this identity leaves out.
 
     WHY AN ENTRY CAN BE ITS OWN COUNTER-EXAMPLE. The content identity drops the
@@ -3234,18 +3324,27 @@ def grades_left_out(gate, excluded, directories=()):
     component inside a longer name, and a sweep listing it was once measured
     again on every unchanged tree. A command that is not text is reported with
     `UNREADABLE` in place of a path.
+
+    `plan` is every spelling of the plan, the configured one first - a plan
+    reached through a symlink has two. Absent, the plan is read off
+    `excluded` (`_plan_among`). An entry holding a script this plugin ships
+    is reported as naming the plan `through` that script.
     """
     paths = [p for p in (excluded or []) if isinstance(p, str) and p.strip()]
     dirs = set(directories or ())
+    plans = [p for p in (plan or ()) if isinstance(p, str) and p.strip()]
+    names = _search_names(paths, dirs, plans)
     named = []
     for name, command in gate or []:
         if not isinstance(command, str):
             named.append((name, "%s (it is %s)"
                           % (UNREADABLE, type(command).__name__)))
             continue
-        readings = (command, _quote_removed(command))
-        hit = next((path for path in paths
-                    if any(_holds_name(text, _last_name(path), path in dirs)
+        removed = _quote_removed(command)
+        readings = [text.casefold()
+                    for text in (command, removed, removed.replace("\\", ""))]
+        hit = next((what for searched, is_dir, what in names
+                    if any(_holds_name(text, searched, is_dir)
                            for text in readings)),
                    None)
         if hit is not None:
@@ -3263,6 +3362,42 @@ def _grading_steps(commands, build):
         steps.extend((name, text) for _n, text in declared_gate([name], build))
         steps.append((name, running))
     return steps
+
+
+def meta_part(manifest):
+    """The plan's meta as the key holds it: every key but the ones a recorded
+    run writes itself (`RECORDER_META`), under a label of its own."""
+    meta = manifest.get("meta") if isinstance(manifest, dict) else None
+    if not isinstance(meta, dict):
+        meta = {}
+    return ["meta", dict((k, v) for k, v in meta.items()
+                         if k not in RECORDER_META)]
+
+
+def plan_spellings(project, manifest_path):
+    """Every project-relative name the plan is reached by, the one it was
+    handed first: a plan that is a symlink is excluded under its target alone
+    (`_evidence_io.recorded_paths` resolves it), and an entry naming the
+    configured link reads the same bytes. The link's own directory is resolved
+    so a project reached through a symlink spells it once. A name outside the
+    project is not one."""
+    if not manifest_path:
+        return []
+    root = os.path.realpath(project)
+    handed = os.path.abspath(manifest_path)
+    spelled = os.path.join(os.path.realpath(os.path.dirname(handed)),
+                           os.path.basename(handed))
+    names = []
+    for path in (spelled, os.path.realpath(handed)):
+        try:
+            rel = _output.posix_rel(path, root)
+        except ValueError:
+            # Another drive than the project's, on Windows: not a name in it.
+            continue
+        if rel == "." or rel == ".." or rel.startswith("../") or rel in names:
+            continue
+        names.append(rel)
+    return names
 
 
 def _first_per_step(grading):
@@ -3315,19 +3450,23 @@ def reuse_identity(project, manifest_path, manifest, commands, owns, group=None,
     gate = [[name, command] for name, command
             in declared_gate([n for n, _c in (commands or [])], build)]
     scope = _tree_stamp.declared_scope(owns)
+    plans = plan_spellings(project, manifest_path)
     grading = _first_per_step(grades_left_out(
-        _grading_steps(commands, build), excluded,
+        _grading_steps(commands, build),
+        excluded + [p for p in plans if p not in excluded],
         directories=[p for p in excluded
-                     if os.path.isdir(os.path.join(project, p))]))
+                     if os.path.isdir(os.path.join(project, p))],
+        plan=plans))
     if content is None:
         return {"key": None, "basis": cbasis, "limit": REUSE_LIMIT,
                 "grading": grading, "unexcluded": unexcluded}
-    parts = [content, gate, scope]
+    parts = [content, gate, scope, meta_part(manifest)]
     if group:
         parts.append(["group", sorted(str(g) for g in group)])
     return {"key": _tree_stamp.identity_of(parts),
             "basis": "%s; over that, the %d gate command(s) this manifest "
-                     "declares and the %d file(s) the work under test declares"
+                     "declares, the plan's meta and the %d file(s) the work "
+                     "under test declares"
                      % (cbasis, len(gate), len(scope)),
             "limit": REUSE_LIMIT,
             "grading": grading,
