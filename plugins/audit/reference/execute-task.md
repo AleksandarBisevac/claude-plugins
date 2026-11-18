@@ -117,7 +117,7 @@ verb writes and refuses, and what the run commands leave behind, is
        task's test files over it - and files the helper's `greenFirst` block marked
        `source: green-first-helper`, with red-first `not-attempted`; a `greenFirst` block the
        agent's return typed is dropped by `submit`. `proved` is exit 0 with a case of the
-       task's own seen to run and pass - by a case id HEAD's own run printed for no case, or
+       task's own shown to run and pass - by a case id HEAD's own run printed for no case, or
        by the runner's passed count rising over HEAD's own run; a skipped case is no pass.
        Under unittest and pytest HEAD's own run is handed every declared Python test file -
        new at HEAD, or held by it and changed by the task - as the task's copy with the
@@ -126,10 +126,17 @@ verb writes and refuses, and what the run commands leave behind, is
        (`_difference_proof`): a case never collected, deselected, not run, or skipped - by a
        decorator or a fixture - leaves it flat, and a file holding no definition of its own to
        take out (one that only imports or subclasses HEAD's TestCase, or only loses a case) is
-       `could-not-prove` saying so; a case the task edited is its own and is taken out. What
+       `could-not-prove` saying so; a case the task edited is its own and is taken out. Both
+       runs are laid from one list of the declared paths, a deleted one deleted in both, and
+       the verb refuses, naming the path, two laid trees that differ anywhere else
+       (`laid_difference_problem`). A proved basis names the definitions taken out and the
+       rise - at least one of them ran and passed - and calls none of them seen. What
        is left of a file must pass on the base, or the baseline is not green: a helper the task
        changed in a file HEAD holds so that HEAD's cases fail there is `could-not-prove` with
        the runner's line, unless the task's run fails a case too, which is `not-green` first.
+       Where the baseline failed in a file the task laid, the basis says that file did not
+       load or fails on HEAD's code; only a failure elsewhere says HEAD's own tests are red
+       and advises narrowing the command (`_baseline_sentence`).
        Two limits are `could-not-prove`, for a file HEAD holds as for a new one,
        although a case of the task's own ran: one overriding an inherited test of the same
        name, and one generated at import (`setattr`, `type()`, `load_tests`). Under jest,

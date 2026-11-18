@@ -6984,6 +6984,7 @@ STAGES = (
     ("sg-green-own", "_green_own_cases"),
     ("sg-green-diff", "_green_diff_cases"),
     ("sg-green-held", "_green_held_cases"),
+    ("sg-green-same", "_green_same_cases"),
 )
 
 
@@ -10698,6 +10699,161 @@ def _green_held_cases(check):
           _gh_rose(edited, "T.test_old")
           and deleted[:2] == (M.E_CANNOT_PROVE, "could-not-prove")
           and _GO_NONE in deleted[2])
+
+
+# --- green: both runs laid from one list, and a basis saying only what they measured
+# Every case below runs the REAL `green` verb on a git fixture under unittest
+# discovery. HEAD holds `head_test` as `tests/test_mine.py` and each file of
+# `committed`; the task deletes each declared path in `gone` and writes `extra`.
+_GS_TWO = _G_HEAD + "    def test_other(self):\n        self.assertTrue(mine.v)\n"
+_GS_ADDED = "    def test_added(self):\n        self.assertTrue(mine.v)\n"
+# What HEAD's own run is said to be when the command is red there for a file
+# the task did not lay, and the advice that goes with it.
+_GS_HEAD_RED = "HEAD's own tests on HEAD's code are not green"
+_GS_NEW_API = (_GD_HEADER + "from mine import new_api\n\n\nclass N(unittest.TestCase):\n"
+               "    def test_a(self):\n        self.assertTrue(new_api())\n")
+_GS_UNTOUCHED = ("tests/test_untouched.py", _GD_HEADER + "class U(unittest.TestCase):\n"
+                 "    def test_u(self):\n        self.assertEqual(mine.v, 2)\n")
+
+
+def _gs_verb(prefix, extra, head_test=_G_HEAD, gone=(), declared=(), committed=(),
+             tail=()):
+    """`(exit, status, basis, payload)` of the real `green` verb: HEAD holds
+    `head_test` as `tests/test_mine.py` and each `(rel, text)` of `committed`;
+    the task deletes each of `gone`, writes `extra` (`{rel: text}`) and declares
+    those paths, `src/mine.py`, `tests/test_mine.py` and `declared`."""
+    files = sorted(set(["src/mine.py", "tests/test_mine.py"] + list(extra)
+                       + list(gone) + list(declared)))
+    root, man = _red_repo(prefix, head_test, head_test=head_test, extra=extra,
+                          files=files)
+    for rel, text in committed:
+        _write(os.path.join(root, *rel.split("/")), text)
+        _git(root, "add", rel)
+        _git(root, "commit", "-q", "-m", "committed " + rel)
+    for rel in gone:
+        os.remove(os.path.join(root, *rel.split("/")))
+    code, got = _green(root, man, [sys.executable] + _GD_DISCOVER + list(tail))
+    block = _green_block(got)
+    return code, block.get("status"), str(
+        block.get("basis") or got.get("note") or got.get("unparsed") or ""), got
+
+
+def _gs_ran(got, run):
+    """The `Ran N` figure of one run's output tail in a verb's payload - `task`
+    or `head` - or None."""
+    record = (got[3].get("run") or {})
+    tail = record.get("outputTail") if run == "task" else (record.get("head") or {}).get(
+        "outputTail")
+    hit = re.search(r"^Ran (\d+) tests? in", "\n".join(tail or []), re.M)
+    return int(hit.group(1)) if hit else None
+
+
+def _green_same_cases(check):
+    gone = ("tests/test_mine.py",)
+    renamed = _gs_verb("stamp-gs-renamed-", {"tests/test_renamed.py": _G_HEAD + _GS_ADDED},
+                       gone=gone)
+    split = _gs_verb("stamp-gs-split-", {
+        "tests/test_a.py": _GD_HEADER + "class T(unittest.TestCase):\n"
+                           "    def test_old(self):\n        self.assertEqual(mine.v, 1)\n",
+        "tests/test_b.py": _GD_HEADER + "class T(unittest.TestCase):\n"
+                           "    def test_other(self):\n        self.assertTrue(mine.v)\n"
+                           + _GS_ADDED}, head_test=_GS_TWO, gone=gone)
+    check("gs1 a test file RENAMED with one case added, and one SPLIT in two with one "
+          "case added - the old path declared and deleted - are `proved` by a rise "
+          "of one: the old path is deleted in HEAD's own run as in the task's, so "
+          "HEAD's copy of it is counted in neither: renamed %s; split %s"
+          % (_gd_short(renamed), _gd_short(split)),
+          renamed[:2] == (M.E_PROVED, "proved") and _gd_counts(renamed[2]) == (1, 2)
+          and split[:2] == (M.E_PROVED, "proved") and _gd_counts(split[2]) == (2, 3)
+          and all("T.test_added" in g[2] for g in (renamed, split)))
+    keep = ("tests/test_keep.py", _GD_HEADER + "class K(unittest.TestCase):\n"
+            "    def test_keep(self):\n        self.assertTrue(mine.v)\n")
+    only = _gs_verb("stamp-gs-deleted-", {}, gone=gone, declared=(keep[0],),
+                    committed=(keep,))
+    taken = (only[3].get("baseline") or {}).get("takenOut")
+    check("gs2 a declared test file the task ONLY deletes, beside an unchanged one, "
+          "is `could-not-prove` with nothing of its own taken out, and HEAD's own "
+          "run counts no case the task's run does not - the deleted file is gone "
+          "from both: %s; taken out %r; ran %r"
+          % (_gd_short(only), taken, (_gs_ran(only, "head"), _gs_ran(only, "task"))),
+          only[:2] == (M.E_CANNOT_PROVE, "could-not-prove")
+          and not any((taken or {}).values())
+          and _gs_ran(only, "head") == _gs_ran(only, "task") == 1)
+    real = M._isolated_run
+
+    def keeps_deleted(root, path, rels, cmd, *rest, **kw):
+        # HEAD's own run handed every declared path but the one the task deleted -
+        # the baseline built from the files present in the working tree alone.
+        if "baseline" in rest:
+            rels = [rel for rel in rels if rel not in gone]
+        return real(root, path, rels, cmd, *rest, **kw)
+
+    M._isolated_run = keeps_deleted
+    try:
+        kept = _gs_verb("stamp-gs-keeps-", {"tests/test_renamed.py": _G_HEAD + _GS_ADDED},
+                        gone=gone)
+    finally:
+        M._isolated_run = real
+    check("gs3 a baseline made to KEEP a path the task's run deletes is refused by the "
+          "verb's own comparison of the two laid trees, naming the path, rather than "
+          "counted: %s" % (_gd_short(kept),),
+          kept[:2] == (M.E_CANNOT_PROVE, "could-not-prove")
+          and "not laid with the same files" in kept[2]
+          and "tests/test_mine.py" in kept[2] and _gd_counts(kept[2]) is None)
+    names = _gs_verb("stamp-gs-names-", {_U_NEW: _GD_HEADER + (
+        "class N(unittest.TestCase):\n    def test_pos(self):\n"
+        "        self.assertTrue(mine.v > 0)\n    @unittest.skip('later')\n"
+        "    def test_pskip(self):\n        pass\n    def test_two(self):\n"
+        "        self.assertEqual(mine.v, 2)\n")}, tail=["-k", "test_p"])
+    # Each name is COUNTED, not found: once, in the clause of what was taken
+    # out - a second list naming them as the task's cases is the overclaim.
+    check("gs4 a proved basis for a run that DESELECTED one own case (failing on the "
+          "base) and SKIPPED another names all three definitions once, as taken out, "
+          "and the rise, says which ran is not named, and calls none of them seen: %s"
+          % (_gd_short(names),),
+          names[:2] == (M.E_PROVED, "proved") and _gd_counts(names[2]) == (0, 1)
+          and "taken out" in names[2]
+          and all(names[2].count(n) == 1
+                  for n in ("N.test_pos", "N.test_pskip", "N.test_two"))
+          and "seen" not in names[2] and "the run does not name" in names[2])
+    loads = _gs_verb("stamp-gs-loads-", {_U_NEW: _GS_NEW_API})
+    primed_head = _GD_HEADER + ("CACHE = {}\n\n\ndef value():\n    return mine.v\n\n\n"
+                                "class T(unittest.TestCase):\n    def test_old(self):\n"
+                                "        self.assertEqual(value(), 1)\n")
+    # The task's copy of HEAD's file: its helper reads a value only its own case
+    # primes, so with that case taken out HEAD's case fails on HEAD's code.
+    primed = _gh_verb("stamp-gs-primed-", primed_head.replace(
+        "    return mine.v\n", "    return CACHE['v']\n").replace(
+        "class T(unittest.TestCase):\n", "class T(unittest.TestCase):\n"
+        "    def test_a_prime(self):\n        CACHE['v'] = mine.v\n"
+        "        self.assertEqual(CACHE['v'], 1)\n"), head_test=primed_head)
+    check("gs5 a baseline failing in a file the TASK LAID - a new file importing new "
+          "code at module level, and a held file whose own case is taken out - says "
+          "the task's own file did not load or fails on HEAD's code, with the "
+          "runner's line and that its cases cannot pass before the change, and "
+          "carries neither the sentence about HEAD's own tests nor the advice to "
+          "narrow: loads %s; primed %s" % (_gd_short(loads), _gd_short(primed)),
+          all(g[:2] == (M.E_CANNOT_PROVE, "could-not-prove") for g in (loads, primed))
+          and "cannot import name 'new_api'" in loads[2]
+          and "tests/test_new.py" in loads[2] and "did not load on HEAD's code" in loads[2]
+          and "tests/test_mine.py" in primed[2] and "fails on HEAD's code" in primed[2]
+          and "test_old" in primed[2]
+          and all("cannot pass before the change" in g[2] and _GS_HEAD_RED not in g[2]
+                  and M.NARROW not in g[2] for g in (loads, primed)))
+    untouched = _gs_verb("stamp-gs-untouched-", {_U_NEW: _GD_HEADER + (
+        "class N(unittest.TestCase):\n    def test_a(self):\n"
+        "        self.assertTrue(mine.v)\n")}, committed=(_GS_UNTOUCHED,))
+    both = _gs_verb("stamp-gs-both-", {_U_NEW: _GS_NEW_API}, committed=(_GS_UNTOUCHED,))
+    check("gs6 THE ALLOW TWIN of gs5: a command red at HEAD in a file the task did not "
+          "touch still says HEAD's own tests are not green and advises narrowing, "
+          "and says nothing of the task's own file; where the baseline fails in "
+          "both, both are said: untouched %s; both %s"
+          % (_gd_short(untouched), _gd_short(both)),
+          all(g[:2] == (M.E_CANNOT_PROVE, "could-not-prove") for g in (untouched, both))
+          and all(_GS_HEAD_RED in g[2] and M.NARROW in g[2] for g in (untouched, both))
+          and "did not load on HEAD's code" not in untouched[2]
+          and "fails on HEAD's code" not in untouched[2]
+          and "did not load on HEAD's code" in both[2] and "tests/test_new.py" in both[2])
 
 
 def _reached(source, name):

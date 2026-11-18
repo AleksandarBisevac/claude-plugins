@@ -1,0 +1,81 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_stamp_verification.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T07:47:14Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_stamp_verification.py` in a throwaway tree at HEAD exited 1 with 6 of 419 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - gs1 (house FAIL), gs2 (house FAIL), gs3 (house FAIL), gs4 (house FAIL), gs5 (house FAIL), gs6 (house FAIL): SELFTEST FAILED: 413/419 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "RULE 1 (one list, checked). run_green now lays BOTH runs from one list, `laid` = the declared test paths less the test-support modules held at HEAD's copy, through the same `_lay_over` (present laid over, deleted deleted): the baseline via `_baseline_run(..., rels=_green_baseline_rels(laid, files))`, which leaves out only the files `_baseline_files` keeps at HEAD's copy (new key `kept`: held files the task changed and nothing was laid over with a take-out - jest/vitest, sweep, house script, unparseable, inline) or leaves absent (new jest/vitest); texts written only for files something was taken out of (`_green_baseline_texts`). `_isolated_run` gained an optional `snap`: after laying it reads sha256 (or None) of each declared path into run['laid'] (`_laid_digest`); both green runs pass snap=scope['declared']. `laid_difference_problem(base, task, taken, altered)` compares the two laid trees AFTER laying: a path differing outside {files with names taken out} + stubs + absent + kept is refused naming it; a file with names taken out that does NOT differ is refused too; an unread tree is said, never passed. green_verdict checks ctx['laid_problem'] before any count or baseline reading (could-not-prove). The two trees are built by one function (`_isolated_run`) called twice with the rels/texts/stubs arguments differing; the check is kept anyway, and gs3 proves it reads the trees: a stand-in `_isolated_run` that drops the deleted path from the baseline's rels only is refused naming tests/test_mine.py. `_baseline_run` passes `snap` only when given so red's call is byte-identical (the recorded-run stand-in `_judged` pins red's signature, and sv_jd1's literal anchor on that call is kept). RULE 2. `_difference_proof`'s proved branch returns own=[] and says: 'the passed count rose by N between two runs of the same files - A passed at HEAD's own run and B with the task's - which differ by nothing but the definitions taken out of the declared test files for HEAD's own run (<file: names>)<kept clause>: the N case(s) more that passed come from that difference, so at least one of the definitions taken out ran and passed, and which of them the run does not name'; green_verdict prints `how` alone when own is empty, else the old 'the task's own cases <how>: <own>' (house ids, sweep rows, jest count route unchanged). 'at least one', not 'at least N', because a parametrised pytest definition yields several cases (go7). No verbose-output naming was added. RULE 3. `_baseline_sentence(said, run, ctx)` replaces `_baseline_loads_clause`: HEAD's run's failures are read by `_read_failures` (the one reader through `_runner_output.failure_kind`) and located by `case_site` (cases) and `_load_site` (a module: unittest dotted name via case_site, pytest path via `_one_declared`), `others` = the throwaway's files less the declared ones. All failures in keys of ctx['taken'] (files laid with the take-out) -> 'the task's own test file X, laid over at HEAD's own run with the task's own definitions taken out (X: names), did not load on HEAD's code (<runner line>) / fails on HEAD's code: <ids> - so the cases in it cannot pass before the change', with no HEAD sentence and no NARROW; any failure elsewhere, unlocatable, a failed tally above the records read, or none read -> baseline_problem's sentence + NARROW stays (plus '; HEAD's own run could not load <module (line)>' for loads elsewhere); both -> '<HEAD sentence + NARROW>; and <laid sentence>'. baseline_problem itself is unchanged (red's words unchanged; probe_red4 output identical on HEAD and the change). The proved baseline clause also names 'the declared test files the task deleted (X) deleted there as in the task's run'. Docs: the module's two green section comments and the docstrings of _own_passing, _difference_proof, green_verdict, _green_baseline_clause, _baseline_files, _baseline_run, _isolated_run, baseline_problem; PLUGIN-BUILD-GUIDE.md (stamp-verification section), CHANGELOG.md (the unreleased green-first entry, edited in place), plugins/audit/reference/execute-task.md. TESTS: new stage sg-green-same (`_green_same_cases`, gs1-gs6), red on HEAD's code 0/6, green after 6/6; whole file `python3 tools/sweep-selftests.py tests/test_stamp_verification.py` exit 0, 1/1 files ok, 419 cases. No existing case was changed: all of sg-green, -verdict, -new, -loaded, -own, -diff, -held and sr-green passed unchanged (53/53) - go3/go4/go9/gd6/gh2 find the names in the taken-out clause. Probes (each on a `git archive HEAD` export and on the change): review4 probe_verb4 - only B6 moved (could-not-prove -> proved, 2 passed at HEAD's own run and 3); probe_names identical statuses (N1, N2 proved, now naming the definitions as taken out, none as seen); probe_red4 identical output; probe_takeout exit 0; review3 probe_verb, sg1.27-mine, sg1.37-mine: identical, WRONG: 0. Mutation probe in the scratchpad's sg1.38/mutations.py: six rows, all caught (present-only baseline -> gs1; rule-1 check dropped -> gs3; names listed as own again -> gs4 by count; names called seen -> gs4; HEAD sentence for a laid file -> gs5; ALLOW: HEAD sentence dropped for an untouched file -> gs6). Lints: ruff and vermin clean; sweep of test__deps, test__output_lints, test__refs 3/3 ok; prove-gates --list exit 0; measure-context --gate OK. DEPENDANTS: grep of tests/ and plugins/audit/scripts/ for the reworded basis text (seen by the difference, own cases seen, must load on the base, already red (or unreadable), narrow it to the, are not green) found no reader outside stamp-verification.py and its suite except test_stamp_verification swn3 (red verb, 'HEAD's own tests on HEAD's code are not green' - red unchanged, passes) and audit-lookup.py's brief sentence 'narrow it to your cases if HEAD's own tests are red under it' (its own text, not a reader). The greenFirst block's shape and keys are unchanged (status, basis, at; payload baseline keys unchanged). Tallies: test_drive_phase.py gfw-block+gfs-block+us-block 90/90; test__filed_returns.py 146, test_audit_lookup.py 207, test__status_facts.py 199 cases ok; test__config.py 413/413. stamp-verification.py dependants: test__claude_home, test__filed_returns, test__proc_group, test_audit_lookup, test_audit_task, test_stamp_verification (import) - no removed or renamed public name; `_baseline_files` keeps its defaults (gd8) and gains the additive key `kept`; `_baseline_run`/`_isolated_run` gain optional trailing keywords; `_baseline_loads_clause` was removed and nothing outside the module named it; tools/affected.py and PLUGIN-BUILD-GUIDE.md name the path, still correct. tests/test_stamp_verification.py dependants: .github/sweep-costs.json has no figure for the new block sg-green-same, which the sweep weighs by the suite's figure over its blocks (not re-recorded: outside this task's files); tools/affected.py (_scan), tools/sweep-selftests.py, tools/verify.sh, test__affected_tests.py name the path, unaffected; test__filed_returns.py imports _green_block, _green_first_cases, _crlf_cases - unchanged. CHANGELOG.md, PLUGIN-BUILD-GUIDE.md: the doc lints (test__deps, test__output_lints, test__refs) green; _doctor_hygiene.py and _deps.py name them in prose, unaffected. execute-task.md: prove-gates rows rs1/rl1 anchor text untouched; test__config mh7 and test__refs readers green. Order: the new cases were drafted after reading run_green, _baseline_files, _isolated_run and green_verdict, because gs3 needed the seam it monkeypatches; they encode the task text and were run red on the unchanged code before any change.",
+    "descriptive": "green-first now lays both runs from one checked list of declared paths (a renamed or split test file with one added case proves), names taken-out definitions without calling any seen, and blames HEAD only for failures in files the task did not lay"
+  },
+  "testsAdded": [
+    "gs1: through the real green verb, a test file renamed with one case added, and one split in two with one case added, both with the old path declared and deleted, are proved with counts (1, 2) and (2, 3)",
+    "gs2: a declared test file only deleted, beside an unchanged declared one, is could-not-prove with nothing taken out and HEAD's own run running no more tests than the task's (Ran 1 and 1)",
+    "gs3: a stand-in _isolated_run that drops the deleted path from the baseline's laid list only is refused by the verb's comparison of the two laid trees, naming tests/test_mine.py, with no counts stated",
+    "gs4: a proved basis for a run that deselects one own case (failing on the base) with -k and skips another names each of the three definitions exactly once, as taken out, states the rise and that which ran is not named, and never says seen",
+    "gs5: a new file importing new code at module level, and a held file whose own case is taken out so HEAD's case fails, say the task's own file did not load or fails on HEAD's code with the runner's line and that its cases cannot pass before the change, with neither the HEAD-tests sentence nor the advice to narrow",
+    "gs6: the allow twin - a command red at HEAD in a committed file the task did not touch keeps the HEAD-tests sentence and the advice to narrow and says nothing of the task's file; failing in both says both"
+  ],
+  "casesAdded": [
+    [
+      "gs1",
+      "gs2"
+    ],
+    "gs3",
+    "gs4",
+    [
+      "gs5",
+      "gs6"
+    ]
+  ],
+  "claims": "claims:\n1 stamp-verification.py: one list - run_green lays the baseline with rels=_green_baseline_rels(laid, files) (5906) and the task run with laid; the tree check is laid_difference_problem (5590) on _isolated_run's snap (_laid_digest, 4781), refused in green_verdict at 4489; rule 2 is _difference_proof's proved branch returning no names (4290); rule 3 is _baseline_sentence (4621) over _baseline_placed (4581) and _load_site (4567)\n2 mutation probe sg1.38/mutations.py on a copy, anchors asserted once, __pycache__ purged: present-only baseline -> gs1 red; check dropped -> gs3 red; names listed as own -> gs4 red (by count); names called seen -> gs4 red; HEAD sentence for a laid file -> gs5 red; ALLOW: HEAD sentence dropped for an untouched file -> gs6 red; unmutated 6/6; MUTATIONS: ALL CAUGHT\n3 the class is 'the two runs are not built from the same input'; grep of the module for every _isolated_run/_baseline_run caller: red (unchanged by design), green baseline and green task - both green callers now take one list and are compared by snapshot; the class of 'basis names cases as seen': grep 'seen by' in the module - _own_by_id (house ids, printed by the run: true), _count_proof (counts, no names), left; 'HEAD's own tests ... narrow': baseline_problem is the one producer, green now routes it through _baseline_sentence, red keeps it\n4 n/a - no rule to an agent; the reference text describes the verb's behaviour, which the cases enforce\n5 n/a - no timing or property recorded; probe statuses compared on two trees, each run once\n6 n/a - no guard\n7 n/a - no number written into prose; the counts in the basis are formatted from the runs",
+  "stamp": "audit-stamp: {\"content\":\"sha256:3771f2acb55ce7d4feb8d2dc13dd50af1346a04dfbde19b35ddf836a6b4f2af5\",\"dirtyDigest\":\"sha256:c9c7f9c4359ad86e3687b6ab9f28fdb34eca65de507916464f05bbc267ac75e1\",\"dirtyPaths\":{\"CHANGELOG.md\":\"14089a6e88fc8a48\",\"PLUGIN-BUILD-GUIDE.md\":\"6acd48ae1aa8a21e\",\"plugins/audit/reference/execute-task.md\":\"fe548ca6035a0e59\",\"plugins/audit/scripts/governance/stamp-verification.py\":\"62eec0e73b658bfe\",\"tests/test_stamp_verification.py\":\"72a70fe3378822a2\"},\"head\":\"ef60e43f\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/scripts/governance/stamp-verification.py\",\"tests/test_stamp_verification.py\"],\"scopeDigest\":\"sha256:4283e0ff50b350dc59c8bbc44e2cb41e2e00bd13e4a1cee50599c0118a68d590\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 1 of the diff's 5 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 3 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/reference/execute-task.md; 1 file(s) that could hold a move not compared: tests/test_stamp_verification.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/reference/execute-task.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test_stamp_verification.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 6938 (`STAGES = (`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "ef60e43f97fb00fbb622c040431431bec37b182a"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-18T07:47:18Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

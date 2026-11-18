@@ -6005,7 +6005,7 @@ deadline, the environment, the holder and its owner file), one baseline step (`_
 teardown (`_proof_teardown`, `_left_behind`), so the two cannot drift; `gf17` fails a verb that
 makes one of those steps itself. `green` makes two runs, HEAD's own and then the task's test
 files over HEAD's code; `green_verdict` reads them. `proved` (exit 0) needs a green run and a
-case of the task's own seen to run and pass - a passing case whose id HEAD's own run printed for
+case of the task's own shown to run and pass - a passing case whose id HEAD's own run printed for
 no case (`house_case_id`; a whole label is never compared, since the two runs are handed
 different temp and home directories), or the runner's PASSED count rising over HEAD's run (the
 sweep's row per file, else the tally's `passed`). A rise made only of skips is no pass.
@@ -6020,7 +6020,9 @@ def in HEAD's tree (`_head_copy`) - removed by its span, decorators included, a 
 empty given `pass`, its imports, classes, helpers and copies of HEAD's tests kept. The payload's
 `baseline.takenOut` names what went, by file. So the two runs are of the same files and differ by
 those definitions alone, and under unittest and pytest `_difference_proof` proves when the passed
-count rose between them, the basis stating both figures and the definitions taken out. That one
+count rose between them, the basis stating both figures, the rise and the definitions taken out -
+called that and nothing more: a rise says that at least one of them ran and passed, never which,
+so a definition the command deselected or the base skipped is never named as seen. That one
 difference answers what a count of definitions could not: a method in a class the runner never
 collects, a case the command deselects, a file its pattern does not run, a skip a class or module
 fixture raised, a skip decorator bound to another name, and a HEAD class imported or inherited
@@ -6031,9 +6033,21 @@ and the basis says HEAD's run held the task's copy of it (`_baseline_said`) rath
 it HEAD's own tests. A case the task edited is not identical to HEAD's and is taken out; one it
 deleted is in neither run. A file with no definition of the task's own to
 take out is `could-not-prove`, saying none was found and that a case generated when the module
-loads is not one, and naming a HEAD test class only when the file imports or inherits one. What is
-left of a new file must load on the base: when it does not, HEAD's run is not a green baseline and
-the basis names the module and the runner's line. **What follows for a file HEAD holds:** a
+loads is not one, and naming a HEAD test class only when the file imports or inherits one. **Both
+runs are laid from one list** - every declared path the task's run lays, a present one laid over
+and a deleted one deleted, by the same `_lay_over` (`_green_baseline_rels`) - so a renamed or
+split test file's old path is gone from HEAD's run as from the task's, and HEAD's copy of it is
+counted in neither. HEAD's run differs on purpose only where `_baseline_files` says: the task's own
+definitions taken out, an empty stub, a file left absent, a changed file kept at HEAD's copy. The
+verb does not trust the list: `_isolated_run` reads each declared path once laid in both runs, and
+`laid_difference_problem` refuses, naming the path, a difference anywhere else, or a file
+something was taken out of that does not differ (`gs3`). **A baseline that is not green is said by
+where it failed** (`_baseline_sentence`), each failure located off the runner's report
+(`_read_failures`, then `case_site`): in a file the task laid over, that the task's own file did
+not load or fails on HEAD's code, with the runner's line, so its cases cannot pass before the
+change; anywhere else, or where a failure cannot be located, the sentence that HEAD's own tests
+are not green and the advice to narrow the command, which `red` prints unchanged; both, where it
+failed in both. **What follows for a file HEAD holds:** a
 helper or fixture the task changed there runs at HEAD's own run on HEAD's code, so a change that
 breaks HEAD's cases leaves the baseline not green and the answer `could-not-prove`, the basis
 naming what was taken out and the cases HEAD's run failed (`_baseline_held_clause`) - unless the

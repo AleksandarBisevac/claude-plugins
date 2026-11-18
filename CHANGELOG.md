@@ -45,14 +45,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   (HEAD's own run first, then the task's test files over it), refuses such a return given no
   test command after `--`, and files the helper's `greenFirst` block marked
   `green-first-helper`, with red-first `not-attempted`; a `greenFirst` block the agent typed is
-  dropped by `submit`. `proved` needs exit 0 and a case of the task's own seen to run and pass:
+  dropped by `submit`. `proved` needs exit 0 and a case of the task's own shown to run and pass:
   a case id HEAD's own run printed for no case, or the runner's passed count rising - never a
   whole label, which differs between the two runs when it quotes a temp path, and never a
   skipped case. **Under unittest and pytest the proof is a difference between two runs of the
   same files**: HEAD's own run is handed every declared Python test file - new at HEAD, or held
   by it and changed by the task - as the task's copy with the task's own test definitions taken
   out - read the way `red` credits a case, removed with their decorators, a block left empty
-  given `pass` - so a passed count that rises is those definitions running and passing. A file
+  given `pass` - so a passed count that rises is at least one of those definitions running and
+  passing. The basis names them as taken out and states the rise, and calls none of them seen:
+  a rise never says which ran, and one deselected or skipped is taken out beside it. Both runs
+  are laid from one list of the declared paths, a test file the task deleted - a renamed or split
+  one's old path - deleted in both, and the verb compares the two laid trees, refusing as
+  `could-not-prove`, naming the path, a difference outside the files it altered on purpose. A file
   HEAD holds gets that baseline too, never HEAD's own copy, against which a subclass of HEAD's
   class added beside the task's cases raises the count with nothing of the task's run. A method
   in a class the runner never collects, a case the command deselects, a file its pattern does
@@ -62,7 +67,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   is taken out. What is left of a file must pass on the base, or the baseline is not green and
   the basis names the module or the case and what was taken out: a helper the task changed in a
   file HEAD holds so that HEAD's cases fail there gives `could-not-prove`, unless the task's run
-  fails a case too, which is `not-green` first. `red` keeps its empty-file baseline. Two limits
+  fails a case too, which is `not-green` first. Where the baseline fails in a file the task laid
+  - a new file importing the new code at module level, say - the basis says that file did not
+  load or fails on HEAD's code, with the runner's line, so its cases cannot pass before the
+  change; the sentence that HEAD's own tests are red, and the advice to narrow the command, are
+  printed only for a failure elsewhere. `red` keeps its empty-file baseline and its words. Two limits
   are `could-not-prove` although a case ran: a case overriding an inherited test of the same
   name, which leaves the count flat, and a case generated at import (`setattr`, `type()`,
   `load_tests`), which is no definition to take out; both hold for a file HEAD holds as for a new
