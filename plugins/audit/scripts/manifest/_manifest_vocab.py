@@ -649,6 +649,11 @@ KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                # inside a block stayed exactly as silent - which is this
                # module's own KNOWN_CLAIM argument, one nesting level over.
                "testEvidence",
+               # The newest recorded run of this phase's gate, whole, written by
+               # `run-test-gate.py --record` in the write that derives the
+               # pointer above from it. `$defs/lastRun` owns the shape, for
+               # `testEvidence`'s reason, and absent means what its absence does.
+               "lastRun",
                # Which derivation produced `testGateDerived` below — the phase
                # twin of a task's `tests.gateBasis`, and open the same way:
                # absent reads as an unnarrowed default rather than as
@@ -706,6 +711,9 @@ KNOWN_TASK = {"id", "title", "status", "model", "skills", "blockedBy",
               # same pointer-not-truth rule, and the same reason no vocabulary
               # for its contents lives here. See the comment on KNOWN_PHASE.
               "testEvidence",
+              # The newest recorded run of this task, whole - the task twin of
+              # the phase key, under `testEvidence`'s reason again.
+              "lastRun",
               # What happened to the red-first proof, which `testEvidence` cannot
               # say: that block records whether the gate passed, this one whether
               # the assertion it ran was ever watched failing. Task-level only -

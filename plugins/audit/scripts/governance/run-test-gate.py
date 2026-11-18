@@ -3474,23 +3474,38 @@ def reuse_identity(project, manifest_path, manifest, commands, owns, group=None,
 
 
 def record_failed(res):
-    """True when `--record` was asked for and the evidence row was not stored.
+    """True when `--record` was asked for and the evidence row, or the run's
+    record in the plan (`_evidence_io.RECORD_KEY`), was not stored.
 
     Read off `res["recorded"]`, which only `_record_run` and `_record_full_run`
     write: a run that never asked to record has no such key and is not failed.
+    `record` is `_record_run`'s alone - a full run has no subject in the plan.
     """
     recorded = res.get("recorded")
-    return isinstance(recorded, dict) and recorded.get("recorded") is False
+    return isinstance(recorded, dict) and (recorded.get("recorded") is False
+                                           or recorded.get("record") is False)
 
 
 def unrecorded_line(res):
-    """The verdict line a green run prints in place of `GATE GREEN` when its
-    row was not stored. The green is still the measurement; the line says the
-    record behind it is missing and which exit that earns."""
-    return ("GATE NOT RECORDED: the gate itself passed, but --record stored no "
-            "evidence row (see the `evidence: NOT recorded` line), so nothing "
-            "can later show this run happened. Exit %d, not 0 - fix the "
-            "ledger and re-run." % (E_UNRECORDED,))
+    """The verdict line a run prints in place of its banner's exit when what
+    `--record` asked for was not stored. The verdict is still the measurement;
+    the line says the record behind it is missing and which exit that earns -
+    on a red run as on a green one, since no caller may read 0 or 1 off a run
+    the plan holds no record of."""
+    recorded = res.get("recorded") if isinstance(res.get("recorded"), dict) else {}
+    if recorded.get("recorded") is False:
+        return ("GATE NOT RECORDED: the gate itself %s, but --record stored no "
+                "evidence row (see the `evidence: NOT recorded` line), so "
+                "nothing can later show this run happened. Exit %d, not %d - "
+                "fix the ledger and re-run."
+                % ("failed" if _ev.row_is_red(res) else "passed", E_UNRECORDED,
+                   E_FAIL if _ev.row_is_red(res) else E_OK))
+    return ("GATE NOT RECORDED: the gate itself %s and its evidence row is in "
+            "%s, but the plan holds no record of the run (see the `record:` "
+            "line). Exit %d, not %d - re-run once the phase lock is free."
+            % ("failed" if _ev.row_is_red(res) else "passed",
+               recorded.get("log") or "the ledger", E_UNRECORDED,
+               E_FAIL if _ev.row_is_red(res) else E_OK))
 
 
 def verdict_banners(res):
@@ -5346,10 +5361,12 @@ def _render_verdict(res, out):
         # the files a phase claimed would keep the interesting half to
         # itself.
         out("  basis: %s" % res["coverageBasis"])
-    if code == E_OK and record_failed(res):
+    if code in (E_OK, E_FAIL) and record_failed(res):
         # THE VERDICT STAYS A MEASUREMENT AND STOPS BEING A PASS. `GATE GREEN`
         # is what a pre-push step and the orchestrator switch on, and printing
         # it over a record that does not exist is the sentence this replaces.
+        # A RED IS HELD TO THE SAME RULE: an exit 1 is read as "the plan holds
+        # this run's failure", and a caller acting on it must find the record.
         out(unrecorded_line(res))
         code = E_UNRECORDED
     if code == E_OK:
@@ -5618,14 +5635,30 @@ def _record_run(project, args, res, source, commands, manifest, out=print):
         return {"recorded": False, "pointer": False, "boundary": None,
                 "boundaryWritten": False}
     out("  evidence: recorded %s" % (identity["runId"],))
-    _say_who_else_was_running(project, res, recorded["row"], out=out)
-    pointer = _ev.write_pointer(project, args.manifest, source, ids,
-                                recorded["row"],
-                                session_id=identity["sessionId"])
+    said = {}
+
+    def _keep(line):
+        # The machine and attribution lines are printed AND kept on the record,
+        # so a reader of the record meets what the run's reader met.
+        text = str(line)
+        for key, lead in (("machine", "  machine:"), ("attribution", "  claimed:")):
+            if text.startswith(lead):
+                said[key] = text[len(lead):].strip()
+        out(line)
+    _say_who_else_was_running(project, res, recorded["row"], out=_keep)
+    record, stages = _run_record_of(project, args, ids, recorded["row"], said)
+    pointer = _ev.write_record(project, args.manifest, source, ids, record,
+                               stages=stages, session_id=identity["sessionId"])
+    log = _journal_io.repo_relative_or_token(project, recorded.get("path"))
     if pointer["written"]:
         out("  pointer:  %s now names it" % (ids.get("taskId") or args.phase,))
     else:
+        # THE RECORD IS THE ONLY COPY THE PLAN WILL KEEP, so a record that could
+        # not be written is not a pointer to catch up later: it is exit 3, and
+        # the line names the ledger file this run's row went to - the one place
+        # the run is still written down.
         out("  pointer:  NOT updated - %s" % (pointer["reason"],))
+        out("  record:   NOT written - this run is only in %s" % (log,))
     # A LOCK THAT REFUSED TO BE GIVEN BACK IS ITS OWN LINE. It does not say the
     # pointer failed - it did not - it says another session held this phase while
     # the write was happening, which is a fact about everything written here and
@@ -5654,10 +5687,38 @@ def _record_run(project, args, res, source, commands, manifest, out=print):
     # a lock that refused to be given back says another session held it while
     # this stamp was being written, which is a fact about the plan rather than
     # about whether the stamp landed.
-    for said in (since.get("releaseRefused") or []):
-        out("  lock:     %s" % (said,))
+    for refusal in (since.get("releaseRefused") or []):
+        out("  lock:     %s" % (refusal,))
     return {"recorded": True, "pointer": bool(pointer["written"]),
+            "record": bool(pointer["written"]), "log": log,
             "boundary": since["at"], "boundaryWritten": bool(since["written"])}
+
+
+def _run_record_of(project, args, ids, row, lines):
+    """`(record, stages)` for the run whose ledger row is `row`: its record,
+    built from that row and the `lines` printed beside it, and - for a run of a
+    task - the gate and selection stage it measured, for
+    `_evidence_io.write_record` to put onto that task's timing in the locked
+    write that records the run. The stage is appended there and nowhere else, so
+    the drive that launched the run does not queue it a second time.
+
+    A run that repeated another's verdict copies that run's steps forward
+    (`_evidence_io.run_record`), read from the ledger row it names."""
+    source_row = None
+    if row.get(_ev.VERDICT_SOURCE) == _ev.REUSED:
+        try:
+            source_row = _ev.row_by_run(_ev.read_rows(project)["rows"],
+                                        (row.get("reusedFrom") or {}).get("runId"))
+        except Exception:                                      # noqa: BLE001
+            source_row = None
+    record = _ev.run_record(row, lines=lines,
+                            launch=getattr(args, "launch", None),
+                            source=source_row)
+    stages = []
+    if ids.get("taskId") is not None:
+        stages, _gaps = _ev.record_stages(
+            row, "run %s's record (run-test-gate --record)" % (row.get("runId"),))
+    return record, stages
 
 
 def _own_log_dir(manifest_path, project_dir):
@@ -6387,14 +6448,17 @@ def _all_left(project, args, manifest, source, subject, declared, left,
     if args.record:
         res["recorded"] = _record_run(project, args, res, source, declared,
                                       manifest, out=out)
+    code = E_UNRECORDED if record_failed(res) else E_FAIL
     if args.as_json:
         out(json.dumps(res, indent=2, sort_keys=True))
-        return E_FAIL
+        return code
     out("NO CHECK RAN: %s. That is not a verdict, and it cannot sign this task "
         "off - give the task a gate entry of its own that runs here, or take "
         "the command out of %s." % (res["countsBasis"],
                                     _config_rules.PHASE_GATE_ONLY_KEY))
-    return E_FAIL
+    if code == E_UNRECORDED:
+        out(unrecorded_line(res))
+    return code
 
 
 def main(argv, out=print):
@@ -6440,6 +6504,10 @@ def main(argv, out=print):
     # row this run writes still carries one, or a forced run would leave nothing
     # for the next one to match.
     p.add_argument("--no-reuse", dest="no_reuse", action="store_true")
+    # A CALLER THAT STARTED THIS RUN IN THE BACKGROUND names it with a token of
+    # its own, kept on the run's record (`_evidence_io.RECORD_KEY`), so it finds
+    # the record of exactly this run rather than of whichever run came last.
+    p.add_argument("--launch", dest="launch", default=None, metavar="TOKEN")
     # The repair a refused pointer names. It runs the ledger against the plan and
     # nothing else - no gate, no subprocess - so it is safe to hand a human who
     # has just been told their pointer did not land.
@@ -6595,11 +6663,14 @@ def main(argv, out=print):
         if args.record:
             res["recorded"] = _record_run(project, args, res, source, [],
                                           manifest, out=out)
+        code = E_UNRECORDED if record_failed(res) else E_OK
         if args.as_json:
             out(json.dumps(res, indent=2, sort_keys=True))
-            return E_OK
+            return code
         out("[run-test-gate] %s" % (said,))
-        return E_OK
+        if code == E_UNRECORDED:
+            out(unrecorded_line(res))
+        return code
     owns, terr = (group_owned_files(manifest, args.phase, also) if also
                   else owned_files(manifest, args.phase, args.task))
     if terr:
@@ -6956,10 +7027,11 @@ def main(argv, out=print):
         # field. Folding it in here would make the decision this entry declined.
         # `treeMutatedForeign` is absent for the same reason and a second one -
         # it is the half nothing can attribute. `row_is_red` is the one reading
-        # of "did this run pass", so this exit and the ledger's agree.
-        if _ev.row_is_red(res):
-            return E_FAIL
-        return E_UNRECORDED if record_failed(res) else E_OK
+        # of "did this run pass", so this exit and the ledger's agree - and a
+        # run the plan holds no record of answers neither 0 nor 1.
+        if record_failed(res):
+            return E_UNRECORDED
+        return E_FAIL if _ev.row_is_red(res) else E_OK
     # WHOSE gate ran is printed, not left to be inferred from the id: under
     # `--task` a task with no gate of its own is measured by the PHASE's, and a
     # reader who assumed otherwise would credit the wrong declaration. So a

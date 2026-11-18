@@ -1451,9 +1451,13 @@ def _play_gate(root, argv, timeout=120):
     is refused here as `(None, why)`, which every case reads as a failure."""
     if len(argv) < 2 or os.path.basename(argv[1]) != "run-test-gate.py":
         return None, "not a gate command, so not run: %r" % (argv[:2],)
-    done = subprocess.run([sys.executable] + list(argv[1:]), cwd=root,
-                          capture_output=True, text=True, encoding="utf-8",
-                          errors="replace", timeout=timeout)
+    # UNDER THE DRIVE'S SESSION, as that Bash is: it is the orchestrator's own
+    # tool call, so the phase lock the drive holds for its run is this run's to
+    # write the gate's record under (`_locks.held_by_us`).
+    with _Env(root):
+        done = subprocess.run([sys.executable] + list(argv[1:]), cwd=root,
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=timeout)
     return done.returncode, done.stdout + done.stderr
 
 
@@ -19572,6 +19576,18 @@ def _timing_cases(check):
           and _tm_parts_add_up(summary)
           and all(k in summary["byKind"]
                   for k in ("writer", "selection", "gate", "reviewer", "commit")))
+    gate_ids = [g.get("runId") for g in gates]
+    pick_ids = [p.get("runId") for p in picks]
+    check("tm1c A TASK CLOSED BY THE DRIVE CARRIES EACH GATE STAGE ONCE: the gate "
+          "recorder appends a run's gate and selection stage itself, so the "
+          "drive queues neither a second time - every runId appears once per "
+          "kind, and each stage's basis is the recorder's, not the drive's "
+          "reading of the evidence row: %r"
+          % ([(s.get("kind"), s.get("runId"), s.get("basis"))
+              for s in gates + picks],),
+          gate_ids and len(gate_ids) == len(set(gate_ids))
+          and sorted(pick_ids) == sorted(gate_ids)
+          and all("--record" in str(s.get("basis")) for s in gates + picks))
     waits = _tm_stages(mpath, "wait")
     writer_wait = _tm_session_waits(waits, _flag(run["writer"], "--record"))
     check("tm2 a hand-out read back after a delay leaves a wait stage of that "
@@ -19594,13 +19610,17 @@ def _timing_cases(check):
     check("tm3 the drive makes no more commits and no more locked writes for a "
           "task than it does with no stage written: the journal's actions and "
           "the commit count match a drive whose stages are never queued, and "
-          "only the first carries a timing stage: %r"
+          "only the first carries a stage the DRIVE queued - the second holds "
+          "the gate recorder's own gate and selection stages alone: %r"
           % ((_tm_actions(root), _tm_actions(base_root), _tm_commits(root),
-              _tm_commits(base_root)),),
+              _tm_commits(base_root),
+              sorted(set(s.get("kind") for s in _tm_stages(base_mpath)))),),
           _tm_task(base_mpath).get("status") == "done"
           and _tm_actions(root) == _tm_actions(base_root)
           and _tm_commits(root) == _tm_commits(base_root)
-          and _tm_stages(mpath) and not _tm_stages(base_mpath))
+          and _tm_stages(mpath)
+          and sorted(set(s.get("kind") for s in _tm_stages(base_mpath)))
+          == ["gate", "selection"])
 
     bare_root, bare_mpath, bare = _tm_drive_clean(M, "tm-bare", bindir, log,
                                                   writer_ms=None)
@@ -19959,6 +19979,10 @@ def _timing_close_cases(check):
     code_b, text_b = _next(M, root_n, mpath_n, "--answer", "no-change",
                            "--reason", "the work was already there")
     task_n = _tm_task(mpath_n)
+    # The gate recorder's own stages are in the shard beside the queued ones,
+    # written by the run itself; the drive's are every other.
+    drive_n = [s for s in _tm_stages(mpath_n)
+               if "(run-test-gate --record)" not in str(s.get("basis"))]
     check("tm11 a task closed by the no-change answer carries every stage queued "
           "for it - the writer's and the reviewer's among them - once each, and "
           "the drive's state keeps no queue for it: %r"
@@ -19969,7 +19993,7 @@ def _timing_close_cases(check):
           and code_b == 0 and task_n.get("status") == "done"
           and not task_n.get("commit")
           and set(s.get("kind") for s in queued) >= {"writer", "reviewer"}
-          and _tm_stages(mpath_n) == queued
+          and drive_n == queued
           and not (_drive_state(root_n).get(M.TIMING_KEY) or {}).get("P1.1"))
 
     # (c) THE LEDGER UNREADABLE AT READ-BACK: the gate's verdict is read as it
@@ -20135,12 +20159,16 @@ def _timing_unread_cases(check):
     finally:
         M._evio.read_rows = real
     said = [ln for ln in text.splitlines() if "not recorded" in ln]
-    check("tm12 a ledger unreadable at the gate's read-back leaves no gate and no "
-          "selection stage, and the step says so once, naming the stage and the "
-          "reason: %r" % ((code, text[-600:], said, _tm_task(mpath).get("timing")),),
-          code == 0 and not _tm_stages(mpath, "gate")
-          and not _tm_stages(mpath, "selection")
-          and len(said) == 1 and "gate" in said[0] and _TM_UNREAD in said[0]
+    gates, picks = _tm_stages(mpath, "gate"), _tm_stages(mpath, "selection")
+    check("tm12 a ledger unreadable at the gate's read-back leaves the gate and "
+          "selection stage the RECORDER wrote, once each and no second copy from "
+          "the drive, no wait stage, and the step says so once, naming the wait "
+          "stage - the one the drive owes - and the reason: %r"
+          % ((code, text[-600:], said, _tm_task(mpath).get("timing")),),
+          code == 0 and len(gates) == 1 and len(picks) == 1
+          and all("--record" in s["basis"] for s in gates + picks)
+          and not _tm_stages(mpath, "wait")
+          and len(said) == 1 and "wait stage" in said[0] and _TM_UNREAD in said[0]
           and text.count(_TM_UNREAD) == 1)
 
 

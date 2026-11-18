@@ -13820,6 +13820,14 @@ def _locked_group(args, project, config, mpath, ids, summary, out):
                 "verdict>\", which is recorded on every member's review")
             return E_USAGE
         pointer = _evidence_io.pointer_for(row) if row else None
+    # THE RECORD TRAVELS WITH THE POINTER: the carrier's own when it names the
+    # same run, else the one that run's row gives.
+    record = None
+    if pointer:
+        held = carrier.get(_evidence_io.RECORD_KEY)
+        record = (held if isinstance(held, dict)
+                  and held.get("runId") == pointer.get("runId")
+                  else _evidence_io.run_record(row))
     settled, refusal = finding_dispositions(args, assembled, plan["members"])
     if refusal:
         out(refusal)
@@ -13848,6 +13856,7 @@ def _locked_group(args, project, config, mpath, ids, summary, out):
             # reads as done work with no run recorded, and its repair - run its own
             # gate - would re-measure the tree the one run already graded.
             phase["testEvidence"] = dict(pointer, gradedBy=carrier.get("id"))
+            phase[_evidence_io.RECORD_KEY] = dict(record, gradedBy=carrier.get("id"))
     settled = _settle(assembled, set(("phase", pid) for pid in ids))
     raw_index, stub_claim = _drop_stub_claims(raw_index, ids)
     written, warnings, written_manifest, stop = _group_write(

@@ -60,8 +60,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   reads a done task's verdict at its recorded commit from the trailers, and says so in the
   badge's sentence; the status rollup takes the same reading when its caller hands it one.
   `COMPATIBILITY.md` section 3 makes those names read keys, and says what is not promised.
+- **The newest run of a task or a phase is one record in its shard.** After
+  `run-test-gate.py --record`, the subject carries `lastRun`: the run's id, moments and
+  durations, its verdict and where the verdict came from, the identity and gate it was
+  measured under, the state it tested, the banners and the machine and attribution lines it
+  printed, and each step with its failing lines at the row's cap - a copied step carrying its
+  source's verdict fields forward. It is replaced on every run, never appended, and
+  `testEvidence` is written from it in the same write; deleting the pointer and running
+  `--reconcile` restores it from the record. The evidence row is still written, unchanged,
+  under the same run id. `--launch <token>` stores a token on the record, so a caller that
+  started the run in the background can find exactly that run. A task run's gate and
+  selection stages are appended to the task's `timing` by the recorder, in the same write,
+  and the step driver no longer queues them a second time. A group sign-off copies the
+  carrier's record to each member with its pointer. A plan without the key validates and
+  reads as before.
 
 ### Changed
+- **A recorded run the plan holds no record of exits 3, red or green.** The record write
+  waits for the phase lock behind another verb's write rather than skipping it, and a record
+  it still cannot write is exit 3 with a `record:` line naming the ledger file the run's row
+  went to - where a red run used to exit 1 and a green one 0 with the pointer left behind. A
+  run without `--record` is unchanged.
 - **`executor.phaseGateOnly` now reaches a task's recorded gate, not only the writer's prompt.**
   A command the key names is left out of a task's recorded run (`run-test-gate.py --task`)
   when the phase's own `testGate` runs it, whichever arm proposed it - a declared entry or a

@@ -178,6 +178,22 @@ been recorded*, which is a different claim from every value it could be initiali
 goes for a phase. Nothing initializes it, nothing needs to, and a hand-written one would name a
 `runId` that resolves to no row in any ledger.
 
+**`lastRun` is not in that list either, for the same reason.** It is the newest recorded run of
+the task (or of the phase's gate), whole - its moments, its verdict and where the verdict came
+from, the identity and gate it was measured under, the state it tested, the lines it printed
+beside the verdict, and each step - written by `run-test-gate.py --record` and by nothing else
+(`_evidence_io.write_record`). `testEvidence` is the pointer derived from it, written in the
+same write, so the two always name one run; `--reconcile` restores a deleted pointer from it.
+It is **replaced, never appended**: a subject holds one. The write takes the phase lock, waiting
+behind another verb's structural write, and reads the shard under it, so neither write loses
+the other's key; a record the recorder still cannot write is the run's exit 3, and the shard is
+left as it was. A task run also appends its gate and selection stages to the task's `timing` in
+that write - the timing keeps every run's stages, the record only the newest run. A verb that
+rewrites a task treats `lastRun` as it treats `testEvidence`: `move` carries both with the task,
+`reopen` keeps both, and a group sign-off copies the carrier's record to each member beside the
+pointer, naming the carrier in `gradedBy`. Every string in it passes the plan writer's
+machine-path scrub, as the rest of the shard does.
+
 ## New phase template
 
 A newly created phase MUST be initialized with: `status: "pending"`,
@@ -490,7 +506,8 @@ The journal's **completion-record actions**:
 - `task.testEvidence` / `phase.testEvidence` — a `testEvidence` pointer moved (details: runId,
   taskId?, phaseId, field, from, to). Written **only after the pointer actually lands**: a pointer
   refused by another live session leaves the row above standing and no row here, because the chain
-  must never assert a transition that did not happen
+  must never assert a transition that did not happen. A recorded run's pointer lands with its
+  `lastRun` record in one write, so this row also says the record moved
 - `meta.evidenceSince` — the plan stated its evidence boundary for the first time, i.e. when it
   could first have recorded a run at all (details: field, from, to, runId?, phaseId?). Written by
   the recorder on the first `--record` that finds the key absent, and **only after the key actually

@@ -13754,8 +13754,213 @@ def _task_bug_definition_cases(check):
           and M.withheld_mutes(plan, None) == {})
 
 
+def _lr_repo():
+    """`(root, manifest, shard)`: a committed sharded project whose phase P1
+    holds a green task (P1.1, its own gate `ok`) and a red one (P1.2, its own
+    gate `red`), the phase's own gate being `ok` too."""
+    root = _harness.fixture_root("run-test-gate-lastrun-")
+    os.makedirs(os.path.join(root, "docs", "audit", "phases"))
+    os.makedirs(os.path.join(root, ".claude"))
+    os.makedirs(os.path.join(root, "src"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    with open(os.path.join(root, "src", "a.py"), "w") as fh:
+        fh.write("declared = 1\n")
+    mp = os.path.join(root, "docs", "audit", "audit-plan.json")
+    with open(mp, "w") as fh:
+        json.dump({"meta": {"version": 3, "buildCommands": {
+                       "ok": "true", "red": "false"}},
+                   "phases": [{"id": "P1", "title": "one",
+                               "shard": "phases/P1.json"}]}, fh)
+    shard = os.path.join(root, "docs", "audit", "phases", "P1.json")
+    with open(shard, "w") as fh:
+        json.dump({"id": "P1", "title": "P1", "status": "in_progress",
+                   "testGate": ["ok"], "tasks": [
+                       {"id": "P1.1", "title": "t", "status": "in_progress",
+                        "files": ["src/a.py"], "tests": {"gate": ["ok"]}},
+                       {"id": "P1.2", "title": "r", "status": "in_progress",
+                        "files": ["src/a.py"], "tests": {"gate": ["red"]}}]},
+                  fh)
+    _harness.git(None, "init", "-q", root, prefix=_PLAIN_GIT)
+    for arg in (["add", "--", "docs", ".claude", "src"],
+                ["-c", "user.email=fixture@example.com",
+                 "-c", "user.name=Fixture", "-c", "commit.gpgsign=false",
+                 "commit", "-qm", "fixture"]):
+        _harness.git(root, *arg, prefix=_PLAIN_GIT)
+    return root, mp, shard
+
+
+def _lr_read(path):
+    with open(path, "rb") as fh:
+        raw = fh.read()
+    return raw, json.loads(raw.decode("utf-8"))
+
+
+def _lr_subject(body, task_id):
+    if task_id is None:
+        return body
+    return [t for t in body.get("tasks") or [] if t.get("id") == task_id][0]
+
+
+def _lr_without(body, keys):
+    """`body` with `keys` taken off the phase and off every task."""
+    body = json.loads(json.dumps(body))
+    for holder in [body] + list(body.get("tasks") or []):
+        for key in keys:
+            holder.pop(key, None)
+    return body
+
+
+def _last_run_record_cases(check):
+    """(lr) A recorded run's newest record is one `lastRun` in its subject's
+    shard, written under the phase lock, and never an exit 0 or 1 without it."""
+    root, mp, shard = _lr_repo()
+    evdir = os.path.join(root, "docs", "audit", "evidence")
+
+    def _run(*extra):
+        lines = []
+        code = M.main([mp, "P1", "--project-dir", root, "--record",
+                       "--no-reuse"] + list(extra), out=lines.append)
+        text = "\n".join(lines)
+        said = re.findall(r"evidence: recorded (\S+)", text)
+        return code, text, said[-1] if said else None
+
+    # --- five runs of one phase gate: one record, a shard that did not grow --
+    phase_runs = []
+    for _i in range(5):
+        code, _text, run_id = _run()
+        raw, body = _lr_read(shard)
+        phase_runs.append((code, run_id, raw, body))
+    first, last = phase_runs[0], phase_runs[-1]
+    record = last[3].get("lastRun")
+    rest_first = _lr_without(first[3], ("lastRun", "testEvidence"))
+    rest_last = _lr_without(last[3], ("lastRun", "testEvidence"))
+    width = (len(json.dumps(record, sort_keys=True))
+             - len(json.dumps(first[3].get("lastRun"), sort_keys=True))
+             if isinstance(record, dict) and isinstance(first[3].get("lastRun"),
+                                                        dict) else None)
+    check("lr1 FIVE RECORDED RUNS, ONE RECORD: the phase holds exactly one "
+          "`lastRun`, a dict naming the LAST runId printed, every byte outside "
+          "the record and its pointer is what the first run left, and the "
+          "shard is no larger than after the first run beyond the width of the "
+          "record's own figures: %r"
+          % (([(c, r, len(raw)) for c, r, raw, _b in phase_runs], width),),
+          all(c == M.E_OK and r for c, r, _raw, _b in phase_runs)
+          and len(set(r for _c, r, _raw, _b in phase_runs)) == 5
+          and isinstance(record, dict) and record.get("runId") == last[1]
+          and isinstance(record.get("steps"), list)
+          and rest_first == rest_last and width is not None
+          and len(last[2]) - len(first[2]) <= max(width, 0) + 32)
+
+    # --- the same, at task scope: the stages the recorder appends ----------
+    task_runs = [_run("--task", "P1.1") for _i in range(5)]
+    _raw, body = _lr_read(shard)
+    task = _lr_subject(body, "P1.1")
+    gates = [s for s in (task.get("timing") or {}).get("stages") or []
+             if s.get("kind") == "gate"]
+    picks = [s for s in (task.get("timing") or {}).get("stages") or []
+             if s.get("kind") == "selection"]
+    printed = [r for _c, _t, r in task_runs]
+    rows = dict((r.get("runId"), r) for r in _recorded_rows(evdir))
+    check("lr2 ...and at task scope the recorder appends each run's gate and "
+          "selection stage to the task's timing itself, once per run, with the "
+          "run's own figures - the record names only the newest run, the "
+          "timing keeps all five: %r"
+          % ((printed, [(g.get("runId"), g.get("ms")) for g in gates],
+              (task.get("lastRun") or {}).get("runId")),),
+          all(c == M.E_OK for c, _t, _r in task_runs)
+          and (task.get("lastRun") or {}).get("runId") == printed[-1]
+          and [g.get("runId") for g in gates] == printed
+          and [p.get("runId") for p in picks] == printed
+          and all(g["ms"] == rows[g["runId"]]["durationMs"]
+                  and g["startedAt"] == rows[g["runId"]]["startedAt"]
+                  for g in gates if g.get("runId") in rows)
+          and all(p["ms"] == rows[p["runId"]].get("selectionMs")
+                  for p in picks if p.get("runId") in rows))
+    keys = [rows[r].get("reuseKey") for r in printed if r in rows]
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"], cwd=root,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    changed = sorted(_ev_io.porcelain_paths(ln)[-1]
+                     for ln in status.stdout.splitlines() if ln.strip())
+    recorded, _dropped = _ev_io.recorded_paths(root, mp)
+    outside = [p for p in changed
+               if not any(p == r or p.startswith(r.rstrip("/") + "/")
+                          for r in recorded)]
+    check("lr3 A RECORDED RUN MOVES NO BYTE INSIDE THE CONTENT IDENTITY: the "
+          "reuse key of every one of those runs is the same - each run's record "
+          "landed before the next one read the tree - and every path the runs "
+          "modified is one `recorded_paths` names, the shard among them: %r"
+          % ((keys, changed, recorded, outside),),
+          len(keys) == 5 and len(set(keys)) == 1 and keys[0]
+          and outside == [] and "docs/audit/phases/P1.json" in changed)
+
+    # --- exit 0 or 1 implies the record; the launch token; the row ---------
+    g_code, _g, g_id = _run("--task", "P1.1", "--launch", "tok-green")
+    r_code, _r, r_id = _run("--task", "P1.2")
+    _raw, body = _lr_read(shard)
+    green = _lr_subject(body, "P1.1").get("lastRun") or {}
+    red = _lr_subject(body, "P1.2").get("lastRun") or {}
+    rows = dict((r.get("runId"), r) for r in _recorded_rows(evdir))
+    check("lr4 EXIT 0 OR 1 IMPLIES THE RECORD: the green run's exit 0 and the "
+          "red run's exit 1 each have their subject's record naming the runId "
+          "printed and the status the exit stands for, and the launch token a "
+          "background caller passed is on its record: %r"
+          % ((g_code, g_id, green.get("runId"), green.get("status"),
+              green.get("launch"), r_code, r_id, red.get("runId"),
+              red.get("status")),),
+          g_code == M.E_OK and green.get("runId") == g_id
+          and green.get("status") == "passed" and green.get("launch") == "tok-green"
+          and r_code == M.E_FAIL and red.get("runId") == r_id
+          and red.get("status") == "failed"
+          and _lr_subject(body, "P1.2").get("testEvidence")
+          == {"runId": r_id, "status": "failed", "at": red.get("at")})
+    check("lr5 THE EVIDENCE ROW IS STILL WRITTEN, under the same runId as the "
+          "record, and it carries none of the record's own keys - the launch "
+          "token is the record's alone: %r"
+          % (sorted(rows.get(g_id) or {}),),
+          g_id in rows and r_id in rows
+          and rows[g_id].get("status") == "passed"
+          and not any(k in rows[g_id] for k in ("launch", "lastRun", "machine")))
+
+    # --- a lock held past the wait: exit 3, the log named, the shard unchanged
+    import _locks
+    held_before, _b = _lr_read(shard)
+    was_session = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    was_wait = getattr(_ev_io, "RECORD_WAIT_SECONDS", None)
+    os.environ["CLAUDE_CODE_SESSION_ID"] = "lr-gate-run"
+    _ev_io.RECORD_WAIT_SECONDS = 0.3
+    _locks.acquire(root, "phase-P1", session="lr-holder", out=lambda *_a: None)
+    try:
+        h_code, h_text, h_id = _run("--task", "P1.1")
+        hr_code, hr_text, _hr_id = _run("--task", "P1.2")
+    finally:
+        _locks.release(root, "phase-P1", session="lr-holder", out=lambda *_a: None)
+        if was_session is None:
+            os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+        else:
+            os.environ["CLAUDE_CODE_SESSION_ID"] = was_session
+        if was_wait is None:
+            delattr(_ev_io, "RECORD_WAIT_SECONDS")
+        else:
+            _ev_io.RECORD_WAIT_SECONDS = was_wait
+    held_after, _a = _lr_read(shard)
+    logs = sorted(os.listdir(evdir))
+    named = [n for n in logs if n in h_text]
+    check("lr6 A LOCK HELD PAST THE WAIT is exit 3 on a green run AND on a red "
+          "one - never 0 or 1 without the record - the output names the ledger "
+          "file the run's row went to, and the shard is byte for byte what it "
+          "was: %r"
+          % ((h_code, hr_code, h_id, named, h_text[-500:]),),
+          h_code == M.E_UNRECORDED and hr_code == M.E_UNRECORDED
+          and h_id is not None and named
+          and held_after == held_before
+          and "GATE GREEN" not in h_text)
+
+
 def _selftest():
     def body(check):
+        _harness.stage(check, "lr-block", _last_run_record_cases)
         _harness.stage(check, "gte-block", _gate_task_env_cases)
         _harness.stage(check, "gtf-block", _foreign_status_cases)
         _harness.stage(check, "gtd-block", _task_bug_definition_cases)

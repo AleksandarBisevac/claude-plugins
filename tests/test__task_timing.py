@@ -313,11 +313,81 @@ def _schema_cases(check):
           and bool(T.stage_problems(dict(good, ms=1.5))))
 
 
+def _run_stage_cases(check):
+    """The stages a recorded run appends to its task: built from that run's own
+    figures, appended once, and kept when the next run replaces the record.
+
+    THE FIGURES ARE CHOSEN SO NO TWO AGREE - a selection of 2300 ms ending at a
+    start whose whole second is :04:10, and a length of 8125 ms - so a stage
+    holding the other figure, or a selection read from the start rather than
+    ending at it, reads as a different value rather than the same one."""
+    where = "run R-1's record"
+    stages, gaps = T.run_stages("R-1", "2026-11-18T04:04:10Z", 8125, 2300, where)
+    by = dict((s.get("kind"), s) for s in stages)
+    check("tt23 a run's stages are its selection, ENDING where the run starts, "
+          "and its gate, starting there - each carrying the run's id, its own "
+          "figure and a basis naming where the figure came from: %r"
+          % ((stages, gaps),),
+          gaps == [] and [s.get("kind") for s in stages] == ["selection", "gate"]
+          and by["selection"]["ms"] == 2300
+          and by["selection"]["startedAt"] == "2026-11-18T04:04:07Z"
+          and by["gate"]["ms"] == 8125
+          and by["gate"]["startedAt"] == "2026-11-18T04:04:10Z"
+          and all(s.get("runId") == "R-1" and where in s.get("basis", "")
+                  for s in stages)
+          and all(T.stage_problems(s) == [] for s in stages))
+    no_pick, _g = T.run_stages("R-2", "2026-11-18T04:04:10Z", 8125, None, where)
+    no_len, len_gaps = T.run_stages("R-3", "2026-11-18T04:04:10Z", None, 2300,
+                                    where)
+    no_start, start_gaps = T.run_stages("R-4", None, 8125, 2300, where)
+    check("tt24 a run that timed no selection gives the gate stage alone, a run "
+          "with no length gives no gate stage and NAMES the gap, and one with no "
+          "readable start gives no stage at all and names that - never a stage "
+          "with a zero or a guessed start: %r"
+          % ((no_pick, no_len, len_gaps, no_start, start_gaps),),
+          [s["kind"] for s in no_pick] == ["gate"]
+          and [s["kind"] for s in no_len] == ["selection"]
+          and len(len_gaps) == 1 and "durationMs" in len_gaps[0]
+          and no_start == [] and len(start_gaps) == 1
+          and "startedAt" in start_gaps[0])
+
+    task = {"id": "P0.4", "timing": {"firstStartedAt": "2026-11-18T04:00:00Z",
+                                     "stages": [_stage("writer",
+                                                       "2026-11-18T04:00:00Z",
+                                                       1000, round=1)]}}
+    before = copy.deepcopy(task)
+    once = T.append_run_stages(task, stages)
+    twice = T.append_run_stages(dict(task, timing=once), stages)
+    check("tt25 append_run_stages adds a run's stages after the ones already "
+          "there and adds them ONCE - a second call with the same run's stages "
+          "leaves the record as the first call left it - and leaves the task "
+          "it was handed untouched: %r" % ((once, twice),),
+          once["stages"][0] == before["timing"]["stages"][0]
+          and once["stages"][1:] == stages
+          and twice == once and task == before
+          and once["firstStartedAt"] == "2026-11-18T04:00:00Z")
+    later, _g2 = T.run_stages("R-5", "2026-11-18T04:09:00Z", 4400, 120, where)
+    kept = T.append_run_stages(dict(task, timing=once), later)
+    ids = [(s.get("kind"), s.get("runId")) for s in kept["stages"]]
+    check("tt26 THE STAGE SURVIVES THE RECORD'S REPLACEMENT: the next run's "
+          "stages land beside the first run's, which keep their figures - the "
+          "record names only the newest run, the timing keeps every one: %r"
+          % (ids,),
+          ids == [("writer", None), ("selection", "R-1"), ("gate", "R-1"),
+                  ("selection", "R-5"), ("gate", "R-5")]
+          and kept["stages"][2]["ms"] == 8125 and kept["stages"][4]["ms"] == 4400)
+    fresh = T.append_run_stages({"id": "P0.5"}, later)
+    check("tt27 ...and a task with no timing record starts one holding the run's "
+          "stages, with no first start invented: %r" % (fresh,),
+          fresh == {"stages": later})
+
+
 def _selftest():
     def body(check):
         _cases(check)
         _unreadable_cases(check)
         _schema_cases(check)
+        _run_stage_cases(check)
     return _harness.run(body)
 
 

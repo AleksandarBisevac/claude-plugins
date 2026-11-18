@@ -1562,21 +1562,11 @@ def stages_carried(state, task, closed=False):
         state.pop(TIMING_KEY, None)
 
 
-def _length(value):
-    """A recorded length in whole milliseconds, or None for anything that is
-    not a finite number of zero or more - a bool included."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)) \
-            or value != value or value < 0 or value == float("inf"):
-        return None
-    return int(round(value))
-
-
-def _stamp_less(stamp, ms):
-    """The whole second `ms` before `stamp`, or None when `stamp` will not read."""
-    epoch = _usage_core.parse_ts(stamp)
-    if epoch is None:
-        return None
-    return time.strftime(STAMP_FORMAT, time.gmtime(int(epoch - ms / 1000.0)))
+# A recorded length in whole milliseconds, and the whole second some length
+# before a stamp: `_task_timing`'s, which builds a recorded run's stages with
+# the same two readings.
+_length = _timing.whole_ms
+_stamp_less = _timing.stamp_less
 
 
 def wait_stage(since, until, basis):
@@ -1663,25 +1653,10 @@ def row_stages(row, kind="gate"):
                     "measuring it, and records no start of its own"
                     % (run_id, "of run %s" % (source,) if source
                        else "of a run it does not name")]
-    if _usage_core.parse_ts(started) is None:
-        return [], ["evidence row %s records no readable %s (%r)"
-                    % (run_id, _evio.STARTED_KEY, started)]
-    out, gaps = [], []
-    selection = _evio.selection_ms(row)
-    if kind == "gate" and selection is not None:
-        out.append(("selection:%s" % (run_id,), _timing.make_stage(
-            "selection", _stamp_less(started, selection), selection,
-            "selectionMs in evidence row %s, ending at its startedAt" % (run_id,),
-            run_id=run_id)))
-    ms = _length(row.get("durationMs"))
-    if ms is not None:
-        out.append(("%s:%s" % (kind, run_id), _timing.make_stage(
-            kind, started, ms, "durationMs in evidence row %s" % (run_id,),
-            run_id=run_id)))
-    else:
-        gaps.append("evidence row %s records no readable durationMs (%r)"
-                    % (run_id, row.get("durationMs")))
-    return out, gaps
+    stages, gaps = _timing.run_stages(
+        run_id, started, row.get("durationMs"), _evio.selection_ms(row),
+        "evidence row %s" % (run_id,), kind=kind)
+    return [("%s:%s" % (s["kind"], run_id), s) for s in stages], gaps
 
 
 def run_start(row):
@@ -1703,7 +1678,14 @@ def queue_row(ctx, state, task, read, kind="gate", since=None):
     is that run's (`_evidence_io.measured_row`), queued under that run's own
     source as every other read of it is, and the did-line says whose it is -
     never that the stage is not recorded while this step records it. A
-    repeat whose run the ledger does not hold keeps its own gap."""
+    repeat whose run the ledger does not hold keeps its own gap.
+
+    A GATE RUN'S OWN STAGES ARE NOT QUEUED HERE. `run-test-gate.py --record`
+    appends a task run's gate and selection stage to the task's timing itself,
+    in the locked write that records the run (`_evidence_io.write_record`), so
+    queueing them too would time the run twice. What is queued for a gate run
+    is the wait before it, which only the drive's hand-out stamp can say; a base
+    run's stage is the drive's still."""
     row, why = read
     if row is None and why is None:
         return
@@ -1715,12 +1697,21 @@ def queue_row(ctx, state, task, read, kind="gate", since=None):
         pairs = [("wait:%s:%s" % (kind, row.get("runId")), wait_stage(
             since, run_start(row), "hand-out stamped by the drive -> start of "
             "evidence row %s" % (row.get("runId"),)))] + pairs
+    said_as, built = kind, pairs
+    if kind == "gate":
+        # The wait is the one stage of a gate run this queues, so a gap is said
+        # as the wait's - and only where a hand-out stamp asked for one.
+        pairs = [(s, st) for s, st in pairs if s.startswith("wait:")]
+        gaps, said_as = (gaps if since else []), "wait"
     for source, stage in pairs:
         queue_stage(state, task, source, stage)
-    said = [gap for gap in gaps if stage_unread(ctx, state, task, kind, gap)]
+    said = [gap for gap in gaps if stage_unread(ctx, state, task, said_as, gap)]
     own = "%s:%s" % (kind, row.get("runId")) if repeat is not None else None
+    # Asked of the stages BUILT, not the ones queued: the measured run's gate
+    # stage is on the task's timing whoever appended it - the recorder, for a
+    # gate run - so whose it is is still this step's sentence to say.
     noted = (repeat is not None
-             and any(s == own and st is not None for s, st in pairs)
+             and any(s == own and st is not None for s, st in built)
              and timing_said(
                  ctx, state, task, "repeats", "%s: %s" % (kind, repeat.get("runId")),
                  "timing: %s stage of %s is run %s's - evidence row %s repeated "

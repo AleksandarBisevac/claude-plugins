@@ -8466,6 +8466,17 @@ def _group_cases(check):
               and _gs_p2ev.get("status") == _gs_p1ev.get("status")
               and _gs_p2ev.get("gradedBy") == "P1"
               and "gradedBy" not in _gs_p1ev)
+        _gs_p1lr = _gs_after["P1"].get("lastRun") or {}
+        _gs_p2lr = _gs_after["P2"].get("lastRun") or {}
+        check("gse2b ...and it takes the carrier's RECORD with the pointer - the "
+              "same run's record, naming the carrier, so a member's record and "
+              "its pointer never name two runs: %r / %r"
+              % (sorted(_gs_p1lr), sorted(_gs_p2lr)),
+              _gs_p1lr.get("runId") == _gs_p1ev.get("runId")
+              and _gs_p2lr.get("runId") == _gs_p2ev.get("runId")
+              and _gs_p2lr.get("gradedBy") == "P1"
+              and dict((k, v) for k, v in _gs_p2lr.items() if k != "gradedBy")
+              == _gs_p1lr)
         _gs_rows = [r for r in _journal_io.read_all(gs_proj)
                     if r.get("action") == "phase.verdict"]
         check("gs7 ...with one phase.verdict row per member: %r"

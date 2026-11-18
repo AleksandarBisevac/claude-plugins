@@ -1346,6 +1346,44 @@ SCHEMA_EXEMPTIONS = {
     "testEvidence.gradedBy":
         "written only on a group member's copy of its carrier's pointer; the demo "
         "signs no group off, so every pointer it carries is its subject's own run.",
+    # `lastRun` is stamped beside each pointer by `_recorded`, through the
+    # recorder's own `run_record` over the run's row, so a field the record
+    # copies off the row is carried wherever the fixture has a value for it -
+    # the gate's source and digest, the banners, the start. The rows below are
+    # the fields the demo has no honest value for, each with its own reason.
+    "lastRun.selectionMs":
+        "the time a recorded run spent choosing what to run; the fixture is "
+        "handed its gate by `_manifest_io.gate_entries` and times no selection, "
+        "so a figure would be a duration nothing measured and no surface renders.",
+    "lastRun.verdictSource":
+        "absent means MEASURED (`_evidence_io.VERDICT_SOURCE`'s rule) and every "
+        "demo run is a measurement, so the absence the record copies off the row "
+        "is the true answer rather than a gap.",
+    "lastRun.reusedFrom":
+        "names the run a repeated verdict copied; no demo run repeats another "
+        "run's verdict.",
+    "lastRun.reuseKey":
+        "the content identity the next run of the same subject compares itself "
+        "with; nothing runs the demo again and its tree has no content to hash, "
+        "so a key would be a lever nothing reads.",
+    "lastRun.leftToPhaseGate":
+        "written only when `executor.phaseGateOnly` leaves a gate entry to the "
+        "phase gate; the demo's config sets none, so no run left anything out.",
+    "lastRun.machine":
+        "the machine line a recorded run printed beside its verdict; the demo's "
+        "runs are generated, not run, so nothing printed one to keep.",
+    "lastRun.attribution":
+        "the attribution line a recorded run printed beside its verdict, for "
+        "lastRun.machine's reason: the demo runs nothing that prints it.",
+    "lastRun.launch":
+        "the token a caller handed `run-test-gate.py --launch` to find a run it "
+        "started in the background; the demo launches nothing.",
+    "lastRun.gradedBy":
+        "written only on a group member's copy of its carrier's record, for "
+        "testEvidence.gradedBy's reason: the demo signs no group off.",
+    "lastRun.stepsDropped":
+        "counted only when a run has more steps than the record keeps "
+        "(`_evidence_io.MAX_STEPS`); no demo gate is that wide.",
     "review.preExistingNotCharged":
         "defined by the schema and by nothing else - no reader, no writer, and not "
         "even a `_manifest_vocab` entry. A fixture value would demonstrate nothing.",
@@ -1984,7 +2022,7 @@ def _run_steps(resolved, seed, red, zero):
 
 
 def _run_result(resolved, owns, head, seed, red=None, zero=False, mutated=(),
-                overlap=None):
+                overlap=None, gateSource=None, gateDigest=None):
     """`run_gate`'s answer for one run of `commands`, assembled rather than run.
 
     The VERDICT is not stated by the caller either -- `_status_of` reads it off the
@@ -2021,7 +2059,33 @@ def _run_result(resolved, owns, head, seed, red=None, zero=False, mutated=(),
             else "the runner named %d path(s); the work under test declares %d "
                  "file(s)" % (len(owns) * 3 + 4, len(owns))),
         "failed": failed,
+        "gateSource": gateSource,
+        _evidence_io.GATE_DIGEST_KEY: gateDigest,
+        _evidence_io.BANNERS_KEY: _banners_of(overlap),
     }
+
+
+def _banners_of(overlap):
+    """The banners `run-test-gate.verdict_banners` prints for a run of this
+    fixture, for its row to keep: `NO OVERLAP` when the runner named paths and
+    none was this work's. The other banner is never reached here, because every
+    path a fixture run moves is the task's own (`_status_of` says why), so the
+    foreign half it reads is empty. STATED HERE AND CHECKED THERE, for
+    `_status_of`'s reason: `tests/test_gen_demo_manifest.py` puts every run
+    through the real function."""
+    if overlap is not None and not overlap:
+        return [_evidence_io.BANNER_NO_OVERLAP]
+    return []
+
+
+def _gate_said(source, entries, build):
+    """Which declaration a run's steps came from and the digest of that gate, as
+    `run-test-gate.py` records both: the source `_manifest_io.gate_entries`
+    answered and `_evidence_io.gate_digest` over the entries as declared - the
+    recorder's own two derivations, so the fixture names no gate it did not
+    run."""
+    return {"gateSource": source,
+            "gateDigest": _evidence_io.gate_digest(entries, build)}
 
 
 def _status_of(failed, ran_total, mutated):
@@ -2124,8 +2188,9 @@ def _evidence_specs(manifest):
                 continue
             # WHICH GATE is `_manifest_io.gate_entries`' answer, the one the
             # runner the demo imitates resolves by.
-            entries, _source = _mio.gate_entries(phase, task)
+            entries, source = _mio.gate_entries(phase, task)
             resolved = [(e, build.get(e, e)) for e in entries]
+            gate = _gate_said(source, entries, build)
             if not resolved:
                 continue                    # the ungated task: nothing to record
             owns = list(task.get("files") or [])
@@ -2144,7 +2209,7 @@ def _evidence_specs(manifest):
                 out.append(("task", ids, _at(task.get("completedAt")), recorded,
                             _run_result(resolved, owns, head,
                                         "%s-done" % ids["taskId"],
-                                        mutated=mutated, overlap=overlap)))
+                                        mutated=mutated, overlap=overlap, **gate)))
             elif tstatus == "in_progress":
                 # NOTHING RAN, AND THE GATE STILL EXITED 0. Nothing printed a path
                 # either, so coverage is UNKNOWN rather than empty - the two are
@@ -2152,7 +2217,7 @@ def _evidence_specs(manifest):
                 out.append(("task", ids, _at(task.get("startedAt"), 2), recorded,
                             _run_result(resolved, owns, head,
                                         "%s-live" % ids["taskId"],
-                                        zero=True, overlap=None)))
+                                        zero=True, overlap=None, **gate)))
             else:
                 # One row per attempt, because the task records three of them and
                 # a ledger that showed the last would make `Earlier runs` a
@@ -2163,7 +2228,7 @@ def _evidence_specs(manifest):
                                 _run_result(resolved, owns, head,
                                             "%s-a%d" % (ids["taskId"], attempt),
                                             red=resolved[0][0],
-                                            overlap=overlap)))
+                                            overlap=overlap, **gate)))
         # The phase's own declaration through the one normaliser: an all-blank
         # `testGate` runs nothing, so it earns no sign-off run.
         phase_gate = _mio.declared_gate_entries(phase.get("testGate"))
@@ -2176,7 +2241,8 @@ def _evidence_specs(manifest):
                                      for e in phase_gate],
                                     owns, phase.get("baseRef"),
                                     "%s-signoff" % (phase.get("id"),),
-                                    overlap=owns)))
+                                    overlap=owns,
+                                    **_gate_said("phase", phase_gate, build))))
     # THE THIRD PLACE'S ONE RUN: `meta.fullGate`, measured at the history's run
     # commit. Resolved the way the runner resolves it, so its steps publish the
     # exact commands `full_status` compares them with.
@@ -2251,7 +2317,11 @@ def evidence_rows(manifest, project):
     for scope, ids, ts, attempt, result in _evidence_specs(manifest):
         identity = {"runId": "%s.%s" % (ts, _hex("%s-%s-%s" % (
             scope, ids.get("taskId") or ids.get("phaseId"), attempt), 6)),
-            "ts": ts, "via": EVIDENCE_VIA}
+            "ts": ts, "via": EVIDENCE_VIA,
+            # When the run began: its stamp less the length its steps add up
+            # to, so the start and the length a reader meets are one story.
+            _evidence_io.STARTED_KEY: _task_timing.stamp_less(
+                ts, result.get("durationMs"))}
         if attempt is not None:
             identity["attempt"] = attempt
         published = [st["command"] for st in result["steps"]]
@@ -2271,16 +2341,25 @@ def _stamp_pointers(manifest, rows):
     best = _evidence_io.latest_by_subject(rows)
     stamped = []
     for phase in (manifest.get("phases") or []):
-        pointer = best.get(("phase", str(phase.get("id"))))
-        if pointer is not None:
-            phase[_evidence_io.POINTER_KEY] = _evidence_io.pointer_for(pointer)
+        row = best.get(("phase", str(phase.get("id"))))
+        if row is not None:
+            phase.update(_recorded(row))
             stamped.append(phase.get("id"))
         for task in (phase.get("tasks") or []):
             row = best.get(("task", str(task.get("id"))))
             if row is not None:
-                task[_evidence_io.POINTER_KEY] = _evidence_io.pointer_for(row)
+                task.update(_recorded(row))
                 stamped.append(task.get("id"))
     return stamped
+
+
+def _recorded(row):
+    """The two keys `run-test-gate.py --record` writes for the run `row` is:
+    the record (`_evidence_io.run_record`) and the pointer derived from it, so
+    the fixture's pair is the recorder's pair and cannot name two runs."""
+    record = _evidence_io.run_record(row)
+    return {_evidence_io.RECORD_KEY: record,
+            _evidence_io.POINTER_KEY: _evidence_io.pointer_from_record(record)}
 
 
 def _stamp_since(manifest, rows):

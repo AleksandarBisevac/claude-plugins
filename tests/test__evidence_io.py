@@ -4816,9 +4816,268 @@ def _selection_time_cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _lr_project(tmp, name):
+    """A fresh sharded project under git, so the phase lock has a scheme: one
+    phase, one task, an empty gate."""
+    root = os.path.join(tmp, name)
+    os.makedirs(os.path.join(root, "docs", "audit", "phases"))
+    os.makedirs(os.path.join(root, ".claude"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    with open(mpath, "w") as fh:
+        json.dump({"meta": {"version": 3}, "phases": [
+            {"id": "P1", "title": "one", "shard": "phases/P1.json"}]}, fh)
+    with open(os.path.join(root, "docs", "audit", "phases", "P1.json"), "w") as fh:
+        json.dump({"id": "P1", "title": "one", "status": "in_progress",
+                   "testGate": [], "tasks": [{"id": "P1.1", "title": "t",
+                                              "status": "in_progress"}]}, fh)
+    _harness.git(None, "init", "-q", root, prefix=("git",))
+    return root, mpath, os.path.join(root, "docs", "audit", "phases", "P1.json")
+
+
+def _lr_row(run_id, ts, steps=None, status="failed"):
+    """A ledger row as `row_for` shapes one, with the fields a record reads."""
+    return {"v": 1, "runId": run_id, "ts": ts, "scope": "task",
+            "taskId": "P1.1", "phaseId": "P1", "status": status,
+            "durationMs": 8125, "selectionMs": 2300,
+            "startedAt": "2026-11-18T04:04:10Z", "failed": ["sweep"],
+            "reuseKey": "sha256:key", "gateDigest": "sha256:gate",
+            "gateSource": "task",
+            "testedState": {"head": "abc123", "dirtyDigest": "sha256:d",
+                            "tree": "sha256:t", "scopeDigest": "sha256:s"},
+            "banners": [], "steps": steps if steps is not None else [
+                {"name": "sweep", "exit": 1, "ran": 3, "measured": "measured",
+                 "durationMs": 8000, "outcome": "failed",
+                 "failing": ["FAIL x1 the case"], "failingBasis": "named"}]}
+
+
+def _lr_shard(spath):
+    with io.open(spath, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+# A path of the shape the plan writer's scrubber reads as a home directory
+# wherever the suite runs: the sweep points HOME at a scratch directory, so a
+# fixture built from the live home would test a different detector arm.
+_LR_MACHINE_PATH = "/Users/someone/work/tests/test_x.py"
+
+
+def _last_run_cases(check):
+    """(lr) The newest run of a task or a phase is one record in its shard.
+
+    Every function is reached through `getattr`, so on a build that has none
+    of them each case fails as itself rather than the block raising once."""
+    import threading
+    import _manifest_io
+    tmp = _harness.fixture_root("audit-evidence-lastrun-")
+    record_of = getattr(M, "run_record", None)
+    write = getattr(M, "write_record", None)
+    derive = getattr(M, "pointer_from_record", None)
+    try:
+        root, mpath, spath = _lr_project(tmp, "ptr")
+        ids = {"taskId": "P1.1", "phaseId": "P1"}
+        rec = _harness.attempt(lambda: record_of(
+            _lr_row("R1", "2026-11-18T04:04:19Z"),
+            lines={"machine": "this run had the machine to itself"},
+            launch="tok-1"))
+        rec = rec[1] if rec[0] else None
+        done = _harness.attempt(lambda: write(root, mpath, "task", ids, rec))
+        task = _lr_shard(spath)["tasks"][0]
+        pointer = _harness.attempt(lambda: derive(task.get("lastRun")))
+        check("lr1 a written record lands on the task as `lastRun`, and "
+              "`testEvidence` beside it is EXACTLY the pointer derived from it - "
+              "three keys, written in the same write: %r"
+              % ((done, task.get("testEvidence"), pointer),),
+              done[0] and done[1].get("written") is True
+              and isinstance(task.get("lastRun"), dict)
+              and task["lastRun"].get("runId") == "R1"
+              and task["lastRun"].get("launch") == "tok-1"
+              and pointer[0] and task.get("testEvidence") == pointer[1]
+              and pointer[1] == {"runId": "R1", "status": "failed",
+                                 "at": "2026-11-18T04:04:19Z"})
+        body = _lr_shard(spath)
+        body["tasks"][0].pop("testEvidence", None)
+        with io.open(spath, "w", encoding="utf-8") as fh:
+            json.dump(body, fh)
+        rep = M.reconcile(root, mpath)
+        task = _lr_shard(spath)["tasks"][0]
+        check("lr2 a deleted pointer is restored by reconcile FROM THE RECORD - "
+              "this ledger holds no row at all, so the record is the only "
+              "source a restored pointer could have come from: %r"
+              % ((rep.get("moved"), task.get("testEvidence")),),
+              task.get("testEvidence") == {"runId": "R1", "status": "failed",
+                                           "at": "2026-11-18T04:04:19Z"}
+              and rep.get("moved") == ["task P1.1 -> R1"])
+        again = M.reconcile(root, mpath)
+        check("lr3 SECOND DIRECTION: a pointer that already equals the record "
+              "is left alone and said as already pointing - the case that fails "
+              "if every record subject were rewritten on every reconcile: %r"
+              % ((again.get("moved"), again.get("already")),),
+              again.get("moved") == [] and "task P1.1" in (again.get("already")
+                                                           or []))
+
+        # --- a verb's write and a record write, interleaved ---------------
+        iroot, impath, ispath = _lr_project(tmp, "interleave")
+        _locks.acquire(iroot, "phase-P1", session="verb", out=lambda *_a: None)
+        landed = []
+        rec2 = dict(rec or {}, runId="R2")
+
+        def _recorder():
+            landed.append(_harness.attempt(lambda: write(
+                iroot, impath, "task", ids, rec2, session_id="recorder",
+                wait=20)))
+        worker = threading.Thread(target=_recorder)
+        worker.start()
+        # The recorder is now waiting on the lock the verb holds. The verb's
+        # write is a read-modify-write of the same shard, made under its lock.
+        time.sleep(0.5)
+        vbody = _lr_shard(ispath)
+        vbody["tasks"][0]["notes"] = [{"at": "2026-11-18T04:05:00Z",
+                                       "text": "the verb's write"}]
+        _manifest_io.save_plan_json(ispath, vbody)
+        _locks.release(iroot, "phase-P1", session="verb", out=lambda *_a: None)
+        worker.join(30)
+        both = _lr_shard(ispath)["tasks"][0]
+        check("lr4 A VERB WRITES WHILE THE RECORDER WAITS: the verb's write and "
+              "the record both land - the recorder read the shard under the lock "
+              "rather than before it, so the note the verb added is not lost "
+              "under the record: %r" % ((landed, sorted(both)),),
+              landed and landed[0][0] and landed[0][1].get("written") is True
+              and (both.get("lastRun") or {}).get("runId") == "R2"
+              and both.get("notes") == [{"at": "2026-11-18T04:05:00Z",
+                                         "text": "the verb's write"}])
+        vbody = _lr_shard(ispath)
+        vbody["tasks"][0].setdefault("notes", []).append(
+            {"at": "2026-11-18T04:06:00Z", "text": "a second write"})
+        _manifest_io.save_plan_json(ispath, vbody)
+        after = _lr_shard(ispath)["tasks"][0]
+        check("lr5 ...and the other order: a verb's read-modify-write AFTER the "
+              "record keeps it, since the record is an ordinary key of the "
+              "shard the verb read: %r" % (sorted(after),),
+              (after.get("lastRun") or {}).get("runId") == "R2"
+              and len(after.get("notes") or []) == 2)
+
+        # --- a lock held past the wait -----------------------------------
+        hroot, hmpath, hspath = _lr_project(tmp, "held")
+        _locks.acquire(hroot, "phase-P1", session="other", out=lambda *_a: None)
+        with io.open(hspath, "rb") as fh:
+            held_before = fh.read()
+        refused = _harness.attempt(lambda: write(
+            hroot, hmpath, "task", ids, rec, session_id="me", wait=0.3))
+        with io.open(hspath, "rb") as fh:
+            held_after = fh.read()
+        _locks.release(hroot, "phase-P1", session="other", out=lambda *_a: None)
+        check("lr6 a lock another live run holds past the wait refuses the "
+              "record with a sentence, and the shard is byte for byte what it "
+              "was: %r" % (refused,),
+              refused[0] and refused[1].get("written") is False
+              and bool(refused[1].get("reason")) and held_after == held_before)
+
+        # --- what the record may hold, and how big it may get ------------
+        wide = [{"name": "step-%02d" % (i,), "exit": 1, "ran": 1,
+                 "outcome": "failed", "durationMs": 10 + i,
+                 "failing": [_LR_MACHINE_PATH + " " + "x" * 900] * 50,
+                 "failingBasis": "named", "teardown": "noise"}
+                for i in range(M.MAX_STEPS + 9)]
+        big = _harness.attempt(lambda: record_of(
+            _lr_row("R3", "2026-11-18T04:04:19Z", steps=wide)))
+        big = big[1] if big[0] else {}
+        size = len(json.dumps(big, sort_keys=True))
+        per_step = M.MAX_FAILING * (_journal_io.MAX_VALUE_CHARS + 8) + 600
+        bound = M.MAX_STEPS * per_step + 4000
+        check("lr7 the record's size is bounded by the gate's width: steps cut "
+              "at MAX_STEPS with the cut counted, failing lines per step cut at "
+              "MAX_FAILING and each at the journal's value bound, a step key the "
+              "record does not carry left off - %d bytes against a bound of %d: "
+              "%r" % (size, bound, (len(big.get("steps") or []),
+                                    big.get("stepsDropped"))),
+              len(big.get("steps") or []) == M.MAX_STEPS
+              and big.get("stepsDropped") == 9
+              and all(len(s.get("failing") or []) <= M.MAX_FAILING
+                      for s in big["steps"])
+              and all(len(ln) <= _journal_io.MAX_VALUE_CHARS
+                      for s in big["steps"] for ln in s.get("failing") or [])
+              and not any("teardown" in s for s in big["steps"])
+              and 0 < size <= bound)
+        sroot, smpath, sspath = _lr_project(tmp, "scrub")
+        raw = dict(rec or {}, runId="R4", steps=[
+            {"name": "sweep", "exit": 1, "ran": 3, "outcome": "failed",
+             "failing": ["FAIL t1 " + _LR_MACHINE_PATH]}])
+        _harness.attempt(lambda: write(sroot, smpath, "task", ids, raw))
+        with io.open(sspath, encoding="utf-8") as fh:
+            text = fh.read()
+        stored = (json.loads(text)["tasks"][0].get("lastRun") or {})
+        step = (stored.get("steps") or [{}])[0]
+        check("lr8 a machine path in a failing line reads SCRUBBED in the shard, "
+              "as every string the shard write passes does, and the verdict "
+              "fields beside it are untouched: %r" % ((step, stored.get("status")),),
+              stored.get("runId") == "R4"
+              and "/Users/someone" not in text
+              and bool(step.get("failing"))
+              and step.get("exit") == 1 and step.get("outcome") == "failed"
+              and stored.get("status") == "failed"
+              and stored.get("failed") == ["sweep"])
+
+        # --- one file and per phase; the schema at both levels ------------
+        flat = os.path.join(tmp, "flat")
+        os.makedirs(os.path.join(flat, ".claude"))
+        with open(os.path.join(flat, ".claude", "audit.config.json"), "w") as fh:
+            json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+        os.makedirs(os.path.join(flat, "docs", "audit"))
+        fpath = os.path.join(flat, "docs", "audit", "audit-plan.json")
+        with open(fpath, "w") as fh:
+            json.dump({"meta": {"version": 3}, "phases": [
+                {"id": "P1", "title": "one", "status": "in_progress",
+                 "testGate": [], "tasks": [{"id": "P1.1", "title": "t",
+                                            "status": "in_progress"}]}]}, fh)
+        _harness.git(None, "init", "-q", flat, prefix=("git",))
+        put_task = _harness.attempt(lambda: write(flat, fpath, "task", ids, rec))
+        put_phase = _harness.attempt(lambda: write(
+            flat, fpath, "phase", {"phaseId": "P1"}, dict(rec or {}, runId="R5")))
+        with io.open(fpath, encoding="utf-8") as fh:
+            whole = json.load(fh)
+        f_phase = whole["phases"][0]
+        sharded = _lr_shard(spath)
+        import _json_schema
+        doc = _json_schema.load_document(os.path.join(
+            _output.PLUGIN_ROOT, "schema", "audit-plan.schema.json"))
+        verdicts = dict(
+            (name, _json_schema.check_findings(doc["$defs"][level], value, doc,
+                                               name))
+            for name, level, value in (
+                ("flat task", "task", f_phase["tasks"][0]),
+                ("flat phase", "phase", f_phase),
+                ("shard task", "task", sharded["tasks"][0]),
+                ("bare task", "task", {"id": "P1.1", "title": "t",
+                                       "status": "pending"})))
+        bad = _json_schema.check_findings(
+            doc["$defs"]["lastRun"], dict(rec or {}, steps="not a list"), doc,
+            "lastRun")
+        check("lr9 a ONE-FILE plan carries the record on its task and its phase "
+              "as a per-phase plan does, and the published schema accepts "
+              "`lastRun` on a task and on a phase, in both layouts, with nothing "
+              "it left unread - a task without it is accepted unchanged, and a "
+              "record whose steps are not a list is refused: %r"
+              % ((put_task, put_phase, dict((k, v) for k, v in verdicts.items()),
+                  bad[0]),),
+              put_task[0] and put_task[1].get("written") is True
+              and put_phase[0] and put_phase[1].get("written") is True
+              and (f_phase["tasks"][0].get("lastRun") or {}).get("runId") == "R1"
+              and (f_phase.get("lastRun") or {}).get("runId") == "R5"
+              and f_phase.get("testEvidence", {}).get("runId") == "R5"
+              and isinstance(sharded["tasks"][0].get("lastRun"), dict)
+              and all(found == [] and not unread
+                      for found, unread in verdicts.values())
+              and bool(bad[0]))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _selftest():
     def body(check):
         _cases(check)
+        _harness.stage(check, "lr-block", _last_run_cases)
         _foreground_bound_cases(check)
         _part_repeat_cases(check)
         _left_to_phase_gate_cases(check)

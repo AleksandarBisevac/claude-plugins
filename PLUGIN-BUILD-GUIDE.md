@@ -361,7 +361,7 @@ L4:
   _ado_drift -> _manifest_io, _manifest_vocab, _output, _usage_core
   _config_rules -> _loader, _output, _policy
   _doctor_report -> _loader, _output
-  _evidence_io -> _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_vocab, _output, _usage_core, _utc_stamp, _worktrees
+  _evidence_io -> _journal_io, _loader, _locks, _machine_paths, _manifest_io, _manifest_vocab, _output, _task_timing, _usage_core, _utc_stamp, _worktrees
   _gate_feed -> _journal_io, _loader, _output, _usage_core
   _help -> _areas, _journal_io, _loader, _output, _policy, _ui_theme
   _id_shape -> _branch, _loader, _manifest_io, _manifest_vocab, _output
@@ -2486,7 +2486,11 @@ and both key sets, to agreeing.
 
 **One module, every writer and every reader.** `make_stage` and `append_stage` build a stage
 and the record it joins, returning new values rather than editing the task; `first_start` is
-the stamp the start verb writes; `timing_problems` is what `_manifest_phases._walk_phases`
+the stamp the start verb writes; `run_stages` builds a recorded run's selection stage, ending
+where the run starts, and its own stage, naming a missing figure as a gap rather than writing
+a zero, and `append_run_stages` adds them once per run - the gate recorder and the step driver
+build a run's stages through it, so the two read one length the same way; `timing_problems` is
+what `_manifest_phases._walk_phases`
 reports as a finding naming the task and the stage; `summarize` gives the per-kind totals,
 the window from `firstStartedAt` to `completedAt`, and the remainder no stage accounts for.
 
@@ -4017,8 +4021,24 @@ re-taken. A stale lock is not taken over here; that is a decision a human makes 
 `audit-lock --takeover`. A refused pointer leaves the ledger row standing and names `--reconcile`,
 which is the only reachable partial state and the harmless one.
 
+**The record is the run, and its write is not allowed to fail quietly.** `write_record()` puts
+`lastRun` (`RECORD_KEY`) on the subject — the run whole, built by `run_record()` from the row
+`record()` just appended, the machine and attribution lines printed beside it, and a `--launch`
+token — with the pointer derived from it (`pointer_from_record()`) beside it, and, for a task
+run, the gate and selection stages `record_stages()` builds appended to the task's `timing`
+(`_task_timing.append_run_stages`), all in **one read and one write of the shard under the
+phase lock**. Unlike the pointer, the lock is **waited for** (`RECORD_WAIT_SECONDS`) rather
+than skipped, and the shard is read under it, so a verb that wrote while the record waited
+keeps what it wrote; a lock still held past the wait is refused with the shard untouched, and
+`run-test-gate.py` makes that exit 3. Replaced, never appended, so a record's size is the
+gate's width — `MAX_STEPS` steps of at most `MAX_FAILING` failing lines at the journal's value
+bound — and a repeated verdict carries its source's steps forward, each naming the run it came
+from. `subject_records()` reads every record a plan's files hold.
+
 **`reconcile()` is that repair**, and it is why the refusal is affordable: it re-derives every
-pointer from the ledger, newest run per subject **by `ts` and never by file position** (rows land in
+pointer from the ledger and from each subject's record, the newer of the two — a pointer
+deleted from a plan whose ledger holds no row is restored from the record — newest run per
+subject **by `ts` and never by file position** (rows land in
 one file per writer per month, so two worktrees concatenate in no meaningful order). Running it
 over an already-correct plan moves nothing and says so — a repair that rewrote a correct pointer
 would put a fresh journal row on every invocation, a trail of transitions that never happened. A

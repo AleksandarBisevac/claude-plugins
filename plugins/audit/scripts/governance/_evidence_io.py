@@ -93,6 +93,7 @@ import _manifest_io as _mio  # noqa: E402  (dual-format loader; the atomic write
 import _manifest_vocab  # noqa: E402  (the FULL_STATUS words, one vocabulary)
 import _worktrees  # noqa: E402  (git ancestry: merged_into, the three answers)
 import _usage_core  # noqa: E402  (parse_ts: a full run's ts read as a moment)
+import _task_timing as _timing  # noqa: E402  (a recorded run's stages, appended once)
 from _journal_io import (command_facts, redacted_paths,  # noqa: E402
                          redacted_text, repo_relative_or_token)
 from _machine_paths import OUTSIDE_TOKEN  # noqa: E402
@@ -2574,12 +2575,26 @@ def write_pointer(project, manifest_path, scope, ids, row, session_id=None,
                 # the write above may have raced one of theirs -- and it used to
                 # go into a printer that discards and a code nobody looked at.
                 refused = _locks.release_refusal(rcode, lock_name)
-    # ONLY NOW. This row says the PLAN moved, and it is written after the move
-    # rather than beside the attempt: a refused write above returns before
-    # reaching here, so the chain can never assert a transition that did not
-    # happen. That is the whole reason this is a second action and not the row
-    # `record()` already wrote -- that one's subject is the evidence file and it
-    # was true the moment it was written.
+    _say_moved(project, path, scope, ids, previous, pointer, session_id, config)
+    _mio.report_redactions(
+        path, pointers, project=project,
+        append_from_cli_why=lambda root, entry: _journal_io.append_from_cli_why(
+            root, entry, config=config))
+    return {"written": True, "reason": None, "path": path,
+            "releaseRefused": refused}
+
+
+def _say_moved(project, path, scope, ids, previous, pointer, session_id, config):
+    """The journal row saying the plan's pointer moved - the row every pointer
+    write ends with. The shard write's redaction report stays with each write,
+    beside its save, where the plan-writer contract reads it.
+
+    ONLY AFTER THE WRITE. This row says the PLAN moved, and it is written after
+    the move rather than beside the attempt: a refused write returns before
+    reaching here, so the chain can never assert a transition that did not
+    happen. That is the whole reason this is a second action and not the row
+    `record()` already wrote -- that one's subject is the evidence file and it
+    was true the moment it was written."""
     details = {"runId": pointer.get("runId"), "field": POINTER_KEY,
                "from": (previous or {}).get("runId"), "to": pointer.get("runId")}
     for key in ("taskId", "phaseId"):
@@ -2594,12 +2609,261 @@ def write_pointer(project, manifest_path, scope, ids, row, session_id=None,
                       pointer.get("runId"), pointer.get("status")),
         "details": details,
     }, config=config)
+
+
+# --- the record: the newest run of a subject, in its shard ----------------------
+# THE RECORD IS THE RUN, NOT A POINTER AT ONE. `testEvidence` names a run and
+# caches its verdict; `lastRun` holds what a reader of that run needs - its
+# moments, its verdict and where the verdict came from, the identity it was
+# measured under, the state it tested, what it printed beside the verdict, and
+# each step - so no ledger row is needed to read it. The ledger row is still
+# written beside it, unchanged; the record is the copy a later reader will take
+# instead of the row.
+#
+# REPLACED, NEVER APPENDED: one record per subject, the newest. So the shard's
+# size is bounded by one record per task and per phase, and a record's own size
+# by the gate's width - `MAX_STEPS` steps, each with at most `MAX_FAILING`
+# failing lines of at most `_journal_io.MAX_VALUE_CHARS` - three bounds a
+# reader multiplies.
+#
+# `testEvidence` STAYS THE THREE-KEY POINTER, written from the record in the
+# same write (`pointer_from_record`), so every reader of the pointer is
+# unchanged and the pointer can be re-derived from the record at any time.
+RECORD_KEY = "lastRun"
+# The top-level fields a record carries, read off the run's ledger row under
+# the row's own names. `ts` crosses as `at`, the pointer's word for it.
+RECORD_ROW_KEYS = ("runId", STARTED_KEY, "durationMs", SELECTION_KEY, "status",
+                   "failed", VERDICT_SOURCE, "reusedFrom", REUSE_KEY,
+                   GATE_DIGEST_KEY, "gateSource", LEFT_TO_PHASE_GATE_KEY,
+                   BANNERS_KEY, "stepsDropped")
+# Per step: what it was, what it answered, what it wrote about a failure, the
+# time it took when it ran here, and the run it was copied from when it did not.
+RECORD_STEP_KEYS = ("name", "exit", "ran", "outcome", "failing", "durationMs",
+                    STEP_REUSED_KEY)
+# What the tested state is named by: the commit, the digest of what was dirty
+# beside it, and the measured tree's key when the run was measured elsewhere.
+RECORD_STATE_KEYS = ("head", "dirtyDigest")
+# The lines the recorder prints beside a recorded run and keeps on its record.
+RECORD_LINE_KEYS = ("machine", "attribution")
+# How long a record write waits for the phase lock another verb holds before it
+# is refused. A verb holds that lock for one structural write; the drive's own
+# phase run holds it as this run's (`lock_state` reads it as ours), so it is
+# never waited out here.
+RECORD_WAIT_SECONDS = 30.0
+
+
+def _record_step(step, source=None):
+    """One step of a record, allow-listed to `RECORD_STEP_KEYS`; its failing
+    lines cut at `MAX_FAILING`, each at the journal's value bound. `source` is
+    the `{runId, ts}` a step copied from another run names, set when the step
+    itself does not already name one."""
+    out = {}
+    for key in RECORD_STEP_KEYS:
+        if key not in step:
+            continue
+        if key == "failing":
+            out[key] = [_journal_io._clip(str(line))
+                        for line in (step[key] or [])[:MAX_FAILING]]
+            continue
+        out[key] = step[key]
+    if source is not None and STEP_REUSED_KEY not in out:
+        out[STEP_REUSED_KEY] = source
+    if out.get(STEP_REUSED_KEY) is not None:
+        # A copied step ran nothing here, so no duration is kept for it.
+        out.pop("durationMs", None)
+    return out
+
+
+def run_record(row, lines=None, launch=None, source=None):
+    """The record of the run `row` (the ledger row `row_for` built) - the value
+    a subject's `RECORD_KEY` holds.
+
+    `lines` holds the machine and attribution lines the recorder printed beside
+    the run; `launch` is the token a caller that started the run in the
+    background passed, so it can find the record of exactly that run.
+
+    A REPEATED VERDICT CARRIES ITS SOURCE'S STEPS FORWARD. A run that repeated
+    another's verdict ran no step, so its row holds none - and a record holding
+    none could only be read through the older one. `source`, the record or row of
+    the run repeated, gives the steps, each naming the run it came from, so the
+    record is the newest measurement of each current step on its own."""
+    row = row if isinstance(row, dict) else {}
+    record = dict((key, row[key]) for key in RECORD_ROW_KEYS
+                  if row.get(key) is not None)
+    record["at"] = row.get("ts")
+    state = row.get("testedState") if isinstance(row.get("testedState"),
+                                                 dict) else {}
+    tested = dict((k, state[k]) for k in RECORD_STATE_KEYS
+                  if state.get(k) is not None)
+    if isinstance(state.get("tree"), dict) and state["tree"].get("key"):
+        tested["treeKey"] = state["tree"]["key"]
+    if tested:
+        record["testedState"] = tested
+    steps = [s for s in (row.get("steps") or []) if isinstance(s, dict)]
+    copied = None
+    if not steps and row.get(VERDICT_SOURCE) == REUSED \
+            and isinstance(source, dict):
+        steps = [s for s in (source.get("steps") or []) if isinstance(s, dict)]
+        copied = {"runId": str(source.get("runId")),
+                  "ts": str(source.get("ts") or source.get("at"))}
+    record["steps"] = [_record_step(s, copied) for s in steps[:MAX_STEPS]]
+    if len(steps) > MAX_STEPS:
+        record["stepsDropped"] = (int(row.get("stepsDropped") or 0)
+                                  + len(steps) - MAX_STEPS)
+    for key in RECORD_LINE_KEYS:
+        said = (lines or {}).get(key)
+        if said:
+            record[key] = _journal_io._clip(str(said), limit=400)
+    if launch:
+        record["launch"] = str(launch)
+    return record
+
+
+def pointer_from_record(record):
+    """The three-key pointer (`pointer_for`'s shape) a record stands for."""
+    record = record if isinstance(record, dict) else {}
+    return {"runId": record.get("runId"), "status": record.get("status"),
+            "at": record.get("at")}
+
+
+def record_stages(row, where):
+    """`(stages, gaps)` - the gate and selection stage of a measured run, as
+    `_task_timing.run_stages` builds them; a run that repeated another's
+    verdict measured nothing and gives none."""
+    if not isinstance(row, dict) or row.get(VERDICT_SOURCE) == REUSED:
+        return [], []
+    return _timing.run_stages(str(row.get("runId")), row.get(STARTED_KEY),
+                              row.get("durationMs"), selection_ms(row), where)
+
+
+def _holders(body, scope, ids, sharded):
+    """`(subject, task, problem)` - the dict a pointer of `scope` lives on, the
+    task `ids` names (None at phase scope with no task), or the sentence saying
+    which of them is not there."""
+    phases = [body] if sharded else [
+        p for p in (body.get("phases") or [])
+        if isinstance(p, dict) and str(p.get("id")) == str(ids.get("phaseId"))]
+    if not phases:
+        return None, None, "no phase %r in this manifest" % (ids.get("phaseId"),)
+    phase = phases[0]
+    task = None
+    if ids.get("taskId") is not None:
+        found = [t for t in (phase.get("tasks") or []) if isinstance(t, dict)
+                 and str(t.get("id")) == str(ids.get("taskId"))]
+        if not found:
+            return None, None, "no task %r in phase %r" % (ids.get("taskId"),
+                                                           ids.get("phaseId"))
+        task = found[0]
+    if scope == "phase":
+        return phase, task, None
+    if task is None:
+        return None, None, "no task named for a task-scope record"
+    return task, task, None
+
+
+def write_record(project, manifest_path, scope, ids, record, stages=(),
+                 session_id=None, wait=None, config=None):
+    """Write `record` as the subject's `RECORD_KEY`, its pointer beside it and
+    `stages` onto the task's timing - one read and one write of the shard, under
+    the phase lock. `{"written", "reason", "path", "releaseRefused"}`.
+
+    THE LOCK IS WAITED FOR, NOT SKIPPED. A pointer could be refused because the
+    ledger row stood anyway; a record that is the only copy cannot. So a lock
+    another verb holds is waited out for `wait` seconds (`RECORD_WAIT_SECONDS`)
+    and only then refused, and a refusal leaves the shard byte for byte as it
+    was. The shard is READ under the lock, never before it: a verb that wrote it
+    while this waited keeps what it wrote.
+
+    A stale lock is not taken over here, `lock_state`'s rule; a project with no
+    lock scheme writes under the weaker guarantee it always had."""
+    wait = RECORD_WAIT_SECONDS if wait is None else wait
+    pointer = pointer_from_record(record)
+    path, sharded = _phase_file(manifest_path, ids.get("phaseId"))
+    if not path or not os.path.exists(path):
+        return {"written": False,
+                "reason": "no phase %r in this manifest" % (ids.get("phaseId"),),
+                "path": None}
+    lock_name = "phase-%s" % (ids.get("phaseId"),)
+    state, detail = lock_state(project, lock_name, "phase", session_id=session_id,
+                               hint="nothing was written to the plan")
+    if state == "stale":
+        return {"written": False, "reason": detail, "path": None}
+    code = None
+    if state in ("free", "held"):
+        said = []
+        code = _locks.acquire(project, lock_name, note="recording a gate run",
+                              session=session_id, out=said.append, wait=wait)
+        if not _locks.held(code):
+            return {"written": False,
+                    "reason": "the phase lock was not free within %gs (%s)"
+                              % (wait, detail or " ".join(
+                                  " ".join(str(s).split()) for s in said)
+                                 or _locks.refusal(code, lock_name)),
+                    "path": None}
+    refused = None
+    previous, pointers, problem = None, [], None
+    try:
+        try:
+            body = _mio.read_json(path)
+        except Exception as exc:
+            problem = "cannot read %s: %s" % (
+                _journal_io.repo_relative_or_token(project, path), exc)
+        else:
+            subject, task, problem = _holders(body, scope, ids, sharded)
+            if problem is None:
+                previous = subject.get(POINTER_KEY)
+                subject[RECORD_KEY] = record
+                subject[POINTER_KEY] = pointer
+                if task is not None and stages:
+                    task["timing"] = _timing.append_run_stages(task, stages)
+                pointers = _mio.save_plan_json(path, body)
+    finally:
+        if _locks.took(code):
+            rcode = _locks.release(project, lock_name, session=session_id,
+                                   out=lambda *_a: None)
+            if rcode != 0:
+                refused = _locks.release_refusal(rcode, lock_name)
+    if problem is not None:
+        return {"written": False, "reason": problem, "path": None}
+    _say_moved(project, path, scope, ids, previous, pointer, session_id, config)
     _mio.report_redactions(
         path, pointers, project=project,
         append_from_cli_why=lambda root, entry: _journal_io.append_from_cli_why(
             root, entry, config=config))
     return {"written": True, "reason": None, "path": path,
             "releaseRefused": refused}
+
+
+def subject_records(manifest_path):
+    """`{(scope, subject id): (record, phase id)}` - every record the plan's
+    files hold, read off the raw files so a shard is read as it is written."""
+    found = {}
+    try:
+        index = _mio.read_json(manifest_path)
+    except Exception:
+        return found
+    base = os.path.dirname(os.path.abspath(manifest_path))
+    bodies = []
+    for stub in (index.get("phases") or []):
+        if not isinstance(stub, dict):
+            continue
+        if stub.get("shard"):
+            try:
+                bodies.append(_mio.read_json(os.path.join(base, str(stub["shard"]))))
+            except Exception:
+                continue
+        else:
+            bodies.append(stub)
+    for phase in bodies:
+        if not isinstance(phase, dict):
+            continue
+        pid = str(phase.get("id"))
+        if isinstance(phase.get(RECORD_KEY), dict):
+            found[("phase", pid)] = (phase[RECORD_KEY], pid)
+        for task in phase.get("tasks") or []:
+            if isinstance(task, dict) and isinstance(task.get(RECORD_KEY), dict):
+                found[("task", str(task.get("id")))] = (task[RECORD_KEY], pid)
+    return found
 
 
 # --- who ran it, when, and who else was running --------------------------------
@@ -3288,7 +3552,8 @@ def newer_for_identity(rows, key, chosen):
 
 
 def reconcile(project, manifest_path, session_id=None, config=None):
-    """Re-derive every pointer from the ledger. The repair `write_pointer` names.
+    """Re-derive every pointer from the ledger and from each subject's record
+    (`RECORD_KEY`), the newer of the two. The repair `write_pointer` names.
 
     THIS IS WHY THE POINTER MAY BE REFUSED AT ALL. A cache write that loses a race
     with another live session leaves the plan behind the record, and this is the
@@ -3312,6 +3577,17 @@ def reconcile(project, manifest_path, session_id=None, config=None):
     owner = dict((str(t.get("id")), str(ph.get("id")))
                  for ph, t in _mio.iter_tasks(plan) if t.get("id"))
     best = latest_by_subject(read["rows"], aliases=subject_aliases(plan))
+    # A SUBJECT'S RECORD IS ITS NEWEST RUN, so the pointer is derived from it
+    # unless the ledger holds a run of that subject stamped after it - a run
+    # whose record write was refused. A ledger with no row for it, which is
+    # what a plan written once the row is no longer kept holds, still points.
+    for key, (record, phase_id) in subject_records(manifest_path).items():
+        row = best.get(key)
+        mine = stamp_moment(record.get("at"))
+        theirs = stamp_moment(row.get("ts")) if row else None
+        if row is None or theirs is None or (mine is not None and mine >= theirs):
+            best[key] = dict(pointer_from_record(record), ts=record.get("at"),
+                             phaseId=phase_id)
     moved, refused, already = [], [], []
     for (scope, subject), row in sorted(best.items()):
         if scope == "task":

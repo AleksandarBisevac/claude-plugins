@@ -57,28 +57,32 @@
         "severity": "med",
         "file": ".github/actions/browser-install/action.yml:112-154 and .github/workflows/ci.yml:404-414",
         "issue": "The new behaviour, a verified push to main running the browser jobs with seed true, was executed by no real run. All four logs read 'seed: false' and show seen-browser and seen-sysdeps as outcome=skipped (run2-browserpanel lines 250-253); the plan step took its 'SEED != true' early exit. So actions/cache/restore@v6 with lookup-only, the cache-hit output read by the plan step, the 'entry exists for both keys, nothing installed' branch, the 'one key missing' branch and the workflow's `seed: needs.verified.outputs.run != ''` wiring have been shown only on the uncommitted stub harness. The task's acceptance 1 asked for 'a run on the default-branch path that saves the entries'; the probes were workflow_dispatch runs on a ci/ branch, which exercise the install and the save but not the seed decision. The first real execution of the seed path will be a push to main.",
-        "resolution": "Before landing, push one more probe commit to a ci/ branch with `seed: true` hard-wired and the slice step skipped, and read two runs: the first must print 'seed: no entry exists for the browser key and the system packages' key' then save; the second must print 'seed: an entry exists for every key this image needs, so nothing is installed and nothing is saved' and show every later step skipped. Add a third look at a run with only one of the two keys present if a cheap way exists (a changed BROWSER_CACHE_VERSION on one key is not possible, so state that this half stays stub-only)."
+        "resolution": "Before landing, push one more probe commit to a ci/ branch with `seed: true` hard-wired and the slice step skipped, and read two runs: the first must print 'seed: no entry exists for the browser key and the system packages' key' then save; the second must print 'seed: an entry exists for every key this image needs, so nothing is installed and nothing is saved' and show every later step skipped. Add a third look at a run with only one of the two keys present if a cheap way exists (a changed BROWSER_CACHE_VERSION on one key is not possible, so state that this half stays stub-only).",
+        "fixTask": "P169.14-6l3"
       },
       {
         "id": "P169-R6",
         "severity": "med",
         "file": ".github/actions/browser-install/action.yml:186-261",
         "issue": "Nothing in the repository guards the action's shell besides a real CI run. I searched tracked files: no test, lint or checker names .github/actions or action.yml (git grep for 'action.yml|.github/actions|actionlint|shellcheck' over tools/tests/.claude/plugins finds nothing), gate-parity.py reads only ci.yml, and the 20-case stub harness the proofs rest on (scratchpad stubs/harness.py) is not committed. The first real run found three defects the stubs could not see (Permission denied from cp -a, the image version in the key, jc0). The failure shape is also quiet: any bug that makes the hit path throw lands in `why`, the fallback fetches from the archive, and the job stays GREEN with one ::warning:: and a cache that never helps. No gate reads that warning, so the regression the whole task exists to remove (a first run paying the archive) can return with every check green. A later change (apt flags, BROWSER_CACHE_VERSION, a new package) has only a 13-minute hosted run as feedback and nothing that notices a hit turning into a fallback.",
-        "resolution": "Commit the harness as tests/test_browser_install.py with the `N/M cases passed` contract: extract the `run:` bodies from action.yml by step id, run them under the stub PATH, and keep si1-si10 and the sk/sp cases (full hit asks nothing, miss, partial, dependency missing, unreadable .deb falls back once, fallback failing is red). Add one case that fails when the hit path prints the ::warning:: (the hit must not fall back). If a suite is out of scope for this task, file it as the next task and name it in the outcome; the claim that the install is guarded cannot rest on an uncommitted harness."
+        "resolution": "Commit the harness as tests/test_browser_install.py with the `N/M cases passed` contract: extract the `run:` bodies from action.yml by step id, run them under the stub PATH, and keep si1-si10 and the sk/sp cases (full hit asks nothing, miss, partial, dependency missing, unreadable .deb falls back once, fallback failing is red). Add one case that fails when the hit path prints the ::warning:: (the hit must not fall back). If a suite is out of scope for this task, file it as the next task and name it in the outcome; the claim that the install is guarded cannot rest on an uncommitted harness.",
+        "fixTask": "P169.14-6l3"
       },
       {
         "id": "P169-R7",
         "severity": "med",
         "file": "PLUGIN-BUILD-GUIDE.md:7699",
         "issue": "An untouched sentence this diff makes false, which the return's claim 3 dismisses as 'pre-existing inexactness about verified unchanged by this task'. PLUGIN-BUILD-GUIDE.md:7699 reads 'a push to main whose commit a run already verified runs only tools/ci-verified.py'. Before this change that was exact (every other job was skipped by `needs.verified.outputs.run == ''`); after it the two browser jobs run their checkout, setup, npm ci, lookups and install on that push. The task named 'the push-to-default-branch path that skips work for a verified commit' as a dependant to answer for by name, and this document is the one that describes that path outside CONTRIBUTING.md.",
-        "resolution": "Change the sentence to say that such a push runs `verified` and, in the two browser jobs, the install only (seeding the caches), and correct claim 3 so it lists this line as made false by the task rather than left. The same pass should re-read tools/check-rendered-artifacts.py:1429, tools/lints/_refs.py:1915 and CLAUDE.md:314 ('every job is setup plus one verify.sh call'), which stay inexact only about `verified` and are unchanged by this diff."
+        "resolution": "Change the sentence to say that such a push runs `verified` and, in the two browser jobs, the install only (seeding the caches), and correct claim 3 so it lists this line as made false by the task rather than left. The same pass should re-read tools/check-rendered-artifacts.py:1429, tools/lints/_refs.py:1915 and CLAUDE.md:314 ('every job is setup plus one verify.sh call'), which stay inexact only about `verified` and are unchanged by this diff.",
+        "fixTask": "P169.14-6l3"
       },
       {
         "id": "P169-R8",
         "severity": "low",
         "file": ".github/workflows/ci.yml:398-414 (browser-panel, browser-report)",
         "issue": "On a push to main whose commit is verified, the browser jobs now do work that can fail: npm ci and `playwright install-deps --dry-run` run before the seed decision even when both entries exist (they are needed only to name the keys), and a miss runs apt and the Chromium download. A transient npm, apt or network failure turns that main run red for a cache it did not need. That is the failure class the `verified` job exists to remove (its own comment: re-running the same bytes 'could only add a ... intermittent the first draw did not have'). It does not skip any slice, and no gate reads main's run, so the cost is a red check on an already-verified commit, not a lost verdict.",
-        "resolution": "Give the two jobs `continue-on-error: ${{ needs.verified.outputs.run != '' }}` so a failed seed is visible but not red, or compute the playwright pin and image name without npm ci on the seed path. Say in ci.yml which is chosen."
+        "resolution": "Give the two jobs `continue-on-error: ${{ needs.verified.outputs.run != '' }}` so a failed seed is visible but not red, or compute the playwright pin and image name without npm ci on the seed path. Say in ci.yml which is chosen.",
+        "fixTask": "P169.14-6l3"
       },
       {
         "id": "P169-R9",
@@ -93,9 +97,44 @@
         "file": "the filed return (outcome.descriptive, outcome.technical) and .github/workflows/ci.yml:160-171",
         "issue": "Two statements go past what the logs show. (a) outcome.descriptive says 'a hit asks the archive for nothing on any image version of the distribution'; one cross-image restore was measured (set saved on 20261111.127.1, restored on 20261111.370.1) and the action's own header (action.yml:27-44) says an image whose installed versions the set's index cannot satisfy falls back to a fresh fetch and keeps doing so on every run. (b) outcome.technical attributes the report job's 35s after the restore to 'apt Reading package lists 18s plus dpkg Reading database about 10s'. In run2-browserreport the 'Reading package lists...' line is 20:12:41.008 and the dependency listing follows at 20:12:41.34; the 18.5s gap is between 'The following NEW packages will be installed' (20:12:41.348) and '0 upgraded, 9 newly installed' (20:12:59.923), which is not apt's index read. The panel job's same stretch took 2.6s (20:12:30.0 to 20:12:32.6), so the gap is variable and unexplained, not shown to be local.",
         "resolution": "Write (a) as 'on the image versions measured' and (b) as 'an unexplained 18s between the dependency listing and the summary line, not seen in the panel job'. The committed comments already avoid both claims; only the return's wording needs the change."
+      },
+      {
+        "id": "P169-R11",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py:2764-2831 (write_record); tests/test__evidence_io.py lr4,lr5",
+        "issue": "contradicts task clause \"the recorder takes the phase lock with a bounded wait behind any verb's write\" and acceptance 4 (\"a verb's write and a background record write, interleaved in both orders, both land\"). write_record takes `phase-<id>`, but every audit-task.py verb reads and writes the shard under the INDEX lock (`_under_lock` -> `_panel_write.acquire_index_lock`, LOCK_NAME \"index\" at _panel_write.py:392); the only `phase-<id>` holders are `start`'s claim and the drive's phase run. So a verb's read-modify-write and the recorder's are not mutually exclusive. Probe in a scratch copy: index lock held by a stand-in verb, write_record returned written=True after 0.02s without waiting, then the verb's write from its earlier read left the shard with neither lastRun nor testEvidence (and the reverse order loses the verb's write, e.g. a `done`). lr4 passes only because its stand-in verb takes `phase-P1`, which no real verb does; lr5 (\"the other order\") asserts only what the test's own read-modify-write does and goes red only when lr4's landing is missing (M1 and M2 each reddened it as a knock-on). CHANGELOG, manifest-conventions.md and PLUGIN-BUILD-GUIDE.md repeat the claim (\"so neither write loses the other's key\"). The old pointer write had the same exposure; what is new is the claim, and that the shard now holds the only copy of the record and of the stages.",
+        "resolution": "Make the recorder's write exclude the verbs: take the index lock as well as the phase lock (one fixed order, checked against `start`, which takes `phase-<id>` while a verb holds the index lock), or have the verbs' shard writes take the phase lock. Re-aim lr4 so the stand-in verb takes the lock real verbs take (drive a real `audit-task.py note` against the same project), and either give lr5 a product assertion or drop it. Until then, correct the three documents so they promise what is true: a wait behind `phase-<id>` holders only."
+      },
+      {
+        "id": "P169-R12",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py:2677-2712 (run_record, `source`); plugins/audit/scripts/governance/run-test-gate.py:5697-5724 (_run_record_of); plugins/audit/schema/audit-plan.schema.json (lastRun.startedAt)",
+        "issue": "The repeated-verdict arm has no case, and it fails silent. Deleting the copy (`steps = []` for the `source` branch) left test__evidence_io 361/361 and test_run_test_gate 699/699 green (M6, both suites run in a scratch copy): every lr case runs with `--no-reuse`, and no case passes `source=` to run_record. The clause \"a copied step carries its source's verdict fields forward, so ... no older record is needed to read it\" is therefore shown by nothing. The source is read only from the ledger row (`row_by_run`); when that row is not there - the day the later task stops writing rows, or a rotated ledger - the record is `steps: []` with `verdictSource: reused` and no marker that its steps are unavailable (probe: run_record(reused_row, source=None) -> steps []). Separately, the record keeps the read-back's own startedAt and durationMs (probe: durationMs 120, startedAt of the repeat) while the schema says startedAt is \"absent on a run that repeated another's verdict, which measured nothing\", and nothing on the record separates those figures from a measurement except `verdictSource`.",
+        "resolution": "Add a gate-level case (reuse on, second run) and a run_record(source=...) case asserting the copied steps, their per-step reusedFrom and the absence of per-step durationMs; take the source from the subject's previous `lastRun` when the ledger row is gone, and say `stepsUnavailable` (or equivalent) when neither is there rather than writing an empty list. For a repeated run either omit startedAt/durationMs/selectionMs from the record or state in the schema that they are the read-back's own."
+      },
+      {
+        "id": "P169-R13",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py:3554-3600 (reconcile); plugins/audit/scripts/governance/_evidence_io.py:2512-2575 (write_pointer); plugins/audit/reference/manifest-conventions.md:~190",
+        "issue": "Two writers of one key can leave `testEvidence` naming a run other than `lastRun`, against the doc's \"the two always name one run\" and COMPATIBILITY's \"runId, status and at in it are the values testEvidence caches\". reconcile takes the ledger row when it is stamped after the record (the run whose record write was refused, exit 3) and calls write_pointer, which moves only the pointer; lastRun keeps the older run. Also write_pointer still reads the shard BEFORE it takes the lock (read_json at 2542, acquire at 2553, save at 2567), so a reconcile racing a recorder saves its stale body over the recorder's lastRun and timing stages. The task's clause says reconcile does to lastRun what it does to testEvidence.",
+        "resolution": "In reconcile, when the ledger row wins, also write `run_record(row)` so the pair stays one run, or soften the two sentences to \"names one run except after a refused record write, until the next recorded run\". Read the shard under the lock in write_pointer, as write_record now does (share `_holders`)."
+      },
+      {
+        "id": "P169-R14",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:172-179 and 6499-6500",
+        "issue": "Stale text contradicts the new behaviour: the `--record` help reads \"a green run whose row could not be stored exits 3 (0 passed, 1 failed, 2 usage, 3 passed but unrecorded)\" and the E_UNRECORDED comment says \"the gate is green and the record the caller asked for does not exist\"; a red run now exits 3 as well (lr6), and `unrecorded_line` says so. A pre-push or CI step reading `--help` is told that 1 is always the work's failure.",
+        "resolution": "Reword both to \"a run (green or red) whose row or whose record in the plan could not be stored exits 3\"."
+      },
+      {
+        "id": "P169-R15",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py:2788-2796 (write_record, hint passed to lock_state)",
+        "issue": "A stale phase lock is refused at once, with no wait (probe: dead holder, wait=5, returned in 0.00s), so every recorded gate of that phase exits 3 until a human runs `audit-lock --takeover`; that is the designed rule, but the sentence it prints is garbled by the hint: \"...use audit-lock --takeover, then nothing was written to the plan\". It names no repair, and the gate's own closing line says \"re-run once the phase lock is free\" for a run that may have taken minutes.",
+        "resolution": "Pass a hint that names the repair (\"then re-run this gate; nothing was written to the plan\") so both the stale and the held sentences read, and say in `unrecorded_line` that the ledger row stands, so `--reconcile` is not mistaken for the repair of a missing record."
       }
     ],
-    "outcome": "[findings: 10 - 0 high, 3 med, 7 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 15 - 0 high, 5 med, 10 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1218,7 +1257,7 @@
     {
       "id": "P169.11-6l3",
       "title": "A branch's first CI run restores the browser install: the default branch seeds the cache, the install is written once, a partial set fetches what it names and a bad entry heals",
-      "status": "in_progress",
+      "status": "done",
       "description": "The browser jobs now restore the Chromium download and the system packages the runner image lacks from a cache, and the first measurement shows what that buys and what it does not. A cache entry is saved only by a job that succeeded, and an entry is readable by the branch that saved it and by branches cut from the default branch's entries. The default branch's push runs skip the browser jobs when the commit is already verified, so the default branch saves no entry, and every phase's CI branch misses both caches on its first run. On a miss the archive is asked for about as many megabytes as before the change (the package index plus the font packages), so on a day the runner's mirror is slow the first run of a branch still pays minutes; the two runs measured so far had a fast mirror and differ by seconds. The review of that change also found three things in its shell.\n\nMake a hit the ordinary case, and make the steps do what their names say:\n1. Seed. The default branch holds a saved entry for both keys after any push that changes a key's inputs (the playwright pin in the lock file, the runner image version, the list of packages the image lacks), so a branch's first run restores it. Do it with the least new machinery that is honest: a job that runs only the install steps and saves the caches, on the default branch, when no entry for the key exists. It carries a time bound and a `longest` line like every job, and tools/gate-parity.py's rules must hold it (a job outside the slices: say how the parity rules read it, and extend them if they cannot).\n2. One install, written once. The two browser jobs and the seeding job run the same steps; today the block is written out twice with a comment asking that both be changed together. Put it in one place the three jobs call (a composite action under .github/actions/ is the established form), or hold the copies to one text with a gate-parity rule that names a difference. A prose rule is not enough.\n3. A partial set fetches what it names. When some but not all packages are in the restored set, the step downloads the missing ones and their dependencies and nothing else, and the check that decides a package is present covers the dependencies the install needs, not only the packages named. The step's title and log line say what the code does.\n4. A bad entry heals. The system-packages key carries the runner's architecture as the browser key does. When installing from a restored set fails, the step falls back once to fetching from the archive and says so; a job is red only when that also fails. A manual version token in the key lets an operator retire an entry.\n\nACCEPTANCE.\n1. The orchestrator dispatches runs for you as before (hand back READY-FOR-RUN with what to read, do not file): a run on the default-branch path that saves the entries, and a first run of a fresh branch that restores both. State what each line of each log must show.\n2. Proven on stubs in your outcome, as the first change was: a full hit, a miss, a partial set (one package missing, one dependency missing), a restored set with a truncated package (the fallback runs once and the step passes), and the fallback failing (the step is red).\n3. `python3 tools/gate-parity.py` is green and each job's bound is backed by its `longest` line; the seeding job's line names a measured run.\n4. No slice is skipped, narrowed or moved; the release tier's jobs are unchanged.\n5. The outcome says what a branch's first run costs after the change on a slow mirror, with the basis, and what it cost before.\n\nDEPENDANTS to answer for by name: tools/gate-parity.py's job-bound, slice and matrix rules, tools/verify.sh's slices (unchanged), CONTRIBUTING.md and CLAUDE.md where they describe CI's shape (CLAUDE.md is outside this task's files: say what sentence there, if any, is no longer exact), and the push-to-default-branch path that skips work for a verified commit.",
       "files": [
         ".github/workflows/ci.yml",
@@ -1243,14 +1282,19 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "29a4a0a4eb6c",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "WHAT CHANGED. (1) .github/actions/browser-install/action.yml (new composite action) holds the install once; browser-panel and browser-report call it, and the two inline copies are deleted from ci.yml. Its steps: npm ci; pins (playwright-core pin, ImageOS, arch, BROWSER_CACHE_VERSION=1; the image version is logged, not keyed); naming the packages the image lacks; seed-only lookups (actions/cache/restore lookup-only) and a decide step; restore and install of the browser; restore of the system packages' set (debs/ plus lists/, the apt index they were resolved against); and the install step. The install step asks apt `--print-uris` against the set's own index what the install lacks. That covers named packages and dependencies, and a wrong-size file, which apt deletes and queues again (acquire-item.cc pkgAcqArchive::QueueNext). Only those files are fetched; no index is fetched on a hit. If the install from the set still fails, the step falls back once to a fresh fetch with a ::warning:: naming BROWSER_CACHE_VERSION, and it is red only when that also fails. (2) SEEDING. On a push to main whose commit is already verified, the browser jobs are no longer skipped. Their `if:` is now `!cancelled()`, they call the action with seed=(verified output non-empty), and their slice step carries `if: needs.verified.outputs.run == ''`. In seed mode the action installs nothing when both entries exist, and otherwise installs and saves under main's scope. No new job, no dispatch input, no --exempt-job change. (3) tools/gate-parity.py: job_slices now reads the `if:` of the step carrying a verify.sh call, the same way it reads a job's (`_step_runs`, `_call_tier`). New cases: sv21 (allow: a step guarded by verified's output), sv22 (an unprovable step condition is a finding and its slices are not counted as run), sv23 (a release-only step makes its slices release-only). The docstring and comment lines saying every CI job is setup plus one verify.sh call now say every job that runs a gate. (4) Bounds, by the file's rule, from the longest finished run after the change: longest browser-panel 7m46s and browser-report 13m35s (both run 44385960921). The report's bound moves 26 to 28 (2x 13m35s = 27m10s). The panel's moves 16 to 18, inside its 15m32s to 23m18s range, to hold its slowest measured miss: 14m49s, run 42283005055. (5) CONTRIBUTING.md :180-185 and :210-224 describe the shape: verified is the one job running no slice, and on a verified push the browser jobs seed without their slice. THREE DEFECTS THE FIRST PROBE FOUND, and their fixes. (a) The install failed on every runner with `mkdir: cannot create directory .../lists/partial: Permission denied`, because GNU `cp -a src/. dst/` gave dst root's owner and a runner-user mkdir followed. Fix: every write to the set goes through sudo; the index is copied with `cp -p \"$sys_lists\"*_*` (files only); one chown hands the set to the runner user at the end. (b) The key named the image version. The probe's jobs landed on 20261111.370.1, 20261116.376.1 and 20261111.127.1 with one package-list hash, so the seed covered only its own image. Fix: key = chromium-sysdeps-<ImageOS>-<arch>-<hash>-v<BROWSER_CACHE_VERSION>, no restore-keys. (c) jc0 went red (`verified` no longer ran alone) because the seed was a job of its own. Fix: the seeding moved into the browser jobs, as above; verified is alone again, with counts 16 per run and 17 on the release tier. STAGE-TWO PROBE (fc7abaf3, ci/P169-seed-probe2), read from the logs myself. Run 44385960921, miss: the panel job (image 20261111.127.1) logged `Fetched 13.2 MB in 14s (937 kB/s)` and `Fetched 21.1 MB in 1min 31s (232 kB/s)`, about 2m20s of install, and saved both keys. The report job fetched at 20.5 MB/s; its saves logged `Unable to reserve cache` (the panel job saved first). Run 44388480667, hit: both jobs logged `Cache restored from key` for both keys (browser ~266 MB, system packages ~63 MB). The panel job was on 20261111.370.1, not the image that saved the entry, and logged `the restored set holds every file the install needs...`. The hit step has no Get: and no Fetched line in either job (88 lines from that line to the slice, counted). Install took about 20s in the panel job and 48s in the report job; the report's 35s after the restore is local, apt `Reading package lists...` 18s plus dpkg `Reading database` about 10s. No Permission denied, ::warning:: or ::error:: in any of the four logs. Each run concluded failure on vt8 (tests/test__commit_trail.py) and on pgo7 in run 2, neither in my files. STUB HARNESS (scratchpad stubs/, not committed): 20/20 on the tree. Cases: si1 full hit; si2 miss; si3 named package missing; si4 dependency missing; si5 truncated .deb (apt's size check makes it a partial fetch, not a fallback); si6 unreadable same-size .deb (the fallback runs once and passes); si7 stale index (fallback once, passes); si8 fallback failing (red); si9 miss with the archive down; si10 ownership; old1/old2 (HEAD's step: a dependency missing means dpkg refuses after `no archive is asked`, and one package missing re-fetches the index and every file); sp1-sp6 the seed decision; sk1/sk2 the key. si10 and sk1 are red on 49a34e63's action. Mutations M1-M7 are each red in their own cases. The harness's limits: its sudo is not root, so ownership is a ledger model; it models only the GNU semantics it was given (cp -a with src/.); it cannot see the _apt sandbox user, sudo's env reset, file modes beyond the owner, dpkg locks or triggers, apt's real resolver, or the cache action itself. THE KEY TRADE: without the image version, a job on any image of the distribution restores the entry. When images differ, apt answers against the set's index: a dependency the image lacks is fetched alone. If two images need different versions of one dependency, an installed version the index satisfies costs nothing; one it cannot satisfy, or a file the archive dropped, falls back once with a warning. That fallback repeats on every run of that image until the key moves (package list or BROWSER_CACHE_VERSION), because an entry is never overwritten. The set's index ages with the entry until a key change or a week-long eviction.",
+        "descriptive": "The browser install is written once, a hit asks the archive for nothing on any image version of the distribution, main's verified pushes seed the caches, and the install works as root on a real runner; measured once: install about 20s on a hit against about 2m20s on a miss at 232 kB/s."
       },
       "startedAt": "2026-11-18T18:59:09Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T20:49:45Z",
+      "verifiedBy": [
+        "sv21 in tools/gate-parity.py: a verify step guarded by verified's output is clean (the allow case)",
+        "sv22 in tools/gate-parity.py: a verify step whose own condition cannot be proved is the job's finding, and its slices are not counted as run",
+        "sv23 in tools/gate-parity.py: a release-only verify step makes its slices release-only",
+        "not committed: a 20-case stub harness of the action's real scripts (scratchpad stubs/harness.py), the record behind the stub proofs"
+      ],
       "notes": [
         {
           "at": "2026-11-18T18:28:20Z",
@@ -1269,7 +1313,46 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T20:29:39Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 5424000,
+            "startedAt": "2026-11-18T18:59:15Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T20:41:26Z.00b0b5",
+            "kind": "wait",
+            "ms": 345000,
+            "startedAt": "2026-11-18T20:29:54Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T20:41:26Z.00b0b5, ending at its startedAt",
+            "kind": "selection",
+            "ms": 11471,
+            "runId": "2026-11-18T20:41:26Z.00b0b5",
+            "startedAt": "2026-11-18T20:35:39Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T20:41:26Z.00b0b5",
+            "kind": "gate",
+            "ms": 334808,
+            "runId": "2026-11-18T20:41:26Z.00b0b5",
+            "startedAt": "2026-11-18T20:35:51Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-18T20:49:20Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 442000,
+            "startedAt": "2026-11-18T20:41:58Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 29a4a0a4eb6c",
+            "kind": "commit",
+            "ms": 1611,
+            "startedAt": "2026-11-18T20:49:42Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T18:59:09Z"
       },
       "reviewPerTask": "signals",
@@ -1277,6 +1360,17 @@
         "runId": "2026-11-18T20:41:57Z.d275ce",
         "status": "passed",
         "at": "2026-11-18T20:41:57Z"
+      },
+      "intentCheck": {
+        "answer": "diverges",
+        "commit": "29a4a0a4eb6c",
+        "at": "2026-11-18T20:49:45Z",
+        "return": "docs/audit/evidence/returns/P169.11-6l3/20261118T185909Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "Task mode is regression with expectRedFirst false and tests.add empty, so no helper red was owed. The new cases live in tools/gate-parity.py, the same file as the reader they test, so a throwaway tree with that file copied over HEAD would carry the fix and could not go red. Red observed before the fix, in my own tree with the reader still unchanged: `python3 tools/gate-parity.py --selftest` printed FAIL sv22 and FAIL sv23 (findings []), SELFTEST FAILED: 128/131; after the reader change, 131/131.",
+        "at": "2026-11-18, stage-two edit of tools/gate-parity.py, before job_slices read a step's if:"
       }
     },
     {
@@ -1364,6 +1458,107 @@
           "reads": "plugins/audit/scripts/manifest/_commit_trail.py",
           "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/manifest/_commit_trail.py - a section headed by its path"
         }
+      ]
+    },
+    {
+      "id": "P169.14-6l3",
+      "title": "The browser install's shell is guarded in the repository, its seed path is seen on a real runner, and a seed cannot redden a verified push",
+      "status": "pending",
+      "description": "The browser install now lives in one composite action (.github/actions/browser-install/action.yml) that both browser jobs call, and on a push to the default branch whose commit is already verified those jobs run it with `seed` true and skip their slice. The review of that change left three things that must not ship as they are, and two smaller ones that belong with them.\n\n1. Nothing in the repository guards the action's shell. It was developed against a stub harness (fake sudo with an ownership ledger, fake apt, dpkg, cache directories; twenty cases, seven mutations) that was never committed, so the only check of the shell is a real CI run, and a bug on the hit path falls into the fallback and leaves the job green with one warning: the regression the change removed can come back with every gate green. Commit the harness as a check this repository runs: its cases execute the action's own `run:` blocks, read out of the committed action.yml (never a copy of the shell), against the stubs. Choose its home by this repository's rules rather than by habit: a `tests/test_<name>.py` must name a module that exists (the coverage classifier reports an orphan), tools under tools/ carry their own cases and are swept, and the gate set is what `sh tools/verify.sh --list` prints, held to the workflow by tools/gate-parity.py. It must include the case that fails when a full hit falls back (a hit that fetches is red, not a warning), the ownership case that reproduces the runner's \"Permission denied\" on the first version of the action, and one case per seed decision. It must run on macOS and Linux and under the sweep's isolation (scratch cwd, HOME and TMPDIR; no network; no real sudo, apt or dpkg). State in its docstring what class of runner behaviour the stubs cannot see.\n\n2. The seed path ran on no real runner: every probe was a dispatch, where `seed` is false and the lookup steps are skipped. Before filing, hand back READY-FOR-RUN with a probe-only patch (a separate diff from the task's own, clearly marked, that hard-wires `seed` true for the two browser jobs on a dispatch) and the lines to read; the orchestrator commits the task's diff plus that patch to a probe branch and dispatches twice: the first run must look both keys up, find none, install and save; the second must find both, install nothing and save nothing. The probe-only patch is never part of the task's diff.\n\n3. PLUGIN-BUILD-GUIDE.md says a verified push to the default branch runs only tools/ci-verified.py. That was exact before the change and is false now: say what runs (two browser jobs that look the cache up and, on a miss, install and save) and what it costs.\n\n4. A seed must not turn a verified push red for a cache it did not need, and must not fail silently either. Today npm ci, the dry run and (on a miss) apt run before and after the seed decision, and any of them failing fails the job on the default branch. Decide and state the rule: on the seed path a failure is an annotation a reader of the run sees, the job's conclusion does not redden the run, and the slice path is untouched (a failure there is red as before). If that needs `continue-on-error`, tools/gate-parity.py does not read a step's `continue-on-error` today: extend the reader so a step that carries the slice can never be the one that is allowed to fail, with a red case and an allow case.\n\n5. The parity reader's new step-condition cases write the `- if:`-first form; the workflow uses `- name:` first with a following `if:`. Add the pin for the form the workflow uses.\n\nACCEPTANCE.\n1. The committed check is red on the action as it stood at the first probe (the ownership defect) and on a hit that falls back, each proven by mutation of a scratch copy of the action, restored in the same command; green on the action as it is.\n2. The two probe runs show the seed path's two branches on a real runner, and the outcome quotes the lines.\n3. `python3 tools/gate-parity.py` and the sweep over the tools this task touches are green; `sh tools/verify.sh --list` shows the new check in a slice a per-run CI job runs, and the job's bound still has its `longest` basis.\n4. On a dispatch and on a pull request the browser slices run exactly as before (the reviewer checked this for the current tree; say what in your diff could change it and why it does not).\n5. The guide's sentence is exact.\n\nDEPENDANTS to answer for by name: tools/gate-parity.py's slice, bound and step-condition rules; tools/verify.sh's slices and CONTRIBUTING.md/CLAUDE.md where they list gates (CLAUDE.md is outside the files: say what sentence there, if any, is no longer exact); the sweep's isolation rules for a tool under tools/; tools/lints/_deps.py's layer and enumeration lints if the new file needs a row (hand back the exact row BEFORE filing if a file you need is outside your list).",
+      "files": [
+        ".github/actions/browser-install/action.yml",
+        ".github/workflows/ci.yml",
+        "tools/gate-parity.py",
+        "tools/check-browser-install.py",
+        "tools/verify.sh",
+        "PLUGIN-BUILD-GUIDE.md",
+        "CONTRIBUTING.md",
+        ".github/actions/browser-install/action.yml",
+        ".github/workflows/ci.yml",
+        "PLUGIN-BUILD-GUIDE.md"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/gate-parity.py",
+          "python3 tools/sweep-selftests.py tools/gate-parity.py tools/check-browser-install.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T20:51:00Z",
+          "text": "scope: .github/actions/browser-install/action.yml, .github/workflows/ci.yml, PLUGIN-BUILD-GUIDE.md, every path the finding(s) P169-R5, P169-R6, P169-R7, P169-R8 name"
+        },
+        {
+          "at": "2026-11-18T20:51:00Z",
+          "text": "no suite: .github/actions/browser-install/action.yml - a document, so no test of it is inferred; nothing names it as a file name in any test, tool or script"
+        },
+        {
+          "at": "2026-11-18T20:51:00Z",
+          "text": "no suite: .github/workflows/ci.yml - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/config/_config_rules.py, plugins/audit/scripts/panel/_panel_settings.py, tests/_harness.py, tests/test__doctor_setup.py and 13 more"
+        },
+        {
+          "at": "2026-11-18T20:51:00Z",
+          "text": "no suite: PLUGIN-BUILD-GUIDE.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__affected_tests.py, tests/test__config.py, tests/test__deps.py, tests/test__doctor_trail.py, tests/test__output.py, tests/test__refs.py and 7 more"
+        },
+        {
+          "at": "2026-11-18T20:51:00Z",
+          "text": "no tests.add clause for P169-R5, P169-R6, P169-R7, P169-R8: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        },
+        {
+          "at": "2026-11-18T20:51:22Z",
+          "text": "it quotes the shard matrix line of the workflow; this task changes the browser jobs' steps and leaves the sharded jobs' matrix as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-18T20:51:22Z",
+          "text": "it quotes 'related listing' from the guide; this task corrects the guide's sentence about a verified push and leaves that passage as it is",
+          "waives": "tests/test__affected_tests.py"
+        },
+        {
+          "at": "2026-11-18T20:51:22Z",
+          "text": "it quotes the guide's passage on a copy's age; this task corrects the sentence about a verified push and leaves that passage as it is",
+          "waives": "tests/test__doctor_trail.py"
+        },
+        {
+          "at": "2026-11-18T20:51:22Z",
+          "text": "it quotes a section marker name the guide lists; this task corrects the sentence about a verified push and leaves that listing as it is",
+          "waives": "tests/test_drive_phase.py"
+        },
+        {
+          "at": "2026-11-18T20:51:22Z",
+          "text": "it quotes the generated module map's heading in the guide; this task adds no module under scripts/ or hooks/, so the map and its heading do not move",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-18T20:51:22Z",
+          "text": "it quotes 'refuses to start' from CONTRIBUTING.md; this task adds to that document and leaves the quoted text as it is",
+          "waives": "tools/sweep-selftests.py"
+        }
+      ],
+      "fixes": [
+        "P169-R5",
+        "P169-R6",
+        "P169-R7",
+        "P169-R8"
       ]
     }
   ],

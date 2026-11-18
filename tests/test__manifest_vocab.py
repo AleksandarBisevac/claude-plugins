@@ -1104,6 +1104,35 @@ def _cases(check):
           all(not hits for hits in _scoped.values())
           and all(_naming.values()))
 
+    # THROUGH THE VALIDATOR, not the set: what the recorder writes onto a plan
+    # must read as a real key where a user meets the warning. The misspelt twin
+    # is the second direction - the walk reached the unknown-key check at both
+    # levels, so a quiet first half is the set answering and not a skipped walk.
+    def _lr_plan(key):
+        record = {"runId": "r1", "status": "passed", "at": "2026-01-01T00:00:00Z",
+                  "steps": [{"name": "test", "exit": 0, "ran": 1,
+                             "outcome": "passed"}]}
+        pointer = {"runId": "r1", "status": "passed", "at": "2026-01-01T00:00:00Z"}
+        task = {"id": "P1.1", "title": "t", "status": "pending",
+                "files": ["src/a.ts"], "testEvidence": pointer, key: record}
+        phase = {"id": "P1", "title": "p", "status": "pending",
+                 "testGate": ["test"], "tasks": [task],
+                 "testEvidence": pointer, key: record}
+        return {"meta": {"version": 2, "buildCommands": {"test": "true"}},
+                "phases": [phase], "fileIndex": {"src/a.ts": ["P1.1"]},
+                "bugs": []}
+    _lr_f, _lr_w = _rules.validate(_lr_plan("lastRun"))
+    _lr_tf, _lr_tw = _rules.validate(_lr_plan("lastRuns"))
+    _lr_said = [x for x in _lr_w + _lr_f if "lastRun" in x]
+    _lr_typo = [x for x in _lr_tw if "unknown key 'lastRuns'" in x]
+    check("mv68 a plan carrying the recorder's `lastRun` on a task and on its "
+          "phase validates with no finding and no warning naming the key, while "
+          "the same plan with the key misspelt is warned about at both levels: "
+          "said=%r typo=%r findings=%r" % (_lr_said, _lr_typo, _lr_f),
+          _lr_f == [] and _lr_said == [] and len(_lr_typo) == 2
+          and any("phase P1" in x for x in _lr_typo)
+          and any("task P1.1" in x for x in _lr_typo))
+
 
 def _selftest():
     return _harness.run(_cases)

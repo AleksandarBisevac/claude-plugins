@@ -33,6 +33,7 @@ Stdlib only, Python 3.8 compatible.
 """
 import os
 import sys
+import time
 
 # The path bootstrap: byte-identical in every `.py` under `scripts/`, counted by
 # `_output.path_preamble_violations()`. It walks UP to the directory holding
@@ -114,6 +115,81 @@ def append_stage(task, stage):
     timing = dict(_timing_of(task) or {})
     stages = timing.get("stages")
     timing["stages"] = (list(stages) if isinstance(stages, list) else []) + [stage]
+    return timing
+
+
+# The spelling a stage's derived start is written in: whole seconds, UTC.
+STAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+
+
+def whole_ms(value):
+    """A recorded length in whole milliseconds, or None for anything that is
+    not a finite number of zero or more - a bool included."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) \
+            or value != value or value < 0 or value == float("inf"):
+        return None
+    return int(round(value))
+
+
+def stamp_less(stamp, ms):
+    """The whole second `ms` before `stamp`, or None when `stamp` will not read.
+    Floored, so a start derived this way never reads as later than it was."""
+    epoch = _usage_core.parse_ts(stamp)
+    if epoch is None:
+        return None
+    return time.strftime(STAMP_FORMAT, time.gmtime(int(epoch - ms / 1000.0)))
+
+
+def run_stages(run_id, started_at, duration_ms, selection_ms, where, kind="gate"):
+    """`(stages, gaps)` for one recorded run: for a `gate` run the time it spent
+    choosing what to run, ENDING where the run starts, then the run's own length
+    under `kind`, starting there. Each stage carries `run_id` and a basis naming
+    `where` the figure was read.
+
+    A MISSING FIGURE IS A GAP, NEVER A STAGE: no readable start gives no stage at
+    all (both are placed by it), no length gives no `kind` stage. A selection
+    that was never timed is no gap - it is a run from before that figure, or one
+    that measured none - and gives no selection stage."""
+    if _usage_core.parse_ts(started_at) is None:
+        return [], ["%s records no readable startedAt (%r)" % (where, started_at)]
+    stages, gaps = [], []
+    selection = whole_ms(selection_ms)
+    if kind == "gate" and selection is not None:
+        stages.append(make_stage(
+            "selection", stamp_less(started_at, selection), selection,
+            "selectionMs in %s, ending at its startedAt" % (where,),
+            run_id=run_id))
+    ms = whole_ms(duration_ms)
+    if ms is not None:
+        stages.append(make_stage(kind, started_at, ms,
+                                 "durationMs in %s" % (where,), run_id=run_id))
+    else:
+        gaps.append("%s records no readable durationMs (%r)" % (where, duration_ms))
+    return stages, gaps
+
+
+def _stage_key(stage):
+    return (stage.get("kind"), stage.get("runId")) if isinstance(stage, dict) \
+        else None
+
+
+def append_run_stages(task, stages):
+    """The task's timing record with a run's `stages` appended, as a NEW dict,
+    each ONCE: a stage whose kind and run id the record already holds is not
+    added again, so a run recorded twice into one task is timed once. The
+    stages already recorded are kept - the record of a run is replaced by the
+    next run's, its stages are not. No first start is invented."""
+    timing = dict(_timing_of(task) or {})
+    kept = timing.get("stages")
+    kept = list(kept) if isinstance(kept, list) else []
+    seen = set(k for k in (_stage_key(s) for s in kept)
+               if k is not None and k[1] is not None)
+    for stage in stages or []:
+        if _stage_key(stage) in seen:
+            continue
+        seen.add(_stage_key(stage))
+        kept.append(stage)
+    timing["stages"] = kept
     return timing
 
 

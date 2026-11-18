@@ -1113,6 +1113,44 @@ def _cases(check):
               _disagreed == [] and len(_rows_b) > 1
               and len(set(r["status"] for r in _rows_b)) > 1)
 
+        # THE BANNERS, PUT AGAINST THE ORIGINAL the same way: `_banners_of`
+        # spells the one arm a fixture run reaches, and the real
+        # `verdict_banners` reads every run's own result. Both arms must occur,
+        # or a copy that always answered one word would pass.
+        _results = [r for _s, _i, _t, _a, r in M._evidence_specs(m)]
+        _banner_gap = [(r.get("banners"), _gate.verdict_banners(r))
+                       for r in _results
+                       if r.get("banners") != _gate.verdict_banners(r)]
+        check("every run's banners are the ones the REAL `verdict_banners` "
+              "prints for the same result, and the fixture holds runs with the "
+              "banner and runs without it: %r" % (_banner_gap,),
+              _banner_gap == [] and any(r.get("banners") for r in _results)
+              and any(r.get("banners") == [] for r in _results))
+
+        # THE RECORD IS THE RECORDER'S, read back off the stamped plan: each
+        # subject's `lastRun` is `run_record` over the newest row the ledger
+        # holds for it, its pointer is derived from that record, and the record
+        # pass agrees with the write pass for the pointer case's reason.
+        _best = M._evidence_io.latest_by_subject(_rows_a)
+        _held = [(t.get("id"), t) for p in m["phases"] for t in [p] + p["tasks"]
+                 if M._evidence_io.RECORD_KEY in t]
+        _wrong = [i for i, t in _held
+                  if t[M._evidence_io.POINTER_KEY]
+                  != M._evidence_io.pointer_from_record(
+                      t[M._evidence_io.RECORD_KEY])
+                  or t[M._evidence_io.RECORD_KEY]["runId"]
+                  not in [r["runId"] for r in _best.values()]]
+        check("every stamped subject carries the record `run_record` builds from "
+              "its newest row and the pointer derived from it, the gate's source "
+              "and digest on each, and the record pass agrees with the write "
+              "pass: wrong=%r held=%d" % (_wrong, len(_held)),
+              _held and _wrong == []
+              and all(t[M._evidence_io.RECORD_KEY].get("gateSource")
+                      and t[M._evidence_io.RECORD_KEY].get("gateDigest")
+                      for _i, t in _held)
+              and [M._evidence_io.run_record(r) for r in _rows_a]
+              == [M._evidence_io.run_record(r) for r in _rows_b])
+
         vm = _loader.load_script("validate-manifest.py", modname="validate_manifest")
         findings, warnings = vm.validate(back)
         check("the plugin's own validator reports no findings", not findings,

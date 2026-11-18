@@ -202,6 +202,17 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   The **contents of the evidence file itself are not promised**, for the reason the
   usage ledger's NDJSON fields are not: it is a record this plugin writes and
   re-derives, and the manifest block is the interface.
+- **`lastRun` is an additive key on a task and on a phase**: the newest recorded run of
+  that subject, whole, written by `run-test-gate.py --record` in the same locked write as
+  `testEvidence` - which stays the pointer and is derived from it. A plan without it
+  validates and reads exactly as before, and absent means what `testEvidence`'s absence
+  means. **It does not move which source a verdict is read from**: a done task's verdict
+  is still read from its commit's trailers (section 3) where the commit carries them, and
+  otherwise from `testEvidence`; `lastRun` is the run the pointer names, not a third
+  opinion beside them. What is promised is the key's name, that `runId`, `status` and `at`
+  in it are the values `testEvidence` caches, and that it is replaced rather than appended
+  to. Its other fields are not promised yet - they follow the evidence row's, which this
+  document leaves out - and a reader of them needs a default arm.
 - **A stored terminal phase status keeps winning, and `done` is also DERIVED.** A phase
   carrying `status: done` or `status: cancelled` reads exactly that. Otherwise it reads
   `done` once every task is terminal, `review.status` holds a sign-off verdict (`passed` or
