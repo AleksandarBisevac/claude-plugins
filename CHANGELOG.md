@@ -263,11 +263,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `_clause_coverage.py`, and the description is read twice by the same reader: with the strict
   column, which is what a task is held to and is unchanged, and with every choice at its widest -
   the text folded to Unicode's compatibility form with its format characters dropped, a marker
-  wherever a line's first word is the marker word in any case once Markdown's marks are set aside
-  or wherever the word stands with its colon, and an item opened by a number in any of the forms
-  either list style knows or in square brackets, at a line start after an indent and a bullet,
-  the forms mixed. When the two find different items the line adds how many the wider reading
-  finds and the first line where they part, its text quoted. The scans for a mention of the
+  wherever the marker word in any case stands with its colon, or opens a line without it once
+  Markdown's marks are set aside where a list numbered one opens directly under it (on the rest
+  of that line or at the start of the next line holding text), and an item opened by a number in
+  any of the forms either list style knows or in square brackets, at a line start after an indent
+  and a bullet, the forms mixed. A line that merely begins with the word - an item wrapping onto
+  it, a closing paragraph, a list under it opening at another number - is prose to both readings,
+  so a plain list holding the word in its prose prints nothing. When the two find different items
+  the line adds how many the wider reading finds - or, when it finds as many with different text,
+  that it finds the same number placed differently - and the first line holding text where they
+  part, numbered as written and its text quoted; a blank line between the list and the departure
+  is never the line named. The scans for a mention of the
   marker word and for a list number inside an item stay: a marker word inside a code fence and a
   skipped or repeated number read the same both ways, so only the scans see them. A quoted part is
   now cut where it is taken, so a line holding thousands of list numbers, mentions or markers no

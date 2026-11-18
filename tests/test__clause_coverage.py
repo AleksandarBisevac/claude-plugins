@@ -30,17 +30,24 @@ task owes, and whether the path an answer cites is one the diff touches.
   line with what it built; the conservation subtraction counts the region's
   characters off the text, never off the reader's spans. `cq12` is the quiet twin
   of every clause: a plain list printing anything goes red there.
+- **A bare marker word is prose unless a list numbered one opens under it.** `cw9`
+  holds the lines that only begin with the word and must print nothing, `cw10`
+  the heading and label over a list from one that the wide reading still takes;
+  `cw11` generates plain lists whose prose holds the word and takes its
+  expectation from the construction - which wrapped line begins with which word -
+  never from the reader.
 
 Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 """
 
 import json
 import os
+import re
 import sys
 import time
 
 import _harness                                    # sets sys.path for scripts/ + hooks/
-from _output import safe_stdio                     # noqa: E402
+from _output import safe_stdio, some_of            # noqa: E402
 import _clause_coverage as M                       # noqa: E402
 
 
@@ -1111,6 +1118,247 @@ def _wide_generated_cases(check):
           % (silent_short[:5], unsaid[:3], plain_loud[:3]))
 
 
+# --- the wide reading's bare word, parting line and equal counts -----------------
+# The words of the equal-count clause, as the line prints them, and the parting
+# clause read back into its line number and its quote.
+_SAME = "the same number of items, placed differently"
+_PART_AT = re.compile(r'first part on line (\d+): "(.*?)"')
+
+
+def _written_lines(text):
+    """The description's lines as written: any line end ends a line."""
+    return re.split(r"\r\n|\r|\n", text)
+
+
+def _parting(text, line):
+    """`(number, quote, the line of the text as written there)` named by the
+    wide clause, or None when the line names no parting line."""
+    found = _PART_AT.search(line)
+    if not found:
+        return None
+    number, quote = int(found.group(1)), found.group(2)
+    lines = _written_lines(text)
+    there = lines[number - 1] if 0 < number <= len(lines) else None
+    return number, quote, there
+
+
+def _quotes_its_line(text, line, at):
+    """Whether the wide clause names line `at` and quotes text that is on it."""
+    got = _parting(text, line)
+    if got is None or got[0] != at or got[2] is None:
+        return False
+    quote = got[1][:-3] if got[1].endswith("...") else got[1]
+    return bool(quote.strip()) and quote.strip() in got[2]
+
+
+_HEAD = "Do it.\n\nAcceptance:\n"
+
+
+def _wide_bare_cases(check):
+    """A bare marker word is a marker in the wider reading only where a list
+    numbered from one opens under it; a line that merely begins with it is
+    prose. Each prose row is a reading that took the word at any line start
+    (the bug); each marker row is a reading that took it nowhere."""
+    prose = [
+        ("an item wrapping onto a line beginning with the word",
+         _HEAD + "(1) a holds\n(2) the\nAcceptance tests stay green.\n(3) c holds", 3),
+        ("the same in lower case",
+         _HEAD + "(1) a holds\n(2) and\nacceptance is by the owner.\n(3) c holds", 3),
+        ("the same with emphasis around the word",
+         _HEAD + "(1) a holds\n(2) see\n**Acceptance** in the handbook\n(3) c holds", 3),
+        ("the same with underscores around the word in lower case",
+         _HEAD + "(1) a holds\n(2) see\n_acceptance_ in the handbook\n(3) c holds", 3),
+        ("the last item ending on a line beginning with the word",
+         _HEAD + "(1) a holds\n(2) the\nAcceptance tests stay green", 2),
+        ("a closing paragraph after a blank line",
+         _HEAD + "(1) a holds\n(2) b holds\n\nAcceptance is by the owner.", 2),
+        ("a closing paragraph after no blank line, lower case",
+         _HEAD + "(1) a holds\n(2) b holds\nacceptance testing is manual", 2),
+        ("a list under it opening at three, not one",
+         "Do it.\n\nAcceptance tests stay green.\n(3) c holds\n(4) d holds", 0),
+        ("no marker at all and a prose line beginning with the word",
+         "Fix it.\n\nAcceptance tests must stay green.", 0),
+        ("no marker at all, lower case, a line after it",
+         "Fix it.\nacceptance is by review\nand nothing else.", 0),
+    ]
+    got = [(label, len(_items(d)), M.reading_line(d)) for label, d, _n in prose]
+    check("cw9 a line that only begins with the marker word, without its colon - "
+          "an item wrapping onto it in either case of its first letter or with "
+          "emphasis, the last item, a closing paragraph after a blank line or "
+          "none, a line whose list opens at three, a description with no marker - "
+          "reads the items written and prints nothing",
+          [(n, ln) for _l, n, ln in got] == [(want, "") for _l, _d, want in prose],
+          "%r" % ([g for g, (_l, _d, want) in zip(got, prose)
+                   if (g[1], g[2]) != (want, "")],))
+
+    marked = [
+        ("a heading", "Do it.\n\n## Acceptance\n(1) a holds\n(2) b holds", 4),
+        ("a heading in lower case", "Do it.\n\n## acceptance\n(1) a holds\n(2) b holds", 4),
+        ("a label with a second word", "Do it.\n\nAcceptance criteria\n1. a holds\n2. b holds", 4),
+        ("a bold label", "Do it.\n\n**Acceptance**\n(1) a holds\n(2) b holds", 4),
+        ("a label with a word in brackets",
+         "Do it.\n\nAcceptance (criteria)\n1) a holds\n2) b holds", 4),
+        ("a blank line between the label and the list",
+         "Do it.\n\nAcceptance criteria\n\n[1] a holds\n[2] b holds", 5),
+        ("the list opening on the word's own line",
+         "Do it.\n\nAcceptance (1) a holds\n(2) b holds", 3),
+    ]
+    got = [(label, M.reading_line(d)) for label, d, _at in marked]
+    check("cw10 ALLOW: a heading or a label holding the bare word, in either case, "
+          "with other words or none, and a list numbered from one opening under it "
+          "or on its own line, is a marker to the wider reading: the line says no "
+          "clause was read, that a wider reading finds two, and quotes the line "
+          "where they part",
+          all(_NONE_READ in ln and "%s 2 items" % (_WIDE,) in ln
+              and _quotes_its_line(d, ln, at)
+              for (_l, ln), (_l2, d, at) in zip(got, marked)),
+          "%r" % (got,))
+
+
+def _wide_parting_cases(check):
+    """The parting line holds text: blank lines, a line of blanks and carriage
+    returns between the list and the continuing numbering do not move it."""
+    forms = [("3.", "4."), ("3)", "4)"), ("[3]", "[4]"),
+             (chr(0xFF08) + "3" + chr(0xFF09), chr(0xFF08) + "4" + chr(0xFF09))]
+    gaps = [("one blank line", "\n", "\n\n"), ("two blank lines", "\n", "\n\n\n"),
+            ("a line of blanks", "\n", "\n \t \n"),
+            ("carriage returns and line feeds", "\r\n", "\r\n\r\n")]
+    built = []
+    for three, four in forms:
+        for label, eol, gap in gaps:
+            head = eol.join(["Do it.", "", "Acceptance:", "(1) a holds", "(2) b holds"])
+            text = head + gap + "%s c holds%s%s d holds" % (three, eol, four)
+            at = len(_written_lines(head + gap))
+            built.append(("%s after %s" % (three, label), text, at, "%s c holds" % (three,)))
+    got = [(label, len(_items(t)), M.reading_line(t)) for label, t, _at, _q in built]
+    wrong = [(label, n, ln) for (label, n, ln), (_l, t, at, quote) in zip(got, built)
+             if not (n == 2 and "%s 4 items" % (_WIDE,) in ln
+                     and _quotes_its_line(t, ln, at)
+                     and '%s %d: "%s"' % (_PART, at, quote) in ln)]
+    check("cw12 a parenthesised list continued by each other numbering after a "
+          "blank line, two, a line of blanks, or with carriage-return line ends "
+          "reads two items, and the line names the continuing line as written "
+          "and quotes its text, never a blank line (over %d descriptions)"
+          % (len(built),), not wrong, some_of(wrong, render=repr))
+
+
+def _wide_equal_cases(check):
+    """Two readings that count the same and place the items differently are
+    said as that. A comparison of counts alone is silent on every row here."""
+    equal = [
+        (_HEAD + "(1) a holds\n(2) b holds\n3. c holds\n(3) d holds", 3, 6,
+         "3. c holds"),
+        (_HEAD + "(1) a holds\n(2) b holds\n\n3. c holds\n\n(3) d holds", 3, 7,
+         "3. c holds"),
+    ]
+    got = [(len(_items(t)), M.reading_line(t)) for t, _n, _at, _q in equal]
+    check("cw13 two readings that find the same number of items with different "
+          "text print a line saying a wider reading finds the same number, placed "
+          "differently, with no count given as if it differed, naming and quoting "
+          "the parting line",
+          all(n == want and "%s %s" % (_WIDE, _SAME) in ln
+              and not re.search(r"%s \d+ item" % (re.escape(_WIDE),), ln)
+              and '%s %d: "%s"' % (_PART, at, quote) in ln
+              for (n, ln), (_t, want, at, quote) in zip(got, equal)),
+          "%r" % (got,))
+    unequal = _HEAD + "(1) a holds\n(2) b holds\n3. c holds"
+    check("cw13b TWIN of cw13: unequal counts keep their sentence - the wider "
+          "count is given and the equal-count words are not",
+          "%s 3 items" % (_WIDE,) in M.reading_line(unequal)
+          and _SAME not in M.reading_line(unequal), "%r" % (M.reading_line(unequal),))
+
+
+# The plain half of the generated case. Prose is drawn from a vocabulary holding
+# the marker word in both cases of its first letter and in emphasis, wrapped at
+# several widths by the construction itself, so it knows which wrapped line
+# begins with which word. One pool also holds a number and its opener as a
+# word; a description where the wrap put one of those at a line start may
+# print, and every other one must print nothing.
+_PLAIN_WORDS = ("the", "sweep", "is", "green", "and", "it", "holds", "by", "owner",
+                "tests", "stay", "reader", "runs", "nightly", "exit(1)", "f(2)",
+                "rows[0](2)", "version", "3.8", "under", "review.")
+_PLAIN_WORD = ("acceptance", "Acceptance", "**Acceptance**", "acceptance.")
+# No opener numbered one: the bare word followed by one IS a marker, by the rule.
+_PLAIN_NUMBERED = ("2.", "3.", "2)")
+_PLAIN_POOLS = (
+    ("lower", _PLAIN_WORDS + ("acceptance",) * 6),
+    ("upper", _PLAIN_WORDS + ("Acceptance",) * 6),
+    ("both, with emphasis", _PLAIN_WORDS + _PLAIN_WORD * 2),
+    ("both, with numbers", _PLAIN_WORDS + _PLAIN_WORD * 2 + _PLAIN_NUMBERED),
+)
+_PLAIN_WIDTHS = (24, 40, 56, 72)
+_PLAIN_LAYOUTS = ("own lines", "closing paragraph", "closing line", "paragraph",
+                  "no marker")
+
+
+def _plain_prose(rng, pool, words):
+    return " ".join(rng.choice(pool) for _ in range(words))
+
+
+def _plain_build(rng, pool, width, layout):
+    """`(text, items written, lines the wrap began)` for one plain description:
+    the item count comes from the construction, and so does each wrapped
+    line's first word."""
+    import textwrap
+
+    def wrap(text):
+        return textwrap.wrap(text, width, break_long_words=False,
+                             break_on_hyphens=False)
+    count = rng.randint(2, 4)
+    items = ["(%d) %s" % (n, _plain_prose(rng, pool, rng.randint(4, 18)))
+             for n in range(1, count + 1)]
+    pre = wrap(_plain_prose(rng, pool, rng.randint(3, 14)))
+    if layout == "no marker":
+        lines = pre + wrap(_plain_prose(rng, pool, rng.randint(3, 14)))
+        return "\n".join(lines), 0, lines
+    if layout == "paragraph":
+        lines = wrap("%s. Acceptance: %s" % (" ".join(pre), " ".join(items)))
+        return "\n".join(lines), count, lines
+    item_lines = [ln for item in items for ln in wrap(item)]
+    lines = pre + ["", "Acceptance:"] + item_lines
+    if layout == "closing paragraph":
+        lines += [""] + wrap(_plain_prose(rng, pool, rng.randint(3, 12)))
+    elif layout == "closing line":
+        lines += wrap(_plain_prose(rng, pool, rng.randint(3, 12)))
+    return "\n".join(lines), count, lines
+
+
+def _wide_plain_generated_cases(check):
+    """Generated plain lists whose prose holds the marker word are silent unless
+    the construction put a number and its opener at a line start."""
+    import random
+    rng = random.Random(1739)
+    built = []
+    for pool_name, pool in _PLAIN_POOLS:
+        for width in _PLAIN_WIDTHS:
+            for layout in _PLAIN_LAYOUTS:
+                for _ in range(12):
+                    text, count, lines = _plain_build(rng, pool, width, layout)
+                    firsts = [ln.split()[0] for ln in lines if ln.split()]
+                    numbered = any(w in _PLAIN_NUMBERED for w in firsts)
+                    built.append((pool_name, width, layout, text, count, numbered,
+                                  firsts))
+    loud, short = [], []
+    for pool_name, width, layout, text, count, numbered, _f in built:
+        got, line = len(_items(text)), M.reading_line(text)
+        if got != count:
+            short.append((pool_name, width, layout, got, count, text))
+        if line and not numbered:
+            loud.append((pool_name, width, layout, line[:160], text))
+    held = [b for b in built if not b[5]]
+    began = set(w for b in held for w in b[6] if w in _PLAIN_WORD)
+    check("cw11 over %d generated plain lists (%d word pools, %d widths, %d "
+          "layouts) whose prose holds the marker word in both cases of its first "
+          "letter and in emphasis, each reads the items built, and every one whose "
+          "wrapped lines begin with no number and its opener prints nothing; the "
+          "construction began wrapped lines with each spelling of the word"
+          % (len(built), len(_PLAIN_POOLS), len(_PLAIN_WIDTHS), len(_PLAIN_LAYOUTS)),
+          not loud and not short and began == set(_PLAIN_WORD),
+          "loud %d: %s / short %d: %s / began %r"
+          % (len(loud), some_of(loud, render=repr), len(short),
+             some_of(short, render=repr), sorted(began)))
+
+
 def _conservation_check_cases(check):
     """The check that no text after the first marker is left outside every item
     and every named part - called directly on spans the case builds, and shown
@@ -1243,6 +1491,10 @@ def _cases(check):
     _harness.stage(check, "cw-measured", _wide_measured_cases)
     _harness.stage(check, "cw-allow", _wide_allow_cases)
     _harness.stage(check, "cw-generated", _wide_generated_cases)
+    _harness.stage(check, "cw-bare", _wide_bare_cases)
+    _harness.stage(check, "cw-plain", _wide_plain_generated_cases)
+    _harness.stage(check, "cw-part", _wide_parting_cases)
+    _harness.stage(check, "cw-equal", _wide_equal_cases)
     _harness.stage(check, "cw-conserve", _conservation_check_cases)
     _harness.stage(check, "cw-timing", _wide_timing_cases)
     _harness.stage(check, "cc-shape", _shape_cases)

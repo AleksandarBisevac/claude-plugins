@@ -25,12 +25,17 @@ not off the reading. `reading_line` names each, so the one line `add` and
 
 SILENT ONLY ON AGREEMENT. A list of departures only names the shapes someone
 thought of, so the silence is also a comparison: the reader's choices - what
-spells the marker, what may stand before it, what opens an item, whether the
-text is folded first - are one table, `READING_CHOICES`, and the description is
-read twice by the same reader, once with the strict column (what a task is held
-to) and once with the wide one. The line is empty only when the strict reading
-is the plain one, nothing is scanned as above, and the wide reading finds the
-same items; otherwise it adds what the wide reading finds and the first line
+spells the marker, what may stand before it, whether the word counts without
+its colon, what opens an item, whether the text is folded first - are one
+table, `READING_CHOICES`, and the description is read twice by the same reader,
+once with the strict column (what a task is held to) and once with the wide
+one. The wide column takes the word without its colon only where it opens a
+line and a list numbered one opens directly under it, so a line that merely
+begins with the word - an item wrapping there, a closing paragraph - is prose
+to both. The line is empty only when the strict reading is the plain one,
+nothing is scanned as above, and the wide reading finds the same items, each
+with the same text; otherwise it adds how many the wide reading finds - or that
+it finds the same number, placed differently - and the first line holding text
 where the two part. The scans stay beside the comparison because the wide
 reading does not answer them: it reads a fenced marker word as an example and
 opens items by sequence, so a mention inside a fence and a skipped or repeated
@@ -133,10 +138,19 @@ _LINE_OPENER = re.compile(r"[ \t#>*_+-]*")
 _ANY_LINE_OPENER = re.compile(r"[ \t#>*_+`-]*")
 # The marker as a task is held to it, and the marker word as the wide reading
 # takes it: any case, whole, with whatever emphasis, blanks and colon follow it
-# taken into the marker so they open no item.
+# taken into the marker so they open no item. The colon is optional in the
+# pattern only; a match without it counts as a marker where the `bare` choice
+# says so (`_markers`).
 _MARK_EXACT = re.compile(re.escape(ACCEPTANCE_MARK))
 _MARK_ANY = re.compile(r"(?i)(?<![^\W_])acceptance(?![^\W_])(?:[ \t*_`]*:)?")
 _INDENT = re.compile(r"[ \t]*")
+# What may stand between a bare marker word and a list opening on its own line:
+# blanks and closing emphasis. An opener numbered one is short, so the rest of
+# the line is read no further than `_OPENER_REACH` characters.
+_AFTER_BARE = " \t*_`"
+_OPENER_REACH = 16
+# A line holding no text: blanks only, up to its end.
+_BLANK_LINE = re.compile(r"[^\S\n]*(?:\n|\Z)")
 # What may stand before the marker for it to open a sentence part-way along a
 # line, read backwards from the marker: emphasis, whitespace (at least one),
 # closing quotes, brackets or emphasis, then a sentence's end.
@@ -185,6 +199,10 @@ READING_CHOICES = (
     # whether a marker ending in a colon counts anywhere, not only where it
     # opens a line or, the first, a sentence
     ("colonAnywhere", False, True),
+    # whether the marker word WITHOUT its colon counts where it opens a line
+    # and a list numbered one opens directly under it (`_list_opens_under`); a
+    # line that merely begins with the word is prose either way
+    ("bare", False, True),
     # the opener forms, each tried alone, the earliest-opening one read
     ("forms", (_PAREN_FORM, _LINE_FORM), (_ANY_FORM,)),
 )
@@ -264,17 +282,54 @@ def _sentence_cut(text, line_start, at):
     return cut
 
 
+def _opens_one(text, at, forms):
+    """Whether an item numbered one, in one of `forms`, opens at `at`."""
+    for form in forms:
+        m = form["pattern"].match(text, at)
+        if m is not None and int(m.group(m.lastgroup)) == 1:
+            return True
+    return False
+
+
+def _list_opens_under(text, end, layout, forms):
+    """Whether a list numbered one opens directly under a marker word ending
+    at `end`: on the rest of its line, past blanks and closing emphasis, or at
+    the start of the next line holding text, outside a code fence. Words of a
+    label may stand between the word and its line's end (`Acceptance criteria`)
+    when the list opens on the next line; a line that only begins with the word
+    has prose, or a list opening at another number, after it."""
+    line = _line_of(end, layout)
+    starts = layout["lines"]
+    line_end = starts[line] - 1 if line < len(starts) else len(text)
+    at = end
+    while at < line_end and text[at] in _AFTER_BARE:
+        at += 1
+    if _opens_one(text[at:min(line_end, at + _OPENER_REACH)], 0, forms):
+        return True
+    at = line_end + 1
+    while at < len(text):
+        blank = _BLANK_LINE.match(text, at)
+        if blank is None:
+            return not _inside(at, layout) and _opens_one(text, at, forms)
+        if text[blank.end() - 1] != "\n":
+            return False
+        at = blank.end()
+    return False
+
+
 def _markers(text, layout, choices):
     """`[{"at", "end", "cut", "indent", "line"}]` of each marker that counts,
     outside a code fence: one opening a line (after an indent and the marks
     `choices["opener"]` allows), and - for the first only - one opening a
     sentence, so a description written as one paragraph still has its list.
-    Away from a line's start the marker holds its colon. Strictly, inside a
-    body a marker ends the body before it only when it opens a line; one that
-    opens a sentence there, or sits inside a sentence, behind a backtick or a
-    quotation mark, is a mention of the word, never the list's start - the wide
-    reading (`colonAnywhere`) counts the word with its colon there too. `end`
-    is where the marker's text ends, `cut` where the text
+    At a line's start the marker word without its colon counts only under the
+    `bare` choice, and only where a list numbered one opens directly under it
+    (`_list_opens_under`). Away from a line's start the marker holds its colon.
+    Strictly, inside a body a marker ends the body before it only when it opens
+    a line; one that opens a sentence there, or sits inside a sentence, behind a
+    backtick or a quotation mark, is a mention of the word, never the list's
+    start - the wide reading (`colonAnywhere`) counts the word with its colon
+    there too. `end` is where the marker's text ends, `cut` where the text
     before it ends - its line's start, the end of the sentence it follows, or
     the marker itself - and `indent` its line's indent."""
     found, opener_end = [], {}
@@ -286,9 +341,13 @@ def _markers(text, layout, choices):
         line_start = layout["lines"][line - 1]
         if line_start not in opener_end:
             opener_end[line_start] = choices["opener"].match(text, line_start).end()
+        bare = not m.group(0).endswith(":")
         if opener_end[line_start] >= at:
+            if bare and not (choices["bare"] and _list_opens_under(
+                    text, m.end(), layout, choices["forms"])):
+                continue
             cut = line_start
-        elif not m.group(0).endswith(":"):
+        elif bare:
             continue
         else:
             cut = None if found else _sentence_cut(text, line_start, at)
@@ -506,12 +565,17 @@ def _read(text, choices):
 
 def _item_lines(text, spans, layout, fold):
     """`{line: [(item index, folded text of the item on that line)]}` - where
-    each item sits, line by line, for finding where two readings part."""
+    each item sits, line by line, for finding where two readings part. A line
+    holding no text once folded is not recorded: a blank line between an item
+    and the next text places nothing, so the line two readings part on is
+    always one holding text."""
     parts = {}
     for i, (start, end) in enumerate(spans):
         first = _line_of(start, layout)
         for j, piece in enumerate(text[start:end].split("\n")):
-            parts.setdefault(first + j, []).append((i, fold(piece).strip()))
+            held = fold(piece).strip()
+            if held:
+                parts.setdefault(first + j, []).append((i, held))
     return parts
 
 
@@ -519,7 +583,8 @@ def _wide_reading(text, layout, chosen):
     """None when the wide reading of `text` finds the items the strict reading
     `chosen` found - the same count, each the same text once both are folded -
     else `{"count", "line", "text"}`: how many items the wide reading finds, and
-    the first line where the two readings part, with its text as written."""
+    the first line holding text where the two readings part, with its text as
+    written. Equal counts with different text are a departure too."""
     spans = chosen[2]["itemSpans"] if chosen else []
     folded, wide_layout, _m, _r, wide, _why = _read(text, WIDE)
     wide_spans = wide[2]["itemSpans"] if wide else []
@@ -583,9 +648,11 @@ def acceptance_reading(description, wide=True):
     THE WIDE READING (`wide`; False skips it, for a caller that needs only the
     items). The reading above is the STRICT one, and it is what a task is held
     to; the wide reading is the same reader with every choice in
-    `READING_CHOICES` at its widest. `wide` is None when the two find the same
-    items, else what the wide reading finds and where the two first part - so a
-    departure no list of shapes names is still said."""
+    `READING_CHOICES` at its widest - among them the marker word without its
+    colon, where a list numbered one opens directly under it. `wide` is None
+    when the two find the same items, else what the wide reading finds and the
+    first line holding text where the two part - so a departure no list of
+    shapes names is still said."""
     text = description if isinstance(description, str) else ""
     text = text.replace("\r\n", "\n")
     _text, layout, markers, readings, chosen, why = _read(text, STRICT)
@@ -686,10 +753,14 @@ def _departures(reading):
     notes = []
     wide = reading.get("wide")
     if wide:
+        # Equal counts are no difference of count: what differs is where the
+        # items fall, and the line says that rather than repeat the count.
+        found = ("the same number of items, placed differently"
+                 if wide["count"] == len(reading["items"])
+                 else _plural(wide["count"], "item"))
         notes.append("a wider reading of the same text finds %s, and the two "
                      "readings first part on line %d: %s" % (
-                         _plural(wide["count"], "item"), wide["line"],
-                         _quoted(wide["text"])))
+                         found, wide["line"], _quoted(wide["text"])))
     if reading["strayNumbers"]:
         notes.append("%s inside an item, not its opener, first %s" % (
             _plural(len(reading["strayNumbers"]), "list number"),

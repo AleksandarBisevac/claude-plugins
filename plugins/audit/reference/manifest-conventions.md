@@ -197,13 +197,18 @@ description could be read another way, AND a wider reading of the same text find
 items. The wider reading is the same reader with each of its choices widened (the table is
 `READING_CHOICES` in `_clause_coverage.py`): the text folded to Unicode's compatibility form with
 its format characters dropped, so full-width brackets and digits, a no-break space and a
-character without width read as their plain twins; a marker wherever a line's first word is
-`acceptance` in any case once Markdown's marks and backticks are set aside, whatever follows it,
-or wherever the word stands with its colon; and an item opened by a number written `(n)`, `n.`,
-`n)` or `[n]` at a line start after an indent and a bullet, the forms mixed, or by a `(n)`
-after a blank. What a task is held to is the strict reading alone. The line carries the item
-count, the shape, how many items the wider reading finds and the first line where the two
-part (its text quoted), each part left out (its start quoted), a second marker, the other
+character without width read as their plain twins; a marker wherever the word `acceptance`, in
+any case, stands with its colon, and - without its colon - where it is a line's first word once
+Markdown's marks and backticks are set aside AND a list numbered one opens directly under it, on
+the rest of that line or at the start of the next line holding text (`## Acceptance` or
+`Acceptance criteria` over `1. ...`). A line that merely begins with the word - an item wrapping
+there, a closing paragraph, a list under it opening at another number - is prose to both
+readings. An item is opened by a number written `(n)`, `n.`, `n)` or `[n]` at a line start
+after an indent and a bullet, the forms mixed, or by a `(n)` after a blank. What a task is held
+to is the strict reading alone. The line carries the item count, the shape, how many items the
+wider reading finds - or, when it finds as many with different text, that it finds the same
+number placed differently - and the first line holding text where the two part, numbered as
+written (its text quoted), each part left out (its start quoted), a second marker, the other
 shape's count, a restarted numbering, and - each with its count and first instance quoted - a
 list number inside an item that is not its opener, a mention of the marker word that was not
 counted (any case, a space before the colon, in backticks, in a fence) and a code fence never

@@ -5699,20 +5699,26 @@ it, three scans of the description itself, independent of how the reading was bu
 (the marker word, any case, a space before the colon, anywhere it was not counted), `strayNumbers`
 (a number inside an item that could have opened one by its position and did not) and `openFence`.
 **The wide reading:** the reader's choices - fold the text first, what spells the marker, what may
-stand before it, whether the word with its colon counts anywhere, which opener forms - are one
+stand before it, whether the word with its colon counts anywhere, whether the word without its
+colon counts (`bare`), which opener forms - are one
 table, `READING_CHOICES`, with a strict and a wide column, and `_read(text, choices)` is the one
 reader both columns go through. `acceptance_reading` reads with the strict column (what a task is
 held to) and, unless called with `wide=False` as `acceptance_items` is, again with the wide one:
 the text folded by `_fold` (NFKC, format characters dropped; line breaks kept, so its line numbers
-are the text's), the marker any line whose first word is the marker word once Markdown's marks are
-set aside or the word with its colon anywhere, and one opener form (`_ANY_FORM`) taking every
-number form either list style knows and a square-bracketed one, mixed, a 1 written another way than
-the list's openers starting a nested list. `wide` is None when both find the same items, else the
-wide count and the first line where they part. The scans stay beside it because the wide reading
+are the text's), the marker the word with its colon anywhere, or a line's first word once
+Markdown's marks are set aside without its colon only where a list numbered one opens directly
+under it - on the rest of the line or at the start of the next line holding text
+(`_list_opens_under`), so a line that merely begins with the word is prose - and one opener form
+(`_ANY_FORM`) taking every number form either list style knows and a square-bracketed one, mixed,
+a 1 written another way than the list's openers starting a nested list. `wide` is None when both
+find the same items, each with the same text, else the wide count and the first line holding
+text where they part (`_item_lines` records no line that holds none, so a blank line between the
+list and the departure is never the one named). The scans stay beside it because the wide reading
 reads a fenced marker word as an example and opens items by sequence too.
 `reading_line(description)` is the line `audit-task.py`'s `add` (single or `--from-file`, dry run
 included) and `scope --description` print unless the reading is one parenthesised list covering the
-whole text, no scan found anything and the wide reading agrees - the wide count and the parting line
+whole text, no scan found anything and the wide reading agrees - the wide count, or that it finds
+the same number placed differently when only the text differs, and the parting line
 quoted, a second marker, the other shape's count, each part left
 out with its start quoted, a restarted numbering, and each scan's count with its first instance
 quoted - and, when a marker word occurs but no item is read, it says no clause was read and why;

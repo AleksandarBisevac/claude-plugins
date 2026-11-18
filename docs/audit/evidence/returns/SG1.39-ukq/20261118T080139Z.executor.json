@@ -1,0 +1,83 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__clause_coverage.py": "pass",
+    "run-test-gate.py docs/audit/audit-plan.json SG1 --task SG1.39-ukq (orchestrator's gate, not recorded)": "pass",
+    "python3 tools/sweep-selftests.py --jobs 4 tests/test__deps.py tests/test__output_lints.py tests/test__refs.py tests/test__clause_coverage.py": "pass",
+    "python3 tools/prove-gates.py --list": "pass",
+    "ruff check + vermin -t=3.8- on the changed .py files": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T08:29:22Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__clause_coverage.py` in a throwaway tree at HEAD exited 1 with 4 of 85 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cw9 (house FAIL), cw11 (house FAIL), cw12 (house FAIL), cw13 (house FAIL): SELFTEST FAILED: 81/85 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "plugins/audit/scripts/governance/_clause_coverage.py: (1) a new READING_CHOICES row ('bare', False, True). _markers skips a line-start marker-word match that has no colon unless choices['bare'] is set and _list_opens_under() finds an opener numbered one in the column's forms, either on the rest of the word's line (past blanks and closing emphasis, read through a window of _OPENER_REACH characters) or at the start of the next line holding text that is outside a fence. The strict column is unchanged to the character (its marker always holds the colon), and so is the colon-only rule away from a line start. (2) _item_lines records no line whose folded text is empty, so the parting line always holds text. Line numbers are unchanged for CRLF, folding and dropped format characters (d4_line.py: every row matches its expected line). (3) _departures says 'finds the same number of items, placed differently' when the counts are equal and keeps the old sentence otherwise. Docs: the module docstrings, manifest-conventions.md, the PLUGIN-BUILD-GUIDE.md section, and the Unreleased CHANGELOG entry of the previous task, corrected in place because it said that any line-start word is a marker. Tests: cw9, cw10, cw11, cw12, cw13 and cw13b in four new stages (cw-bare, cw-plain, cw-part, cw-equal). The suite is 85/85. No existing case was changed. Measurements: sg1.39-mine/mine.py exits 0 (WRONG 0, 11 before). sg1.29-mine exits 0. p2_plans finds 0 silent readings. p2_silent: only the two excepted AFTER rows (CJK glued, a number glued after ']') read SILENT-WRONG. d1_strict against the tree before the previous task: 100000 generated, strict diffs 0, lines lost 0; 1789 committed, print 39 before and 40 after, SG1.17-ukq the one new. The walk (walk33 against export-ef60e43): 40 print before and 40 after, ITEMS CHANGED 0, none went quiet, none newly prints. It exits 1 only because SG1.17-ukq's clause is reworded by rule 3. d2b_rate after: base 0.00%, +acceptance 1.23%, +Acceptance 1.14%, numbers 0.00%, '2.'/'3.' 4.04% (before: 26.3/26.0/4.0). Every word-pool print is the word at a line start followed directly by '[1]', which is in d2b's own word list, on its line or opening the next (sg1.39/classify_d2b.out). Rule 1 makes those markers. The longest committed description (P75.2-j5h) takes 0.68 ms before and after, in two runs minutes apart. d5_time is linear in every kind at 100k/200k/1M, the five kinds this change touches included, in two runs. Dependants: test_audit_task ar-block 11/11, test_drive_phase wl/rw/uy blocks 88/88, test_audit_lookup 207/207. No shape a caller reads changed: reading_line and reading_summary are still strings and dicts of the same keys, and task_clauses, check, gap_summary and resume_text are untouched. Dependants answered: drive-phase.py, audit-task.py and audit-lookup.py are still correct (same keys, strict items unchanged, their suites green). tests/test__refs.py and CHANGELOG/PLUGIN-BUILD-GUIDE basename and path references still resolve (the lint sweep is green). COMPATIBILITY.md and commands/init.md describe the strict reading only and are still true. The mutation probe is sg1.39/mutations.py with five rows, every row caught. The review's d6_mut row (vi) now turns cw13 red.",
+    "descriptive": "The wider Acceptance reading no longer takes a line that merely begins with 'acceptance' for a marker, names a parting line that holds text, and says equal counts as equal."
+  },
+  "testsAdded": [
+    "cw9: lines that only begin with the marker word stay silent with the built count (an item wrapping onto it in both cases and with emphasis, the last item, a closing paragraph after a blank line and after none, a list under it opening at three, no marker). cw10: a heading or label holding the bare word over a list from one still prints the wide clause, quoting its line",
+    "cw11: 960 generated plain lists (4 word pools, 4 widths, 5 layouts) whose prose holds the word in both cases and in emphasis. Each one whose wrapped lines begin with no number-and-opener prints nothing and reads the built count. The expectation comes from the construction",
+    "cw12: a parenthesised list continued by 3., 3), [3] or full-width (3) after one blank line, two, a line of blanks or CRLF. The line names the continuing line as written and quotes its text",
+    "cw13: equal counts with different text print 'the same number of items, placed differently' and no count. cw13b: the twin, where unequal counts keep the old sentence"
+  ],
+  "casesAdded": [
+    [
+      "cw9",
+      "cw10"
+    ],
+    "cw11",
+    "cw12",
+    [
+      "cw13",
+      "cw13b"
+    ]
+  ],
+  "claims": "claims:\n1 _clause_coverage.py _markers (bare check) + _list_opens_under do rule 1; _item_lines (if held) does rule 2; _departures (found = ...) does rule 3; docs restate exactly these\n2 mutations.py: bare counted anywhere -> cw9,cw11 red; blank lines recorded -> cw12,cw13 red; text half removed -> cw13 red; rule-3 wording off -> cw13 red; allow: bare never counted -> cw2,cw5,cw10 red; each restored byte for byte, pycache purged\n3 the class is 'line-start word read as marker': walk over every committed description, 0 items changed, 0 went quiet; d2b word pools 26% -> ~1.2%, every remaining print classified as word + [1] (rule-mandated); blank-line parting: d4b all four shapes now name the text line\n4 n/a - no rule to an agent\n5 longest description 0.68 ms before/after, two runs minutes apart; d5_time touched kinds linear in both runs\n7 counts in cw11's label are printed by len() in the label itself; no number written into prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:4fa45a6d378d70e596b52af3c2ff5183e693ed367dc9b8f9508cc4913459fb2d\",\"dirtyDigest\":\"sha256:4252304e7dc01cec96f3e91075bae20a6af550f65c2f1f073bd9557a2871c32f\",\"dirtyPaths\":{\"CHANGELOG.md\":\"b82fb25da391261d\",\"PLUGIN-BUILD-GUIDE.md\":\"556fb2371946f329\",\"plugins/audit/reference/manifest-conventions.md\":\"219fef56ef3d339f\",\"plugins/audit/scripts/governance/_clause_coverage.py\":\"bfa67c448d36e0ea\",\"tests/test__clause_coverage.py\":\"9915a735d8f16a26\"},\"head\":\"60e88d76\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/manifest-conventions.md\",\"plugins/audit/scripts/governance/_clause_coverage.py\",\"tests/test__clause_coverage.py\"],\"scopeDigest\":\"sha256:72c2998c9567fbd718a4c7e5f8ef8f9daf8880321e721608683761eab2979cd7\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 1 of the diff's 5 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 3 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/reference/manifest-conventions.md; 1 file(s) that could hold a move not compared: tests/test__clause_coverage.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/reference/manifest-conventions.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test__clause_coverage.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 43 (`from _output import safe_stdio                     # noqa: E402`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "60e88d76fa6ee58517e08e4d0e8563660d42c9f7"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-18T08:29:23Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
