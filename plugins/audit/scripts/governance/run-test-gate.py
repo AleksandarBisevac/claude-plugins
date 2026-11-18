@@ -104,7 +104,6 @@ import argparse
 import ast
 import json
 import os
-import posixpath
 import re
 import shlex
 import signal
@@ -2563,11 +2562,29 @@ def declared_gate(entries, build):
     operator's preamble in front of each of these before a shell sees it, and the
     two are different things to compare: the preamble is a property of the
     machine the gate is being run on, and two machines running the same declared
-    gate must not read as two different gates. Spelled once and called twice so
-    the pair cannot come apart.
+    gate must not read as two different gates.
+
+    A STEP WIDENED ONTO THE PHASE GATE is named `affected/phase-gate: <entry>`,
+    and that name is no build key: its declaration is its ENTRY's command, as
+    the step was built from it, so a remapped key is a different gate and the
+    command is what `grades_left_out` reads.
     """
-    return [(e, build.get(e, e)) for e in entries
-            if isinstance(e, str) and e.strip()]
+    return [(e, build.get(_declared_entry(e), _declared_entry(e)))
+            for e in entries if isinstance(e, str) and e.strip()]
+
+
+# The name a step widened onto the phase gate carries before its gate entry,
+# spelled as that step is named where it is built.
+_PHASE_GATE_STEP = "%s%s: " % (_ev.DERIVED_STEP_PREFIX, _ev.DERIVED_PHASE_GATE_ARM)
+
+
+def _declared_entry(name):
+    """The gate entry a step named `name` declares: the entry after the
+    phase-gate arm's prefix for a step widened onto the phase gate, else the
+    name itself."""
+    if name.startswith(_PHASE_GATE_STEP) and name[len(_PHASE_GATE_STEP):].strip():
+        return name[len(_PHASE_GATE_STEP):]
+    return name
 
 
 def _resolved(entries, build, preamble=None):
@@ -2817,8 +2834,7 @@ def affected_steps(tree, own_tree, manifest, phase_id, task_id, commands,
     wide, _left = split_not_commands(
         _resolved([e for e in phase_entries if e not in names], build,
                   meta.get("nodePreamble")), manifest)
-    steps = [("%s%s: %s" % (_ev.DERIVED_STEP_PREFIX, _ev.DERIVED_PHASE_GATE_ARM,
-                            name), command)
+    steps = [(_PHASE_GATE_STEP + name, command)
              for name, command in wide]
     return steps, [command for _name, command in wide], info
 
@@ -3065,103 +3081,109 @@ def subject_ids(phase_id, task_id, source):
     return ids
 
 
-# The reason an entry is reported for when its command has no words to read.
+# --- whether a gate entry names a path the identity leaves out -------------------
+# THE RULE, IN TWO SENTENCES. An entry names a left-out path when its command's
+# text holds that path's last component as a whole name - no letter or digit
+# runs on into it, through the characters that join a name (`_NAME_JOINERS`),
+# on either side - and, for a path known to be a directory, with a path
+# separator of either kind directly beside it. The text is searched as written
+# and once more as a shell's quote removal leaves it (`_quote_removed`), never
+# split into words, so no quote, escape, delimiter or whitespace kind can hide
+# an occurrence, and nothing in the reading can fail or recurse.
+#
+# WHICH WAY EACH THING IT CANNOT READ FAILS. A command that is not text grades
+# (`UNREADABLE`): measured, the safe direction. Reading more than a shell would
+# - a path inside a comment or an `echo`, a sibling directory sharing a left-out
+# directory's last component, two unquoted words that only together spell a
+# spaced path - also grades: a run measured that could have been repeated. What
+# it reads LESS than a shell would, each a stale green if an entry relies on it,
+# and each kept because no literal reading can see it: a path reached only
+# through a variable (`"$PLAN"`), a glob (`docs/audit/*.json`), a word naming an
+# ancestor directory of a left-out path (`docs/audit`, `.`), a left-out
+# directory named by its bare last component after a `cd` (`ls journal`), and
+# a last component a shell assembles by brace expansion (`audit-{plan,x}.json`).
+# One assembled only from quoted pieces is read (`audit-"plan".json`), and so
+# is a path through `..`, since its last component is still written. The
+# earlier readings split the entry into shell words and matched words, and each
+# failed on a shape its enumeration lacked: a delimiter, a whitespace kind it
+# re-read without end, an apostrophe its lexer refused.
+
+# The reason an entry is reported for when its command cannot be read at all.
 # `left_out_line` keys its sentence on this prefix, so the two cannot drift.
-UNSPLITTABLE = "its command cannot be split into words"
+UNREADABLE = "its command is not text"
 
-# Inside one shell word, the characters that start a second path: an option's
-# value (`--manifest=docs/audit/audit-plan.json`, `VAR=path`) and a backquoted
-# substitution, neither of which the lexer separates from what precedes it.
-_WORD_PIECES = re.compile(r"[=`]")
+# Characters that continue a file name, as `audit-plan.json` and
+# `test__evidence_io.py` continue: an occurrence a letter or digit reaches
+# through these is part of a longer name. Every other character - whitespace of
+# any kind, a quote, a separator, `,`, `:`, `=`, a brace - ends one.
+_NAME_JOINERS = "._-+@~"
 
-
-def _command_words(command):
-    """`(words, problem)`: every word a POSIX shell would read in `command`,
-    quoted bodies read through their own words as well, or `(None, why)`.
-
-    READ AS THE SHELL THAT RUNS IT READS IT. Every entry is started under the
-    POSIX shell (`_proc_group.shell_invocation`), so a quoted word is one word
-    with its quotes removed and a backslash escapes the character after it -
-    `my\\ plan/x` is one path, as `_argv_of`, `gate_task_step` and
-    `command_runner` already split it. `gate_entry_commands` is not called: it keeps a backslash as an
-    ordinary character and answers an unbalanced quote with the whitespace
-    split, a guess, and its redirections drop the word they name - so `<
-    docs/audit/audit-plan.json` would read nothing. Here the guess is refused
-    and said, and an operator token is just a word that names no path.
-
-    A WORD STILL CARRYING WHITESPACE OR A QUOTE is kept as the one word the
-    shell reads, and is ALSO read again as a shell body - `sh -c '...'`, a
-    nested quote - so a path inside the body is a word too. Both, because which
-    word a program reads as a script cannot be told from the text: replacing
-    the word by its re-read split a quoted path holding a space into two words
-    that named nothing, and a step grading the ledger was repeated. A re-read
-    that cannot be split makes the whole command unsplittable. Every re-read
-    strips a quote pair, an escape, or splits on whitespace, so the recursion
-    ends.
-
-    THE COMMAND IS LEXED WHOLE, with each backslash-newline pair taken out
-    first, as the shell takes it out: a newline is whitespace between words and
-    a quote may span it, while a line read alone ends on an escape with nothing
-    after it. Inside single quotes a shell keeps that pair; taking it out there
-    too can only join a path, never part one.
-    """
-    if not isinstance(command, str):
-        return None, "%s: it is %s, not text" % (UNSPLITTABLE,
-                                                 type(command).__name__)
-    lexer = shlex.shlex(command.replace("\\\n", ""), posix=True,
-                        punctuation_chars=True)
-    lexer.whitespace_split = True
-    try:
-        tokens = list(lexer)
-    except ValueError as exc:
-        return None, "%s (%s)" % (UNSPLITTABLE, exc)
-    words = []
-    for token in tokens:
-        words.append(token)
-        if re.search(r"[\s'\"]", token):
-            inner, problem = _command_words(token)
-            if inner is None:
-                return None, problem
-            words.extend(w for w in inner if w != token)
-    return words, None
+# Both separators, whatever the host: a Windows path in an entry is read on a
+# posix leg too, and its separators are backslashes.
+_SEPARATORS = "/\\"
 
 
-def _word_rels(word, roots):
-    """Each project-relative path one word can stand for, normalised.
+def _quote_removed(text):
+    """`text` as a POSIX shell's quote removal leaves it: each backslash-newline
+    pair taken out, a backslash dropped before a character that is not a letter
+    or digit (`my\\ plan`, `\\"`), and every remaining quote character dropped.
 
-    An absolute word under one of `roots` is taken relative to it; any other
-    word is already relative to the project, which is the directory a gate
-    entry runs in. A backslash the shell left in the word - one written inside
-    single quotes, or doubled - is read as a separator, because a program on
-    Windows handed that word reads it as one.
-    """
-    rels = []
-    for piece in _WORD_PIECES.split(word.replace("\\", "/")):
-        if not piece.strip():
+    A SECOND READING, NEVER THE ONLY ONE. It is what lets `my\\ plan/x.json`
+    hold `my plan` and `docs/"audit-plan".json` hold the plan's name; the text
+    as written is searched as well, so a backslash before a letter is kept here
+    because on Windows it is the separator before a directory's name."""
+    text = text.replace("\\\n", "")
+    kept = []
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if (char == "\\" and index + 1 < len(text)
+                and not text[index + 1].isalnum()):
+            kept.append(text[index + 1])
+            index += 2
             continue
-        if os.path.isabs(piece):
-            for root in roots:
-                try:
-                    rel = _output.posix_rel(os.path.realpath(piece),
-                                            os.path.realpath(root))
-                except ValueError:
-                    continue
-                if not (rel == ".." or rel.startswith("../")):
-                    piece = rel
-                    break
-        rels.append(posixpath.normpath(piece))
-    return rels
+        if char not in "'\"":
+            kept.append(char)
+        index += 1
+    return "".join(kept)
 
 
-def _names_path(rel, path, is_dir):
-    """True when the word `rel` is `path`: the path itself, a path under it,
-    or - for a file - any path whose own last component is `path`'s base name,
-    which is how an entry names the plan after a `cd`. A directory is not
-    matched by its base name, because a bare `-k journal` is a selector, not
-    the journal."""
-    if rel == path or rel.startswith(path + "/"):
-        return True
-    return not is_dir and posixpath.basename(rel) == posixpath.basename(path)
+def _reaches_letter(text, start, step):
+    """True when, walking from `start` by `step` through letters, digits and
+    `_NAME_JOINERS`, a letter or digit is met: the occurrence beside `start`
+    is part of a longer name."""
+    index = start
+    while 0 <= index < len(text) and (text[index].isalnum()
+                                      or text[index] in _NAME_JOINERS):
+        if text[index].isalnum():
+            return True
+        index += step
+    return False
+
+
+def _holds_name(text, name, is_dir):
+    """True when `text` holds `name` as a whole name - and, for a directory,
+    with a separator directly beside it, because a bare `-k journal` is a
+    selector and not the journal directory."""
+    start = text.find(name)
+    while start >= 0:
+        end = start + len(name)
+        whole = (not _reaches_letter(text, start - 1, -1)
+                 and not _reaches_letter(text, end, 1))
+        beside = ((start > 0 and text[start - 1] in _SEPARATORS)
+                  or (end < len(text) and text[end] in _SEPARATORS))
+        if whole and (beside or not is_dir):
+            return True
+        start = text.find(name, start + 1)
+    return False
+
+
+def _last_name(path):
+    """The last component of a left-out path, either separator; the whole path
+    when it has no such component (`.`, `..`, a bare separator), so an
+    exclusion is never searched as the empty string."""
+    name = re.split(r"[/\\]", path.rstrip(_SEPARATORS))[-1]
+    return path if name in ("", ".", "..") else name
 
 
 def left_out_line(name, what):
@@ -3169,7 +3191,7 @@ def left_out_line(name, what):
     repeated: the entry, and the path it names or the reason it was read as
     naming one. The gate's other entries may still be repeated
     (`part_reused_result`)."""
-    if what.startswith(UNSPLITTABLE):
+    if what.startswith(UNREADABLE):
         return ("[run-test-gate] %s cannot be read for the paths it names - %s - "
                 "so it is treated as naming a path this identity leaves out, and "
                 "this entry is MEASURED and not repeated. A guess the other way "
@@ -3181,7 +3203,7 @@ def left_out_line(name, what):
             "thing it graded" % (name, what))
 
 
-def grades_left_out(gate, excluded, roots=(), directories=()):
+def grades_left_out(gate, excluded, directories=()):
     """The gate entries whose command NAMES a path this identity leaves out.
 
     WHY AN ENTRY CAN BE ITS OWN COUNTER-EXAMPLE. The content identity drops the
@@ -3202,32 +3224,56 @@ def grades_left_out(gate, excluded, roots=(), directories=()):
     wrong in the other direction is a stale pass, which is the failure the rest of
     this module is written against.
 
-    THE COMMAND IS READ AS WORDS, NEVER AS TEXT. A substring of the command
-    matched a suite named after the module that writes a left-out directory -
-    `tests/test__evidence_io.py` contains that directory's last component - so
-    a sweep listing it was measured again on every unchanged tree. A word names
-    a left-out path when, taken against the project (`_word_rels`), it is that
-    path or lies under it, or - for a file - ends in its base name, because a
-    gate entry commonly names the plan the way the operator types it after a
-    `cd`. `directories` are the left-out paths that are directories on disk,
-    which are not matched by base name (`_names_path`). A command with no words
-    to read is reported with `UNSPLITTABLE` in place of a path.
+    THE COMMAND IS READ AS TEXT, FOR WHOLE NAMES. The rule, the directions it
+    fails in and the limits it keeps are stated once, above `UNREADABLE`. A
+    file is named by its last component anywhere in the text, because a gate
+    entry commonly names the plan the way the operator types it after a `cd`;
+    `directories` are the left-out paths that are directories on disk, named
+    only with a separator beside that component. A bare substring is not
+    enough: `tests/test__evidence_io.py` holds the evidence directory's last
+    component inside a longer name, and a sweep listing it was once measured
+    again on every unchanged tree. A command that is not text is reported with
+    `UNREADABLE` in place of a path.
     """
     paths = [p for p in (excluded or []) if isinstance(p, str) and p.strip()]
     dirs = set(directories or ())
     named = []
     for name, command in gate or []:
-        words, problem = _command_words(command)
-        if words is None:
-            named.append((name, problem))
+        if not isinstance(command, str):
+            named.append((name, "%s (it is %s)"
+                          % (UNREADABLE, type(command).__name__)))
             continue
-        rels = [rel for word in words for rel in _word_rels(word, roots)]
+        readings = (command, _quote_removed(command))
         hit = next((path for path in paths
-                    if any(_names_path(rel, path, path in dirs) for rel in rels)),
+                    if any(_holds_name(text, _last_name(path), path in dirs)
+                           for text in readings)),
                    None)
         if hit is not None:
             named.append((name, hit))
     return named
+
+
+def _grading_steps(commands, build):
+    """`[(name, command)]` to read for left-out paths: each step under its
+    declared command (`declared_gate`) AND under the command that runs - the
+    preamble in front, a derived step's suites - so a path either one names
+    grades the step. A step is named once in the answer."""
+    steps = []
+    for name, running in commands or []:
+        steps.extend((name, text) for _n, text in declared_gate([name], build))
+        steps.append((name, running))
+    return steps
+
+
+def _first_per_step(grading):
+    """`grading` with each step named once, at its first path."""
+    seen = set()
+    kept = []
+    for name, what in grading:
+        if name not in seen:
+            seen.add(name)
+            kept.append((name, what))
+    return kept
 
 
 def reuse_identity(project, manifest_path, manifest, commands, owns, group=None,
@@ -3269,11 +3315,10 @@ def reuse_identity(project, manifest_path, manifest, commands, owns, group=None,
     gate = [[name, command] for name, command
             in declared_gate([n for n, _c in (commands or [])], build)]
     scope = _tree_stamp.declared_scope(owns)
-    roots = [project] if tree is None else [project, tree]
-    grading = grades_left_out(
-        gate, excluded, roots=roots,
+    grading = _first_per_step(grades_left_out(
+        _grading_steps(commands, build), excluded,
         directories=[p for p in excluded
-                     if os.path.isdir(os.path.join(project, p))])
+                     if os.path.isdir(os.path.join(project, p))]))
     if content is None:
         return {"key": None, "basis": cbasis, "limit": REUSE_LIMIT,
                 "grading": grading, "unexcluded": unexcluded}

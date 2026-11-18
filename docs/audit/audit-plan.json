@@ -1624,7 +1624,8 @@
       "P164.1",
       "P168.7",
       "P168.8-icj",
-      "P168.18-icj"
+      "P168.18-icj",
+      "P168.19-icj"
     ],
     "PLUGIN-BUILD-GUIDE.md": [
       "P2.4",
@@ -10456,7 +10457,8 @@
       "P156.6",
       "P168.7",
       "P168.8-icj",
-      "P168.18-icj"
+      "P168.18-icj",
+      "P168.19-icj"
     ],
     "docs/audit/phases/P85.json": [
       "P91.1"
@@ -13833,7 +13835,8 @@
       "P142.36-6yq",
       "P148.4",
       "P168.8-icj",
-      "P168.18-icj"
+      "P168.18-icj",
+      "P168.19-icj"
     ],
     "plugins/audit/scripts/status/_impact.py": [
       "P131.18-dau",

@@ -79,8 +79,10 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-test-gate.py:6544-6560; plugins/audit/scripts/governance/drive-phase.py:6587-6591",
         "issue": "The reuse identity is taken over the unjoined commands, so the left-out line (`left_out_line(name, path)`, printed from `identity[\"grading\"]`) names the DECLARED entry, while the recorded step is now named for the joined step (`<entry> + affected/...`). The drive's `grades_left_out(text, s.get(\"name\"))` matches the line by `startswith(form % name)` on the step's name, so for a joined step whose declared entry grades a left-out path it answers False and reports 'did not repeat ... <repeat_reason>' instead of the left-out reason. Only the explanation differs; the run itself is measured correctly (jn6 covers repeat_plan).",
-        "resolution": "Have `grades_left_out` match on `_evidence_io.step_parts(name)[0]` as well as the whole name, or print the left-out line under the step's joined name; add one drive case with a joined grading step.",
-        "fixTask": "P168.16-icj"
+        "resolution": "fixed in P168.16-icj (6d32795882a8): Have `grades_left_out` match on `_evidence_io.step_parts(name)[0]` as well as the whole name, or print the left-out line under the step's joined name; add one drive case with a joined grading step.",
+        "fixTask": "P168.16-icj",
+        "commit": "6d32795882a8",
+        "status": "fixed"
       },
       {
         "id": "P168-R7",
@@ -118,8 +120,10 @@
         "severity": "med",
         "file": "plugins/audit/scripts/governance/drive-phase.py:4105-4136 (sweep_base_trees), :3707-3712 (fold_progress)",
         "issue": "The sweep of a dead background base run asks whether the run is alive twice. When the first reading says alive and the second says dead, it removes the tree and clears tree and pids from the state copy only; the run's own progress record still holds them, the next reading of the mark folds them back, and the mark names a tree that is gone. The next drive then prints that it removed a tree it did not remove. A liveness reading can flip when a pid exits between the kill probe and ps, which is how a loaded machine turned case bq4 red. Made deterministic by a probe that returns one alive reading after the pids died.",
-        "resolution": "One liveness reading per run per sweep, used by both the fold and the removal, and the key cleared where the mark is read from. A case that forces the two readings apart.",
-        "fixTask": "P168.16-icj"
+        "resolution": "fixed in P168.16-icj (6d32795882a8): One liveness reading per run per sweep, used by both the fold and the removal, and the key cleared where the mark is read from. A case that forces the two readings apart.",
+        "fixTask": "P168.16-icj",
+        "commit": "6d32795882a8",
+        "status": "fixed"
       },
       {
         "id": "P168-R12",
@@ -156,7 +160,7 @@
         "file": "tools/affected.py:583-588 (_spells), comment at :313",
         "issue": "The edge of the rule that reads a script's path as text rather than a run is pinned by no case. The comment says a value handed to a call other than shlex.quote is still a run, and that only a percent format spells; two mutations that widen the rule (the flag passing through any call; any binary operator counting as a format) leave the tool's suite green. A later edit can therefore drop a real run edge, after which a change to the named script no longer selects the suites that run it, with the build green.",
         "resolution": "A case for each side of the edge: a percent format whose operand is another call wrapping the resolver, and a non-percent operator, each still a run; proved by the two mutations going red.",
-        "fixTask": "P168.18-icj"
+        "fixTask": "P168.19-icj"
       },
       {
         "id": "P168-R17",
@@ -166,7 +170,7 @@
         "resolution": "The first three with the case above, in the same two tools; the rest to the low batch."
       }
     ],
-    "outcome": "[findings: 17 - 0 high, 9 med, 8 low; 5 with a recorded fix commit]"
+    "outcome": "[findings: 17 - 0 high, 9 med, 8 low; 7 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1884,7 +1888,7 @@
     {
       "id": "P168.16-icj",
       "title": "A dead background base run is swept on one liveness reading, and a joined step that grades a left-out path is reported with that reason",
-      "status": "in_progress",
+      "status": "done",
       "description": "Two faults in how the drive reads what a gate or base run left behind.\n\n(A) THE SWEEP OF A DEAD BACKGROUND BASE RUN. sweep_base_trees asks whether the run is alive twice: once inside fold_progress and once itself. When the first reading says alive and the second says dead, the sweep removes the tree and clears tree and pids from the state copy only; the run's own progress record still holds them, the next reading of the mark folds them back, and the mark names a tree that is gone. The drive after that prints that it removed a tree it did not remove. A liveness reading flips when a pid exits between the kill probe and ps (which then answers unverified, counted as alive), or when ps times out on a loaded machine; that is how case bq4 went red inside a loaded sweep. A reviewer's probe makes it red every time by returning one alive reading after the pids died.\n\n(B) A JOINED STEP'S REASON. Since this phase a task's declared suites and the suites its change can break run as one step named <entry> + affected/<arm>: <suites>, while the runner's left-out sentence names the declared entry alone. grades_left_out matches that sentence by the step's whole name, so for a joined step it answers no and the drive says the step did not repeat for the general reason instead of the left-out one. Only the explanation is wrong.\n\nACCEPTANCE.\n1. One liveness reading per run per sweep decides both the fold and the removal, and a swept run's tree and pids are cleared where the mark is read from. A case forces the two readings apart (alive, then dead) and requires that the mark names no tree after the sweep and that no later drive claims to remove one; red before the change.\n2. The other direction is cased too: a run that is alive at the one reading keeps its tree and its mark.\n3. A joined step whose declared entry grades a left-out path is reported with the left-out reason; read the joined name through _evidence_io.step_parts, not by a second spelling of it. One drive case with a joined grading step.\n4. The sentence the drive prints for a gate row that repeated an earlier verdict does not say the stage was not recorded when the same step records the stage of the run it repeated; and read_back's docstring headline says what holds for a green as well as a red.\n5. Mutations as a probe file, each on an in-memory copy.\n\nNOT IN THIS TASK. The runner's left-out sentences and how it decides which paths an entry names are being rewritten by a sibling task in plugins/audit/scripts/governance/run-test-gate.py; do not touch that file, and do not add a case that depends on the sentence for an entry that cannot be read.\n\nDEPENDANTS. tests/test_drive_phase.py is a staged suite: the bq block and the rd block are the ones this touches. _locks.liveness is shared by every lock reader; if the right fix is there, hand that back instead of editing it.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1913,14 +1917,20 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "6d32795882a8",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: (A) fold_reading returns the liveness reading it took (fold_progress kept, same return); sweep_base_trees acts on that one reading and reads again only when the fold took none, so a run read alive keeps its tree and mark and a run read dead has its record spent in the same sweep; a holder already gone is said 'already gone from disk', never 'removed'. (B) grades_left_out matches the declared entry read off a joined name by _evidence_io.step_parts as well as the whole name. While proving rd11 I found it red intermittently (2 of about a dozen early runs): on a host the run had to itself, run-test-gate.py prints its one-line green, which drops the left-out line, so the read-back said 'did not repeat' for any gate whose steps all grade a left-out path, joined or not. rd11 now waits 1.5 s before the read-back so it meets that form every time (red 3/3 without the fix below), and read_back calls repeat(True): record_gate / run_phase_gate / phase_gate take verbose and add READ_BACK_FORM (_output.VERBOSE_FLAG) at all three read-back sites. run-test-gate.py untouched. (4) queue_row reads a repeat row through to the run it repeated (repeated_measured -> _evidence_io.measured_row), queues that run's stage under its own source, and says 'timing: gate stage of P1.1 is run A's - evidence row B repeated that run's verdict rather than measuring it' once (timing_said; stage_unread now delegates to it); a repeat whose run the ledger lacks keeps the old gap. read_back's docstring headline now covers green and red. tests/test_drive_phase.py: _killed_base_run factored out of bq4; _scripted_liveness replaces M.base_running with scripted readings (alive once, then dead; the real ps never consulted); new bq6, bq7, bq8 (bq block), rd11 (rd block, with the runner's read-back output in its message); rd10 tightened (no 'not recorded', the repeated run's stage present); bq6/7/8 added to the no-killpg skip. PLUGIN-BUILD-GUIDE.md: the sweep's single reading, the joined match and long-form read-back, the repeat-row timing. Mutation probe (in-memory copy compiled under the driver's path, checkout asserted unchanged): <scratchpad>/p168-16/mutations.py, exit 0, 10/10 as expected: M0 x2 green; MA1 second reading -> bq6,bq7; MA2 always sweep -> bq6,bq7; MA3 fold hides reading -> bq6,bq7; MA4 gone said removed -> bq8; MB1 whole name only -> rd11; MC1 no read-through -> rd10; MC2 no sentence -> rd10; MD1 terse read-back -> rd11. Commands: python3 tools/sweep-selftests.py tests/test_drive_phase.py exit 0, 1/1 files ok, 1027 cases; python3 tools/sweep-selftests.py tests/test__deps.py tests/test_drive_without_model.py tests/test_stamp_verification.py exit 0, 3/3 files ok, 722 cases; ruff check on both .py exit 0; vermin -t=3.8- exit 0. One edit to drive-phase.py (the three read-back lambdas and repeat(True)) went through a python heredoc in Bash, not Edit. No tool refused it; it is named here because guard-bash-writes only notices after the fact. DEPENDANTS: test_drive_without_model.py (imports _base_mark, _Env, _base_measure_repo) still correct, helpers unchanged, ran green; test_stamp_verification.py (_actions) ran green; .github/sweep-costs.json has no figure for bq6/bq7/bq8/rd11, so the sweep weighs them by the suite's figure, not re-recorded; ci.yml, tools/affected.py, test__runner_output.py, test_run_test_gate.py name the file by path, unchanged by this, not run except as listed; drive-phase.py importers (hooks/drive-without-model.py, _worktrees.py, test__filed_returns, test__invariants, test__worktrees, test_audit_lookup, test_audit_status, test_commit_task_work) still correct: no name removed or renamed, fold_progress keeps its return, record_gate/phase_gate/run_phase_gate gained only an optional verbose; I ran none of those suites, and the four suite stubs of record_gate/phase_gate with fixed signatures sit on foreground paths (the full drive suite is green); README.md, reference/execute-task.md, COMPATIBILITY.md name step names and config keys this task does not change; run-test-gate.py and test_run_test_gate.py are P168.17-icj's and untouched; PLUGIN-BUILD-GUIDE.md edited, test__deps green. _locks.liveness not touched. Not checked: whether GATE_REUSED_BANNER survives the one-line green on a quiet host for inline (non-read-back) callers.",
+        "descriptive": "One liveness reading now decides a dead base run's sweep. A joined step that grades a left-out path is read back with that reason, as is a single-step one on a quiet host. A repeated gate's timing names the run whose stage it records."
       },
       "startedAt": "2026-11-18T14:07:42Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T15:00:40Z",
+      "verifiedBy": [
+        "bq6: a killed base run read alive once then dead: across three drives the tree is removed and said removed once, no mark names a tree that is gone, the last mark names no tree or pids",
+        "bq7: the drive whose one reading says alive leaves the tree on disk and registered, the mark naming it and the pids, and says it is left",
+        "bq8: a mark naming a tree already gone from disk is cleared and said 'already gone from disk', never 'removed'",
+        "rd11: a background gate whose one step is joined (validator naming the plan + affected/related suite), read back in a later second, is reported with the left-out reason, never 'did not repeat'",
+        "rd10 (tightened): a repeat row's sentence names the run whose stage is recorded and never says 'not recorded'"
+      ],
       "notes": [
         {
           "at": "2026-11-18T14:07:09Z",
@@ -1951,7 +1961,40 @@
         "P168-R6"
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T14:55:29Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 2863000,
+            "startedAt": "2026-11-18T14:07:46Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T15:00:20Z.62cf8c",
+            "kind": "wait",
+            "ms": 0,
+            "startedAt": "2026-11-18T14:55:46Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T15:00:20Z.62cf8c, ending at its startedAt",
+            "kind": "selection",
+            "ms": 21797,
+            "runId": "2026-11-18T15:00:20Z.62cf8c",
+            "startedAt": "2026-11-18T14:55:46Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T15:00:20Z.62cf8c",
+            "kind": "gate",
+            "ms": 252056,
+            "runId": "2026-11-18T15:00:20Z.62cf8c",
+            "startedAt": "2026-11-18T14:56:08Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 6d32795882a8",
+            "kind": "commit",
+            "ms": 1609,
+            "startedAt": "2026-11-18T15:00:37Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T14:07:42Z"
       },
       "reviewPerTask": "signals",
@@ -1959,12 +2002,24 @@
         "runId": "2026-11-18T15:00:36Z.4950a0",
         "status": "passed",
         "at": "2026-11-18T15:00:36Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "6d32795882a8",
+        "at": "2026-11-18T15:00:40Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-18T14:55:24Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with 5 of 1027 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rd10 (house FAIL), rd11 (house FAIL), bq7 (house FAIL), bq6 (house FAIL), bq8 (house FAIL): SELFTEST FAILED: 1022/1027 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P168.17-icj",
       "title": "Whether a gate step may be repeated is decided by an invariant reading of the command that runs: a literal left-out path always grades it, whatever surrounds it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The runner decides whether a gate step may be repeated by asking whether the step's command names a path the tree identity leaves out (the plan, its shards, the evidence record). That reading has now been wrong three times in this phase, each time by enumeration: split the entry into shell words, then match words. This task replaces the enumeration with an invariant and proves it.\n\nTHE INVARIANT. A literal occurrence of a left-out path in the command that runs, between path boundaries, always grades that path - whatever quotes, escapes, option glue or delimiters surround it. Reading more than a shell would (and so measuring a step that could have been repeated) is the safe direction; reading less is a stale green and is never acceptable. A name that merely contains a left-out path's base name inside a longer file name (tests/test__evidence_io.py against the evidence record) still does not grade it; that is the one false positive the earlier work removed and it must stay removed.\n\nWHAT IS WRONG TODAY, each shown by a probe on the phase's base and head:\n(1) a path followed by a delimiter other than = or a backquote is not read: --files=docs/audit/audit-plan.json,src/a.py ; docs/audit/audit-plan.json:3 ; a trailing comma ; a closing brace after a quoted path inside python -c. All four were graded before this phase.\n(2) the reader recurses until RecursionError on an entry holding a non-breaking space, a form feed or a vertical tab, and nothing catches it, so every recorded run of that gate dies. Its docstring says the recursion ends.\n(3) a step the change widened onto the phase gate, named affected/phase-gate: <key>, is asked by its name and not by the command its build key resolves to, so it never grades; this repository's own keys (validate, gate, report) read the plan. Ask the command that runs, for every step.\n(4) an entry with an apostrophe inside a double-quoted body is reported as one that cannot be split and is measured on every run with a sentence that is false about it.\n\nACCEPTANCE.\n1. Each entry in (1), each whitespace kind in (2) and the step in (3) is read as naming the plan; none raises. Each is a case, red before the change.\n2. Allow cases, proved by weakening the reading until it over-fires: an entry naming only tests/test__evidence_io.py, and an entry naming nothing left out, do not grade.\n3. No recursive re-read and no lexer failure can decide the answer; say in the outcome what happens to an entry the old code called unsplittable, and whether that sentence can still be printed.\n4. The two sentences the runner prints for a step that grades a left-out path keep their text byte for byte where they are still printed: plugins/audit/scripts/governance/drive-phase.py matches them by prefix and is NOT in this task's files. If one of them can no longer be printed, leave the drive alone and say so in the outcome.\n5. A probe file of mutations, each applied to an in-memory copy, with the cases each turns red.\n6. Pre-existing limits that stay (a bare $VAR, a glob, a word naming an ancestor directory of a left-out path) are stated where the reading is documented, each with the direction it fails in; fix any of them the invariant makes free.\n\nDEPENDANTS. drive-phase.py reads the left-out sentences (see 4). tools/check-example-ledgers.py quotes a runner refusal sentence. The per-step repeat, the joined step (declared and affected suites as one step, read back by _evidence_io.step_parts) and the entries left to the phase gate all rest on this reading: a joined step is measured when any part of it grades. Run under the spaced leg as well: python3 tools/sweep-selftests.py --spaced tests/test_run_test_gate.py.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -1989,14 +2044,14 @@
       "risk": "high",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T15:00:42Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -2023,12 +2078,22 @@
         "P168-R9",
         "P168-R10",
         "P168-R12"
-      ]
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T15:00:42Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T15:34:13Z.dbc0a0",
+        "status": "passed",
+        "at": "2026-11-18T15:34:13Z"
+      }
     },
     {
       "id": "P168.18-icj",
       "title": "The edge of the selector's text-not-run reading is held by cases that fail when it is widened, and a comparison selector's faults stay its own",
-      "status": "pending",
+      "status": "cancelled",
       "description": "This repository's test selector (tools/affected.py) was narrowed in this phase: a path obtained from the script resolver and then spelled into a percent format or handed to shlex.quote is read as text, not as a run of that script. A review found the narrowing sound on the tree as it stands (every such site in product code is text nobody executes) and found that nothing holds its edge: two mutations that widen it leave the tool's own cases green.\n\nACCEPTANCE.\n1. tools/affected.py gains a case for each side of the edge the comment above TEXT_RESOLVERS and the docstring of the spelled reading state: a percent format whose operand is another call wrapping the resolver is still a run; an operator other than percent is still a run. Each is proved by its mutation going red: the call branch of the spelled reading returning the flag instead of False, and the operator test accepting any binary operator. Deliver both mutations as a probe file run against an in-memory copy or an export, never the checkout.\n2. tools/measure-affected-miss.py gains a case for the branch that still sweeps a commit whose default selection is the full set when the comparison selector is narrower; proved by reverting that guard.\n3. The window line of that tool does not say of the comparison selector what holds only for the default one: with a comparison selector given, the full-set commits can miss for it.\n4. A comparison selector that cannot be read does not cost the default selector its measurement for that commit: the default's reading is kept and the comparison's is reported as not measured, by name.\n5. CONTRIBUTING.md says where the command and the date behind the narrowing really sit.\n6. The listings the plan records (one path per line from --list-related and --list-all) do not change by a byte; say how you checked.\n\nDEPENDANTS. The plugin's gate runner reads --list-related and --list-all through the plan's recorded listing commands; tools/verify.sh and CI read --json; tests/test__output_lints.py pins the prose-scan exemption row for tools/measure-affected-miss.py's fixtures by the tool's path, so keep the tool at its path and keep its fixtures. Both tools carry their own cases and are run by the sweep as tools/affected.py and tools/measure-affected-miss.py; no file under tests/ is added.",
       "files": [
         "tools/affected.py",
@@ -2052,15 +2117,15 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
-        "descriptive": null
+        "descriptive": "Cancelled: Minted with the wrong test discipline. Its cases pin an edge the selector already keeps and live in the tools they test, so no run of the head's code with the task's test files can be red; the proof is by mutation. The discipline of a started task cannot be changed, so it is replaced by a task that says regression. The finished work is kept as a patch and applied by the replacement."
       },
-      "startedAt": null,
-      "completedAt": null,
+      "startedAt": "2026-11-18T15:00:49Z",
+      "completedAt": "2026-11-18T15:18:32Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -2093,6 +2158,77 @@
         {
           "at": "2026-11-18T14:10:14Z",
           "text": "Before filing run python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py tests/test__refs.py: fixture .py names written under tools/ turned tests/test__refs.py red once in this phase. The reviewer's two surviving mutations are handed over in the dispatch, not here."
+        }
+      ],
+      "fixes": [
+        "P168-R16"
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T15:00:49Z"
+      },
+      "reviewPerTask": "signals"
+    },
+    {
+      "id": "P168.19-icj",
+      "title": "The edge of the selector's text-not-run reading is held by cases that fail when it is widened, and a comparison selector's faults stay its own",
+      "status": "pending",
+      "description": "This repository's test selector (tools/affected.py) was narrowed in this phase: a path obtained from the script resolver and then spelled into a percent format or handed to shlex.quote is read as text, not as a run of that script. A review found the narrowing sound on the tree as it stands (every such site in product code is text nobody executes) and found that nothing holds its edge: two mutations that widen it leave the tool's own cases green.\n\nACCEPTANCE.\n1. tools/affected.py gains a case for each side of the edge the comment above TEXT_RESOLVERS and the docstring of the spelled reading state: a percent format whose operand is another call wrapping the resolver is still a run; an operator other than percent is still a run. Each is proved by its mutation going red: the call branch of the spelled reading returning the flag instead of False, and the operator test accepting any binary operator. Deliver both mutations as a probe file run against an in-memory copy or an export, never the checkout.\n2. tools/measure-affected-miss.py gains a case for the branch that still sweeps a commit whose default selection is the full set when the comparison selector is narrower; proved by reverting that guard.\n3. The window line of that tool does not say of the comparison selector what holds only for the default one: with a comparison selector given, the full-set commits can miss for it.\n4. A comparison selector that cannot be read does not cost the default selector its measurement for that commit: the default's reading is kept and the comparison's is reported as not measured, by name.\n5. CONTRIBUTING.md says where the command and the date behind the narrowing really sit.\n6. The listings the plan records (one path per line from --list-related and --list-all) do not change by a byte; say how you checked.\n\nDEPENDANTS. The plugin's gate runner reads --list-related and --list-all through the plan's recorded listing commands; tools/verify.sh and CI read --json; tests/test__output_lints.py pins the prose-scan exemption row for tools/measure-affected-miss.py's fixtures by the tool's path, so keep the tool at its path and keep its fixtures. Both tools carry their own cases and are run by the sweep as tools/affected.py and tools/measure-affected-miss.py; no file under tests/ is added.",
+      "files": [
+        "tools/affected.py",
+        "tools/measure-affected-miss.py",
+        "CONTRIBUTING.md",
+        "tools/affected.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tools/affected.py: a percent format whose operand is another call wrapping the resolver, and a non-percent operator, are each still a run; tools/measure-affected-miss.py: a commit whose default selection is the full set is still swept for a narrower comparison selector"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tools/affected.py tools/measure-affected-miss.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "med",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-18T15:18:38Z",
+          "text": "scope: tools/affected.py, every path the finding(s) P168-R16 name"
+        },
+        {
+          "at": "2026-11-18T15:18:38Z",
+          "text": "no suite: tools/affected.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-11-18T15:18:46Z",
+          "text": "it pins, by the tool's path, the prose-scan exemption row for the fixtures of tools/measure-affected-miss.py; the tool stays at its path and keeps its fixtures",
+          "waives": "tests/test__output_lints.py"
+        },
+        {
+          "at": "2026-11-18T15:18:46Z",
+          "text": "its document lints scan CONTRIBUTING.md; the task corrects one sentence there and runs tests/test__deps.py before filing",
+          "waives": "tools/lints/_deps.py"
+        },
+        {
+          "at": "2026-11-18T15:18:46Z",
+          "text": "it is described by CONTRIBUTING.md's paragraphs on the sweep, which this task does not touch",
+          "waives": "tools/sweep-selftests.py"
         }
       ],
       "fixes": [

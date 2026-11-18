@@ -7832,7 +7832,7 @@ def _unrecorded_cases(check):
 
 
 def _left_word_cases(check):
-    """An entry names a left-out path through its WORDS, never through a substring.
+    """An entry names a left-out path through a WHOLE name, never a bare substring.
 
     The over-fire these exist for was driven: a sweep step listing the suites
     named after the evidence and journal modules read as grading the evidence
@@ -7892,17 +7892,22 @@ def _left_word_cases(check):
                   ("same", "docs/audit/evidence"),
                   ("opt", "docs/audit/evidence")])
 
-    unsplit = M.grades_left_out([("v", "python3 v.py \"unterminated")], excluded)
-    check("lw5 a command that cannot be split into words is treated as naming "
-          "a left-out path, and says that is why - a guess the other way would "
-          "repeat a verdict nobody measured: %r" % (unsplit,),
-          len(unsplit) == 1 and unsplit[0][0] == "v"
-          and "cannot be split into words" in unsplit[0][1])
-    body = M.grades_left_out([("v", "sh -c 'python3 v.py \"unterminated'")],
-                             excluded)
-    check("lw6 ...and so is a quoted shell body that cannot: %r" % (body,),
-          len(body) == 1 and body[0][0] == "v"
-          and "cannot be split into words" in body[0][1])
+    # NO LEXER DECIDES. A quote left open is read like any other text: the
+    # path written in it grades, and an entry naming nothing left out grades
+    # nothing - a shell would refuse to run it, so there is no verdict over the
+    # plan for a repeat to make stale.
+    unsplit = M.grades_left_out(
+        [("v", "python3 v.py \"unterminated"),
+         ("p", "python3 v.py \"docs/audit/audit-plan.json")], excluded)
+    check("lw5 a command with a quote left open is read for the paths written "
+          "in it: one naming the plan grades it, one naming nothing does not: "
+          "%r" % (unsplit,),
+          unsplit == [("p", "docs/audit/audit-plan.json")])
+    body = M.grades_left_out(
+        [("v", "sh -c 'python3 v.py \"unterminated'"),
+         ("p", "sh -c 'python3 v.py \"docs/audit/evidence/x.jsonl'")], excluded)
+    check("lw6 ...and so is a quoted shell body with one: %r" % (body,),
+          body == [("p", "docs/audit/evidence")])
 
     # A DIRECTORY IS NOT ITS BASE NAME. Given the directories, a bare selector
     # word spelled like one (`-k journal`) is not the journal, while the same
@@ -7920,27 +7925,186 @@ def _left_word_cases(check):
     absw = M.grades_left_out(
         [("abs", "cat %s" % shlex.quote(os.path.join(root, "docs", "audit",
                                                      "evidence", "x.jsonl")))],
-        excluded, roots=[root])
-    check("lw8 an absolute word under the project is read against it, so a row "
-          "file spelled from the root still names the evidence: %r" % (absw,),
+        excluded, directories=["docs/audit/evidence"])
+    check("lw8 an absolute path under the project holds the left-out path's "
+          "own text, so a row file spelled from the root still names the "
+          "evidence: %r" % (absw,),
           absw == [("abs", "docs/audit/evidence")])
 
     path_line = M.left_out_line("validate", "docs/audit/audit-plan.json")
-    why_line = M.left_out_line("v", unsplit[0][1] if unsplit else "")
+    odd = M.grades_left_out([("v", None)], excluded)
+    why_line = M.left_out_line("v", odd[0][1] if odd else "")
     check("lw9 the line saying why the run is MEASURED still names the entry "
-          "and the path, and an unsplittable entry's line names the entry and "
-          "the reason instead: %r" % ((path_line, why_line),),
+          "and the path, and an entry whose command is not text names the "
+          "entry and the reason instead: %r" % ((path_line, why_line),),
           "validate names docs/audit/audit-plan.json" in path_line
           and "MEASURED and not repeated" in path_line
-          and "v cannot be read" in why_line
-          and "cannot be split into words" in why_line
+          and why_line.startswith("[run-test-gate] v cannot be read for the "
+                                  "paths it names")
+          and "not text" in why_line
           and "MEASURED and not repeated" in why_line)
 
     _spaced_word_cases(check, root, excluded)
+    _literal_reading_cases(check, excluded)
+
+
+def _grading_or_raise(gate, excluded, directories=()):
+    """`grades_left_out`'s answer, or the escape it raised as a string - so a
+    reading that dies on an input is one named failing case, not the end of the
+    block. `BaseException` on purpose: the escape this exists for was a
+    `RecursionError`, and a narrower catch lets the next one out."""
+    try:
+        return M.grades_left_out(gate, excluded, directories=directories)
+    except BaseException as exc:
+        return "RAISED %s: %s" % (type(exc).__name__, str(exc)[:80])
+
+
+def _literal_reading_cases(check, excluded):
+    """A literal left-out path in the command grades it, whatever surrounds it.
+
+    Each input here was driven by a review probe against an export of the
+    phase's base and head: a word reading lost the path behind a delimiter it
+    did not enumerate, recursed until the interpreter stopped it on a whitespace
+    kind it did not enumerate, and called an apostrophe inside double quotes an
+    unsplittable command. So none of these is a shell shape to support; each is
+    a place where the text holds the path and the answer must not depend on
+    what is around it. The allow block beside them is what a reading widened to
+    "any mention" breaks.
+    """
+    dirs = ["docs/audit/evidence", "docs/audit/journal"]
+    plan = "docs/audit/audit-plan.json"
+    glued = [("comma", "python3 v.py --files=docs/audit/audit-plan.json,src/a.py"),
+             ("lead", "python3 v.py --files=src/a.py,docs/audit/audit-plan.json"),
+             ("colon", "python3 v.py docs/audit/audit-plan.json:3"),
+             ("trail", "jq -e .meta docs/audit/audit-plan.json,"),
+             ("brace", "python3 -c \"import json; d={'p': "
+                       "'docs/audit/audit-plan.json'}; json.load(open(d['p']))\""),
+             ("bracket", "python3 -c \"x=['docs/audit/evidence/a.jsonl']\""),
+             # A shell glues `'s` onto this word and reads another file; the
+             # literal path between its quotes still grades - more, never less.
+             ("literal", "echo \"docs/audit/audit-plan.json\"'s copy'")]
+    got = _grading_or_raise(glued, excluded, directories=dirs)
+    check("lw16 a left-out path followed or preceded by a comma, a colon, a "
+          "closing brace or a bracket inside a quoted body, or written "
+          "literally between quotes a shell would glue a word onto, names it: "
+          "%r" % (got,),
+          got == [("comma", plan), ("lead", plan), ("colon", plan),
+                  ("trail", plan), ("brace", plan),
+                  ("bracket", "docs/audit/evidence"), ("literal", plan)])
+
+    # Every whitespace kind a reader might split on, and a nesting deep enough
+    # that a reader re-reading each quoted body would exhaust the stack.
+    kinds = [("nbsp", u"\u00a0"), ("formfeed", "\x0c"), ("vtab", "\x0b"),
+             ("emspace", u"\u2003"), ("ideographic", u"\u3000")]
+    spaced = []
+    for tag, ws in kinds:
+        spaced.append((tag, "python3 v.py%sdocs/audit/audit-plan.json" % ws))
+        spaced.append((tag + "-none", "python3 v.py --title a%sb" % ws))
+        spaced.append((tag + "-quoted", "echo 'x%sy' docs/audit/audit-plan.json"
+                       % ws))
+    spaced.append(("deep", "sh -c " + "'\"" * 400 + plan + "\"'" * 400))
+    got = _grading_or_raise(spaced, excluded, directories=dirs)
+    want = []
+    for tag, _ws in kinds:
+        want.extend([(tag, plan), (tag + "-quoted", plan)])
+    want.append(("deep", plan))
+    check("lw17 an entry holding a non-breaking space, a form feed, a vertical "
+          "tab or another whitespace kind, or quotes nested hundreds deep, "
+          "raises nothing, grades the plan where it is written and nothing "
+          "where it is not: %r" % (got,),
+          got == want)
+
+    apostrophe = [("dq", "python3 -c \"print(\\\"it's fine\\\")\""),
+                  ("k", "pytest -k \"not don't_run\""),
+                  ("then", "echo \"it's\" && python3 v.py docs/audit/audit-plan.json")]
+    got = _grading_or_raise(apostrophe, excluded, directories=dirs)
+    lines = ([M.left_out_line(name, what) for name, what in got]
+             if isinstance(got, list) else [])
+    check("lw18 an apostrophe inside a double-quoted body is no reason to "
+          "measure: an entry naming nothing grades nothing, and one naming the "
+          "plan says it NAMES it - no line claims it cannot be read: %r"
+          % (lines or got,),
+          got == [("then", plan)] and len(lines) == 1
+          and "then names docs/audit/audit-plan.json" in lines[0]
+          and not any("cannot be read" in ln for ln in lines))
+
+    # WINDOWS-SHAPED, BUILT BY HAND so every leg runs them: on Windows a path's
+    # own separators are backslashes, and a reading that treats a backslash as
+    # a POSIX escape eats them - which is how `lw10`'s escaped-space form named
+    # nothing on CI's windows legs while every posix leg was green.
+    base = "C:\\Users\\a b\\proj"
+    row = base + "\\docs\\audit\\evidence\\x.jsonl"
+    wplan = base + "\\docs\\audit\\audit-plan.json"
+    windows = [("dq", "python3 v.py \"%s\"" % wplan),
+               ("sq", "type '%s'" % row),
+               ("esc", "type %s" % row.replace(" ", "\\ ")),
+               ("body", "sh -c 'type \"%s\" | more'" % row),
+               ("mixed", "python3 v.py %s" % wplan.replace("\\", "/")
+                .replace(" ", "\\ ")),
+               ("bare", "python3 v.py docs\\audit\\audit-plan.json")]
+    got = _grading_or_raise(windows, excluded, directories=dirs)
+    check("lw19 a Windows-shaped absolute path - backslash separators, a "
+          "directory whose name holds a space, quoted, single-quoted, with the "
+          "space escaped, inside a shell body, or written with forward "
+          "slashes - and a relative backslash path each name the record: %r"
+          % (got,),
+          got == [("dq", plan), ("sq", "docs/audit/evidence"),
+                  ("esc", "docs/audit/evidence"), ("body", "docs/audit/evidence"),
+                  ("mixed", plan), ("bare", plan)])
+
+    # THE ALLOW CASES, for the mutation that widens the reading until it fires
+    # on any mention: a left-out name inside a longer file name - before or
+    # after it, behind a delimiter, under a Windows path - is not that path.
+    allow = [("sweep", "python3 tools/sweep-selftests.py --files="
+                       "tests/test__evidence_io.py,tests/test__journal_io.py"),
+             ("win", "python3 tools\\sweep-selftests.py "
+                     "C:\\a b\\tests\\test__evidence_io.py:3"),
+             ("near", "cat docs/audit/audit-plan.json.bak my-audit-plan.json "
+                      "docs/audit/evidence-old/x docs/audit/journal_io.md"),
+             ("k", "pytest -k journal tests/"),
+             ("plain", "pytest -q tests/ && ruff check src")]
+    got = _grading_or_raise(allow, excluded, directories=dirs)
+    check("lw20 THE ALLOW CASE: an entry naming only suites whose file names "
+          "contain the evidence's or the journal's name, a backup or a sibling "
+          "whose name runs on past a left-out one, a bare selector, or nothing "
+          "left out at all, grades nothing: %r" % (got,),
+          got == [])
+
+    odd = _grading_or_raise([("v", 3)], excluded, directories=dirs)
+    line = (M.left_out_line("v", odd[0][1])
+            if isinstance(odd, list) and odd else "")
+    check("lw21 a command that is not text cannot be read at all, so it is "
+          "measured - and its line says it cannot be read, in the sentence "
+          "the drive matches by prefix: %r" % (line or odd,),
+          isinstance(odd, list) and len(odd) == 1
+          and line.startswith("[run-test-gate] v cannot be read for the paths "
+                              "it names")
+          and "MEASURED and not repeated" in line)
+
+    # THE LIMITS THE READING STATES, held to what it does. Each `kept` entry is
+    # a stale green the comment above `run-test-gate.UNREADABLE` says it
+    # accepts; each `read` entry is one it says it does not. A change closing a
+    # limit turns this red, and the comment is then the thing to correct.
+    kept = [("var", "python3 v.py \"$AUDIT_PLAN\""),
+            ("glob", "python3 v.py docs/audit/*.json"),
+            ("ancestor", "python3 v.py docs/audit"),
+            ("dot", "python3 v.py ."),
+            ("cd", "cd docs/audit && ls journal"),
+            ("brace", "python3 v.py docs/audit/audit-{plan,x}.json")]
+    read = [("quoted", "python3 v.py docs/audit/audit-\"plan\".json"),
+            ("dotted", "ls docs/audit/phases/../journal/x.jsonl")]
+    got = (_grading_or_raise(kept, excluded, directories=dirs),
+           _grading_or_raise(read, excluded, directories=dirs))
+    check("lw22 the limits the reading documents are what it does: a "
+          "variable, a glob, an ancestor directory, a directory's bare name "
+          "after a cd and a brace expansion name nothing, while a name "
+          "assembled from quoted pieces and a path through `..` are read: %r"
+          % (got,),
+          got == ([], [("quoted", plan), ("dotted", "docs/audit/journal")]))
 
 
 def _spaced_word_cases(check, root, excluded):
-    """A path holding a space is one word once a shell has read its quoting.
+    """A path holding a space names its record however a shell would quote it.
 
     CI's spaced leg went red on `lw8`: the case quoted an absolute path under a
     temp directory whose name held a space, and the entry was read as naming
@@ -7948,7 +8112,7 @@ def _spaced_word_cases(check, root, excluded):
     stored verdict, the unsafe direction. These build the space themselves,
     under the fixture root, so they go red on every leg rather than only on the
     one that happens to put a space in TMPDIR. Nothing is created on disk: what
-    is asked is how an entry's text becomes words.
+    is asked is whether an entry's text holds the path.
     """
     spaced = os.path.join(root, "s p")
     row = os.path.join(spaced, "docs", "audit", "evidence", "x.jsonl")
@@ -7957,7 +8121,7 @@ def _spaced_word_cases(check, root, excluded):
                 ("sq", "cat %s" % shlex.quote(row)),
                 ("esc", "cat %s" % row.replace(" ", "\\ ")),
                 ("body", "sh -c 'cat \"%s\" | wc -l'" % row)]
-    got = M.grades_left_out(absolute, excluded, roots=[spaced])
+    got = M.grades_left_out(absolute, excluded)
     check("lw10 under a project whose path holds a space, an absolute path in "
           "double quotes, in single quotes, with its space escaped, and inside "
           "a quoted shell body each name the left-out record it resolves to: "
@@ -7973,7 +8137,7 @@ def _spaced_word_cases(check, root, excluded):
              ("suite", "python3 tools/sweep-selftests.py %s"
               % shlex.quote(os.path.join(spaced, "tests",
                                          "test__evidence_io.py")))]
-    got = M.grades_left_out(plain, excluded, roots=[spaced])
+    got = M.grades_left_out(plain, excluded)
     check("lw11 ...and a quoted absolute path under that project naming a "
           "source file or a suite named after the evidence names nothing: %r"
           % (got,),
@@ -7996,26 +8160,28 @@ def _spaced_word_cases(check, root, excluded):
                   ("sq", "my plan/evidence"),
                   ("body", "my plan/evidence")])
     # Unquoted, a shell reads `my` and `plan/evidence/x.jsonl` - two paths, and
-    # neither is under the left-out directory. A reading by substring, or one
-    # that rejoins words, would name it.
-    apart = [("two", "cat my plan/evidence/x.jsonl"),
-             ("near", "cat \"my plan-old/evidence/x.jsonl\"")]
-    got = M.grades_left_out(apart, rel, directories=dirs)
-    check("lw13 ...while the same path unquoted is two words a shell reads as "
-          "two other paths, and a quoted sibling directory is not it: %r"
-          % (got,),
-          got == [])
+    # neither is under the left-out directory. The reading names it anyway: it
+    # reads the text, not a shell's words, and reading MORE than a shell is the
+    # direction that costs a run rather than a stale verdict. A directory is
+    # read by its last component beside a separator, so a sibling whose own
+    # name only begins with it is still not it.
+    apart = [("two", "cat my plan/evidence/x.jsonl")]
+    near = [("near", "cat \"my plan/evidence-old/x.jsonl\" my\\ plan/evidenced")]
+    got = (M.grades_left_out(apart, rel, directories=dirs),
+           M.grades_left_out(near, rel, directories=dirs))
+    check("lw13 ...the same path unquoted still names it - read more than a "
+          "shell would, never less - while a sibling whose name runs on past "
+          "the directory's is not it: %r" % (got,),
+          got == ([("two", "my plan/evidence")], []))
 
     unsplit = [("open", "cat \"%s" % row), ("tail", "cat %s\\" % row)]
-    got = M.grades_left_out(unsplit, excluded, roots=[spaced])
+    got = M.grades_left_out(unsplit, excluded)
     lines = [M.left_out_line(name, why) for name, why in got]
     check("lw14 an entry holding a spaced path that a shell cannot split - a "
-          "quote left open, an escape with nothing after it - is read as naming "
-          "a left-out path, and the line it prints says it is MEASURED because "
-          "it cannot be read: %r" % (lines,),
-          [name for name, _why in got] == ["open", "tail"]
-          and len(lines) == 2
-          and all("cannot be split into words" in ln
+          "quote left open, an escape with nothing after it - still names the "
+          "record written in it, and its line says it NAMES it: %r" % (lines,),
+          got == [("open", "docs/audit/evidence"), ("tail", "docs/audit/evidence")]
+          and all("names docs/audit/evidence" in ln
                   and "MEASURED and not repeated" in ln for ln in lines))
 
     # A BACKSLASH BEFORE A NEWLINE joins two lines into one, for a shell. Once a
@@ -8028,7 +8194,7 @@ def _spaced_word_cases(check, root, excluded):
                ("cut", "cat docs/audit/\\\nevidence/x.jsonl"),
                ("lines", "true\ncat \"%s\"" % row),
                ("quoted", "printf '%%s\\n' \"a\nb\" docs/audit/evidence/x.jsonl")]
-    got = M.grades_left_out(wrapped, excluded, roots=[spaced],
+    got = M.grades_left_out(wrapped, excluded,
                             directories=["docs/audit/evidence"])
     check("lw15 a multi-line entry is read as a shell reads it - a backslash "
           "before a newline joins the lines, a path broken across them is one "
@@ -8187,6 +8353,49 @@ def _reuse_cases(check):
           "declarations reach two different verdicts: %r"
           % (other_scope["key"] != plain_key["key"],),
           other_scope["key"] != plain_key["key"])
+
+    # A STEP IS ASKED BY THE COMMAND THAT RUNS, NOT BY ITS NAME. A step the
+    # change widened onto the phase gate is named `affected/phase-gate: <key>`,
+    # and that name is no build key - so a reading of names alone looked the
+    # name up, got the name back, and found no path in it, while the command
+    # under the key validates the plan. This repository's own `validate`,
+    # `gate` and `report` keys read the plan.
+    arm = "%s%s: validate" % (_ev_io.DERIVED_STEP_PREFIX,
+                              _ev_io.DERIVED_PHASE_GATE_ARM)
+    reads_plan = {"meta": {"buildCommands": {
+        "validate": "python3 v.py docs/audit/audit-plan.json"}}}
+    by_key = M.reuse_identity(root, mp, reads_plan,
+                              [(arm, "python3 v.py docs/audit/audit-plan.json")],
+                              ["src/a.py"])
+    run_only = M.reuse_identity(
+        root, mp, declared,
+        [("%ssuites: tests/test_a.py" % _ev_io.DERIVED_STEP_PREFIX,
+          "python3 tools/sweep.py tests/test_a.py docs/audit/audit-plan.json")],
+        ["src/a.py"])
+    names_nothing = M.reuse_identity(root, mp, {"meta": {"buildCommands": {
+        "validate": "pytest -q tests/"}}}, [(arm, "pytest -q tests/")],
+        ["src/a.py"])
+    check("ru46 a phase-gate arm step whose build key validates the plan, and "
+          "a derived step whose running command names it, each grade the "
+          "plan; an arm step whose key names nothing left out grades nothing: "
+          "%r" % ((by_key["grading"], run_only["grading"],
+                   names_nothing["grading"]),),
+          by_key["grading"] == [(arm, "docs/audit/audit-plan.json")]
+          and run_only["grading"] == [
+              ("%ssuites: tests/test_a.py" % _ev_io.DERIVED_STEP_PREFIX,
+               "docs/audit/audit-plan.json")]
+          and names_nothing["grading"] == [])
+    other_key = M.reuse_identity(root, mp, {"meta": {"buildCommands": {
+        "validate": "python3 v2.py docs/audit/audit-plan.json"}}},
+        [(arm, "python3 v2.py docs/audit/audit-plan.json")], ["src/a.py"])
+    check("ru47 ...and the arm step's declaration is its key's command, so the "
+          "same arm over a remapped key is a different gate: %r"
+          % ((M.declared_gate([arm], reads_plan["meta"]["buildCommands"]),
+              other_key["key"] != by_key["key"]),),
+          M.declared_gate([arm], reads_plan["meta"]["buildCommands"])
+          == [(arm, "python3 v.py docs/audit/audit-plan.json")]
+          and by_key["key"] is not None
+          and other_key["key"] != by_key["key"])
 
     excluded, _no_drops = _ev_io.recorded_paths(root, mp)
     check("ru5 the paths this recorder writes are DERIVED and include the "

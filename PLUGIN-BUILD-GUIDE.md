@@ -4614,17 +4614,21 @@ the reuse path prints them again under their own literals — the ones `drive-ph
 and not *none*, and the reuse path says so.
 
 **An entry that names a path the identity leaves out is measured, never repeated, and "names" is
-read off its words.** `grades_left_out` reads each command the way the POSIX shell that runs it
-splits it (`_command_words`): a quoted word is one word with its quotes removed, a backslash
-escapes the character after it, so a path holding a space is one word however it is quoted, and a
-backslash-newline joins two lines. A word still holding a space or a quote is kept whole and also
-read again as a shell body, so a path inside a quoted `sh -c` body is a word too. A word names a
-left-out path when, taken against the project, it is that path, lies under it, or, for a file,
-ends in its base name (`_names_path`). A word only containing the name inside a longer file name
-does not, so a sweep listing `tests/test__evidence_io.py` stays repeatable; a left-out path that
-is a directory on disk is not matched by its base name, so `-k journal` is no reading of the
-journal. A command that cannot be split into words is reported as naming one, with
-`UNSPLITTABLE` as the reason (`left_out_line`), because the other guess repeats a verdict nobody
+read off its text, not off shell words.** `grades_left_out` asks whether the command holds the
+left-out path's last component as a whole name — no letter or digit runs on into it through the
+characters that join a name — and, for a path that is a directory on disk, with a separator of
+either kind beside it (`_holds_name`). The text is searched as written and once more as a shell's
+quote removal leaves it (`_quote_removed`), so no quote, escape, option glue, delimiter or
+whitespace kind can hide the path, a backslash-separated Windows path is read on every host, and
+nothing in the reading can fail or recurse. A name only containing the left-out one inside a longer
+file name does not grade, so a sweep listing `tests/test__evidence_io.py` stays repeatable, and a
+bare `-k journal` is no reading of the journal directory. Reading more than a shell would is the
+accepted direction; what it reads less — a variable, a glob, an ancestor directory, a directory's
+bare name after a `cd`, a brace expansion — is listed beside `UNREADABLE`, and `lw22` holds the
+list to what the reading does. Each step is read under its declared command and under the command
+that runs (`_grading_steps`), so a step widened onto the phase gate is read through its entry's
+build command (`declared_gate`). A command that is not text is reported as naming one, with
+`UNREADABLE` as the reason (`left_out_line`), because the other guess repeats a verdict nobody
 measured.
 
 **It is the entry that is measured, not the whole gate.** `repeat_plan` splits the gate: the
