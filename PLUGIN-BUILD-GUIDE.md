@@ -5669,21 +5669,35 @@ Whether a writer answered every clause its task owes.
 `task_clauses(task)` is the one numbering: the `tests.add` entries in order, then the items of the
 description's Acceptance list. **Which marker:** `acceptance_reading(description)` counts an
 `Acceptance:` only where it opens a line (after an indent and Markdown's heading, quote, list or
-emphasis marks) or a sentence, and outside a code fence, so one named in a sentence, in backticks or
-in a fenced example is no marker; each marker's text runs to the next and ends at the first heading
-line, and with several the one holding a numbered list is read when exactly one does, else the last.
-**Which shape:** parenthesised numbers (`(1) ... (2) ...`, the recommended form), a `(n)` opening an
-item only at the text's start or after whitespace; a number closed by a full stop or a parenthesis at
-the start of a line, read at the indent of its first `1.` so a nested sub-step opens nothing, with a
-restarted `1.` opening a new item; both by the sequence rule, so a version number inside a sentence
-opens nothing. When both yield items the one opening first is read and the other's count is kept;
-else the whole non-empty text, as ONE item. A marker followed by nothing but whitespace has no
-items, and both digit captures are bounded so a long digit run cannot raise. `reading_line(description)`
-is the line `audit-task.py`'s `add` (single or `--from-file`, dry run included) and `scope
---description` print whenever the reading is anything but one parenthesised list covering the whole
-text - a second marker, the other shape's count, text left out of every item and a restarted
-numbering each named - and `reading_summary` is the same as the `acceptanceReading` key of their
-`--json` results. **The check runs on the headless-writer route alone** (`executor.writerModel`
+emphasis marks) - or, for the first marker alone, a sentence - and outside a code fence, so one
+named in a sentence, in backticks, in a fenced example, or opening a sentence inside a list is no
+marker. Fences are CommonMark's (`_layout`): a run of three or more backticks or tildes, closed
+only by a run of the same character at least as long with nothing after it, and a backtick run
+with a backtick after it on its line is an inline span. Each marker's text runs to the next and
+ends at the first heading line, and with several the one holding a numbered list is read when
+exactly one does, else the last. **Which shape:** parenthesised numbers (`(1) ... (2) ...`, the
+recommended form), a `(n)` opening an item unless a letter, a digit, an underscore or a closing
+bracket stands before it; a number closed by a full stop or a parenthesis at the start of a line,
+read at the indent of its first `1.` so a nested sub-step opens nothing, with a restarted `1.`
+opening a new item; both by the sequence rule, so a version number inside a sentence opens nothing
+and a skipped or repeated number stays in the item before it. When both yield items the one
+opening first is read and the other's count is kept; else the whole non-empty text, as ONE item. A
+marker followed by nothing but whitespace has no items, and both digit captures are bounded so a
+long digit run cannot raise. **What the reading accounts for:** it returns, as spans of the
+description, each item and each part it left out of every item (`leftOut`: the text before the
+first item, the body of a marker not read, the text from a heading that ended the list), so that
+from the first marker to the end everything is in an item, a named part, a marker or a list number
+- `unaccounted` is the remainder of that subtraction, empty unless a shape forgot a span. Beside
+it, three scans of the description itself, independent of how the reading was built: `mentions`
+(the marker word, any case, a space before the colon, anywhere it was not counted), `strayNumbers`
+(a number inside an item that could have opened one by its position and did not) and `openFence`.
+`reading_line(description)` is the line `audit-task.py`'s `add` (single or `--from-file`, dry run
+included) and `scope --description` print unless the reading is one parenthesised list covering the
+whole text and no scan found anything - a second marker, the other shape's count, each part left
+out with its start quoted, a restarted numbering, and each scan's count with its first instance
+quoted - and, when a marker word occurs but no item is read, it says no clause was read and why;
+the tests pin each clause both ways. `reading_summary` is the same as the `acceptanceReading` key of
+their `--json` results, which a description holding no item does not carry. **The check runs on the headless-writer route alone** (`executor.writerModel`
 set): the executor subagent filing through `submit` reads no clause, and the line says which route it
 is true of. `audit-lookup.py` builds the writer's closing
 line from it and `drive-phase.py` reads the writer's answer against it, which is why it lives below

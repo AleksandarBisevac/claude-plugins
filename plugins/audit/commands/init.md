@@ -350,8 +350,9 @@ next presentation - there is no separate question round for assumptions.
      `agents/audit-executor.md` states for the executor that later implements it.
    - **Each Acceptance clause states an observable condition.** A task's acceptance is
      the numbered items after an `Acceptance:` marker at the end of its `description`,
-     written `Acceptance: (1) ... (2) ...` - the form `scripts/governance/_clause_coverage.py`
-     reads - and on the headless-writer route (`executor.writerModel` set) the writer must
+     written `Acceptance: (1) ... (2) ...`, the marker spelled exactly so and opening its
+     line - the form `scripts/governance/_clause_coverage.py` reads, any other spelling
+     reading no clause - and on the headless-writer route (`executor.writerModel` set) the writer must
      answer every clause before the drive files its work, so a clause nothing can judge is
      answered with prose and proves nothing; the executor subagent filing through `submit`
      is asked for no clause. State each as one of: a command and the result

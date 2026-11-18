@@ -184,18 +184,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   closed by `.` or `)` at the start of a line, by the same rule that a number opens an item only
   after the one before it (a version number inside a sentence opens nothing), else the whole text
   after the marker as one item; a marker with nothing after it is still no item. The marker counts
-  only where it opens a line or a sentence and outside a code fence, so one named in a sentence or
-  in backticks no longer reads its tail as a clause; with two, the one holding a numbered list is
-  read when exactly one does, else the last. A `(1)` opens an item only at the list's start or
-  after whitespace, so `sys.exit(1)` inside a Markdown item no longer swallows the list; when both
-  shapes number items, the one opening first is read. A Markdown list's items open only at the
-  indent of its first `1.`, a restarted `1.` opens a new item, and the last item ends at a heading
-  line. A digit run too long for the interpreter's integer conversion no longer raises out of the
-  reader. `/audit:task add` (single and `--from-file`, dry run included) and `scope --description`
-  print one `acceptance:` line whenever the reading is anything but a parenthesised list covering
-  the whole text, naming a second marker, the other shape's item count, text left out of every
-  item and a restarted numbering; their `--json` results carry it as the optional
-  `acceptanceReading` key. **On upgrade:** on the headless-writer route a task whose list was
+  only where it opens a line - or, for the first marker alone, a sentence, so a list written as
+  one paragraph is read - and outside a code fence read as CommonMark reads one (a longer fence is
+  not closed by a shorter one, and a backtick run with a backtick after it on its line is an inline
+  span, no fence), so one named in a sentence, in backticks or opening a sentence inside a list no
+  longer reads its tail as a clause or cuts the list short; with two, the one holding a numbered
+  list is read when exactly one does, else the last. A `(1)` opens an item unless a letter, a
+  digit, an underscore or a closing bracket stands right before it, so `sys.exit(1)` inside a
+  Markdown item no longer swallows the list and `(1) a;(2) b` reads two items; when both shapes
+  number items, the one opening first is read. A Markdown list's items open only at the indent of
+  its first `1.`, a restarted `1.` opens a new item, and the last item ends at a heading line. A
+  skipped or repeated number stays in the item before it, and is reported. A digit run too long for
+  the interpreter's integer conversion no longer raises out of the reader, and a line holding
+  thousands of markers no longer costs it time growing with the line's length per marker
+  (`tests/test__clause_coverage.py`'s `cq13` bounds it). **Nothing is dropped or departed from without a
+  word:** the reading knows, as spans, each item and each part it left out of every item (the text
+  before the first item, the body of a marker not read, the text from a heading that ended the
+  list), and three scans of the description report what could be read another way - a list number
+  inside an item that is not its opener, the marker word anywhere it was not counted (another
+  case, a space before the colon, in backticks or a fence), and a fence never closed. `/audit:task
+  add` (single and `--from-file`, dry run included) and `scope --description` print one
+  `acceptance:` line unless the reading is a parenthesised list covering the whole text and no scan
+  found anything, naming a second marker, the other shape's item count, each part left out with
+  its start quoted, a restarted numbering and each scan's count with its first instance quoted; a
+  description whose marker word occurs but yields no item says no clause was read, and why. Their
+  `--json` results carry the reading as the optional `acceptanceReading` key for a description
+  holding an item. **On upgrade:** on the headless-writer route a task whose list was
   unread owes an answer per clause the next time the drive files its writer's work; the executor
   subagent route reads no clause, before or after. A `done` task is not re-read, and nothing a
   plan holds stops validating (`COMPATIBILITY.md` names the change).

@@ -1,0 +1,136 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test__clause_coverage.py": "pass",
+    "python3 tools/sweep-selftests.py tests/test__clause_coverage.py tests/test_audit_task.py tests/test_audit_lookup.py tests/test_drive_phase.py tests/test__refs.py tests/test__output_lints.py tests/test__deps.py --jobs 4": "pass",
+    "run-test-gate.py docs/audit/audit-plan.json SG1 --task SG1.29-ukq (no --record)": "pass",
+    "python3 tools/measure-context.py --gate": "pass",
+    "python3 tools/prove-gates.py --list": "pass",
+    "ruff check _clause_coverage.py test__clause_coverage.py": "pass",
+    "vermin -t=3.8- --no-tips --violations _clause_coverage.py test__clause_coverage.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-18T01:08:27Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__clause_coverage.py` in a throwaway tree at HEAD exited 1 with 17 of 71 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cr2 (house FAIL), cr3 (house FAIL), cs9b (house FAIL), cq1 (house FAIL), cq2 (house FAIL), cq3 (house FAIL), cq4 (house FAIL), cq5 (house FAIL) and 9 more: SELFTEST FAILED: 54/71 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "WHAT CHANGED. plugins/audit/scripts/governance/_clause_coverage.py. (1) CONSERVATION, built into the reading: _read_body now works on spans of the description, so acceptance_reading returns itemSpans and leftOut ([{kind, line, start, end, text}] - the text before the first item, the body of a marker not read, the text from a heading that ended the body) and region; _unaccounted subtracts marker spans [cut, body start), opener spans, item spans and left-out spans from the region [first marker's cut, end) and returns the non-whitespace remainder as unaccounted (empty for every committed description and every generated one; is_plain is false when it is not, and the line names it). (2) NO SILENT DEPARTURE, three scans of the description independent of the reading: mentions (_MARKER_WORD, any case, spaces before the colon, ASCII or full-width colon, at every place not counted - fences and backticks included), strayNumbers (_stray_numbers: inside an item, a (n) not glued to a word in a parenthesised list, a line-start number at the list's indent in a line-numbered one, either at any indent in unnumbered text; fenced ones skipped) and openFence. _departures adds one clause each, with count and first instance quoted (the instance's line from that point). describe_reading prints nothing only for is_plain AND no departure; a reading with no item prints 'no clause was read; ...' when the marker word occurs (a counted marker with no text says 'the marker on line N is followed by no text'). The 'other shape' note stays silent on an otherwise plain reading (cr6e, a parenthesised item with Markdown sub-steps) and is said on any printed line. (3) The corrections: _markers counts a sentence-opening marker only when no marker was counted before it (a marker inside a body ends it only when it opens a line); _PAREN_NUMBER is (?<![\\w)\\]}])\\((\\d{1,6})\\); _layout reads CommonMark fences (opening run of 3+ backticks or tildes indented at most three spaces, a backtick run whose info string holds a backtick is no fence; closing run of the same character at least as long with only spaces or tabs after it; unclosed runs to the end and is reported by line). (4) Bounded cost: line numbers and fence membership by bisect; the line-opener test is memoised per line and the sentence test reads backwards from the marker, so neither re-reads a line per marker (the unchanged reader took 32 s on ten thousand markers on one line; now the hostile table runs 0.02-0.60 s per input over two runs about fifteen minutes apart, the second under load; cq13 bounds each at 10 s). reading_summary keeps exactly {shape, items, line} and stays None for a description with no item (audit-task.py's _acceptance_key promises no key then, so the JSON form does not carry the 'no clause was read' line - the human line does). Module docstring: a WHAT THE AUTHOR IS TOLD paragraph; acceptance_reading's docstring states CONSERVATION and the scans.\n\nTESTS. tests/test__clause_coverage.py, new blocks after the existing ones (cq-measured, cq-conserve, cq-correct, cq-hostile): cq1-cq7 are (a)-(g) of the description, each the exact input measured; cq8 the conservation case over 3 list bodies x 11 disturbances = 33 generated descriptions (9 built to print nothing), the expectation (items, parts left out, the clauses owed, quiet) built from the segments and the subtraction counted off the generated text, never off the reader's spans, plus the reader's own remainder asserted empty; cq9 correction 1 with its paragraph twin; cq10 correction 2 with the glued twin (letter, underscore, digit, closing bracket - and that list prints nothing); cq11 correction 3 (inline span, longer backtick and tilde fences, text after a closing fence, an info string, an unclosed fence named); cq12 the quiet plain lists (own lines, one paragraph after a sentence, exit(1), rows[0](2), bold marker, the suite's DESCRIPTION); cq13 hostile inputs (empty, None, 42, a list, a dict, only the marker, marker at the end, ten thousand line markers / markers on one line / mentions / fences, a megabyte list of 90000 items, a megabyte line) - each returns a reading and a line within 10 s; cq14 the backtick mention, beside a real marker and alone; cq15 the remainder clause and its quiet twin. The suite: ALL PASS: 71/71 cases passed.\n\nEXISTING CASES CHANGED ON PURPOSE (all in tests/test__clause_coverage.py): cr2 asserted reading_line == '' for the marker in backticks and in a quotation; it now asserts the same empty reading AND a line saying no clause was read and naming the mention. cr3 asserted 'marker' not in the line for a marker inside a fence after the real list; it now asserts 'Acceptance markers' not in the line (no second marker counted) and that the line names '1 mention of the marker word not read as a marker, first \"Acceptance: none\"' - the property says the word anywhere not counted is reported, fences included. cs9b asserted DESCRIPTION, an empty marker 'Acceptance:  ' and no marker all print ''; DESCRIPTION and no marker still print '', the empty marker now prints a line starting 'acceptance: no clause was read' (the property: a marker word that yields no item says so). No case in tests/test_audit_task.py or tests/test_audit_lookup.py needed changing; both are green.\n\nTHE EVIDENCE PROBES (outputs in the session scratchpad's sg1.29/before and sg1.29/after). mine.py: before 16 WRONG (exit 1), after WRONG: 0 (exit 0). No expectation of mine.py is wrong about an author, in my reading. probe_clauses.py: every row now reads the count or prints a line; D3-D5 shapes (marker after a dash, semicolon, comma) read no item and print 'no clause was read; 1 mention ...' - correction 1 is not widened to read them, as the task lists only three corrections. probe_plans_z.py: its 'before' is a hand-written reconstruction of the reader from before the marker rule (old(): rfind of 'Acceptance:' and both patterns, no fence), not HEAD, and it reads only descriptions containing 'Acceptance:'; it now prints a line for P142.37-6yq and the inline-backtick extra shape reads old=2 new=2. Because that walk does not compare against HEAD, I wrote sg1.29/walk.py: HEAD's _clause_coverage.py (git show into a scratch directory beside a copy of _output.py) against the worktree's, over every node with an id and a string description in every .json under docs/ and examples/ (docs/audit/audit-plan.json including its proposals and bugs, docs/audit/phases/*.json, examples/acme-store/audit-plan.json and its phase shards): 176 files, 1775 descriptions, 0 unreadable. ITEMS CHANGED: 0 (count or text). Newly printed lines: 2 descriptions - P142.37-6yq (cancelled): 'no clause was read; 1 mention of the marker word not read as a marker, first \"Acceptance: (1) time python3 tools/sweep-selftests.py is ...\"' (the marker quoted inside a sentence); SG1.15-ukq: '5 items, read from a parenthesised list; 1 mention ... first \"Acceptance: the full sweep is green; ruff and vermin are ...\"' (a quotation). By clause: mention 2, no clause was read 1, list number 0, open fence 0, left out 0, unaccounted 0. Lines that printed before and changed wording: 4 - P131.1 gains '2 list numbers inside an item, not its opener, first \"(8) is now done by ...\"' (unnumbered text); SG1.8 gains '1 mention ... \"Acceptance:` marker in its description, ...\"' (the one backtick mention in the tree); SG1.24-ukq and SG1.29-ukq gain the named left-out body of their first marker and the reworded marker clause. Over every description: a line prints for 39; a mention sits in 3 descriptions holding a counted marker; a backtick mention in 1 description, which printed a line already, so the backtick rule as stated adds no newly printed line - it does not drown the signal and is left as stated.\n\nTHIS TASK'S OWN DESCRIPTION (SG1.29-ukq) - its line is now: 'acceptance: 8 items, read from a parenthesised list; 2 Acceptance markers, read the one on line 28 (the last); the body of the marker on line 4 is in no item: \"lists stay numbered. - ends the list there: 2 items of ...\" - held on the headless-writer route (executor.writerModel set): the writer answers each'. The marker on line 4 is the sentence-opening 'Acceptance:' inside example (a); it is the first marker, so by correction 1 it counts, its body (examples (a)-(g)) holds a parenthesised list after correction 2 ('(1) a;(2) b;(3) c'), both bodies hold a numbered list, the last is read, and the first body is named as left out.\n\nMUTATIONS. sg1.29/mutations.py in the session scratchpad (output sg1.29/mutations.out): throwaway copy of the tree, each anchor asserted to occur exactly once and the file asserted to differ, __pycache__ purged between rows, restore verified byte for byte, baseline 'ALL PASS: 71/71' with every one of the 19 case ids the rows name printed PASS; 'ROWS 25; MUTATIONS ALL CAUGHT', exit 0. Rows: each clause of the line (mention, stray number, open fence, left-out parts, remainder, second marker, no clause was read, plain-with-left-out), each conservation span (marker body, lead-in, after-heading, the subtraction forgetting left-out spans), the scans (case, space before colon), each correction (sentence-opener inside a body, whitespace-only before a number, backtick info string, shorter closing fence, text after a closing fence), and the ALLOW rows asked for: glued class widened to every character (cq10, cq12 red), mention scan reporting the counted marker (cq8, cq12 red), fence rule back to any three backticks (cq4, cq8, cq11 red), plus stray scan counting glued numbers, line numbers at any indent, and the first marker no longer opening a sentence. One first-run row expectation was wrong and is corrected with a comment: dropping the lead-in from leftOut leaves cr7 green because the remainder clause then names the same text - the safety net working; cq8 is the case that goes red.\n\nDEPENDANTS. drive-phase.py (imports task_clauses, check, gap_summary): unchanged API; items unchanged for every committed description, so no running task's clause numbering moves; test_drive_phase.py green. audit-task.py (reading_line, reading_summary): reading_line is still one line, reading_summary keeps its three keys and None for no item; the ar-block cases green (Do it. Acceptance: (1)... stays quiet). Its own _body is a local function, not this module's. audit-lookup.py (acceptance_reading's shape, markers, markerLine, restart; task_clauses; acceptance_items): meanings kept - markers counts counted markers, which now excludes a sentence-opener after the first; test_audit_lookup.py green (wp7/wp8 still read 3 items from '(1) ... (7) ... (3)'). tests/test__clause_coverage.py: changed as above. tests/test_audit_lookup.py: green, untouched. PLUGIN-BUILD-GUIDE.md: the _clause_coverage.py section rewritten to the new rules; the audit-lookup section's sentence on _acceptance_named still true. tests/test__refs.py: green (init.md's bullet still names _clause_coverage.py). plugins/audit/commands/init.md: one clause added (the marker spelled exactly so and opening its line); measure-context --gate GATE OK. plugins/audit/reference/manifest-conventions.md: the paragraph rewritten to the three corrections, plus a paragraph on what the line names. CHANGELOG.md: the Unreleased Changed entry rewritten so each sentence is true of the code (it described whitespace-only and sentence-opening rules this change replaces) - this file is last declared by SG1.30-ukq (pending), so that task will meet this wording. COMPATIBILITY.md (not in my files): its sentence 'only a marker opening a line or a sentence, outside a code fence, counts' stays true as a necessary condition; it does not say a sentence-opener counts only first - left, not mine.\n\nGATE RUNS. python3 tools/sweep-selftests.py tests/test__clause_coverage.py -> 1/1 files ok, 70 cases (before cq15 was added), and 71/71 by the suite directly. The orchestrator's gate, unrecorded: run-test-gate.py ... SG1 --task SG1.29-ukq -> GATE GREEN, exit 0. Final sweep: the seven named suites --jobs 4 -> '7/7 files ok, 3346 cases', exit 0. measure-context --gate exit 0 GATE OK; prove-gates --list exit 0; ruff 'All checks passed!'; vermin minimum 3.4, no violation.\n\nRED-FIRST COMMAND. The command after -- is the gate entry itself, python3 tools/sweep-selftests.py tests/test__clause_coverage.py (one house runner). On HEAD's code the suite's cq13 runs the slow hostile inputs (about 45 s measured by hand), well inside the deadline. It leaves out nothing of mine: every case I added or changed lives in this one suite.",
+    "descriptive": "The Acceptance reader now accounts, as spans, for everything after the first marker and names every part it left out and everything that could be read another way; over 1775 committed descriptions no item changed and two descriptions newly print a line."
+  },
+  "testsAdded": [
+    "cq1-cq7: the measured descriptions (a)-(g) each read the items a reader counts or print a line naming the mention, the left-out body, the stray number, or that no clause was read",
+    "cq8: conservation over 33 generated descriptions (3 bodies x 11 disturbances), expectation built from the generated segments, subtraction counted off the text; cq15: the remainder clause and its quiet twin",
+    "cq9-cq12: correction 1 with its paragraph twin, correction 2 with the glued twin, correction 3 (inline span, longer fence, tilde, trailing text, info string, unclosed fence), plain lists print nothing",
+    "cq13: hostile inputs return a reading and a line within a bound; cq14: a backtick mention beside a real marker and alone",
+    "changed: cr2, cr3, cs9b now assert the line names the mention / the empty marker"
+  ],
+  "casesAdded": [
+    [
+      "cq1",
+      "cq2",
+      "cq3",
+      "cq4",
+      "cq5",
+      "cq6",
+      "cq7",
+      "cq13",
+      "cq14",
+      "cr2",
+      "cr3",
+      "cs9b"
+    ],
+    [
+      "cq8",
+      "cq15"
+    ],
+    [
+      "cq9",
+      "cq10",
+      "cq11",
+      "cq12"
+    ]
+  ],
+  "claims": "claims:\n1 _clause_coverage.py: acceptance_reading returns leftOut/itemSpans/unaccounted (the return dict at the end of acceptance_reading); _departures names mentions, strayNumbers, openFence; describe_reading returns '' only for is_plain and no departure; manifest-conventions.md, PLUGIN-BUILD-GUIDE.md, CHANGELOG.md and the docstrings were rewritten to these lines\n2 sg1.29/mutations.py: 25 rows (one per clause, per conservation span, per correction, ALLOW rows for the glued class widened, the counted marker reported, the fence rule loosened) -> MUTATIONS ALL CAUGHT, restore verified, baseline 71/71; red before the change: SELFTEST FAILED: 54/70\n3 the class (a reading departing from the text, unsaid) is closed by the property, not shapes: the walk over 1775 descriptions shows 0 unaccounted remainders and 0 item changes; grep for the old rule wording ('open a line or a sentence', 'or after whitespace') over tracked .md/.py/.json: CHANGELOG fixed, COMPATIBILITY.md:328 left (true as a necessary condition, not my file), SG1.json and evidence returns left (history)\n4 n/a - no rule addressed to an agent\n5 hostile timing measured twice about fifteen minutes apart: 0.02-0.50 s, then 0.02-0.60 s under load; the case bounds at 10 s\n6 n/a - no guard\n7 numbers in this return carry their command (walk.py, mine.py, the sweep); the CHANGELOG names cq13 instead of a timing",
+  "stamp": "audit-stamp: {\"content\":\"sha256:7e15a2ae716087998d07a816164da4655a6eb9d7e1340dea155aad9dcd237673\",\"dirtyDigest\":\"sha256:2f12ced8c6dc8431d9a5fa8d3c6ec2f325966bc23b1d03282c0621137b835823\",\"dirtyPaths\":{\"CHANGELOG.md\":\"9efe5edd8c60539a\",\"PLUGIN-BUILD-GUIDE.md\":\"1fd8bebbf84c868b\",\"plugins/audit/commands/init.md\":\"91cfbe7372be6e96\",\"plugins/audit/reference/manifest-conventions.md\":\"55d74cbaad14847b\",\"plugins/audit/scripts/governance/_clause_coverage.py\":\"abe5a95e18bacb65\",\"tests/test__clause_coverage.py\":\"94ce041865ccf4b8\"},\"head\":\"b95ec42a\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/commands/init.md\",\"plugins/audit/reference/manifest-conventions.md\",\"plugins/audit/scripts/governance/_clause_coverage.py\",\"tests/test__clause_coverage.py\"],\"scopeDigest\":\"sha256:c201dd904baef07526988b5b41a950ab7ff543e556671a76f6f7ab116b5a2c9e\",\"v\":2}",
+  "floorGuard": {
+    "answer": "findings",
+    "basis": "1 move(s) that lower the bar across 6 file(s) of the diff; 3 change(s) to tests the task declared by case; 4 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/commands/init.md, plugins/audit/reference/manifest-conventions.md; 1 file(s) that could hold a move not compared: tests/test__clause_coverage.py",
+    "findings": [
+      {
+        "move": "suppression-added",
+        "path": "tests/test__clause_coverage.py",
+        "line": 922,
+        "side": "tree",
+        "what": "suppression added (noqa BLE001, new to the file): except Exception as exc:                               # noqa: BLE001"
+      }
+    ],
+    "declared": [
+      {
+        "move": "definition-changed",
+        "path": "tests/test__clause_coverage.py",
+        "line": 368,
+        "side": "base",
+        "what": "labelled check `cs9b the parenthesised form, an empty marker and no marker print no...` is gone from the tree copy"
+      },
+      {
+        "move": "definition-changed",
+        "path": "tests/test__clause_coverage.py",
+        "line": 396,
+        "side": "base",
+        "what": "labelled check `cr2 a marker in backticks or inside a quotation is no marker: no sh...` is gone from the tree copy"
+      },
+      {
+        "move": "definition-changed",
+        "path": "tests/test__clause_coverage.py",
+        "line": 412,
+        "side": "base",
+        "what": "labelled check `cr3 a marker inside a code fence after the real list opens nothing:...` is gone from the tree copy"
+      }
+    ],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/commands/init.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/reference/manifest-conventions.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test__clause_coverage.py",
+        "move": "definition-changed",
+        "reason": "a changed line lies outside its labelled checks and outside every inert addition (first at base line 366), and the code there - a helper, a table a case reads, a fixture, a statement before or around a case - is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "b95ec42abb3002b7479dfb7debfd7fed29282277"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-18T01:08:28Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}
