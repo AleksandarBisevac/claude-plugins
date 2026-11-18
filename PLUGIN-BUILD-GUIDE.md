@@ -4614,8 +4614,11 @@ the reuse path prints them again under their own literals — the ones `drive-ph
 and not *none*, and the reuse path says so.
 
 **An entry that names a path the identity leaves out is measured, never repeated, and "names" is
-read off its words.** `grades_left_out` reads each command the way a POSIX shell splits it —
-operators, pipes and a quoted `sh -c` body included (`_command_words`) — and a word names a
+read off its words.** `grades_left_out` reads each command the way the POSIX shell that runs it
+splits it (`_command_words`): a quoted word is one word with its quotes removed, a backslash
+escapes the character after it, so a path holding a space is one word however it is quoted, and a
+backslash-newline joins two lines. A word still holding a space or a quote is kept whole and also
+read again as a shell body, so a path inside a quoted `sh -c` body is a word too. A word names a
 left-out path when, taken against the project, it is that path, lies under it, or, for a file,
 ends in its base name (`_names_path`). A word only containing the name inside a longer file name
 does not, so a sweep listing `tests/test__evidence_io.py` stays repeatable; a left-out path that

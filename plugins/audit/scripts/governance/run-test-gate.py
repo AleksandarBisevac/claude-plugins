@@ -3079,37 +3079,50 @@ def _command_words(command):
     """`(words, problem)`: every word a POSIX shell would read in `command`,
     quoted bodies read through their own words as well, or `(None, why)`.
 
-    THE LEXER IS `gate_entry_commands`' OWN SETTINGS, and that function is not
-    called because of its fallback: an unbalanced quote is answered there with
-    the whitespace split, a guess, and its redirections drop the word they name
-    - so `< docs/audit/audit-plan.json` would read nothing. Here the guess is
-    refused and said, and an operator token is just a word that names no path.
+    READ AS THE SHELL THAT RUNS IT READS IT. Every entry is started under the
+    POSIX shell (`_proc_group.shell_invocation`), so a quoted word is one word
+    with its quotes removed and a backslash escapes the character after it -
+    `my\\ plan/x` is one path, as `_argv_of`, `gate_task_step` and
+    `command_runner` already split it. `gate_entry_commands` is not called: it keeps a backslash as an
+    ordinary character and answers an unbalanced quote with the whitespace
+    split, a guess, and its redirections drop the word they name - so `<
+    docs/audit/audit-plan.json` would read nothing. Here the guess is refused
+    and said, and an operator token is just a word that names no path.
 
-    A WORD STILL CARRYING WHITESPACE OR A QUOTE came out of a quoted body - `sh
-    -c '...'`, a nested quote - and is read again, so a path inside the body is
-    a word too. Every re-read strips a quote pair or splits on whitespace, so
-    the recursion ends.
+    A WORD STILL CARRYING WHITESPACE OR A QUOTE is kept as the one word the
+    shell reads, and is ALSO read again as a shell body - `sh -c '...'`, a
+    nested quote - so a path inside the body is a word too. Both, because which
+    word a program reads as a script cannot be told from the text: replacing
+    the word by its re-read split a quoted path holding a space into two words
+    that named nothing, and a step grading the ledger was repeated. A re-read
+    that cannot be split makes the whole command unsplittable. Every re-read
+    strips a quote pair, an escape, or splits on whitespace, so the recursion
+    ends.
+
+    THE COMMAND IS LEXED WHOLE, with each backslash-newline pair taken out
+    first, as the shell takes it out: a newline is whitespace between words and
+    a quote may span it, while a line read alone ends on an escape with nothing
+    after it. Inside single quotes a shell keeps that pair; taking it out there
+    too can only join a path, never part one.
     """
     if not isinstance(command, str):
         return None, "%s: it is %s, not text" % (UNSPLITTABLE,
                                                  type(command).__name__)
+    lexer = shlex.shlex(command.replace("\\\n", ""), posix=True,
+                        punctuation_chars=True)
+    lexer.whitespace_split = True
+    try:
+        tokens = list(lexer)
+    except ValueError as exc:
+        return None, "%s (%s)" % (UNSPLITTABLE, exc)
     words = []
-    for line in command.splitlines():
-        lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
-        lexer.whitespace_split = True
-        lexer.escape = ""
-        try:
-            tokens = list(lexer)
-        except ValueError as exc:
-            return None, "%s (%s)" % (UNSPLITTABLE, exc)
-        for token in tokens:
-            if re.search(r"[\s'\"]", token):
-                inner, problem = _command_words(token)
-                if inner is None:
-                    return None, problem
-                words.extend(inner)
-            else:
-                words.append(token)
+    for token in tokens:
+        words.append(token)
+        if re.search(r"[\s'\"]", token):
+            inner, problem = _command_words(token)
+            if inner is None:
+                return None, problem
+            words.extend(w for w in inner if w != token)
     return words, None
 
 
@@ -3118,7 +3131,9 @@ def _word_rels(word, roots):
 
     An absolute word under one of `roots` is taken relative to it; any other
     word is already relative to the project, which is the directory a gate
-    entry runs in. Backslashes are read as separators, as the lexer kept them.
+    entry runs in. A backslash the shell left in the word - one written inside
+    single quotes, or doubled - is read as a separator, because a program on
+    Windows handed that word reads it as one.
     """
     rels = []
     for piece in _WORD_PIECES.split(word.replace("\\", "/")):

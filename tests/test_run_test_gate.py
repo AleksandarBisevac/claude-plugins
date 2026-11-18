@@ -7936,6 +7936,107 @@ def _left_word_cases(check):
           and "cannot be split into words" in why_line
           and "MEASURED and not repeated" in why_line)
 
+    _spaced_word_cases(check, root, excluded)
+
+
+def _spaced_word_cases(check, root, excluded):
+    """A path holding a space is one word once a shell has read its quoting.
+
+    CI's spaced leg went red on `lw8`: the case quoted an absolute path under a
+    temp directory whose name held a space, and the entry was read as naming
+    nothing - so a step grading the evidence would have been repeated from a
+    stored verdict, the unsafe direction. These build the space themselves,
+    under the fixture root, so they go red on every leg rather than only on the
+    one that happens to put a space in TMPDIR. Nothing is created on disk: what
+    is asked is how an entry's text becomes words.
+    """
+    spaced = os.path.join(root, "s p")
+    row = os.path.join(spaced, "docs", "audit", "evidence", "x.jsonl")
+    plan = os.path.join(spaced, "docs", "audit", "audit-plan.json")
+    absolute = [("dq", "python3 v.py \"%s\"" % plan),
+                ("sq", "cat %s" % shlex.quote(row)),
+                ("esc", "cat %s" % row.replace(" ", "\\ ")),
+                ("body", "sh -c 'cat \"%s\" | wc -l'" % row)]
+    got = M.grades_left_out(absolute, excluded, roots=[spaced])
+    check("lw10 under a project whose path holds a space, an absolute path in "
+          "double quotes, in single quotes, with its space escaped, and inside "
+          "a quoted shell body each name the left-out record it resolves to: "
+          "%r" % (got,),
+          got == [("dq", "docs/audit/audit-plan.json"),
+                  ("sq", "docs/audit/evidence"),
+                  ("esc", "docs/audit/evidence"),
+                  ("body", "docs/audit/evidence")])
+
+    # THE OVER-FIRE DIRECTION. Treating every quoted or spaced word as left out
+    # passes lw10 and turns the repeat off for any project under such a path.
+    plain = [("src", "python3 v.py \"%s\"" % os.path.join(spaced, "src", "a b.py")),
+             ("suite", "python3 tools/sweep-selftests.py %s"
+              % shlex.quote(os.path.join(spaced, "tests",
+                                         "test__evidence_io.py")))]
+    got = M.grades_left_out(plain, excluded, roots=[spaced])
+    check("lw11 ...and a quoted absolute path under that project naming a "
+          "source file or a suite named after the evidence names nothing: %r"
+          % (got,),
+          got == [])
+
+    # A RELATIVE PATH WITH A SPACE: the project keeps its plan in a directory
+    # whose own name holds one, so the left-out paths do too.
+    rel = ["my plan/audit-plan.json", "my plan/evidence"]
+    dirs = ["my plan/evidence"]
+    named = [("dq", "python3 v.py \"my plan/audit-plan.json\""),
+             ("esc", "cat my\\ plan/evidence/x.jsonl"),
+             ("sq", "ls 'my plan/evidence'"),
+             ("body", "sh -c 'python3 v.py \"my plan/evidence/x.jsonl\"'")]
+    got = M.grades_left_out(named, rel, directories=dirs)
+    check("lw12 a relative path with a space, double-quoted, escaped, "
+          "single-quoted or quoted inside a shell body, names the left-out "
+          "record: %r" % (got,),
+          got == [("dq", "my plan/audit-plan.json"),
+                  ("esc", "my plan/evidence"),
+                  ("sq", "my plan/evidence"),
+                  ("body", "my plan/evidence")])
+    # Unquoted, a shell reads `my` and `plan/evidence/x.jsonl` - two paths, and
+    # neither is under the left-out directory. A reading by substring, or one
+    # that rejoins words, would name it.
+    apart = [("two", "cat my plan/evidence/x.jsonl"),
+             ("near", "cat \"my plan-old/evidence/x.jsonl\"")]
+    got = M.grades_left_out(apart, rel, directories=dirs)
+    check("lw13 ...while the same path unquoted is two words a shell reads as "
+          "two other paths, and a quoted sibling directory is not it: %r"
+          % (got,),
+          got == [])
+
+    unsplit = [("open", "cat \"%s" % row), ("tail", "cat %s\\" % row)]
+    got = M.grades_left_out(unsplit, excluded, roots=[spaced])
+    lines = [M.left_out_line(name, why) for name, why in got]
+    check("lw14 an entry holding a spaced path that a shell cannot split - a "
+          "quote left open, an escape with nothing after it - is read as naming "
+          "a left-out path, and the line it prints says it is MEASURED because "
+          "it cannot be read: %r" % (lines,),
+          [name for name, _why in got] == ["open", "tail"]
+          and len(lines) == 2
+          and all("cannot be split into words" in ln
+                  and "MEASURED and not repeated" in ln for ln in lines))
+
+    # A BACKSLASH BEFORE A NEWLINE joins two lines into one, for a shell. Once a
+    # backslash is read as an escape, an entry wrapped that way must still be
+    # read: split line by line, the first half has an escape with nothing after
+    # it and the whole entry is measured on every run; lexed whole with the pair
+    # kept, the path broken across the lines names nothing, a stored verdict over
+    # the ledger repeated.
+    wrapped = [("wrap", "python3 v.py \\\n  %s" % shlex.quote(row)),
+               ("cut", "cat docs/audit/\\\nevidence/x.jsonl"),
+               ("lines", "true\ncat \"%s\"" % row),
+               ("quoted", "printf '%%s\\n' \"a\nb\" docs/audit/evidence/x.jsonl")]
+    got = M.grades_left_out(wrapped, excluded, roots=[spaced],
+                            directories=["docs/audit/evidence"])
+    check("lw15 a multi-line entry is read as a shell reads it - a backslash "
+          "before a newline joins the lines, a path broken across them is one "
+          "path, and a quote may span them: %r" % (got,),
+          got == [("wrap", "docs/audit/evidence"), ("cut", "docs/audit/evidence"),
+                  ("lines", "docs/audit/evidence"),
+                  ("quoted", "docs/audit/evidence")])
+
 
 def _reuse_cases(check):
     """A verdict already measured on these bytes, and everything that must stop it.

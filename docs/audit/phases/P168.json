@@ -1543,7 +1543,7 @@
     {
       "id": "P168.14-icj",
       "title": "The drive's comments describe the read-back it now performs, a step name cannot break the signal line, and a repeated gate's timing says what it repeats",
-      "status": "in_progress",
+      "status": "done",
       "description": "Findings of the review of the task that changed how the drive reads a background gate back. Two docstrings in the drive still describe the behaviour that task replaced. (a) The docstring of the function that picks a gate's red lines says a background gate's red reaches its reader as a repeat every time, which is the reason it gives for filtering the repeat banner; a background red is now read from its own row and carries no banner, and the filter still serves a second ask that repeated a red. (b) The module docstring says of a background gate that the verdict is that row's, repeated rather than measured again; now a red is acted on as its row records it, and a green is asked again, repeating each step that grades the tree and measuring an entry that names a path the identity leaves out. Correct both to what the code does, and then read every other comment and docstring in the drive that speaks of reading a gate back, repeating a verdict or measuring again, and correct any that the same change made untrue; list the ones you read in the outcome, changed or not. (c) The read-back clause embeds each measured step's name, which is the gate entry's command text, unbounded: a long command makes the signal line drop the whole clause to a count, and a command holding the field separator is joined into a separator-joined field. Clip each step name in that clause to a fixed width and replace the separator inside names, with a case for a long name and one for a name holding the separator; the printed text under --explain keeps the whole name. (d) When a task gate's newest row is a repeat, the drive says the gate stage of the task's timing was not recorded because the row has no readable start. A repeated row names the run it repeats; the stage should be the cost of the ask itself with a basis that says the verdict was repeated from that run, or be left out with that same sentence, whichever the timing record's rules already allow - decide from the timing helper's docstring, state which, and case it. Dependants you answer for: the signal line's field rules and their existing cases; /audit:status, which prints the stages the drive records. Acceptance: (1) the two docstrings state the present behaviour and no comment in the drive contradicts the read-back as it now is; (2) a long step name and one holding the separator each leave the signal line parseable, by case; (3) a repeated task gate leaves either a stage with an honest basis or one sentence naming the run it repeats, by case; (4) no case added passes with its feature removed.",
       "files": [
         "plugins/audit/scripts/governance/drive-phase.py",
@@ -1568,14 +1568,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "45eb0228cad7",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "drive-phase.py: (a) the gate_red_lines docstring now says a gate run inside `next` that repeated a red opens with the banner, and that a background red is read off its row by recorded_red with no banner. (b) The module docstring now says the background row is read back by read_back. A red is acted on as the row records it. A green is asked again, which repeats each step that grades the tree while nothing it graded has moved, and measures an entry naming a path its identity leaves out. A comment in run_followers had the same fault and is fixed: it said a background red reaches it as a repeat. (c) New SIGNAL_STEP_BYTES, SIGNAL_FORMS_KEY, signal_step_name and say_clause. step_seconds takes a name speller. repeat_said returns (clause, signal form); read_back records both. signal_line carries a clause's signal form when one is recorded. Each name in the signal form goes through _flat, has `; ` replaced, and past the width is cut to head...tail. The plain did-line and --explain keep every name whole. Measured: with names unclipped, the clause's fixed text alone (with the run id) is longer than the room fit_rest leaves on the sign-off step. So clipping alone could not keep the clause on the line, and the signal form also drops the run id and the repeated names; it keeps a count of the repeated steps. (d) Decision: leave the stage out. _task_timing.stage_problems requires an ISO startedAt, a repeat row records none, and the module rule is that a missing source is named, never read as zero. row_stages now answers a verdictSource=reused row with `evidence row <R> repeated the verdict of run <S> rather than measuring it, and records no start of its own`. Comments I read that speak of reading a gate back, repeating a verdict or measuring again, found by what they say. Changed: module docstring, gate_red_lines, run_followers comment, row_stages, repeat_said, read_back, signal_line, step_seconds. Unchanged and still true: the set-aside paragraph of the module docstring; the gate-red-base-unknown options comment; GATE_REUSED_BANNER comment; ledger_unread; the reviewer-redispatch docstring; gate_row; gate_row_read; verdict_taken; note_basis; the base-mark block comment; unmeasurable_bound; red_runs; base_reading_for and its bound comment; base_gate; the scope-run rerun docstring; record_gate; task_gate; follow_red_gate; the gate_step queue_row comment; the GATE_LAUNCH_KEY block comment; chosen_task_gate; unrepeatable_red; recorded_red; GATE_LEFT_OUT; repeat_reason; background_gate; the measure-base and redo answer comments; chosen_phase_gate. tests/test_drive_phase.py: helpers _rb_signal_back and _rb_pieces, and cases rd8, rd9 and rd10 in a new _readback_signal_cases, run by the rd-block. PLUGIN-BUILD-GUIDE.md: the read-back paragraph describes the signal form, and the timing paragraph describes the repeat sentence. Commands, each exit 0: `python3 tools/sweep-selftests.py tests/test_drive_phase.py` -> `1/1 files ok, 1023 cases`; `python3 tools/sweep-selftests.py tests/test__deps.py` -> 284 cases ok; `python3 tools/sweep-selftests.py tests/test__output_lints.py` -> 183 cases ok; `ruff check` and `vermin -t=3.8-` on the two .py files. Mutations were made in memory: the source was compiled under its real path in a scratch probe, and the checkout was not written. No clip turns rd8 and rd9 red. No separator replacement turns rd9 red. Forms unread turns rd8 and rd9 red. No repeat branch turns rd10 red. Unmutated, all three pass. Not run: the --spaced sweep; the new cases build no command from a new path. Dependants: the signal line's field rules are unchanged, since the head, the ` | ` fields and the read-clause handling are untouched, and the sn blocks pass inside the full sweep. /audit:status prints recorded stages: no stage's shape changed, a repeat row built no stage before and builds none now, and only the did-line sentence differs. The other importers of drive-phase.py use none of the changed signatures: a grep for repeat_said and step_seconds over plugins, tests, tools and .claude/hooks finds only drive-phase.py. PLUGIN-BUILD-GUIDE.md's dependants are basename and prose references to the guide; no heading or file name changed.",
+        "descriptive": "The read-back clause now stays on the signal line with clipped, separator-free step names, a repeated background gate row says which run it repeats instead of claiming an unreadable start, and the drive's docstrings describe the read-back as it is."
       },
       "startedAt": "2026-11-18T12:45:00Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T13:30:19Z",
+      "verifiedBy": [
+        "rd8: a measured step whose name is longer than the line leaves the read-back clause on the signal line, clipped, within the bound, with three fields, and --explain names it whole",
+        "rd9: a measured step whose name holds `; ` is one clause on the signal line, both halves in one piece, and --explain names it whole",
+        "rd10: a background row that repeated an earlier verdict leaves no gate stage of its own, and one sentence naming that row and the run it repeats, never an unreadable start"
+      ],
       "notes": [
         {
           "at": "2026-11-18T08:53:15Z",
@@ -1585,7 +1589,73 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T13:07:05Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1322000,
+            "startedAt": "2026-11-18T12:45:03Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T13:14:21Z.5872f2, ending at its startedAt",
+            "kind": "selection",
+            "ms": 36397,
+            "runId": "2026-11-18T13:14:21Z.5872f2",
+            "startedAt": "2026-11-18T13:07:25Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T13:14:21Z.5872f2",
+            "kind": "gate",
+            "ms": 379433,
+            "runId": "2026-11-18T13:14:21Z.5872f2",
+            "startedAt": "2026-11-18T13:08:02Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T13:22:17Z.5d23f2",
+            "kind": "wait",
+            "ms": 20000,
+            "startedAt": "2026-11-18T13:19:16Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T13:22:17Z.5d23f2",
+            "kind": "base",
+            "ms": 161549,
+            "runId": "2026-11-18T13:22:17Z.5d23f2",
+            "startedAt": "2026-11-18T13:19:36Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T13:28:03Z.b30089",
+            "kind": "wait",
+            "ms": 6000,
+            "startedAt": "2026-11-18T13:22:33Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T13:28:03Z.b30089, ending at its startedAt",
+            "kind": "selection",
+            "ms": 24182,
+            "runId": "2026-11-18T13:28:03Z.b30089",
+            "startedAt": "2026-11-18T13:22:39Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T13:28:03Z.b30089",
+            "kind": "gate",
+            "ms": 298533,
+            "runId": "2026-11-18T13:28:03Z.b30089",
+            "startedAt": "2026-11-18T13:23:04Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-18T13:30:02Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 102000,
+            "startedAt": "2026-11-18T13:28:20Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 45eb0228cad7",
+            "kind": "commit",
+            "ms": 1553,
+            "startedAt": "2026-11-18T13:30:16Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T12:45:00Z"
       },
       "reviewPerTask": "signals",
@@ -1593,12 +1663,24 @@
         "runId": "2026-11-18T13:28:18Z.d99eda",
         "status": "passed",
         "at": "2026-11-18T13:28:18Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "45eb0228cad7",
+        "at": "2026-11-18T13:30:19Z",
+        "return": "docs/audit/evidence/returns/P168.14-icj/20261118T124500Z.reviewer.json"
+      },
+      "redFirst": {
+        "at": "2026-11-18T13:07:03Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_drive_phase.py` in a throwaway tree at HEAD exited 1 with failing cases rd8 (house FAIL), rd9 (house FAIL), rd10 (house FAIL), but the fix run could not be made: the run timed out after 189 s and its process group was torn down - SELFTEST FAILED: 1020/1023 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "could-not-prove",
+        "source": "red-first-helper"
       }
     },
     {
       "id": "P168.15-icj",
       "title": "A gate entry's path words are read as a shell reads them, so a quoted path with a space still names the record it resolves to",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The runner decides which gate entries name a path the content identity leaves out by reading each entry's path words. CI's stress leg, which runs the suites under a temp directory whose path holds a space, went red on the case that hands the runner an absolute path under the project, quoted as a shell word: the entry was read as naming nothing. It reproduces here with python3 tools/sweep-selftests.py --spaced tests/test_run_test_gate.py. So a gate entry that spells a path with a space in it, quoted as any shell requires, is not recognised as naming the plan or the evidence, and the step would be repeated from a stored verdict when it should be measured - the unsafe direction. Find where the entry's text becomes words and make it read the command the way a shell does: a quoted word is one word with its quotes removed, an escaped space stays inside its word, and text that cannot be split as a shell would (an unbalanced quote) is treated as naming a left-out path, since what cannot be read cannot be shown to be safe to repeat - say so on the line the runner prints for it. Check the same reading for a relative path with a space and for a path inside a quoted shell body (sh -c '...'), which an existing case covers for the unspaced spelling. Dependants you answer for: every existing case of the left-out reading, by value; the line the runner prints for a left-out entry; the drive's read-back, which says which steps were measured again and why. Acceptance: (1) the stress-leg command above is green; (2) a quoted absolute path, a quoted relative path and an escaped-space path under the project each name the left-out record they resolve to, by case, in a directory whose path holds a space; (3) an entry that cannot be split is measured, not repeated, with its reason printed; (4) no case added passes with its feature removed.",
       "files": [
         "plugins/audit/scripts/governance/run-test-gate.py",
@@ -1621,14 +1703,14 @@
       "risk": "med",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-18T13:30:20Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -1643,7 +1725,17 @@
           "reads": "plugins/audit/scripts/governance/run-test-gate.py",
           "text": "declared to answer a reading: PLUGIN-BUILD-GUIDE.md reads plugins/audit/scripts/governance/run-test-gate.py - a section headed by its path"
         }
-      ]
+      ],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-18T13:30:20Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-18T13:54:10Z.3d33b9",
+        "status": "passed",
+        "at": "2026-11-18T13:54:10Z"
+      }
     }
   ],
   "request": "Brzina razvoja postaje merena metrika: task gate pokrece samo pogodjene testove, ceo suite ide na sign-off-u faze. Izmereno: task gate je 93% razlike prema obicnoj sesiji, a polovina toga je ponovljeno merenje vec zelenog stabla.",
