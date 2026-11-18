@@ -2091,8 +2091,8 @@
       "P168.8-icj",
       "P168.14-icj",
       "P168.15-icj",
-      "P168.16-icj",
       "P168.17-icj",
+      "P168.16-icj",
       "P168.20-icj"
     ],
     "QUICKSTART.md": [
@@ -14792,6 +14792,29 @@
       ],
       "taskId": "P166.1",
       "fixedIn": "8cb47b74c523",
+      "notes": null
+    },
+    {
+      "id": "BUG-35-icj",
+      "title": "Low findings from the reviews of the phase that made a task's gate measured once",
+      "status": "open",
+      "severity": "low",
+      "reportedAt": "2026-11-18T16:34:43Z",
+      "reportedBy": null,
+      "description": "Six low review findings of that phase, carried here so one task of the low batch answers them together. The verdict binding trusts a row's list of entries left to the phase gate as history and does not ask whether the phase gate still holds them, and refuses a legitimate repeat when that list changed under one key. A part-repeated run can record no-checks where the same tree measured whole recorded passed. A gate entry spelled like a joined step is refused when a verdict is bound, not when the entry is written. In the drive's read-back: the second left-out sentence it matches is guarded by no case, a red read back from a whole-verdict repeat names no failing lines and lists a muted step's, a joined step measured through one of its derived parts is reported as not repeated, a gate stage can be queued twice across a close and reopen, and the reason it prints when the reuse key moved says the tree identity moved though a change to the plan's meta now moves it too. In the repository's tools: the scan for a confirm click followed by a fixed wait does not report a click followed directly by a read.",
+      "repro": null,
+      "expected": null,
+      "actual": null,
+      "files": [
+        "plugins/audit/scripts/governance/_verdict_binding.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        "plugins/audit/scripts/manifest/_manifest_rules.py",
+        "plugins/audit/scripts/manifest/audit-task.py",
+        "tools/ui-tests/confirm-write.test.mjs"
+      ],
+      "taskId": null,
+      "fixedIn": null,
       "notes": null
     }
   ],

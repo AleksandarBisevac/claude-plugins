@@ -22,7 +22,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "P168-R1",
@@ -89,7 +89,9 @@
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/_manifest_rules.py:626-628; plugins/audit/scripts/manifest/audit-task.py:15429",
         "issue": "The diff reserves a second step-name spelling (`<entry> + affected/<arm>: <suites>`), refusing it only at bind time (`_verdict_binding.gate_mismatch`, vb42). The write-time guards that refuse a gate entry starting with `DERIVED_STEP_PREFIX` were not widened, so a plan can carry such an entry and learns it cannot bind only when a commit is attempted. The executor named this as LEFT, but the class (a reader of a step name) is open on the write side of the same boundary.",
-        "resolution": "Use `_evidence_io.step_parts(entry) != (entry, [])` beside `is_derived_step` in `_manifest_rules.py:628` and `audit-task.py:15429`, with the message naming JOINED_STEP_SEPARATOR."
+        "resolution": "Use `_evidence_io.step_parts(entry) != (entry, [])` beside `is_derived_step` in `_manifest_rules.py:628` and `audit-task.py:15429`, with the message naming JOINED_STEP_SEPARATOR.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P168-R8",
@@ -146,21 +148,27 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-test-gate.py (part_reused_result)",
         "issue": "A part-repeated run can record no-checks where the same tree measured whole recorded passed: the measured half's own count decides the status, and a repeated green step's checks are counted nowhere. Read only.",
-        "resolution": "Count a repeated step's recorded checks toward the run's total, or state that a part-repeated run's word comes from the measured half alone; one case."
+        "resolution": "Count a repeated step's recorded checks toward the run's total, or state that a part-repeated run's word comes from the measured half alone; one case.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P168-R14",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_verdict_binding.py:342-348 (gate_mismatch)",
         "issue": "The binding trusts a row's leftToPhaseGate as history: it takes the listed entries out of the declaration without asking whether the phase gate still holds them, so an entry later dropped from the phase gate runs nowhere for that task and the commit still binds. A legitimate repeat is also refused when the left-out set changed under one key. Read only.",
-        "resolution": "Ask the phase gate, as it stands at the bind, for each listed entry; carry to the low batch."
+        "resolution": "Ask the phase gate, as it stands at the bind, for each listed entry; carry to the low batch.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P168-R15",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py:6787, :6330, :6595-6601, :6716-6723, :6574-6592",
         "issue": "Four small faults in the read-back: the sentence for a repeated gate row says its stage was not recorded while the same step records the stage of the run it repeated; the second left-out form the drive matches (an entry that cannot be read) is guarded by no case though a comment says three cases guard it (a mutation of it stayed green); read_back's headline says the verdict acted on is the launched run's, which holds for a red only; a red read back from a whole-verdict repeat names no failing lines and lists a muted step's.",
-        "resolution": "With the sweep fix where the lines are the same; the rest to the low batch."
+        "resolution": "With the sweep fix where the lines are the same; the rest to the low batch.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P168-R16",
@@ -177,7 +185,9 @@
         "severity": "low",
         "file": "tools/measure-affected-miss.py:700, :974-979, :690-696; tools/ui-tests/confirm-write.test.mjs:169-176; CONTRIBUTING.md:593",
         "issue": "Five small faults in the repo's tools: the branch that still sweeps a commit whose default selection is the full set when the comparison selector is narrower has no case (reverting its guard stays green); the window line says the full-set commits cannot miss, which holds for the default selector only; a comparison selector that cannot be read discards the default selector's measurement for that commit; the scan for a confirm click followed by a fixed wait does not report a click followed directly by a read, and its list of what it cannot see does not say so; CONTRIBUTING.md says the selector's docstring carries the command and date, which sit in a comment.",
-        "resolution": "The first three with the case above, in the same two tools; the rest to the low batch."
+        "resolution": "The first three with the case above, in the same two tools; the rest to the low batch.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P168-R18",
@@ -204,34 +214,52 @@
         "severity": "low",
         "file": "plugins/audit/scripts/governance/run-test-gate.py (_holds_name, _quote_removed); plugins/audit/scripts/governance/drive-phase.py:6677-6688, :1697-1745; tests/test_run_test_gate.py (ru46)",
         "issue": "Cheap places the reading still reads less than a shell: case is not folded though the host file systems are case-insensitive; a backslash a shell would drop before a letter; a directory that holds only left-out files (the shards' directory) named as a directory. In the drive: a joined step measured through one of its derived parts is reported as not repeated; a gate stage can be queued twice across a close and reopen. Case ru46's first conjunct cannot fail under either single mutation.",
-        "resolution": "The runner's three and ru46 with the fix above; the drive's two to the low batch."
+        "resolution": "The runner's three and ru46 with the fix above; the drive's two to the low batch.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P168-R21",
         "severity": "med",
         "file": "CHANGELOG.md:88-93 and the Unreleased section's sentences on the reuse identity",
         "issue": "The unreleased changelog describes a reading the code no longer has: its Fixed entry says a gate entry is read as shell words and that a word names a left-out file when it is that file, which stopped being true when the reading became a whole-name search of the command's text. It says nothing of the plan's meta being part of the reuse key (one re-measurement for a row recorded earlier), of a command naming one of the plugin's own scripts grading the plan, or of a phase-gate arm step being asked by the command that runs. Handed back by the executor whose task did not hold the file.",
-        "resolution": "Rewrite the entry to what the released behaviour will be, one entry for the reading as it now stands rather than a history of its three versions.",
-        "fixTask": "P168.21-icj"
+        "resolution": "fixed in P168.21-icj (0a1506ca8dad): Rewrite the entry to what the released behaviour will be, one entry for the reading as it now stands rather than a history of its three versions.",
+        "fixTask": "P168.21-icj",
+        "commit": "0a1506ca8dad",
+        "status": "fixed"
       },
       {
         "id": "P168-R22",
         "severity": "low",
         "file": "CHANGELOG.md:97-99",
         "issue": "\"a directory counts only with a path separator beside its name, so `-k journal` is not the journal directory\" is true only for a left-out directory that exists on disk when the gate is asked. `reuse_identity` passes `directories=[p for p in excluded if os.path.isdir(...)]`, and a path not in that list is read as a file whose bare last component grades. On a plan whose evidence or journal directory has not been created yet, a bare `-k journal` or `evidence` word grades. PLUGIN-BUILD-GUIDE.md says \"a path that is a directory on disk\"; the changelog drops that qualifier.",
-        "resolution": "Say \"a left-out directory that exists\" (or \"a directory on disk\"), matching the guide's wording."
+        "resolution": "Say \"a left-out directory that exists\" (or \"a directory on disk\"), matching the guide's wording.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       },
       {
         "id": "P168-R23",
         "severity": "low",
         "file": "CHANGELOG.md:105-107",
         "issue": "\"listed once, beside `UNREADABLE` in `run-test-gate.py` and in `PLUGIN-BUILD-GUIDE.md`'s section\" says once and names two places. The guide's section restates the list (variable, glob, ancestor directory, `cd`, brace expansion, ANSI-C quoting, assembled name, a suite opening the plan's phases/tasks/bugs). The sentence is still a pointer and not a copy, but `once` contradicts the two locations.",
-        "resolution": "Say \"is listed beside `UNREADABLE` in `run-test-gate.py`, and the guide's run-test-gate.py section carries the same list\", or drop \"once\"."
+        "resolution": "Say \"is listed beside `UNREADABLE` in `run-test-gate.py`, and the guide's run-test-gate.py section carries the same list\", or drop \"once\".",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
+      },
+      {
+        "id": "P168-R24",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/run-test-gate.py:3463, :3243-3276, :3056-3061; plugins/audit/scripts/governance/drive-phase.py:6735-6750; tests/test_run_test_gate.py (ru2, ru3, ru47)",
+        "issue": "Six lows from the review of the commit that put the plan's meta in the reuse key. With --tree the key holds the project's plan meta and not the member tree's own copy, so an edit to that copy alone leaves the key where it was. A shards directory reached through a symlink of another name is searched under its target's name only. The comment beside the recorder's meta keys says every other writer of meta is a verb an operator runs, while a red full run couples a test on its own. A plan whose meta holds a machine path has it scrubbed by the first recorded write, which moves the key once. The drive's reason for a moved key says the tree identity moved, though a meta edit now moves it too. Cases ru2, ru3 and ru47 compare keys over plans whose meta differs, so the meta half alone now makes them unequal and they no longer guard the gate half, which other cases still do.",
+        "resolution": "One task of the low batch.",
+        "status": "carried",
+        "carriedTo": "BUG-35-icj"
       }
     ],
-    "outcome": "[findings: 23 - 0 high, 12 med, 11 low; 14 with a recorded fix commit]"
+    "outcome": "[findings: 24 - 0 high, 12 med, 12 low; 15 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "A task's gate is measured once: a second ask repeats each step whose inputs did not change and names the run it came from, the drive acts on the verdict of the run it launched and does not replace a red with a later green, entries the project leaves to the phase gate are not run by a task's recorded gate, the declared and affected suites run as one call, and this repository's selector no longer reaches most of the tree through one text-only edge. What may be repeated is decided by one reading: a whole name of the plan, its shards, the evidence record or one of the plugin's own scripts anywhere in the command that runs, with the plan's meta in the key. Reviewed in four rounds; every med finding and each regression the phase introduced was fixed in the phase (tasks P168.9-icj to P168.21-icj) and the lows are carried to BUG-35-icj. CI was green on ff6456dd, before the last two tasks; it runs again on the landed commit. Per-task reviewer answers continued over: P168.9-icj intent diverges: Owner, 2026-11-18: 'ok onda radi autonomno i samostalno, nemoj mi otvarati promptove koji ce blokirati tvoj rad dok ti se ne javim licno ponovo.' The divergence is the reviewer's med finding (one more case, au32, shares an append log between wave members); it is filed and gets its own fix task in this phase before sign-off.; P168.11-icj intent diverges: Owner, 2026-11-18: 'ok onda radi autonomno i samostalno, nemoj mi otvarati promptove koji ce blokirati tvoj rad dok ti se ne javim licno ponovo.' The divergence is the reviewer's med finding (two confirm-then-wait sites left in an imported check file outside the task's declared file); it is filed and has its own task in this phase, P168.13-icj.",
   "tasks": [
     {
       "id": "P168.1",
@@ -2549,7 +2577,7 @@
     {
       "id": "P168.21-icj",
       "title": "The unreleased changelog describes the repeat reading that ships: whole names in the command's text, the plugin's own scripts, and the plan's meta in the key",
-      "status": "in_progress",
+      "status": "done",
       "description": "CHANGELOG.md's Unreleased section describes how the gate runner decides that a step may be repeated, and three commits of this phase changed that after the sentences were written. A changelog entry is a claim a user reads at upgrade; it must describe the behaviour that ships, not the first of three versions of it.\n\nACCEPTANCE.\n1. The Fixed entry about a gate step listing a suite named after the evidence or journal module, and every sentence of the Unreleased section about the reuse identity, the left-out reading or a repeated step, says what the code at this task's base does. Read the code, not the earlier entries: plugins/audit/scripts/governance/run-test-gate.py around the comment above UNREADABLE, _holds_name, _search_names, plan_spellings, meta_part, RECORDER_META, plugin_script_names, _grading_steps, reuse_identity and repeat_plan; and the matching section of PLUGIN-BUILD-GUIDE.md, which is current.\n2. It states, in a user's terms: a step is measured rather than repeated when its command names the plan, its shards or the evidence record (by a whole name anywhere in the command's text, in any case, whatever quotes it), or names one of the plugin's own scripts, or when the plan's meta has changed since the run that measured it; that a step the change widened onto the phase gate is read by the command it runs; and that a run recorded by an earlier build is measured once more rather than repeated.\n3. It states what the reading still cannot see, in one sentence pointing at where the list lives, rather than restating the list.\n4. One entry per behaviour as it now stands. Do not narrate the three versions; entries for behaviour that never shipped are folded into the one that did.\n5. No number is written into the prose unless the command that re-derives it is beside it.\n\nThis task changes a document only. The gate is the document lints. tools/release.py reads the Unreleased heading and moves the section at a release: keep the heading and the section's Added/Changed/Fixed structure exactly as they are.",
       "files": [
         "CHANGELOG.md",
@@ -2571,13 +2599,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0a1506ca8dad",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "CHANGELOG.md [Unreleased] only; headings and the Added/Changed/Fixed structure unchanged, released sections untouched. Fixed: (1) rewrote the evidence/journal-suite entry to the reading at base (run-test-gate.py grades_left_out/_holds_name/_quote_removed/_search_names/plan_spellings/plugin_script_names/_grading_steps): whole-name search of the command's text as written, quote-removed and backslash-dropped, case-folded; a directory only with a separator beside it; the shard directory, both spellings of a symlinked plan and every plugin script name grade the plan; each step read under its declared command and the command that runs, so a step widened onto the phase gate is read by the command it runs; a non-string command is measured; one sentence pointing at the limits list beside UNREADABLE and in PLUGIN-BUILD-GUIDE.md's run-test-gate.py section. (2) new entry: the plan's meta in the reuse key (meta_part, RECORDER_META = evidence boundary left out), an earlier build's run measured once more, phases/tasks/bugs outside the key. (3) part-repeat entry: identity now named as tree content, declared gate and files, plan meta; the printed line corrected (part_reuse_line gives times for measured steps only); 'a gate naming no such path, and --no-reuse, behave as before' replaced, since the key changed. (4) new entry for 6d327958's sweep_base_trees fix (one fold_reading liveness reading decides fold and removal; 3.9.0's sweep asked base_running separately). (5) read-back entry: second ask in long form (READ_BACK_FORM), joined step matched by its declared entry (drive-phase.py grades_left_out via step_parts). Changed: the join's 'runs exactly as before' list gains the phase-gate-widened step (PLUGIN-BUILD-GUIDE.md joined_steps paragraph). Gate: python3 tools/sweep-selftests.py tests/test__deps.py tests/test__output_lints.py exit 0, 2/2 files ok, 467 cases. Sentences found false at base and what they became: 'The command is now read as shell words, a quoted sh -c body included: a word names a left-out file when it is that file or ends in its base name...' (superseded by ec0dfc31) -> the whole-name text reading; 'a command that cannot be split into words is treated as naming one' -> 'A gate command that is not a string is measured'; 'every other entry repeats from the newest run that measured it on the same tree and gate' -> same identity incl. declared files and plan meta; 'naming the repeated and the measured steps with their times' -> repeated steps with their source run, measured steps with times; 'a gate naming no such path ... behave as before' -> repeats whole, --no-reuse measures every step. Not false, made precise: the read-back's did-line condition now names the long form and joined-step matching; the join's unchanged-list adds the phase-gate arm. Checked and left as true: the executor.phaseGateOnly Changed entry (phase_gate_only_plan asked after the affected join, identity over what is left, gateDigest declared, no-checks, 'runs nowhere' line in run-test-gate.py:3777 and audit-lookup.py:983, COMPATIBILITY.md:485), the joined-step entry (identity over unjoined steps, run-test-gate.py:6699-6744). Dependants: every listed tests/*.py names CHANGELOG.md by basename; grep of tests for the removed phrases and 'Unreleased' found no pin, and the heading the release tool reads is unchanged, so all still correct; tools/lints/_deps.py is named at a released line (~4004, now shifted) that was not edited - still correct.",
+        "descriptive": "The unreleased changelog now describes the repeat reading that ships - whole names in the command's text, the plugin's own scripts, the plan's meta in the key - plus the base-tree sweep and read-back fixes."
       },
       "startedAt": "2026-11-18T16:34:19Z",
-      "completedAt": null,
+      "completedAt": "2026-11-18T16:43:10Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -2598,7 +2626,46 @@
         "P168-R21"
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T16:39:09Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 289000,
+            "startedAt": "2026-11-18T16:34:20Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-18T16:40:27Z.d43679",
+            "kind": "wait",
+            "ms": 0,
+            "startedAt": "2026-11-18T16:39:29Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T16:40:27Z.d43679, ending at its startedAt",
+            "kind": "selection",
+            "ms": 304,
+            "runId": "2026-11-18T16:40:27Z.d43679",
+            "startedAt": "2026-11-18T16:39:29Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T16:40:27Z.d43679",
+            "kind": "gate",
+            "ms": 57038,
+            "runId": "2026-11-18T16:40:27Z.d43679",
+            "startedAt": "2026-11-18T16:39:30Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-18T16:43:00Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 150000,
+            "startedAt": "2026-11-18T16:40:30Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 0a1506ca8dad",
+            "kind": "commit",
+            "ms": 1569,
+            "startedAt": "2026-11-18T16:43:07Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T16:34:19Z"
       },
       "reviewPerTask": "signals",
@@ -2606,6 +2673,17 @@
         "runId": "2026-11-18T16:40:29Z.bccb1d",
         "status": "passed",
         "at": "2026-11-18T16:40:29Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "0a1506ca8dad",
+        "at": "2026-11-18T16:43:10Z",
+        "return": "docs/audit/evidence/returns/P168.21-icj/20261118T163419Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "gate-only document task with tests.expectRedFirst false and no tests.add entry: no case was owed, so no red was owed",
+        "at": "n/a"
       }
     }
   ],
@@ -2615,10 +2693,10 @@
     "Narrowing what the related listing selects is held to the miss-rate rule the selection was introduced under: zero misses over twenty replayed changes, measured again here. A narrowing that cannot show it is not made."
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "2b3b3ad6-53c7-447e-9ceb-53c614bccbc5",
-    "branch": "audit/p168-a-task-s-gate-is-measured-once",
-    "at": "2026-11-18T06:46:41Z"
-  },
-  "startedAt": "2026-11-18T06:46:41Z"
+  "startedAt": "2026-11-18T06:46:41Z",
+  "testEvidence": {
+    "runId": "2026-11-18T17:08:35Z.9b8312",
+    "status": "passed",
+    "at": "2026-11-18T17:08:35Z"
+  }
 }
