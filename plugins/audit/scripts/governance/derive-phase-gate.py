@@ -140,7 +140,7 @@ import _manifest_io as _mio          # noqa: E402  (dual-format loader; index
 #                                       lock write target resolution)
 import _machine_paths                # noqa: E402  (executed_value_refusal: a
 #                                       written gate's machine-path door)
-import _manifest_phases as _phases   # noqa: E402  (PHASE_GATE_MODES)
+import _manifest_phases as _phases   # noqa: E402  (PHASE_GATE_MODES, derived_runner)
 import _manifest_vocab as _vocab     # noqa: E402  (PHASE_GATE_BASIS: the one
 #                                       "derived-empty" word, read here rather
 #                                       than restated as a literal)
@@ -358,9 +358,9 @@ def _render_lines(phase_id, meta, result, facts):
     gate = meta.get("phaseGate")
     gate = gate if isinstance(gate, dict) else {}
     always = [a for a in (gate.get("always") or []) if isinstance(a, str)]
-    entry = gate.get("derived", {}).get("runner") if isinstance(
-        gate.get("derived"), dict) else None
-    entry = entry or "gate"
+    # The validator's reading (`derived_runner`), so a runner blank once trimmed
+    # prints as the default rather than as the blank it holds.
+    entry = _phases.derived_runner(gate.get("derived"))[0] or "gate"
     listed_count = len((facts.get("listing") or {}).get("paths") or [])
     line = ("DERIVED sign-off gate for %s: always %s | %s over %d test file(s) "
             "[tests.add %d, coupling %d, importers %d of %d listed, changed %d, "
@@ -439,8 +439,9 @@ def _testgatederived(meta, result, facts, at):
                        "changed": list(attribution["changed"]),
                        "lastFailed": list(attribution["lastFailed"])}
         doc["shapeSource"] = result.get("shapeSource")
-    if derived_cfg.get("runner"):
-        doc["entry"] = derived_cfg["runner"]
+    runner = _phases.derived_runner(derived_cfg)[0]
+    if runner:
+        doc["entry"] = runner
     if "listing" in facts:
         doc["listed"] = list(facts["listing"].get("paths") or [])
         doc["listing"] = {"command": facts["listing"].get("command"),

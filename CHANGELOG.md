@@ -61,6 +61,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   `COMPATIBILITY.md` records this as a change to what a set key does.
 
 ### Fixed
+- **A task added before the project recorded how to run a subset gets the narrow gate once it
+  does.** Such a task stored the phase's whole gate, saying no spelling was known, and recording
+  the spelling later changed nothing for it, so it ran the whole gate on its turn. `/audit:phase
+  settle` now rewrites the gate of a task not yet started whose stored gate was the derivation's
+  fallback and whose derivation now gives a narrower one, with the basis it gives; the validator
+  warns about each such task and names the verb, and `record-listing` prints the tasks its new
+  spelling leaves stale. A gate somebody declared or cleared, a started task, and a task put back
+  to pending after an attempt keep their gate.
+- **A derived phase gate whose `meta.phaseGate.derived.runner` is blank once trimmed shows the
+  default `gate` entry** instead of printing and recording the blank, the way the validator
+  already read that value.
 - **A gate step listing a suite named after the evidence or journal module is repeated again.**
   The test-gate runner decided that a step graded a path its verdict identity leaves out (the
   manifest, its shards, the evidence and journal directories) by finding that path's name

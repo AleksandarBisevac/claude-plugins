@@ -706,6 +706,60 @@ def _cases(check):
           and "--gate \"<each entry of the phase gate>\"" in _tg_line
           and _tg_line.count("--replace") == 1)
 
+    # --- wgv: a derived wide gate the recorded spelling has made stale -------
+    # A task stored before the project recorded how to run a subset carries the
+    # phase's gate with `phase-no-spelling`; tg8 keeps that silent while no
+    # spelling exists. Once one does, a pending task whose derivation now
+    # narrows is a stale derived value, and `settle` is the verb that writes it.
+    _wg_suite = "tests/test_a.py: the case"
+
+    def _wg_tdd(tid, basis="phase-no-spelling", gate=None, add=None, **kw):
+        return _task(tid, tests={
+            "mode": "tdd", "add": [_wg_suite] if add is None else add,
+            "expectRedFirst": True,
+            "gate": ["test"] if gate is None else gate, "gateBasis": basis},
+            attempts=kw.pop("attempts", 0), **kw)
+
+    def _wg_plan(spelled, tasks):
+        meta = {"version": 2, "buildCommands": {"test": "true"}}
+        if spelled:
+            meta["phaseGate"] = {"derived": {
+                "listing": {"all": "lister --all",
+                            "related": "lister --related {paths}"},
+                "spelling": "runner {paths}",
+                "verifiedOn": {"command": "echo v", "answer": "v"}}}
+        return {"meta": meta, "phases": [
+            _phase(status="in_progress", testGate=["test"], tasks=tasks)]}
+
+    def _wg_lines(plan):
+        f, w = _rules.validate(plan)
+        return f, [x for x in w if "settle" in x and "P0." in x]
+
+    _wg_all = [
+        _wg_tdd("P0.1"),                                       # stale
+        _wg_tdd("P0.2", basis="declared"),
+        _wg_tdd("P0.3", basis="cleared", gate=[]),
+        _wg_tdd("P0.4", status="in_progress", attempts=1,
+                startedAt="2026-01-01T00:00:00Z"),
+        _wg_tdd("P0.5", attempts=1),                           # put back
+        _wg_tdd("P0.6", add=[]),                               # still wide
+    ]
+    _wg_f, _wg_w = _wg_lines(_wg_plan(True, _wg_all))
+    check("wgv1 with a spelling recorded, the validator warns about the ONE "
+          "pending, never-attempted task whose stored wide gate the derivation "
+          "now narrows, names `settle`, and says nothing about a declared or "
+          "cleared gate, a started task, a task put back after an attempt, or "
+          "one whose derivation still gives the wide gate: f=%r w=%r"
+          % (_wg_f, _wg_w),
+          len(_wg_w) == 1 and "P0.1" in _wg_w[0]
+          and not any(t in _wg_w[0] for t in
+                      ("P0.2", "P0.3", "P0.4", "P0.5", "P0.6")))
+    _wg_nf, _wg_nw = _wg_lines(_wg_plan(False, _wg_all))
+    check("wgv2 SECOND DIRECTION: the same tasks under a plan that records NO "
+          "spelling draw no such line - the wide gate is still the "
+          "derivation's answer there, which tg8 holds: %r" % (_wg_nw,),
+          _wg_nw == [])
+
     # --- jp: a value that is several entries joined by commas ----------------
     # One predicate for the validator's joined-key warning and the verb's
     # list-flag reader: the value holds two or more comma parts and EVERY part

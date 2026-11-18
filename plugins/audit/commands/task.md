@@ -115,6 +115,8 @@ A `--gate` list leaving out an entry the task holds is refused without `--replac
 appends - to the phase's `testGate` on a task with no gate of its own. The success line prints
 the gate the task now holds. `--gate*`, `--tests-add` and `--waive` take one entry per flag: a
 value whose every comma part reads as an entry is refused, naming the repeated spelling.
+On a task not started, a gate the derivation wrote follows `--files` and `--tests-add`; a wide
+one a spelling recorded later narrows is rewritten by `/audit:phase settle`, which the validator names.
 
 ## Subcommand: `move <taskId> --to <phaseId>`
 

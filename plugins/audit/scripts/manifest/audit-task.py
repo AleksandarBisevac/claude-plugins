@@ -10598,6 +10598,61 @@ def _rederive_gate(tid, node, tests, phase, assembled, project):
     return changes
 
 
+# The derivation's words for the arms that end in its FALLBACK rather than in a
+# gate pointed at the task's own paths: the phase's wide gate, or for a gate-only
+# task with no suite `meta.phaseGate.always`. A later input of the derivation - a
+# recorded spelling above all - can move such a task onto a narrow arm with no
+# scope edit, which is the one thing `_gate_follows_scope` never sees.
+_WIDE_GATE_BASES = ("phase-no-spelling", "phase-no-paths", "files-no-suite",
+                    "gate-only-no-suite")
+
+
+def _narrowed_wide_gates(assembled, project):
+    """`[(phase, task, tests, changes)]` - each task whose stored gate is one of
+    the derivation's fallbacks and whose derivation now gives a narrower one:
+    `tests` is a copy carrying the new gate and basis, `changes` the journal
+    rows `_rederive_gate` reports. Nothing in `assembled` is written.
+
+    THE SAME RULE A SCOPE EDIT FOLLOWS (`_gate_follows_scope`), and the same
+    derivation (`_rederive_gate`): a task not started, whose basis is the
+    derivation's own word. A declared or cleared gate carries another word, and
+    a started task keeps the gate its attempt is graded against. NARROWER means
+    a non-empty gate that is neither the phase's `testGate` nor the stored one,
+    so a task the derivation still answers wide - its word moving from one
+    fallback to another included - is left as it stands.
+    """
+    found = []
+    for phase, task in _mio.iter_tasks(assembled):
+        tests = task.get("tests")
+        if not isinstance(tests, dict) or not _gate_follows_scope(task, tests) \
+                or tests.get("gateBasis") not in _WIDE_GATE_BASES:
+            continue
+        now = dict(tests)
+        changes = _rederive_gate(task.get("id"), task, now, phase, assembled,
+                                 project)
+        wide = [g for g in (phase.get("testGate") or []) if isinstance(g, str)]
+        if now.get("gate") and now.get("gate") != wide \
+                and now.get("gate") != tests.get("gate"):
+            found.append((phase, task, now, changes))
+    return found
+
+
+def _settle_wide_gates(assembled, project):
+    """`(rows, phase_ids)` - `_narrowed_wide_gates` written onto `assembled`,
+    as `_settle`'s rows (`kind` "task") and the phases whose shards they move."""
+    rows, phase_ids = [], []
+    for phase, task, now, changes in _narrowed_wide_gates(assembled, project):
+        basis = ("the derivation now narrows it; stored as the fallback `%s`"
+                 % (task["tests"].get("gateBasis"),))
+        task["tests"] = now
+        if phase.get("id") not in phase_ids:
+            phase_ids.append(phase.get("id"))
+        rows.extend({"kind": "task", "id": c["id"], "field": c["field"],
+                     "stored": c["from"], "derived": c["to"], "basis": basis}
+                    for c in changes)
+    return rows, phase_ids
+
+
 def _scope_gate_flags(args):
     """The gate flags a `scope` call passed, in the usage block's order."""
     return [flag for flag, given in (
@@ -13968,7 +14023,9 @@ def _print_group_plan(args, plan, ids, mrel, landing, sharded, out):
 # about each one and names this verb. It is the ONE writer of a whole plan's derived
 # values, under the index lock with revalidate-or-roll-back and a journal row, the
 # path every mutating verb here takes - and it never runs on its own initiative: the
-# warning names it, and whoever owns the plan decides when.
+# warning names it, and whoever owns the plan decides when. A task's derived wide
+# gate is one of those values (`_settle_wide_gates`): recording a spelling moves no
+# gate, so a task stored with the fallback before it keeps the wide gate until here.
 def cmd_settle(args, out):
     # `settle` takes no title, so a manifest named in the first free positional is
     # the manifest - the verb's usage line spells it `settle [manifest]`.
@@ -13995,9 +14052,11 @@ def _locked_settle(args, project, config, mpath, out):
             out("FINDING: " + line)
         return E_INVALID
     rows = _settle(assembled, None)
+    gate_rows, gate_phases = _settle_wide_gates(assembled, project)
+    rows = rows + gate_rows
+    moved_phases = [r["id"] for r in rows if r["kind"] == "phase"] + gate_phases
     phase_ids = []
-    for pid in ([r["id"] for r in rows if r["kind"] == "phase"]
-                + [row[0] for row in _mio.stale_stubs(mpath)]):
+    for pid in (moved_phases + [row[0] for row in _mio.stale_stubs(mpath)]):
         if pid not in phase_ids:
             phase_ids.append(pid)
     bugs_moved = any(r["kind"] == "bug" for r in rows)
@@ -14011,8 +14070,8 @@ def _locked_settle(args, project, config, mpath, out):
             result.update(project_basis_key(args))
             out(json.dumps(result, indent=2, sort_keys=True))
             return 0
-        out("[audit-task] nothing to settle -- %s, and every stored status is the "
-            "derived one" % (examined,))
+        out("[audit-task] nothing to settle -- %s, every stored status is the "
+            "derived one, and no task's derived wide gate narrows" % (examined,))
         return 0
     paths = [mpath]
     for pid in phase_ids:
@@ -14051,8 +14110,7 @@ def _locked_settle(args, project, config, mpath, out):
         for line in findings:
             out("FINDING: " + line)
         return E_INVALID
-    stubs = [pid for pid in phase_ids
-             if pid not in [r["id"] for r in rows if r["kind"] == "phase"]]
+    stubs = [pid for pid in phase_ids if pid not in moved_phases]
     changes = [{"id": r["id"], "field": r["field"], "from": r["stored"],
                 "to": r["derived"]} for r in rows]
     jres = _journal_row(project, config, mpath, "plan.settle",
@@ -15305,12 +15363,20 @@ def _locked_record_listing(args, project, config, mpath, out):
                         {"field": "meta.phaseGate.derived",
                          "from": ", ".join(was) or None, "to": moved})
     index_note = _index_dirty_note(written, mpath, project, None)
+    # Counted by the derivation `settle` writes with, so the number said here
+    # is the number of gates the next `settle` moves.
+    stale = [task.get("id") for _p, task, _n, _c
+             in _narrowed_wide_gates(written_manifest, project)]
     if args.as_json:
-        result = {"ok": True, "derived": derived, "written": written}
+        result = {"ok": True, "derived": derived, "written": written,
+                  "staleGates": stale}
         out(_json_tail(result, args, jres, warnings, written_manifest,
                        index_note))
         return 0
     out("[audit-task] %s" % (summary,))
+    out("  %d task(s) left with a stale derived gate this spelling narrows%s"
+        % (len(stale), (" (%s) -- `/audit:phase settle` writes the narrow gate"
+                        % (", ".join(stale),)) if stale else ""))
     _report_tail(out, jres, "listing.recorded", warnings, written_manifest,
                  written, index_note)
     return 0

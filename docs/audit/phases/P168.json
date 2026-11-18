@@ -709,9 +709,9 @@
       },
       "reviewPerTask": "signals",
       "testEvidence": {
-        "runId": "2026-11-18T10:29:16Z.bfc4a0",
+        "runId": "2026-11-18T10:35:11Z.1476bb",
         "status": "passed",
-        "at": "2026-11-18T10:29:16Z"
+        "at": "2026-11-18T10:35:11Z"
       }
     },
     {
@@ -1125,7 +1125,7 @@
     {
       "id": "P168.12-icj",
       "title": "The drive suite's writer-stub log is one file per session wherever a wave runs two sessions at once",
-      "status": "in_progress",
+      "status": "done",
       "description": "The task that gave each wave member its own mark file left one case with the same shape: a case that runs the real loop over a wave of two writer sessions has both stub sessions append one line each to a single log, and counts the lines. The class sweep of that task called this log 'written by sessions run one at a time', which is not true for that case, since the loop starts a wave's members together. The case is skipped where process groups are absent, so it has not failed on Windows, and an append of one short line is atomic on the systems where it does run; the shape is still the one the task set out to remove, and its own acceptance clause says no case hands one file to two commands that run at the same time. Give that case's stub sessions a log per session (or per member) read together through the same helper, and then walk every log in this suite that a stub or child appends to and state, in the helper's docstring table, which run concurrently and which serially, by case, from what the loop does and not from the case's name. Dependants you answer for: every case reading the writer-stub log, whose expectations must not change by value. Acceptance: (1) no stub or child in the suite appends to a file another concurrent process appends to; (2) the docstring's table names each shared log and why it is safe; (3) the suite's case count does not drop and every expectation is unchanged. A second fragile case in the same suite, seen red in CI on the stress leg: the case that checks the wait stage before the writer picks the writer's wait by arithmetic alone (a wait whose start plus length equals the writer's start), and when the reviewer's hand-out lands in the same second as the writer's start, the reviewer's zero-length wait satisfies the same arithmetic and the case finds two where it requires one. Stamps are whole seconds, so this depends on where a second boundary falls. Pick the writer's wait by what it is - its basis names the writer's session record - and keep the arithmetic as the assertion about it, not as the selector; do the same wherever a case in this suite selects a stage by time arithmetic. Acceptance (4): the wait case selects by the stage's own basis and holds when two stages share a second, shown by a case that builds exactly that record.",
       "files": [
         "tests/test_drive_phase.py"
@@ -1148,16 +1148,52 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "8d5e69878d5d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_drive_phase.py only (the worktree's git diff --stat shows 151 insertions and 9 deletions). (1) _WRITER_STUB: WS_LOG may name a directory, in which case each stub session creates a file of its own with tempfile.mkstemp (O_EXCL) and writes its one line there. A file still gets the same append as before. (2) _stub_runs(where) now reads a file, a list of files, or a directory in file-name order, using the new _stub_run_lines. Its docstring carries the table: each log a stub or child appends to (WS_LOG as a file, WS_LOG as a directory, _AUTO_CHILD marks pointing to _auto_marks' own table, _RB_LOG, LP_PROBE_LOG/LP_PROBE_TOUCH, DRIVE_CWD_LOG, owner.log), the cases that use it, and whether they run at once or one after another. Each row is read off what starts the processes: _play_session/subprocess.run, run-test-gate's per-step communicate, run_lint_probe, claimed_followers, and auto_run, which starts a step's commands together and so starts more than one only for a wave. It also names what is left: the driver's own auto log, opened once in append mode and shared by a wave's children, which no case reads from a wave (bq5 reads it from a single child), and WS_PIDS, which is written whole, not appended. (3) au32 now hands its stub a directory. New au32c: two files of one run each, the same count as au32, with a matching skip on hosts without killpg. au32's expectation is unchanged (len(runs) == 2). (4) tm2 now picks the writer's wait with the new _tm_session_waits(waits, record), which reads the basis naming the writer's own session record (the basename of its --record flag, anchored to end or ';'). The arithmetic becomes the assertion through _tm_ends_at. New tm2b uses the driver's real session_stages to build a writer wait 10->12 and a reviewer wait handed out and started at 12 (0 ms). It asserts that arithmetic picks 2, the basis picks exactly the writer's 2000 ms wait, and the reviewer's wait is picked by its own record. Every other place in the suite that picks a stage was checked: tm6 already picks by basis ('evidence row <runId>'), and tm8 picks by kind and count with arithmetic only as an assertion. So tm2 was the only case that picked a stage by arithmetic. Commands: the gate `python3 tools/sweep-selftests.py tests/test_drive_phase.py` was run twice, minutes apart; both exit 0 with '1/1 files ok, 1020 cases'. Blocks au32-block plus tm-block: 18/18 on this tree against 16/16 for HEAD's copy (git show HEAD:tests/test_drive_phase.py run from scratch), so the count went up by au32c and tm2b and nothing dropped. ruff check: exit 0. vermin -t=3.8-: exit 0. prose_number_claims and house_style_violations: no hits for this file. Dependants: tests/test_drive_without_model.py imports _stub_runs/_writer_stub/_base_measure_repo and passes a file path, whose behaviour is unchanged; `python3 tools/sweep-selftests.py tests/test_drive_without_model.py` exit 0, 74 cases. .github/sweep-costs.json, .github/workflows/ci.yml, tools/affected.py, plugins/audit/scripts/governance/drive-phase.py, tests/test__runner_output.py, tests/test_run_test_gate.py and tests/test_stamp_verification.py refer to this file by path or import other names (_actions). No block was added or renamed and no imported name changed, so they are still correct. Every case that reads the writer-stub log keeps its expected values: the file path is unchanged for all of them except au32, whose count expectation stays 2.",
+        "descriptive": "No two stub sessions in the drive suite append to one log at once, the suite says which logs are shared and why that is safe, and the writer's wait is picked by its own session record, so the reviewer's wait in the same second can no longer be picked too."
       },
       "startedAt": "2026-11-18T09:47:33Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-18T10:29:21Z",
+      "verifiedBy": [
+        "tm2b: the driver's own session_stages builds a writer wait and a reviewer wait that share a second; time arithmetic picks both, while the basis naming each session record picks each wait alone",
+        "au32c: the two writer sessions a wave starts at once each log into a file of their own, two files of one run each, read together as au32's count"
+      ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-18T10:01:42Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 838000,
+            "startedAt": "2026-11-18T09:47:44Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-18T10:06:59Z.1e231a, ending at its startedAt",
+            "kind": "selection",
+            "ms": 17228,
+            "runId": "2026-11-18T10:06:59Z.1e231a",
+            "startedAt": "2026-11-18T10:01:52Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-18T10:06:59Z.1e231a",
+            "kind": "gate",
+            "ms": 288429,
+            "runId": "2026-11-18T10:06:59Z.1e231a",
+            "startedAt": "2026-11-18T10:02:10Z"
+          },
+          {
+            "basis": "hand-out to the filed return (the filed file's modification time, 2026-11-18T10:15:38Z - no journal row files a reviewer return, and a modification time moves later when the file is written again - a stash, a branch switch, a copy - never earlier); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "reviewer",
+            "ms": 92000,
+            "startedAt": "2026-11-18T10:14:06Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 8d5e69878d5d",
+            "kind": "commit",
+            "ms": 1477,
+            "startedAt": "2026-11-18T10:29:18Z"
+          }
+        ],
         "firstStartedAt": "2026-11-18T09:47:33Z"
       },
       "reviewPerTask": "signals",
@@ -1165,6 +1201,17 @@
         "runId": "2026-11-18T10:14:04Z.722584",
         "status": "passed",
         "at": "2026-11-18T10:14:04Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "8d5e69878d5d",
+        "at": "2026-11-18T10:29:21Z",
+        "return": "docs/audit/evidence/returns/P168.12-icj/20261118T094733Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "mode regression with tests.expectRedFirst false, and the task changes only the test file: HEAD's driver already writes the basis the new selector reads, so tm2b passes on HEAD's code by construction and there is no product red to prove. The case's own power was shown instead by in-process mutation of the selector, no tree edit: the real _tm_session_waits PASS; every wait (over-fire), none, the old time-arithmetic selector, and an unanchored basename substring each FAIL tm2b. Stub mutated in-process to append to one shared file inside the directory: au32c FAIL while au32 and au32b stay PASS.",
+        "at": "not run through the helper: no -- <test command> given, since none was owed"
       }
     },
     {

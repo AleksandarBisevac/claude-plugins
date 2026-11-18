@@ -2514,7 +2514,15 @@ own reason is a `cause` beside the fixed `why`, so a writer bounds the varying p
 path with no answer named as not asked rather than counted as reached. Also the
 per-phase rules a schema cannot express — a parallel-run `claim` left on a finished phase,
 an `area` that normalises to no tags at all, a `budgetUSD` of zero, and a phase marked done
-over tasks that are not **finished** (done *or* cancelled).
+over tasks that are not **finished** (done *or* cancelled). `stale_spelled_gates(manifest)`, run
+from `_check_phase_gate`, warns about each pending task with no recorded attempt still holding
+`phase-no-spelling` under a recorded `{paths}` spelling while it names a `tests.add` path or a
+suite among its `files`, and names `/audit:phase settle`. It asks only the arms certain without
+the derivation, which sits above this layer: a narrowing that comes from a sibling's entry or a
+relating slot is `settle`'s to find, not this warning's (`wgv1`, `wgv2`). `derived_runner(derived)`
+is the one reading of `meta.phaseGate.derived.runner` - the key, or None with the validator's
+reason for a value blank once trimmed - which the shape check here and `derive-phase-gate.py`'s
+printed line and `testGateDerived.entry` both take (`dp-runner`, `dp-runner-b`).
 
 ### `plugins/audit/scripts/manifest/_scope_companions.py`
 `derive(intent, repo, lister=None)` returns `{"companions": [{path, kind, basis}], "notes": [...]}`
@@ -6586,6 +6594,12 @@ shard (`_manifest_io.stale_stubs`) - under the index lock, revalidated, rolled b
 with one `plan.settle` row naming each value it moved. It is the command `validate-manifest`'s
 warnings name, and it only ever moves a value towards the derivation: a stored terminal status and
 a person's `wontfix`/`not_a_bug` win inside the derivation, so settle cannot overwrite either.
+A task's derived wide gate is one of those values (`_settle_wide_gates`): a task not started whose
+`tests.gateBasis` is one of the derivation's fallback words (`_WIDE_GATE_BASES`) and whose
+derivation - `_rederive_gate`, the one a `scope --files`/`--tests-add` edit runs - now gives a
+non-empty gate that is neither the phase's `testGate` nor the stored one gets that gate and its
+basis. A declared or cleared gate carries another word, and a started task, a pending one with a
+recorded attempt included, keeps the gate its attempt is graded against (`wg1`-`wg9`).
 
 `add-phase --park` writes the same phase `add-phase` builds as a parked proposal instead
 (`PROP-<n>[-suffix]`; on a side branch the reserved phase id is the placeholder `P<n>-<suffix>`,
@@ -6667,6 +6681,8 @@ fails or prints nothing. The shape is the validator's (`_check_phase_gate_derive
 raises about this field after the write rolls every file back, exit 1, with the finding printed,
 so a `spelling` or `related` with no `{paths}` is refused in the validator's words. The write is
 index-only and records `listing.recorded`, naming the fields that moved rather than the commands.
+It then prints the tasks the new spelling leaves with a stale derived gate - counted by
+`_narrowed_wide_gates`, the reading `settle` writes from - and `--json` carries them as `staleGates`.
 
 `build-command <key> --command "<cmd>" [--replace]` / `build-command <key> --remove` sets or drops
 one `meta.buildCommands` key on a plan that exists, the door that does not need the panel's browser

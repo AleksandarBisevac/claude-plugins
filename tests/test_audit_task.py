@@ -23646,6 +23646,143 @@ def _timing_cases(check):
         _harness.remove_tree(tmp)
 
 
+def _stale_wide_gate_cases(check):
+    """`settle` writes the narrow gate a pending task's derivation gives once the
+    project records how to run a subset, where the task stored the phase's wide
+    gate for want of that spelling - and touches no gate somebody declared or
+    cleared, no started task, and no task the derivation still answers wide."""
+    tmp = tempfile.mkdtemp(prefix="audit-task-selftest-")
+    (run, _run_on_stdin, base_manifest, mk, _mk_empty, task_in, _pin, _unpin,
+     _PD_SHA, _pd_fixture, _pd_repo, _git) = _at_kit(tmp)
+    try:
+        proj, mpath = mk("wg-stale", base_manifest(), sharded=True, git=True)
+
+        def tests_of(tid):
+            return dict((task_in(mpath, tid) or {}).get("tests") or {})
+
+        def add_tdd(title, *extra):
+            return run(["add", title, "--phase", "P2", "--tests-mode", "tdd",
+                        "--project-dir", proj] + list(extra))
+
+        suite = "tests/test_a.py: the case the task adds"
+        # Each task below is added BEFORE the project records a spelling, so
+        # each stores the phase's wide gate with the derivation's own word.
+        add_tdd("stale", "--tests-add", suite)                     # P2.4
+        add_tdd("declared", "--tests-add", suite)                  # P2.5
+        add_tdd("cleared", "--tests-add", suite)                   # P2.6
+        add_tdd("started", "--tests-add", suite)                   # P2.7
+        add_tdd("ran once", "--tests-add", suite)                  # P2.8
+        add_tdd("no paths")                                        # P2.9
+        before = dict((t, tests_of(t)) for t in
+                      ("P2.4", "P2.5", "P2.6", "P2.7", "P2.8", "P2.9"))
+        check("wg1 PRECONDITION: a task added before the project records a "
+              "subset spelling stores the phase's wide gate with the basis "
+              "word saying no spelling was known: %r" % (before,),
+              all(v.get("gate") == ["test"]
+                  and v.get("gateBasis") == "phase-no-spelling"
+                  for v in before.values()))
+
+        run(["scope", "P2.5", "--gate", "test", "--project-dir", proj])
+        raw = _mio.load_manifest(mpath)
+        for ph in raw["phases"]:
+            for t in ph.get("tasks") or []:
+                if t.get("id") == "P2.6":
+                    t["tests"].update(gate=[], gateBasis="cleared")
+                if t.get("id") == "P2.7":
+                    t.update(status="in_progress", attempts=1,
+                             startedAt="2026-01-01T00:00:00Z")
+                if t.get("id") == "P2.8":
+                    t["attempts"] = 1
+        _mio.save_sharded(mpath, raw)
+        held = dict((t, tests_of(t)) for t in
+                    ("P2.5", "P2.6", "P2.7", "P2.8", "P2.9"))
+
+        code_rl, txt_rl = run(["record-listing", "--listing-all", "lister --all",
+                               "--listing-related", "lister --related {paths}",
+                               "--spelling", "runner {paths}",
+                               "--verified-on", "echo v-wg",
+                               "--project-dir", proj])
+        # The derivation's answer, computed independently of `settle`: a task
+        # added NOW with the same scope is derived against the spelling.
+        add_tdd("control", "--tests-add", suite)                   # P2.10
+        control = tests_of("P2.10")
+        check("wg2 PRECONDITION: with the spelling recorded, the derivation "
+              "gives a task of the same scope a NARROWER gate than the "
+              "phase's: %r" % (control,),
+              code_rl == 0 and control.get("gate")
+              and control.get("gate") != ["test"]
+              and control.get("gateBasis") not in (None, "phase-no-spelling"))
+        check("wg3 record-listing says how many tasks the new spelling leaves "
+              "with a stale derived gate, and names the verb that settles "
+              "them: %s" % (txt_rl[-400:],),
+              re.search(r"\b1 task\b[^\n]*stale", txt_rl) is not None
+              and "settle" in txt_rl)
+
+        stale_lines = [w for w in _rules.validate(_mio.load_manifest(mpath))[1]
+                       if "settle" in w and "P2." in w]
+        check("wg4 the validator warns about the ONE pending task whose stored "
+              "wide gate the derivation now narrows, and names the verb: %r"
+              % (stale_lines,),
+              len(stale_lines) == 1 and "P2.4" in stale_lines[0]
+              and not any(t in stale_lines[0] for t in
+                          ("P2.5", "P2.6", "P2.7", "P2.8", "P2.9", "P2.10")))
+
+        code, txt = run(["settle", "--project-dir", proj])
+        after = tests_of("P2.4")
+        check("wg5 settle rewrites the stale task's gate to the narrow one, "
+              "with the basis the derivation gives: %r / %s" % (after, txt),
+              code == 0 and after.get("gate") == control.get("gate")
+              and after.get("gateBasis") == control.get("gateBasis"))
+        kept = dict((t, tests_of(t)) for t in held)
+        check("wg6 ...and leaves alone the declared gate, the cleared gate, the "
+              "started task, the task put back to pending after an attempt, and "
+              "the task whose derivation still gives the wide gate: %r"
+              % ([(t, held[t], kept[t]) for t in held if held[t] != kept[t]],),
+              kept == held
+              # ...and each held task IS the case its label names, so a
+              # fixture edit that left them all wide could not pass here.
+              and held["P2.5"].get("gateBasis") == "declared"
+              and held["P2.6"].get("gateBasis") == "cleared"
+              and task_in(mpath, "P2.7").get("status") == "in_progress"
+              and task_in(mpath, "P2.8").get("attempts") == 1
+              and task_in(mpath, "P2.8").get("status") == "pending"
+              and held["P2.9"].get("add") == [])
+        rows = [r for r in _journal_io.read_all(proj)
+                if r.get("action") == "plan.settle"]
+        moved = sorted((c.get("id"), c.get("field")) for r in rows
+                       for c in (r.get("details") or {}).get("changes") or [])
+        check("wg7 ...with ONE plan.settle journal row naming the task and the "
+              "gate it moved, and nothing else: %r" % (moved,),
+              len(rows) == 1 and moved
+              and all(i == "P2.4" for i, _f in moved)
+              and ("P2.4", "tests.gate") in moved)
+        left = [w for w in _rules.validate(_mio.load_manifest(mpath))[1]
+                if "settle" in w and "P2." in w]
+        check("wg8 ...after which the validator has nothing stale to say: %r"
+              % (left,), left == [])
+        def plan_bytes():
+            # The index AND every shard: the layout writes the stale task's
+            # gate into its phase's shard, not into the index.
+            found = {}
+            for root, _dirs, names in os.walk(os.path.dirname(mpath)):
+                for name in names:
+                    path = os.path.join(root, name)
+                    with open(path, "rb") as fh:
+                        found[path] = fh.read()
+            return found
+
+        settled_bytes = plan_bytes()
+        code2, txt2 = run(["settle", "--project-dir", proj])
+        check("wg9 settle on a plan with nothing stale writes nothing and "
+              "journals nothing: %s" % (txt2,),
+              code2 == 0 and "nothing to settle" in txt2
+              and len(settled_bytes) > 1 and plan_bytes() == settled_bytes
+              and len([r for r in _journal_io.read_all(proj)
+                       if r.get("action") == "plan.settle"]) == 1)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("at3-block", "_flag_cases"), ("at4-block", "_start_cases"),
           ("at5-block", "_close_cases"), ("at6-block", "_group_cases"),
@@ -23680,7 +23817,8 @@ STAGES = (("at1-block", "_add_cases"), ("at2-block", "_reshape_cases"),
           ("gk-block", "_gate_keep_cases"),
           ("lr-block", "_list_flag_cases"),
           ("grt-block", "_gate_reach_cases"),
-          ("tmg-block", "_timing_cases"))
+          ("tmg-block", "_timing_cases"),
+          ("wg-block", "_stale_wide_gate_cases"))
 
 
 if __name__ == "__main__":
