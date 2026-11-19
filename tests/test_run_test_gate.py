@@ -9401,7 +9401,38 @@ def _pgo_masked(root, text):
     # dates the boundary: both are masked whole, as one token.
     text = re.sub(r"\b\d{4}-\d\d-\d\dT\S+", "<stamp>", text)
     text = re.sub(r"\b[0-9a-f]{12,}\b", "<id>", text)
+    # A step's duration is right-aligned in a fixed-width column, so the time a
+    # step took moves the PADDING before it as well as its digits: masking the
+    # digits alone leaves `73 ms` and `111 ms` one space apart, and a step near
+    # a power of ten on a loaded runner turned this comparison red. The unit
+    # moves too (`_fmt.human_duration`: ms, then seconds, then minutes). So the
+    # field - the spaces before it, the number and the unit - is one token.
+    text = re.sub(r" *\b(?:\d+ m \d\d s|\d+\.\d s|\d+ ms)\b", " <duration>",
+                  text)
     return re.sub(r"\d+", "N", text)
+
+
+def _first_line_difference(left, right, width=160):
+    """None when `left` and `right` print the same lines; otherwise one line
+    naming the first pair that differs, by its line number, each side cut to
+    `width` characters, and both line counts when they differ. A comparison of
+    two runs' printed text that fails without this names no cause, and the next
+    red is the only chance to learn one."""
+    a, b = left.splitlines(), right.splitlines()
+    if a == b:
+        return None
+    at = next((i for i, pair in enumerate(zip(a, b)) if pair[0] != pair[1]),
+              min(len(a), len(b)))
+
+    def _side(lines):
+        if at >= len(lines):
+            return "(no such line)"
+        line = lines[at]
+        return repr(line if len(line) <= width else line[:width] + "...")
+    return ("line %d differs: %s / %s%s"
+            % (at + 1, _side(a), _side(b),
+               "" if len(a) == len(b)
+               else " (%d line(s) against %d)" % (len(a), len(b))))
 
 
 def _phase_gate_only_cases(check):
@@ -9498,8 +9529,11 @@ def _phase_gate_only_cases(check):
                                sorted(row))
     check("pgo7 with the setting ABSENT or EMPTY a task's run is the run it was "
           "before: both entries run, no row key lists anything as left out, "
-          "and the two print the same lines once ids and times are masked: %r"
-          % (dict((k, v[:2] + (v[3],)) for k, v in said.items()),),
+          "and the two print the same lines once ids and times are masked: %r; "
+          "printed lines, absent / empty: %s"
+          % (dict((k, v[:2] + (v[3],)) for k, v in said.items()),
+             _first_line_difference(said["None"][2], said["[]"][2])
+             or "the same"),
           said["None"][:2] == (M.E_OK, ["browser", "sweep"])
           and said["None"] == said["[]"]
           and "leftToPhaseGate" not in said["None"][3]
