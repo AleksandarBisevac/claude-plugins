@@ -48,6 +48,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   error or the plan lock, and the stop says the run is read again at the next `next` and that
   taking `ci.cadence` out goes on without CI. A plan without the key validates and behaves
   exactly as before.
+- **A full run's answer for a phase is kept in the plan, and a phase certified whole stays
+  whole.** A recorded full run (`full-gate.py`, or `run-test-gate.py --full --record`) is now
+  also written to the optional phase key `fullGateRuns` of every phase that has started and does
+  not already read whole: the run's id, moment, head and the count and digest of the commands it
+  ran - never a verdict, since whether the phase is whole is asked of git again on every read.
+  A phase holds at most two runs, the one that answers best for it and the newest, and one that
+  reads whole is never replaced, so a later red or dirty full run changes no byte of the plan.
+  `/audit:status`, the report, the panel, `/audit:doctor` and the release guard read these runs
+  beside any ledger rows, so a project with no evidence directory still reads a certified phase
+  as whole. The plan is revalidated with the runs in place before anything is written; a refusal
+  writes nothing and the run exits 3. A plan without `meta.fullGate` never carries the key and
+  is unchanged. When no run that could certify a phase is held, the basis now says exactly that
+  rather than that no full run was ever recorded.
 - **A task can record where its wall time went.** The optional task key `timing` holds
   `firstStartedAt` and a list of `stages` - each a `kind` (writer, gate, selection, base,
   reviewer, commit or wait), a start, a length in milliseconds and the record the length was

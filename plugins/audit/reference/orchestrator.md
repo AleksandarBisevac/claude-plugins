@@ -578,10 +578,10 @@ panel, so whoever reads any of those already knows a phase has landed without ye
 `whole`; only this repository's own release guard turns a provisional phase into a refusal,
 and that refusal belongs to the release command, never to a phase run.
 
-**Never claim a full run passed, or that a phase is whole, from anything but the ledger.**
+**Never claim a full run passed, or that a phase is whole, from anything but recorded runs.**
 `_evidence_io.full_status` is the one answer every surface reads. It answers `whole`,
-`provisional`, `unknown` or `not_declared`, derived from the evidence ledger alone, never from a
-manifest pointer or a memory of what a gate answered earlier in this session. Read a recorded run back with `scripts/status/audit-lookup.py <manifest> run <runId>`,
+`provisional`, `unknown` or `not_declared`, read from recorded full runs alone, never from a
+cached verdict or a memory of what a gate answered earlier in this session. Read a recorded run back with `scripts/status/audit-lookup.py <manifest> run <runId>`,
 exactly as **Answering one question about the trail** above describes, rather than asserting
 what a run answered from its own printed lines.
 

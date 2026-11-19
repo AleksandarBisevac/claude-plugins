@@ -869,38 +869,23 @@ def unreported_record(sha, basis, at, run_id=None):
     return record
 
 
-def _schema_or_finding(line):
-    """Whether a validator warning refuses a `ci` record: a line the
-    whole-plan schema check raised (`_manifest_rules.SCHEMA_CODE_PREFIX`) - its
-    refusal of a value, or a keyword the reader could not check, since a
-    record checked against less than its schema is not known to validate. The
-    `--strict` reading, which a record this verb writes is held to now."""
-    return str(_output.finding_code(line) or "").startswith(
-        _rules.SCHEMA_CODE_PREFIX)
-
-
 def ci_validation_problem(manifest_path, phase_id, record, validator):
     """Why the plan with `record` as phase `phase_id`'s `ci` would not
     validate, or None - asked of the plan as it is now and as the record would
     leave it, through the plugin's own validator with the published schema
     bound in (`_manifest_rules.bound_validator`). Only what the record ADDS
-    refuses: a line the plan already carried is not this write's to answer."""
-    try:
-        now = _mio.load_manifest(manifest_path)
-    except Exception as exc:
-        return "the plan could not be read to validate the record (%s)" % (exc,)
-    after = json.loads(json.dumps(now))
-    held = [p for p in after.get("phases") or []
-            if isinstance(p, dict) and str(p.get("id")) == str(phase_id)]
-    if not held:
-        return "no phase %s in the assembled plan" % (phase_id,)
-    held[0][CI_KEY] = record
-    was_f, was_w = validator.validate(now)
-    is_f, is_w = validator.validate(after)
-    before = set(was_f) | set(w for w in was_w if _schema_or_finding(w))
-    new = [ln for ln in list(is_f) + [w for w in is_w if _schema_or_finding(w)]
-           if ln not in before]
-    return "; ".join(str(ln) for ln in new[:3]) or None
+    refuses - a finding, or a line the schema check raised, the `--strict`
+    reading - and the one copy of that rule is `_evidence_io.added_findings`,
+    which the full run's held runs are checked by too."""
+    def put(plan):
+        held = [p for p in plan.get("phases") or []
+                if isinstance(p, dict) and str(p.get("id")) == str(phase_id)]
+        if not held:
+            return "no phase %s in the assembled plan" % (phase_id,)
+        held[0][CI_KEY] = record
+        return None
+    return _ev.added_findings(manifest_path, put, validator,
+                              _rules.SCHEMA_CODE_PREFIX)
 
 
 # What a person does next when the record itself is refused: the record is

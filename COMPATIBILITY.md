@@ -293,6 +293,16 @@ current. Neither is legacy, and a mutating command does not nudge you off either
   its own fixture); a plan that never adopts the third
   place behaves exactly as it did before any of the three existed. Ceasing to read any of them,
   or reversing what its absence means, is a major.
+- **`phase.fullGateRuns` is under the same promise, and adding it was free.** It is written only
+  by a recorded full run, on a plan that declares `meta.fullGate`, so a plan with no third place
+  never carries it and is byte for byte what it was. **Absent means the plan holds no full run
+  for that phase**, which reads exactly as no recorded run did before: its answer comes from
+  whatever ledger rows exist, and with none it is `provisional` (or `unknown` with no
+  `mergedHead`). What it holds is a run's id, moment, head and the count and digest of the
+  commands it ran, never a verdict: whether the phase is whole is asked of git again on every
+  read, against the `meta.fullGate` declared then. A held value this build does not recognise
+  certifies nothing and is named in the basis. Ceasing to read the key, or reading a verdict
+  from it, is a major.
 - **`phase.mergedHead` keeps two readings, and `phase.mergedHeadAt` keeps telling them apart.**
   Without `mergedHeadAt`, `mergedHead` reads as the commit recovered from the parent's
   first-parent chain as the one that brought the phase branch's tip in. With `mergedHeadAt`, it

@@ -2253,8 +2253,11 @@ def read_rows(project, config=None, *, manifest_path):
 
     THE PLAN'S RECORDS ARE READ BESIDE THE ROWS (`RECORD_KEY`, through
     `record_row`), one entry per run: a run the ledger holds is its row, and a
-    run only a record holds - the newest run of a subject, or the run a repeat
-    copied - is appended after every row. `rowSources[i]` says which
+    run only a record holds - the newest run of a subject, the run a repeat
+    copied, or a full run a phase holds - is appended after every row. A
+    project with no evidence directory at all is read from the plan alone,
+    and a full run certified before the ledger stopped being written is read
+    from its frozen row for as long as that row is there. `rowSources[i]` says which
     (`ROW_FROM_LEDGER` or `ROW_FROM_RECORD`); for a record `rowFiles[i]` is the
     plan file holding it, relative to `project`, where for a row it is the
     ledger file's basename. `files`, `unreadable` and `unreadableFiles` stay
@@ -3008,14 +3011,14 @@ RECORD_NOT_CARRIED = {
                "a task's - and `record_row` writes it back from there",
     "treeMutated": "the same list as `observations.treeMutated`, which crosses "
                    "whole; `record_row` gives it back at the top level too",
-    "selectionMiss": "written only on a run of `--full`, which records its "
-                     "ledger row and writes no record (`_record_full_run`)",
-    "selectionMissDropped": "written only on a run of `--full`, which records "
-                            "its ledger row and writes no record "
-                            "(`_record_full_run`)",
-    "dirtyOutsideDropped": "written only on a run of `--full`, which records "
-                           "its ledger row and writes no record "
-                           "(`_record_full_run`)",
+    "selectionMiss": "written only on a run of `--full`, which writes no "
+                     "record: the plan holds a full run as `held_run_record`",
+    "selectionMissDropped": "written only on a run of `--full`, which writes "
+                            "no record: the plan holds a full run as "
+                            "`held_run_record`",
+    "dirtyOutsideDropped": "written only on a run of `--full`, which writes "
+                           "no record: the plan holds a full run as "
+                           "`held_run_record`",
 }
 # The measured tree's key crosses as `testedState.treeKey`, the one field of
 # `testedState.tree` a reader asks (`stored_verdict_moved`).
@@ -3608,7 +3611,8 @@ def records_of_bodies(bodies):
     phase body)]`, a body as its file holds it) carry, each as `record_row`
     reads it, with the run it repeated (`REPEATED_RUN_KEY`) beside it and the
     base runs its red's reading keeps (`BASE_RUNS_KEY`) as base-scope rows,
-    once per run.
+    and every full run a phase holds (`FULL_GATE_RUNS_KEY`) as the scope-full
+    row `held_run_row` gives - once per run.
 
     A GROUP MEMBER'S COPY IS ITS CARRIER'S RUN. Group sign-off copies the
     carrier's record onto each member naming the carrier in `gradedBy`; the
@@ -3644,6 +3648,13 @@ def records_of_bodies(bodies):
             runs.extend(record_row(base, BASE_SCOPE, None, pid)
                         for base in kept_bases(reading))
             (copies if graded else carried).extend((r, label) for r in runs)
+        # The full runs the phase holds, each as the scope-`full` row it was
+        # recorded as; a run two phases hold is read once, below.
+        full_runs = phase.get(FULL_GATE_RUNS_KEY)
+        carried.extend((row, label) for row in (
+            held_run_row(h)
+            for h in (full_runs if isinstance(full_runs, list) else []))
+            if row is not None)
     seen, out = set(), []
     for row, label in carried + copies:
         if row["runId"] not in seen:
@@ -4659,7 +4670,7 @@ def _reconciled(body, scope, ids, sharded, target, record):
 
 
 # --- full_status: whole, provisional, unknown, or not declared -----------------
-# THE THIRD PLACE'S OWN VERDICT, DERIVED FROM THE LEDGER ALONE. `phase.mergedHead`
+# THE THIRD PLACE'S OWN VERDICT, FROM RECORDED FULL RUNS ALONE. `phase.mergedHead`
 # names the commit the parent's first-parent chain brought the phase in with, or,
 # with `phase.mergedHeadAt` set, the parent's head recorded after the fact. A
 # WHOLE answer needs a green, measured, clean, verbatim full run whose recorded
@@ -4668,12 +4679,13 @@ def _reconciled(body, scope, ids, sharded, target, record):
 # comparison, because a head that merely EQUALS `mergedHead` is a special case of
 # containment and a head that is further ahead of it is the ordinary one.
 #
-# NO MANIFEST POINTER IS EVER READ HERE. `phase.testEvidence` and any cache a
+# NO VERDICT IS EVER READ FROM THE PLAN. `phase.testEvidence` and any cache a
 # surface keeps beside it answer a different, narrower question (is THIS task's
 # or phase's own gate run backed by evidence); a stale or hand-edited cache must
-# never be able to make a phase read WHOLE that the ledger does not actually
-# hold, so the only two things this reads are the rows it is handed and the
-# phase dict's own `mergedHead`.
+# never be able to make a phase read WHOLE. What this reads is the rows it is
+# handed - the ledger's, and the full runs phases hold (`FULL_GATE_RUNS_KEY`),
+# each a run's id, head and commands whose containment is asked of git again on
+# every read - and the phase dict's own `mergedHead`.
 FULL_SCOPE = "full"
 
 
@@ -4724,6 +4736,12 @@ def _measurement_disqualification(row, full_commands):
                 "measuring one" % (VERDICT_SOURCE, row.get(VERDICT_SOURCE)))
     if row.get("scope") != FULL_SCOPE:
         return "scope is %r, not %r" % (row.get("scope"), FULL_SCOPE)
+    held = row.get(HELD_COMMANDS_KEY)
+    if isinstance(held, dict):
+        # A run a phase holds (`held_run_row`): every rule below but the last
+        # was met when it was offered, so only the gate declared NOW is asked.
+        return _commands_disqualification(held.get("entries"),
+                                          held.get("digest"), full_commands)
     obs = row.get("observations") if isinstance(row.get("observations"), dict) else {}
     ran_total = obs.get("ranTotal")
     if not (isinstance(ran_total, (int, float)) and not isinstance(ran_total, bool)
@@ -4744,11 +4762,29 @@ def _measurement_disqualification(row, full_commands):
         return ("FULL RUN ON A DIRTY TREE: certifies nothing about %s"
                 % ((row.get("testedState") or {}).get("head"),))
     commands = [s.get("command") if isinstance(s, dict) else None for s in steps]
+    return _commands_disqualification(len(commands), commands_digest(commands),
+                                      full_commands)
+
+
+def commands_digest(commands):
+    """`sha256:` and the hex digest of `commands` as compact JSON, in order -
+    two lists digest alike exactly when they are equal, so a run a phase
+    holds is judged against the gate declared now without carrying its
+    commands."""
+    text = json.dumps(list(commands or []), separators=(",", ":"),
+                      ensure_ascii=False)
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _commands_disqualification(count, digest, full_commands):
+    """The commands rule, over a run's count of commands and their digest: a
+    run of fewer or more than the declared entries says how many, one of the
+    same count that differs says it is not verbatim. One rule for a row and
+    for a run a phase holds, so the two read alike."""
     declared = list(full_commands or [])
-    if len(commands) != len(declared):
-        return ("FULL RUN RAN %d OF %d DECLARED ENTRIES"
-                % (len(commands), len(declared)))
-    if commands != declared:
+    if count != len(declared):
+        return "FULL RUN RAN %s OF %d DECLARED ENTRIES" % (count, len(declared))
+    if digest != commands_digest(declared):
         return ("the published commands do not match meta.fullGate verbatim "
                 "and in order")
     return None
@@ -4958,14 +4994,35 @@ def full_status(rows, phase, git_root, full_commands, run=None):
     contain `mergedHead` -- or, when the only whole-bearing runs carry no
     readable `ts`, the nearest of those, saying so -- or, when not one
     recorded full run was whole-bearing at all, the nearest disqualified one
-    and why.
+    and why. With no full run at all, the basis says no run that could
+    certify the phase is held or found among the rows - never that none ran.
+
+    THE RUNS A PHASE HOLDS ARE AMONG `rows`: `read_rows` gives each back as a
+    scope-`full` row (`held_run_row`), so the walk above is the same over
+    the plan's runs as over the ledger's. One reading the rows give and the
+    plan alone cannot, A STATED LOSS: a run that could not certify anything
+    (red, dirty, unmeasured) is held by no phase, so where the rows' basis
+    names such a run as the newest recorded one, the plan's alone names the
+    newest run that could certify, or says it holds none - the same word.
+    And where more than one run contains the merge the plan names the first
+    that certified it, the rows the newest. A value under
+    `FULL_GATE_RUNS_KEY` on `phase` that is not the writer's shape gives no
+    row; a basis that is not WHOLE then names it (`held_runs_problems`).
     """
     phase = phase if isinstance(phase, dict) else {}
     declared = list(full_commands or [])
     full_rows = _full_rows_newest_first(rows)
     whole = newest_whole_bearing(rows, declared)
     whole_ts = whole.get("ts") if whole is not None else None
-    return dict(_full_answer(full_rows, phase, git_root, declared, run),
+    answer = _full_answer(full_rows, phase, git_root, declared, run)
+    problems = held_runs_problems(phase.get(FULL_GATE_RUNS_KEY))
+    if problems and declared \
+            and answer["answer"] != _manifest_vocab.FULL_STATUS_WHOLE:
+        answer = dict(answer, basis="%s; phase %s holds a full run this build "
+                      "does not read (%s), so it certifies nothing"
+                      % (answer["basis"], phase.get("id"),
+                         "; ".join(problems)))
+    return dict(answer,
                 wholeRunId=whole.get("runId") if whole is not None else None,
                 wholeRunTs=str(whole_ts) if whole_ts else None)
 
@@ -5042,9 +5099,400 @@ def _full_answer(full_rows, phase, git_root, declared, run):
                          "whole-bearing: %s" % (row.get("runId"), reason)),
                 "runId": row.get("runId")}
     return {"answer": _manifest_vocab.FULL_STATUS_PROVISIONAL,
-            "basis": ("no full-scope run has ever been recorded, so nothing "
-                     "can be asked whether it contains %s" % (merged_head,)),
+            "basis": ("no full run that could certify phase %s is held by "
+                      "the plan or found among the ledger's rows, so nothing "
+                      "can be asked whether it contains %s"
+                      % (phase.get("id"), merged_head)),
             "runId": None}
+
+
+# --- the full runs a phase holds: the third place's answer, in the plan --------
+# WHY A PHASE HOLDS FULL RUNS AT ALL. `full_status` walks every recorded full
+# run, and once no ledger row is written the runs it can walk are the ones the
+# plan holds; keeping only the newest run would turn a certified phase
+# provisional the moment a later full run is red. So each phase holds the runs
+# ITS answer is read from, under `FULL_GATE_RUNS_KEY`, at most `HELD_RUNS_MAX`
+# of them (`held_choice`): the run that ranks best for it (`_held_rank`: one
+# containing its merge, then one git could not ask about, then one that does
+# not contain it; the newest on a tie), and beside it the newest run offered
+# when that is another run - the run a PROVISIONAL basis names and the moment
+# `stale-full-run` measures from. Once a held run reads WHOLE nothing replaces
+# it: a later red run qualifies for nothing, and a later green one changes
+# nothing, so a full run does not rewrite every shard its head contains.
+#
+# WHO IS OFFERED A RUN (`full_run_holder`): every phase that has started, merged
+# or not, that does not already hold a run reading whole for it - so a run that
+# qualifies is held by no phase only when every started phase is certified. Not
+# only merged phases, because a run taken on a phase branch's tip before it
+# lands is the run a fast-forward landing is certified by, and the phase has no
+# `mergedHead` yet: an unmerged phase ranks a run by whether its head holds every
+# task commit the phase records, and the read asks git again with the
+# `mergedHead` the landing writes. A PENDING PHASE IS OFFERED NOTHING: it has
+# recorded no work, so what it lands is committed after this run and no head
+# this run measured contains it. The one exception is a phase that lands no
+# commit at all, which carries no work a certification would speak for.
+#
+# WHAT IS HELD IS THE RUN, NEVER A VERDICT: its id, moment and head, the status
+# every held run has, and the count and digest of the commands it ran
+# (`held_run_record`). `read_rows` gives each back as a scope-`full` row
+# (`held_run_row`), once per run and behind a ledger row of the same run, and
+# `full_status` asks git again on every read - so a `mergedHead` re-recorded, a
+# history rewritten or a `meta.fullGate` changed after the run reads as the rows
+# of the same run read. The measurement rules (counted, timed, clean) were met
+# when the run was offered (`_full_disqualification`), so a held run is read
+# against the commands rule and its shape (`held_run_problem`) alone; a shape
+# this build does not write never certifies, and the basis names it.
+FULL_GATE_RUNS_KEY = "fullGateRuns"
+HELD_RUNS_MAX = 2
+# Where a held run's commands ride on the row it is read back as.
+HELD_COMMANDS_KEY = "heldCommands"
+_HELD_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+# A phase or task status that says work began; `cancelled` is never offered.
+_STARTED_STATUSES = ("in_progress", "blocked", "done")
+
+
+def _blank(value):
+    return not (isinstance(value, str) and value.strip())
+
+
+def held_run_record(row):
+    """What a phase holds of the full run `row`: `{runId, at, head, status,
+    entries, digest}`, or None when the row names no run id, head or moment -
+    a held run carries all three or is not written. It does not judge the
+    run: `held_choice` offers only one `_full_disqualification` passes."""
+    row = row if isinstance(row, dict) else {}
+    state = row.get("testedState") if isinstance(row.get("testedState"),
+                                                 dict) else {}
+    run_id, at, head = row.get("runId"), row.get("ts"), state.get("head")
+    if _blank(run_id) or _blank(at) or _blank(head):
+        return None
+    steps = row.get("steps") if isinstance(row.get("steps"), list) else []
+    commands = [s.get("command") if isinstance(s, dict) else None
+                for s in steps]
+    return {"runId": run_id, "at": at, "head": head,
+            "status": row.get("status"), "entries": len(commands),
+            "digest": commands_digest(commands)}
+
+
+def held_run_problem(held):
+    """`(field, why)` for the first way `held` is not the shape
+    `held_run_record` writes, or None. `field` is None when `held` is not an
+    object at all. Strict on purpose: a value written by hand, or by a build
+    with a status this one does not know, is not a run this build certifies
+    from."""
+    if not isinstance(held, dict):
+        return None, "is not an object"
+    for key in ("runId", "at", "head"):
+        if _blank(held.get(key)):
+            return key, "is %r, not a non-blank string" % (held.get(key),)
+    if held.get("status") != RUN_PASSED:
+        return "status", ("is %r, not %r, the one status a held run is "
+                          "written with" % (held.get("status"), RUN_PASSED))
+    entries = held.get("entries")
+    if isinstance(entries, bool) or not isinstance(entries, int) or entries < 1:
+        return "entries", "is %r, not a count of one command or more" % (
+            entries,)
+    digest = held.get("digest")
+    if not isinstance(digest, str) or not _HELD_DIGEST.match(digest):
+        return "digest", ("is %r, not sha256: and 64 lowercase hex digits"
+                          % (digest,))
+    return None
+
+
+def held_runs_problems(value):
+    """Every way the value a phase holds under `FULL_GATE_RUNS_KEY` is not
+    the writer's shape, each naming the key and the field - `[]` when it is,
+    or when the phase holds none."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        return ["%s is not a list of held runs" % (FULL_GATE_RUNS_KEY,)]
+    out = []
+    for i, held in enumerate(value):
+        found = held_run_problem(held)
+        if found is not None:
+            field, why = found
+            out.append("%s[%d]%s %s" % (FULL_GATE_RUNS_KEY, i,
+                                        ".%s" % (field,) if field else "", why))
+    return out
+
+
+def held_run_row(held):
+    """The scope-`full` row a held run is read back as, or None when it is
+    not the writer's shape (`held_run_problem`)."""
+    if held_run_problem(held) is not None:
+        return None
+    return {"runId": held["runId"], "ts": held["at"], "scope": FULL_SCOPE,
+            "status": held["status"], "testedState": {"head": held["head"]},
+            HELD_COMMANDS_KEY: {"entries": held["entries"],
+                                "digest": held["digest"]}}
+
+
+def full_run_holder(phase):
+    """Whether a recorded full run is offered to `phase`: one with an id that
+    is not cancelled and has started - merged, a status saying work began, or
+    a task that began or committed. A pending phase is not; the section's
+    comment says why."""
+    if not isinstance(phase, dict) or phase.get("id") is None \
+            or phase.get("status") == "cancelled":
+        return False
+    if merged_phase(phase) or phase.get("status") in _STARTED_STATUSES:
+        return True
+    return any(isinstance(t, dict) and (t.get("status") in _STARTED_STATUSES
+                                        or not _blank(t.get("commit")))
+               for t in phase.get("tasks") or [])
+
+
+def _held_rank(row, phase, declared, git_root, run):
+    """How strongly the full run `row` answers for `phase` now: -1 when it
+    cannot bear whole against the gate declared now; with a `mergedHead`, 2
+    when its head contains it, 1 when git could not say, 0 when it does not;
+    with none, 1 when its head holds every task commit the phase records and
+    0 otherwise."""
+    if row is None or _full_disqualification(row, declared) is not None:
+        return -1
+    head = (row.get("testedState") or {}).get("head")
+    merged_head = phase.get("mergedHead")
+    if merged_head:
+        answer = _worktrees.merged_into(git_root, merged_head, head,
+                                        run=run)["answer"]
+        return {_worktrees.CONTAINED: 2, _worktrees.UNKNOWN: 1}.get(answer, 0)
+    commits = [t.get("commit") for t in phase.get("tasks") or []
+               if isinstance(t, dict) and not _blank(t.get("commit"))]
+    if commits and all(_worktrees.merged_into(git_root, c, head, run=run)[
+            "answer"] == _worktrees.CONTAINED for c in commits):
+        return 1
+    return 0
+
+
+def _held_moment(held):
+    moment = stamp_moment(held.get("at"))
+    return moment if moment is not None else float("-inf")
+
+
+def held_choice(phase, held, row, declared, git_root, run=None):
+    """The runs `phase` holds once the full run `row` is offered to it, or
+    None when that changes nothing.
+
+    Nothing changes when the gate declares nothing, when `row` cannot bear
+    whole (`_full_disqualification`) or names no id, head or moment, when the
+    phase already holds `row`'s run, or when a run it holds reads WHOLE for
+    it - the certification stays. Otherwise the phase holds the best-ranked
+    of what it held and `row` (`_held_rank`; the newer on a tie, and the one
+    offered last on a tie of moments, as the rows' walk breaks it) and, when
+    that is another run, the newest - oldest first. A held value that is not
+    the writer's shape is not kept."""
+    declared = list(declared or [])
+    if not declared or _full_disqualification(row, declared) is not None:
+        return None
+    offered = held_run_record(row)
+    if offered is None:
+        return None
+    current = [h for h in (held if isinstance(held, list) else [])
+               if held_run_problem(h) is None]
+    if any(str(h["runId"]) == str(offered["runId"]) for h in current):
+        return None
+    pool = [(h, _held_rank(held_run_row(h), phase, declared, git_root, run))
+            for h in current]
+    if any(rank == 2 for _h, rank in pool):
+        return None
+    pool.append((offered, _held_rank(held_run_row(offered), phase, declared,
+                                     git_root, run)))
+    best = max(range(len(pool)),
+               key=lambda i: (pool[i][1], _held_moment(pool[i][0]), i))
+    newest = max(range(len(pool)), key=lambda i: (_held_moment(pool[i][0]), i))
+    chosen = [pool[i][0] for i in sorted(set([best, newest]),
+                                         key=lambda i: (_held_moment(pool[i][0]),
+                                                        i))]
+    return None if chosen == held else chosen
+
+
+def added_findings(manifest_path, put, validator, prefix):
+    """Why the plan at `manifest_path` would not validate with `put`'s change
+    made to a copy of it as assembled now, or None.
+
+    `put(plan)` changes the copy and returns a problem sentence or None.
+    `validator` is `_manifest_rules.bound_validator()`'s and `prefix` its
+    schema code prefix, both the caller's, since the rules sit above this
+    module. ONLY WHAT THE CHANGE ADDS REFUSES: a finding, or a warning the
+    schema check raised - its refusal of a value, or a keyword its reader
+    could not check, since a value checked against less than its schema is
+    not known to validate. A line the plan already carried is not this
+    write's to answer."""
+    try:
+        now = _mio.load_manifest(manifest_path)
+    except Exception as exc:
+        return "the plan could not be read to validate the record (%s)" % (exc,)
+    after = json.loads(json.dumps(now))
+    problem = put(after)
+    if problem:
+        return problem
+
+    def refuses(line):
+        return str(_output.finding_code(line) or "").startswith(prefix)
+    was_f, was_w = validator.validate(now)
+    is_f, is_w = validator.validate(after)
+    before = set(was_f) | set(w for w in was_w if refuses(w))
+    new = [ln for ln in list(is_f) + [w for w in is_w if refuses(w)]
+           if ln not in before]
+    return "; ".join(str(ln) for ln in new[:3]) or None
+
+
+def _phase_dump(phase):
+    return json.dumps(phase, sort_keys=True)
+
+
+def _put_holds(chosen):
+    """`added_findings`' change: each phase of `chosen` (`{id: held}`) holding
+    its value in the assembled plan."""
+    def put(plan):
+        found = [p for p in plan.get("phases") or []
+                 if isinstance(p, dict) and str(p.get("id")) in chosen]
+        if len(found) != len(chosen):
+            return "a phase a plan file holds is not in the assembled plan"
+        for p in found:
+            p[FULL_GATE_RUNS_KEY] = chosen[str(p["id"])]
+        return None
+    return put
+
+
+def _planned_holds(manifest_path, project, row, declared, git_root, run):
+    """`({path: (sharded, {id: (phase as read, held | None)})}, unreadable)`
+    - what each phase a full run is offered to would hold, decided over the
+    plan files as read BEFORE any lock, so the plan is validated once for the
+    whole run rather than once per file; each write reads its file again
+    under the lock and decides again for a phase that changed meanwhile."""
+    bodies, lost = plan_bodies(manifest_path, project)
+    out = {}
+    for _label, phase in bodies:
+        if not full_run_holder(phase):
+            continue
+        path, sharded = _phase_file(manifest_path, phase.get("id"))
+        if not path:
+            continue
+        got = held_choice(phase, phase.get(FULL_GATE_RUNS_KEY), row, declared,
+                          git_root, run=run)
+        out.setdefault(path, (sharded, {}))[1][str(phase["id"])] = (
+            _phase_dump(phase), got)
+    return out, lost
+
+
+def _hold_in(body, sharded, planned, manifest_path, row, declared, git_root,
+             run, validator, prefix):
+    """`write_plan_file`'s change for one plan file: every phase in it that a
+    full run is offered to holds what `held_choice` gives -> `(body | None,
+    problem | None, (held, kept))`. A phase as it was when `planned` decided
+    takes that decision, which was validated with the rest; one that changed
+    under the lock is decided again, and the file's change validated again."""
+    phases = [body] if sharded else [p for p in body.get("phases") or []
+                                     if isinstance(p, dict)]
+    chosen, kept, again = {}, [], False
+    for phase in phases:
+        if not full_run_holder(phase):
+            continue
+        pid = str(phase["id"])
+        was = planned.get(pid)
+        if was is not None and was[0] == _phase_dump(phase):
+            got = was[1]
+        else:
+            got = held_choice(phase, phase.get(FULL_GATE_RUNS_KEY), row,
+                              declared, git_root, run=run)
+            again = again or got is not None
+        if got is None:
+            kept.append(pid)
+        else:
+            chosen[pid] = got
+    if not chosen:
+        return None, None, ([], kept)
+    problem = added_findings(manifest_path, _put_holds(chosen), validator,
+                             prefix) if again else None
+    if problem:
+        return None, ("the plan with run %s held would not validate (%s), so "
+                      "nothing was written" % (row.get("runId"), problem)), None
+    for phase in phases:
+        if str(phase.get("id")) in chosen:
+            phase[FULL_GATE_RUNS_KEY] = chosen[str(phase["id"])]
+    return body, None, (sorted(chosen), kept)
+
+
+def hold_full_run(project, manifest_path, row, declared, git_root, validator,
+                  prefix, run=None, session_id=None, wait=None):
+    """Offer the recorded full run `row` to every phase of the plan at
+    `manifest_path` that `full_run_holder` admits, each plan file written
+    through `write_plan_file` - the `index` lock, the file read under it.
+    The plan is validated with every phase's new value in place before the
+    first save (`added_findings`, with `validator` and `prefix` from the
+    caller), and a file whose phase changed before its lock was taken is
+    decided and validated again under it (`_hold_in`). A plan whose
+    revalidation refuses is written nowhere.
+
+    -> `{"runId", "held", "kept", "refused", "notHeld"}`: the phases whose
+    held runs changed, the phases offered the run that kept what they hold,
+    `[(plan file, sentence)]` for each file that refused or could not be
+    read, and the sentence saying why the run was offered to no phase at all
+    (None when it was). A refusal leaves its file byte for byte as it was."""
+    declared = list(declared or [])
+    out = {"runId": (row or {}).get("runId"), "held": [], "kept": [],
+           "refused": [], "notHeld": None}
+    if not declared:
+        out["notHeld"] = ("this plan names no runnable meta.fullGate entry, so "
+                          "no phase holds a full run")
+        return out
+    reason = _full_disqualification(row, declared)
+    if reason is None and held_run_record(row) is None:
+        reason = "the run names no run id, head or moment"
+    if reason is not None:
+        out["notHeld"] = ("run %s cannot certify a phase (%s), so nothing was "
+                          "held and what every phase holds is unchanged"
+                          % (out["runId"], reason))
+        return out
+    if getattr(validator, "unreadable", None):
+        out["refused"].append((repo_relative_or_token(project, manifest_path),
+                               "%s, so the plan could not be checked and "
+                               "nothing was written" % ("; ".join(
+                                   str(u) for u in validator.unreadable),)))
+        return out
+    files, lost = _planned_holds(manifest_path, project, row, declared,
+                                 git_root, run)
+    out["refused"].extend((label, "could not be read, so the phases it holds "
+                                  "were offered nothing") for label in lost)
+    chosen = dict((pid, got) for _s, decided in files.values()
+                  for pid, (_dump, got) in decided.items() if got is not None)
+    problem = added_findings(manifest_path, _put_holds(chosen), validator,
+                             prefix) if chosen else None
+    if problem:
+        out["refused"].append((
+            repo_relative_or_token(project, manifest_path),
+            "the plan with run %s held would not validate (%s), so nothing was "
+            "written" % (out["runId"], problem)))
+        return out
+    for path in sorted(files):
+        sharded, decided = files[path]
+        if all(got is None for _dump, got in decided.values()):
+            out["kept"].extend(decided)
+            continue
+        got = write_plan_file(
+            project, path,
+            lambda body, s=sharded, d=decided: _hold_in(
+                body, s, d, manifest_path, row, declared, git_root, run,
+                validator, prefix),
+            "holding full run %s" % (out["runId"],), session_id=session_id,
+            wait=RECORD_WAIT_SECONDS if wait is None else wait,
+            outcome="nothing was written to the plan",
+            repair="re-run the full gate with --record once the lock is free")
+        if got["reason"]:
+            out["refused"].append((repo_relative_or_token(project, path),
+                                   got["reason"]))
+            continue
+        held, kept = got["answer"] or ([], [])
+        out["held"].extend(held)
+        out["kept"].extend(kept)
+    out["held"].sort()
+    out["kept"].sort()
+    if not files and not lost:
+        out["notHeld"] = ("no phase has started, so no phase was offered run "
+                          "%s" % (out["runId"],))
+    return out
 
 
 # --- a failing suite no derived gate selected: the selection miss -------------

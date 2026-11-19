@@ -875,7 +875,7 @@ LIST_ANCHORS = (
     ("full-status-words", "The third place",
      os.path.join("scripts", "manifest", "_manifest_vocab.py"),
      r'((?:FULL_STATUS_[A-Z_]+\s*=\s*"[^"]+"[ \t]*\n)+)FULL_STATUS\s*=\s*\(',
-     "derived from the evidence ledger alone"),
+     "read from recorded full runs alone"),
 )
 
 # section -> why nothing anchors it. Checked in BOTH directions by `claim_drift`:

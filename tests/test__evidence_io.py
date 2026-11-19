@@ -3620,7 +3620,7 @@ def _full_status_cases(check):
               res_reorder["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
               and "verbatim" in res_reorder["basis"])
 
-        # --- RED-FIRST: the ledger is the only source ---------------------------
+        # --- RED-FIRST: recorded runs are the only source -----------------------
         phase_with_stale_cache = {"id": "P1", "mergedHead": repo["first"],
                                   "fullEvidence": {"status": "whole",
                                                     "runId": "some-old-run"}}
@@ -3629,7 +3629,7 @@ def _full_status_cases(check):
                                   run=_fake_git(
                                       {"merge-base --is-ancestor": (1, "", "")}))
         check("fs11 RED-FIRST: a stale phase.fullEvidence claiming whole is "
-              "never consulted - the answer comes from the ledger alone: %r"
+              "never consulted - the answer comes from recorded runs alone: %r"
               % (res_cache,),
               res_cache["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL)
 
@@ -6640,8 +6640,662 @@ def _record_schema_cases(check):
         _harness.remove_tree(tmp)
 
 
+# --- the full run a phase holds: the third place's answer, in the plan --------
+# THE ORACLE IS THE ROWS. `_full_status_cases` is the table of full_status
+# fixtures; `_fh_oracle` runs it with `full_status` watched, and at each call
+# puts the same runs through the plan's own path - every run offered, oldest
+# first, to `held_choice`, the one decision the writer makes - then asks
+# `full_status` again of the runs the plan would hold alone. What is compared
+# is derived per fixture (`_fh_kind`), never listed by hand.
+FH_FULL = "word, run and basis"
+FH_WORD_DISQUALIFIED = ("word alone: the run the rows' basis names cannot "
+                        "certify, and the plan holds no run that cannot")
+FH_WORD_FIRST = ("word alone: more than one run contains the merge, and the "
+                 "plan keeps the first that certified it where the rows name "
+                 "the newest")
+_FH_GIT = ["git", "-c", "user.email=t@t.t", "-c", "user.name=t",
+           "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"]
+
+
+def _fh_full_rows(rows):
+    return [r for r in rows or [] if isinstance(r, dict)
+            and r.get("scope") == M.FULL_SCOPE]
+
+
+def _fh_held_over(rows, phase, declared, git_root, run):
+    """The runs the plan would hold for `phase` after every run of `rows` was
+    recorded in the order of its moment - None when it would hold none."""
+    held = None
+    for row in M.oldest_first(_fh_full_rows(rows)):
+        chosen = M.held_choice(phase, held, row, declared, git_root, run=run)
+        if chosen is not None:
+            held = chosen
+    return held
+
+
+def _fh_rows_of(held):
+    """The rows `read_rows` gives back for a list of held runs."""
+    return [r for r in (M.held_run_row(h) for h in held or []) if r]
+
+
+def _fh_kind(rows, phase, declared, git_root, run, got):
+    """Which of the three comparisons a fixture owes, from its own runs."""
+    if not declared or not phase.get("mergedHead") or got.get("runId") is None:
+        return FH_FULL
+    deciding = M.row_by_run(rows, got["runId"])
+    if deciding is None or M._full_disqualification(deciding,
+                                                    declared) is not None:
+        return FH_WORD_DISQUALIFIED
+    if got["answer"] == _manifest_vocab.FULL_STATUS_WHOLE:
+        containing = [
+            r for r in _fh_full_rows(rows)
+            if M._full_disqualification(r, declared) is None
+            and M._worktrees.merged_into(
+                git_root, phase["mergedHead"],
+                (r.get("testedState") or {}).get("head"),
+                run=run)["answer"] == M._worktrees.CONTAINED]
+        if len(containing) > 1:
+            return FH_WORD_FIRST
+    return FH_FULL
+
+
+def _fh_oracle():
+    """`[entry]`, one per `full_status` call the fixture table makes: the
+    rows' answer, the plan's answer and the comparison owed - or the error
+    that stopped the plan's side of one."""
+    captured, real = [], M.full_status
+
+    def spy(rows, phase, git_root, full_commands, run=None):
+        got = real(rows, phase, git_root, full_commands, run=run)
+        try:
+            ph = phase if isinstance(phase, dict) else {}
+            declared = list(full_commands or [])
+            held = _fh_held_over(rows, ph, declared, git_root, run)
+            on_plan = dict(ph)
+            if held is not None:
+                on_plan[M.FULL_GATE_RUNS_KEY] = held
+            mine = real(_fh_rows_of(held), on_plan, git_root, declared,
+                        run=run)
+            captured.append({"rows": got, "plan": mine,
+                             "kind": _fh_kind(rows, ph, declared, git_root,
+                                              run, got)})
+        except Exception as exc:                               # noqa: BLE001
+            captured.append({"error": "%s: %s" % (type(exc).__name__, exc)})
+        return got
+    M.full_status = spy
+    try:
+        _full_status_cases(lambda *_a, **_k: None)
+    finally:
+        M.full_status = real
+    return captured
+
+
+def _fh_commit(root, name):
+    """A commit on the branch checked out at `root` -> its sha."""
+    with open(os.path.join(root, "%s.txt" % (name,)), "w",
+              encoding="utf-8") as fh:
+        fh.write("%s\n" % (name,))
+    _harness.git(root, "add", "--", "%s.txt" % (name,), prefix=_FH_GIT,
+                 timeout=30)
+    _harness.git(root, "commit", "-qm", name, prefix=_FH_GIT, timeout=30)
+    return _harness.git(root, "rev-parse", "HEAD", prefix=_FH_GIT,
+                        timeout=30).strip()
+
+
+def _fh_project(tmp, name, phases, sharded=True):
+    """A git repository holding a plan with `meta.fullGate` and no evidence
+    directory at all -> `(root, mpath)`. The plan is written beside the
+    repository's history, not into it: what a run's head contains is the
+    commits the case makes."""
+    root = os.path.join(tmp, name)
+    os.makedirs(os.path.join(root, "docs", "audit", "phases"))
+    _project(root, {"manifestPath": "docs/audit/audit-plan.json"})
+    _harness.git(root, "init", "-q", prefix=_FH_GIT, timeout=30)
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    meta = {"version": 3, "fullGate": ["x"], "buildCommands": {"x": "echo x"}}
+    if not sharded:
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump({"meta": meta, "phases": phases}, fh)
+        return root, mpath
+    stubs = []
+    for ph in phases:
+        stubs.append({"id": ph["id"], "title": ph.get("title") or ph["id"],
+                      "shard": "phases/%s.json" % (ph["id"],)})
+        _fh_put(root, ph)
+    with open(mpath, "w", encoding="utf-8") as fh:
+        json.dump({"meta": meta, "phases": stubs}, fh)
+    return root, mpath
+
+
+def _fh_shard(root, pid):
+    return os.path.join(root, "docs", "audit", "phases", "%s.json" % (pid,))
+
+
+def _fh_put(root, phase):
+    with open(_fh_shard(root, phase["id"]), "w", encoding="utf-8") as fh:
+        json.dump(phase, fh)
+
+
+def _fh_get(root, pid):
+    with open(_fh_shard(root, pid), encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _fh_bytes(root):
+    out = {}
+    for dirpath, _dirs, names in os.walk(os.path.join(root, "docs")):
+        for name in sorted(names):
+            path = os.path.join(dirpath, name)
+            with open(path, "rb") as fh:
+                out[os.path.relpath(path, root)] = fh.read()
+    return out
+
+
+def _fh_declared(mpath):
+    return M.full_gate_commands(M._mio.load_manifest(mpath))
+
+
+def _fh_row(run_id, ts, head, mpath, **kw):
+    return _fs_row(run_id, ts, head, _fh_declared(mpath), **kw)
+
+
+def _fh_hold(root, mpath, row, validator=None):
+    """The writer, as `run-test-gate.py --full --record` calls it."""
+    import _manifest_rules
+    return M.hold_full_run(
+        root, mpath, row, _fh_declared(mpath), root,
+        validator if validator is not None else _manifest_rules.bound_validator(),
+        _manifest_rules.SCHEMA_CODE_PREFIX)
+
+
+def _fh_answer(root, mpath, pid):
+    """`(full_status over the plan alone, the read)` for phase `pid`."""
+    read = M.read_rows(root, manifest_path=mpath)
+    phase = [p for p in M._mio.load_manifest(mpath)["phases"]
+             if p.get("id") == pid][0]
+    return (M.full_status(read["rows"], phase, root, _fh_declared(mpath)),
+            read)
+
+
+def _fh_started(pid, commits=(), status="in_progress"):
+    return {"id": pid, "title": pid, "status": status,
+            "tasks": [{"id": "%s.%d" % (pid, i + 1), "title": "t",
+                       "status": "done", "commit": c}
+                      for i, c in enumerate(commits)]}
+
+
+def _fh_good_held(head="a" * 40):
+    return M.held_run_record(_fs_row("run-held", "2026-01-02T00:00:00Z", head,
+                                     ["echo x"]))
+
+
+def _fh_head_git(table, default=1):
+    """A fake git whose `merge-base --is-ancestor <a> <b>` answers by `b`."""
+    def run(git_root, args, timeout=None):
+        if args[:2] == ["merge-base", "--is-ancestor"]:
+            return (table.get(args[3], default), "", "")
+        return (0, "", "")
+    return run
+
+
+def _full_held_cases(check):
+    """(fh) A full run's answer for a phase is in the plan: the run a phase
+    holds answers as the rows do, a later red removes nothing, and a held
+    run that is not the shape the writer writes never certifies."""
+    oracle = _fh_oracle()
+    errors = [e["error"] for e in oracle if "error" in e]
+    words = [(e["rows"], e["plan"]) for e in oracle if "error" not in e
+             and e["rows"]["answer"] != e["plan"]["answer"]]
+    fulls = [(e["rows"], e["plan"]) for e in oracle if "error" not in e
+             and e["kind"] == FH_FULL
+             and (e["rows"]["runId"], e["rows"]["basis"])
+             != (e["plan"]["runId"], e["plan"]["basis"])]
+    table = dict((k, sum(1 for e in oracle if e.get("kind") == k))
+                 for k in (FH_FULL, FH_WORD_DISQUALIFIED, FH_WORD_FIRST))
+    check("fh1 ACCEPTANCE 1: over every full_status fixture the table holds, "
+          "the plan's own answer is the rows' word, and the rows' run and "
+          "basis wherever the fixture owes them - comparisons %r; errors %r; "
+          "word differs %r; run or basis differs %r"
+          % (table, errors, words[:2], fulls[:2]),
+          oracle and not errors and not words and not fulls
+          and all(table.values()))
+
+    tmp = _harness.fixture_root("audit-evidence-held-")
+    try:
+        # --- acceptance 2: a later red removes no certification ------------
+        root, mpath = _fh_project(tmp, "r2", [_fh_started("P1")])
+        a = _fh_commit(root, "a")
+        b = _fh_commit(root, "b")
+        _fh_put(root, dict(_fh_started("P1", [a], status="done"),
+                           mergedAt="2026-01-01T00:00:00Z", mergedHead=a))
+        green = _fh_row("run-green", "2026-01-02T00:00:00Z", b, mpath)
+        got = _fh_hold(root, mpath, green)
+        res, read = _fh_answer(root, mpath, "P1")
+        held_list = _fh_get(root, "P1").get(M.FULL_GATE_RUNS_KEY) or []
+        held = held_list[0] if len(held_list) == 1 else {}
+        check("fh2 a green, measured, clean, verbatim full run is held by the "
+              "merged phase its head contains, with its id, head and moment, "
+              "and with no ledger at all the phase reads WHOLE from the plan: "
+              "%r / %r / %r / ledger %r"
+              % (got, held_list, res, read["ledgerAbsent"]),
+              got["held"] == ["P1"] and held.get("runId") == "run-green"
+              and held.get("head") == b
+              and held.get("at") == "2026-01-02T00:00:00Z"
+              and res["answer"] == _manifest_vocab.FULL_STATUS_WHOLE
+              and res["runId"] == "run-green" and read["ledgerAbsent"])
+        before = _fh_bytes(root)
+        for case, row in (
+                ("fh3 ACCEPTANCE 2: a later RED full run on a head that "
+                 "contains the phase",
+                 _fh_row("run-red", "2026-01-03T00:00:00Z", b, mpath,
+                         status="failed")),
+                ("fh3b a later full run on a DIRTY tree",
+                 _fh_row("run-dirty", "2026-01-04T00:00:00Z", b, mpath,
+                         dirty_outside=["src/x.ts"])),
+                ("fh3c a later full run that counted nothing",
+                 _fh_row("run-none", "2026-01-05T00:00:00Z", b, mpath,
+                         ran_total=0))):
+            said = _fh_hold(root, mpath, row)
+            res, _read = _fh_answer(root, mpath, "P1")
+            check("%s holds nothing and leaves every plan byte as it was, so "
+                  "the phase still reads WHOLE by the run that certified it: "
+                  "%r / %r" % (case, said, res),
+                  said["held"] == [] and said["notHeld"]
+                  and _fh_bytes(root) == before
+                  and res["answer"] == _manifest_vocab.FULL_STATUS_WHOLE
+                  and res["runId"] == "run-green")
+        newer = _fh_row("run-green-2", "2026-01-06T00:00:00Z", b, mpath)
+        said = _fh_hold(root, mpath, newer)
+        check("fh4 a later GREEN run that also contains it changes nothing "
+              "either - a certification is written once, so a full run does "
+              "not rewrite every shard it contains: %r" % (said,),
+              said["held"] == [] and said["kept"] == ["P1"]
+              and _fh_bytes(root) == before)
+
+        # --- acceptance 3: what cannot be asked reads unknown ---------------
+        root3, mpath3 = _fh_project(tmp, "r3", [
+            dict(_fh_started("P1"), status="done",
+                 mergedAt="2026-01-01T00:00:00Z"),
+            dict(_fh_started("P2"), status="done",
+                 mergedAt="2026-01-01T00:00:00Z", mergedHead="e" * 40)])
+        c = _fh_commit(root3, "c")
+        _fh_hold(root3, mpath3, _fh_row("run-c", "2026-01-02T00:00:00Z", c,
+                                        mpath3))
+        nohead, _r = _fh_answer(root3, mpath3, "P1")
+        unasked, _r = _fh_answer(root3, mpath3, "P2")
+        check("fh5 ACCEPTANCE 3: from the plan alone a merged phase with no "
+              "mergedHead reads UNKNOWN saying so, and one whose mergedHead "
+              "git cannot relate to the held run's head reads UNKNOWN with "
+              "git's could-not-ask: %r / %r" % (nohead, unasked),
+              nohead["answer"] == _manifest_vocab.FULL_STATUS_UNKNOWN
+              and "no mergedHead" in nohead["basis"]
+              and unasked["answer"] == _manifest_vocab.FULL_STATUS_UNKNOWN
+              and "could not be established" in unasked["basis"]
+              and unasked["runId"] == "run-c")
+
+        # --- a run on the phase branch's tip, then a landing ----------------
+        for name, merge_commit in (("ff", False), ("merge", True)):
+            proj, mp = _fh_project(tmp, "land-" + name, [_fh_started("P1")])
+            base = _fh_commit(proj, "base")
+            _harness.git(proj, "checkout", "-q", "-b", "p1", prefix=_FH_GIT,
+                         timeout=30)
+            tip = _fh_commit(proj, "work")
+            _fh_put(proj, _fh_started("P1", [tip]))
+            tip_run = _fh_row("run-tip", "2026-01-02T00:00:00Z", tip, mp)
+            first = _fh_hold(proj, mp, tip_run)
+            _harness.git(proj, "checkout", "-q", "main", prefix=_FH_GIT,
+                         timeout=30)
+            main_run = _fh_row("run-main", "2026-01-03T00:00:00Z", base, mp)
+            second = _fh_hold(proj, mp, main_run)
+            if merge_commit:
+                _fh_commit(proj, "other")
+                _harness.git(proj, "merge", "-q", "--no-ff", "-m", "land",
+                             "p1", prefix=_FH_GIT, timeout=30)
+            else:
+                _harness.git(proj, "merge", "-q", "--ff-only", "p1",
+                             prefix=_FH_GIT, timeout=30)
+            landed = _harness.git(proj, "rev-parse", "HEAD", prefix=_FH_GIT,
+                                  timeout=30).strip()
+            _fh_put(proj, dict(_fh_get(proj, "P1"), status="done",
+                               mergedAt="2026-01-04T00:00:00Z",
+                               mergedHead=landed))
+            mine, read = _fh_answer(proj, mp, "P1")
+            phase = _fh_get(proj, "P1")
+            rows_say = M.full_status([tip_run, main_run], phase, proj,
+                                     _fh_declared(mp))
+            if merge_commit:
+                check("fh7 a run on the branch tip, then a MERGE COMMIT "
+                      "landing: with no ledger the plan answers what the "
+                      "rows of the same two runs answer, word, run and "
+                      "basis: plan %r / rows %r" % (mine, rows_say),
+                      (mine["answer"], mine["runId"], mine["basis"])
+                      == (rows_say["answer"], rows_say["runId"],
+                          rows_say["basis"])
+                      and read["ledgerAbsent"])
+            else:
+                check("fh6 a run on the branch tip before it lands, a later "
+                      "run on main that does not contain the branch, then a "
+                      "FAST-FORWARD landing: the started phase held the tip "
+                      "run and kept it beside the newer main run, and with "
+                      "no ledger the phase reads WHOLE by the tip run, as "
+                      "the rows do: %r / %r / held %r / plan %r / rows %r"
+                      % (first, second, phase.get(M.FULL_GATE_RUNS_KEY),
+                         mine, rows_say),
+                      first["held"] == ["P1"] and second["held"] == ["P1"]
+                      and sorted(h.get("runId") for h in
+                                 phase.get(M.FULL_GATE_RUNS_KEY) or [])
+                      == ["run-main", "run-tip"]
+                      and mine["answer"] == _manifest_vocab.FULL_STATUS_WHOLE
+                      and mine["runId"] == "run-tip"
+                      and rows_say["answer"] == mine["answer"]
+                      and rows_say["runId"] == mine["runId"]
+                      and read["ledgerAbsent"])
+
+        # --- a phase started after the run is not certified by it -----------
+        proj, mp = _fh_project(tmp, "later", [
+            _fh_started("P1"), _fh_started("P2", status="pending")])
+        one = _fh_commit(proj, "one")
+        _fh_put(proj, _fh_started("P1", [one]))
+        p2 = _fh_get(proj, "P2")
+        p2["tasks"] = []
+        _fh_put(proj, p2)
+        early = _fh_row("run-early", "2026-01-02T00:00:00Z", one, mp)
+        said = _fh_hold(proj, mp, early)
+        two = _fh_commit(proj, "two")
+        _fh_put(proj, dict(_fh_started("P2", [two]), status="done",
+                           mergedAt="2026-01-03T00:00:00Z", mergedHead=two))
+        mine, _read = _fh_answer(proj, mp, "P2")
+        rows_say = M.full_status([early], _fh_get(proj, "P2"), proj,
+                                 _fh_declared(mp))
+        check("fh8 a phase still pending when a full run is recorded holds "
+              "nothing of it, and once started and landed after that run it "
+              "is not certified by it: PROVISIONAL from the plan, naming the "
+              "run a started phase held, as the rows say: %r / plan %r / "
+              "rows %r" % (said, mine, rows_say),
+              said["held"] == ["P1"]
+              and M.FULL_GATE_RUNS_KEY not in p2
+              and mine["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
+              and (mine["runId"], mine["basis"])
+              == (rows_say["runId"], rows_say["basis"]))
+
+        # --- never held by nobody: an unmerged started phase takes it --------
+        proj, mp = _fh_project(tmp, "nobody", [
+            dict(_fh_started("P1"), status="done",
+                 mergedAt="2026-01-01T00:00:00Z"), _fh_started("P2")])
+        x = _fh_commit(proj, "x")
+        _fh_put(proj, dict(_fh_get(proj, "P1"), mergedHead=x))
+        _fh_hold(proj, mp, _fh_row("run-x", "2026-01-02T00:00:00Z", x, mp))
+        y = _fh_commit(proj, "y")
+        said = _fh_hold(proj, mp, _fh_row("run-y", "2026-01-03T00:00:00Z", y,
+                                          mp))
+        check("fh9 a qualifying run is held by a started phase that holds "
+              "nothing reading whole, even while every merged phase is "
+              "certified already - the merged phase keeps its own: %r / P1 "
+              "%r / P2 %r"
+              % (said, _fh_get(proj, "P1").get(M.FULL_GATE_RUNS_KEY),
+                 _fh_get(proj, "P2").get(M.FULL_GATE_RUNS_KEY)),
+              said["held"] == ["P2"] and said["kept"] == ["P1"]
+              and [h.get("runId") for h in
+                   _fh_get(proj, "P1").get(M.FULL_GATE_RUNS_KEY) or []]
+              == ["run-x"]
+              and [h.get("runId") for h in
+                   _fh_get(proj, "P2").get(M.FULL_GATE_RUNS_KEY) or []]
+              == ["run-y"])
+        read = M.read_rows(proj, manifest_path=mp)
+        check("fh10 a run two phases hold is read once, as one full-scope "
+              "run, and its row came from the plan: %r"
+              % ([(r.get("runId"), s) for r, s in zip(read["rows"],
+                                                      read["rowSources"])],),
+              sorted(r.get("runId") for r in read["rows"]
+                     if r.get("scope") == M.FULL_SCOPE) == ["run-x", "run-y"]
+              and set(read["rowSources"]) == set([M.ROW_FROM_RECORD]))
+
+        # --- what else could remove or falsify a certification --------------
+        proj, mp = _fh_project(tmp, "falsify", [
+            dict(_fh_started("P1"), status="done",
+                 mergedAt="2026-01-01T00:00:00Z")])
+        m1 = _fh_commit(proj, "m1")
+        _fh_put(proj, dict(_fh_get(proj, "P1"), mergedHead=m1))
+        cert = _fh_row("run-cert", "2026-01-02T00:00:00Z", m1, mp)
+        _fh_hold(proj, mp, cert)
+        m2 = _fh_commit(proj, "m2")
+        _fh_put(proj, dict(_fh_get(proj, "P1"), mergedHead=m2,
+                           mergedHeadAt="2026-01-03T00:00:00Z"))
+        mine, _r = _fh_answer(proj, mp, "P1")
+        rows_say = M.full_status([cert], _fh_get(proj, "P1"), proj,
+                                 _fh_declared(mp))
+        later = _fh_row("run-later", "2026-01-04T00:00:00Z", m2, mp)
+        said = _fh_hold(proj, mp, later)
+        again, _r = _fh_answer(proj, mp, "P1")
+        check("fh11 a mergedHead RE-RECORDED past the held run's head reads "
+              "PROVISIONAL from the plan exactly as from the rows, and the "
+              "next run that contains the new head replaces the held run "
+              "and reads WHOLE: plan %r / rows %r / %r / %r"
+              % (mine, rows_say, said, again),
+              mine["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
+              and (mine["answer"], mine["runId"], mine["basis"])
+              == (rows_say["answer"], rows_say["runId"], rows_say["basis"])
+              and said["held"] == ["P1"]
+              and again["answer"] == _manifest_vocab.FULL_STATUS_WHOLE
+              and again["runId"] == "run-later")
+
+        gone = dict(_fh_get(proj, "P1"))
+        gone[M.FULL_GATE_RUNS_KEY] = [dict(h, head="e" * 40)
+                                      for h in gone[M.FULL_GATE_RUNS_KEY]]
+        res = M.full_status(_fh_rows_of(gone[M.FULL_GATE_RUNS_KEY]), gone,
+                            proj, _fh_declared(mp))
+        check("fh12 a held run whose head the history no longer holds (a "
+              "rewrite made it unreachable) reads UNKNOWN with git's "
+              "could-not-ask, never WHOLE: %r" % (res,),
+              res["answer"] == _manifest_vocab.FULL_STATUS_UNKNOWN
+              and res["runId"] == "run-later")
+
+        held_now = _fh_get(proj, "P1")
+        for case, commands, said_word in (
+                ("fh13 a meta.fullGate that GAINS an entry after the "
+                 "certification", ["echo x", "echo y"], "1 OF 2"),
+                ("fh13b a meta.fullGate REORDERED after the certification",
+                 ["echo y"], "verbatim")):
+            rows_side = M.full_status([later], held_now, proj, commands)
+            plan_side = M.full_status(
+                _fh_rows_of(held_now[M.FULL_GATE_RUNS_KEY]), held_now, proj,
+                commands)
+            check("%s reads as the rows read the certifying run against the "
+                  "gate declared now - not whole, the same basis: plan %r / "
+                  "rows %r" % (case, plan_side, rows_side),
+                  plan_side["answer"] == _manifest_vocab.FULL_STATUS_PROVISIONAL
+                  and said_word in plan_side["basis"]
+                  and (plan_side["runId"], plan_side["basis"])
+                  == (rows_side["runId"], rows_side["basis"]))
+
+        # --- two runs recorded out of order ---------------------------------
+        phase = {"id": "P1", "mergedHead": "m" * 40}
+        git_by_head = _fh_head_git({"h-in": 0, "h-out": 1, "h-ask": 128})
+        newer_out = M.held_run_record(_fs_row("run-n", "2026-01-05T00:00:00Z",
+                                              "h-out", ["echo x"]))
+        older_out = _fs_row("run-o", "2026-01-04T00:00:00Z", "h-out",
+                            ["echo x"])
+        held_in = M.held_run_record(_fs_row("run-i", "2026-01-01T00:00:00Z",
+                                            "h-in", ["echo x"]))
+        held_ask = M.held_run_record(_fs_row("run-a", "2026-01-01T00:00:00Z",
+                                             "h-ask", ["echo x"]))
+        def ids(chosen):
+            return (None if chosen is None
+                    else sorted(h.get("runId") for h in chosen))
+        unchanged = [
+            ids(M.held_choice(phase, [newer_out], older_out, ["echo x"], "/",
+                              run=git_by_head)),
+            ids(M.held_choice(phase, [held_in], _fs_row(
+                "run-i2", "2026-01-09T00:00:00Z", "h-in", ["echo x"]),
+                ["echo x"], "/", run=git_by_head))]
+        changed = [
+            ids(M.held_choice(phase, [held_ask], _fs_row(
+                "run-o2", "2026-01-09T00:00:00Z", "h-out", ["echo x"]),
+                ["echo x"], "/", run=git_by_head)),
+            ids(M.held_choice(phase, [newer_out], _fs_row(
+                "run-i3", "2026-01-02T00:00:00Z", "h-in", ["echo x"]),
+                ["echo x"], "/", run=git_by_head)),
+            ids(M.held_choice(phase, [held_ask], _fs_row(
+                "run-a2", "2026-01-09T00:00:00Z", "h-ask", ["echo x"]),
+                ["echo x"], "/", run=git_by_head))]
+        check("fh14 RUNS RECORDED OUT OF ORDER keep the rows' walk: an older "
+              "run of the same standing as the newest held one changes "
+              "nothing, a held run that reads whole is never replaced, a "
+              "could-not-ask is kept beside a newer definite does-not-contain, "
+              "an older run that contains the merge is kept beside the newest, "
+              "and a newer could-not-ask replaces an older one: unchanged %r / "
+              "changed %r" % (unchanged, changed),
+              unchanged == [None, None]
+              and changed == [["run-a", "run-o2"], ["run-i3", "run-n"],
+                              ["run-a2"]])
+
+        # --- a held run that is not the writer's shape never certifies ------
+        good = _fh_good_held()
+        contains = _fh_head_git({}, default=0)
+        allow = M.full_status([M.held_run_row(good)],
+                              dict(phase, **{M.FULL_GATE_RUNS_KEY: [good]}),
+                              "/", ["echo x"], run=contains)
+        check("fh15 ALLOW: the shape the writer writes reads WHOLE when its "
+              "head contains the merge, and its basis names no malformation: "
+              "%r" % (allow,),
+              allow["answer"] == _manifest_vocab.FULL_STATUS_WHOLE
+              and M.FULL_GATE_RUNS_KEY not in allow["basis"])
+        bad = [
+            ("a", "not a list", None),
+            ("b", ["not an object"], "[0]"),
+            ("c", [dict(good, status="failed")], "status"),
+            ("d", [dict(good, status="verified")], "status"),
+            ("e", [dict((k, v) for k, v in good.items() if k != "status")],
+             "status"),
+            ("f", [dict(good, digest="abc")], "digest"),
+            ("g", [dict(good, digest="sha256:" + "Z" * 64)], "digest"),
+            ("h", [dict(good, digest="sha1:" + "a" * 40)], "digest"),
+            ("i", [dict(good, entries="1")], "entries"),
+            ("j", [dict(good, entries=True)], "entries"),
+            ("k", [dict(good, entries=0)], "entries"),
+            ("l", [dict(good, runId="  ")], "runId"),
+            ("m", [dict((k, v) for k, v in good.items() if k != "runId")],
+             "runId"),
+            ("n", [dict(good, head="")], "head"),
+            ("o", [dict(good, head=7)], "head"),
+            ("p", [dict(good, at="")], "at"),
+            ("q", [dict((k, v) for k, v in good.items() if k != "at")], "at"),
+        ]
+        for letter, value, field in bad:
+            rows = _fh_rows_of(value if isinstance(value, list) else [])
+            res = M.full_status(rows,
+                                dict(phase, **{M.FULL_GATE_RUNS_KEY: value}),
+                                "/", ["echo x"], run=contains)
+            check("fh16%s a held run malformed in `%s` is read as not held - "
+                  "no row, not WHOLE - with a basis naming %s and the field: "
+                  "%r / %r" % (letter, field or "the value",
+                               M.FULL_GATE_RUNS_KEY, rows, res),
+                  rows == []
+                  and res["answer"] != _manifest_vocab.FULL_STATUS_WHOLE
+                  and M.FULL_GATE_RUNS_KEY in res["basis"]
+                  and (field is None or field in res["basis"]))
+
+        # --- the plan file: one-file layout, refusal, schema, bound ---------
+        proj, mp = _fh_project(tmp, "onefile", [
+            dict(_fh_started("P1"), status="done",
+                 mergedAt="2026-01-01T00:00:00Z")], sharded=False)
+        o = _fh_commit(proj, "o")
+        with open(mp, encoding="utf-8") as fh:
+            body = json.load(fh)
+        body["phases"][0]["mergedHead"] = o
+        with open(mp, "w", encoding="utf-8") as fh:
+            json.dump(body, fh)
+        before = _fh_bytes(proj)
+        refusing = _types_namespace(
+            validate=lambda m, today=None: (
+                ["rules.schema.x: refused"] if any(
+                    M.FULL_GATE_RUNS_KEY in p for p in m.get("phases") or [])
+                else [], []), unreadable=[])
+        refused = _fh_hold(proj, mp, _fh_row("run-o", "2026-01-02T00:00:00Z",
+                                             o, mp), validator=refusing)
+        check("fh17 a plan the held run would not leave valid is refused "
+              "before the save, every byte as it was, the refusal named: %r"
+              % (refused,),
+              refused["held"] == [] and refused["refused"]
+              and "refused" in str(refused["refused"])
+              and _fh_bytes(proj) == before)
+        ok = _fh_hold(proj, mp, _fh_row("run-o", "2026-01-02T00:00:00Z", o,
+                                        mp))
+        res, _r = _fh_answer(proj, mp, "P1")
+        check("fh18 in the one-file layout the held run goes on the phase "
+              "in the plan file itself and reads WHOLE from it: %r / %r"
+              % (ok, res),
+              ok["held"] == ["P1"]
+              and res["answer"] == _manifest_vocab.FULL_STATUS_WHOLE)
+
+        doc = _json_schema.load_document(_RK_SCHEMA)
+        # Every value the writer composes, read off the plan files it wrote.
+        composed = []
+        for base_dir, _dirs, names in os.walk(tmp):
+            for name in names:
+                if not name.endswith(".json") or "audit" not in base_dir:
+                    continue
+                with open(os.path.join(base_dir, name), encoding="utf-8") as fh:
+                    try:
+                        body = json.load(fh)
+                    except ValueError:
+                        continue
+                for ph in ([body] if "tasks" in body else
+                           body.get("phases") or []):
+                    if isinstance(ph, dict) and M.FULL_GATE_RUNS_KEY in ph:
+                        composed.append(("%s %s" % (name, ph.get("id")),
+                                         ph[M.FULL_GATE_RUNS_KEY]))
+        two = [h for _n, v in composed for h in v]
+        wide_one = M.held_run_record(_fs_row(
+            M.new_run_id(), "2026-12-31T23:59:59Z", "f" * 64,
+            ["echo %d %s" % (i, "y" * 400) for i in range(M.MAX_STEPS)]))
+        wide = [wide_one, dict(wide_one, runId=M.new_run_id())]
+        composed.append(("widest", wide))
+        said = dict((name, _rk_said(doc, "#/$defs/fullGateRuns", value,
+                                    M.FULL_GATE_RUNS_KEY))
+                    for name, value in composed)
+        placed = ((doc["$defs"]["phase"].get("properties") or {})
+                  .get(M.FULL_GATE_RUNS_KEY) or {}).get("$ref")
+        check("fh19 every held value the writer composed in this block - "
+              "one run or two - is accepted by the published `fullGateRuns`, "
+              "read by validate-manifest's reader with no keyword unread, "
+              "and the widest - two runs, a 64-hex head, every step of the "
+              "widest gate - is %d bytes against the %d a shard's record is "
+              "held to: %r / placed %r / composed %d"
+              % (M.record_bytes(wide), M.RECORD_MAX_BYTES,
+                 dict((k, v) for k, v in said.items() if v), placed,
+                 len(composed)),
+              all(not lines for lines in said.values())
+              and len(composed) > 2 and any(len(v) == 2 for _n, v in composed)
+              and two and placed == "#/$defs/fullGateRuns"
+              and M.record_bytes(wide) <= M.RECORD_MAX_BYTES)
+        refusals = dict((name, _rk_said(doc, "#/$defs/fullGateRuns", value,
+                                        M.FULL_GATE_RUNS_KEY))
+                        for name, value in (
+                            ("no head", [dict((k, v) for k, v in
+                                              wide_one.items() if k != "head")]),
+                            ("a red status", [dict(wide_one, status="failed")]),
+                            ("a bare digest", [dict(wide_one, digest="abc")]),
+                            ("not a list", wide_one)))
+        check("fh20 SECOND DIRECTION: the schema refuses a held run with no "
+              "head, a status other than passed, a digest of another form, "
+              "or a value that is not a list: %r" % (refusals,),
+              all(lines for lines in refusals.values()))
+    except Exception as exc:                                   # noqa: BLE001
+        check("fh0 the held-run block ran to its end (%s: %s)"
+              % (type(exc).__name__, exc), False)
+    finally:
+        _harness.remove_tree(tmp)
+
+
+def _types_namespace(**kw):
+    import types
+    return types.SimpleNamespace(**kw)
+
+
 def _selftest():
     def body(check):
+        _harness.stage(check, "fh-block", _full_held_cases)
         _harness.stage(check, "ev-block", _cases)
         _harness.stage(check, "rs-block", _record_sufficiency_cases)
         _harness.stage(check, "sh-block", _shared_subtree_cases)

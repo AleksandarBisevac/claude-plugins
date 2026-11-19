@@ -1710,8 +1710,236 @@ def _ci_gh_stub_cases(check):
         _harness.remove_tree(root)
 
 
+# --- the run a recorded full run leaves on the phases it can certify --------------
+_ID = ("-c", "user.email=fixture@example.com", "-c", "user.name=Fixture",
+       "-c", "commit.gpgsign=false")
+
+
+def _git_in(root, *args):
+    return _harness.git(None, *(_ID + args), prefix=("git", "-C", root))
+
+
+def _phases_of(mpath):
+    with open(mpath) as fh:
+        return dict((p["id"], p) for p in json.load(fh)["phases"])
+
+
+def _put_phases(mpath, phases):
+    with open(mpath) as fh:
+        body = json.load(fh)
+    body["phases"] = phases
+    with open(mpath, "w") as fh:
+        json.dump(body, fh)
+
+
+def _held_ids(phase):
+    return [h.get("runId") for h in phase.get(_ev_io.FULL_GATE_RUNS_KEY) or []]
+
+
+def _held_run_cases(check):
+    """(fgh) A recorded full run leaves its run on every phase it can certify,
+    read back with no ledger; a red one leaves the plan as it was; a plan
+    with no fullGate is untouched; and a landing keeps what a phase holds."""
+    tmp = _harness.fixture_root("full-gate-held-")
+    flag = os.path.join(tmp, "red.flag")
+    # A gate that counts what it ran (a pytest summary), red while `flag` exists.
+    root, mpath = _full_repo("held", buildcommands={
+        "ok": "test ! -f '%s' && echo '===== 1 passed in 0.01s ====='" % (flag,)})
+    try:
+        head = _git_head(root)
+        _git_in(root, "checkout", "-q", "-b", "side")
+        with open(os.path.join(root, "side.txt"), "w") as fh:
+            fh.write("side\n")
+        _git_in(root, "add", "--", "side.txt")
+        _git_in(root, "commit", "-qm", "side")
+        side = _git_head(root)
+        _git_in(root, "checkout", "-q", "-")
+        _put_phases(mpath, [
+            {"id": "P1", "title": "one", "status": "done",
+             "mergedAt": "2026-01-01T00:00:00Z", "mergedHead": head,
+             "tasks": []},
+            {"id": "P2", "title": "two", "status": "in_progress",
+             "tasks": [{"id": "P2.1", "title": "t", "status": "done",
+                        "commit": head}]},
+            {"id": "P3", "title": "three", "status": "pending", "tasks": []},
+            {"id": "P4", "title": "four", "status": "done",
+             "mergedAt": "2026-01-01T00:00:00Z", "mergedHead": side,
+             "tasks": []}])
+        lines = []
+        code = M.main([mpath, "--project-dir", root], out=lines.append)
+        rows = [r for r in _ev_io.read_rows(root, manifest_path=mpath)["rows"]
+                if r.get("scope") == "full"]
+        run = rows[0] if len(rows) == 1 else {}
+        phases = _phases_of(mpath)
+        held = (phases["P1"].get(_ev_io.FULL_GATE_RUNS_KEY) or [{}])[0]
+        check("fgh1 a recorded green full run is held by the merged phase its "
+              "head contains - its id, head and moment - and by every other "
+              "started phase that holds nothing reading whole, never by a "
+              "pending one: exit %r, %r, held %r, %r"
+              % (code, run.get("runId"),
+                 dict((p, _held_ids(ph)) for p, ph in phases.items()),
+                 [ln for ln in lines if "plan:" in ln]),
+              code == M.E_OK and run.get("runId")
+              and held.get("runId") == run["runId"]
+              and held.get("head") == (run.get("testedState") or {}).get("head")
+              and head.startswith(str(held.get("head")))
+              and held.get("at") == run.get("ts")
+              and _held_ids(phases["P2"]) == [run["runId"]]
+              and _held_ids(phases["P4"]) == [run["runId"]]
+              and _held_ids(phases["P3"]) == [])
+        _harness.remove_tree(_ev_io.evidence_dir(root))
+        read = _ev_io.read_rows(root, manifest_path=mpath)
+        declared = _ev_io.full_gate_commands(_ev_io._mio.load_manifest(mpath))
+        answers = dict((pid, _ev_io.full_status(read["rows"], phases[pid], root,
+                                                declared)["answer"])
+                       for pid in ("P1", "P4"))
+        check("fgh2 with the evidence directory gone the plan alone answers: "
+              "the phase the run's head contains reads whole, the one it does "
+              "not provisional: %r / ledger %r" % (answers, read["ledgerAbsent"]),
+              answers == {"P1": "whole", "P4": "provisional"}
+              and read["ledgerAbsent"])
+
+        with open(mpath, "rb") as fh:
+            before = fh.read()
+        with open(flag, "w") as fh:
+            fh.write("red\n")
+        lines = []
+        code = M.main([mpath, "--project-dir", root], out=lines.append)
+        os.remove(flag)
+        with open(mpath, "rb") as fh:
+            after = fh.read()
+        read = _ev_io.read_rows(root, manifest_path=mpath)
+        p1 = _ev_io.full_status(read["rows"], _phases_of(mpath)["P1"], root,
+                                declared)
+        check("fgh3 a later RED full run on a head that contains the phase "
+              "leaves every byte of the plan as it was and the phase whole by "
+              "the run that certified it, and says it held nothing: exit %r, "
+              "%r, %r" % (code, p1, [ln for ln in lines if "plan:" in ln]),
+              code != M.E_OK and after == before
+              and p1["answer"] == "whole" and p1["runId"] == run.get("runId")
+              and any("plan:" in ln and "nothing" in ln for ln in lines))
+    finally:
+        _harness.remove_tree(root)
+        _harness.remove_tree(tmp)
+
+    # --- acceptance 5: a plan with no fullGate --------------------------------
+    root, mpath = _full_repo("held-none", fullgate=None)
+    try:
+        with open(mpath, "rb") as fh:
+            before = fh.read()
+        code = M.main([mpath, "--project-dir", root], out=(lambda _l: None))
+        with open(mpath, "rb") as fh:
+            after_full = fh.read()
+        body = json.loads(before)
+        body["phases"][0]["testGate"] = ["ok"]
+        with open(mpath, "w") as fh:
+            json.dump(body, fh)
+        with open(mpath, "rb") as fh:
+            before_task = json.loads(fh.read())
+        import subprocess
+        done = subprocess.run(
+            [sys.executable, _loader.script_path("run-test-gate.py"), mpath,
+             "P1", "--project-dir", root, "--record"],
+            stdin=subprocess.DEVNULL, capture_output=True, text=True,
+            timeout=300)
+        with open(mpath) as fh:
+            after_task = json.load(fh)
+        recorded = ("lastRun", "testEvidence")
+        stripped = json.loads(json.dumps(after_task))
+        for key in recorded:
+            stripped["phases"][0].pop(key, None)
+        # The first run a plan records also stamps its evidence boundary,
+        # which a held full run neither writes nor reads.
+        stamped = (stripped.get("meta") or {}).pop(_ev_io.SINCE_KEY, None)
+        check("fgh4 ACCEPTANCE 5: with no meta.fullGate a full run leaves the "
+              "plan byte-identical, and a recorded phase run changes nothing "
+              "of it but that run's own record and pointer and the evidence "
+              "boundary a first run stamps - no held full run anywhere: "
+              "full %r, run %r (%s), held %r, changed %r"
+              % (code, done.returncode, (done.stdout or "")[-200:],
+                 [p.get(_ev_io.FULL_GATE_RUNS_KEY) for p in
+                  after_task["phases"]],
+                 sorted(k for k in set(stripped) | set(before_task)
+                        if stripped.get(k) != before_task.get(k))
+                 + sorted(k for k in set(stripped["phases"][0])
+                          | set(before_task["phases"][0])
+                          if stripped["phases"][0].get(k)
+                          != before_task["phases"][0].get(k))),
+              code == M.E_OK and after_full == before
+              and done.returncode == 0
+              and all(k in after_task["phases"][0] for k in recorded)
+              and stamped is not None and stripped == before_task
+              and _ev_io.FULL_GATE_RUNS_KEY not in json.dumps(after_task))
+    finally:
+        _harness.remove_tree(root)
+
+    # --- a landing keeps what a phase holds ------------------------------------
+    root = _harness.fixture_root("full-gate-held-landing-")
+    try:
+        close = _loader.load_script("close-phase.py", "close_phase_held")
+        import _tree_stamp
+        shard = os.path.join(root, "docs", "audit", "phases", "P1.json")
+        mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+        os.makedirs(os.path.dirname(shard))
+        _harness.git(None, "init", "-q", "-b", "main", root, prefix=("git",))
+        _git_in(root, "config", "user.name", "t")
+        _git_in(root, "config", "user.email", "t@t")
+        phase = {"id": "P1", "title": "One", "status": "in_progress",
+                 "branch": "audit/p1-demo", "baseRef": None, "mergedAt": None,
+                 "parentBranch": "main", "review": {"status": "passed"},
+                 "testGate": ["test"],
+                 "tasks": [{"id": "P1.1", "title": "t", "status": "done",
+                            "files": ["src.txt"]}]}
+
+        def write(body):
+            with open(shard, "w") as fh:
+                json.dump(body, fh)
+            with open(mpath, "w") as fh:
+                json.dump({"meta": {"developmentBranch": "main"}, "phases": [
+                    {"id": "P1", "title": "One", "shard": "phases/P1.json"}],
+                    "fileIndex": {"src.txt": ["P1.1"]}}, fh)
+        write(phase)
+        _git_in(root, "add", "-A")
+        _git_in(root, "commit", "-qm", "base")
+        _git_in(root, "checkout", "-q", "-b", "audit/p1-demo")
+        for rel in ("work.txt", "src.txt"):
+            with open(os.path.join(root, rel), "w") as fh:
+                fh.write("work\n")
+        digest = _tree_stamp.scope_digest(root, ["src.txt"])[0]
+        phase[_ev_io.RECORD_KEY] = _ev_io.run_record({
+            "runId": "cr-1", "ts": "2026-09-01T01:00:00Z", "scope": "phase",
+            "phaseId": "P1", "status": "passed", "gateSource": "phase",
+            "steps": [{"name": "test"}], "testedState": {"scopeDigest": digest}})
+        phase[_ev_io.POINTER_KEY] = _ev_io.pointer_from_record(
+            phase[_ev_io.RECORD_KEY])
+        held = [_ev_io.held_run_record({
+            "runId": "full-1", "ts": "2026-09-01T02:00:00Z", "scope": "full",
+            "status": "passed", "steps": [{"command": "true"}],
+            "testedState": {"head": "a" * 40}})]
+        phase[_ev_io.FULL_GATE_RUNS_KEY] = held
+        write(phase)
+        _git_in(root, "add", "-A")
+        _git_in(root, "commit", "-qm", "work")
+        _git_in(root, "checkout", "-q", "main")
+        lines = []
+        code = close.main([mpath, "P1", "--project", root, "--keep-branch"],
+                          out=lines.append)
+        with open(shard) as fh:
+            landed = json.load(fh)
+        check("fgh5 close-phase's real landing keeps the full runs the phase "
+              "holds, byte for byte as the branch held them, beside the "
+              "mergedAt and mergedHead it writes: exit %r, held %r, merged %r "
+              "/ %r" % (code, landed.get(_ev_io.FULL_GATE_RUNS_KEY),
+                        landed.get("mergedHead"), "\n".join(lines)[-300:]),
+              code == 0 and landed.get(_ev_io.FULL_GATE_RUNS_KEY) == held
+              and landed.get("mergedAt") and landed.get("mergedHead"))
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
     def body(check):
+        _harness.stage(check, "fgh-block", _held_run_cases)
         _delegation_cases(check)
         _end_to_end_cases(check)
         _learning_cases(check)

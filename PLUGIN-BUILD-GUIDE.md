@@ -466,7 +466,7 @@ L9:
   resolve-ado-tracked -> _ado_tracked, _manifest_io, _output
   resolve-branch -> _branch, _manifest_io, _output, _worktrees
   run-agent-session -> _claude_home, _help, _manifest_io, _output, _proc_group, _skill_places
-  run-test-gate -> _affected_tests, _claude_home, _config_rules, _evidence_io, _fmt, _invariants, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _task_outputs, _tree_stamp, _worktrees
+  run-test-gate -> _affected_tests, _claude_home, _config_rules, _evidence_io, _fmt, _invariants, _journal_io, _loader, _manifest_io, _manifest_phases, _manifest_rules, _manifest_vocab, _output, _panel_write, _proc_group, _runner_output, _status_facts, _task_outputs, _tree_stamp, _worktrees
   set-priority -> _claude_home, _manifest_io, _output, _panel_write, _priority, _warning_groups
   stamp-verification -> _claude_home, _evidence_io, _filed_returns, _invariants, _locks, _manifest_io, _output, _proc_group, _runner_output, _task_outputs, _tree_stamp, _worktrees
   validate-config -> _config_rules, _output
@@ -4181,12 +4181,26 @@ it cannot be committed there at all, so the plan is not at fault for naming rows
 to hold. A torn committed row is a **gap**: it says a row could not be read, never that a pointer is
 unsupported.
 
-**`full_status()` answers the third place's own question from the ledger alone**, never from a
-manifest pointer: WHOLE only when a scope-`full` row that is green, measured, clean and running
+**`full_status()` answers the third place's own question from recorded full runs alone**, never
+from a cached verdict: WHOLE only when a scope-`full` row that is green, measured, clean and running
 the runnable `meta.fullGate` verbatim has a head `_worktrees.merged_into` (git ancestry, never
 string equality) finds containing the phase's `mergedHead`, PROVISIONAL when every such row falls
 short of that, UNKNOWN when the phase carries no `mergedHead` or git itself could not say, and
 NOT_DECLARED when the plan names no runnable third place at all.
+
+**The plan holds the full runs each phase's answer is read from** (`phase.fullGateRuns`), so the
+answer survives without a ledger. `run-test-gate.py --full --record` writes the ledger row, then
+`hold_full_run()` offers the run to every started phase not already reading whole — merged or not,
+since a run on a branch tip is what a fast-forward landing is certified by; a pending phase is
+offered nothing. `held_choice()` keeps at most two runs a phase: the best-ranked for it and the
+newest, and never replaces one that reads whole, so a later red run changes no byte. A held run
+is an id, moment, head, `status` and the count and digest of its commands (`held_run_record()`);
+`records_of_bodies()` gives each back as a scope-`full` row, and `_measurement_disqualification()`
+reads it against the gate declared now. A held value of another shape certifies nothing and the
+basis names it (`held_runs_problems()`). Every plan file is written through `write_plan_file()`
+under the `index` lock, after `added_findings()` — the one copy of "only what this write adds
+refuses", which `full-gate.py`'s `ci` record is checked by too — accepts the plan with the change
+in place.
 
 **`full_gate()` is the one list a full run is counted against**: `meta.fullGate` resolved, with
 every review-only entry (`_manifest_vocab.review_only_entry`, judged on the raw `buildCommands`

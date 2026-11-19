@@ -168,6 +168,7 @@ import _affected_tests as _affected  # noqa: E402  (which suites a task's change
 import _invariants  # noqa: E402  (record_rels/is_record_path: the one definition of
 #                                  which paths are the plan's records, shared with
 #                                  integrate-task, audit-task and commit-task-work)
+import _manifest_rules as _rules  # noqa: E402  (bound_validator: the plan revalidated with a held full run in place)
 import _config_rules  # noqa: E402  (phase_gate_only_split: the one reading of
 #                                    executor.phaseGateOnly, the writer's too)
 
@@ -3491,7 +3492,8 @@ def record_failed(res):
 
     Read off `res["recorded"]`, which only `_record_run` and `_record_full_run`
     write: a run that never asked to record has no such key and is not failed.
-    `record` is `_record_run`'s alone - a full run has no subject in the plan.
+    A full run's `record` is whether every plan file it was offered to took
+    it (`_hold_full_run`).
     """
     recorded = res.get("recorded")
     return isinstance(recorded, dict) and (recorded.get("recorded") is False
@@ -6137,8 +6139,10 @@ def _say_base_answer(answer, args, left, how, out):
 
 
 # --- the third place: --full, against the whole product -----------------------
-def _record_full_run(project, args, res, commands, run_id, out=print):
-    """Record a scope-`full` row: no ids, no pointer, no evidence boundary.
+def _record_full_run(project, args, manifest, res, commands, run_id,
+                     out=print):
+    """Record a scope-`full` row: no ids, no pointer, no evidence boundary -
+    and the run on every phase it can certify (`_hold_full_run`).
 
     THE TWO WRITES A PHASE OR TASK RUN MAKES ARE BOTH ABSENT ON PURPOSE.
     `write_pointer` caches a verdict onto ONE phase or task's own runtime
@@ -6156,6 +6160,12 @@ def _record_full_run(project, args, res, commands, run_id, out=print):
     lost than a run whose summary the operator never saw.
 
     `run_id` is minted by the caller, which names it in a remedy it prints.
+
+    THE PLAN HOLDS THE RUN TOO, after the row is written: each phase it can
+    certify keeps it under `_evidence_io.FULL_GATE_RUNS_KEY`, which is what
+    answers for the phase once no row is written. A plan file that refused it
+    makes `record` False, so the run exits 3 like any run whose record in the
+    plan was not stored.
     """
     identity = {"runId": run_id, "via": "cli",
                 "sessionId": os.environ.get("CLAUDE_CODE_SESSION_ID") or None,
@@ -6168,7 +6178,31 @@ def _record_full_run(project, args, res, commands, run_id, out=print):
         out("  evidence: NOT recorded - %s" % (exc,))
         return {"recorded": False}
     out("  evidence: recorded %s" % (identity["runId"],))
-    return {"recorded": True, "path": recorded["path"]}
+    held = _hold_full_run(project, args.manifest, manifest, recorded["row"],
+                          published, out)
+    return {"recorded": True, "path": recorded["path"], "record": held}
+
+
+def _hold_full_run(project, manifest_path, manifest, row, published, out):
+    """Offer the recorded full run `row` to the plan's phases
+    (`_evidence_io.hold_full_run`), the plan revalidated with the published
+    schema bound in, and print what each phase did with it. False when a plan
+    file refused it or could not be read, True otherwise."""
+    validator = _rules.bound_validator()
+    got = _ev.hold_full_run(project, manifest_path, row, published,
+                            _invariants.git_root_for(manifest, project),
+                            validator, _rules.SCHEMA_CODE_PREFIX)
+    if got["held"]:
+        out("  plan: run %s held by %s" % (got["runId"], ", ".join(got["held"])))
+    if got["notHeld"]:
+        out("  plan: %s" % (got["notHeld"],))
+    elif not got["held"] and not got["refused"]:
+        out("  plan: run %s held by no phase - every phase offered it (%s) "
+            "already holds what it answers from" % (
+                got["runId"], ", ".join(got["kept"]) or "none"))
+    for label, reason in got["refused"]:
+        out("  plan: NOT written to %s - %s" % (label, reason))
+    return not got["refused"]
 
 
 def _miss_remedy(miss, run_id, head, manifest_path, project):
@@ -6361,8 +6395,8 @@ def _run_full(project, args, manifest, out=print):
     if args.record:
         # STRICTLY BEFORE render()/render_quiet() PRINT ANYTHING - see
         # `_record_full_run`'s own docstring for why.
-        res["recorded"] = _record_full_run(project, args, res, commands,
-                                           run_id, out=out)
+        res["recorded"] = _record_full_run(project, args, manifest, res,
+                                           commands, run_id, out=out)
     if args.as_json:
         out(json.dumps(res, indent=2, sort_keys=True))
         # `row_is_red` is the one reading of "did this run pass".

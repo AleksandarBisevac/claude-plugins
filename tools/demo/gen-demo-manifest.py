@@ -1066,6 +1066,19 @@ SCHEMA_EXEMPTIONS = {
     "ci.at": "a field of phase.ci, exempt for its reason.",
     "ci.basis": "a field of phase.ci, exempt for its reason.",
     "ci.supersedes": "a field of phase.ci, exempt for its reason.",
+    "phase.fullGateRuns":
+        "the full runs a phase holds, written when a full run is recorded "
+        "through `run-test-gate.py`; the demo's one full run is a generated "
+        "ledger row (`_full_run_result`) that every surface reads through "
+        "`read_rows` beside what the plan holds, so the phases already read "
+        "from it and a held copy would be the same run twice.",
+    "fullGateRun.runId": "a field of phase.fullGateRuns, exempt for its reason.",
+    "fullGateRun.at": "a field of phase.fullGateRuns, exempt for its reason.",
+    "fullGateRun.head": "a field of phase.fullGateRuns, exempt for its reason.",
+    "fullGateRun.status": "a field of phase.fullGateRuns, exempt for its reason.",
+    "fullGateRun.entries":
+        "a field of phase.fullGateRuns, exempt for its reason.",
+    "fullGateRun.digest": "a field of phase.fullGateRuns, exempt for its reason.",
     # `meta.fullGate` and `phase.mergedHead` WERE EXEMPT HERE, both on the same
     # reason: no rendered surface read either field yet. The report now does
     # (`_report_html._verified_line`), so both rows are gone and `generate()`

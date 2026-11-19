@@ -684,6 +684,11 @@ KNOWN_PHASE = {"id", "title", "status", "model", "blockedBy", "docs",
                # --ci-run` (or `--ci-unreported`); `$defs/ci` owns the shape.
                # Absent means no run was recorded, not that CI was green.
                "ci",
+               # The full runs the phase's full-gate status is read from,
+               # written only by a recorded full run
+               # (`_evidence_io.hold_full_run`); `$defs/fullGateRuns` owns the
+               # shape. Absent means the plan holds no such run for the phase.
+               "fullGateRuns",
                # not in the schema; reason in `OFF_SCHEMA` below:
                "signOff"}
 # Recommended keys on a parallel-run claim — soft: a claim that omits one draws a
