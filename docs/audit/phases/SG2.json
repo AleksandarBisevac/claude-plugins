@@ -37,9 +37,23 @@
         "file": "tests/test_guard_edits.py:1114-1117",
         "issue": "The cf29 budget for a write that creates its file allows `links` = len(rel) extra calls (2) while the measured extra by the question own source is 1 (cf-new.ts: 4 before, 5 now, allowance 2, in after.folding.out). A single disk call added to that write path still passes `within` (6 <= 6); only the call-for-call comparisons `now == today` and `now == off` catch it, so the claim that the budget is what turns an added call red holds for the existing-file write (allowance 0, exact) but not for the creating one. The mutation row for a disk call added to the config question path went red through the call-for-call half, not the budget.",
         "resolution": "Say in the comment above _before (the call-for-call paragraph) that the added calls of a creating write are held by `now == today`, not by the budget; or tighten the allowance to the measured link count per host once windows CI has printed it."
+      },
+      {
+        "id": "SG2-R3",
+        "severity": "med",
+        "file": "tests/test_build_shop.py:1103-1141",
+        "issue": "contradicts task clause: acceptance (1) and rule 1 say that on every host a builder that kept GIT_DIR leaves the other repository unchanged. kept_gitdir_faults() (line 1140) waives the unchanged check whenever refused_by_check(built) is true, so on a host where git lets the patched builder commit into the other repository (macOS) and the check then refuses with exit 3, esc47 asserts only not-exit-0 and a documented failure. The unconditional unchanged reading remains only for the shipped builder (esc45, esc46). The diff is honest about this: the block comment (1038-1048), the esc47 label (unless its own-repository check refused the build) and the executor outcome all say so, and the old esc47 never asserted anything about the other repository, so nothing is asserted more weakly than before. But the task text as written is not what the case holds, and a patched builder that writes the other repository and then refuses passes esc47 by design. I did not rerun the executor probe_victim.py to see the macOS write myself; the order is consistent with build-shop.sh (built() runs after every commit) and with the executor mutation rows.",
+        "resolution": "No code change needed if the owner accepts the narrowing: amend acceptance (1), or record it as a reconciled divergence, to say unchanged unconditionally for the shipped builder (esc45/esc46); for a GIT_DIR-keeping patch, unchanged unless the own-repository check refused. If the clause must stand literally, the only way is a patched builder that stops before git writes, which is not esc47 subject."
+      },
+      {
+        "id": "SG2-R4",
+        "severity": "low",
+        "file": "tests/test_build_shop.py:1085-1088,1171-1176",
+        "issue": "check_reached() reads as not reached any exit 2 whose stderr has build-shop: git init|add|commit failed, whatever git own words were, and the skip goes through _harness.skip(..., True): the absent argument is the constant True, so the helper failure direction (skipped where the mechanism exists) can never fire. On a host where a patched builder fails at a git step for an unrelated reason, esc57 prints SKIPPED HERE and passes; only esc47 weaker conditions and esc58 (check held without GIT_DIR) remain. The words are printed in the label, so it is findable, but nothing requires them to be the work-tree refusal.",
+        "resolution": "Optional: have the esc57 skip branch also require git own words to name a work tree or GIT_DIR (a constant next to WINDOWS_WORDS), so an unrelated git failure fails esc57 instead of skipping it; or pass a computed absent argument that is not constant True."
       }
     ],
-    "outcome": "[findings: 2 - 0 high, 0 med, 2 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 4 - 0 high, 1 med, 3 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -503,7 +517,7 @@
     {
       "id": "SG2.6-xk1",
       "title": "The eval builder's own-repository refusal is held on every host: what must never happen is asserted everywhere, and the check itself where git lets the patched builder reach it",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The first CI run over the skill-gates phase was red on windows in one case of tests/test_build_shop.py that is green on macOS and ubuntu.\n\nMEASURED IN CI (windows runner), read from the job log. esc47 patches the shipped builder (plugins/audit/evals/build-shop.sh) to keep GIT_DIR, points GIT_DIR at another repository's .git, runs the bugfix scaffold and wants exit 3 with the words 'own repository' - the builder's check that the repository it built is the workspace's own. On windows the patched builder exited 2 with 'fatal: this operation must be run in a work tree | build-shop: git add failed': git itself refused before the builder's check was reached. Its neighbours esc45, esc46 and esc48 passed in the same job, so the shipped builder leaves the other repository alone there. Why git for windows refuses at that point (the form GIT_DIR arrives in under the shell that runs the builder, or how that git reads GIT_DIR with no work tree named) was NOT established - nothing here can run windows.\n\nTHE RULE TO BUILD.\n1. WHAT MUST NEVER HAPPEN IS ASSERTED ON EVERY HOST: a builder that kept GIT_DIR never exits 0, and the other repository is byte for byte and ref for ref what it was (the reading esc45 and esc46 already take).\n2. THE CHECK ITSELF IS ASSERTED WHERE IT IS REACHED: exit 3 with its own words. Where git stops the patched builder first, the case does not pass silently and does not fail for git's reason: it prints that the check was not reached on this host, with git's words, as its own line a reader of a CI log can find.\n3. THE CHECK IS ALSO HELD WITHOUT GIT'S HELP, on every host: one case drives the builder's own-repository check through an input that does not depend on how a git build reads GIT_DIR (for instance a patched builder whose build lands in the workspace while the question the check asks is answered for another repository), so the check has a red-first proof on windows too.\n4. Nothing of the shipped builder changes unless a run shows it building into a repository that is not the workspace's; if one does, stop and report it.\n\nHOW TO PROVE. Locally: the present case green; a substituted git that refuses the way the windows log shows ('this operation must be run in a work tree' at the add) makes the PRESENT case red and the new one print the not-reached line and still hold rule 1. A mutation probe the orchestrator can run from the worktree root: the builder's check removed (the rule-3 case and the reached half go red); the check made to exit 0; rule 1's comparison of the other repository dropped. Say in the return which lines only a windows run can confirm.\n\nNOT in this task: the timing cases (another task); the scaffolds' content; the eval cases' yaml.\n\nAcceptance:\n(1) On every host a builder that kept GIT_DIR does not exit 0 and leaves the other repository unchanged.\n(2) The own-repository check is asserted where reached, and a host where git stops first prints that as its own line.\n(3) One case holds the check on every host without depending on how git reads GIT_DIR, and removing the check turns it red.",
       "files": [
         "tests/test_build_shop.py"
@@ -524,21 +538,31 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-19T18:31:41Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "timing": {
+        "stages": [],
+        "firstStartedAt": "2026-11-19T18:31:41Z"
+      },
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-19T19:00:57Z.4d8881",
+        "status": "passed",
+        "at": "2026-11-19T19:00:57Z"
+      }
     },
     {
       "id": "SG2.7-xk1",
       "title": "A growth-per-doubling case measures runs long enough for the clock it reads, by one shared helper, so a coarse clock cannot turn it red or green",
-      "status": "in_progress",
+      "status": "done",
       "description": "The first CI run over the skill-gates phase was red on windows in two timing cases that are green on macOS and ubuntu.\n\nMEASURED IN CI (windows runner), read from the job logs.\n(a) tests/test__clause_coverage.py cw8: 'list numbers on one line grew 0.00x, 15.62x, 3.00x per doubling; mentions on one line grew 15.62x, 1.00x, 4.00x; markers on one line grew 15.62x, 2.00x, 2.50x'. The case reads time.process_time, whose step on windows is about 15.6 ms: a run shorter than one step reads as zero or as one whole step, so the ratios are the clock's, not the code's.\n(b) tests/test_build_shop.py esc53 (python's regex engine): worst growth 5.38x with the LONGEST run at 0.0033 s. The case reads time.perf_counter over single runs of a few milliseconds on a shared runner; its node twin esc55 passed in the same job.\n\nTHE RULE TO BUILD.\n1. ONE HELPER, in tests/_harness.py (which carries its own cases), measures a growth series: for each size it repeats the measured call until the total is at least a stated multiple of the clock's own resolution (asked of the clock - time.get_clock_info - and floored by a measured step, since a documented resolution can be finer than the step the clock really takes) and at least a stated minimum duration, and returns per-call seconds with the repeat count. Both cases use it; neither keeps a private loop.\n2. A size whose single run is too short to measure is REPEATED, never skipped and never passed: a series the helper could not bring above the floor inside the case's deadline is a failure that says so.\n3. The thresholds keep their meaning: growth per doubling within the stated power, the longest within its ceiling, a child killed at its deadline a failure. The power is not loosened to make a runner pass; if a threshold moves, the return carries the measured spread on this machine (two runs with a gap) that justifies it.\n4. The cases still catch what they were written for: a reading made quadratic again turns each red.\n\nHOW TO PROVE. Red before, locally: substitute a clock with a 15.6 ms step (and one that returns zero for a short run) for the one each case reads and show the present loops produce the CI ratios; green after with the same substituted clock. The existing mutation of each case (the quadratic reading; the regular expression made to backtrack) still turns it red under the helper, by a mutation probe the orchestrator can run from the worktree root, which also holds: the repeat floor removed; the helper returning a total instead of per-call seconds. Suite seconds before and after, two runs with a gap. Windows cannot be run locally; say which lines only CI can confirm.\n\nNOT in this task: the code under measurement; esc47 (another task); any other timing case unless a run with the substituted coarse clock shows the same fault in it (then list it and move it to the helper).\n\nAcceptance:\n(1) Both cases take their series from one helper in tests/_harness.py that repeats a run until it is long enough for the clock.\n(2) Under a substituted clock with a 15.6 ms step both cases answer as they do under the real clock.\n(3) A series that cannot be measured inside the deadline fails and says so.\n(4) The quadratic and backtracking mutations still turn the cases red.",
       "files": [
         "tests/_harness.py",
@@ -566,14 +590,16 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0a603072dfb0",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "ONE HELPER: tests/_harness.py gains growth_series(call, inputs, clock=time.perf_counter, clock_name='perf_counter', steps=GROWTH_STEPS, min_seconds=GROWTH_MIN_SECONDS, rounds=3, deadline=60.0, wall=time.perf_counter) and clock_step(). It repeats call(x) in batches until a batch's total on `clock` is at least floor = max(steps * max(get_clock_info(clock_name).resolution, measured step), min_seconds); the step is measured by clock_step (reading the clock until it changes, least of three steps from an edge). Rounds take the inputs in turn; a round counts only when its batch reached the floor; per input the least per-call round is kept. It returns {seconds (per call), repeats, totals, floor, resolution, fault}; fault is None, or a sentence naming the input by place and length, the floor and the deadline when an input could not reach `rounds` batches at the floor before `deadline` seconds of `wall`, or 'the clock did not advance' when clock_step sees no change in CLOCK_PROBE_SECONDS. A faulted series holds only the inputs before the first unmeasured one. GROWTH_STEPS = 10: at the floor a doubling reads within (steps-1)/(steps+1) and its inverse of its size, so a linear doubling reads under 2 ** 1.5 while a 1/64 s series fits the children's deadlines. CONSUMERS: cw8's child (tests/test__clause_coverage.py _WIDE_TIMER) and esc53's python child (tests/test_build_shop.py _PY_TIMER) import _harness from TESTS_DIR and call growth_series inside the child, so the child is still the unit killed at WIDE_DEADLINE / TRIPWIRE_DEADLINE; neither keeps a private loop. New per-case parameters: WIDE_SERIES_DEADLINE 45.0, WIDE_MIN_SECONDS 0.02, WIDE_ROUNDS 3 (HEAD's loop took 3 rounds); TRIPWIRE_MIN_SECONDS 0.01, TRIPWIRE_ROUNDS 3 (HEAD's min_rounds), TRIPWIRE_SERIES_DEADLINE 8.0. A helper fault is a case fault worded 'could not be measured: <sentence>'; timer_answer accepts a faulted line. esc53's clock moved from perf_counter to process_time: helper batches on perf_counter still read 4.21x (18:18, load 20) and 4.83x (18:22, load 29, 10 cores) under local load, while process_time under load 29 read 2.13x (measured once under that load; 2.10-2.12x in three later runs under load 3-13). esc55 (node) keeps its own loop: it is another engine and passed on windows. NO threshold moved: WIDE_POWER/FLOOR/CEILING/BYTES/DEADLINE, TRIPWIRE_POWER/FLOOR/CEILING/DEADLINE and gw15's ratio < 6 are unchanged. SAME FAULT ELSEWHERE: of the process_time/perf_counter readers in tests/, gw15 (tests/test_guard_history_rewrite.py, outside the declared files) went red under the coarse clock ('fastest at 4 operands 0.0 s, at 16 0.0 s, ratio unmeasurable'), so it was moved to growth_series (min_seconds 0.005, rounds 5) and its now-unused `import time` removed; the plan gate allowed the edit. fx6 (tests/test__floor_guard.py) was run under the coarse clock and stayed green (a 10 s ceiling over a ~1.1 s run), so it was left alone. RUNS: the gate command above exit 0 (4/4 files, 329 cases); sweep --selftest exit 0 (168/168); the orchestrator's gate unrecorded: GATE GREEN, exit 0; ruff and vermin -t=3.8- clean on the four changed suites; prose_number_claims() and house_style_violations() report nothing. Suite seconds (sweep --jobs 1), before on a HEAD export at 18:12 (load 11.7) and 18:42 (load 2.8), after at 18:43 (load 3.1) and 19:09 (load 3.0): _harness 9.0/9.0 -> 9.1/9.1; test__clause_coverage 4.3/4.3 -> 5.3/5.2; test_build_shop 10.4/10.7 -> 12.2/12.9; test_guard_history_rewrite 0.8 (once at HEAD) -> 0.8/0.8. On a 1/64 s clock (windows' real process-time step) the cw8 child takes 12.6 s and esc53's 18 python children 40.3 s (19:10, load 3.5), against about 2.2 s and 3.1 s on the real clock here. A mutation probe (scratchpad sg2.7/mutations.py, 25 rows, exit 0) holds the before/after coarse-clock rows, the quadratic reading and backtracking tripwire on both clocks, the zero series deadlines, and one row per helper rule. DEPENDANTS: tests/_harness.py's importers and the names used elsewhere (_group_present, _load_sweep, _pid_present, _positive_int) are untouched, since the change only adds names; the prose mentions in tests/test__refs.py and tools/sweep-selftests.py still hold. tests/test__affected_tests.py and tools/sweep-selftests.py are unchanged and green. test__clause_coverage.py's and test_build_shop.py's path mentions (.github/sweep-costs.json, _clause_coverage.py, the eval case.yaml files, tests/test__output_lints.py, CHANGELOG.md, PLUGIN-BUILD-GUIDE.md) are unaffected, and _cases/_selftest/write_hook/tool_result are unchanged. .github/sweep-costs.json now underweights both suites on windows (not a declared file; not edited).",
+        "descriptive": "cw8, esc53 and gw15 now take their growth series from one harness helper that repeats each call until the batch is long enough for the clock's measured step, so a 1/64 s clock neither turns them red (cw8, gw15) nor green on all-zero readings (esc53); a series the helper cannot measure before its deadline fails, naming what was not measured."
       },
       "startedAt": "2026-11-19T17:04:33Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-19T18:31:10Z",
+      "verifiedBy": [
+        "gs1-gs8 in tests/_harness.py, over a virtual clock with a 1/64 s step: per-call seconds within 6% and a near-2x doubling (gs1); the floor built on the measured step, not the documented resolution (gs2); a stated minimum duration as the floor (gs3); a pause that lifts a one-call batch over the floor discarded (gs4); a deadline that leaves an input unmeasured is a fault naming it, with no time for it (gs5); a clock that never advances is a fault, not zeros (gs6); the real perf_counter defaults (gs7); a slow stretch falls on one round of every input because rounds take the inputs in turn (gs8)"
+      ],
       "notes": [
         {
           "at": "2026-11-19T15:52:47Z",
@@ -597,7 +623,40 @@
         }
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-19T18:20:09Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 4532000,
+            "startedAt": "2026-11-19T17:04:37Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-19T18:30:38Z.28fb41",
+            "kind": "wait",
+            "ms": 5000,
+            "startedAt": "2026-11-19T18:20:21Z"
+          },
+          {
+            "basis": "selectionMs in evidence row 2026-11-19T18:30:38Z.28fb41, ending at its startedAt",
+            "kind": "selection",
+            "ms": 16880,
+            "runId": "2026-11-19T18:30:38Z.28fb41",
+            "startedAt": "2026-11-19T18:20:26Z"
+          },
+          {
+            "basis": "durationMs in evidence row 2026-11-19T18:30:38Z.28fb41",
+            "kind": "gate",
+            "ms": 594727,
+            "runId": "2026-11-19T18:30:38Z.28fb41",
+            "startedAt": "2026-11-19T18:20:43Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 0a603072dfb0",
+            "kind": "commit",
+            "ms": 3268,
+            "startedAt": "2026-11-19T18:31:05Z"
+          }
+        ],
         "firstStartedAt": "2026-11-19T17:04:33Z"
       },
       "reviewPerTask": "signals",
@@ -605,7 +664,92 @@
         "runId": "2026-11-19T18:31:04Z.d156c1",
         "status": "passed",
         "at": "2026-11-19T18:31:04Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "0a603072dfb0",
+        "at": "2026-11-19T18:31:10Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-19T18:20:07Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/_harness.py tests/test__clause_coverage.py tests/test_build_shop.py tests/test__affected_tests.py` in a throwaway tree at HEAD exited 1 with 3 of 63 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - cw8 (house FAIL), esc53 (house FAIL), esc54 (house FAIL): SELFTEST FAILED: 61/63 cases passed; the run with the task's copy of test-support module tests/_harness.py laid over passed, so it may carry the work the new cases test, and the run was made again with HEAD's copy - the run with the fix lays it over; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
+    },
+    {
+      "id": "SG2.8-xk1",
+      "title": "The journal hook's and the edit guard's suites run as blocks, and the sweep's cost table holds what the suites of this line cost, so no file of it meets the per-file timeout on the slowest runner",
+      "status": "pending",
+      "description": "The second CI run over the skill-gates phase was red on windows because tests/test_journal_writes.py 'did not finish within 300s'. It is not a hang: read from the CI logs, the same suite printed its whole run on windows in 240.8 s in the run before the merge (run 44549802704, windows plain 4), and on linux takes between about 40 and 75 s. The sweep's cost table (.github/sweep-costs.json) holds 29.9 slot-seconds for it - a figure recorded before the skill-gates line added its cases - so the runner gave it the floor timeout and dealt it to a part as a light file.\n\nWHAT THE RUNNER ALREADY OFFERS (read tools/sweep-selftests.py before anything: the `blocks, not suites` comment above `work_items()`, the `shards` comment above `parse_shard()`, and how a timeout is calibrated). A suite whose `__main__` is `_harness.staged_main` over a `STAGES` table is run block by block, each block a job on one slot with its own timeout and its own figure in the cost table, then replayed once for the whole run's lines. tests/test_journal_writes.py is one unstaged file; its neighbours of comparable weight are staged (tests/test_guard_edits.py, tests/test_audit_task.py and others - read two before writing a table).\n\nTHE SAME RUN SHOWS THE NEXT ONE COMING: tests/test_guard_edits.py, also unstaged and also grown by this line, printed its run on windows in 236.1 s against the same 300 s. Every file's seconds on every leg of that run are in the file the orchestrator names in your prompt.\n\nTHE RULE TO BUILD.\n1. tests/test_journal_writes.py and tests/test_guard_edits.py each become a staged suite: its cases grouped into blocks along the seams it already has (its `_..._cases(check)` functions and the sections of its main body), each block able to run alone - whatever one block builds for another is built by each that needs it, or moved into a shared fixture function - and the whole run printing THE SAME CASE LINES IN THE SAME ORDER as before. Prove that last sentence by diffing the PASS/FAIL labels of a whole run before and after (ids and order; the summary line's count equal).\n2. No case is dropped, weakened, merged or renamed, and no assertion changes. The floor guard will read this diff and say that code outside the labelled checks moved; that is expected, and the return says why it is not a weakening, with the before/after label diff as the evidence.\n3. THE COST TABLE IS RE-RECORDED, not hand-edited, for the suites this line changed or added - the way the runner's own flag does it (`--record-costs`; read what it writes and for which files) - so each block of this suite and every file the skill-gates line added or grew has a measured figure and none is 'estimated'. Say in the return which files' figures moved by more than double, with both numbers and the command that printed them. The table's figures are this machine's; the timeout a runner applies is the floor or a multiple of the figure - say what that gives the heaviest block of this suite on a runner about six times slower than this machine (the ratio the two CI figures above show against a local run you take), and that it is under the per-job timeout.\n4. gate-parity's shard and time-bound rules stay green (`python3 tools/gate-parity.py`), the runner's own cases stay green (`python3 tools/sweep-selftests.py --selftest`), and the parts still cover the whole tree - the runner's cases pin that.\n5. List in the return every OTHER unstaged suite that took more than half the per-file timeout on any leg of that run, with its seconds - they are not this task's to stage, and the list goes to the phase's batch.\n6. If a single block is itself heavier than the others together (one case that builds many git fixtures), say so and split it where the seam is; do not raise a timeout to make a slow file fit.\n\nHOW TO PROVE. The label diff of rule 1. Each block run alone, in an order other than the table's, green (a block that needs another's leftovers shows here). The suite through the sweep (`python3 tools/sweep-selftests.py tests/test_journal_writes.py --jobs 4`), two runs with a gap, seconds before and after. A mutation probe the orchestrator can run from the worktree root: one block left out of the STAGES table (the suite's or the runner's own coverage rule must go red - find which, and if neither does, that is a finding to report, not to fix here); one case's assertion inverted in a block run alone (red in that block). Windows cannot be run locally: only CI confirms the seconds there.\n\nNOT in this task: the hook under test; any other suite's staging; the timing cases and the mask (other tasks).\n\nAcceptance:\n(1) Both suites are staged, every block runs alone, and a whole run prints the same case labels in the same order with the same count as before.\n(2) The cost table carries measured figures for both suites' blocks and for every file the skill-gates line added or grew, written by the runner's own flag.\n(3) gate-parity and the runner's own cases are green.",
+      "files": [
+        "tests/test_journal_writes.py",
+        "tests/test_guard_edits.py",
+        ".github/sweep-costs.json"
+      ],
+      "tests": {
+        "mode": "gate-only",
+        "add": [
+          "tests/test_journal_writes.py: the suite runs as blocks that each pass alone and a whole run prints the case labels it printed before, in the same order",
+          "tests/test_guard_edits.py: the suite runs as blocks that each pass alone and a whole run prints the case labels it printed before, in the same order"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_journal_writes.py tests/test_guard_edits.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
+    },
+    {
+      "id": "SG2.9-xk1",
+      "title": "The gate suite's byte-for-byte comparison of two runs masks a duration as one token, so how long a step took cannot turn it red",
+      "status": "pending",
+      "description": "The second CI run over the skill-gates phase (after the development branch was merged in) was red in tests/test_run_test_gate.py pgo7 on two legs - linux plain and windows cp1252 - and green in the same suite on linux stress, windows plain and macOS in the same run. The development branch's own CI was green on the commit that was merged. The case came in with that merge; nothing of the skill-gates line touches it.\n\nWHAT THE CASE DOES (tests/test_run_test_gate.py, `_pgo_masked` and pgo7). It runs one task gate twice in two fixtures that differ only in a config value, masks 'ids, stamps and durations' out of what each printed, and wants the two texts equal. The mask's last step is `re.sub(r\"\\d+\", \"N\", text)`.\n\nTHE ORCHESTRATOR'S READING, not yet proven by a red run - prove or refute it first. A step line prints its duration through `_fmt.human_duration` (\"%d ms\" below a second, \"%.1f s\" from one second, \"%d m %02d s\" from a minute) right-justified in a column. Masking the digits alone leaves two things that differ with nothing but time: the PADDING before a duration (a two-digit and a three-digit number of milliseconds, right-justified in one column, mask to texts with a different count of spaces in front) and the UNIT (`N ms` against `N.N s`). On this machine both runs take a two-digit number of milliseconds, so the case has only ever been seen green here; on a loaded runner the two runs land either side of a power of ten. The failing CI line prints only the exit codes, the entries run and the row keys - all equal for both runs - so the difference was in the masked text, which the line does not show.\n\nTHE RULE TO BUILD.\n1. A duration is masked as ONE TOKEN WITH ITS PADDING, by what prints it: the mask recognises every form `_fmt.human_duration` can return (derive them from that function - call it over a range of values and build the expectation from its answers - rather than restating its three formats in the suite, so a fourth form added there is masked or turns a case red) and replaces the token and the column padding in front of it with one fixed word.\n2. THE MASK IS HELD BY ITS OWN CASE, which needs no gate run: two texts that are one step line printed for durations either side of each boundary the formatter has (one and two digits, two and three, under and over a second, under and over a minute) mask to the same text; and two texts that differ in something that is NOT time (an entry name, an exit code, a word of a banner) do not - the allow half, so the mask cannot be widened into one that hides a real difference.\n3. WHEN THE COMPARISON FAILS IT SHOWS THE DIFFERENCE: the failing line carries the differing lines of the two masked texts (a bounded unified diff), since a line that prints only what was equal sent a reader to the code.\n4. THE CLASS, NOT THE INSTANCE. Search tests/ and tools/ for every other comparison of two runs' printed output that masks or ignores digits, stamps or durations by a pattern of its own (the starting grep: `re.sub(` beside `\\\\d` in tests/, and the words 'masked', 'byte for byte', 'the same lines'); list each in the return with whether a duration can reach it. One that can is moved to the same mask. If more than one suite needs it the mask lives in tests/_harness.py with its cases there - but another task of this phase is adding a helper to tests/_harness.py right before this one, so read the file as it stands when you start.\n5. No behaviour of run-test-gate.py or _fmt.py changes.\n\nHOW TO PROVE. Red before, locally: drive pgo7's comparison with a step whose duration is substituted (the fixture's command made to sleep, or the duration field substituted where the line is printed) so the two runs take 56 ms and 156 ms, then 950 ms and 1050 ms - the PRESENT mask reports them different. Green after with the same substitution. A mutation probe the orchestrator can run from the worktree root (a copy of the tree, each mutation asserted applied, __pycache__ purged between rows): the mask reverted to digits alone; the padding left out of the token; the mask widened to swallow the whole step line (the allow half goes red); the config value's effect made real - an always-firing split - so pgo7 still catches what it was written for.\n\nNOT in this task: the growth-series timing cases (another task); the gate's own output.\n\nAcceptance:\n(1) Two runs whose steps took different numbers of digits of milliseconds, or fell either side of a second, compare equal under the mask; two that differ in anything else do not.\n(2) The forms the mask knows are derived from the formatter, held by a case that needs no gate run.\n(3) A failing comparison prints the differing lines.\n(4) Every other masked comparison of two runs in tests/ and tools/ is listed, and one a duration can reach uses the same mask.",
+      "files": [
+        "tests/test_run_test_gate.py"
+      ],
+      "tests": {
+        "mode": "regression",
+        "add": [
+          "tests/test_run_test_gate.py: the mask treats a duration with its padding as one token for every form the formatter returns, keeps a difference that is not time, and a failing comparison prints the differing lines"
+        ],
+        "expectRedFirst": false,
+        "gate": [
+          "python3 tools/sweep-selftests.py tests/test_run_test_gate.py"
+        ],
+        "gateBasis": "tests.add"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "low",
+      "blockedBy": [],
+      "dependsOn": [],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": []
     }
   ],
   "parentBranch": "integration/skill-gates",

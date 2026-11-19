@@ -1003,15 +1003,8 @@ def _redirect_cases(check, root):
               % (built["code"], before == after, own_repo(box),
                  quoted(built["err"], 400)))
 
-    box, hits = make_box(root, REDIRECT_KEPT)
-    victim = make_victim(root, box)
-    built = scaffold(box, "bugfix", extra_env=redirect_env(victim, ("GIT_DIR",)))
-    check("esc47 a builder patched to keep GIT_DIR refuses, exit 3, when the "
-          "repository it built is not the workspace's own (anchor matched %r "
-          "time(s))" % (hits,),
-          hits == 1 and built["code"] == EXIT_REFUSED
-          and "own repository" in built["err"],
-          "exit %r: %s" % (built["code"], quoted(built["err"], 400)))
+    _kept_gitdir_cases(check, root)
+    _own_repo_check_case(check, root)
 
     hooks = os.path.join(root, "host-hooks")
     template = os.path.join(root, "host-template")
@@ -1040,6 +1033,150 @@ def _redirect_cases(check, root):
           "repository, where it would run in the session: the workspace's hooks "
           "directory holds %r" % (copied,),
           built["code"] == 0 and not copied)
+
+
+# --- the own-repository check, on every git ------------------------------------
+# A builder that kept GIT_DIR is stopped by one of two things, and which one comes
+# first is the host git's business: where git lets it (macOS, seen), the build
+# lands in the other repository and the builder's own-repository check refuses
+# afterwards; a windows runner's git refused the first `add` with "this operation
+# must be run in a work tree", before the check. Why that git refuses there was not established, so no
+# case below depends on it. What must never happen is asserted on every git
+# (esc47); the check is asserted where it is reached (esc57) and printed as not
+# reached, with git's words, where git stops the build first; a git refusing the
+# way that runner's did is substituted here to drive that path on every host
+# (esc59); and esc58 reaches the check with no GIT_DIR at all.
+OWN_REPO_WORDS = "does not hold its own repository"
+# The builder's could-not-build line for a git step - the one reading under which
+# the check counts as not reached. An exit 0 is never that: it is the check failing.
+GIT_STOPPED = re.compile(r"^build-shop: git (?:init|add|commit) failed", re.M)
+WINDOWS_WORDS = "fatal: this operation must be run in a work tree"
+# A git that refuses `add` with the windows runner's words while GIT_DIR is set,
+# and is the real git for every other call. Global options before the verb are
+# the builder's `-c name=value` pairs.
+REFUSING_GIT = """#!/bin/sh
+verb=""
+skip=0
+for arg in "$@"; do
+  if [ "$skip" = 1 ]; then skip=0; continue; fi
+  case "$arg" in
+    -c|-C) skip=1 ;;
+    -*) ;;
+    *) verb=$arg; break ;;
+  esac
+done
+if [ -n "${GIT_DIR:-}" ] && [ "$verb" = add ]; then
+  echo '%s' >&2
+  exit 128
+fi
+exec '%s' "$@"
+"""
+# A builder whose build lands in the workspace (its unset line intact) and whose
+# check is then asked from a subdirectory of another repository it makes there.
+CHECK_ELSEWHERE = ("built() {\n",
+                   "built() {\n  mkdir elsewhere && cd elsewhere && fixture_git -c "
+                   "init.defaultBranch=main init -q --template= . && mkdir deep && "
+                   "cd deep || fail \"could not leave for another repository\"\n")
+
+
+def check_reached(built):
+    """False only when git stopped the build before the own-repository check: the
+    builder's could-not-build exit with its line naming a git step."""
+    return not (built["code"] == EXIT_NOT_BUILT
+                and GIT_STOPPED.search(built["err"]) is not None)
+
+
+def refused_by_check(built):
+    return built["code"] == EXIT_REFUSED and OWN_REPO_WORDS in built["err"]
+
+
+def kept_gitdir_faults(built, hits, victim_same):
+    """What a GIT_DIR-keeping build did that no git may let it do, as sentences.
+    The other repository may have moved only when the check then refused: git
+    already wrote it by the time the check can ask, and the refusal is what stops
+    the fixture being used."""
+    faults = []
+    if hits != 1:
+        faults.append("the patch's anchor matched %r time(s)" % (hits,))
+    if built["code"] == 0:
+        faults.append("the build exited 0")
+    elif built["code"] not in (EXIT_NOT_BUILT, EXIT_REFUSED):
+        faults.append("exit %r is none of the builder's documented failures"
+                      % (built["code"],))
+    if not victim_same and not refused_by_check(built):
+        faults.append("the other repository changed and the check did not refuse")
+    return faults
+
+
+def kept_gitdir_build(root, extra_path=None):
+    """`(built, hits, victim_same)` of the GIT_DIR-keeping builder run with
+    GIT_DIR naming another repository; `extra_path` is put ahead of the build's
+    PATH only, so the repository readings around it use the host's git."""
+    box, hits = make_box(root, REDIRECT_KEPT)
+    victim = make_victim(root, box)
+    before = victim_state(box, victim)
+    extra = redirect_env(victim, ("GIT_DIR",))
+    if extra_path is not None:
+        extra["PATH"] = extra_path + os.pathsep + box_env(box)["PATH"]
+    built = scaffold(box, "bugfix", extra_env=extra)
+    after = victim_state(box, victim)
+    return built, hits, before[0][0] == 0 and bool(before[0][1]) and before == after
+
+
+def _kept_gitdir_cases(check, root):
+    built, hits, same = kept_gitdir_build(root)
+    detail = "exit %r: %s" % (built["code"], quoted(built["err"], 400))
+    faults = kept_gitdir_faults(built, hits, same)
+    check("esc47 a builder patched to keep GIT_DIR, run with GIT_DIR naming another "
+          "repository, never exits 0: it stops with a documented failure and leaves "
+          "that repository as it was unless its own-repository check refused the "
+          "build", not faults, "%s; %s" % ("; ".join(faults), detail))
+    reached_label = ("esc57 ...and where git lets that builder reach its "
+                     "own-repository check, the check refuses the build: exit 3 "
+                     "with its own words")
+    if check_reached(built):
+        check(reached_label, refused_by_check(built), detail)
+    else:
+        _harness.skip(check, reached_label, "the own-repository check was not "
+                      "reached on this host: git stopped the patched builder "
+                      "first (%s)" % (detail,), True)
+
+    real = shutil.which("git")
+    if real is None:
+        _harness.could_not_run(check, "esc59 the build under a git refusing the "
+                               "way the windows runner's did",
+                               "no git on PATH to stand behind the substitute")
+        return
+    fake = tempfile.mkdtemp(prefix="refusing-git-", dir=root)
+    try:
+        with open(os.path.join(fake, "git"), "w", encoding="utf-8",
+                  newline="\n") as fh:
+            fh.write(REFUSING_GIT % (WINDOWS_WORDS, real.replace("'", "'\\''")))
+        os.chmod(os.path.join(fake, "git"), 0o755)
+        built, hits, same = kept_gitdir_build(root, extra_path=fake)
+    finally:
+        shutil.rmtree(fake, ignore_errors=True)
+    faults = kept_gitdir_faults(built, hits, same)
+    check("esc59 under a git that refuses the add the way the windows runner's did, "
+          "the same builder holds esc47 - not exit 0, the other repository as it "
+          "was - and is read as stopped before its check, the reading that prints "
+          "esc57 as not reached",
+          not faults and WINDOWS_WORDS in built["err"] and not check_reached(built),
+          "%s; reached %r; exit %r: %s" % ("; ".join(faults), check_reached(built),
+                                          built["code"], quoted(built["err"], 400)))
+
+
+def _own_repo_check_case(check, root):
+    box, hits = make_box(root, CHECK_ELSEWHERE)
+    built = scaffold(box, "bugfix")
+    owned = own_repo(box)
+    check("esc58 a builder whose build lands in the workspace but whose "
+          "own-repository check is asked from inside another repository refuses: "
+          "exit 3 with its own words, the workspace holding its own repository - "
+          "no GIT_DIR anywhere, so no git's reading of it decides the case",
+          hits == 1 and owned and refused_by_check(built) and check_reached(built),
+          "anchor matched %r time(s); own repository %r; exit %r: %s"
+          % (hits, owned, built["code"], quoted(built["err"], 400)))
 
 
 def write_hook(path, marker):

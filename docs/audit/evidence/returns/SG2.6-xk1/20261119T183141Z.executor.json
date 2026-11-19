@@ -1,0 +1,65 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_build_shop.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "regression task with tests.expectRedFirst false, and the change is to the test file alone: the shipped builder (plugins/audit/evals/build-shop.sh) is unchanged, so HEAD's code passes the new cases by design and a red-first run against HEAD would only print a green. The reds were shown instead by the mutation probe on a copy of the tree: the case as it stood before this task, run under a substituted git that refuses `add` under GIT_DIR with the windows runner's words, prints 'FAIL esc47 ... (exit 2: fatal: this operation must be run in a work tree | build-shop: git add failed)', the same detail as the windows job log, 62/63; removing the builder's own-repository check turns esc47, esc57 and esc58 red (63/66); making it exit 0 with its words kept does the same; under the substituted git, removing the check leaves esc58 alone red (65/66), which is the check held without git's help.",
+    "at": "not run by the helper; mutation probe run 2026-11-19, before the gate runs at 18:43Z and 18:48Z"
+  },
+  "outcome": {
+    "technical": "tests/test_build_shop.py only. esc47's single assertion (exit 3 with 'own repository') is replaced by a block of its own, '# --- the own-repository check, on every git ---': esc47 (every host, the host's git) asserts the patch's anchor matched once, the GIT_DIR-keeping builder did not exit 0, its exit is one of the builder's documented failures (2 or 3), and the other repository is unchanged unless the own-repository check refused the build - on macOS the patched builder commits into the other repository before the check can ask, which this host showed, so an unconditional 'unchanged' would be false here. esc57 (the reached half) asserts exit 3 with 'does not hold its own repository' when check_reached() says the check was reached; check_reached() is False only for the builder's could-not-build exit with a 'build-shop: git init|add|commit failed' line, so an exit 0 always counts as reached and fails. Where git stopped first, esc57 goes through _harness.skip() and prints 'esc57 ... SKIPPED HERE - the own-repository check was not reached on this host: git stopped the patched builder first (exit 2: <git's words>)'. esc59 writes a substitute `git` into a mkdtemp the case removes in finally, puts it ahead of PATH for the builder only (the repository readings around it use the host's git), and asserts esc47's faults are empty, the windows words reached the build's stderr, and check_reached() says not reached. esc58 patches built() to ask its question from a subdirectory of a second repository it makes inside the workspace, with no GIT_DIR anywhere, and asserts exit 3 with its words, the workspace holding its own repository, and check_reached() True. Suite: 63 cases before, 66 after; sweep seconds 19.7 before, 16.5 and 18.1 after (two runs about five minutes apart, other sessions loading the machine), 14.1 under --encoding cp1252. The orchestrator's gate (run-test-gate.py SG2 --task SG2.6-xk1, not recorded) printed GATE GREEN, exit 0. ruff, vermin -t=3.8-, prose_number_claims and house_style_violations report nothing for the file. Dependants: plugins/audit/evals/bugfix/case.yaml and guard-stop/case.yaml are still read the same way (no reader changed); tests/test__output_lints.py uses _cases and _selftest, whose names and signatures are unchanged; CHANGELOG.md and PLUGIN-BUILD-GUIDE.md describe the builder's refusal (exit 3) and what the suite builds, both still true since the builder is unchanged and no case id, count or wording they cite was touched. Windows-only: whether esc57 prints the not-reached line or the reached half on a windows runner, and that esc58 and esc59 pass there (the substitute git is a POSIX sh script found by MSYS sh the way the suite's python3 wrapper already is), can only be confirmed by a windows run.",
+    "descriptive": "The eval builder's own-repository refusal is now held on every host: esc47 asserts what must never happen, esc57 asserts the check where git lets the patched builder reach it and prints a not-reached line where git stops first, esc59 drives that windows path here with a substituted git, and esc58 holds the check without GIT_DIR."
+  },
+  "testsAdded": [
+    "esc47 rewritten: a GIT_DIR-keeping builder never exits 0, exits with a documented failure, and leaves the other repository unchanged unless its own-repository check refused the build",
+    "esc57: where git lets that builder reach its own-repository check, exit 3 with its own words; otherwise a SKIPPED HERE line saying the check was not reached on this host, with git's words",
+    "esc58: a builder whose build lands in the workspace and whose check is asked from inside another repository refuses with exit 3, no GIT_DIR involved",
+    "esc59: under a substituted git refusing `add` the way the windows runner's git did, esc47 holds and the build is read as stopped before its check"
+  ],
+  "casesAdded": [
+    [
+      "esc47",
+      "esc57",
+      "esc58",
+      "esc59"
+    ]
+  ],
+  "claims": "claims:\n1 tests/test_build_shop.py kept_gitdir_faults() holds esc47's three conditions; check_reached() is the not-reached reading; _kept_gitdir_cases() prints esc57 through _harness.skip() only when check_reached() is False; the block comment says the macOS order was seen and the windows cause was not established\n2 mutation probe on a tree copy, every row as expected: check removed -> esc47/esc57/esc58 red; check exits 0 -> same; check removed under the substituted git -> esc58 red alone; builder writing the other repository after building its own -> esc45/esc46 red, and with the comparison dropped the same builder passes (twin); a GIT_DIR-keeping builder writing the other repository before git refuses -> esc59 red; check_reached() forced True -> esc59 red, forced False -> esc58 red; allow rows: baseline and substituted-git runs green\n3 grep esc4[5-9]/esc5[7-9] outside the suite: no hits; the one case that leaned on git's ordering was esc47, now split; esc45/esc46 read the shipped builder and already pass on windows per both logs\n4 n/a - no rule to an agent\n5 sweep 16.5 s and 18.1 s, about five minutes apart on a loaded machine; 19.7 s before the change\n6 n/a - no guard\n7 n/a - no number written into the suite's prose",
+  "stamp": "audit-stamp: {\"content\":\"sha256:e9c8a6e47a200b557078fb49f1039adafe798b429b2f4b51ca61d20e11586b11\",\"dirtyDigest\":\"sha256:4ee7aa9534820a70c33324b9554c1a4edfa36bbf6e6c47225f44c0fddd67e53a\",\"dirtyPaths\":{\"tests/test_build_shop.py\":\"6c91db44c47310ae\"},\"head\":\"0a603072\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"tests/test_build_shop.py\"],\"scopeDigest\":\"sha256:be7672b09cadc5ae7274b869465d3e209e4b9720d03bce5b707ca825e19aee1a\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 0 of the diff's 1 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 1 change(s) to tests the task declared by case; 1 file(s) that could hold a move not compared: tests/test_build_shop.py",
+    "findings": [],
+    "declared": [
+      {
+        "move": "definition-changed",
+        "path": "tests/test_build_shop.py",
+        "line": 1009,
+        "side": "base",
+        "what": "labelled check `esc47 a builder patched to keep GIT_DIR refuses, exit 3, when the r...` is gone from the tree copy",
+        "part": "gone"
+      }
+    ],
+    "renamed": [],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "tests/test_build_shop.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was changed or removed: the first statement of the base copy outside them with no place in the tree copy is at base line 1006 (`box, hits = make_box(root, REDIRECT_KEPT)`), and what the code there does for a case is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "0a603072dfb0e690a139f1daa7cb4b369f7434c3"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-19T18:49:12Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

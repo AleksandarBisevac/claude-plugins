@@ -12302,7 +12302,8 @@
       "P152.4",
       "P152.11",
       "P152.13-6jb",
-      "P155.5"
+      "P155.5",
+      "SG2.8-xk1"
     ],
     "docs/audit/phases/P127.json": [
       "P127.8-bgr"
@@ -13943,7 +13944,8 @@
       "SG1.48-ukq",
       "SG1.52-ukq",
       "SG1.55-ukq",
-      "SG2.4-xk1"
+      "SG2.4-xk1",
+      "SG2.8-xk1"
     ],
     "tests/test_guard_history_rewrite.py": [
       "P131.1",
@@ -14012,7 +14014,8 @@
       "SG1.52-ukq",
       "SG1.53-ukq",
       "SG1.54-ukq",
-      "SG1.55-ukq"
+      "SG1.55-ukq",
+      "SG2.8-xk1"
     ],
     "tests/test_manage_worktrees.py": [
       "P131.1",
@@ -14138,7 +14141,8 @@
       "P168.15-icj",
       "P168.16-icj",
       "P168.17-icj",
-      "P168.20-icj"
+      "P168.20-icj",
+      "SG2.9-xk1"
     ],
     "tests/test_set_priority.py": [
       "P131.1"
