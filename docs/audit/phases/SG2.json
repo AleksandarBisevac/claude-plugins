@@ -223,7 +223,7 @@
     {
       "id": "SG2.3",
       "title": "The integration branch holds the development branch as released and the phases landed on it since, with every conflict resolved to keep both sides' behaviour",
-      "status": "in_progress",
+      "status": "done",
       "description": "The skill-gates integration branch was cut from the development branch before the last release and before the phases that landed after it. Merging the development branch in conflicts in the files this task names: both sides appended changelog entries, build-guide sections, suite cases and plan records at the same places, and a few functions of the drive, the brief builder and the status facts were edited by both.\n\nTHE RULE. A merge commit of the development branch into the integration branch (no fast-forward), made by the orchestrator, not by an executor: git owns the merge state, and a scoped task commit cannot be made inside it. Each conflict is resolved to keep BOTH sides: appended entries and cases are kept from both, in the development branch's order first where order is free; a function edited by both carries both edits, and where the two cannot both stand the development branch's released behaviour wins and the skill-gates change is rebuilt on top of it. The plan index is merged by the plugin's own three-way record merge (merge-manifest.py driver), then reindexed and validated. Screenshots and rendered artifacts are taken from the development branch and re-captured at the phase end by the browser gates.\n\nWHAT STAYS. Every case of both sides' suites: the case count of each conflicted suite after the merge is at least each side's own count. The floor guard, the green-first proof, the config hold and the brief sentences of the skill-gates phase answer their probes as they did before the merge. The development branch's own suites are green.\n\nHOW TO PROVE. The full selftest sweep, the runner's selftest, gate parity, the hook budget, the context ceiling, ruff, vermin and vitest are green on the merge commit; the manifest validates; the conflicted suites' case counts are compared with both parents'.\n\nAcceptance:\n(1) The integration branch contains the development branch's head and no conflict marker remains in any tracked file.\n(2) Each conflicted suite prints at least as many cases as it did on either parent, all passing.\n(3) The plan validates and names the phases of both sides.",
       "files": [
         "CHANGELOG.md",
@@ -267,13 +267,13 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "66635e08",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Merge commit 66635e08: the plan index by the plugin's record merge; main's form of the review-skill brief kept as the superset; appended sections, imports and suite blocks from both sides; skill-gates changelog entries moved under the new Unreleased; three duplicated case ids renamed; commands/task.md shortened under its context ceiling; the panel capture record refreshed. Full sweep and phase-end gates green on the merged tree.",
+        "descriptive": "The skill-gates phase branch holds the development branch as released and the phases landed on it since; every conflict kept both sides"
       },
       "startedAt": "2026-11-19T15:03:14Z",
-      "completedAt": null,
+      "completedAt": "2026-11-19T15:48:48Z",
       "verifiedBy": [],
       "notes": [
         {
@@ -331,7 +331,18 @@
           "text": "declared to answer a reading: tests/test__status_facts.py reads plugins/audit/scripts/status/_status_facts.py - its own suite"
         }
       ],
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "66635e08",
+        "at": "2026-11-19T15:48:48Z",
+        "basis": "A merge commit: against its first parent the diff is the development branch's own reviewed and released work, which no task reviewer can judge against this task's description. The resolution hunks alone are read by a separate fresh review of the remerge diff, and anything it finds at medium or above becomes a task of this phase."
+      },
+      "testEvidence": {
+        "runId": "2026-11-19T15:52:06Z.a967c6",
+        "status": "passed",
+        "at": "2026-11-19T15:52:06Z"
+      }
     }
   ],
   "parentBranch": "integration/skill-gates",
