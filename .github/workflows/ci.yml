@@ -72,8 +72,8 @@ concurrency:
 # tests/test_drive_phase.py alone, because a part then held whole files. The parts
 # now deal a staged suite's blocks (tools/sweep-selftests.py `shard_units`). The
 # windows plain leg runs five parts and the code-page leg three (the matrix's
-# `parts` rows); the `longest` line below is the longest cell of the per-run run
-# 41158896864 (head ef0ec287), `selftests (windows, plain 4)`. The bound does not
+# `parts` rows); the `longest` line below is the longest cell of a release-tier
+# run, whose code-page cells sweep the whole tree. The bound does not
 # follow the parts down: the sweep's deadline must fit inside it
 # (tools/sweep-selftests.py `SWEEP_DEADLINE`, case tt5), and the deadline in turn
 # sits above the heaviest block's calibrated timeout, which no part count changes.
@@ -83,45 +83,34 @@ concurrency:
 # `--shard I/N` prints every part's load, so an estimate re-derives from the line
 # it prints.
 #
-# THE OTHER JOBS ARE NEW SHAPES, and their figures are ESTIMATES built from the steps
-# each now runs, as those steps were measured in runs 38902667892 and 38929591548
-# (ci/p125, every job green); each is replaced by the first measured run of its job:
-#   e2e      - that run's windows e2e cell, whose steps it runs (run 38902667892)
-#   lint     - measured: the merged job's first run took 3m14s (run 41112221437), past
-#              the 2m38s its estimate had set (the lint + e2e job's 1m50s plus the
-#              manifests job's verify, node and install steps), so the bound moved
-#              to 7, over twice the measurement
-#   browser-panel, browser-report - measured on the shared install
-#              (.github/actions/browser-install, head fc7abaf3): run 44385960921
-#              missed both caches and run 44388480667 hit them, and each job's
-#              longer one was the miss. In the miss the
-#              panel job met a slow mirror, measured once: 21.1 MB fetched at
-#              232 kB/s, about 2m20s of install, against about 20s for the same
-#              job's hit, which asked the archive for nothing. The panel's bound
-#              moved from 16 to 18 to hold its slowest measured miss (the comment
-#              above browser-panel). The report's line is a later miss, run
-#              44426388905 (head 4580b756, branch ci/P169-seed-probe3, a dispatch
-#              with `seed` forced on, so a seed's miss-then-save): its report job
-#              took 18m23s, of which the install 6m21s - "Fetched 21.1 MB in 5min
-#              19s (66.2 kB/s)" - and the slice 11m38s; its bound moved from 28 to
-#              37, over twice that. Before the cache
-#              the longest finished jobs over runs 41281241772 to 44356971266 were
-#              14m49s (panel, run 42283005055) and 17m57s (report, run
-#              44270291891), install-bound both: 9m43s and 6m27s of install,
-#              nearly all of it the apt fetch `--with-deps` asked for; the comment
-#              above browser-panel says what a miss on the slowest mirror read
-#              still costs
-#   verified - checkout, setup-python and two API reads (no run yet)
-# The resample figure is measured: its first finished run, run 40715565769 (f06f113f,
-# success), took 22m00s, past half the bound of 40 its estimate had set, so the bound
-# moved to twice the measurement.
-#   longest selftests: 7m48s (run 41158896864, windows plain 4, 02:12:07 to 02:19:55)
+# EVERY LINE BELOW IS MEASURED, as the longest finished run of its job over the
+# sixty finished runs from 41323768411 to 44528150555, read on 2026-11-19 with the
+# commands below - or, for resample, an earlier run longer than any of those. Two
+# jobs' lines stand on a narrower span, because their shape began
+# inside it: the browser jobs' on the runs from 44379408461, the first to call
+# .github/actions/browser-install - both of those lines are runs that missed a
+# cache on a slow mirror (the comment above browser-panel says what such a miss
+# costs). That reading found runs nobody had written down longer than the lines of
+# the panel, lint, e2e and selftests jobs, and put three of those jobs' bounds under
+# twice their longest run; each line was replaced and each bound moved by the rule.
+#
+# EACH JOB HAS ONE FIGURE, ITS `longest` LINE, and on the shape a job has now its
+# whole run's duration is written nowhere else in this file, so no second figure can
+# disagree with the one its bound is read against. A finished run of the job that
+# took longer REPLACES the line - its run id, start and end - and the bound moves by
+# the rule above in the same edit. gate-parity.py fails two lines for one job and a
+# bound outside the rule (`job_bound_evidence`); nothing per-run can see a longer
+# run nobody wrote down, since a per-run gate asks GitHub nothing, so a line is only
+# as current as the last reading of its job's finished runs, which is:
+#   gh run list --workflow ci.yml --limit 60 --json databaseId,status --jq '.[] | select(.status=="completed") | .databaseId'
+# and the `gh run view` command above for each run since the newest one read.
+#   longest selftests: 13m13s (run 41885968278, windows cp1252 1, 18:19:19 to 18:32:32)
 #   bound selftests: held by the sweep deadline (tools/sweep-selftests.py SWEEP_DEADLINE)
-#   longest e2e: 1m41s (estimate, run 38902667892)
-#   longest lint: 3m14s (run 41112221437, 19:04:54 to 19:08:08)
-#   longest browser-panel: 7m46s (run 44385960921, 19:58:01 to 20:05:47)
+#   longest e2e: 2m52s (run 44388480667, 20:12:07 to 20:14:59)
+#   longest lint: 4m59s (run 41661612765, 15:13:42 to 15:18:41)
+#   longest browser-panel: 11m29s (run 44424245100, 23:51:27 to 00:02:56)
 #   longest browser-report: 18m23s (run 44426388905, 00:07:12 to 00:25:35)
-#   longest verified: 0m30s (estimate, no run yet)
+#   longest verified: 0m24s (run 44363658245, 17:53:36 to 17:54:00)
 #   longest resample: 22m00s (run 40715565769, windows-2025)
 # EVERY JOB PINS ITS RUNNER IMAGE, and so does every `os` value a matrix crosses. A
 # `*-latest` label is a pointer GitHub moves: `ubuntu-latest` went from ubuntu-24.04
@@ -284,7 +273,7 @@ jobs:
     name: e2e (windows)
     needs: verified
     if: ${{ !cancelled() && needs.verified.outputs.run == '' }}
-    timeout-minutes: 5
+    timeout-minutes: 6
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v5
@@ -327,7 +316,7 @@ jobs:
     name: lint + manifests + e2e (linux)
     needs: verified
     if: ${{ !cancelled() && needs.verified.outputs.run == '' }}
-    timeout-minutes: 7
+    timeout-minutes: 10
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -401,18 +390,29 @@ jobs:
   # installed, which a real seed never does because its slice step is skipped.
   # Not yet seen in a run: a seed on main from a real verified push, and a ci/
   # branch restoring what main saved. tools/check-browser-install.py runs the
-  # action's shell against stubs; its docstring says what they cannot see. The
-  # bounds sit above each job's `longest` line below; a real seed runs no slice,
+  # action's shell against stubs; its docstring says what they cannot see. Each
+  # job's bound sits above its `longest` line (the comment above `jobs:`), whose
+  # run included its slice; a real seed runs no slice,
   # and the longest install measured, 9m43s (run 42283005055's panel job), is
   # inside both. The slice step carries the guard the job used to, so gate-parity
   # reads it (`job_slices` reads a step's `if:` as it reads a job's).
   #
-  # A SEED NEVER REDDENS A VERIFIED PUSH, AND NEVER FAILS IN SILENCE. On the seed
-  # path the install step carries `continue-on-error`, so a failure in it - npm ci,
-  # the dry run, the browser download, apt - leaves the job's conclusion green, and the next
-  # step writes a warning annotation saying so; the step's own `::error::` lines and
-  # log say where. On every other run the expression is false and a failed install
-  # is red as before. gate-parity.py (`_may_fail`) fails the build on a
+  # A FAILED SEED IS MEANT TO LEAVE A VERIFIED PUSH GREEN, AND TO SAY SO. On the seed
+  # path the install step carries `continue-on-error`, and the next step, guarded by
+  # that step's outcome, writes a warning annotation; on every other run the
+  # expression is false and a failed install is red as before. Seen once, in run
+  # 44550679481 (ci/P169-seed-probe4, a probe-only edit: the `verified` job answered
+  # with a made-up run instead of asking, and the action's `plan` step exited 1 after
+  # both seed lookups had missed): the install step's log ends in "Process completed
+  # with exit code 1.", the warning step ran and wrote its line, the slice step was
+  # skipped, and the job concluded success. Read such a job with care: it carries a
+  # `failure` annotation beside the warning, and the jobs API reports the failed
+  # install step's conclusion as `success`, because a conclusion is taken after
+  # `continue-on-error` - the failure is in the step's log and annotation only.
+  #   gh run view 44550679481 --json jobs
+  # Not seen: such a failure on a real verified push to main, a failure in any one
+  # install command (npm ci, the dry run, the download, apt), or a seed that saves.
+  # gate-parity.py (`_may_fail`) fails the build on a
   # `continue-on-error` that is not `false` on a step or job running verify.sh, so
   # the slice can never be the thing allowed to fail. A job past its bound is
   # cancelled whatever this says: `continue-on-error` does not cover the job's
@@ -421,7 +421,7 @@ jobs:
     name: browser (panel)
     needs: verified
     if: ${{ !cancelled() }}
-    timeout-minutes: 18
+    timeout-minutes: 24
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5

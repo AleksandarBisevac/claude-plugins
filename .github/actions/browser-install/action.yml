@@ -51,9 +51,11 @@ description: >-
 # paths as the restores.
 #
 # THE SHELL BELOW IS RUN, NOT ONLY READ: tools/check-browser-install.py (verify.sh's
-# `lint` slice) executes the `pins`, `plan` and `sysdeps-install` scripts out of
-# this file against stubs of sudo, apt and the set's ownership, and reads the
-# steps' keys for the seed's wiring. Its selftest breaks a copy of this file once
+# `lint` slice) executes the `pins`, `sysdeps`, `plan` and `sysdeps-install`
+# scripts out of this file against stubs of sudo, apt, dpkg and the set's
+# ownership, with nothing else on their PATH but a few read-only tools, and reads
+# the steps' keys for the seed's wiring; a script line naming an absolute path is
+# red there, because PATH cannot confine it. Its selftest breaks a copy of this file once
 # per property by replacing a line it names, so an edit that moves such a line
 # turns that row red as "not applied" until the row names the new text.
 inputs:

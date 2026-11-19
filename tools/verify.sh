@@ -602,7 +602,11 @@ slice_lint() {
   # The browser install's shell, which only a runner otherwise executes, run out of
   # the committed action against stubs of sudo and apt: a hit that falls back to the
   # archive is red here, where on a runner it is green with one warning. POSIX only,
-  # like the job that runs this slice; on another host it says it could not run.
+  # like the job that runs this slice (ubuntu): on a host without a POSIX sh, or
+  # without one of the real tools it links, every case that runs a step is RED as
+  # "could not run here", and so is this slice - the way the stress leg refuses
+  # `--spaced` on Windows rather than report a leg it did not run. Only the cases
+  # that read the action's text run there.
   run "the browser install's shell, against stubs" python3 tools/check-browser-install.py
 }
 

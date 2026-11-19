@@ -224,10 +224,16 @@ entry and every `ci/` branch's first run would miss. Both branches of a seed hav
 runner, on a branch with `seed` forced on by a probe (runs 44426388905, a miss that saved,
 and 44428930205, a hit that installed and saved nothing); a seed on `main` from a real
 verified push, and a `ci/` branch restoring what one saved, have not yet been seen in a
-run. A seed never reddens the
-verified push: on that path the install step carries `continue-on-error` and the step after
-it writes a warning when it failed, while on every other run a failed install is red as
-before (the comment above `browser-panel` in `ci.yml`).
+run. A failed seed is meant to leave the verified push green: on that path the install step
+carries `continue-on-error` and the step after it writes a warning when it failed, while on
+every other run a failed install is red as before. That has been seen once, on a probe
+branch whose `verified` job answered with a made-up run and whose install was made to exit 1
+after both lookups missed (run 44550679481, `gh run view 44550679481 --json jobs`): the
+warning was written, the slice step was skipped and the job concluded success - with a
+`failure` annotation beside the warning, and the failed install step reported by the jobs
+API as `success`, so the failure is in that step's log alone. A failure on a real push to
+`main`, or in one particular install command, has not been seen (the comment above
+`browser-panel` in `ci.yml`).
 
 **The install's shell is run here, not only on a runner.** `tools/check-browser-install.py`,
 in the `lint` slice, executes the action's own `run:` blocks against stubs of sudo, apt and

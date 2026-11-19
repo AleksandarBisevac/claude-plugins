@@ -7957,8 +7957,13 @@ lookups - and restores, fetches and saves nothing (run 44428930205: the panel jo
 any miss pays, and that depends on the mirror: in run 44426388905 the same 21.1 MB took the
 panel job's install about 36s and the report job's 6m21s ("Fetched 21.1 MB in 5min 19s
 (66.2 kB/s)"), and the panel job saved both entries. Not yet seen in a run: a seed on `main`
-from a real verified push, and another branch restoring what `main` saved. A failed seed is a
-warning on the run, not a red job (the comment above `browser-panel` in `ci.yml`). `CONTRIBUTING.md`'s *Tests* section says why each slice holds
+from a real verified push, and another branch restoring what `main` saved. A failed seed is
+meant to be a warning on the run, not a red job; seen once, on a probe branch whose `verified`
+answer was made up and whose install was made to exit 1 after both lookups missed (run
+44550679481, `gh run view 44550679481 --json jobs`): the warning was written, the slice
+skipped and the job concluded success, while the job also carries a `failure` annotation
+and the jobs API reports the failed install step as `success` (the comment above
+`browser-panel` in `ci.yml` says what was and was not seen). `CONTRIBUTING.md`'s *Tests* section says why each slice holds
 what it holds. Locally:
 
 ```bash

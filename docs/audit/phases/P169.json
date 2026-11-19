@@ -634,9 +634,23 @@
         "file": "plugins/audit/scripts/governance/_evidence_io.py (the full runs a phase holds); plugins/audit/schema/audit-plan.schema.json; plugins/audit/scripts/panel/_panel_composition.py",
         "issue": "Four things the executor of the full-run task reported as not held, none of which lets a phase read whole wrongly. (1) Whether each reader hands the full-run question the whole shard phase or an index stub was not verified: with a stub, the clause naming a malformed held run is missing from the basis (the malformed run still certifies nothing). (2) Two full runs recorded at once are serialised by the plan lock and decided again under it, with no case that exercises it. (3) The schema cannot bound the list of held runs, because the schema reader implements no item-count keyword; only the writer holds the bound. (4) A docstring in the panel's composition quotes, as the wrong claim it avoids, a sentence the task removed, so it now quotes text that exists nowhere.",
         "resolution": "Each reader is shown to pass the phase the malformation clause needs, by a case through the reader; a case with two recorders on one plan; the bound held where a hand-edited longer list is read (read as not held past the bound, with the basis naming it) or the keyword added to the schema reader; the docstring says what the file avoids in its own words."
+      },
+      {
+        "id": "P169-R70",
+        "severity": "med",
+        "file": "tools/check-browser-install.py:60-80 (docstring WHAT A STEP CAN START), :1188-1198 (_ABSOLUTE / sd7), :865-926 (_stub_env PATH)",
+        "issue": "contradicts task clause 1 (NOTHING the action's shell starts may be anything but a stub or an allow-listed tool): the confinement is PATH alone, and bash's `command -p` ignores PATH. Probe run by the reviewer: `env -i PATH=/nonexistent /bin/bash -c 'command -p touch /private/tmp/.../x'` ran the real /usr/bin/touch and `command -p ls /` listed the host root. A line `command -p rm -rf <path>` appended to the action therefore reaches the host: no stub is involved, `sudo` is not used (so the `sudo` stub's refusal never sees it), the command is found (so the not-found ledger stays empty), and sd7 does not match it (no absolute path in the line). The docstring's 'What stays outside that' list names absolute paths, builtins/redirections, $STUB_PY/$BASH, node and bash 3.2, but not `command -p`. The same holds for an executable named by a relative or variable-built path (`../../../bin/rm`, `\"$X/rm\"`): a name with a slash skips PATH, and sd7's lookbehind excludes `.` and `$`, so it is not read. The bx rows cover only `sudo` + stubs, an unstubbed bare name, and node.",
+        "resolution": "Add a static rule beside sd7 (a case with a red row in bp7/CONFINEMENT) that refuses `command -p`, `exec`, `PATH=` and a command word containing `/` whether absolute, relative or built from a variable, or, if that is judged out of reach, list `command -p` and slash-containing relative/variable names in the docstring's unguarded list with the reason, as the task allows for the absolute-path case."
+      },
+      {
+        "id": "P169-R71",
+        "severity": "low",
+        "file": ".github/workflows/ci.yml:~408-412 ('Not seen: ... or a seed that saves')",
+        "issue": "The new 'Not seen' sentence ends with 'a seed that saves', but the same comment block (and CONTRIBUTING.md's seed paragraph) records runs 44426388905 and 44428930205 as a seed that missed and saved. Read in the failed-seed paragraph it presumably means 'a failed seed that still saves', but as written it contradicts the evidence cited a few lines above, against acceptance 3 (no document sentence states something the runs do not show, and none denies what they do).",
+        "resolution": "Reword to what was not seen, e.g. 'a seed whose install fails after a cache was saved', or drop the clause."
       }
     ],
-    "outcome": "[findings: 69 - 4 high, 24 med, 41 low; 36 with a recorded fix commit]"
+    "outcome": "[findings: 71 - 4 high, 25 med, 42 low; 36 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -1962,7 +1976,7 @@
     {
       "id": "P169.7",
       "title": "A full-scope run's answer for a merged phase is in the plan, and a phase certified whole stays whole",
-      "status": "in_progress",
+      "status": "done",
       "description": "`meta.fullGate` names a third gate, and whether a merged phase has been certified whole by it is answered today by walking every full-scope ledger row for a green, measured, clean, verbatim run whose head contains the phase's merge. With one record per subject that walk has nothing to walk, and keeping only the last full run would turn a certified phase provisional the moment a later full run is red. Put the answer where it is asked: when a full run is recorded, each merged phase its head contains and that it certifies carries the certifying run (id, head, moment); a later red run removes no certification. `full_status` answers from those and from the frozen rows, with the same words (whole, provisional, stale, unknown) and the same bases. A plan that declares no fullGate reads and renders exactly as it does today.\n\nACCEPTANCE.\n1. Over the existing table of full_status fixtures, the answer from the plan's own records equals the answer from the rows.\n2. A phase certified by a green full run stays whole after a later red full run on a head that contains it.\n3. A full run that could not be asked about (no mergedHead, ancestry not establishable) reads unknown with its basis, as today.\n4. The release guard's reading of provisional phases is unchanged on its own cases.\n5. A plan with no fullGate is byte-identical after a recorded task run.\n\nDEPENDANTS to answer for by name: audit-status.py's provisional, stale-full-run and unknown-full-run conditions, _status_facts.py, render-report.py, the panel's state and areas, .claude/hooks/guard-release.py, the doctor's full-run check, full-gate.py's own recording and its learn path, and COMPATIBILITY.md's sentences about the full run.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
@@ -2013,14 +2027,17 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "d7f41e1cb84d",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "_evidence_io.py: phase key fullGateRuns (FULL_GATE_RUNS_KEY, HELD_RUNS_MAX=2) holding {runId, at, head, status, entries, digest}; commands_digest + _commands_disqualification shared by rows and held runs; held_run_record/held_run_problem/held_runs_problems/held_run_row; full_run_holder (every started phase, merged or not; pending/cancelled offered nothing); _held_rank + held_choice (best-ranked plus newest, never replaces a run reading whole, so a later red/dirty/uncounted run changes no byte); added_findings (the one copy of 'only what the change adds refuses', full-gate.py's ci_validation_problem moved onto it); hold_full_run writes each plan file through write_plan_file under the index lock, validated once before the first save and again under the lock for a phase that changed meanwhile; records_of_bodies yields each well-formed held run as a scope-full row; _measurement_disqualification reads a held run against the commands rule only; full_status names a malformed held value in a non-whole basis and the no-run fallback now says no run that could certify is held or found, never that none ran; stated losses in its docstring. run-test-gate.py: _record_full_run calls _hold_full_run after the ledger row (bound_validator, git_root_for), prints held/kept/notHeld/refusals, a refusal makes record False -> E_UNRECORDED; new _manifest_rules import, _deps --write-map rerun. Schema: $defs/fullGateRuns, $defs/fullGateRun, phase.fullGateRuns; mergedHead description shortened to pay (help payload 159789 -> 159785 of 160000). _manifest_vocab KNOWN_PHASE, gen-demo SCHEMA_EXEMPTIONS rows, orchestrator.md reworded (61997 -> 61994 bytes), COMPATIBILITY.md, CHANGELOG.md, PLUGIN-BUILD-GUIDE.md. AS IT HAPPENED: plugins/audit/scripts/manifest/_areas.py was edited while it was outside the task's files - its full-status-words anchor quoted the orchestrator.md phrase I reworded, so the anchor moved with the sentence; the rule was to stop before editing, I edited first, the plan gate allowed it, the first submit refused it, and the orchestrator then added it (and tests/test__areas.py) to the files. All after the last edit: declared gate 3/3 files ok, 1235 cases; full sweep 198/198 files ok, 19513 cases, every dependant suite among them.",
+        "descriptive": "A recorded full run's answer for each phase is now kept in the plan, read back like a ledger row, and a phase certified whole stays whole after later red runs."
       },
       "startedAt": "2026-11-19T12:52:57Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-19T14:08:48Z",
+      "verifiedBy": [
+        "test__evidence_io fh block: acceptance-1 oracle over every full_status fixture (word, run and basis where owed, word alone where the plan cannot name the disqualified/newest run), later red/dirty/uncounted runs change no byte, write-once certification, unknown without mergedHead or with an unrelatable one, tip run then fast-forward landing reads whole, merge-commit landing equals rows, pending phase not certified by an earlier run, mergedHead re-recorded, history rewrite, fullGate gained/reordered, out-of-order runs, one case per malformation, refusing validator writes nothing, one-file layout, schema accepts every composed value and refuses bad shapes, widest record measured",
+        "test_full_gate fgh block: a real full-gate.py run holds the run on the merged phase its head contains and every other started phase, none on a pending one; read whole from the plan with the evidence dir removed; a later red real run leaves the plan bytes unchanged and the phase whole; no fullGate plan byte-identical after a full run and only the run's own record/pointer/evidence boundary after a recorded phase run; close-phase's real landing keeps fullGateRuns byte for byte"
+      ],
       "notes": [
         {
           "at": "2026-11-18T17:39:30Z",
@@ -2087,6 +2104,24 @@
             "ms": 642264,
             "basis": "durationMs in run 2026-11-19T14:08:16Z.b2ec9e's record (run-test-gate --record)",
             "runId": "2026-11-19T14:08:16Z.b2ec9e"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-19T13:55:24Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 3744000,
+            "startedAt": "2026-11-19T12:53:00Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-19T14:08:16Z.b2ec9e",
+            "kind": "wait",
+            "ms": 1000,
+            "startedAt": "2026-11-19T13:56:44Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit d7f41e1cb84d",
+            "kind": "commit",
+            "ms": 3140,
+            "startedAt": "2026-11-19T14:08:43Z"
           }
         ],
         "firstStartedAt": "2026-11-19T12:52:57Z"
@@ -2197,6 +2232,18 @@
         "runId": "2026-11-19T14:08:41Z.0bc5e0",
         "status": "passed",
         "at": "2026-11-19T14:08:41Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "d7f41e1cb84d",
+        "at": "2026-11-19T14:08:48Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-19T13:55:22Z",
+        "basis": "`python3 tests/test__evidence_io.py --selftest` in a throwaway tree at HEAD exited 1 with 2 of 406 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fh1 (house FAIL), fh0 (house FAIL): SELFTEST FAILED: 404/406 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -4183,7 +4230,7 @@
     {
       "id": "P169.17-6l3",
       "title": "The browser install check cannot run a real command, a job's bound rests on its longest run, and a seed's failure is described as it was seen",
-      "status": "pending",
+      "status": "in_progress",
       "description": "The check that runs the browser install's shell against stubs (`tools/check-browser-install.py`) landed with a review that found two mediums and four lows. The phase's findings carry each in full (read them with the brief); this is what they amount to.\n\n1. THE CHECK CAN RUN A REAL COMMAND (medium). Its `sudo` stub execs whatever follows, PATH still ends in the host's directories, and `rm` has no stub, so a line added to the action later (`sudo rm -rf /var/lib/apt/lists/*`, `sudo tee`, `sudo sh -c`, a tool by absolute path) would run on a developer's machine in the lint slice and under the sweep. The reviewer showed it: an appended `sudo rm -rf <outside>` deleted a file outside the fixture while the check stayed green. The property to hold is an invariant, not a longer list of stubs: NOTHING the action's shell starts may be anything but a stub or a tool on an explicit allow-list of read-only utilities, and nothing may write outside the fixture root. So: PATH is the fixture's bin directory and nothing else (the allowed real tools are linked into it by name, the list is one table in the check with a reason per entry), the `sudo` stub starts only a name it finds in that directory and otherwise prints what was refused and exits non-zero, `rm` and every other writer is a stub confined to the fixture root, stdin is closed, and a command the shell cannot find FAILS the case (an unknown command must be red, never skipped). Say in the docstring what remains outside this (a tool invoked by an absolute path in the action is not stopped by PATH: add a static case that the action's `run:` blocks name no absolute path to an executable, or state plainly that this is unguarded and why). Selftest rows, each proven red: an appended `sudo touch <outside>` and `sudo rm -rf <outside>` leave the outside untouched and turn the check red; a new unstubbed command in a step turns it red; and the allow direction: the committed action is green.\n\n2. THE PANEL JOB'S BOUND RESTS ON A STALE FIGURE (medium). `longest browser-panel` names 7m46s while run 44424245100 has that job at 11m29s (success; `gh run view 44424245100 --json jobs`), so the bound of 18 is under the two-times rule and passes only because the stale line is the one read. Set the line from the longest green run with its id and timestamps, and the bound by the rule. Then close the class rather than the instance: the line is hand-maintained and has now been stale twice in one phase. Either the parity tool can be asked which recorded figure is the longest among runs named in the workflow's own comments and fails when a line is not the maximum of the figures beside it, or the comment keeps exactly ONE figure per job and the rule for replacing it is stated where it is written. Choose, say why, and do not add a network call to a per-run gate.\n\n3. Lows, in the same files. (a) Actions that are plainly broken stay green (the Chromium step deleted, `npm ci` deleted, the system packages' key replaced by a constant, the `missing != ''` guard dropped, `seed` defaulting to true, the restore key changed identically in lookup and restore): assert the wiring those break, each with a mutation row, or list as unread in the docstring what you decide not to read, with the reason. (b) `gate-parity.py`'s step reader gives no runs and no problem for a flow-style step (`- { name: a, continue-on-error: true, run: ... }`), so the never-allowed-to-fail rule is bypassed by that spelling: a flow-style step item is a named problem, with a case beside the existing red case and the allow case re-proven. (c) `build_fixture` runs before the try/finally, so an exception leaks its directory into the sweep's watched TMPDIR; and on a host without POSIX sh the gate is red for a check CI never runs there: decide between a skip that says so with exit 0 and a statement in verify.sh, by what the other POSIX-only checks in verify.sh already do. (d) The documents state the failed-seed behaviour (the job stays green and a warning is written) as fact, and no run has shown it.\n\n4. For (d), observe it rather than reword it. This is a TWO-STAGE task: hand back READY-FOR-RUN with a probe-only patch (never in your tree) that makes a dispatch on a disposable branch behave as a verified push whose install fails (hard-wire the two expressions and force the install step to fail; say exactly which lines), and what the run must show: the install step failed, the warning step ran and printed its line, the slice step did not run, the job concluded success. The orchestrator dispatches it and sends back the log lines; then the documents say what was seen, with the run id.\n\nACCEPTANCE.\n1. Each of 1, 3a, 3b has a mutation row or case that is red when the property is broken and green on the committed tree; mutations run on scratch copies outside every checkout, restored in the same command, each confirmed landed.\n2. `python3 tools/gate-parity.py`, `python3 tools/check-browser-install.py` and both selftests exit 0; the check's wall time before and after, measured twice (it runs in the per-run lint slice).\n3. No document sentence describes as behaviour something no run has shown; every figure carries its run.\n\nDEPENDANTS to answer for by name: the lint slice in tools/verify.sh and the CI job that runs it (ubuntu), the sweep's isolation rules for a file under tools/ (watched cwd, HOME, TMPDIR; PATH's refusing `gh`/`az`/`claude` shims come first in the sweep, so say how a PATH you replace inside your child interacts with them), `.github/sweep-costs.json` (no figure for the new file: say whether one is owed and hand back the command), gate-parity's other rules that read steps (the slice and `if` rules), CONTRIBUTING.md and the guide's paragraphs about the seed.\n\nIf a file you need is outside your list, STOP BEFORE FILING and hand back the exact change.",
       "files": [
         "tools/check-browser-install.py",
@@ -4218,14 +4265,14 @@
         "P169.22-6l3",
         "P169.23-6l3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-19T14:08:50Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -4307,7 +4354,143 @@
         "P169-R27",
         "P169-R28",
         "P169-R29"
-      ]
+      ],
+      "timing": {
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-19T15:21:53Z",
+            "ms": 13304,
+            "basis": "selectionMs in run 2026-11-19T15:31:41Z.1fe782's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-19T15:31:41Z.1fe782"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-19T15:22:07Z",
+            "ms": 573319,
+            "basis": "durationMs in run 2026-11-19T15:31:41Z.1fe782's record (run-test-gate --record)",
+            "runId": "2026-11-19T15:31:41Z.1fe782"
+          }
+        ],
+        "firstStartedAt": "2026-11-19T14:08:50Z"
+      },
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-19T15:31:56Z.83da5a",
+        "status": "passed",
+        "durationMs": 222,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no command ran, so nothing here counted a check",
+          "treeMutated": null,
+          "treeBasis": "no command ran, so the tree was not bracketed",
+          "coverage": null,
+          "coverageBasis": "no command ran, so no runner named a path here; the run named above is where that question was asked"
+        },
+        "banners": [],
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:a1fdc79fb4f366fd25d69d528d6745f95894e6d805826f4fb9b1eb4bb47a8b0d",
+        "reuseKey": "1:sha256:7feaf5e4a98cb81efe7b5d4849fde7e252b26d0009d94939c06848cc7addafb2",
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-19T15:31:41Z.1fe782",
+          "ts": "2026-11-19T15:31:41Z",
+          "status": "passed"
+        },
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "2b3b3ad6-53c7-447e-9ceb-53c614bccbc5",
+        "selectionMs": 12724,
+        "at": "2026-11-19T15:31:56Z",
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "attempt": 1,
+          "banners": [],
+          "durationMs": 573319,
+          "failed": [],
+          "gateDigest": "sha256:a1fdc79fb4f366fd25d69d528d6745f95894e6d805826f4fb9b1eb4bb47a8b0d",
+          "gateReach": {
+            "gaps": []
+          },
+          "gateSource": "task",
+          "launch": "2026-11-19T15:21:53Z-e6ac717b",
+          "observations": {
+            "countsBasis": "no step printed a summary this reader can count (python3 tools/gate-parity.py and 1 more), so the size of this gate is not knowable from its output",
+            "coverage": [
+              ".github/workflows/ci.yml",
+              ".github/workflows/ci.yml",
+              "tools/check-browser-install.py",
+              "tools/check-browser-install.py",
+              "tools/gate-parity.py",
+              "tools/gate-parity.py",
+              "tools/verify.sh"
+            ],
+            "coverageBasis": "the runner named 211 path(s); the work under test declares 12 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 197/197 and 206 more; declared but not named by the run: .github/actions/browser-install/action.yml, CONTRIBUTING.md, PLUGIN-BUILD-GUIDE.md; breadth: the run named 175 suite path(s) and this task declares 12 file(s), and 175 of them are suites the task neither declares nor is named after (test__deps.py, test__output.py, test_audit_task.py, test_close_phase.py, test_commit_task_work.py, test_drive_phase.py, test_stamp_verification.py and 168 more) - this gate asks more than the task changed; that is reported, not refused",
+            "ranTotal": null,
+            "treeBasis": "git described the tree before and after",
+            "treeMutated": []
+          },
+          "reuseKey": "1:sha256:7feaf5e4a98cb81efe7b5d4849fde7e252b26d0009d94939c06848cc7addafb2",
+          "runId": "2026-11-19T15:31:41Z.1fe782",
+          "selectionMs": 13304,
+          "sessionId": "2b3b3ad6-53c7-447e-9ceb-53c614bccbc5",
+          "startedAt": "2026-11-19T15:22:07Z",
+          "status": "passed",
+          "via": "cli",
+          "at": "2026-11-19T15:31:41Z",
+          "testedState": {
+            "dirtyBasis": "git described the tree before the run; 11 dirty path(s)",
+            "dirtyDigest": "sha256:5255d8824de3c62aa217fbfac0708851e57bfb14781906225d3fcbbc0b589101",
+            "head": "d7f41e1c",
+            "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+            "scopeBasis": "7 declared file(s); 7 read, 0 missing",
+            "scopeDigest": "sha256:22db28d30da8d91998b99698b22219236a4c2673b1fd1a9ff740e12a685a400b",
+            "scopeListDigest": "sha256:65853eccffa26b2f2e96c5202a91aa4b604c480ed68e90ae14836f33775c6a88"
+          },
+          "steps": [
+            {
+              "command": "python3 tools/gate-parity.py",
+              "durationMs": 1534,
+              "exit": 0,
+              "measured": "not-knowable",
+              "name": "python3 tools/gate-parity.py",
+              "ran": null,
+              "suiteReader": "none"
+            },
+            {
+              "commandBytes": 5463,
+              "commandSha256": "c33a7a7b391f4aea7f7da94f967c2087a44db6a025dabc5e22331ecf67337737",
+              "durationMs": 571607,
+              "exit": 0,
+              "measured": "not-knowable",
+              "name": "python3 tools/sweep-selftests.py tools/gate-parity.py tools/check-browser-install.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_io.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_phase.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_import_evidence.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_outside_run.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_run_test_gate.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+              "program": "python3",
+              "ran": null,
+              "suiteReader": "none"
+            }
+          ]
+        },
+        "sharedWithRepeated": [
+          "steps"
+        ],
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-19T15:31:41Z.1fe782",
+            "launch": "2026-11-19T15:21:53Z-e6ac717b",
+            "status": "passed",
+            "at": "2026-11-19T15:31:41Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-19T15:31:56Z.83da5a",
+        "status": "passed",
+        "at": "2026-11-19T15:31:56Z"
+      }
     },
     {
       "id": "P169.18-6l3",
