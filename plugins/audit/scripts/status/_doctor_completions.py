@@ -170,13 +170,30 @@ def check_evidence_pointers(rep, project, manifest):
         rep.ok("evidence", "no runs recorded and no pointers in the plan")
         return
     known = set(str(r.get("runId")) for r in read["rows"] if r.get("runId"))
+    # A SUBJECT WHOSE OWN RECORD WOULD NOT READ HAS NO NEWEST RUN TO HOLD ITS
+    # POINTER TO (`newest_or_unreadable`): the run it names may be that record's,
+    # and an older run of it is not newer than the plan - so it is said as the
+    # record, never as a dangling pointer or as a reconcile owed.
+    lost = read.get("unreadableRecords") or []
+    unread = []
+
+    def readable(scope, subject):
+        ask = _evidence_io.newest_or_unreadable(
+            read["rows"], lost, scope, subject, latest=latest)
+        unread.extend(e for e in ask["unreadable"] if e not in unread)
+        return not ask["unreadable"]
     dangling = [(scope, subject, run) for scope, subject, run in pointers
-                if run not in known]
+                if run not in known and readable(scope, subject)]
     behind = []
     for (scope, subject), row in sorted(latest.items()):
         current = [r for s, sub, r in pointers if s == scope and sub == subject]
-        if not current or current[0] != str(row.get("runId")):
+        if (not current or current[0] != str(row.get("runId"))) \
+                and readable(scope, subject):
             behind.append("%s %s" % (scope, subject))
+    if unread:
+        rep.warn("evidence", "%s - so its pointer was not checked against the "
+                             "ledger" % (_evidence_io.unreadable_records_sentence(
+                                 unread),))
     if read["unreadable"]:
         rep.warn("evidence", "%d ledger row(s) could not be read and were not "
                              "matched against any pointer"
@@ -196,7 +213,7 @@ def check_evidence_pointers(rep, project, manifest):
                              "refused pointer leaves behind; "
                              "`run-test-gate.py --reconcile` catches it up"
                              % (", ".join(behind),))
-    if not dangling and not behind and not read["unreadable"]:
+    if not dangling and not behind and not read["unreadable"] and not unread:
         rep.ok("evidence", "%d pointer(s) in the plan, %d recorded run(s), and "
                            "every pointer names a run this checkout holds"
                            % (len(pointers), len(read["rows"])))

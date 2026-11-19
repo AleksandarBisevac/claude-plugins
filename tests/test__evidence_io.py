@@ -42,6 +42,7 @@ import _panel_composition                          # noqa: E402  (the panel's re
 import _doctor_trail                               # noqa: E402  (the doctor's full-run check)
 import _doctor_report                              # noqa: E402  (the collector that check reports into)
 import _json_schema                                # noqa: E402  (the schema reader validate-manifest uses)
+import _tree_stamp                                 # noqa: E402  (the digest a binding checks a tested state against)
 
 
 def _project(root, config=None):
@@ -6457,6 +6458,11 @@ def _one_reader_cases(check):
         with io.open(nshards["P1"], encoding="utf-8") as fh:
             bare = dict(json.load(fh)["tasks"][0][M.RECORD_KEY], steps=[])
         bare.pop(getattr(M, "REPEATED_RUN_KEY", "repeatedRun"), None)
+        # Its steps are its own empty list, so the share no longer names
+        # them: `steps` held beside a `steps` share is two values for one
+        # field, which `share_problem` refuses (`ns2`).
+        bare[M.SHARED_KEY] = [p for p in bare.get(M.SHARED_KEY) or []
+                              if p != "steps"]
         ri_put_record(nshards["P1"], "P1.1", bare)
         lone = M.read_rows(nroot, manifest_path=nm)["rows"]
         repeat = M.row_by_run(lone, "R2") or {}
@@ -7065,12 +7071,12 @@ def _record_schema_cases(check):
 
         cut_last = set(n for names, _r in cuts if len(names) == 1 for n in names)
         # What a repeat may share: a key of a measured record outside
-        # `_NEVER_SHARED` holding a subtree - a dict or a list - longer than
-        # the path naming it (`_shared_paths`' rule); and the steps, which a
-        # whole repeat shares by derivation (the never-shared table's comment).
+        # `NEVER_SHARED_KEYS` holding a subtree - a dict or a list - longer
+        # than the path naming it (`_shared_paths`' rule); and the steps, which
+        # a whole repeat shares by derivation (the never-shared table's comment).
         measured = M.run_record(rows["source"])
         shareable = sorted(
-            set(k for k, v in measured.items() if k not in M._NEVER_SHARED
+            set(k for k, v in measured.items() if k not in M.NEVER_SHARED_KEYS
                 and isinstance(v, (dict, list))
                 and M.record_bytes(v) > M.record_bytes(k) + 1)
             | set(["steps"]))
@@ -7096,7 +7102,7 @@ def _record_schema_cases(check):
                        for name, (table, seen) in tables.items())
         check("rk2 THE TABLES ARE COMPOSED: each entry of the cut order is the "
               "one field some bound newly cut, each path a repeat may share (a record's "
-              "keys outside `_NEVER_SHARED`, and the steps) is shared by some "
+              "keys outside `NEVER_SHARED_KEYS`, and the steps) is shared by some "
               "record, and each key only a record holds is held by some record "
               "- each table against what its walk reached: %r"
               % (dict((n, [e for e in t if e not in reached[n]])
@@ -8436,6 +8442,745 @@ def _full_held_cases(check):
         _harness.remove_tree(tmp)
 
 
+# --- a subject whose own record could not be read is never answered older -----
+# THE REGRESSION, THROUGH THE REAL COMMANDS: a task (or the phase) whose newest
+# record is a malformed red, and whose ledger holds an OLDER green of it. A
+# reader that leaves the malformed record out finds the green as the subject's
+# newest run, so a reconcile wrote it over the red and the status gate's
+# failing-tests condition passed. Beside it, subject B (P1.2) holds an older
+# record and the ledger a newer run of it - the subject reconcile must still
+# move, so a malformed record of one subject stops nothing of another's.
+_NU_FILE = "docs/audit/phases/P1.json"
+_NU_RED, _NU_GREEN = "NU-RED", "NU-GR0"
+
+
+def _nu_row(run_id, ts, status, scope="task", task="P1.1"):
+    """A ledger row of `scope` (`task` of `task`, or the phase) - one sweep step
+    with the exit `status` reads as."""
+    row = _lr_row(run_id, ts, status=status, steps=[
+        {"name": "sweep", "exit": 0 if status == "passed" else 1, "ran": 3,
+         "measured": "measured", "durationMs": 8000}])
+    row["failed"] = [] if status == "passed" else ["sweep"]
+    if scope == "phase":
+        row.pop("taskId", None)
+        row["scope"] = "phase"
+    else:
+        row["taskId"] = task
+    return row
+
+
+def _nu_project(tmp, name, scope, malformed=True):
+    """`(root, manifest, shard)` - the regression's fixture, with the red
+    record of `scope`'s subject malformed or (`malformed` False) well-formed."""
+    root = os.path.join(tmp, name)
+    mpath, shards = ri_plan(root)
+    _harness.git(None, "init", "-q", root, prefix=("git",))
+    red = M.run_record(_nu_row(_NU_RED, "2026-11-18T12:00:00Z", "failed", scope))
+    if malformed:
+        red["steps"] = 5
+    ri_put_record(shards["P1"], None if scope == "phase" else "P1.1", red)
+    ri_put_record(shards["P1"], "P1.2", M.run_record(_nu_row(
+        "NU-B-OLD", "2026-11-18T09:00:00Z", "passed", task="P1.2")))
+    M.append_row(root, _nu_row(_NU_GREEN, "2026-11-18T08:00:00Z", "passed",
+                               scope))
+    M.append_row(root, _nu_row("NU-B-NEW", "2026-11-18T10:00:00Z", "passed",
+                               task="P1.2"))
+    return root, mpath, shards["P1"]
+
+
+def _nu_holder(shard, subject):
+    """The record and pointer `subject` (None: the phase) holds, as one
+    canonical text - what a reconcile that left it alone leaves unchanged."""
+    body = _lr_shard(shard)
+    holder = body if subject is None else [
+        t for t in body["tasks"] if t["id"] == subject][0]
+    return json.dumps([holder.get(M.RECORD_KEY), holder.get(M.POINTER_KEY)],
+                      sort_keys=True)
+
+
+def _nu_env(root):
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+    env["CLAUDE_PROJECT_DIR"] = root
+    return env
+
+
+def _nu_cmd(script, argv, root):
+    """`(exit, stdout + stderr)` of the plugin's `script` run as a process."""
+    done = subprocess.run([sys.executable, _loader.script_path(script)] + argv,
+                          cwd=root, env=_nu_env(root), capture_output=True,
+                          text=True, encoding="utf-8", timeout=300)
+    return done.returncode, done.stdout + done.stderr
+
+
+def _nu_reconcile(root, mpath):
+    return _nu_cmd("run-test-gate.py", [mpath, "P1", "--project-dir", root,
+                                        "--reconcile"], root)
+
+
+def _nu_failing_gate(root, mpath):
+    return _nu_cmd("audit-status.py", [mpath, "--gate", "--fail-on",
+                                       "failing-tests"], root)
+
+
+def _nu_scope_case(check, tmp, scope, label):
+    """One red-first case: reconcile over the fixture of `scope` refuses the
+    subject whose record is malformed, leaves it, and still moves B."""
+    root, mpath, shard = _nu_project(tmp, "nu-" + scope, scope)
+    subject = None if scope == "phase" else "P1.1"
+    said = "phase P1" if scope == "phase" else "task P1.1"
+    before = _nu_holder(shard, subject)
+    gate_before, _g = _nu_failing_gate(root, mpath)
+    code, out = _nu_reconcile(root, mpath)
+    gate_after, gate_out = _nu_failing_gate(root, mpath)
+    refused = [ln for ln in out.splitlines() if "REFUSED:" in ln and said in ln]
+    check("%s RED-FIRST: reconcile at %s scope over a malformed newest red and "
+          "an older green in the ledger leaves the record and pointer exactly, "
+          "says nothing moved for %s, refuses it naming the plan file and the "
+          "field, exits failing, and the status gate's failing-tests condition "
+          "still fails: exit=%r gate %r->%r refused=%r out=%r"
+          % (label, scope, said, code, gate_before, gate_after, refused,
+             out[-600:]),
+          code == 1 and _nu_holder(shard, subject) == before
+          and ("moved:    %s" % (said,)) not in out
+          and len(refused) == 1 and _NU_FILE in refused[0]
+          and "%s.steps" % (M.RECORD_KEY,) in refused[0]
+          and _NU_GREEN not in refused[0]
+          and gate_before != 0 and gate_after != 0
+          and "GATE PASSED" not in gate_out)
+    return root, shard, out
+
+
+def _newest_unreadable_cases(check):
+    """(nu) A subject whose own record could not be read is never answered
+    from an older run: reconcile refuses it at either scope and still moves
+    every other subject; the one function answers newest-or-unreadable; every
+    picker the tree holds goes through it."""
+    tmp = _harness.fixture_root("audit-evidence-newest-")
+    try:
+        root, shard, out = _nu_scope_case(check, tmp, "task", "nu1")
+        _nu_scope_case(check, tmp, "phase", "nu2")
+        body = _lr_shard(shard)
+        b_task = [t for t in body["tasks"] if t["id"] == "P1.2"][0]
+        check("nu4 A MALFORMED RECORD OF ONE SUBJECT STOPS NOTHING OF ANOTHER'S: "
+              "in the same reconcile, B's newer ledger run moves its pointer "
+              "and rewrites its record: %r / %r"
+              % ((b_task.get(M.POINTER_KEY) or {}).get("runId"),
+                 [ln for ln in out.splitlines() if "P1.2" in ln]),
+              "moved:    task P1.2 -> NU-B-NEW" in out
+              and (b_task.get(M.POINTER_KEY) or {}).get("runId") == "NU-B-NEW"
+              and (b_task.get(M.RECORD_KEY) or {}).get("runId") == "NU-B-NEW")
+
+        # ALLOW: the same fixture well-formed reconciles as it always did - the
+        # red record is newer than the ledger's green, so it is already where it
+        # points, and B moves.
+        croot, cmpath, cshard = _nu_project(tmp, "nu-clean", "task",
+                                            malformed=False)
+        cbefore = _nu_holder(cshard, "P1.1")
+        ccode, cout = _nu_reconcile(croot, cmpath)
+        cbody = _lr_shard(cshard)
+        cb = [t for t in cbody["tasks"] if t["id"] == "P1.2"][0]
+        ledger_b = [r for r in M.read_rows(croot, manifest_path=cmpath)["rows"]
+                    if r.get("runId") == "NU-B-NEW"]
+        check("nu3 ALLOW: a well-formed plan reconciles as before - exit 0, the "
+              "red record already where it points and left exactly, B moved "
+              "with its record the writer's own record of its ledger row, and "
+              "nothing refused or unread: exit=%r out=%r"
+              % (ccode, cout[-500:]),
+              ccode == 0 and "already:  task P1.1" in cout
+              and "moved:    task P1.2 -> NU-B-NEW" in cout
+              and "REFUSED" not in cout and "UNREAD" not in cout
+              and _nu_holder(cshard, "P1.1") == cbefore
+              and len(ledger_b) == 1
+              and cb.get(M.RECORD_KEY) == M.run_record(ledger_b[0]))
+
+        # The one function, in-process: newest for a readable subject, the
+        # unreadable record for one whose own record would not read.
+        doc = _json_schema.load_document(_RK_SCHEMA)
+        good = M.run_record(_nu_row("F-NEW", "2026-11-18T12:00:00Z", "failed"))
+        bodies = [(_NU_FILE, {"id": "P1", "tasks": [
+            {"id": "P1.1", M.RECORD_KEY: dict(good, steps=5)},
+            {"id": "P1.2", M.RECORD_KEY: dict(good, runId="F-B")}],
+            M.FULL_GATE_RUNS_KEY: 5})]
+        lost = M.unreadable_records(bodies, doc)
+        rows = [_nu_row("F-OLD", "2026-11-18T08:00:00Z", "passed"),
+                _nu_row("NU-B-OLD", "2026-11-18T08:00:00Z", "passed",
+                        task="P1.2"),
+                _nu_row("NU-P-OLD", "2026-11-18T08:00:00Z", "passed",
+                        scope="phase")]
+        rows += [r for r, _l in M.records_of_bodies(bodies, doc)]
+        ask = getattr(M, "newest_or_unreadable", None)
+        got = dict((k, ask(rows, lost, k[0], k[1]) if ask else None)
+                   for k in (("task", "P1.1"), ("task", "P1.2"),
+                             ("phase", "P1"), ("task", "P9.9")))
+
+        def run_of(answer):
+            return ((answer or {}).get("row") or {}).get("runId")
+        a11 = got[("task", "P1.1")] or {}
+        check("nu5 THE ONE ANSWER, newest-or-unreadable: the subject whose own "
+              "record is malformed answers no run and names its record (file, "
+              "subject, field) with the shared sentence; the subject beside it "
+              "answers its newest; a phase whose held full runs are malformed "
+              "still answers its own newest run, since those are not its "
+              "record; a subject with no run answers none and nothing "
+              "unreadable: %r"
+              % (dict(("%s %s" % k, (run_of(v), len((v or {}).get(
+                  "unreadable") or []))) for k, v in got.items()),),
+              ask is not None and run_of(a11) is None
+              and [(e.get("file"), e.get("subject"), e.get("field"))
+                   for e in a11.get("unreadable") or []]
+              == [(_NU_FILE, "P1.1", "%s.steps" % (M.RECORD_KEY,))]
+              and _NU_FILE in str(a11.get("sentence"))
+              and run_of(got[("task", "P1.2")]) == "F-B"
+              and not got[("task", "P1.2")].get("unreadable")
+              and run_of(got[("phase", "P1")]) == "NU-P-OLD"
+              and not got[("phase", "P1")].get("unreadable")
+              and run_of(got[("task", "P9.9")]) is None
+              and not got[("task", "P9.9")].get("unreadable")
+              and got[("task", "P9.9")].get("sentence") is None)
+        check("nu5b ...and for a readable subject it is the newest by moment, "
+              "the run `latest_by_subject` keys, over every subject of the "
+              "one-reader fixture: %r"
+              % (sorted((k, run_of(ask(ri_rows(tmp), [], k[0], k[1])
+                                   if ask else None), v.get("runId"))
+                        for k, v in M.latest_by_subject(ri_rows(tmp)).items()),),
+              ask is not None and all(
+                  run_of(ask(ri_rows(tmp), [], k[0], k[1])) == v.get("runId")
+                  for k, v in M.latest_by_subject(ri_rows(tmp)).items()))
+
+        # UNDER THE LOCK: a record that became unreadable after the rows were
+        # read is refused there too, never replaced by the older target.
+        lbody = {"id": "P1", "tasks": [{"id": "P1.1", M.RECORD_KEY: dict(
+            good, steps=5)}]}
+        snapshot = json.dumps(lbody, sort_keys=True)
+        written, problem, _ans = M._reconciled(
+            lbody, "task", {"taskId": "P1.1", "phaseId": "P1"}, True,
+            dict(_nu_row("F-OLD", "2026-11-18T08:00:00Z", "passed")),
+            M.run_record(_nu_row("F-OLD", "2026-11-18T08:00:00Z", "passed")))
+        check("nu7 UNDER THE LOCK THE SAME RULE: the shard as read under the lock "
+              "holding a malformed record refuses that subject's write, naming "
+              "the field, and the body is left as read: %r"
+              % ((written is None, problem),),
+              written is None and problem
+              and "%s.steps" % (M.RECORD_KEY,) in str(problem)
+              and json.dumps(lbody, sort_keys=True) == snapshot)
+        _nu_picker_cases(check)
+    except Exception as exc:                                   # noqa: BLE001
+        check("nu0 the newest-or-unreadable block ran to its end (%s: %s)"
+              % (type(exc).__name__, exc), False)
+    finally:
+        _harness.remove_tree(tmp)
+
+
+# THE PICKERS, DERIVED BY WHAT THEY CALL. A function that reduces runs to one
+# per subject (`latest_by_subject`), takes a subject's newest red
+# (`newest_red_phase_row`, `red_after_green`) or the binding's newest
+# (`_verdict_binding.newest`) answers "the newest run of a subject"; each must
+# also ask `newest_or_unreadable`, or carry a row below saying why an older
+# answer cannot come out of it. Read in both directions: a row naming a
+# function that no longer calls a picker, or that now goes through the one
+# answer, is stale.
+_NU_PICKS = ("latest_by_subject", "newest_red_phase_row", "red_after_green")
+_NU_LEFT = {
+    ("governance/_verdict_binding.py", "red_after_green"):
+        "the definition itself: it reads the rows it is handed, which "
+        "`binding` hands only after the subject's own record was asked of "
+        "`newest_or_unreadable`",
+    ("governance/_verdict_binding.py", "member_red"):
+        "OWED, NOT SAFE: a group member's own record that would not read is "
+        "not handed to it - close-phase.py passes the records it read and not "
+        "what that read lost - so a member's newest red in such a record is "
+        "not seen, and its rows are still chosen by `_same_subject`, which "
+        "counts a base run a member's task keeps; recorded as a finding for "
+        "the owner of close-phase.py",
+    ("governance/_verdict_binding.py", "signoff_moment"):
+        "the newest `phase.verdict` JOURNAL row, a sign-off moment - not a "
+        "run of any subject, and no plan record holds one",
+    ("governance/_verdict_binding.py", "newest"):
+        "the definition itself: `newest_row` under the binding's name, whose "
+        "one caller is `signoff_moment`",
+    ("governance/_evidence_io.py", "newest_or_unreadable"):
+        "the one answer itself, which reduces with `latest_by_subject`",
+    ("governance/_gate_derive.py", "newest_red_phase_row"):
+        "the definition itself: its one caller, `derive-phase-gate.py`'s "
+        "`_gather_facts`, asks `newest_or_unreadable` for the phase first",
+    ("governance/_evidence_io.py", "latest_by_subject"):
+        "the definition itself",
+}
+
+
+def _nu_pickers():
+    """`{(rel, function): (calls a picker, calls the one answer)}` for every
+    function under `scripts/` and `.claude/hooks/` that calls either."""
+    import ast
+    files = list(_output.py_files(_output.SCRIPTS_DIR))
+    hooks = os.path.join(_output.REPO_ROOT, ".claude", "hooks")
+    files += [(".claude/hooks/" + n, os.path.join(hooks, n))
+              for n in sorted(os.listdir(hooks)) if n.endswith(".py")]
+    out = {}
+    for rel, path in files:
+        with io.open(path, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+        newest_here = rel.endswith("_verdict_binding.py")
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            called = set()
+            for sub in ast.walk(node):
+                if isinstance(sub, ast.Call):
+                    fn = sub.func
+                    called.add(getattr(fn, "attr", None) or getattr(fn, "id",
+                                                                  None))
+            picks = set(_NU_PICKS) | (set(["newest"]) if newest_here
+                                      else set())
+            if node.name in picks:
+                called.add(node.name)
+            if called & (picks | set(["newest_or_unreadable"])):
+                out[(rel.replace(os.sep, "/"), node.name)] = (
+                    bool(called & picks), "newest_or_unreadable" in called)
+    return out
+
+
+def _nu_picker_cases(check):
+    """(nu6) the pickers' rule, derived.
+
+    WHAT IT CANNOT SEE: a function that filters runs to one subject by hand and
+    takes `newest_row` (or `oldest_first(...)[-1]`) of them picks a subject's
+    newest run without calling any name above, and is not derived - `newest_row`
+    alone is also every by-run-id and by-launch lookup, which are not pickers.
+    The author of such a function owes it the call to `newest_or_unreadable`,
+    or a row in `_NU_LEFT`; nothing here finds it."""
+    found = _nu_pickers()
+    bypass = sorted(k for k, (_p, via) in found.items()
+                    if not via and k not in _NU_LEFT)
+    stale = sorted(k for k in _NU_LEFT
+                   if k not in found or found[k][1])
+    through = sorted(k for k, (_p, via) in found.items() if via)
+    owed = set([("governance/_evidence_io.py", "reconcile"),
+                ("status/audit-lookup.py", "run_lookup"),
+                ("status/_doctor_completions.py", "check_evidence_pointers"),
+                ("governance/_verdict_binding.py", "binding"),
+                ("governance/derive-phase-gate.py", "_gather_facts")])
+    check("nu6 EVERY PICKER GOES THROUGH THE ONE ANSWER, derived from what each "
+          "function calls: none calls a picker without `newest_or_unreadable` "
+          "unless a row says why, no row is stale, and the known pickers - "
+          "reconcile, the lookup, the doctor, the binding, the phase-gate "
+          "derivation - are among those going through it: bypass=%r stale=%r "
+          "through=%r" % (bypass, stale, through),
+          found and bypass == [] and stale == [] and owed <= set(through))
+
+
+def _never_shared_cases(check):
+    """(ns) A share cannot rewrite a verdict: a shared path whose top key the
+    writer never shares, and a shared path the record also holds, are each a
+    problem of the record - one table, read by the writer and by the check.
+    A shared tested state is a share the writer itself makes, part repeat
+    and whole alike, so it stays legal; what it can and cannot make bind is
+    `ns3`'s."""
+    import _verdict_binding as VB
+    doc = _json_schema.load_document(_RK_SCHEMA)
+    table = tuple(getattr(M, "NEVER_SHARED_KEYS", ()))
+    tmp = _harness.fixture_root("audit-evidence-shared-")
+    try:
+        root = os.path.join(tmp, "ns")
+        os.makedirs(os.path.join(root, "src"))
+        with io.open(os.path.join(root, "src", "a.py"), "w",
+                     encoding="utf-8") as fh:
+            fh.write("a = 1\n")
+        rows = _rk_rows(root)
+
+        def bind(record):
+            bodies = [(_NU_FILE, {"id": "P1", "tasks": [
+                {"id": "P1.1", M.RECORD_KEY: record}]})]
+            return VB.binding(
+                root, {"taskId": "P1.1", "phaseId": "P1"}, ["sweep"], "task",
+                ["src/a.py"], os.path.join(root, "docs", "audit",
+                                           "audit-plan.json"),
+                "record it", "no gate", texts=[],
+                records=M.records_of_bodies(bodies, doc),
+                records_lost=M.unreadable_records(bodies, doc))
+        whole = M.run_record(rows["whole"], source=rows["source"])
+        part = M.run_record(rows["part"], source=rows["source"])
+        check("ns0 ALLOW: the records the writer composes - a whole repeat and "
+              "a part repeat sharing what it shares - read, and the whole one "
+              "shares something: %r / %r"
+              % (M.record_problem(whole, doc), M.record_problem(part, doc)),
+              M.record_problem(whole, doc) is None
+              and M.record_problem(part, doc) is None
+              and len(whole.get(M.SHARED_KEY) or []) > 0)
+        missed, bound = [], []
+        for key in table:
+            planted = dict(whole, **{M.SHARED_KEY: list(
+                whole.get(M.SHARED_KEY) or []) + ([key] if key != "steps"
+                                                  else ["steps.0"])})
+            found = M.record_problem(planted, doc)
+            if found is None or not str(found.get("field")).startswith(
+                    "%s.%s" % (M.RECORD_KEY, M.SHARED_KEY)):
+                missed.append((key, found))
+            answer = bind(planted)
+            if answer.get("state") == "bound" \
+                    or answer.get("arm") != VB.ARM_UNREADABLE \
+                    or M.SHARED_KEY not in str(answer.get("sentence")):
+                bound.append((key, answer.get("state"), answer.get("arm")))
+        plain = bind(whole)
+        check("ns1 RED-FIRST: EVERY KEY THE WRITER NEVER SHARES, named in a "
+              "record's share, makes the record unreadable at "
+              "`lastRun.sharedWithRepeated`, and through the binding it refuses "
+              "as unreadable naming the share, never binding - while the "
+              "writer's own record is not refused as unreadable: table=%r "
+              "missed=%r bound=%r plain=%r"
+              % (table, missed, bound, (plain.get("arm"),
+                                        str(plain.get("sentence"))[:160])),
+              len(table) >= 10 and missed == [] and bound == []
+              and all(k in table for k in ("runId", "at", "status"))
+              and plain.get("arm") != VB.ARM_UNREADABLE)
+        held = dict(whole, **{M.SHARED_KEY: list(whole.get(M.SHARED_KEY) or [])
+                              + [M.GATE_REACH_KEY]})
+        held[M.GATE_REACH_KEY] = {"unreached": ["src/hand.py"]}
+        steps_too = dict(whole, steps=[{"name": "sweep", "exit": 0}])
+        problems = [M.record_problem(held, doc),
+                    M.record_problem(steps_too, doc)]
+        check("ns2 A SHARED PATH THE RECORD ALSO HOLDS is a problem of the "
+              "record - a reach reading written beside its share, and `steps` "
+              "kept beside the `steps` share, the both-arms shape, whose "
+              "sentence names `steps` and the share as what to repair: %r"
+              % (problems,),
+              all(p is not None for p in problems)
+              and str(problems[0].get("field")).startswith(
+                  "%s.%s" % (M.RECORD_KEY, M.SHARED_KEY))
+              and "steps" in str(problems[1].get("why"))
+              and M.SHARED_KEY in str(problems[1].get("why"))
+              and "more than one" not in str(problems[1].get("why")))
+        # A SHARED TESTED STATE, which the writer makes whenever a repeat's
+        # equals its source's: the record then reads the carried run's state,
+        # and the binding checks THAT against the work.
+        here = _tree_stamp.scope_digest(root, ["src/a.py"])[0]
+        gate = M.gate_digest(["sweep"], None)
+        step = {"name": "sweep", "exit": 0, "ran": 3, "measured": "measured",
+                "durationMs": 10}
+
+        def ns_row(run_id, ts, digest, **extra):
+            return dict(_lr_row(run_id, ts, steps=[dict(step)],
+                                status="passed"), failed=[],
+                        gateDigest=gate, testedState={"head": "abc",
+                                                      "scopeDigest": digest},
+                        **extra)
+        src_ts = "2026-11-18T10:00:00Z"
+
+        def ns_part(digest):
+            return ns_row("NS-PART", "2026-11-18T10:05:00Z", digest, **{
+                M.VERDICT_SOURCE: M.PART_REUSED,
+                "reusedFrom": {"runId": "NS-SRC", "ts": src_ts,
+                               "status": "passed"},
+                "steps": [dict(step, reusedFrom={"runId": "NS-SRC",
+                                                 "ts": src_ts})]})
+        writers = {}
+        for label, digest in (("these bytes", here),
+                              ("other bytes", "sha256:other")):
+            record = M.run_record(ns_part(digest), source=ns_row(
+                "NS-SRC", src_ts, digest))
+            writers[label] = (record, bind(record))
+        own_other = M.run_record(ns_part("sha256:other"),
+                                 source=ns_row("NS-SRC", src_ts, here))
+        planted = dict(own_other, **{M.SHARED_KEY: list(
+            own_other.get(M.SHARED_KEY) or []) + ["testedState"]})
+        planted.pop("testedState", None)
+        typed = dict(own_other, testedState={"head": "abc",
+                                             "scopeDigest": here})
+        said = dict((k, (v[1].get("state"), v[1].get("arm"),
+                         "testedState" in (v[0].get(M.SHARED_KEY) or [])))
+                    for k, v in writers.items())
+        said.update({"own other": bind(own_other).get("state"),
+                     "planted": bind(planted).get("state"),
+                     "typed": bind(typed).get("state")})
+        check("ns3 A SHARED TESTED STATE, which the writer itself makes, reads "
+              "the carried run's state and the binding checks that: carried "
+              "from a run of these bytes it binds, from a run of other bytes it "
+              "is refused; a part repeat of other bytes holds its own state and "
+              "is refused; and a share planted by hand onto it binds exactly as "
+              "the same state written into the field by hand does - the share "
+              "is no wider than the field it stands for: %r" % (said,),
+              said["these bytes"] == ("bound", None, True)
+              and said["other bytes"][0] == "refused" and said["other bytes"][2]
+              and "testedState" not in (own_other.get(M.SHARED_KEY) or [])
+              and said["own other"] == "refused"
+              and M.record_problem(planted, doc) is None
+              and said["planted"] == said["typed"] == "bound")
+        # The writer over a record whose every field - the table's included -
+        # equals the carried run's, each a subtree worth sharing.
+        same = dict((key, {"same": ["x" * 40]}) for key in table
+                    if key != M.REPEATED_RUN_KEY)
+        same.update({"muted": {"same": ["y" * 40]}})
+        written = M.shared_with_repeated(dict(same, **{
+            M.REPEATED_RUN_KEY: dict(same)}))
+        shared_tops = set(str(p).split(".")[0] for p in
+                          written.get(M.SHARED_KEY) or [])
+        check("ns4 ...AND THE WRITER READS THE SAME TABLE: over a record whose "
+              "every field equals the carried run's, it shares a field the "
+              "table does not name and none the table does: %r"
+              % (sorted(shared_tops),),
+              len(table) >= 10 and shared_tops == set(["muted"]))
+    except Exception as exc:                                   # noqa: BLE001
+        check("ns0b the shared-path block ran to its end (%s: %s)"
+              % (type(exc).__name__, exc), False)
+    finally:
+        _harness.remove_tree(tmp)
+
+
+# --- the release guard reads the plan's structure or refuses ------------------
+_GS_INDEX = "docs/audit/audit-plan.json"
+_GS_VALUES = (("object", {}), ("array", []), ("string", "x"), ("number", 5),
+              ("boolean", True), ("null", None))
+
+
+def _gs_def(doc, node):
+    while isinstance(node, dict) and "$ref" in node:
+        node = doc["$defs"][node["$ref"].split("/")[-1]]
+    return node
+
+
+def _gs_containers(doc):
+    """`[(file, path, admitted type)]` - every container the guard reads to
+    decide, its type read off the published schema. WHICH containers is the
+    guard's reading (the plan, its phases and their tasks, its bugs); what
+    each admits is the schema's. A sharded plan's tasks sit in the shard."""
+    props = doc["properties"]
+    phases, bugs = props["phases"], props["bugs"]
+    phase = _gs_def(doc, phases["items"])
+    tasks = phase["properties"]["tasks"]
+    return [(_GS_INDEX, "meta", _gs_def(doc, props["meta"])["type"]),
+            (_GS_INDEX, "phases", phases["type"]),
+            (_GS_INDEX, "phases[0]", phase["type"]),
+            (_NU_FILE, "tasks", tasks["type"]),
+            (_NU_FILE, "tasks[0]", _gs_def(doc, tasks["items"])["type"]),
+            (_GS_INDEX, "bugs", bugs["type"]),
+            (_GS_INDEX, "bugs[0]", _gs_def(doc, bugs["items"])["type"])]
+
+
+def _gs_plant(root, rel, path, value):
+    """`value` at `path` (one key, or one key's first entry) of the plan file
+    `rel` under `root`."""
+    full = os.path.join(root, rel)
+    with io.open(full, encoding="utf-8") as fh:
+        body = json.load(fh)
+    key, _sep, first = path.partition("[")
+    if first:
+        body[key] = (body.get(key) or [None])
+        body[key] = [value] + body[key][1:]
+    else:
+        body[key] = value
+    with io.open(full, "w", encoding="utf-8") as fh:
+        json.dump(body, fh)
+
+
+def _gs_guard():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("gs_guard", _UG_HOOK)
+    guard = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(guard)
+    return guard
+
+
+def _guard_structure_cases(check):
+    """(gs) The release guard reads the plan's STRUCTURE or refuses: each
+    container it reads, holding each JSON type its schema does not admit; a
+    full gate the plugin's own reader would not take; a phase recording a
+    merge head with no usable merge moment; a key written twice - each a deny
+    naming the file and the place. A well-formed plan, one naming no full
+    gate, one with no bugs and no merged phase, and the committed example and
+    the demo starter, are read without one. And a deny that can be written
+    nowhere still exits 2."""
+    tmp = _harness.fixture_root("audit-evidence-guard-shape-")
+    try:
+        doc = _json_schema.load_document(_RK_SCHEMA)
+        root, mpath, shards = _ug_project(tmp, "gs")
+        texts = {}
+        for rel in (_GS_INDEX, _NU_FILE):
+            with io.open(os.path.join(root, rel), encoding="utf-8") as fh:
+                texts[rel] = fh.read()
+
+        def restore():
+            for rel, text in texts.items():
+                with io.open(os.path.join(root, rel), "w",
+                             encoding="utf-8") as fh:
+                    fh.write(text)
+
+        def deny():
+            code, reason, out, err = _ug_run(root, _ug_payload(root))
+            return code, reason, (reason or out)[-260:], err[-200:]
+
+        code, reason, _s, err = deny()
+        check("gs1 ALLOW: the well-formed plan - a full gate, no bug, no merged "
+              "phase - lets the tag command through: %r" % ((code, reason, err),),
+              code == 0 and reason is None)
+        containers = _gs_containers(doc)
+        shapes, missed = 0, []
+        for rel, path, admitted in containers:
+            for kind, value in _GS_VALUES:
+                if kind == admitted:
+                    continue
+                shapes += 1
+                restore()
+                _gs_plant(root, rel, path, value)
+                code, reason, said, err = deny()
+                if code != 0 or reason is None or rel not in reason \
+                        or ("`%s` is %s" % (path, kind)) not in reason \
+                        or "Traceback" in err:
+                    missed.append((rel, path, kind, code, said, err))
+        check("gs2 RED-FIRST: EVERY CONTAINER THE GUARD READS, holding every "
+              "JSON type its schema does not admit, is a deny naming the file "
+              "and the place - %d container(s), %d shape(s); not denied as "
+              "said: %r" % (len(containers), shapes, missed[:3]),
+              [a for _r, _p, a in containers] == [
+                  "object", "array", "object", "array", "object", "array",
+                  "object"]
+              and shapes == 35 and missed == [])
+        full = _gs_def(doc, doc["properties"]["meta"])["properties"]["fullGate"]
+        gate_shapes = [(k, v) for k, v in _GS_VALUES if k != full["type"]]
+        gate_shapes += [("an entry that is " + k, [v]) for k, v in _GS_VALUES
+                        if k != full["items"]["type"]]
+        gate_shapes += [("a blank entry", [""]), ("a spaces entry", ["   "])]
+        gate_missed = []
+        for label, value in gate_shapes:
+            restore()
+            with io.open(mpath, encoding="utf-8") as fh:
+                index = json.load(fh)
+            index["meta"]["fullGate"] = value
+            with io.open(mpath, "w", encoding="utf-8") as fh:
+                json.dump(index, fh)
+            code, reason, said, err = deny()
+            if code != 0 or reason is None or "meta.fullGate" not in reason \
+                    or _GS_INDEX not in reason:
+                gate_missed.append((label, code, said))
+        check("gs3 RED-FIRST: A FULL GATE THE PLUGIN'S OWN READER WOULD NOT "
+              "TAKE - not a list, an entry not a string, a blank entry - is a "
+              "deny naming `meta.fullGate`, never read as no third place: "
+              "%d shape(s); %r" % (len(gate_shapes), gate_missed),
+              len(gate_shapes) == 12 and gate_missed == [])
+        merge_missed = []
+        for label, moment in (("absent", "-"), ("null", None), ("empty", ""),
+                              ("not a moment", "soon"), ("a number", 5)):
+            restore()
+            with io.open(shards["P1"], encoding="utf-8") as fh:
+                body = json.load(fh)
+            body["mergedHead"] = "abc1234"
+            if moment != "-":
+                body["mergedAt"] = moment
+            _ug_write_shard(shards, json.dumps(body))
+            code, reason, said, err = deny()
+            if code != 0 or reason is None or "P1" not in reason \
+                    or "mergedAt" not in reason or "Traceback" in err:
+                merge_missed.append((label, code, said))
+        check("gs4 RED-FIRST: A PHASE RECORDING A MERGE HEAD WITH NO USABLE "
+              "MERGE MOMENT - absent, null, empty, not a moment, a number - "
+              "reads as unknown, never as unmerged: %r" % (merge_missed,),
+              merge_missed == [])
+        dup_missed = []
+        for rel, key, old, new in (
+                (_GS_INDEX, "bugs", '{', '{"bugs": [], '),
+                (_NU_FILE, "id", '{"id": "P1"', '{"id": "P0", "id": "P1"')):
+            restore()
+            text = texts[rel].replace(old, new, 1)
+            with io.open(os.path.join(root, rel), "w", encoding="utf-8") as fh:
+                fh.write(text)
+            code, reason, said, err = deny()
+            if text == texts[rel] or code != 0 or reason is None \
+                    or rel not in reason or ("`%s`" % (key,)) not in reason \
+                    or "more than once" not in reason:
+                dup_missed.append((rel, key, code, said))
+        check("gs5 RED-FIRST: A KEY WRITTEN TWICE IN ONE OBJECT - in the index "
+              "and in a shard - is a deny naming the file and the key, since "
+              "which value the plan carries is not established: %r"
+              % (dup_missed,), dup_missed == [])
+        # ALLOW: no third place at all - and then a recorded head without a
+        # moment is asked nothing, as no merged phase is - and an empty one.
+        allowed = []
+        for label, gate in (("no fullGate", None), ("an empty fullGate", [])):
+            restore()
+            with io.open(mpath, encoding="utf-8") as fh:
+                index = json.load(fh)
+            if gate is None:
+                index["meta"].pop("fullGate")
+            else:
+                index["meta"]["fullGate"] = gate
+            with io.open(mpath, "w", encoding="utf-8") as fh:
+                json.dump(index, fh)
+            with io.open(shards["P1"], encoding="utf-8") as fh:
+                body = json.load(fh)
+            body["mergedHead"] = "abc1234"
+            _ug_write_shard(shards, json.dumps(body))
+            code, reason, _s, err = deny()
+            allowed.append((label, code, reason))
+        check("gs6 ALLOW: a plan naming no third place - no fullGate, or an "
+              "empty one - is let through, its merged-head-only phase asked "
+              "nothing: %r" % (allowed,),
+              all(code == 0 and reason is None for _l, code, reason in allowed))
+        # The committed example and the demo starter, through the guard's own
+        # structural reader, in-process and read-only.
+        restore()
+        guard = _gs_guard()
+        reader = getattr(guard, "plan_structure_problem", None)
+        acme = os.path.join(tmp, "acme")
+        src = os.path.join(_output.REPO_ROOT, "examples", "acme-store")
+        os.makedirs(os.path.join(acme, "docs", "audit"))
+        shutil.copy(os.path.join(src, "audit-plan.json"),
+                    os.path.join(acme, "docs", "audit", "audit-plan.json"))
+        shutil.copytree(os.path.join(src, "phases"),
+                        os.path.join(acme, "docs", "audit", "phases"))
+        demo = os.path.join(tmp, "demo")
+        made = subprocess.run(
+            [sys.executable, os.path.join(_output.REPO_ROOT, "tools", "demo",
+                                          "gen-demo-manifest.py"),
+             os.path.join(demo, "docs", "audit"), "--phases", "4",
+             "--tasks", "3"], capture_output=True, text=True, timeout=120)
+        readings = [(name, reader(project) if reader else "no reader")
+                    for name, project in (("fixture", root), ("example", acme),
+                                          ("demo starter", demo))]
+        _gs_plant(root, _GS_INDEX, "phases", "x")
+        planted = reader(root) if reader else None
+        restore()
+        check("gs7 ALLOW: the guard's structural reader takes the fixture, the "
+              "committed example and the demo starter as they are, and names "
+              "the planted shape: %r / %r / %r"
+              % (readings, planted, made.returncode),
+              made.returncode == 0
+              and all(said is None for _n, said in readings)
+              and planted is not None and "`phases` is string" in planted)
+        # A DENY WRITTEN NOWHERE: stdout closed when the process starts (and,
+        # beside it, the interpreter's own None stream), and then stderr too.
+        ri_put_record(shards["P1"], "P1.1", dict(_ur_base(), steps=5))
+        runner = ("import runpy, sys\nsys.argv = [sys.argv[1]]\n%s"
+                  "runpy.run_path(sys.argv[0], run_name='__main__')\n")
+        closed = []
+        for label, pre in (("stdout None", "sys.stdout = None\n"),
+                           ("stdout and stderr None",
+                            "sys.stdout = None\nsys.stderr = None\n")):
+            code, _r, _o, err = _ug_run(
+                root, _ug_payload(root),
+                argv=[sys.executable, "-c", runner % (pre,), _UG_HOOK])
+            closed.append((label, code, err))
+        if os.name == "posix":
+            code, _r, _o, err = _ug_run(root, _ug_payload(root), argv=[
+                sys.executable, "-c",
+                "import os, sys\nos.close(1)\n"
+                "os.execv(sys.executable, [sys.executable, sys.argv[1]])\n",
+                _UG_HOOK])
+            closed.append(("fd 1 closed at exec", code, err))
+        check("gs8 RED-FIRST: A DENY THAT CAN BE WRITTEN NOWHERE still exits 2 - "
+              "stdout closed when the process starts, stdout None, and stdout "
+              "and stderr both None - and says it on stderr when stderr "
+              "takes it: %r" % ([(lab, c, e[:120]) for lab, c, e in closed],),
+              len(closed) >= 2
+              and all(code == 2 for _l, code, _e in closed)
+              and all("[guard-release]" in err for label, _c, err in closed
+                      if "stderr" not in label))
+    except Exception as exc:                                   # noqa: BLE001
+        check("gs0 the guard-structure block ran to its end (%s: %s)"
+              % (type(exc).__name__, exc), False)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _types_namespace(**kw):
     import types
     return types.SimpleNamespace(**kw)
@@ -8443,6 +9188,9 @@ def _types_namespace(**kw):
 
 def _selftest():
     def body(check):
+        _harness.stage(check, "nu-block", _newest_unreadable_cases)
+        _harness.stage(check, "ns-block", _never_shared_cases)
+        _harness.stage(check, "gs-block", _guard_structure_cases)
         _harness.stage(check, "ur-block", _unreadable_record_cases)
         _harness.stage(check, "id-block", _record_identity_cases)
         _harness.stage(check, "ug-block", _guard_unreadable_cases)

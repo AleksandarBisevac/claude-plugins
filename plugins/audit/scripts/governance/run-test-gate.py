@@ -6739,8 +6739,11 @@ def main(argv, out=print):
         for label in report.get("unreadablePlanFiles") or []:
             out("  UNREAD:   %s would not read, so no record it holds was "
                 "reconciled" % (label,))
+        for label in report.get("unreadableRecords") or []:
+            out("  UNREAD:   %s - no pointer is derived from it, and it was "
+                "left as it is" % (label,))
         return E_FAIL if report["refused"] or report.get(
-            "unreadablePlanFiles") else E_OK
+            "unreadablePlanFiles") or report.get("unreadableRecords") else E_OK
     if args.own:
         commands, source, err = own_gate_of(manifest, args.phase, args.task)
     else:

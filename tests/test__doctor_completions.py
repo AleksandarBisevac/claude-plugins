@@ -750,8 +750,112 @@ def _cases(check):
     _shutil.rmtree(os.path.join(tmp, "dcev-ok"), ignore_errors=True)
 
 
+_DU_FILE = "docs/audit/phases/P1.json"
+
+
+def _du_row(run_id, ts, status, task):
+    return {"v": 1, "runId": run_id, "ts": ts, "scope": "task",
+            "taskId": task, "phaseId": "P1", "status": status,
+            "durationMs": 10, "gateSource": "task",
+            "failed": [] if status == "passed" else ["sweep"],
+            "testedState": {"head": "abc123", "scopeDigest": "sha256:s"},
+            "steps": [{"name": "sweep", "exit": 0 if status == "passed" else 1,
+                       "ran": 3, "measured": "measured", "durationMs": 8}]}
+
+
+def _du_project(root, malformed):
+    """The regression's fixture: task P1.1's newest run is a red only its
+    record holds (MALFORMED, or not), the ledger holding an older green of it;
+    task P1.2's record is older than the ledger's newest run of it."""
+    import _evidence_io as _ev
+    os.makedirs(os.path.join(root, ".claude"))
+    os.makedirs(os.path.join(root, "docs", "audit", "phases"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    red = _ev.run_record(_du_row("DU-RED", "2026-11-18T12:00:00Z", "failed",
+                                 "P1.1"))
+    if malformed:
+        red["steps"] = 5
+    old_b = _ev.run_record(_du_row("DU-B-OLD", "2026-11-18T09:00:00Z",
+                                   "passed", "P1.2"))
+    tasks = [{"id": tid, "title": "t", "status": "in_progress",
+              _ev.RECORD_KEY: rec, _ev.POINTER_KEY: _ev.pointer_from_record(rec)}
+             for tid, rec in (("P1.1", red), ("P1.2", old_b))]
+    with open(os.path.join(root, _DU_FILE), "w") as fh:
+        json.dump({"id": "P1", "title": "one", "status": "in_progress",
+                   "testGate": ["sweep"], "tasks": tasks}, fh)
+    with open(os.path.join(root, "docs", "audit", "audit-plan.json"), "w") as fh:
+        json.dump({"meta": {"version": 3}, "phases": [
+            {"id": "P1", "title": "one", "shard": "phases/P1.json"}]}, fh)
+    _ev.append_row(root, _du_row("DU-GR0", "2026-11-18T08:00:00Z", "passed",
+                                 "P1.1"))
+    _ev.append_row(root, _du_row("DU-B-NEW", "2026-11-18T10:00:00Z", "passed",
+                                 "P1.2"))
+    _harness.git(None, "init", "-q", root, prefix=("git",))
+
+
+def _du_doctor(root):
+    """`(exit, the evidence check's lines)` of the real doctor command."""
+    import subprocess
+    import _loader
+    env = dict((k, v) for k, v in os.environ.items()
+               if not k.startswith("CLAUDE") and k != "AUDIT_LOCK_TOKENS")
+    done = subprocess.run(
+        [sys.executable, _loader.script_path("audit-doctor.py"), "--project",
+         root], cwd=root, env=env, capture_output=True, text=True,
+        encoding="utf-8", timeout=300)
+    text = done.stdout + done.stderr
+    return done.returncode, text, [ln for ln in text.splitlines()
+                                   if "evidence" in ln]
+
+
+def _unreadable_record_cases(check):
+    """(du) The doctor's evidence check over a subject whose own newest record
+    would not read: through the real doctor command it names the record and
+    neither sends the person to reconcile the subject (whose older ledger run
+    is not its newest) nor calls its pointer dangling (the run it names is the
+    one the record holds) - and over the same plan well-formed, it says
+    neither too, while the subject beside it is still said as behind."""
+    root = _harness.fixture_root("doctor-unreadable-")
+    try:
+        bad = os.path.join(root, "bad")
+        _du_project(bad, True)
+        _code, text, lines = _du_doctor(bad)
+        ahead = [ln for ln in lines if "ahead of the plan" in ln]
+        check("du1 RED-FIRST: the doctor does not say the record is ahead of "
+              "the plan for the task whose own newest record would not read - "
+              "no reconcile is offered for it - and still says it for the "
+              "subject beside it: %r" % (ahead,),
+              ahead and all("task P1.1" not in ln for ln in ahead)
+              and any("task P1.2" in ln for ln in ahead))
+        check("du2 RED-FIRST: the doctor does not call that task's pointer "
+              "dangling - the run it names is the one its unreadable record "
+              "holds - and names the record, its file and its field: %r"
+              % (lines,),
+              not any("points at run DU-RED" in ln for ln in text.splitlines())
+              and _DU_FILE in text and "lastRun.steps" in text
+              and any("P1.1" in ln and "lastRun.steps" in ln
+                      for ln in lines))
+        good = os.path.join(root, "good")
+        _du_project(good, False)
+        _code, gtext, glines = _du_doctor(good)
+        gahead = [ln for ln in glines if "ahead of the plan" in ln]
+        check("du3 ALLOW: the same plan well-formed - the red record newest and "
+              "named by its pointer - says neither of P1.1, and still says the "
+              "subject beside it is behind: %r" % (glines,),
+              not any("points at run" in ln for ln in gtext.splitlines())
+              and gahead and all("task P1.1" not in ln for ln in gahead)
+              and any("task P1.2" in ln for ln in gahead)
+              and "lastRun.steps" not in gtext)
+    finally:
+        _harness.remove_tree(root)
+
+
 def _selftest():
-    return _harness.run(_cases)
+    def body(check):
+        _cases(check)
+        _harness.stage(check, "du-block", _unreadable_record_cases)
+    return _harness.run(body)
 
 
 if __name__ == "__main__":

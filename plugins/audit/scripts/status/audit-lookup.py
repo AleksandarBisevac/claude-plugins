@@ -2719,7 +2719,7 @@ def _run_payload(row):
 
 
 def run_lookup(rows, run_id, phase_id=None, task_id=None, aliases=None,
-              unreadable=0):
+              unreadable=0, records_lost=None):
     """`(found, payload_or_message)` for "what did run `run_id` record" - or,
     with `run_id == "latest"`, the newest recorded run for the ONE subject
     named by `phase_id`/`task_id`.
@@ -2727,23 +2727,29 @@ def run_lookup(rows, run_id, phase_id=None, task_id=None, aliases=None,
     THE ANSWER TO "a gate ran in the background; what did it say", which today
     can only be read from a terminal a long gate may already have scrolled
     past. `rows` is `_evio.read_rows(...)["rows"]`; a specific `run_id` goes
-    through `_evio.row_by_run`, `"latest"` through `_evio.latest_by_subject`
-    keyed exactly as that function keys its own answers (`aliases` is
-    `_evio.subject_aliases(manifest)`, so a task moved to a new id still
-    answers under it).
+    through `_evio.row_by_run`, `"latest"` through `_evio.newest_or_unreadable`
+    keyed exactly as `_evio.latest_by_subject` keys its own answers (`aliases`
+    is `_evio.subject_aliases(manifest)`, so a task moved to a new id still
+    answers under it). `records_lost` is `read_rows`' `unreadableRecords`: a
+    subject whose own record would not read answers no `latest`, never an
+    older run in its place.
 
     AN UNKNOWN RUN IS A MISS, worded like every other question here - never
     "no such run", which would claim more than a ledger this caller may not
     have read in full is entitled to. `unreadable` (a count of ledger files
-    `_evio.read_rows` could not read) is folded into that same miss rather
-    than swallowed: the run may be genuinely absent, or sitting in one of the
-    files nothing here could open, and a caller deciding whether to re-run a
-    gate needs to know which."""
+    `_evio.read_rows` could not read) and the plan records that would not
+    read are folded into that same miss rather than swallowed: the run may be
+    genuinely absent, or sitting in one of the files or records nothing here
+    could read, and a caller deciding whether to re-run a gate needs to know
+    which."""
     if run_id == "latest":
         scope = "phase" if phase_id else "task"
         subject = phase_id if phase_id else task_id
-        key = (aliases or {}).get((scope, str(subject)), (scope, str(subject)))
-        row = _evio.latest_by_subject(rows, aliases).get(key)
+        ask = _evio.newest_or_unreadable(rows, records_lost, scope, subject,
+                                         aliases=aliases)
+        if ask["unreadable"]:
+            return False, ask["sentence"]
+        row = ask["row"]
         label = "%s %r" % (scope, subject)
     else:
         row = _evio.row_by_run(rows, run_id)
@@ -2754,6 +2760,10 @@ def run_lookup(rows, run_id, phase_id=None, task_id=None, aliases=None,
             message += (" (%d ledger file(s) could not be read - the miss "
                         "may be there rather than a run that never happened)"
                         % (unreadable,))
+        lost = _evio.unreadable_records_sentence(records_lost)
+        if lost:
+            message += (" (the miss may be in a plan record that would not "
+                        "read: %s)" % (lost,))
         return False, message
     return True, _run_payload(row)
 
@@ -3031,7 +3041,8 @@ def main(argv):
         aliases = _evio.subject_aliases(manifest)
         found, payload = run_lookup(
             read["rows"], args.id, phase_id=args.phase, task_id=args.task,
-            aliases=aliases, unreadable=read["unreadable"])
+            aliases=aliases, unreadable=read["unreadable"],
+            records_lost=read.get("unreadableRecords"))
         node_id = args.id
     else:
         found, payload = file_lookup(manifest, args.path)

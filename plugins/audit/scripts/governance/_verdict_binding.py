@@ -398,18 +398,6 @@ def plan_records(project, manifest_path):
             list(lost) + _evidence_io.unreadable_records(bodies, doc))
 
 
-def subject_record_lost(lost, ids):
-    """The unreadable records among `lost` (`plan_records`' second half:
-    labels, and `unreadable_records`' entries) that are the subject `ids`'
-    own run record - the one its newest run may be."""
-    scope, subject = (("task", ids.get("taskId")) if ids.get("taskId")
-                      else ("phase", ids.get("phaseId")))
-    return [e for e in lost or [] if isinstance(e, dict)
-            and e.get("key") == _evidence_io.RECORD_KEY
-            and e.get("scope") == scope
-            and str(e.get("subject")) == str(subject)]
-
-
 def subject_file_lost(lost, manifest_path, phase_id):
     """The labels among `lost` (plan files that would not read) that could
     hold the record of a subject of phase `phase_id`: the file its phase
@@ -499,20 +487,32 @@ def binding(project, ids, entries, source, owns, manifest_path, record,
             "it) and %s" % (", ".join(lost_here), who, who, record))
         out["arm"] = ARM_UNREADABLE
         return out
-    # THE SUBJECT'S OWN RECORD NOT THE RECORD'S SHAPE BLOCKS THE SAME WAY: it
-    # gave no run, and it may be the newest one.
-    malformed = subject_record_lost(records_lost, ids)
-    if malformed:
+    ledger = {"rows": subject_runs(texts, records)}
+    # THE ONE ANSWER (`newest_or_unreadable`): the subject's own record not
+    # the record's shape blocks as a lost file does: it gave no run, and it
+    # may be the newest one.
+    scope, subject = (("task", ids.get("taskId")) if ids.get("taskId")
+                      else ("phase", ids.get("phaseId")))
+    ask = _evidence_io.newest_or_unreadable(
+        ledger["rows"], [e for e in records_lost or [] if isinstance(e, dict)],
+        scope, subject)
+    if ask["unreadable"]:
         out["sentence"] = (
             "%s - %s's own among them, so its newest run is not established "
             "and no older verdict can stand for it; %s"
-            % (_evidence_io.unreadable_records_sentence(malformed), who,
-               record))
+            % (_evidence_io.unreadable_records_sentence(ask["unreadable"]),
+               who, record))
         out["arm"] = ARM_UNREADABLE
         return out
-    ledger = {"rows": subject_runs(texts, records)}
+    # The verdict's runs are the runs of the WORK `ids` names (`_same_subject`,
+    # so a task's run on its phase's gate - `scope: phase` beside its
+    # `taskId` - is the task's and never the phase's), less a base run a
+    # task's red keeps: it names the phase but measured the base commit for
+    # that task, so it is no run of either.
     rows = [r for r in ledger["rows"]
-            if isinstance(r, dict) and _evidence_io._same_subject(r, ids)]
+            if isinstance(r, dict)
+            and r.get("scope") != _evidence_io.BASE_SCOPE
+            and _evidence_io._same_subject(r, ids)]
     # A SUBJECT ROW WHOSE ts NAMES NO MOMENT BLOCKS, as an unparseable line
     # does: it cannot be placed before or after any other row, so it could be
     # the newest verdict - and ordering it first would let a green retire it.

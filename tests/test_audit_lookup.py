@@ -3371,7 +3371,87 @@ def _selftest():
         _harness.stage(check, "hd-block", _unborn_head_entry_cases)
         _harness.stage(check, "rk-block", _review_skill_brief_cases)
         _harness.stage(check, "gb-block", _cut_banner_cases)
+        _harness.stage(check, "lu-block", _unreadable_latest_cases)
     return _harness.run(body)
+
+
+_LU_FILE = "docs/audit/phases/P1.json"
+
+
+def _lu_row(run_id, ts, status, task="P1.1"):
+    return {"v": 1, "runId": run_id, "ts": ts, "scope": "task",
+            "taskId": task, "phaseId": "P1", "status": status,
+            "durationMs": 10, "gateSource": "task",
+            "failed": [] if status == "passed" else ["sweep"],
+            "testedState": {"head": "abc123", "scopeDigest": "sha256:s"},
+            "steps": [{"name": "sweep", "exit": 0 if status == "passed" else 1,
+                       "ran": 3, "measured": "measured", "durationMs": 8}]}
+
+
+def _lu_project(root):
+    """A sharded plan whose task P1.1 holds a MALFORMED newest red record and
+    whose ledger holds an OLDER green of it; P1.2's newest is in the ledger."""
+    os.makedirs(os.path.join(root, ".claude"))
+    os.makedirs(os.path.join(root, "docs", "audit", "phases"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    red = _evio.run_record(_lu_row("LU-RED", "2026-11-18T12:00:00Z", "failed"))
+    red["steps"] = 5
+    tasks = [{"id": "P1.1", "title": "t", "status": "in_progress",
+              _evio.RECORD_KEY: red,
+              _evio.POINTER_KEY: _evio.pointer_from_record(red)},
+             {"id": "P1.2", "title": "t", "status": "in_progress"}]
+    with open(os.path.join(root, _LU_FILE), "w") as fh:
+        json.dump({"id": "P1", "title": "one", "status": "in_progress",
+                   "testGate": ["sweep"], "tasks": tasks}, fh)
+    mpath = os.path.join(root, "docs", "audit", "audit-plan.json")
+    with open(mpath, "w") as fh:
+        json.dump({"meta": {"version": 3}, "phases": [
+            {"id": "P1", "title": "one", "shard": "phases/P1.json"}]}, fh)
+    _evio.append_row(root, _lu_row("LU-GR0", "2026-11-18T08:00:00Z", "passed"))
+    _evio.append_row(root, _lu_row("LU-B", "2026-11-18T09:00:00Z", "passed",
+                                   task="P1.2"))
+    return mpath
+
+
+def _unreadable_latest_cases(check):
+    """(lu) `run latest` goes through the one newest-or-unreadable answer: for a
+    subject whose own newest record would not read it never prints an older
+    run as the newest, and names the record; a miss names the plan records
+    that would not read beside the ledger files."""
+    root = _harness.fixture_root("audit-lookup-lu-")
+    try:
+        mpath = _lu_project(root)
+        code, out = _cli([mpath, "run", "latest", "--task", "P1.1"], root)
+        jcode, jout = _cli([mpath, "run", "latest", "--task", "P1.1", "--json"],
+                           root)
+        try:
+            payload = json.loads(jout)
+        except ValueError:
+            payload = {}
+        check("lu1 RED-FIRST: `run latest` for a task whose own newest record "
+              "would not read prints no older run as its newest - a miss "
+              "naming the plan file and the field, in text and in --json: "
+              "%r / %r" % ((code, out[-300:]), (jcode, payload)),
+              code == M.E_NOMATCH and "LU-GR0" not in out
+              and _LU_FILE in out and "lastRun.steps" in out
+              and jcode == M.E_NOMATCH and payload.get("found") is False
+              and "LU-GR0" not in jout and _LU_FILE in jout)
+        code, out = _cli([mpath, "run", "LU-RED"], root)
+        check("lu2 A MISS NAMES THE PLAN RECORDS THAT WOULD NOT READ, as it "
+              "names ledger files: the malformed record's own run is not "
+              "said to be absent: %r" % ((code, out[-300:]),),
+              code == M.E_NOMATCH and _LU_FILE in out
+              and "lastRun.steps" in out)
+        code, out = _cli([mpath, "run", "latest", "--task", "P1.2"], root)
+        gcode, gout = _cli([mpath, "run", "LU-GR0"], root)
+        check("lu3 ALLOW: a readable subject beside it answers its newest run, "
+              "and a run asked for by its own id is still answered: %r / %r"
+              % ((code, out[-200:]), (gcode, gout[-200:])),
+              code == M.E_OK and "LU-B" in out and _LU_FILE not in out
+              and gcode == M.E_OK and "LU-GR0" in gout)
+    finally:
+        _harness.remove_tree(root)
 
 
 def _cut_banner_cases(check):

@@ -793,7 +793,79 @@ def _selftest():
         _harness.stage(check, "vb-tree-block", _tree_binding_cases)
         _harness.stage(check, "vb-record-block", _record_binding_cases)
         _harness.stage(check, "vb-unread-block", _unread_binding_cases)
+        _harness.stage(check, "vb-base-block", _kept_base_binding_cases)
     return _harness.run(body)
+
+
+def _kb_phase_bodies(root, phase_status, base_status):
+    """`(records, records_lost)` of a plan whose phase P1 holds its own run
+    (`phase_status`, measured on the declared files as they stand) and whose
+    task P1.1 holds a red keeping a NEWER base run (`base_status`) measured at
+    the base commit - one whose tested state carries the same declared-work
+    digest, as a base commit whose declared files the task has not changed
+    does."""
+    here = _tree_stamp.scope_digest(root, ["src/a.py"])[0]
+    gate = _evidence_io.gate_digest(["test"], None)
+    step = {"name": "test", "exit": 0 if phase_status == "passed" else 1,
+            "ran": 3, "measured": "measured", "durationMs": 9}
+    phase = {"v": 1, "runId": "PH", "ts": "2026-11-18T04:00:00Z",
+             "scope": "phase", "phaseId": "P1", "status": phase_status,
+             "gateSource": "phase", "gateDigest": gate, "steps": [step],
+             "testedState": {"head": "h", "scopeDigest": here}}
+    red = {"v": 1, "runId": "R1", "ts": "2026-11-18T04:04:19Z",
+           "scope": "task", "taskId": "P1.1", "phaseId": "P1",
+           "status": "failed", "steps": [dict(step, exit=1)],
+           "testedState": {"head": "c0ffee12ab34"},
+           _evidence_io.BASE_RED_KEY: {
+               "run": None, "head": "c0ffee12ab34", "verdict": "no-base",
+               "atBase": [], "introduced": [], "unknown": [],
+               "basis": "no run recorded at base"}}
+    base = {"v": 1, "runId": "RB", "ts": "2026-11-18T04:30:00Z",
+            "scope": _evidence_io.BASE_SCOPE, "status": base_status,
+            _evidence_io.BASE_OF_KEY: "R1",
+            "testedState": {"head": "c0ffee12ab34", "scopeDigest": here},
+            "steps": [dict(step, exit=0 if base_status == "passed" else 1)]}
+    task = _evidence_io.run_record(red)
+    task[_evidence_io.BASE_RED_KEY] = dict(
+        task[_evidence_io.BASE_RED_KEY],
+        **{_evidence_io.BASE_RUNS_KEY: [_evidence_io.kept_base(base)]})
+    bodies = [("docs/audit/phases/P1.json", {
+        "id": "P1", _evidence_io.RECORD_KEY: _evidence_io.run_record(phase),
+        "tasks": [{"id": "P1.1", _evidence_io.RECORD_KEY: task}]})]
+    doc = _evidence_io.record_schema()[0]
+    return (_evidence_io.records_of_bodies(bodies, doc),
+            _evidence_io.unreadable_records(bodies, doc))
+
+
+def _kept_base_binding_cases(check):
+    """(vb-base) A base run a task's red keeps is a run of the BASE commit,
+    measured for that task - no subject's evidence (`subject_key`) - so the
+    phase's binding never reads it as the phase's newest verdict: the phase's
+    own run decides, red or green, whatever the kept base run says."""
+    root = _harness.fixture_root("verdict-binding-kept-base-")
+    try:
+        mpath = _project(root, [])
+        said = {}
+        for phase_status, base_status in (("passed", "failed"),
+                                          ("failed", "passed")):
+            records, lost = _kb_phase_bodies(root, phase_status, base_status)
+            answer = M.binding(root, PHASE, ["test"], "phase", ["src/a.py"],
+                               mpath, "run the gate", "no gate here", texts=[],
+                               records=records, records_lost=lost)
+            said[phase_status] = (answer.get("state"), answer.get("arm"),
+                                  (answer.get("row") or {}).get("runId"))
+        check("vb-base1 RED-FIRST: a phase whose own newest run is GREEN binds "
+              "to that run - a newer RED base run kept on a task's record is "
+              "not the phase's verdict and does not refuse it: %r"
+              % (said["passed"],),
+              said["passed"] == ("bound", None, "PH"))
+        check("vb-base2 RED-FIRST, THE OTHER DIRECTION: a phase whose own newest "
+              "run is RED is refused on that red - a newer GREEN base run kept "
+              "on a task's record, carrying the same declared-work digest, "
+              "never binds the phase over it: %r" % (said["failed"],),
+              said["failed"] == ("refused", M.ARM_RED, "PH"))
+    finally:
+        _harness.remove_tree(root)
 
 
 if __name__ == "__main__":

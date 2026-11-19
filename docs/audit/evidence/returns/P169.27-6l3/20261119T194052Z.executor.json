@@ -1,0 +1,59 @@
+{
+  "gates": {
+    "python3 tools/gate-parity.py": "pass",
+    "python3 tools/sweep-selftests.py .claude/hooks/guard-release.py .claude/hooks/arm-release-bypass.py tests/test__evidence_io.py tests/test_run_test_gate.py tests/test__verdict_binding.py tests/test_audit_lookup.py tests/test_validate_manifest.py tests/test_derive_phase_gate.py": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-19T20:52:21Z",
+    "basis": "`python3 tests/test__evidence_io.py --selftest` in a throwaway tree at HEAD exited 1 with 16 of 499 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - nu1 (house FAIL), nu2 (house FAIL), nu5 (house FAIL), nu6 (house FAIL), ns1 (house FAIL), ns2 (house FAIL): SELFTEST FAILED: 483/499 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "ONE ANSWER: _evidence_io.newest_or_unreadable(rows, unreadable, scope, subject, aliases, latest) returns {row, rows, unreadable, sentence}; a subject whose own lastRun is not the schema's shape answers no row and a sentence naming file and field. Reconcile loops subjects through it: such a subject is REFUSED (run-test-gate prints `REFUSED:` and exits 1), its record and pointer are left byte-identical, every other subject is reconciled as before; _reconciled re-reads under the plan-file lock and refuses the same way; held full-run records that do not read are printed as UNREAD and exit 1, never folded into a subject. The same function answers audit-lookup `run latest` (a miss naming the record; a miss also names unread plan records), the doctor's pointer check (_doctor_completions: no dangling/behind finding for such a subject, a warning naming it instead), the verdict binding's unreadable arm (subject_record_lost removed, no callers) and derive-phase-gate (REFUSED, E_INVALID, before deriving last-failed suites). validate-manifest's suite check says 'not established' when plan records do not read. nu6 derives every picker from the AST and fails one that picks a newest run without the function, with _NU_LEFT naming the rest (each row checked stale both ways) and its blind spot stated. BINDING BEHAVIOUR CHANGE: a base run kept on a task's red (scope base, phaseId set) was counted as the phase's run by _same_subject; now excluded, identity otherwise unchanged (_same_subject) - a first attempt keyed the binding by subject_key and broke ctw46 (a task's run on its phase's gate records scope phase beside taskId); reverted to _same_subject minus base-scope rows, m7b mutation proves ctw46 holds it. SHARES: _NEVER_SHARED renamed NEVER_SHARED_KEYS, read by the writer (_shared_paths) and the reader (share_problem): a share naming a never-shared top key, or a path the record also holds, does not read; validate-manifest warns the same (rules.schema.share, a warning in 3.x). The writer DOES share testedState on part and whole repeats; ns3 shows a planted testedState share binds exactly as a hand-written one and a carried run of other bytes is refused. SCHEMA: lastRun.repeatedRun -> $ref lastRun; baseRed typed object with baseRuns array of lastRun (rr1-rr3, a warning in 3.x). RELEASE GUARD (.claude/hooks/guard-release.py, edits accepted, no refusal): plan_structure_problem refuses duplicate keys (object_pairs_hook, index and every shard), meta not object, phases not list (absent = []), phase/task entry not object, tasks not list; read_bugs refuses bugs not list / bug entry not object; read_held_phases refuses evidence_io.full_gate_problem and a mergedHead with no placeable mergedAt; _deny exits 2 when the stdout write fails (stderr attempted, each guarded by BaseException). arm-release-bypass: _load_guard, open_bugs, held_phases catch BaseException (rb21). Docs: SECURITY.md (guard section + table header), CHANGELOG.md Fixed (four bullets), PLUGIN-BUILD-GUIDE.md reconcile paragraph + NEVER_SHARED_KEYS rename; guard docstring exit-code line corrected (it said 'exit 0 always'). Also fixed in my own test file: ri8 fixture planted a steps share beside held steps (now refused by share_problem) - share list trimmed; rk2 text renamed; nu5 run ids renamed off a register-citation shape (rc16). Gates: gate command as given exit 0/0 (8/8 files, 1714 cases); full sweep after the last edit 198/198 files, 19650 cases, exit 0. Pre-filing: suite list (30 files) green after fixes; gate-parity, bench-hooks --gate, check-rendered-artifacts --before-commit, check-example-ledgers, check-git-pipeline, measure-context --gate, ruff, vermin all exit 0; _deps --write-map wrote nothing new. Help payload 159878 of the 160000 budget line (was 159785), p5 green. Mutation probe scratchpad/p169-27/mutations.py: 23/23 killed. The submit test command is the evidence suite alone because the brief's `-- A && B` is split by the shell at `&&` and the helper runs argv without a shell.",
+    "descriptive": "A subject whose own run record will not read is refused everywhere, never answered from an older run; the release guard refuses a plan whose structure it cannot read; a share cannot rewrite a verdict."
+  },
+  "testsAdded": [
+    "nu1-nu7 + nu6 picker derivation (test__evidence_io): reconcile at task and phase scope refuses a malformed newest record and leaves it, under the lock too; one-function answer; every picker goes through it",
+    "lu1-lu3 (test_audit_lookup): run latest names the unread record and never the older run; a miss names unread records",
+    "ns0-ns4 (test__evidence_io): never-shared keys and held-and-shared paths refused by one table read by writer and reader; testedState share equivalence",
+    "rr1-rr3 + su1 (test_validate_manifest): schema types repeatedRun and baseRuns as run records; share warning; suite check not established",
+    "du1-du3 (test__doctor_completions), dp-unread/dp-unread-allow (test_derive_phase_gate), vb-base1/vb-base2 (test__verdict_binding), gs1-gs8 (test__evidence_io, the guard's structure shapes), rb21 (arm-release-bypass)"
+  ],
+  "casesAdded": [
+    [
+      "nu1",
+      "nu2",
+      "nu3",
+      "nu4",
+      "nu5",
+      "nu5b",
+      "nu6",
+      "nu7"
+    ],
+    [
+      "lu1",
+      "lu2",
+      "lu3"
+    ],
+    [
+      "ns0",
+      "ns1",
+      "ns2",
+      "ns3",
+      "ns4"
+    ],
+    [
+      "rr1",
+      "rr2",
+      "rr3"
+    ]
+  ],
+  "claims": "claims:\n1 _evidence_io.py:4688 newest_or_unreadable; :5015 reconcile refuses; :5092 _reconciled under the lock; :3812 share_problem; :189 full_gate_problem; guard-release.py:776 plan_structure_problem, :842 _read_plan calls it, :960 fullGate, :987 unplaced merge, :1230-1255 _deny exit 2; arm-release-bypass.py:118,133 BaseException\n2 mutations.py in a scratch copy, anchors counted, __pycache__ purged: 23/23 killed (m1..m22, m7b); m8 first mutation was equivalent and was replaced by a bypass of the one function -> lu1 red; allow cases nu3, nu4, ns0, ns3, gs1, gs6, lu3, du3, dp-unread-allow green at head and after\n3 pickers derived by AST in nu6 (every function picking a newest run across the tree), the rest named in _NU_LEFT with reasons, stale-checked both ways; grep _NEVER_SHARED|_base_runs_problem|subject_record_lost: 3 hits (guide + rk2 twice) all renamed; member_red left on _same_subject (finding)\n4 rule 'a subject whose record will not read is never answered from an older run' is held by nu6 (derived picker case), named in PLUGIN-BUILD-GUIDE's own sentence\n5 guard time: tag path head 0.166/0.164/0.161 s median vs after 0.258/0.256 s (three head runs 19:51, 20:25, 20:34; two after 20:25, 20:34); ls path 0.049/0.048/0.051 vs 0.050/0.050 - unchanged\n6 guard decisions read the plan's parsed structure (JSON types, duplicate keys via object_pairs_hook), not command text; no command reading changed; allow: rb5 (phases absent) and gs1 (a clean plan) quiet; the three real plans read structure=None\n7 n/a in repo prose - no number written into a document",
+  "stamp": "audit-stamp: {\"content\":\"sha256:d73988de169b1aaec970868f09784c8baa71e95fbe967529999de6d1d84f4de3\",\"dirtyDigest\":\"sha256:38d819952ca35691e30611623908eea27fe5f2183f8a6ada4c426b1b593ecdff\",\"dirtyPaths\":{\".claude/hooks/arm-release-bypass.py\":\"155228c2e1745fa2\",\".claude/hooks/guard-release.py\":\"9aa4f3adfd293da9\",\"CHANGELOG.md\":\"0ef146a061fd03ae\",\"PLUGIN-BUILD-GUIDE.md\":\"ac9d16a2b5d62851\",\"SECURITY.md\":\"35c8220742416522\",\"plugins/audit/schema/audit-plan.schema.json\":\"217403236ef926d3\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"f4d35069bfd12d60\",\"plugins/audit/scripts/governance/_verdict_binding.py\":\"5586015ebfac4a68\",\"plugins/audit/scripts/governance/derive-phase-gate.py\":\"cc39006bc0dfd31c\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"6fc96d321c354066\",\"plugins/audit/scripts/manifest/validate-manifest.py\":\"9da3488f2c1af2e6\",\"plugins/audit/scripts/status/_doctor_completions.py\":\"b0f2df392f29a508\",\"plugins/audit/scripts/status/audit-lookup.py\":\"a6574da600e90332\",\"tests/test__doctor_completions.py\":\"f2a2db1229c27eff\",\"tests/test__evidence_io.py\":\"b4187f1915471ff3\",\"tests/test__verdict_binding.py\":\"5b2fb34369770805\",\"tests/test_audit_lookup.py\":\"ae84378645498c9b\",\"tests/test_derive_phase_gate.py\":\"b124393660052ee9\",\"tests/test_validate_manifest.py\":\"f547815b9b59925b\"},\"head\":\"1af351fd\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\".claude/hooks/arm-release-bypass.py\",\".claude/hooks/guard-release.py\",\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/schema/audit-plan.schema.json\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/_verdict_binding.py\",\"plugins/audit/scripts/governance/derive-phase-gate.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/scripts/manifest/validate-manifest.py\",\"plugins/audit/scripts/status/_doctor_completions.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test__doctor_completions.py\",\"tests/test__evidence_io.py\",\"tests/test__verdict_binding.py\",\"tests/test_audit_lookup.py\",\"tests/test_derive_phase_gate.py\",\"tests/test_run_test_gate.py\",\"tests/test_validate_manifest.py\"],\"scopeDigest\":\"sha256:177b25cdcde7e13165b276022b37f560fa5058572608e55be09f07fd39277b76\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": [
+    "tests/test_audit_lookup.py: The lookup goes through the same newest-or-unreadable answer: `latest` refuses or qualifies when the subject's own record is unreadable, and a miss names the ... - not checked: the submit's command did not run `tests/test_audit_lookup.py`, so the ids bound to it were not compared with any printed label",
+    "tests/test_validate_manifest.py: The schema types both as a run record (a warning in 3.x) - not checked: the submit's command did not run `tests/test_validate_manifest.py`, so the ids bound to it were not compared with any printed label"
+  ]
+}

@@ -4220,7 +4220,7 @@ beside the `repeatedRun` they are given back from (`rk8`). `rk1` in
 `tests/test__evidence_io.py` validates every shape the writer composes - one run per status the
 runner records, read off the schema's status table, and a group member's copy composed through
 the verb's `_group_record` - against the schema, `rk7` reads each through `record_problem()`, and
-`rk2` holds each table - `RECORD_CUT_ORDER`, what `_NEVER_SHARED` leaves shareable, the keys only
+`rk2` holds each table - `RECORD_CUT_ORDER`, what `NEVER_SHARED_KEYS` leaves shareable, the keys only
 a record holds - to what its walk reached, each its own conjunct, so an emptied walk fails.
 `subject_records()` reads every record a plan's files hold.
 
@@ -4235,7 +4235,15 @@ one file per writer per month, so two worktrees concatenate in no meaningful ord
 over an already-correct plan moves nothing and says so — a repair that rewrote a correct pointer
 would put a fresh journal row on every invocation, a trail of transitions that never happened. A
 reconcile that could not finish reports the subjects it left behind rather than returning a smaller
-number.
+number. A subject whose own record would not read is one of them: that record may hold its newest
+run, so it is refused, named with the record's file and field, and left exactly as it is - never
+caught up to an older ledger run - while every other subject is reconciled as before, and the
+refusal under the plan-file lock is the same (`nu1`-`nu7`). That answer is
+`newest_or_unreadable()`, the one function every reader of a subject's newest run asks whether the
+subject's own record read - the lookup's `run latest`, the doctor's pointer check, the verdict
+binding and the phase gate's last-failed suites among them; `nu6` derives them from what each
+function calls. The binding then picks among the runs of the work it binds (`_same_subject`, which
+keeps a task's run on its phase's gate the task's), less a base run a task's red keeps.
 
 **The plan-movement row is the second of C4's two events.** `task.testEvidence` /
 `phase.testEvidence` is written **only after the pointer lands**, naming both ends of the move; a

@@ -763,11 +763,25 @@ phase is held by PROVISIONAL — no full run yet recorded whose head contains wh
 into — and by UNKNOWN — a phase whose ancestry the evidence cannot ask at all, such as one with no
 `mergedHead`. A guard that cannot answer refuses, so an unknown phase holds the release exactly as a
 provisional one does, named with the basis `full_status` gave. A plan naming no third place
-(`meta.fullGate` absent) has no phase to hold, and the guard judges the bugs alone.
+(`meta.fullGate` absent) has no phase to hold, and the guard judges the bugs alone. A `meta.fullGate`
+the plugin's own reader would not take whole — not a list, or an entry that is not a key name —
+is not "absent": the phase list is UNKNOWN. So is a phase that records a `mergedHead` with no
+`mergedAt` a reader can place, which says it merged without saying when, and is never read as
+unmerged.
 
 Each list is read and reported on its own. A list the guard could not read is named UNKNOWN with the
 reason; the list it did read is still named by what it holds, so an unreadable bug list never hides
-a phase that holds the release, nor the reverse.
+a phase that holds the release, nor the reverse. Reading the plan includes its STRUCTURE: a key
+written twice in one object of the index or a shard, a `meta` that is not an object, `phases` that
+is not a list, a phase, task or bug entry that is not an object, or a phase's `tasks` that is not a
+list is UNKNOWN, named by file and place, rather than read as a plan holding less. A `bugs` that is
+not a list, or a bug entry that is not an object, makes the bug list UNKNOWN; every other shape
+makes both lists UNKNOWN.
+
+A deny the guard cannot write on stdout — stdout closed when the hook starts included — is written
+on stderr when stderr takes it, and the hook exits 2, the code that blocks a PreToolUse call, either
+way. The arming message reads both lists through the guard's own reading and catches every kind of
+error that reading can end in, as the guard's entry point does, naming such a list UNKNOWN.
 
 The refusal names an UNKNOWN phase as **unanswerable**, beside the bugs and the provisional phases,
 with the remedy for its cause, told apart by whether the phase records a `mergedHead`. A phase with
@@ -783,7 +797,7 @@ refused as provisional, and the remedy is to record the full run that settles it
 refusal lists the first few phases of each kind and points at `/audit:status` for the rest; the
 arming message names every one.
 
-| What the guard is asked | Manifest and ledger read clean | Manifest cannot be read | Ledger cannot be read/verified |
+| What the guard is asked | Manifest and ledger read clean | Manifest cannot be read, or is not the structure the guard reads | Ledger cannot be read/verified |
 |---|---|---|---|
 | An open bug, or a provisional phase | **deny** | **deny — UNKNOWN, not "nothing to refuse"** | **deny — UNKNOWN, not "nothing to refuse"** |
 | A merged phase whose full-run answer is unknown | **deny — named unanswerable, with its basis** | **deny — UNKNOWN, not "nothing to refuse"** | **deny — UNKNOWN, not "nothing to refuse"** |

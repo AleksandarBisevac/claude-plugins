@@ -355,40 +355,50 @@
         "severity": "med",
         "file": ".claude/hooks/guard-release.py (read_held_phases) and plugins/audit/scripts/governance/_evidence_io.py (record_row, _cut_observations, resolved_shared)",
         "issue": "The release guard lets a release through when the run reader raises. A plan that parses but carries a malformed lastRun makes read_rows raise; nothing between read_held_phases, tree_verdict, decide and main catches it, the hook exits 1 with no deny, and an exit 1 from a pre-tool hook does not block, so `git tag` goes ahead. Established by a probe that runs the hook on a tag command: with no record the release is denied; with `lastRun.steps: 5` it is not denied (already so before this change); with `lastRun.recordCut: 5` and with a shared path over a list-valued field it is not denied, and both of those were denied before this change, which added the two functions that raise. The same malformed field raises for every other reader of the seam as well.",
-        "resolution": "The guard refuses when the recorded runs cannot be read, saying so with the error; and a mistyped field in a record cannot raise for any reader: the record's readers check the shapes they walk and report the record as unreadable with its file and field. Cases for the guard (each malformed shape is a deny) and for the reader.",
-        "fixTask": "P169.19-6l3"
+        "resolution": "fixed in P169.19-6l3 (1af351fdf479): The guard refuses when the recorded runs cannot be read, saying so with the error; and a mistyped field in a record cannot raise for any reader: the record's readers check the shapes they walk and report the record as unreadable with its file and field. Cases for the guard (each malformed shape is a deny) and for the reader.",
+        "fixTask": "P169.19-6l3",
+        "commit": "1af351fdf479",
+        "status": "fixed"
       },
       {
         "id": "P169-R37",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_evidence_io.py (record_row)",
         "issue": "A record's keys now pass through into the row except a small set, where before only an allow-list did, and the subject id is set from placement only for a task record: a phase record carrying `taskId` reads as a run of that task, and a probe with the ledger absent got a task with no record of its own bound to the phase record's run. Only a hand edit produces it, and editing the task's own record already gives the same power, so nothing new is forgeable, but the protection the allow-list gave is gone.",
-        "resolution": "record_row drops every key the record is defined not to carry before it applies placement, so identity always comes from where the record sits; a case.",
-        "fixTask": "P169.19-6l3"
+        "resolution": "fixed in P169.19-6l3 (1af351fdf479): record_row drops every key the record is defined not to carry before it applies placement, so identity always comes from where the record sits; a case.",
+        "fixTask": "P169.19-6l3",
+        "commit": "1af351fdf479",
+        "status": "fixed"
       },
       {
         "id": "P169-R38",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_evidence_io.py (_record_of, repeat_carried)",
         "issue": "Keys only a record should hold leak into the run a repeat carries when its source was read back from a record: the carried run came back holding launch, replacedLaunches and sharedUnresolved, so a stale marker says something about a run that shares nothing. The sufficiency cases only cover keys a ledger row can hold, which is why they do not see it.",
-        "resolution": "The record-shaped keys are one table that both directions exclude; a case that carries a source read back from a record.",
-        "fixTask": "P169.19-6l3"
+        "resolution": "fixed in P169.19-6l3 (1af351fdf479): The record-shaped keys are one table that both directions exclude; a case that carries a source read back from a record.",
+        "fixTask": "P169.19-6l3",
+        "commit": "1af351fdf479",
+        "status": "fixed"
       },
       {
         "id": "P169-R39",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/drive-phase.py (replaced_gate's callers in background_gate and chosen_phase_gate)",
         "issue": "A relaunch after a replacement starts the cancelled count again at nought, so a launched run that came back cancelled and was replaced before the drive read it puts the bound's ask off; no attempt is spent on such a relaunch and nothing bounds how many there are, and once a launched run's entry is cut from the bounded list of replaced launches the drive waits for ever again, which is what the list exists to prevent. Each step needs another actor recording a run of the same subject in between; two drives on one subject were not reproduced.",
-        "resolution": "The count is carried across a replacement relaunch (and raised when the replaced run was cancelled), replacement relaunches are counted on the mark and bounded by the same ask, and a launch cut from the list is said as that rather than waited on.",
-        "fixTask": "P169.19-6l3"
+        "resolution": "fixed in P169.19-6l3 (1af351fdf479): The count is carried across a replacement relaunch (and raised when the replaced run was cancelled), replacement relaunches are counted on the mark and bounded by the same ask, and a launch cut from the list is said as that rather than waited on.",
+        "fixTask": "P169.19-6l3",
+        "commit": "1af351fdf479",
+        "status": "fixed"
       },
       {
         "id": "P169-R40",
         "severity": "low",
         "file": "plugins/audit/scripts/governance/_verdict_binding.py (binding); plugins/audit/scripts/status/audit-lookup.py (gate_banners)",
         "issue": "The binding never reads the unresolved-share marker: it still refuses, because the field it reads is then absent, but the sentence names the wrong cause (a missing scope digest, or a gate measured under no steps). No other surface reads the marker either. And the lookup's banner reads a tree-changed observation as an empty list when it was cut from the record, so the banner is silently absent.",
-        "resolution": "The binding refuses naming the unresolved paths; the lookup says the observation was cut, with the record's own basis.",
-        "fixTask": "P169.19-6l3"
+        "resolution": "fixed in P169.19-6l3 (1af351fdf479): The binding refuses naming the unresolved paths; the lookup says the observation was cut, with the record's own basis.",
+        "fixTask": "P169.19-6l3",
+        "commit": "1af351fdf479",
+        "status": "fixed"
       },
       {
         "id": "P169-R41",
@@ -545,21 +555,30 @@
         "severity": "low",
         "file": "plugins/audit/schema/audit-plan.schema.json ($defs.lastRun.anyOf)",
         "issue": "The arm that admits a record sharing its steps is looser than what the recorder writes, in three ways a standard validator and the repository's reader both show: a record holding BOTH `steps` and a sharing entry naming them is accepted, and on read its own steps are silently replaced by the derived ones; a record naming `steps` as shared with no `repeatedRun` to share with is accepted and reads back as unresolved; and the `contains` in that arm carries no `type`, which adds one strict-mode warning line to the standard validator's run in CI.",
-        "resolution": "Exactly one of the two arms holds (`oneOf`), the sharing arm requires `repeatedRun`, and `contains` sits beside `type: array`; the twin cases refuse both hand-made records."
+        "resolution": "fixed in P169.19-6l3 (1af351fdf479): Exactly one of the two arms holds (`oneOf`), the sharing arm requires `repeatedRun`, and `contains` sits beside `type: array`; the twin cases refuse both hand-made records.",
+        "fixTask": "P169.19-6l3",
+        "commit": "1af351fdf479",
+        "status": "fixed"
       },
       {
         "id": "P169-R57",
         "severity": "low",
         "file": "tests/test__evidence_io.py (rk1, rk2)",
         "issue": "The case that holds every composed record shape to the schema is weaker than it reads in two places: four mutations of its own derivation left it green (a table's walk replaced by an empty list passes, because the guards check that the tables are non-empty and not that the comparison walked them), and it composes only passed and failed runs, so the other statuses the runner records (timed out, cancelled, could not run, no checks, empty gate, gate mutated) are never held to the schema. The group copy the task verbs write with `gradedBy` is not composed either.",
-        "resolution": "Each table's walk is its own conjunct that an empty walk fails; one composed record per status the runner can record, derived from the status table; the group copy composed through its writer."
+        "resolution": "fixed in P169.19-6l3 (1af351fdf479): Each table's walk is its own conjunct that an empty walk fails; one composed record per status the runner can record, derived from the status table; the group copy composed through its writer.",
+        "fixTask": "P169.19-6l3",
+        "commit": "1af351fdf479",
+        "status": "fixed"
       },
       {
         "id": "P169-R58",
         "severity": "low",
         "file": "CHANGELOG.md (Unreleased)",
         "issue": "One clause describes a repair to behaviour no release ever had (that the validator used to warn every such record broke the schema): the record itself is new in this unreleased section, so a reader of the release notes meets a fix for something they never saw.",
-        "resolution": "The clause goes; the sentence says what the schema accepts."
+        "resolution": "fixed in P169.19-6l3 (1af351fdf479): The clause goes; the sentence says what the schema accepts.",
+        "fixTask": "P169.19-6l3",
+        "commit": "1af351fdf479",
+        "status": "fixed"
       },
       {
         "id": "P169-R59",
@@ -809,9 +828,85 @@
         "file": "plugins/audit/scripts/report/ (page renderers); plugins/audit/scripts/ui/ (panel)",
         "issue": "The sentence about an unreadable run record is on the report command's stderr and in the evidence view's data, and in the panel's state payload; neither the rendered report page nor the panel displays it.",
         "resolution": "Shown on both pages by a task that owns the page sources and their browser gates, after the owner has seen it locally."
+      },
+      {
+        "id": "P169-R90",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/drive-phase.py (the launched-run read, run_by_launch over the subject's rows)",
+        "issue": "When the run a drive launched is held only in a record that cannot be read, the drive reads 'no run carries it yet' and waits; nothing ends that wait or says the record is the reason. Found by the executor of the newest-or-unreadable task while sweeping the places that pick a subject's run; it is a wait, not an older answer.",
+        "resolution": "The wait names the unreadable record as what it is waiting on and has the exit the base wait is given, by the task that owns the drive's waits."
+      },
+      {
+        "id": "P169-R91",
+        "severity": "low",
+        "file": "plugins/audit/scripts/governance/_gate_derive.py (newest_red_phase_row docstring)",
+        "issue": "The docstring says a phase whose newest run went green owes a derivation nothing further; the code returns the newest failed row even when a newer green exists. The effect is a wider gate, so nothing is missed, but the sentence is untrue.",
+        "resolution": "The sentence says what the function returns, or the function does what the sentence says, with a case telling the two apart."
+      },
+      {
+        "id": "P169-R92",
+        "severity": "low",
+        "file": "tests/test__evidence_io.py (ug5); .claude/hooks/guard-release.py on Windows",
+        "issue": "A fourth case is red on Windows only, from the malformed-records commit (CI run 44601012586 on 1af351fd, job 'selftests (windows, plain 5)'): ug5's row 'a value nested too deep to parse'. The hook exited 0 and printed a deny (its tail is the bypass sentence), so the command was refused, but the deny did not carry the words the case expects for a plan file that would not read: on Windows the deeply nested shard is refused through another path (unverified which: the parser may take a depth there that it refuses elsewhere, or the error may arrive as a different type). The other failures of that run are the three already recorded (rw4, pa4, uw1); every non-Windows job is green.",
+        "resolution": "Settled on a Windows runner with the three others: the full deny text read from the job, then the case asserts what is true on both platforms (a deny naming the file), with the platform difference stated where the depth is chosen."
+      },
+      {
+        "id": "P169-R93",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py (reusable_run); plugins/audit/scripts/governance/run-test-gate.py (its two call sites); the remedy sentence every unreadable-record refusal prints",
+        "issue": "Second recurrence of one class (a reader answers from an older run when the subject's own record cannot be read), found by the independent review of the task that was meant to close the class with one function: the gate's reuse lookup is a picker that function does not reach. With a subject's newest red held only as its malformed plan record and an older green in the ledger for the same content, `run-test-gate.py <plan> <phase>` prints GATE GREEN, verdict reused from the older run, no check ran; with --record it writes that green as the subject's new record and the binding then binds passed. The refusals this phase added (reconcile, doctor, binding, status, lookup) all tell the person to re-record the subject's gate, which is exactly that command; only --record --no-reuse measures. The red is held only in the plan whenever ledger writes are off, which the phase's last task makes the default, so this becomes the ordinary path. The same behaviour is at the previous commit; it is not a regression of the task reviewed.",
+        "resolution": "The property is held where rows are produced, not by a list of pickers: after a read, a subject whose own record cannot be read has no row any reader can take as its verdict or repeat, and the read says so in one place every reader already looks. The reuse lookup measures for such a subject, the remedy sentence names a command that measures, and one black-box case runs every command that prints or decides from runs over the fixture family and fails when the older run is given as the subject's answer.",
+        "fixTask": "P169.28-6l3"
+      },
+      {
+        "id": "P169-R94",
+        "severity": "high",
+        "file": "plugins/audit/scripts/governance/_verdict_binding.py (member_red); plugins/audit/scripts/git/close-phase.py (its call site)",
+        "issue": "Same class, third instance: a group member whose own phase record is a malformed red newer than the carrier's green run lands. The carrier binds, `member_red` is handed the records without the lost ones and returns nothing, so the landing goes over the member's own newer red. The executor of the one-function task listed this picker as owed, not safe; the previous commit behaves the same.",
+        "resolution": "Closed by the same source-level property; a case through the real landing with a member whose record is unreadable: refused, naming the record.",
+        "fixTask": "P169.28-6l3"
+      },
+      {
+        "id": "P169-R95",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_verdict_binding.py (member_red)",
+        "issue": "`member_red` still selects a member's rows the old way, so a kept base run (a measurement of the base commit, not of the member) newer than the carrier's run refuses the landing as the member's own failed verdict, while the binding, corrected in the task reviewed, says the member has no verdict. The two disagree about one phase and the person is pushed to override.",
+        "resolution": "One selection of a subject's own runs, used by the binding and by the member check; a case where they are asked about the same phase and must agree.",
+        "fixTask": "P169.28-6l3"
+      },
+      {
+        "id": "P169-R96",
+        "severity": "med",
+        "file": "plugins/audit/scripts/governance/_evidence_io.py (write_record, _holders, record_row); plugins/audit/scripts/governance/_verdict_binding.py (comment in binding); PLUGIN-BUILD-GUIDE.md",
+        "issue": "A task whose gate falls back to its phase's writes its run onto the PHASE's record, and reading the record back drops the task id because identity comes from where a record sits. Held only as a record, that run is the phase's: a task's green binds the phase over the phase's older red (with the ledger row present the phase is refused), and the task's red is invisible to the task's own binding, which binds an older green. The new comment and guide sentence saying such a run is the task's and never the phase's are true of ledger rows only. Related: re-recording such a task prints that the task's pointer now names the run while the task's own malformed record stays, so reconcile keeps failing until a hand repair. Older than the task reviewed; it matters once ledger writes are off.",
+        "resolution": "A run is held by the subject it measured: either the task's record takes it, or the phase's record keeps who ran it and the reader gives it back; the comment and the guide say what is true; cases with the ledger row absent, both directions.",
+        "fixTask": "P169.28-6l3"
+      },
+      {
+        "id": "P169-R97",
+        "severity": "low",
+        "file": "tests/test__evidence_io.py (nu6); PLUGIN-BUILD-GUIDE.md; CHANGELOG.md; SECURITY.md",
+        "issue": "The derived pickers case counts a function as going through the one answer when it calls it and ignores the result, does not derive pickers built on the newest-row helper (the reuse lookup is one), and does not scan tools. The guide says one function is asked by every reader of a subject's newest run and the changelog says the phase's own run decides now; neither is true of the reuse lookup, the member check or the report's evidence cell. SECURITY.md says a fullGate entry that is not a key name makes the list unknown (the code refuses only non-strings and blanks) and states the unplaced-merge refusal without its condition (it applies only when a runnable fullGate exists).",
+        "resolution": "The case is replaced or joined by the black-box one; each sentence made true, quoted before and after.",
+        "fixTask": "P169.28-6l3"
+      },
+      {
+        "id": "P169-R98",
+        "severity": "low",
+        "file": ".claude/hooks/guard-release.py (read_bugs, merged_phase, plan_structure_problem called twice, read_held_phases)",
+        "issue": "Residues of the guard's structure reading. A plan with no `bugs` key is refused though the schema makes the key optional (the plugin's own verbs always write it; unchanged from before). A merged phase whose id is null is skipped, so the guard allows (hand edit only; the validator refuses it). The structure is parsed once per list, about 46 ms each over this repository's plan as profiled by the reviewer (cProfile of the hook's decision over a copy of the plan), which is the whole of the slowdown the executor measured on publishing commands; it grows with the bytes of the shards. And the older cost: the reviewer measured the phase list at 4.7 s for 350 merged phases on a fixture with a full gate declared, against the hook's 10 s timeout; what Claude Code does with a publishing command when this hook times out is not verified, and if it lets the command run the guard fails open at that size.",
+        "resolution": "The plan is parsed once per decision; a null phase id is a structure problem; an absent bugs key is either read as no bugs with the reason stated or kept as a refusal with the reason stated; the timeout behaviour is looked up in Claude Code's documentation and SECURITY.md says what it is, with the size at which the guard would meet it and the command that measures.",
+        "fixTask": "P169.28-6l3"
+      },
+      {
+        "id": "P169-R99",
+        "severity": "low",
+        "file": "plugins/audit/scripts/report/render-report.py and the report's page renderer (evidence cell)",
+        "issue": "For a subject whose record is present but malformed the report's evidence cell still says pointer without evidence, the plan points at a run the ledger does not carry: the wording the doctor was changed to stop using. It does not present the older run.",
+        "resolution": "The cell says the record could not be read, with the display work for the unreadable-record sentence on the report page and the panel."
       }
     ],
-    "outcome": "[findings: 89 - 5 high, 33 med, 51 low; 47 with a recorded fix commit]"
+    "outcome": "[findings: 99 - 7 high, 35 med, 57 low; 55 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2476,7 +2571,8 @@
         "P169.24-6l3",
         "P169.25-6l3",
         "P169.26-6l3",
-        "P169.27-6l3"
+        "P169.27-6l3",
+        "P169.28-6l3"
       ],
       "attempts": 0,
       "maxAttempts": 3,
@@ -5019,7 +5115,7 @@
     {
       "id": "P169.19-6l3",
       "title": "A malformed or hand-edited run record cannot crash a reader or pass a release: the release guard refuses when it cannot read, readers say which file and field, and a record's identity comes from where it sits",
-      "status": "in_progress",
+      "status": "done",
       "description": "The plan's record is now what every reader of a gate run reads, and the plan is a file a person or a model can edit by hand. An independent review of the change that made the record sufficient found one medium and four lows, all about what a reader does with a record that is malformed, hand-edited or carries keys it should not. The phase's findings carry each in full (read them with the brief).\n\n1. THE RELEASE GUARD FAILS OPEN (medium). `.claude/hooks/guard-release.py` asks the run reader about merged phases; when the reader RAISES, nothing catches it, the hook exits 1 with no deny, and an exit 1 from a pre-tool hook does not block, so the release command goes ahead. A plan that parses but carries a malformed `lastRun` does it (`steps: 5` already did before the phase; `recordCut: 5` and a shared path over a list-valued field are new with the last change). Two halves, both owed:\n   (a) the guard is fail-loud by this repository's own table in SECURITY.md: ANY exception while it decides is a refusal that says what could not be read, never an exit that lets the command through. Make that the shape of its entry point (one place that turns an unexpected error into a deny with the error's type and text), not a try/except around one call, and prove it with cases that feed each malformed record through the real hook on a tag command, and one that injects an error where no record is involved. Change NOTHING else in that guard: no rule, no pattern it matches, no bypass handling. If a tool or hook refuses an edit to that file, do not work around it in any way: leave the file, finish the rest, and hand the refusal back verbatim.\n   (b) a mistyped field in a record cannot raise for ANY reader: `record_row`, `_cut_observations`, `resolved_shared` and whatever else walks a record check the shapes they walk, and a record that is not the shape the schema gives is reported as unreadable with its plan file and the field, through the same channel an unreadable shard already uses, so status, the panel, the report, the doctor and the binding each say \"could not read\" rather than crash or read it as absent. Derive the malformed shapes for the cases from the schema's own `lastRun` definition (every field given a wrong type in turn), not from the three the review happened to try.\n\n2. Lows. (a) `record_row` passes any key of a record through, and identity is set from placement only for a task: a phase record carrying `taskId` reads as that task's run (a probe bound a task with no record to the phase's run). Identity ALWAYS comes from where the record sits; every key the record is defined not to carry is dropped before placement is applied. (b) Record-only keys (`launch`, `replacedLaunches`, `sharedUnresolved`, the unread marker) leak into the run a repeat carries when its source was read back from a record: one table of record-shaped keys that both directions exclude, with a case whose source is read back from a record (the sufficiency cases only cover keys a ledger row holds). (c) In the drive, a relaunch after a replacement starts the cancelled count at nought and is itself unbounded and uncounted, and a launch cut from the bounded list of replaced launches is waited on for ever: carry the count across (raised when the replaced run was cancelled), count replacement relaunches on the mark under the same bound and ask, and say a cut launch as that. (d) The binding refuses an unresolved share only by accident of a missing field and names the wrong cause; it refuses naming the unresolved paths. `audit-lookup.gate_banners` reads a tree-changed observation that was cut as an empty list; it says the observation was cut, with the record's basis.\n\nACCEPTANCE.\n1. Each point has a case red at the branch head and green after; for the guard, the cases run the real hook as a process with a real payload and assert the DENY, and the allow case (a well-formed plan with nothing held) still lets the command through. Mutations on scratch copies outside every checkout, restored in the same command, each confirmed landed; the guard's allow direction is proven too (a guard that denies everything is red).\n2. With a fixture plan carrying each malformed record: status, the panel's state payload, the report render, the doctor and the commit binding each exit without a traceback and name the file and field.\n3. `python3 tools/bench-hooks.py --gate` stays green (the release guard is a hook; say what the catch costs, measured twice), the full sweep is green, `python3 tools/gate-parity.py` is green (SECURITY.md's fail-mode table is held to the registered hooks there: if the guard's row or wording needs to change, the file is in your list).\n\nDEPENDANTS to answer for by name: every caller of `record_row` and of `read_rows`'s `unreadablePlanFiles` channel (who reads it and who ignores it), the drive's cancelled-gate bound and its asks, `arm-release-bypass.py` (it prints the guard's own reading of open bugs and provisional phases: it must not crash on what the guard now refuses), `tools/verify.sh --release`'s early ask of the same question, SECURITY.md's fail-mode table, and the schema's description of the record's keys.\n\nIf a file you need is outside your list, STOP BEFORE FILING and hand back the exact change with the reason: a return is filed once per start.",
       "files": [
         ".claude/hooks/guard-release.py",
@@ -5079,14 +5175,22 @@
       ],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "1af351fdf479",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "Release guard: main() runs the decision inside try/except BaseException (KeyboardInterrupt kept, said in the comment); any error is a deny 'Release decision UNKNOWN: this guard could not finish deciding (<Type>: <text, cut at 400>), so the command is refused rather than let through on a question nobody answered - repair what it names and retry.'; a payload that does not parse or is not an object stays fail-open (ug8); a closed stdout gives exit 2 with the reason on stderr (ug9); approved second hunk refuses on unreadablePlanFiles through plan_read_sentence; docstring sentence reworded off 'from the ledger alone'. arm-release-bypass says a raising guard reading as unreadable (rb20). _evidence_io: record_problem checks a record (and its repeatedRun and baseRed.baseRuns) against the published lastRun through _json_schema; read_rows adds unreadableRecords and labels them in unreadablePlanFiles; one sentence unreadable_records_sentence/plan_read_sentence used by status (header line + --json unreadableRecords [{file,scope,subject,key,field,why}], present only when non-empty), render-report (stderr WARNING) and _evidence_view (planReadError), the panel state payload (unreadableRecords, unreadablePlanSaid), the doctor ('run records' row), the binding and close-phase (refused, way on: re-recording replaces the record, mr2). Neither the report page nor the panel UI displays the sentence: the report says it on stderr and in the evidence view's data, the panel carries it in the state payload. record_row's identity comes from placement; RECORD_ONLY_KEYS is one table read in both directions (record_row drops, _record_of excludes; RECORD_ONLY_READ re-admitted). Drive 2c: replaced launches counted (replacedBefore), cancelled count carried, asked at CANCELLED_BOUND, a cut launch said as cut; base wait untouched. Binding refuses naming sharedUnresolved paths; gate_banners says a cut tree-changed list as cut. R56 oneOf + share arm requires repeatedRun and type array; R57 rk walks per-table conjuncts, one composed record per status, group copy composed (rk1/rk2/rk7/rk8); R58 the clause the finding names removed. Out-of-scope suites brought into the files by the coordinator: test__manifest_vocab names _evidence_io as a $defs reader (mv36); ve2 and ctw64 fixtures now leave the writer's no-run shape, and twins ve2h (audit-task signoff) and ctw64h (commit-task-work) keep the hand-edited fixture and assert the unreadable arm naming file, subject and field. Brief gate exit 0: 5/5 files ok, 1927 cases (bq4 green this run). Three suites + dependants exit 0: 14/14 files ok, 3692 cases. Full sweep exit 0: 198/198 files ok, 19614 cases. ruff, vermin, gate-parity, check-rendered-artifacts --before-commit, check-example-ledgers, measure-context --gate, check-git-pipeline, bench-hooks --gate (3.14.7 only) all exit 0; count-ui-pins --json identical before/after (cmp 0).",
+        "descriptive": "A malformed or hand-edited run record no longer crashes a reader or passes a release: the guard refuses on what it cannot read, every reader names the file, subject and field, and a record's identity is where it sits."
       },
       "startedAt": "2026-11-19T17:34:44Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-19T19:40:49Z",
+      "verifiedBy": [
+        "ug1-ug9: the release guard refuses, naming what could not be read, when the recorded runs or its own reading fail; allow and fail-open directions kept",
+        "id1-id2: record_row takes scope, subject and moment from where the record sits, not from fields written into it",
+        "id3-id4: the record-only keys are one table, dropped by record_row and excluded by _record_of",
+        "rpl1-rpl4: the drive counts replaced launches, carries the cancelled count across them, asks at the bound, and says a cut launch as cut",
+        "vb45-vb47: the binding refuses naming unresolved shared paths and a subject's own malformed record, and binds past another subject's",
+        "ur1-ur5, us1-us2, gb1-gb2, mr1-mr2, rb20, rk7, rk8: unreadable-record reading, its sentence, the cut banner, the landing and its way on, the bypass reading, composed shapes and schema twins",
+        "ve2h, ctw64h: the hand-edited no-run share is refused at audit-task signoff and at commit-task-work on the unreadable arm, naming file, subject and field"
+      ],
       "notes": [
         {
           "at": "2026-11-19T04:54:03Z",
@@ -5167,6 +5271,24 @@
             "ms": 431130,
             "basis": "durationMs in run 2026-11-19T19:18:32Z.fc0d1a's record (run-test-gate --record)",
             "runId": "2026-11-19T19:18:32Z.fc0d1a"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-19T19:09:22Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 5673000,
+            "startedAt": "2026-11-19T17:34:49Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-19T19:18:32Z.fc0d1a",
+            "kind": "wait",
+            "ms": 0,
+            "startedAt": "2026-11-19T19:10:48Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 1af351fdf479",
+            "kind": "commit",
+            "ms": 2637,
+            "startedAt": "2026-11-19T19:40:45Z"
           }
         ],
         "firstStartedAt": "2026-11-19T17:34:44Z"
@@ -5288,6 +5410,18 @@
         "runId": "2026-11-19T19:18:50Z.5aa576",
         "status": "passed",
         "at": "2026-11-19T19:18:50Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "1af351fdf479",
+        "at": "2026-11-19T19:40:49Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-19T19:09:17Z",
+        "basis": "`python3 tests/test__evidence_io.py --selftest` in a throwaway tree at HEAD exited 1 with 19 of 477 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - id1 (house FAIL), id3 (house FAIL), ug2 (house FAIL), ug7 (house FAIL): SELFTEST FAILED: 458/477 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -6480,6 +6614,10 @@
         {
           "at": "2026-11-19T17:51:31Z",
           "text": "Ordered behind P169.26-6l3 for an ordering reason, not a code one: the phase's CI is red on Windows until that task settles three cases, and each later task's CI run is read against a green one."
+        },
+        {
+          "at": "2026-11-19T19:51:03Z",
+          "text": "Added after this task was written: finding P169-R90 belongs here by subject (the drive waits with no exit and no reason when the run it launched is held only in a record that cannot be read); give that wait the exit and the named reason the base wait gets."
         }
       ],
       "fixes": [
@@ -6716,6 +6854,10 @@
         {
           "at": "2026-11-19T17:51:20Z",
           "text": "Added after this task was written: the plan-writers commit is red on Windows in CI (finding P169-R81, run 44578935890): rw4 of the merge suite, pa4 and uw1 of the evidence suite. They are this task's FIRST point, ahead of the others, because every later CI run of the phase is red on Windows until they are settled. A local machine cannot show them: hand back READY-FOR-RUN after the first attempt and the orchestrator dispatches CI on a disposable branch and returns the Windows job's lines; expect more than one round. The resolver's reference (point 1) and the Windows failure of its allow case may be the same defect seen twice: a comparison of bytes across git's line-ending conversion."
+        },
+        {
+          "at": "2026-11-19T19:54:55Z",
+          "text": "A fourth Windows-only red joined the three (finding P169-R92, CI run 44601012586 on the malformed-records commit): ug5's deeply-nested-shard row in the evidence suite; the hook denied, with other words than the case expects. Settle it in the same Windows rounds; print the hook's full deny text in the case's failure message first, so one CI round shows which path refused."
         }
       ],
       "fixes": [
@@ -6728,7 +6870,7 @@
     {
       "id": "P169.27-6l3",
       "title": "A subject whose record cannot be read is never answered from an older run: reconcile, the lookup and the validator go through one newest-or-unreadable answer, the release guard refuses a plan whose structure it cannot read, and a share cannot rewrite a verdict",
-      "status": "pending",
+      "status": "in_progress",
       "description": "An independent review of the malformed-records change found that making readers skip an unreadable record opened a new way to be wrong: whatever picks \"the newest run of a subject\" now silently answers from an OLDER run when the subject's own record is the unreadable one. One instance is a regression that turns a red into a green (finding P169-R82: reconcile); a second answers a lookup falsely (P169-R83). The same review found the release guard still reads a structurally malformed plan as \"nothing held\" (P169-R84), that a share can rewrite a record's verdict (P169-R85), and lows (P169-R86, R87, R88). Read each finding's text in the phase's review before designing; they carry the scenarios.\n\nTHE RULE THIS TASK ESTABLISHES (one mechanism, not one repair per instance): a subject whose own record could not be read is never answered from an older run. Build it as ONE function in the evidence module that answers, for a subject, either its newest run or \"unreadable\" with the record's file, subject and field; then make every place that picks a subject's newest run go through it. FIND THOSE PLACES BY A SWEEP, not from this list: every caller of the read that reduces rows to one-per-subject, takes a maximum by moment, or reads \"latest\". Known so far: reconcile (refuses the subject, leaves the record's bytes exactly, lists it under refused with the shared sentence; task AND phase scope); the lookup's `run latest` and its miss; the validator's phase-gate suite-gap warning (says the gap is not established while a plan record could not be read, as it does for an unreadable ledger); the newest-red-phase-row reader that derives a phase gate; the commit binding (already refuses: route it through the same function so there is one rule). For each reader you leave alone, say in the outcome why an older answer cannot come out of it. Then hold the rule: a case that derives the pickers (by what they call) and fails by name for a new one that does not go through the function, or, if that cannot be derived honestly, say so and say what the author owes.\n\nPOINTS, in this order.\n1. Reconcile (P169-R82), red at the head through the real command on a fixture: a task whose newest record is a malformed red and whose ledger holds an older green. After reconcile: the shard's bytes for that record are unchanged, nothing says moved for that subject, the output names the record as the reason, the status gate's failing-tests condition still fails, exit code is the failing one. The same at phase scope. The ALLOW case: a well-formed plan reconciles exactly as before (bytes compared with the head's result on the same fixture), and a malformed record of subject A does not stop subject B's reconcile.\n2. Lookup (P169-R83): `run latest` for a subject whose record is unreadable does not print an older run as the answer; a miss names the plan records that could not be read.\n3. The release guard reads the plan's STRUCTURE or refuses (P169-R84). This is plan reading, not command reading: change no pattern, no reading of a command, no bypass handling. Refuse, naming the problem, when: `phases` is not a list; a phase entry is not an object; `meta` is present and not an object; a bug entry is not an object; `meta.fullGate` is present and is not what the plugin's own reader accepts (ask the plugin's reader what it accepts rather than restating it; an absent key stays \"no third place\" exactly as now); a phase with a recorded merge head and no usable merge moment reads as unknown, not as unmerged; a plan file holding a duplicated key is refused (decide where: the loader the guard uses, without changing what every other reader of a plan accepts unless you show nothing committed or generated has a duplicate). Derive the shapes for the cases from the schema as the malformed-record cases do, and include the allow direction for each: a well-formed plan, a plan with no fullGate, a plan with no bugs, a plan whose phases are all unmerged. Run the new reading read-only over this repository's own plan, the committed example and the starter before filing: it must refuse none of them. IF ANY TOOL, HOOK, CLASSIFIER OR SAFEGUARD REFUSES OR INTERRUPTS AN EDIT TO EITHER GUARD FILE: do not work around it in any way; leave both files as they are, finish the rest, and hand the refusal back verbatim with the intended diff as text.\n4. `_deny` exits 2 whenever the reason cannot be written, the stderr write guarded too, with a case that closes stdout at exec; the arming message catches what the guard's entry point catches (P169-R86).\n5. A share cannot rewrite a verdict (P169-R85): a shared path whose top key the writer never shares is a problem of the record, and so is a shared path the record also holds; one table (the writer's never-shared keys) read by the writer and by the check; a case per key through the binding, and the composed-shape cases still read every shape the writer writes.\n6. Schema and reader agree (P169-R87): the carried run and each kept base run are typed as a run record in the published schema; the both-arms message names what to repair; the comment claiming agreement is true after this or goes. A case that walks the reader's checks and the schema's and fails where they differ, so the next divergence is caught at the time.\n7. Documents (P169-R88): SECURITY.md's table and sentences about this guard made true against the guard as it stands after point 3 and 4, the changelog and guide say what reconcile does with an unreadable record. Quote each changed sentence before and after in the hand-back.\n\nNOT THIS TASK: showing the sentence on the report page or in the panel (P169-R89: page sources, a later task); the wait for a base run; the writers lint and the merge resolver; the browser install check; ledger writes off.\n\nACCEPTANCE: (1) reconcile's two red-first cases and its allow cases as above; (2) the pickers' rule holds by a derived case; (3) every structural shape of point 3 fed to the real hook is a deny naming the problem, every allow case passes, and this repository's plan is not refused; (4) no reader prints a traceback on any shape (the readers table of the malformed-records suite still green); (5) the hook's time on a non-publishing command and on a tag command is measured before and after, twice with a gap; (6) the full sweep is green.",
       "files": [
         "plugins/audit/scripts/governance/_evidence_io.py",
@@ -6760,7 +6902,9 @@
         "PLUGIN-BUILD-GUIDE.md",
         "tests/test__evidence_io.py",
         "tests/test_audit_lookup.py",
-        "tests/test_validate_manifest.py"
+        "tests/test_validate_manifest.py",
+        "plugins/audit/scripts/status/_doctor_completions.py",
+        "tests/test__doctor_completions.py"
       ],
       "tests": {
         "mode": "tdd",
@@ -6783,14 +6927,14 @@
       "dependsOn": [
         "P169.19-6l3"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-19T19:40:52Z",
       "completedAt": null,
       "verifiedBy": [],
       "notes": [
@@ -6907,6 +7051,333 @@
         "P169-R86",
         "P169-R87",
         "P169-R88"
+      ],
+      "timing": {
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-19T20:54:19Z",
+            "ms": 24257,
+            "basis": "selectionMs in run 2026-11-19T21:02:30Z.308489's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-19T21:02:30Z.308489"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-19T20:54:44Z",
+            "ms": 466235,
+            "basis": "durationMs in run 2026-11-19T21:02:30Z.308489's record (run-test-gate --record)",
+            "runId": "2026-11-19T21:02:30Z.308489"
+          }
+        ],
+        "firstStartedAt": "2026-11-19T19:40:52Z"
+      },
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-19T21:02:48Z.0e9924",
+        "status": "passed",
+        "durationMs": 223,
+        "failed": [],
+        "observations": {
+          "ranTotal": null,
+          "countsBasis": "no command ran, so nothing here counted a check",
+          "treeMutated": null,
+          "treeBasis": "no command ran, so the tree was not bracketed",
+          "coverage": null,
+          "coverageBasis": "no command ran, so no runner named a path here; the run named above is where that question was asked"
+        },
+        "banners": [],
+        "gateReach": {
+          "gaps": []
+        },
+        "gateSource": "task",
+        "gateDigest": "sha256:a2cb520f1f652a0cedacf7eeef160017ce164774e5b6cf03c5bbed281c6b42f0",
+        "reuseKey": "1:sha256:8fb3e29835cada20e2f9cba00eb77605c53dcbbf7cf147666a5684ac7be55b7f",
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-19T21:02:30Z.308489",
+          "ts": "2026-11-19T21:02:30Z",
+          "status": "passed"
+        },
+        "attempt": 1,
+        "via": "cli",
+        "sessionId": "2b3b3ad6-53c7-447e-9ceb-53c614bccbc5",
+        "selectionMs": 15968,
+        "at": "2026-11-19T21:02:48Z",
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "attempt": 1,
+          "banners": [],
+          "durationMs": 466235,
+          "failed": [],
+          "gateDigest": "sha256:a2cb520f1f652a0cedacf7eeef160017ce164774e5b6cf03c5bbed281c6b42f0",
+          "gateReach": {
+            "gaps": []
+          },
+          "gateSource": "task",
+          "launch": "2026-11-19T20:54:19Z-6898a411",
+          "observations": {
+            "countsBasis": "no step printed a summary this reader can count (python3 tools/gate-parity.py && python3 tools/sweep-selftests.py .claude/hooks/guard-release.py .claude/hooks/arm-release-bypass.py tests/test__evidence_io.py t... (148 more characters) and 1 more), so the size of this gate is not knowable from its output",
+            "coverage": [
+              ".claude/hooks/arm-release-bypass.py",
+              ".claude/hooks/arm-release-bypass.py",
+              ".claude/hooks/guard-release.py",
+              ".claude/hooks/guard-release.py",
+              "SECURITY.md",
+              "SECURITY.md",
+              "tests/test__doctor_completions.py",
+              "tests/test__evidence_io.py",
+              "tests/test__evidence_io.py",
+              "tests/test__verdict_binding.py",
+              "tests/test_audit_lookup.py",
+              "tests/test_audit_lookup.py",
+              "tests/test_derive_phase_gate.py",
+              "tests/test_run_test_gate.py",
+              "tests/test_validate_manifest.py",
+              "tests/test_validate_manifest.py"
+            ],
+            "coverageBasis": "the runner named 211 path(s); the work under test declares 32 file(s); among them: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, 188/188, 8/8 and 205 more; declared but not named by the run: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, plugins/audit/schema/audit-plan.schema.json, plugins/audit/scripts/governance/_evidence_io.py and 6 more; breadth: the run named 175 suite path(s) and this task declares 32 file(s), and 168 of them are suites the task neither declares nor is named after (test__deps.py, test__output.py, test_audit_task.py, test_close_phase.py, test_commit_task_work.py, test_drive_phase.py, test_stamp_verification.py and 161 more) - this gate asks more than the task changed; that is reported, not refused",
+            "ranTotal": null,
+            "treeBasis": "git described the tree before and after",
+            "treeMutated": []
+          },
+          "reuseKey": "1:sha256:8fb3e29835cada20e2f9cba00eb77605c53dcbbf7cf147666a5684ac7be55b7f",
+          "runId": "2026-11-19T21:02:30Z.308489",
+          "selectionMs": 24257,
+          "sessionId": "2b3b3ad6-53c7-447e-9ceb-53c614bccbc5",
+          "startedAt": "2026-11-19T20:54:44Z",
+          "status": "passed",
+          "via": "cli",
+          "at": "2026-11-19T21:02:30Z",
+          "testedState": {
+            "dirtyBasis": "git described the tree before the run; 23 dirty path(s)",
+            "dirtyDigest": "sha256:e8e46fa3a19f93a8db7cb09eac6ce125aa8d73e4dc3774151e48d81c68e00a73",
+            "head": "1af351fd",
+            "headBasis": "repository HEAD at execution time; it does not identify the tested state, because a task gate runs before the task commit",
+            "scopeBasis": "20 declared file(s); 20 read, 0 missing",
+            "scopeDigest": "sha256:177b25cdcde7e13165b276022b37f560fa5058572608e55be09f07fd39277b76",
+            "scopeListDigest": "sha256:193a67f21a286e6ab406cbb4ff7a44c1c833c1b279a42b80997542af77ab2cb0"
+          },
+          "steps": [
+            {
+              "command": "python3 tools/gate-parity.py && python3 tools/sweep-selftests.py .claude/hooks/guard-release.py .claude/hooks/arm-release-bypass.py tests/test__evidence_io.py tests/test_run_test_gate.py tests/test__verdict_binding.py tests/test_audit_lookup.py tests/test_validate_manifest.py tests/test_derive_phase_gate.py",
+              "durationMs": 70399,
+              "exit": 0,
+              "measured": "not-knowable",
+              "name": "python3 tools/gate-parity.py && python3 tools/sweep-selftests.py .claude/hooks/guard-release.py .claude/hooks/arm-release-bypass.py tests/test__evidence_io.py tests/test_run_test_gate.py tests/test__verdict_binding.py tests/test_audit_lookup.py tests/test_validate_manifest.py tests/test_derive_phase_gate.py",
+              "ran": null,
+              "suiteReader": "none"
+            },
+            {
+              "commandBytes": 5198,
+              "commandSha256": "37b5e88e1bad66111b1c356d5d846c11b971214f27714a38bf5119b1289cf0fb",
+              "durationMs": 395779,
+              "exit": 0,
+              "measured": "not-knowable",
+              "name": "affected/related: .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_status.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_commit_task_work.py, tests/test_detect_plan_skip.py, tests/test_drive_phase.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_import_evidence.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_outside_run.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-browser-install.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+              "program": "python3",
+              "ran": null,
+              "suiteReader": "none"
+            }
+          ]
+        },
+        "sharedWithRepeated": [
+          "steps"
+        ],
+        "replacedLaunches": [
+          {
+            "runId": "2026-11-19T21:02:30Z.308489",
+            "launch": "2026-11-19T20:54:19Z-6898a411",
+            "status": "passed",
+            "at": "2026-11-19T21:02:30Z"
+          }
+        ]
+      },
+      "testEvidence": {
+        "runId": "2026-11-19T21:02:48Z.0e9924",
+        "status": "passed",
+        "at": "2026-11-19T21:02:48Z"
+      }
+    },
+    {
+      "id": "P169.28-6l3",
+      "title": "A subject whose record cannot be read has no older run to answer from, as a property of the read itself: the reuse lookup measures, a group member's unreadable red stops its landing, a run is held by the subject it measured, and one black-box case runs every command that reads runs",
+      "status": "pending",
+      "description": "The class \"a reader answers from an OLDER run when the subject's own record cannot be read\" has now been repaired by listing readers twice, and both lists were wrong: first reconcile and the lookup were missed, then, after one function was given to every reader a sweep found, an independent review found the gate's reuse lookup (finding P169-R93, high), the group member check at landing (P169-R94, high) and the report's evidence cell outside it, and showed the derived case that was meant to hold the list cannot see a reader that filters rows by hand. A third list would be the same mistake. Read P169-R93 to P169-R99 in the phase's review before designing; they carry the scenarios and the reviewer's probes are named in the brief.\n\nTHE RULE, HELD AT THE SOURCE. The property stops being \"every picker asks a function\" and becomes a property of what a read returns: after `read_rows`, a subject whose own record could not be read has NO row a reader can take as that subject's verdict, repeat, or newest run, and the read says so where every reader already looks. A reader written tomorrow, however it filters, then cannot answer from the older run, because the older run is not among what it was given as the subject's. Design that, and say which of these you chose and why the others are worse; the choice is yours, the property is not:\n (a) the read withholds the subject's older rows from the rows a verdict may be drawn from and returns them under a separate key for the readers that list history;\n (b) the read adds, for the unreadable record, a row placed by where the record sits (subject known, moment newest) carrying a status that can sign nothing off, so \"newest\" is that row for every picker;\n (c) both.\nWhatever you choose, state and prove what it does to every kind of reader of rows, because absence has been read as \"fine\" before in this code: the evidence boundary (it must never move LATER because rows were withheld: an excuse that widens turns a gate green), counts and tallies (usage, proposals), history listings, the reuse lookup (measures instead of repeating for such a subject), the member check at landing (refuses, naming the record), the binding, reconcile, the lookup, the doctor, status and its gate conditions, the report's evidence view, the panel's payload, the drive's own decisions on a gate result (the reviewer noted `gate_went_red` drops a malformed red silently and did not trace it: trace it), sign-off, the full-run readers. If you add a status word, every table of statuses that decides (cannot sign off, trips failing-tests, the schema's enum, the vocabulary) takes it from one place and a case fails for a table that lacks it. The function added by the previous task stays as the one sentence and the one question; what changes is that correctness no longer depends on calling it.\n\nTHE CASE THAT HOLDS IT, black-box. One fixture family (a subject's newest run is red and held ONLY as its plan record; an older green of the same content is in the ledger; variants: task scope, phase scope, group member, a task whose gate falls back to its phase's, ledger absent entirely) built twice: once with the record well-formed (the oracle: what each command says about a readable red) and once malformed. Every entry point that prints or decides from runs is run as its real command over both (derive the entry points from the tree, with a table giving each its invocation and a reason for any left out, stale-checked both ways, so a command added later is red by name until it is placed). The rule asserted for each: over the malformed fixture the older run's id is never given as the subject's answer, no passing word is given for the subject, nothing is written that replaces the red with the older run, and the exit code is not the success the readable-red oracle denies. Bound its cost and say what it is, measured twice.\n\nPOINTS BEYOND THE RULE.\n1. The remedy sentence names a command that MEASURES (today's advice, re-record the gate, repeats the older green through reuse); prove the remedy end to end on the fixture: follow the printed advice exactly, and the red is what gets recorded.\n2. One selection of a subject's own runs, used by the binding and by the member check, so the two cannot disagree about a phase (P169-R95): kept base runs are measurements of the base commit and nobody's verdict.\n3. A run is held by the subject it measured (P169-R96): a task's run on its phase's gate, held only as a record, is the task's. Decide between writing it onto the task's record and keeping who ran it on the phase's record and reading it back; show what each does to a plan written by the previous release and by earlier commits of this phase (records already on disk are read as before or better, never worse), and make the pointer line the recorder prints true. Cases with the ledger row absent, both directions (the phase is not bound by the task's green; the task's red is seen by the task's binding).\n4. The release guard's residues (P169-R98): the plan is parsed once per decision; a merged phase with a null id is a structure problem; an absent `bugs` key is read as no bugs or kept as a refusal, with the reason stated in the comment and in SECURITY.md; SECURITY.md says what happens to a publishing command when this hook exceeds its timeout, from Claude Code's own documentation (if you cannot establish it from documentation you can read, say so in the hand-back and write nothing about it), with the command that measures the guard's time. Change no pattern, no reading of a command, no bypass handling. IF ANY TOOL, HOOK, CLASSIFIER OR SAFEGUARD REFUSES OR INTERRUPTS AN EDIT TO EITHER GUARD FILE: do not work around it in any way; leave both files as they are, finish the rest, hand the refusal back verbatim with the intended diff as text.\n5. Documents (P169-R97): the guide and changelog sentences claiming one function is asked by every reader, and the two SECURITY.md sentences about fullGate entries and the unplaced merge, made true; the previous derived case is removed or kept beside the black-box one with its blind spots stated, not left claiming the list is complete.\n\nNOT THIS TASK: showing the unreadable-record sentence on the report page or in the panel, and the report's evidence cell wording (P169-R99 and P169-R89: page sources); the wait for a base run; the writers lint, the merge resolver and the Windows-only reds; the browser install check; ledger writes off.\n\nACCEPTANCE: (1) the black-box case is red at the head for the reuse lookup, the member check and the fall-back record, by name, and green after; (2) a new command reading runs is red by name until placed, and a mutation that makes any one reader answer from the older run turns the case red without that reader being listed anywhere as a picker; (3) the boundary never moves later (a case comparing it with and without the unreadable record); (4) a plan and ledger of the previous release, and this repository's own plan, read exactly as before (rows compared), with the unreadable channel empty; (5) the guard refuses none of this repository's plan, the committed example, the starter, a fresh plan made by the add verb; its time on a tag command is not above what it was before the structure reading was added, measured twice with a gap; (6) the full sweep is green.",
+      "files": [
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_verdict_binding.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "plugins/audit/scripts/governance/drive-phase.py",
+        ".claude/hooks/guard-release.py",
+        ".claude/hooks/arm-release-bypass.py",
+        "SECURITY.md",
+        "CHANGELOG.md",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__evidence_io.py",
+        "tests/test_run_test_gate.py",
+        "tests/test__verdict_binding.py",
+        "tests/test_close_phase.py",
+        "tests/test_drive_phase.py",
+        "plugins/audit/scripts/governance/_evidence_io.py",
+        "plugins/audit/scripts/governance/run-test-gate.py",
+        "plugins/audit/scripts/governance/_verdict_binding.py",
+        "plugins/audit/scripts/git/close-phase.py",
+        "PLUGIN-BUILD-GUIDE.md",
+        "tests/test__evidence_io.py",
+        "CHANGELOG.md",
+        "SECURITY.md",
+        ".claude/hooks/guard-release.py",
+        "tests/test_run_test_gate.py",
+        "tests/test__verdict_binding.py",
+        "tests/test_close_phase.py"
+      ],
+      "tests": {
+        "mode": "tdd",
+        "add": [
+          "tests/test__evidence_io.py: The property is held where rows are produced, not by a list of pickers: after a read, a subject whose own record cannot be read has no row any reader can take ...",
+          "tests/test__verdict_binding.py: Closed by the same source-level property",
+          "tests/test__verdict_binding.py: One selection of a subject's own runs, used by the binding and by the member check",
+          "tests/test__evidence_io.py: A run is held by the subject it measured: either the task's record takes it, or the phase's record keeps who ran it and the reader gives it back",
+          "tests/test__evidence_io.py: The case is replaced or joined by the black-box one"
+        ],
+        "expectRedFirst": true,
+        "gate": [
+          "python3 tools/gate-parity.py && python3 tools/sweep-selftests.py .claude/hooks/guard-release.py .claude/hooks/arm-release-bypass.py tests/test__evidence_io.py tests/test_run_test_gate.py tests/test__verdict_binding.py tests/test_close_phase.py tests/test_drive_phase.py tests/test_audit_lookup.py tests/test__doctor_completions.py tests/test_audit_status.py"
+        ],
+        "gateBasis": "declared"
+      },
+      "model": "opus",
+      "skills": [],
+      "risk": "high",
+      "blockedBy": [],
+      "dependsOn": [
+        "P169.27-6l3",
+        "P169.26-6l3"
+      ],
+      "attempts": 0,
+      "maxAttempts": 3,
+      "commit": null,
+      "outcome": {
+        "technical": null,
+        "descriptive": null
+      },
+      "startedAt": null,
+      "completedAt": null,
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-19T21:14:28Z",
+          "text": "scope: plugins/audit/scripts/governance/_evidence_io.py, plugins/audit/scripts/governance/run-test-gate.py, plugins/audit/scripts/governance/_verdict_binding.py, plugins/audit/scripts/git/close-phase.py, PLUGIN-BUILD-GUIDE.md, tests/test__evidence_io.py, CHANGELOG.md, SECURITY.md, .claude/hooks/guard-release.py, every path the finding(s) P169-R93, P169-R94, P169-R95, P169-R96, P169-R97, P169-R98 name"
+        },
+        {
+          "at": "2026-11-19T21:14:28Z",
+          "text": "scope: tests/test__evidence_io.py, the suite that tests plugins/audit/scripts/governance/_evidence_io.py (python: its import closure reaches plugins/audit/scripts/governance/_evidence_io.py)"
+        },
+        {
+          "at": "2026-11-19T21:14:28Z",
+          "text": "scope: tests/test_run_test_gate.py, the suite that tests plugins/audit/scripts/governance/run-test-gate.py (python: its import closure reaches plugins/audit/scripts/governance/run-test-gate.py)"
+        },
+        {
+          "at": "2026-11-19T21:14:28Z",
+          "text": "scope: tests/test__verdict_binding.py, the suite that tests plugins/audit/scripts/governance/_verdict_binding.py (python: its import closure reaches plugins/audit/scripts/governance/_verdict_binding.py)"
+        },
+        {
+          "at": "2026-11-19T21:14:28Z",
+          "text": "scope: tests/test_close_phase.py, the suite that tests plugins/audit/scripts/git/close-phase.py (python: its import closure reaches plugins/audit/scripts/git/close-phase.py)"
+        },
+        {
+          "at": "2026-11-19T21:14:28Z",
+          "text": "no suite: .claude/hooks/guard-release.py - no test file imports or loads it; name the one that tests it with `scope --files`, none was guessed"
+        },
+        {
+          "at": "2026-11-19T21:14:28Z",
+          "text": "no suite: PLUGIN-BUILD-GUIDE.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__affected_tests.py, tests/test__config.py, tests/test__deps.py, tests/test__doctor_trail.py, tests/test__output.py, tests/test__refs.py and 7 more"
+        },
+        {
+          "at": "2026-11-19T21:14:28Z",
+          "text": "no suite: CHANGELOG.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are tests/test__deps.py, tests/test__evidence_io.py, tests/test__impact.py, tests/test__manifest_phases.py, tests/test__output.py, tests/test__panel_settings.py and 8 more"
+        },
+        {
+          "at": "2026-11-19T21:14:28Z",
+          "text": "no suite: SECURITY.md - a document, so no test of it is inferred; the files that name it, the checks that read it, are plugins/audit/scripts/config/_help.py, tests/test__help.py, tests/test_guard_secrets_read.py, tools/check-committed-pii.py, tools/gate-parity.py and 2 more"
+        },
+        {
+          "at": "2026-11-19T21:14:28Z",
+          "text": "no tests.add clause for P169-R98: no test file is named, placed or mapped for it; name the case with `scope --tests-add \"<path>: <what it asserts>\"`"
+        },
+        {
+          "at": "2026-11-19T21:14:28Z",
+          "text": "no test runner in this task's gate for the test P169-R93, P169-R94, P169-R95, P169-R96, P169-R97, P169-R98 asks for: the gate is ['python3 tools/gate-parity.py && python3 tools/sweep-selftests.py .claude/hooks/guard-release.py .claude/hooks/arm-release-bypass.py tests/test__evidence_io.py tests/test_run_test_gate.py tests/test__verdict_binding.py tests/test_close_phase.py tests/test_drive_phase.py tests/test_audit_lookup.py tests/test__doctor_completions.py tests/test_audit_status.py'], derived as from --gate; name the runner with `retarget --gate-set`, or the test will have nothing that runs it"
+        },
+        {
+          "at": "2026-11-19T21:14:53Z",
+          "text": "it quotes the runner's 'the work under test declares no files' sentence, which this task leaves as it is; only the reuse lookup for a subject whose record cannot be read changes",
+          "waives": "tools/check-example-ledgers.py"
+        },
+        {
+          "at": "2026-11-19T21:14:53Z",
+          "text": "this task changes only the sentences about the release guard in SECURITY.md; the '[quality-gates security]' text is untouched",
+          "waives": ".github/ISSUE_TEMPLATE/config.yml"
+        },
+        {
+          "at": "2026-11-19T21:14:53Z",
+          "text": "this task changes only the sentences about the release guard in SECURITY.md; the 'Test-file exemption' text is untouched",
+          "waives": "plugins/audit/hooks/_config.py"
+        },
+        {
+          "at": "2026-11-19T21:14:53Z",
+          "text": "this task changes only the sentences about the release guard in SECURITY.md; the sentence 'It denies the tool, not the knowledge.' is untouched",
+          "waives": "tests/test__panel_page.py"
+        },
+        {
+          "at": "2026-11-19T21:14:53Z",
+          "text": "this task changes only the sentences about the release guard in SECURITY.md; the 'Secret-read guard is name-based' text is untouched",
+          "waives": "tests/test_guard_secrets_read.py"
+        },
+        {
+          "at": "2026-11-19T21:14:53Z",
+          "text": "this task changes only the sentences about the release guard in SECURITY.md; the 'write, after the fact' text is untouched",
+          "waives": "tests/test_hooks.py"
+        },
+        {
+          "at": "2026-11-19T21:14:53Z",
+          "text": "this task changes only the sentences about the release guard in SECURITY.md; the 'everywhere else' text is untouched",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-19T21:14:53Z",
+          "text": "this task changes only the sentences about the release guard in SECURITY.md; the 'deliberately loud rather than silent' text is untouched",
+          "waives": "tools/check-git-pipeline.py"
+        },
+        {
+          "at": "2026-11-19T21:14:53Z",
+          "text": "this task changes only the sentences about the release guard in SECURITY.md; the fail-mode table's heading and its registered-hook rows stay as they are, and the task's gate runs gate-parity",
+          "waives": "tools/gate-parity.py"
+        },
+        {
+          "at": "2026-11-19T21:14:53Z",
+          "text": "this task changes only the sentences about the release guard in SECURITY.md; the fail-mode table's guard-edits row it quotes is untouched",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-19T21:14:53Z",
+          "text": "a research note with a section about SECURITY.md; this task changes only the sentences about the release guard in SECURITY.md and the note records a past design, not the current text",
+          "waives": "docs/research/guard-ownership-design.md"
+        },
+        {
+          "at": "2026-11-19T21:14:53Z",
+          "text": "it reads the '## [Unreleased]' heading, which this task leaves untouched",
+          "waives": "tools/release.py"
+        }
+      ],
+      "fixes": [
+        "P169-R93",
+        "P169-R94",
+        "P169-R95",
+        "P169-R96",
+        "P169-R97",
+        "P169-R98"
       ]
     }
   ],

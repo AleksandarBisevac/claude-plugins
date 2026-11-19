@@ -290,12 +290,20 @@ def _gather_facts(manifest, phase, project, out, mpath=None):
     else:
         lines.append("changed: skipped - phase.baseRef is not set")
 
-    rows = _evidence_io.read_rows(
+    read = _evidence_io.read_rows(
         project, manifest_path=(mpath if mpath is not None
-                                else _evidence_io.plan_file_of(project))
-    ).get("rows") or []
-    red_row = _gate_derive.newest_red_phase_row(rows, phase.get("id")
-                                                if isinstance(phase, dict) else None)
+                                else _evidence_io.plan_file_of(project)))
+    rows = read.get("rows") or []
+    pid = phase.get("id") if isinstance(phase, dict) else None
+    # THE PHASE'S OWN RECORD WOULD NOT READ: its newest red may be there, so
+    # no older red is learned from in its place (`newest_or_unreadable`); the
+    # caller refuses on `recordUnreadable`.
+    ask = _evidence_io.newest_or_unreadable(
+        rows, read.get("unreadableRecords"), "phase", pid)
+    if ask["unreadable"]:
+        facts["recordUnreadable"] = ask["sentence"]
+    red_row = None if ask["unreadable"] else _gate_derive.newest_red_phase_row(
+        rows, pid)
     # The one reading every learner shares: a failed, unmuted step whose
     # runner NAMED its suites - never a tail of output.
     facts["lastFailedSuites"] = (
@@ -623,6 +631,11 @@ def _locked_run(args, project, config, mpath, phase_id, out):
 
     facts, fact_lines = _gather_facts(assembled, phase, project, out,
                                       mpath=mpath)
+    if facts.get("recordUnreadable"):
+        out("[derive-phase-gate] REFUSED: %s - the suites it last failed are "
+            "not established, so nothing is derived; re-record the phase "
+            "gate or repair the record" % (facts["recordUnreadable"],))
+        return E_INVALID
     result = _gate_derive.derive(assembled, phase, facts)
     result["lines"] = list(result.get("lines") or []) + fact_lines
     at = _utc_stamp.utc_stamp()

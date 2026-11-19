@@ -655,6 +655,54 @@ def _cases(check):
 
     _nested_changed_cases(check)
     _repo_listing_cases(check)
+    _harness.stage(check, "du-block", _unreadable_red_cases)
+
+
+def _unreadable_red_cases(check):
+    """(dp-unread) The phase's newest red is asked of the one newest-or-
+    unreadable answer: a phase whose own record would not read is refused,
+    naming the record, rather than learning last-failed suites from an older
+    red in the ledger; the same phase well-formed derives as before."""
+    named = "the suite file(s) jest named as failing, read from jest's FAIL"
+    root = _harness.fixture_root("derive-phase-gate-unread-")
+    try:
+        said = {}
+        for label, malformed in (("malformed", True), ("well-formed", False)):
+            d, mpath, _base = _project(root, mode="shadow")
+            M._evidence_io.append_row(d, {
+                "v": 1, "runId": "DG-OLD", "ts": "2026-11-18T08:00:00Z",
+                "scope": "phase", "phaseId": "P1", "status": "failed",
+                "steps": [{"name": "unit", "exit": 1,
+                           "failingSuites": ["old.test.ts"],
+                           "failingSuitesBasis": named}]})
+            record = M._evidence_io.run_record({
+                "v": 1, "runId": "DG-NEW", "ts": "2026-11-18T12:00:00Z",
+                "scope": "phase", "phaseId": "P1", "status": "failed",
+                "steps": [{"name": "unit", "exit": 1,
+                           "failingSuites": ["new.test.ts"],
+                           "failingSuitesBasis": named}]})
+            if malformed:
+                record["steps"] = 5
+            plan = _raw(mpath)
+            plan["phases"][0][M._evidence_io.RECORD_KEY] = record
+            with open(mpath, "w", encoding="utf-8") as fh:
+                json.dump(plan, fh, indent=2)
+            said[label] = _run([mpath, "P1", "--dry-run"])
+        code, out = said["malformed"]
+        check("dp-unread RED-FIRST: a phase whose own newest record would not "
+              "read is refused, naming the plan file and the field - its older "
+              "red in the ledger is never learned from as the newest: %r"
+              % ((code, out[-400:]),),
+              code == M.E_INVALID and "docs/audit/audit-plan.json" in out
+              and "lastRun.steps" in out and "old.test.ts" not in out)
+        code, out = said["well-formed"]
+        check("dp-unread-allow ALLOW: the same phase with its record well-formed "
+              "derives as before, no refusal and no record named: %r"
+              % ((code, out[-300:]),),
+              code == M.E_OK and "REFUSED" not in out
+              and "lastRun.steps" not in out)
+    finally:
+        _harness.remove_tree(root)
 
 
 def _nested_changed_cases(check):

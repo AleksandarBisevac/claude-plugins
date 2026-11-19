@@ -175,10 +175,37 @@ def full_gate(manifest):
     build = meta.get("buildCommands")
     entries = meta.get("fullGate")
     entries = [e for e in (entries if isinstance(entries, list) else [])
-               if isinstance(e, str) and e.strip()]
+               if _full_gate_entry(e)]
     left = [e for e in entries if _manifest_vocab.review_only_entry(e, build)]
     keep = [e for e in entries if e not in left]
     return {"commands": resolved_commands(manifest, keep), "reviewOnly": left}
+
+
+def _full_gate_entry(entry):
+    """Whether `full_gate` takes `entry` as a `meta.fullGate` key at all."""
+    return isinstance(entry, str) and bool(entry.strip())
+
+
+def full_gate_problem(manifest):
+    """The sentence saying how `meta.fullGate` is not what `full_gate` reads -
+    not a list, or an entry it would pass over - or None when it is, and when
+    the plan names no `meta.fullGate` at all (no third place). A caller that
+    must not read a full gate it would partly drop as the gate the plan
+    declares (the release guard) refuses on it."""
+    meta = manifest.get("meta") if isinstance(manifest, dict) else None
+    if not isinstance(meta, dict) or "fullGate" not in meta:
+        return None
+    entries = meta["fullGate"]
+    if not isinstance(entries, list):
+        return ("`meta.fullGate` is %s, and the full gate is read as a list of "
+                "`meta.buildCommands` keys, so the third place it declares is "
+                "not established" % (_json_schema.json_type(entries),))
+    for i, entry in enumerate(entries):
+        if not _full_gate_entry(entry):
+            return ("`meta.fullGate[%d]` is %s, not a key name the full gate "
+                    "reads, so it would be passed over and the full gate read "
+                    "is not the one declared" % (i, json.dumps(entry)[:80]))
+    return None
 
 
 def full_gate_commands(manifest):
@@ -3101,10 +3128,13 @@ SHARED_UNRESOLVED_KEY = "sharedUnresolved"
 # without resolving; the keys that hold the carried run or say what the record
 # lost; and the steps, which a whole repeat shares by derivation instead - the
 # entry `steps` under `SHARED_KEY` always means "copied from the carried run,
-# each naming it" (`_copied_steps`), never an equal list.
-_NEVER_SHARED = ("runId", "at", "status", "reusedFrom", "launch",
-                 "repeatedRun", "repeatedRunUnread", "recordCut",
-                 "replacedLaunches", "gradedBy", "steps", "stepsDropped")
+# each naming it" (`_copied_steps`), never an equal list. ONE TABLE, read by
+# the writer (`_shared_paths`) and by the reader (`share_problem`): a record
+# whose share names one of these rewrites the run's own field from another
+# run, so it is not the record's shape.
+NEVER_SHARED_KEYS = ("runId", "at", "status", "reusedFrom", "launch",
+                     "repeatedRun", "repeatedRunUnread", "recordCut",
+                     "replacedLaunches", "gradedBy", "steps", "stepsDropped")
 # The basis an observation cut from a record is read back with.
 _CUT_BASIS = ("cut from this run's record, which was over its bound "
               "(RECORD_MAX_BYTES); the run's ledger row, where one was "
@@ -3388,7 +3418,7 @@ def _shared_paths(mine, theirs, prefix, depth):
     further. Sorted, so a record is written the same way every time."""
     out = []
     for key in sorted(mine):
-        if not prefix and key in _NEVER_SHARED:
+        if not prefix and key in NEVER_SHARED_KEYS:
             continue
         here, there = mine[key], (theirs or {}).get(key)
         path = "%s%s" % (prefix, key)
@@ -3719,14 +3749,16 @@ def record_row(record, scope, subject, phase_id):
 
 # --- a record that is not the record's shape ------------------------------------
 # A RECORD WRITTEN BY HAND, OR BY A BUILD THAT WROTE ANOTHER SHAPE, IS SAID, NEVER
-# READ AND NEVER RAISED ON. Its shape is the published schema's `lastRun` - read
-# by the reader validate-manifest uses, so the two never disagree about what a
-# record is - and the run a repeat carries and each base run a red's reading
-# keeps are read against it too, since a reader walks them as runs. A record that
-# is not that shape gives no run: it is named, with its plan file, its subject and
-# the first field that is wrong, under `read_rows`' `unreadableRecords`, and its
-# label joins `unreadablePlanFiles`, so every reader that already refuses over a
-# plan file it could not read refuses over it the same way.
+# READ AND NEVER RAISED ON. Its shape is the published schema's `lastRun` - the
+# run a repeat carries and each base run a red's reading keeps typed there as
+# run records too - read by the reader validate-manifest uses, so the two agree
+# about every shape. What no keyword that reader supports can state is the
+# share's rules (`share_problem`): checked here first, and said by
+# validate-manifest too. A record that is not that shape gives no run: it is
+# named, with its plan file, its subject and the first field that is wrong,
+# under `read_rows`' `unreadableRecords`, and its label joins
+# `unreadablePlanFiles`, so every reader that already refuses over a plan file
+# it could not read refuses over it the same way.
 PLAN_SCHEMA_PATH = os.path.join(_output.PLUGIN_ROOT, "schema",
                                 "audit-plan.schema.json")
 _LAST_RUN_REF = {"$ref": "#/$defs/lastRun"}
@@ -3753,42 +3785,51 @@ def record_problem(record, doc, where=RECORD_KEY):
     published `lastRun` gives, or None when it is. `doc` is the schema
     (`record_schema`); `where` names the record in what is said. The run a
     repeat carries (`REPEATED_RUN_KEY`) and each base run its red's reading
-    keeps (`BASE_RUNS_KEY`) are records too, read the same way."""
+    keeps (`BASE_RUNS_KEY`) are run records in that schema, read with it. The
+    share's own rules (`share_problem`) are asked first, so a record holding a
+    field beside a share of it is told which field to repair."""
     if doc is None:
         return {"field": where, "why": "%s could not be checked: no plan "
                 "schema was read" % (where,)}
     why = (_first_finding({"type": "object"}, record, doc, where)
+           or share_problem(record, where)
            or _first_finding(_LAST_RUN_REF, record, doc, where))
-    if why is None:
-        carried = record.get(REPEATED_RUN_KEY)
-        if carried is not None:
-            why = _first_finding(_LAST_RUN_REF, carried, doc, "%s.%s" % (
-                where, REPEATED_RUN_KEY))
-    if why is None:
-        why = _base_runs_problem(record.get(BASE_RED_KEY), doc,
-                                 "%s.%s" % (where, BASE_RED_KEY))
     if why is None:
         return None
     why = _journal_io._clip(why)
     return {"field": why.split(" ", 1)[0], "why": why}
 
 
-def _base_runs_problem(reading, doc, where):
-    """The first way a red's reading `reading` - or a base run it keeps - is
-    not the shape its writer writes, or None."""
-    if reading is None:
-        return None
-    why = _first_finding({"type": "object"}, reading, doc, where)
-    runs = reading.get(BASE_RUNS_KEY) if why is None else None
-    if why is None and runs is not None:
-        where = "%s.%s" % (where, BASE_RUNS_KEY)
-        why = _first_finding({"type": "array"}, runs, doc, where)
-        for i, run in enumerate(runs if why is None else []):
-            why = _first_finding(_LAST_RUN_REF, run, doc,
-                                 "%s[%d]" % (where, i))
-            if why is not None:
-                break
-    return why
+def _holds_path(record, parts):
+    value = record
+    for part in parts:
+        if not isinstance(value, dict) or part not in value:
+            return False
+        value = value[part]
+    return True
+
+
+def share_problem(record, where=RECORD_KEY):
+    """The first way the share of `record` (a dict) rewrites a verdict, or
+    None: an entry whose top key the writer never shares (`NEVER_SHARED_KEYS`
+    - but `steps`, which means the steps derived from the carried run), or a
+    shared path the record also holds, which leaves two values for one field.
+    THE RULES NO SCHEMA KEYWORD HERE STATES, so the reader and validate-manifest
+    each ask this beside the schema."""
+    shared = record.get(SHARED_KEY) if isinstance(record, dict) else None
+    for entry in shared if isinstance(shared, list) else []:
+        if not isinstance(entry, str):
+            continue
+        parts = entry.split(".")
+        if entry != "steps" and parts[0] in NEVER_SHARED_KEYS:
+            return ("%s.%s names `%s`, a field of the run's own the writer "
+                    "never shares, so it would be read from another run - "
+                    "drop the entry" % (where, SHARED_KEY, entry))
+        if _holds_path(record, parts):
+            return ("%s.%s names `%s`, which the record also holds, so the "
+                    "field has two values - drop `%s` or its entry in the "
+                    "share" % (where, SHARED_KEY, entry, entry))
+    return None
 
 
 def _plan_records(phase):
@@ -4644,6 +4685,43 @@ def latest_by_subject(rows, aliases=None):
     return best
 
 
+def newest_or_unreadable(rows, unreadable, scope, subject, aliases=None,
+                         latest=None):
+    """THE ONE ANSWER to "what is the newest run of `(scope, subject)`":
+    `{"row", "rows", "unreadable", "sentence"}`.
+
+    A SUBJECT WHOSE OWN RECORD WOULD NOT READ HAS NO NEWEST RUN. `unreadable`
+    is `read_rows`' `unreadableRecords`; an entry naming this subject's own
+    record (`RECORD_KEY`, never a held full run) may be the newest run there
+    is, so `row` is None, `unreadable` holds the entries and `sentence` says
+    them - never an older run in its place. Otherwise `row` is the newest
+    run keyed to the subject (`latest_by_subject`'s rule, through `aliases`),
+    or None for a subject with no run, and `rows` every run keyed to it.
+
+    `latest`, `latest_by_subject(rows, aliases)` already computed, answers
+    `row` from it for a caller asking of every subject at once; `rows` is
+    then None."""
+    key = (aliases or {}).get((str(scope), str(subject)),
+                              (str(scope), str(subject)))
+    lost = [e for e in unreadable or [] if isinstance(e, dict)
+            and e.get("key") == RECORD_KEY
+            and (aliases or {}).get((str(e.get("scope")), str(e.get("subject"))),
+                                    (str(e.get("scope")),
+                                     str(e.get("subject")))) == key]
+    if lost:
+        return {"row": None, "rows": [], "unreadable": lost,
+                "sentence": "%s %s's own record could not be read, so its "
+                            "newest run is not established and no older run "
+                            "stands for it - %s"
+                            % (key[0], key[1], unreadable_records_sentence(lost))}
+    if latest is not None:
+        return {"row": latest.get(key), "rows": None, "unreadable": [],
+                "sentence": None}
+    mine = [r for r in rows or [] if subject_key(r, aliases) == key]
+    return {"row": latest_by_subject(mine, aliases).get(key), "rows": mine,
+            "unreadable": [], "sentence": None}
+
+
 def row_by_run(rows, run_id):
     """The row carrying `runId == run_id`, newest by `ts`; `None` when none do.
 
@@ -4887,10 +4965,14 @@ def reconcile(project, manifest_path, session_id=None, config=None, wait=None):
     written since the rows were read is not replaced by an older run.
 
     Returns `{"moved", "refused", "already", "unreadable", "subjects",
-    "unreadablePlanFiles"}`. `moved` and `refused` carry sentences, because a
-    reconcile that could not finish must say which subjects it left behind
-    rather than reporting a smaller number; `unreadablePlanFiles` names each
-    plan file that would not read, whose subjects were not reconciled.
+    "unreadablePlanFiles", "unreadableRecords"}`. `moved` and `refused` carry
+    sentences, because a reconcile that could not finish must say which
+    subjects it left behind rather than reporting a smaller number; a subject
+    whose own record would not read is among `refused`, named with the record,
+    and left exactly as it is. `unreadablePlanFiles` names each plan file that
+    would not read, whose subjects were not reconciled, and
+    `unreadableRecords` each other record that would not read (a held full
+    run), which no pointer is derived from and which was left as it is.
     """
     config = _journal_io.load_config(project) if config is None else config
     read = read_rows(project, config=config, manifest_path=manifest_path)
@@ -4903,7 +4985,8 @@ def reconcile(project, manifest_path, session_id=None, config=None, wait=None):
         plan = {}
     owner = dict((str(t.get("id")), str(ph.get("id")))
                  for ph, t in _mio.iter_tasks(plan) if t.get("id"))
-    best = latest_by_subject(read["rows"], aliases=subject_aliases(plan))
+    aliases = subject_aliases(plan)
+    best = latest_by_subject(read["rows"], aliases=aliases)
     # A SUBJECT'S RECORD IS ITS NEWEST RUN, so the pointer is derived from it
     # unless the ledger holds a run of that subject stamped after it - a run
     # whose record write was refused. A ledger with no row for it, which is
@@ -4919,8 +5002,20 @@ def reconcile(project, manifest_path, session_id=None, config=None, wait=None):
     ledger = [r for r, src in zip(read["rows"], read["rowSources"])
               if src == ROW_FROM_LEDGER]
     ledger_runs = set(str(r.get("runId")) for r in ledger)
+    # A SUBJECT WHOSE OWN RECORD WOULD NOT READ IS REFUSED, NEVER MOVED: that
+    # record may be its newest run, so no older run is written over it
+    # (`newest_or_unreadable`); every other subject is reconciled as before.
+    lost_records = list(read.get("unreadableRecords") or [])
+    own_lost = set((str(e.get("scope")), str(e.get("subject")))
+                   for e in lost_records if e.get("key") == RECORD_KEY)
     moved, refused, already = [], [], []
-    for (scope, subject), row in sorted(best.items()):
+    for scope, subject in sorted(set(best) | own_lost):
+        ask = newest_or_unreadable(read["rows"], lost_records, scope, subject,
+                                   aliases=aliases, latest=best)
+        if ask["unreadable"]:
+            refused.append("%s %s: %s" % (scope, subject, ask["sentence"]))
+            continue
+        row = ask["row"]
         if scope == "task":
             ids = {"taskId": subject,
                    "phaseId": owner.get(subject) or row.get("phaseId")}
@@ -4943,10 +5038,15 @@ def reconcile(project, manifest_path, session_id=None, config=None, wait=None):
             already.append(said)
         else:
             refused.append("%s: %s" % (said, out["reason"]))
+    labels = set(unreadable_record_label(e) for e in lost_records)
     return {"moved": moved, "refused": refused, "already": already,
             "unreadable": read["unreadable"], "subjects": len(best),
             "unreadablePlanFiles": sorted(set(
-                list(read.get("unreadablePlanFiles") or []) + lost_plan))}
+                [f for f in read.get("unreadablePlanFiles") or []
+                 if f not in labels] + lost_plan)),
+            "unreadableRecords": [unreadable_record_label(e)
+                                  for e in lost_records
+                                  if e.get("key") != RECORD_KEY]}
 
 
 def _reconcile_subject(project, manifest_path, scope, ids, target, record,
@@ -4984,6 +5084,15 @@ def _reconciled(body, scope, ids, sharded, target, record):
     subject, _task, problem = _holders(body, scope, ids, sharded)
     if problem is not None:
         return None, problem, None
+    # A RECORD THAT WOULD NOT READ UNDER THE LOCK is the subject's record all
+    # the same - it may be its newest run - so it is refused here as it is
+    # before the lock, never replaced by an older one.
+    unread = record_problem(subject.get(RECORD_KEY), record_schema()[0]) \
+        if subject.get(RECORD_KEY) is not None else None
+    if unread is not None:
+        return None, ("its record would not read under the lock (%s), so its "
+                      "newest run is not established and it was left as it "
+                      "is" % (unread["why"],)), None
     held = readable_record(subject.get(RECORD_KEY))
     # A repeat whose source was read nowhere before the lock looks once more,
     # in the record it is about to replace - `_put_record`'s look, through the

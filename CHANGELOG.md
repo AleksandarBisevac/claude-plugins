@@ -275,6 +275,32 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   is named cannot bind, and the binding says so.
 
 ### Fixed
+- **A subject whose own run record will not read is never answered from an older run.**
+  `--reconcile` wrote an older ledger run over a malformed newer record, so the status gate's
+  `failing-tests` condition passed over a red; it now refuses that subject - `REFUSED:` naming the
+  record's file and field - leaves its record and pointer exactly as they are, still reconciles
+  every other subject, and exits 1. The same rule answers `audit-lookup.py run latest` (a miss
+  naming the record, never the older run; a miss now names plan records that would not read),
+  `/audit:doctor`'s pointer check (the record is named instead of a dangling pointer or a
+  reconcile owed), the verdict binding, `derive-phase-gate.py` (refused, rather than learning the
+  last-failed suites from an older red) and `validate-manifest.py`'s suite check (said as not
+  established, never as "runs no suite").
+- **A base run kept on a task's red is no longer read as its phase's verdict.** The verdict
+  binding counted it among the phase's own runs, so a newer red base run refused a phase whose own
+  run was green, and a newer green one could bind a phase whose own run was red; the phase's own
+  run decides now.
+- **A share cannot rewrite a verdict.** A record whose `sharedWithRepeated` names a field the
+  writer never shares (`runId`, `status`, `at` and the rest of `NEVER_SHARED_KEYS`), or a field the
+  record also holds, does not read; the record holding `steps` beside a `steps` share is told to
+  drop one of the two rather than that it "matches more than one" shape. `validate-manifest.py`
+  says the same, as a warning in 3.x, and the published schema now types the run a repeat carries
+  (`repeatedRun`) and each kept base run (`baseRed.baseRuns`) as run records (a warning in 3.x).
+- **The release guard reads the plan's structure or refuses.** A key written twice in one object,
+  a `meta`, `phases`, phase, `tasks`, task, `bugs` or bug entry of the wrong JSON type, a
+  `meta.fullGate` the plugin's reader would not take whole, and a phase recording a `mergedHead`
+  with no `mergedAt` a reader can place are each refused as UNKNOWN, named by file and place. A
+  deny it cannot write on stdout - stdout closed when the hook starts included - exits 2, and the
+  arming message catches every kind of error the guard's reading can end in.
 - **A run record written while a repair was running is no longer lost.** `repair-commits.py
   --apply` and `repair-tests-add.py --apply` read the plan before taking the index lock and saved
   that read under it, so a gate's record, a pointer or a verb's change made in between was

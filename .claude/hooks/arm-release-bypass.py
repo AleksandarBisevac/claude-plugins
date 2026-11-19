@@ -76,7 +76,7 @@ def _load_guard():
         guard = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(guard)
         return guard
-    except Exception:
+    except BaseException:                       # noqa: BLE001
         return None
 
 
@@ -86,9 +86,10 @@ GUARD_UNLOADED = ("the release guard could not be loaded from "
 
 
 def _unread(exc):
-    """The problem for a guard reading that raised `exc` - the guard refuses
-    the same release as UNKNOWN, so the list travels as unread, with what was
-    raised, its text cut short."""
+    """The problem for a guard reading that raised `exc` - whatever kind, as
+    the guard's entry point catches every kind and refuses the same release
+    as UNKNOWN - so the list travels as unread, with what was raised, its text
+    cut short."""
     return ("the release guard's reading raised (%s: %s), so this list "
             "cannot be read here" % (type(exc).__name__, str(exc)[:400]))
 
@@ -114,7 +115,7 @@ def open_bugs(project):
         return ([], GUARD_UNLOADED)
     try:
         return guard.read_bugs(project)
-    except Exception as exc:                    # noqa: BLE001
+    except BaseException as exc:                # noqa: BLE001
         return ([], _unread(exc))
 
 
@@ -129,7 +130,7 @@ def held_phases(project):
         return ([], GUARD_UNLOADED)
     try:
         return guard.read_held_phases(project)
-    except Exception as exc:                    # noqa: BLE001
+    except BaseException as exc:                # noqa: BLE001
         return ([], _unread(exc))
 
 
@@ -450,6 +451,29 @@ def _selftest():
               bug_read[0] == [] and "RuntimeError" in str(bug_read[1])
               and held_read[0] == [] and "RuntimeError" in str(held_read[1])
               and "UNKNOWN" in msg_r and "authorises nothing" not in msg_r)
+
+        # WHAT THE GUARD'S ENTRY POINT CATCHES, this file catches: every
+        # kind, an interrupt and an exit included, since the guard refuses
+        # over each of them.
+        kinds = []
+        for kind in (SystemExit, KeyboardInterrupt, MemoryError):
+            def stopping(_project, kind=kind):
+                raise kind()
+            own["_load_guard"] = lambda stopping=stopping: types.SimpleNamespace(
+                read_bugs=stopping, read_held_phases=stopping, BASIS_CAP=240)
+            try:
+                read = (open_bugs(tmp), held_phases(tmp))
+            except BaseException as exc:            # noqa: BLE001
+                read = ("raised %s" % (type(exc).__name__,),)
+            finally:
+                own["_load_guard"] = saved
+            kinds.append((kind.__name__, read))
+        check("rb21 RED-FIRST: a reading that ends in SystemExit, "
+              "KeyboardInterrupt or MemoryError is an UNKNOWN list naming "
+              "what was raised, as the guard refuses over each: %r" % (kinds,),
+              all(len(read) == 2 and all(r[0] == [] and name in str(r[1])
+                                         for r in read)
+                  for name, read in kinds))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

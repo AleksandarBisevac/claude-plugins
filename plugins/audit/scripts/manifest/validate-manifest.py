@@ -134,6 +134,32 @@ def strict_split(findings, warnings):
             [w for w in warnings if not is_schema_line(w)])
 
 
+def share_warnings(manifest):
+    """A schema-coded warning for each run record whose share breaks a rule no
+    schema keyword here states (`_evidence_io.share_problem`) - the record the
+    plugin's own reader refuses, said here as that reader says it."""
+    out = []
+    phases = manifest.get("phases") if isinstance(manifest, dict) else None
+    for i, phase in enumerate(phases if isinstance(phases, list) else []):
+        if not isinstance(phase, dict):
+            continue
+        tasks = phase.get("tasks") if isinstance(phase.get("tasks"), list) else []
+        holders = [("phases[%d]" % (i,), phase)] + [
+            ("phases[%d].tasks[%d]" % (i, j), t) for j, t in enumerate(tasks)
+            if isinstance(t, dict)]
+        for where, holder in holders:
+            record = holder.get(_ev.RECORD_KEY)
+            why = _ev.share_problem(record, "%s.%s" % (where, _ev.RECORD_KEY)) \
+                if isinstance(record, dict) else None
+            if why:
+                out.append(_output.finding(
+                    _manifest_rules.SCHEMA_CODE_PREFIX + "share",
+                    "%s - the plugin's reader refuses this record; "
+                    "validate-manifest will refuse it from %s (a warning in "
+                    "3.x)" % (why, _manifest_rules.BUG_VALUE_REFUSAL_RELEASE)))
+    return out
+
+
 def main(argv):
     verbose = "--verbose" in argv
     strict = "--strict" in argv
@@ -154,6 +180,7 @@ def main(argv):
     try:
         findings, warnings = validate(manifest, schema=schema)
         findings = list(unreadable) + findings
+        warnings = list(warnings) + share_warnings(manifest)
     except Exception as exc:  # defensive; validate() should never raise
         print("FINDING: internal validator error: %s" % exc)
         return 1
@@ -227,6 +254,13 @@ def main(argv):
                 % (_output.some_of(
                     [_output.posix_rel(p, _project)
                      for p in _read["unreadableFiles"]]),)]
+        elif _ev.plan_read_sentence(_read):
+            # THE SAME FOR THE PLAN'S OWN RECORDS: a record that would not read
+            # holds a run that may be the one recording a suite.
+            warnings = warnings + [
+                "%s - so whether the phase gate runs a suite could not be "
+                "checked against the evidence; this is not 'phase gate runs "
+                "no suite'" % (_ev.plan_read_sentence(_read),)]
         else:
             gap = _manifest_rules.phase_gate_suite_gap(
                 manifest, suite_keys=_ev.suite_keys(_read["rows"]))

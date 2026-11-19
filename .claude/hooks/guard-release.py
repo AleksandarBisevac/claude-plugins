@@ -30,7 +30,8 @@ with the basis `full_status` gave. `read_held_phases` asks the plugin's own
 already asks `effective_bug_status` rather than reading a stored field. A
 plan naming no third place (`meta.fullGate` absent, or holding only
 review-only entries) has no phase to hold, so this guard then judges the bugs
-alone.
+alone; one the plugin's reader would not take whole is not absent, and the
+phase list is UNKNOWN.
 
 THE WAY PAST IT is `arm-release-bypass.py`: the maintainer types the keyword and a
 single-use slot appears. Nothing the model writes can arm it. That is why the
@@ -50,7 +51,9 @@ Contract: a block emits {"hookSpecificOutput": {"permissionDecision": "deny",
 "permissionDecisionReason": ...}} on stdout and exits 0 - the canonical PreToolUse
 protocol.
 
-Exit codes: 0 always (the decision travels in the payload, never in the code).
+Exit codes: 0 when the decision is written on stdout (it travels in the
+payload); 2 when a deny cannot be written there - said on stderr when stderr
+takes it - the code that blocks a PreToolUse call (`_deny`).
 """
 import json
 import os
@@ -733,6 +736,89 @@ def _release_trees(payload, project, command, publishers):
         return paired
 
 
+def _json_kind(value):
+    """The JSON type name of a parsed value, as the schema spells it."""
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    for kind, name in ((dict, "object"), (list, "array"), (str, "string"),
+                       ((int, float), "number")):
+        if isinstance(value, kind):
+            return name
+    return type(value).__name__
+
+
+def _raw_json(path):
+    """`(parsed, keys written twice)` of the JSON file at `path`, or
+    `(None, [])` when it will not read - the plugin's loader then names why."""
+    twice = []
+
+    def pairs(items):
+        seen = set()
+        for key, _value in items:
+            if key in seen and key not in twice:
+                twice.append(key)
+            seen.add(key)
+        return dict(items)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh, object_pairs_hook=pairs), twice
+    except Exception:
+        return None, []
+
+
+def _shape(rel, path, value, admitted):
+    return ("%s: `%s` is %s, the schema admits %s, so what the plan holds there "
+            "is not established" % (rel, path, _json_kind(value), admitted))
+
+
+def plan_structure_problem(project):
+    """The first way the plan under `project` is not the structure the guard
+    reads - a key written twice in one object of its index or a shard, its
+    `meta` not an object, its `phases` not a list, a phase entry not an
+    object, a phase's `tasks` not a list or a task not an object - named by
+    file and place, or None. The admitted types are the published schema's
+    (`tests/test__evidence_io.py`'s `gs` cases read them off it). A file that
+    will not read at all is left to the plugin's loader, which names why."""
+    index_path = os.path.join(project, MANIFEST_REL)
+    rel = MANIFEST_REL.replace(os.sep, "/")
+    index, twice = _raw_json(index_path)
+    if twice:
+        return ("%s holds the key `%s` more than once in one object, so which "
+                "value the plan carries is not established" % (rel, twice[0]))
+    if index is None or not isinstance(index, dict):
+        return None
+    if "meta" in index and not isinstance(index["meta"], dict):
+        return _shape(rel, "meta", index["meta"], "object")
+    phases = index.get("phases", [])
+    if not isinstance(phases, list):
+        return _shape(rel, "phases", phases, "array")
+    for i, phase in enumerate(phases):
+        if not isinstance(phase, dict):
+            return _shape(rel, "phases[%d]" % (i,), phase, "object")
+        where, holder, prefix = rel, phase, "phases[%d]." % (i,)
+        shard = phase.get("shard")
+        if isinstance(shard, str) and shard:
+            spath = os.path.join(os.path.dirname(index_path), shard)
+            body, twice = _raw_json(spath)
+            where = os.path.relpath(spath, project).replace(os.sep, "/")
+            if twice:
+                return ("%s holds the key `%s` more than once in one object, "
+                        "so which value the plan carries is not established"
+                        % (where, twice[0]))
+            if not isinstance(body, dict):
+                continue
+            holder, prefix = body, ""
+        tasks = holder.get("tasks", [])
+        if not isinstance(tasks, list):
+            return _shape(where, prefix + "tasks", tasks, "array")
+        for j, task in enumerate(tasks):
+            if not isinstance(task, dict):
+                return _shape(where, "%stasks[%d]" % (prefix, j), task, "object")
+    return None
+
+
 def _read_plan(mio, project):
     """`(manifest, problem)` - the plan both lists are read from, or why it
     could not be read.
@@ -748,7 +834,14 @@ def _read_plan(mio, project):
     for a missing or unparsable file, and `{}` reads as a plan naming no third
     place - so the phase list would report "nothing held" for a file nobody
     read. The exception is the basis the refusal names.
+
+    THE STRUCTURE FIRST (`plan_structure_problem`): a plan whose containers are
+    not the shapes the schema gives, or whose file holds a key twice, is
+    refused naming the file and the place, never read as a plan holding less.
     """
+    shape = plan_structure_problem(project)
+    if shape:
+        return (None, shape)
     try:
         data = mio.load_manifest(os.path.join(project, MANIFEST_REL))
     except Exception as exc:
@@ -777,8 +870,15 @@ def read_bugs(project):
     if problem:
         return ([], problem)
     bugs = data.get("bugs")
+    if "bugs" in data and not isinstance(bugs, list):
+        return ([], _shape(MANIFEST_REL.replace(os.sep, "/"), "bugs", bugs,
+                           "array"))
     if not isinstance(bugs, list):
         return ([], "%s carries no `bugs` list" % (MANIFEST_REL,))
+    for i, bug in enumerate(bugs):
+        if not isinstance(bug, dict):
+            return ([], _shape(MANIFEST_REL.replace(os.sep, "/"),
+                               "bugs[%d]" % (i,), bug, "object"))
     try:
         by_id = mio.tasks_by_id(data)
     except Exception as exc:
@@ -786,8 +886,6 @@ def read_bugs(project):
                     "effective status is unknown" % (exc,))
     out = []
     for bug in bugs:
-        if not isinstance(bug, dict):
-            continue
         try:
             status = mio.effective_bug_status(bug, by_id)
         except Exception:
@@ -857,6 +955,11 @@ def read_held_phases(project):
     data, problem = _read_plan(mio, project)
     if problem:
         return ([], problem)
+    # A FULL GATE THE PLUGIN'S OWN READER WOULD PARTLY DROP is not the third
+    # place the plan declares, so it is never read as none.
+    problem = evidence_io.full_gate_problem(data)
+    if problem:
+        return ([], "%s: %s" % (MANIFEST_REL.replace(os.sep, "/"), problem))
     # THE RUNNABLE FULL GATE, the one list the runner records and every
     # reader counts against: a fullGate holding only review-only entries
     # holds nothing, exactly as no fullGate does.
@@ -877,6 +980,17 @@ def read_held_phases(project):
     rows = ledger.get("rows") or []
     phases = data.get("phases")
     phases = phases if isinstance(phases, list) else []
+    # A RECORDED MERGE HEAD WITH NO MERGE MOMENT a reader can place says the
+    # phase merged without saying when, so it is unknown, never unmerged.
+    unplaced = [p for p in phases if isinstance(p, dict) and p.get("mergedHead")
+                and evidence_io.stamp_moment(p.get("mergedAt")) is None]
+    if unplaced:
+        return ([], "%s records a mergedHead and no mergedAt a reader can place "
+                    "(%s), so whether and when it merged is not established - "
+                    "repair its mergedAt" % (
+                        ", ".join(str(p.get("id")) for p in unplaced[:5]),
+                        ", ".join(json.dumps(p.get("mergedAt"))[:40]
+                                  for p in unplaced[:5])))
     out = []
     for phase in phases:
         if not evidence_io.merged_phase(phase):
@@ -1115,8 +1229,9 @@ def undecided(exc):
 
 def _deny(reason):
     """Write the PreToolUse deny for `reason` on stdout -> the exit code: 0
-    once it is written; 2, with the reason on stderr, when stdout cannot take
-    it - the exit that blocks a PreToolUse call."""
+    once it is written; 2, with the reason on stderr when stderr takes it,
+    whenever stdout cannot - closed when the process started included - the
+    exit that blocks a PreToolUse call."""
     text = json.dumps({"hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
@@ -1125,9 +1240,12 @@ def _deny(reason):
         sys.stdout.write(text)
         sys.stdout.flush()
         return 0
-    except (OSError, ValueError):
-        sys.stderr.write("[guard-release] %s\n" % (reason,))
-        sys.stderr.flush()
+    except BaseException:                       # noqa: BLE001
+        try:
+            sys.stderr.write("[guard-release] %s\n" % (reason,))
+            sys.stderr.flush()
+        except BaseException:                   # noqa: BLE001
+            pass
         # What stdout still buffers would be flushed again at exit and fail
         # again, which turns the exit into 120; it goes to the null device.
         try:

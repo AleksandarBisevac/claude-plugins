@@ -314,6 +314,7 @@ def _cases(record):
         _cases_bug_value_types(record, path2)
         _cases_success_line(record, path2)
         _cases_schema_parity(record, path2)
+        _cases_run_record_schema(record, path2)
         _cases_never_raises(record, path2)
         _cases_directory_entries(record)
         _cases_default_skills(record, path2)
@@ -507,6 +508,122 @@ def _cases_schema_parity(record, path):
            _schema_lines(f) == [] and len(_schema_lines(w)) == 1
            and "will refuse it from 4.0.0" in _schema_lines(w)[0]
            and code == 0 and "phases[0].priority 0" in out)
+
+
+_RR_AT = "2026-11-18T10:00:00Z"
+
+
+def _rr_run(run_id, status="passed"):
+    return {"runId": run_id, "status": status, "at": _RR_AT,
+            "steps": [{"name": "sweep", "exit": 0}]}
+
+
+def _rr_record():
+    """A record carrying a repeated run and a red's kept base run - every
+    place a run record sits inside a record."""
+    out = _rr_run("VR", "failed")
+    out["repeatedRun"] = _rr_run("VS")
+    out["baseRed"] = {"verdict": "no-base", "baseRuns": [_rr_run("VB")]}
+    return out
+
+
+def _rr_shapes():
+    """`[(label, record)]` - the well-formed record and each way one of its
+    runs breaks the run record's shape: a required key gone, `steps` not a
+    list, a step not an object, and each container the wrong type."""
+    shapes = [("well-formed", _rr_record())]
+    places = (("the record", lambda r: r),
+              ("its repeated run", lambda r: r["repeatedRun"]),
+              ("its kept base run", lambda r: r["baseRed"]["baseRuns"][0]))
+    for where, at in places:
+        for key in ("runId", "status", "at", "steps"):
+            rec = _rr_record()
+            del at(rec)[key]
+            shapes.append(("%s without %s" % (where, key), rec))
+        for label, value in (("steps 5", 5), ("a step 5", [5])):
+            rec = _rr_record()
+            at(rec)["steps"] = value
+            shapes.append(("%s with %s" % (where, label), rec))
+    for label, plant in (
+            ("a repeated run 5", lambda r: r.update(repeatedRun=5)),
+            ("a repeated run null", lambda r: r.update(repeatedRun=None)),
+            ("a base reading 5", lambda r: r.update(baseRed=5)),
+            ("base runs 5", lambda r: r["baseRed"].update(baseRuns=5)),
+            ("a base run 5", lambda r: r["baseRed"].update(baseRuns=[5]))):
+        rec = _rr_record()
+        plant(rec)
+        shapes.append((label, rec))
+    return shapes
+
+
+def _cases_run_record_schema(record, path):
+    """The published schema types the run a repeat carries and each kept base
+    run as a run record, as the reader reads them - a warning in 3.x - and the
+    reader and the schema agree about every shape walked; the share rules no
+    schema keyword here states are said by the validator too."""
+    import _evidence_io as _ev                                     # noqa: E402
+    import _json_schema as _js                                     # noqa: E402
+    import _manifest_rules                                         # noqa: E402
+    schema, _unread = _manifest_rules.load_validation_schema()
+    lines = {}
+    for label, plant in (
+            ("repeatedRun.steps", lambda r: r["repeatedRun"].update(steps=5)),
+            ("baseRed.baseRuns[0].steps",
+             lambda r: r["baseRed"]["baseRuns"][0].update(steps=5))):
+        plan = _valid_manifest()
+        rec = _rr_record()
+        plant(rec)
+        plan["phases"][0]["tasks"][0]["lastRun"] = rec
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(plan, fh)
+        code, out = _run([path, "--verbose"])
+        lines[label] = (code, [ln for ln in out.splitlines()
+                               if ("lastRun.%s" % (label,)) in ln])
+    record("rr1 RED-FIRST: The schema types both as a run record (a warning in "
+           "3.x) - a carried run and a kept base run whose `steps` is a number "
+           "are each a schema warning at their own path, naming the release "
+           "that refuses it, and the plan still validates: %r" % (lines,),
+           all(code == 0 and len(said) == 1 and "(a warning in 3.x)" in said[0]
+               for code, said in lines.values()))
+    walked = []
+    for label, rec in _rr_shapes():
+        reader = _ev.record_problem(rec, schema)
+        found = _js.check_findings({"$ref": "#/$defs/lastRun"}, rec, schema,
+                                   "lastRun")[0]
+        walked.append((label, reader is None, not found))
+    differ = [w for w in walked if w[1] != w[2]]
+    record("rr2 RED-FIRST: THE READER AND THE SCHEMA AGREE about every shape "
+           "walked - each run a record holds, each required key gone, each "
+           "container the wrong type - %d shape(s), the well-formed one read "
+           "by both; where they differ: %r" % (len(walked), differ),
+           len(walked) == 24 and differ == []
+           and walked[0] == ("well-formed", True, True)
+           and all(not r for _l, r, _s in walked[1:]))
+    both = _rr_record()
+    both["sharedWithRepeated"] = ["steps"]
+    never = _rr_record()
+    never["sharedWithRepeated"] = ["status"]
+    said = {}
+    for label, rec in (("both arms", both), ("a never-shared key", never)):
+        plan = _valid_manifest()
+        plan["phases"][0]["tasks"][0]["lastRun"] = rec
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(plan, fh)
+        code, out = _run([path, "--verbose"])
+        why = str((_ev.record_problem(rec, schema) or {}).get("why"))
+        said[label] = (code, why, [ln for ln in out.splitlines()
+                                   if "sharedWithRepeated" in ln])
+    record("rr3 RED-FIRST: A RECORD HOLDING `steps` BESIDE A `steps` SHARE is "
+           "said as what to repair - the reader's sentence and a validator "
+           "warning name `steps` and the share, never 'matches more than one' "
+           "alone - and a share naming a key the writer never shares is said "
+           "by the validator as the reader says it: %r" % (said,),
+           all(code == 0 and "sharedWithRepeated" in why
+               and "more than one" not in why and lines_
+               and any("(a warning in 3.x)" in ln for ln in lines_)
+               for code, why, lines_ in said.values())
+           and "`steps`" in said["both arms"][1]
+           and "`status`" in said["a never-shared key"][1])
 
 
 def _cases_never_raises(record, path):
@@ -871,6 +988,25 @@ def _cases_gate_evidence(record, path):
                       for x in w_torn)
                and not any(x.startswith("WARNING: phase gate runs no suite")
                           for x in w_torn))
+
+        _write_ledger({"name": "lint", "suiteReader": "none"})
+        held = copy.deepcopy(plan)
+        held["phases"][0]["tasks"][0]["lastRun"] = {
+            "runId": "VR-RED", "status": "failed",
+            "at": "2026-11-18T12:00:00Z", "steps": 5}
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(held, fh)
+        code_rec, w_rec = _warnings()
+        record("su1 RED-FIRST: A PLAN RECORD THAT WOULD NOT READ IS SAID, NEVER "
+               "READ AS 'NO SUITE' - the run it held may be the one recording a "
+               "suite, so the warning names the record and the field and says "
+               "this is not 'phase gate runs no suite': %r" % (w_rec,),
+               code_rec == 0
+               and any("not 'phase gate runs no suite'" in x
+                       and "lastRun.steps" in x and "P0.1" in x
+                       for x in w_rec)
+               and not any(x.startswith("WARNING: phase gate runs no suite")
+                           for x in w_rec))
 
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(_valid_manifest(), fh)
