@@ -22,7 +22,7 @@
   "review": {
     "tool": null,
     "model": "sonnet",
-    "status": "pending",
+    "status": "passed",
     "findings": [
       {
         "id": "SG1-R1",
@@ -39,42 +39,54 @@
         "severity": "low",
         "file": "plugins/audit/scripts/manifest/_filed_returns.py:1496-1500; plugins/audit/README.md (floorGuard.mode row); plugins/audit/reference/execute-task.md:243-252",
         "issue": "Acceptance 4 ('An agent-supplied floor block in the return is not trusted') holds only on the `submit` route. floor_block trusts any block carrying the string mark `source: floor-guard` with well-formed lists, and `submit` is the only place that pops an agent's block. A return filed straight through `audit-task.py file-return` with a typed, marked block is read back by the briefs as the script's reading. `ffg3` only proves an unmarked block is untrusted. The README and execute-task.md say 'an agent's own block is dropped' without that limit. This is the same exposure `helper_red_first` already has for redFirst, which the task said to follow, so it is the module's existing weakness repeated, not a new one.",
-        "resolution": "Word the README and execute-task.md sentence as 'dropped by `submit`', and state that the mark is a convention rather than a proof. If the class is wanted closed, record it once for redFirst and floorGuard together (for example a digest the verb binds to the return), not for this key alone."
+        "resolution": "Word the README and execute-task.md sentence as 'dropped by `submit`', and state that the mark is a convention rather than a proof. If the class is wanted closed, record it once for redFirst and floorGuard together (for example a digest the verb binds to the return), not for this key alone.",
+        "status": "carried",
+        "carriedTo": "SG2.1-ukq"
       },
       {
         "id": "SG1-R3",
         "severity": "low",
         "file": "plugins/audit/commands/init.md:144-146",
         "issue": "Step 4.5 says the user 'corrects a line in the same answer that approves the plan'. The CHANGELOG entry and the README row repeat it with 'you correct a line in the same answer'. Step 6's gate is a single-choice AskUserQuestion (init.md:667, options 1-3), where a correction typed into the automatic Other field replaces the option and so cannot also approve. Step 6's own opening paragraph (init.md:575-577) says the right thing: a correction comes as the free-text answer, the synthesis it touches is redone, and the plan is presented again. So 4.5, CHANGELOG and README promise something step 6 cannot do. The task asked for the 'same turn the approval gate already uses', not the same answer.",
-        "resolution": "Reword 4.5, the CHANGELOG entry and the README row to say a correction is typed as the answer to the gate question, which re-presents the plan, and that approval is the option chosen on the next presentation. Delete 'in the same answer that approves the plan'."
+        "resolution": "Reword 4.5, the CHANGELOG entry and the README row to say a correction is typed as the answer to the gate question, which re-presents the plan, and that approval is the option chosen on the next presentation. Delete 'in the same answer that approves the plan'.",
+        "status": "carried",
+        "carriedTo": "SG2.1-ukq"
       },
       {
         "id": "SG1-R4",
         "severity": "low",
         "file": "plugins/audit/commands/init.md:129-131",
         "issue": "Step 4.5 defines 'settled' as said 'in `$ARGUMENTS` or a step-2 answer', then lists the test runner and the stack. Recon (step 3, init.md:141 and 151) already asks the user by AskUserQuestion whether to adopt detected gates and runners, and step 3.5 asks which areas. By this wording an answer the user gave in step 3 still counts as unsettled and gets listed. That contradicts the rule's own 'list only what is unsettled' and the task's 'that the interview and recon did not settle'. It also pads the list, which the step forbids.",
-        "resolution": "Define settled as said in `$ARGUMENTS` or in any AskUserQuestion answer of steps 2-3.5."
+        "resolution": "Define settled as said in `$ARGUMENTS` or in any AskUserQuestion answer of steps 2-3.5.",
+        "status": "carried",
+        "carriedTo": "SG2.1-ukq"
       },
       {
         "id": "SG1-R5",
         "severity": "low",
         "file": "tests/test__refs.py:259-260",
         "issue": "ia7 is meant to pin that the approval gate prints the list. It checks `step 4.5` and `no open assumptions` anywhere in `_md_section(text, '## 6.')`, which spans the whole of step 6 including 6.1, 6.2 and the manifest examples. The sentence could move out of step 6's opening paragraph into a later sub-step, or be left stale there, and ia7 stays green. This reaches Acceptance 3, which is about order against the gate. The ordering half is held by ia2, ia5 and the synth < gate comparison.",
-        "resolution": "Restrict the search to the text before the first `### ` or the first code fence of step 6, and add an ia9 row that moves the sentence into 6.1."
+        "resolution": "Restrict the search to the text before the first `### ` or the first code fence of step 6, and add an ia9 row that moves the sentence into 6.1.",
+        "status": "carried",
+        "carriedTo": "SG2.1-ukq"
       },
       {
         "id": "SG1-R6",
         "severity": "low",
         "file": "tools/lints/_output_lints.py:2493-2500,2616-2619",
         "issue": "ALLOWED_DIRS names the whole of plugins/audit/evals/, and _coverable_test_names() walks every file under it. That includes the gitignored evals/results/ directory that `claude plugin eval` writes on one machine (.gitignore:65). Any file name written there becomes a name a tests/test_*.py is allowed to carry. A stray orphan test file could therefore pass the orphan check on a machine that has run the eval and fail it on CI, which has not. Nothing real is hidden today, because the new coverage cases read only the tree as committed. It is the same machine-dependence class the classifier otherwise avoids by reading the checkout.",
-        "resolution": "Make the evals walk skip `results` (prune it from `dirnames` for that directory), or derive the allowed names from tracked files only. Add one case to tests/test__output_lints.py: a file under `<evals>/results/` must not make a same-named suite a non-orphan."
+        "resolution": "Make the evals walk skip `results` (prune it from `dirnames` for that directory), or derive the allowed names from tracked files only. Add one case to tests/test__output_lints.py: a file under `<evals>/results/` must not make a same-named suite a non-orphan.",
+        "status": "carried",
+        "carriedTo": "SG2.1-ukq"
       },
       {
         "id": "SG1-R7",
         "severity": "low",
         "file": "plugins/audit/README.md:274,368; PLUGIN-BUILD-GUIDE.md:913",
         "issue": "Three statements about rule 7 now under-state the code this diff changed: README.md:274 and :368 say the config write is denied to a subagent and asked of the main session, and PLUGIN-BUILD-GUIDE.md:913 says denied to a subagent and asked of the main session. None names the new refusal of a drive-started (AUDIT_DRIVE_SESSION) session, and the README table row says a linked worktree of the project without the nested placement. The executor's outcome flags PLUGIN-BUILD-GUIDE.md as under-stating but left it (and does not mention README); PLUGIN-BUILD-GUIDE.md is in the task's declared scope.",
-        "resolution": "Add the drive-started refusal (and the nested-worktree wording) to the README row and paragraph and to the guide's guard-edits section and run-agent-session section, or record the widening as owed by the task that declares those files."
+        "resolution": "Add the drive-started refusal (and the nested-worktree wording) to the README row and paragraph and to the guide's guard-edits section and run-agent-session section, or record the widening as owed by the task that declares those files.",
+        "status": "carried",
+        "carriedTo": "SG2.1-ukq"
       },
       {
         "id": "SG1-R8",
@@ -91,19 +103,24 @@
         "severity": "low",
         "file": "tests/test_journal_writes.py:3600-3680",
         "issue": "The task's HOW TO PROVE names an allow twin for rule 2: 'a call whose pass after never ran leaves its one reading, as the documents already say'. sn24 has no such case. Every row it drives runs both passes, and its 'two in flight' leg runs both Posts. The executor's filed 'allow twin' (R3, the pass before never writes the reading) is a different mutation. sn18 and sn22 touch calls whose Post never runs, but do not assert that the ordinary call's reading is still the one file in the state directory. A pass after that removed readings of calls it never ran (R4 over-fire) is therefore held only indirectly. The executor's probe says R4 turned sn24 and sn18 red; I did not re-run it.",
-        "resolution": "Add one row to sn24: an ordinary command whose Post is not run (call(..., post=False), or the Pre pass only). Assert readings() holds exactly one file, and that a later call of the same writer leaves that file in place."
+        "resolution": "Add one row to sn24: an ordinary command whose Post is not run (call(..., post=False), or the Pre pass only). Assert readings() holds exactly one file, and that a later call of the same writer leaves that file in place.",
+        "status": "carried",
+        "carriedTo": "SG2.1-ukq"
       },
       {
         "id": "SG1-R10",
         "severity": "low",
         "file": "plugins/audit/README.md:1392-1396; CHANGELOG.md:507-512",
         "issue": "The task asks for 'one wording' in the four documents. SECURITY.md and PLUGIN-BUILD-GUIDE.md say the warning appears 'with a later call or none (sn23, by hand and in the panel)'. README and CHANGELOG drop 'by hand and in the panel'. The 'no row' half is cited to sn20/sn4 in SECURITY.md and the build guide, but README and CHANGELOG cite only sn23 for it (sn23 does assert no new row). The four citations are not the same set.",
-        "resolution": "Use the SECURITY.md sentence verbatim (modulo the dash glyph) in all four documents, including the qualifier and both half-citations."
+        "resolution": "Use the SECURITY.md sentence verbatim (modulo the dash glyph) in all four documents, including the qualifier and both half-citations.",
+        "status": "carried",
+        "carriedTo": "SG2.1-ukq"
       }
     ],
-    "outcome": "[findings: 10 - 0 high, 1 med, 9 low; 2 with a recorded fix commit]"
+    "outcome": "[findings: 10 - 0 high, 1 med, 9 low; 2 with a recorded fix commit]",
+    "readReturns": []
   },
-  "summary": null,
+  "summary": "Phase SG1 as built: a brief's hard rules outrank a skill's instructions in both agent briefs; a named review skill reaches the phase brief; the floor guard reports weakened tests on submit, report-only, setting a bare new test aside only where the base copy is proven not to bind its name; a green-first proof for regression tasks; the audit config is held against edit-tool and MCP writes in every tree a loader reads, with its journal row; init lists its assumptions; the two eval cases have their scaffolds. Every fix task was verified by re-run probes, a mutation probe and a recorded green gate; the last fresh reviews left no finding at medium or above open; the lows are carried to SG2.1-ukq. Full sweep, runner selftest, gate parity, hook budget, context ceiling, ruff, vermin, vitest and the lint mutation probes are green at 41771752. Per-task reviewer answers continued over: SG1.5 intent diverges: Nastavi, SG1.13 pokriva razliku (Recommended)",
   "tasks": [
     {
       "id": "SG1.1",
@@ -6018,7 +6035,7 @@
     {
       "id": "SG1.58-ukq",
       "title": "A call is spelled like one form and its reason position is that form's own, held for every row of the table, and an attribute merely named for the namespace does not turn the switch",
-      "status": "in_progress",
+      "status": "done",
       "description": "A narrow review of the task that gave the floor guard one switch per file and made a name's resolution decide only whether a reason is set aside found one regression and one cost outside this repository. Both were run by the reviewer and again by the orchestrator.\n\nMEASURED on the tree as it stands.\n(a) REGRESSION, a finding no longer reported. A call is matched to the table's rows by its last name and by its last two, and every row that matches is taken: a conditional expected-failure mark matches its own row, which has no reason position, and also the row of the function of the same last name, whose reason is its first argument. Under a name that does not resolve - the module imported twice, a star import, or the switch turned by anything in the file - the mark's first argument, its CONDITION, is set aside as a reason, and a widened condition reads not compared where every earlier tree reported a finding. The case that holds every move in every file context has rows for two frameworks' skip forms only.\n(b) A COST OUTSIDE THIS REPOSITORY. Any attribute whose last name is globals, locals or vars counts as the file's namespace, so a test file that stores into a template environment's dictionary of that name turns the switch and a bare new test in it reads not compared where it read clean three tasks ago. No test file of this repository holds one.\n\nTHE RULE TO BUILD.\n1. ONE CALL, ONE FORM. A call spelled through a dotted row name is that row and no other: the match on the most trailing names wins, and a row matched on fewer names is dropped. Where rows of equal length remain - the same last name in two frameworks - their reason positions must agree, and a pair of rows that match one spelling with different reason positions fails a case by name, so the table cannot gain such a pair unseen.\n2. EVERY ROW IS HELD, NOT TWO. The case that holds the moves in every file context takes its framework rows from the table: for every row, in every spelling the row is known by, under a name that resolves and under one that does not, a change of each argument that is not the row's reason is a finding, and a change of the reason alone is clean where the name resolves and not compared where it does not. The oracle is the argument the generator changed; it does not ask the module which position is the reason - the suite states each row's reason position itself, and a row of the table the suite has no entry for fails by name.\n3. THE ATTRIBUTE SPELLING IS THE BUILTINS MODULE'S. An attribute named globals, locals or vars is the file's namespace only where the object it is taken from is the builtins module - a name that resolves to an import of it, or its dunder name. Any other attribute of that name is an ordinary attribute and turns nothing.\n4. THE DOCUMENTS say rule 3 where they list what turns the switch.\n\nWHAT STAYS. Every answer of every earlier probe (the brief says where) except the rows of (a), which become findings, and the row of (b), which reads clean. The two sweeps over this repository's test files are unchanged. The measurement over this repository's task commits loses no finding and moves no verdict. The payload's shape and the SET_ASIDE rows do not change.\n\nHOW TO PROVE. Red before: the conditional expected-failure mark with its condition widened, positionally and by its documented keyword, under two imports, a star import and a turned switch - each not compared before and a finding after; a file storing into another object's attribute named globals with a bare new test - not compared before, clean after. Allow twins: the same mark's reason changed alone (clean under one import, not compared under two); the namespace reached through the builtins module still turns the switch and loses nothing unseen. A mutation probe the orchestrator can run from the worktree root: every matching row taken again; the shorter match winning; a row's reason position moved by one; any attribute of the name turning the switch; the builtins spelling no longer turning it.\n\nNOT in this task: any other row of the documents' list of what is read without proof; a call spelled skip on an object of the file under an unresolved name, which reads not compared as it did before this run of fixes.\n\nAcceptance:\n(1) A widened condition of a conditional expected-failure mark is a finding in every file context.\n(2) A call matches one form, and two rows matching one spelling with different reason positions fail a case by name.\n(3) Every row of the table, in every spelling, is held by the generated case under a resolved and an unresolved name.\n(4) An attribute named for the namespace on an ordinary object turns nothing, and the builtins module's does.\n(5) Both sweeps are unchanged and no finding is lost over the repository's task commits.",
       "files": [
         "plugins/audit/scripts/governance/_floor_guard.py",
@@ -6046,14 +6063,22 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "41771752ae74",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "(1) _floor_guard.py: _rows_spelled keeps only the rows matched on the most trailing names, so pytest.mark.xfail / mark.xfail is the mark.xfail row alone and never also the xfail function row whose reason is position 0; rows left of one length (skip of unittest and pytest) agree on position 0, held by fx17. _switch defers a namespace use spelled through an attribute and keeps it only when the attribute is taken from a name an import of the builtins module binds anywhere in the copy (alias included, counted however often the name is bound otherwise), from __builtins__, or from an entry of the modules table (sys.modules['builtins']); any other attribute named globals, locals or vars turns nothing. New helpers _attribute_owner and _builtins_bound; the comment above _NAMESPACES and the docstrings of _rows_spelled and _switch say this. SKIP_FORMS, SET_ASIDE and the payload shape are unchanged. (2) tests/test__floor_guard.py, 7 new cases, no existing case changed: fm90 (xfail mark condition widened positionally and by condition=, under one import, the module imported twice, a star import, a turned switch, plus a parametrized case's marks under a star import and a strict mark in a file an eval round trip switches: all findings), fa63 (its twin: the reason alone, clean under one import, not compared under two), fx17 (every spelling of every row of the module's table returns rows of one length with its own row among them, and every pair of rows one spelling matches agrees on the reason position, disagreeing pairs named), fx18 (the suite's own SIGNATURES table, written from the documented signatures of unittest skip/skipIf/skipUnless/expectedFailure/TestCase.skipTest and pytest mark.skip/mark.skipif/mark.xfail/mark usefixtures/pytest.skip/pytest.xfail: every row x every spelling (dotted, bare with its import, through mark for the marks, self. for the method) x 4 contexts (one import, the spelling's name bound twice, a star import, a turned switch) x each argument changed alone in each way of passing it, plus the call added; the oracle is the changed argument against the suite's table, never the module; the case prints 372 pairs over 21 spellings of 11 rows in 4 contexts, 84 cells), fx19 (every row of SKIP_FORMS has a SIGNATURES entry and none is stray, by name), fa64 (an ordinary object's globals/locals/vars, a name builtins no import binds, and an environment's globals in a file that imports builtins for print: a bare new test reads clean), fm91 (builtins imported, aliased, __builtins__, imported twice, looked up in sys.modules: the switch turns, its reason naming the line). (3) PLUGIN-BUILD-GUIDE.md: the sentence listing the spellings of the namespace in the switch paragraph now says an attribute counts only on the builtins module and an attribute of that name on any other object turns nothing. CHANGELOG.md: the floor guard's one-switch entry reworded for the attribute spelling and for one form per call with every row held. Red before the fix: fm90, fx17, fx18, fa64 failed (SELFTEST FAILED: 180/184), fa63, fx19, fm91 passed as allow twins. After: 184/184 (sweep exit 0). Probes from the orchestrator rerun on this tree: r1 - the six conditional-xfail condition rows under two imports, star import and a globals() read went partly-read -> findings, every other row identical to the stored before file; r2_rows - pytest.mark.xfail and mark.xfail now match mark.xfail alone (positions []), pytest.mark.skip matches mark.skip alone, skip spellings keep the two skip rows at position 0; r4 - both xfail shapes findings; r5_attr - clean; q1, q3, q5, q7, q8, p1_rule, my_rows, u1_unsafe, n1_noise, n2_shapes, n2_classes byte-identical to the stored outputs. Measurement over the repository's task commits (measure.py of the last task): this tree, the tree before (7daa3d0a) and export-68c5879 all 1200 commits {clean 274, findings 397, partly-read 529}; versus the tree before no commit differs in verdict, findings or not-compared text; versus 68c5879 no finding lost or gained, and the same five commits whose not-compared text the previous task changed still differ (95d5549a06, 46a6e095b0, d24b3047d5, 82174ff4a3, 100beb3669). Mutation probe (scratchpad sg1.58/mutations.py, run from the worktree root): 14 of 14 rows caught, none judged equivalent. Suite seconds, direct --selftest, two runs with a gap: before 12.54 and 14.06, after 12.92 and 14.59. Dependants: drive-phase.py imports the module and uses _bases/_fit, untouched - test_drive_phase.py 1008 cases green; _filed_returns.py, status/audit-lookup.py, _status_facts read the payload, whose shape is unchanged - test__filed_returns 146, test_audit_lookup 207, test__status_facts 199 cases green; gate-parity.py reads the suite's _cases, exit 0; plugins/audit/README.md's passage stays correct (its sentence that an expected-failure mark's first argument is its condition and is compared is now true in every file context); the documents' basename dependants - test__deps, test__output_lints, test__refs 792 cases green. The orchestrator's unrecorded gate: first run red with no failing file named while three measurement runs and a dependants sweep loaded the machine; the same 194 affected files rerun by sweep-selftests: 194/194 ok; the gate rerun on a quieter machine: GATE GREEN, exit 0. ruff and vermin clean; prove-gates --list exit 0.",
+        "descriptive": "A conditional expected-failure mark's widened condition is a finding again in every file context, every skip/mark row is held in every spelling by the suite's own signatures, and a template environment's globals no longer turns the switch."
       },
       "startedAt": "2026-11-19T11:01:15Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-19T13:15:43Z",
+      "verifiedBy": [
+        "fm90: a conditional expected-failure mark's widened condition, positional and by keyword, is a finding under one import, two imports, a star import and a turned switch, and in a parametrized case's marks and a strict mark",
+        "fa63: its twin - the mark's reason changed alone is clean under one import and not compared under two",
+        "fx17: every spelling of every row of the module's table is one form, its own row among them, and no pair of rows one spelling matches disagrees on the reason position",
+        "fx18: every row in every spelling, under a resolved and an unresolved name, with each argument changed alone in each way of passing it, answers as the suite's own signatures say",
+        "fx19: every row of the module's table has an entry in the suite's signatures, and none is stray",
+        "fa64: an attribute named globals, locals or vars on an ordinary object turns nothing",
+        "fm91: the namespace reached through the builtins module - imported, aliased, its dunder name, imported twice, from the modules table - still turns the switch"
+      ],
       "notes": [
         {
           "at": "2026-11-19T11:01:12Z",
@@ -6066,6 +6091,18 @@
         "runId": "2026-11-19T13:15:39Z.f8c192",
         "status": "passed",
         "at": "2026-11-19T13:15:39Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "41771752ae74",
+        "at": "2026-11-19T13:15:43Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-19T12:56:47Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test__floor_guard.py` in a throwaway tree at HEAD exited 1 with 4 of 184 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - fm90 (house FAIL), fx17 (house FAIL), fx18 (house FAIL), fa64 (house FAIL): SELFTEST FAILED: 180/184 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     }
   ],
@@ -6077,10 +6114,10 @@
     "shell-form writes to .claude/audit.config.json stay journal-only in this phase"
   ],
   "reviewPerTask": "signals",
-  "claim": {
-    "sessionId": "c445985d-439f-43a2-a6e0-523acc4ac52e",
-    "branch": "audit/sg1-a-brief-outranks-a-skill-and-a",
-    "at": "2026-11-16T16:20:20Z"
-  },
-  "startedAt": "2026-11-16T16:20:20Z"
+  "startedAt": "2026-11-16T16:20:20Z",
+  "testEvidence": {
+    "runId": "2026-11-19T14:31:37Z.8f0ae0",
+    "status": "passed",
+    "at": "2026-11-19T14:31:37Z"
+  }
 }
