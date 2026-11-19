@@ -402,6 +402,7 @@ def _git_cases(check, tmp):
               code != 0 and "<<<<<<< ours" in text and "without writing" in out,
               "%s\n%s" % (out, text))
         _resolve_cases(check, tmp, env)
+        _window_cases(check, tmp, env)
     finally:
         os.environ.clear()
         os.environ.update(held)
@@ -533,6 +534,267 @@ def _resolve_cases(check, tmp, env):
           not any("<<<<<<<" in open(os.path.join(dp, f), encoding="utf-8").read()
                   for dp, _d, fs in os.walk(os.path.dirname(idx)) for f in fs
                   if f.endswith(".json")))
+
+
+# --- resolve never writes over bytes it did not account for ----------------------
+# `resolve` builds every file of the merged plan from git's commits, never from the
+# work tree, so a plan write made while `git merge` is stopped - a gate's run record
+# landing in a shard the merge left clean - would be overwritten by it. Each target is
+# decided under the index lock, before the first write: a conflicted path holding
+# the driver's markers (which no plan writer can read, so none can have written),
+# a path equal to what git's merge left or to what resolve is about to write, or a
+# stray - and one stray refuses the whole write.
+_W_SHARD = "docs/audit/phases/%s.json"
+
+
+def _window_plan(extra=None):
+    """A two-phase plan; `extra` is the task each side adds to P1 as P1.2."""
+    tasks = [{"id": "P1.1", "title": "a", "status": "pending", "files": ["src/a.ts"]}]
+    index = {"src/a.ts": ["P1.1"], "src/b.ts": ["BF10.1"]}
+    if extra:
+        tasks.append(dict(extra, id="P1.2", status="pending"))
+        index[extra["files"][0]] = ["P1.2"]
+    return {"meta": {"version": 2, "repo": "demo"},
+            "phases": [{"id": "P1", "title": "One", "status": "pending", "tasks": tasks},
+                       {"id": "BF10", "title": "Ten", "status": "pending",
+                        "tasks": [{"id": "BF10.1", "title": "b", "status": "pending",
+                                   "files": ["src/b.ts"]}]}],
+            "fileIndex": index, "bugs": []}
+
+
+def _stopped_merge(tmp, name, env):
+    """A sharded plan with the driver installed, both sides minting P1.2, and `git
+    merge` stopped on P1's shard -> (repo, index path, merge exit, merge output)."""
+    repo = os.path.join(tmp, name)
+    os.makedirs(repo)
+    _harness.git(repo, "init", "-q", "-b", "main")
+    idx = os.path.join(repo, "docs", "audit", "plan.json")
+    _write_json(idx, _window_plan())
+    _mio.save_sharded(idx, _window_plan())
+    _install(idx)
+    _harness.git(repo, "add", "-A")
+    _harness.git(repo, "commit", "-qm", "base")
+    _harness.git(repo, "checkout", "-qb", "side")
+    _mio.save_sharded(idx, _window_plan({"title": "theirs", "files": ["src/t.ts"]}))
+    _harness.git(repo, "commit", "-qam", "theirs")
+    _harness.git(repo, "checkout", "-q", "main")
+    _mio.save_sharded(idx, _window_plan({"title": "ours", "files": ["src/o.ts"]}))
+    _harness.git(repo, "commit", "-qam", "ours")
+    code, out = _git(repo, env, "merge", "-q", "side", "-m", "merge")
+    return repo, idx, code, out
+
+
+def _plan_bytes(repo):
+    """{repo-relative path: bytes} of every plan file under docs/audit."""
+    top = os.path.join(repo, "docs", "audit")
+    found = {}
+    for dp, _d, fs in os.walk(top):
+        for f in fs:
+            if f.endswith(".json"):
+                p = os.path.join(dp, f)
+                with open(p, "rb") as fh:
+                    found[os.path.relpath(p, repo).replace(os.sep, "/")] = fh.read()
+    return found
+
+
+def _record_into(repo, idx, task_id, phase_id, run_id):
+    """A run record written through the evidence layer's own writer, as a gate's
+    would be -> its `{"written", "reason"}`."""
+    import _evidence_io
+    row = {"v": 1, "runId": run_id, "ts": "2026-11-19T10:00:00Z", "scope": "task",
+           "taskId": task_id, "phaseId": phase_id, "status": "passed",
+           "durationMs": 10, "steps": []}
+    return _evidence_io.write_record(repo, idx, "task",
+                                     {"taskId": task_id, "phaseId": phase_id},
+                                     _evidence_io.run_record(row),
+                                     session_id="stray-writer")
+
+
+def _last_run(repo, phase_id):
+    try:
+        with open(os.path.join(repo, _W_SHARD % (phase_id,)), encoding="utf-8") as fh:
+            return (json.load(fh)["tasks"][0].get("lastRun") or {}).get("runId")
+    except (OSError, ValueError, KeyError, IndexError):
+        return None
+
+
+def _land_at_acquire(land):
+    """Patch the lock `resolve` takes so `land()` runs once, as resolve asks for
+    the lock and before the real acquire - the moment a check made before the lock
+    would already have passed. -> (restore, [True once it ran])."""
+    real = M._locks.acquire
+    ran = []
+
+    def first(*a, **k):
+        M._locks.acquire = real
+        land()
+        ran.append(True)
+        return real(*a, **k)
+    M._locks.acquire = first
+
+    def restore():
+        M._locks.acquire = real
+    return restore, ran
+
+
+class _Interrupted(Exception):
+    pass
+
+
+def _window_cases(check, tmp, env):
+    # An undisturbed resolve first: the bytes every other case compares against.
+    repo_b, idx_b, _c, _o = _stopped_merge(tmp, "w-plain", env)
+    code, out = _resolve(["resolve", idx_b, "--renumber", "theirs"])
+    clean = _plan_bytes(repo_b)
+    try:
+        merged = _mio.load_manifest(idx_b)
+    except Exception:                                      # noqa: BLE001
+        merged = {"phases": []}
+    p1 = [(t["id"], t["title"]) for ph in merged["phases"] if ph["id"] == "P1"
+          for t in ph["tasks"]]
+    check("rw4 ALLOW: with no stray write resolve writes as before - exit 0, theirs' "
+          "P1.2 renumbered to P1.3, the index and both shards in the plugin's spelling "
+          "with no marker: %s" % (out,),
+          code == 0 and p1 == [("P1.1", "a"), ("P1.2", "ours"), ("P1.3", "theirs")]
+          and sorted(clean) == ["docs/audit/phases/BF10.json", "docs/audit/phases/P1.json",
+                                "docs/audit/plan.json"]
+          and all(b"<<<<<<<" not in raw and raw.decode("utf-8")
+                  == _mio.json_document(json.loads(raw.decode("utf-8")))
+                  for raw in clean.values()), p1)
+    # The same plan reached through a symlinked directory - a temp dir under
+    # /var on macOS is one - names what it wrote relative to the work tree, and a
+    # second run over its own output is accepted.
+    link = os.path.join(tmp, "w-plain-link")
+    try:
+        os.symlink(repo_b, link)
+        via = os.path.join(link, "docs", "audit", "plan.json")
+    except (OSError, NotImplementedError):
+        via = idx_b
+    code, out = _resolve(["resolve", via, "--renumber", "theirs"])
+    check("rw4b ...and says what it wrote relative to the work tree even when the plan "
+          "is reached through a symlink, its own earlier output accepted: %s" % (out,),
+          code == 0 and "written: docs/audit/plan.json, %s, %s"
+          % (_W_SHARD % "P1", _W_SHARD % "BF10") in out and _plan_bytes(repo_b) == clean)
+
+    repo, idx, code, out = _stopped_merge(tmp, "w-stray", env)
+    conflicted = _harness.git(repo, "ls-files", "-u", "--", _W_SHARD % "P1")
+    check("rw0 CONTROL: the merge stops on P1's shard, naming the id minted on both "
+          "sides, and the index and BF10's shard merge clean",
+          code != 0 and "tasks[P1.2]" in out and conflicted.strip()
+          and not _harness.git(repo, "ls-files", "-u", "--", "docs/audit/plan.json",
+                               _W_SHARD % "BF10").strip(), out)
+
+    # State (a): what a conflicted target holds, and whether a writer reaches it.
+    before_p1 = _plan_bytes(repo)[_W_SHARD % "P1"]
+    try:
+        _mio.load_manifest(idx)
+        loads = True
+    except Exception:                                      # noqa: BLE001
+        loads = False
+    into_conflicted = _record_into(repo, idx, "P1.1", "P1", "RX")
+    check("rw3 a conflicted target holds the driver's marker block, the plan does not "
+          "load, and the evidence writer refuses a record for a task in it, leaving "
+          "the bytes git's merge left: %s" % (into_conflicted.get("reason"),),
+          b"<<<<<<<" in before_p1 and not loads
+          and not into_conflicted.get("written")
+          and _plan_bytes(repo)[_W_SHARD % "P1"] == before_p1)
+
+    # The window: a gate's record lands in BF10's clean shard as resolve asks for
+    # the lock.
+    landed = []
+    restore, ran = _land_at_acquire(
+        lambda: landed.append(_record_into(repo, idx, "BF10.1", "BF10", "RW")))
+    try:
+        code, out = _resolve(["resolve", idx, "--renumber", "theirs"])
+    finally:
+        restore()
+    after = _plan_bytes(repo)
+    check("rw1 a run record written into a shard git's merge left clean, landed as "
+          "resolve asks for its lock, survives: resolve exits non-zero and BF10.1's "
+          "record is still RW",
+          ran and landed and landed[0].get("written") and code != 0
+          and _last_run(repo, "BF10") == "RW", "%s %s\n%s" % (code, landed, out))
+    check("rw1b ...and NOTHING is written, the files before the stray one included: "
+          "the index and P1's shard (still the driver's markers) are byte for byte "
+          "what they held before resolve ran",
+          after[_W_SHARD % "P1"] == before_p1
+          and b"<<<<<<<" in after[_W_SHARD % "P1"]
+          and after["docs/audit/plan.json"]
+          == _harness.git(repo, "show", ":docs/audit/plan.json").encode("utf-8"), out)
+    check("rw1c ...the refusal names the stray file and no other, says nothing was "
+          "written, and names the command that puts it back as the merge left it: %s"
+          % (out,),
+          (_W_SHARD % "BF10") in out and (_W_SHARD % "P1") not in out
+          and "nothing was written" in out
+          and "git checkout -- %s" % (_W_SHARD % "BF10",) in out
+          and "--reconcile" in out)
+    _harness.git(repo, "checkout", "--", _W_SHARD % "BF10")
+    code, out = _resolve(["resolve", idx, "--renumber", "theirs"])
+    check("rw2 the way on is true: after `git checkout --` on the stray file resolve "
+          "completes, writing what the undisturbed resolve wrote: %s" % (out,),
+          code == 0 and _plan_bytes(repo) == clean)
+    # ...and what the refusal says comes back does: the discarded record's run,
+    # held as a ledger row (the gate writes the row before the record), is put
+    # back by reconcile once the merge is committed.
+    import _evidence_io
+    discarded = _last_run(repo, "BF10")
+    _harness.git(repo, "add", "-A")
+    _harness.git(repo, "commit", "-qm", "merged")
+    _evidence_io.append_row(repo, {"v": 1, "runId": "RW", "ts": "2026-11-19T10:00:00Z",
+                                   "scope": "task", "taskId": "BF10.1", "phaseId": "BF10",
+                                   "status": "passed", "durationMs": 10, "steps": []},
+                            session_id="stray-writer")
+    caught = _evidence_io.reconcile(repo, idx, session_id="after-merge")
+    check("rw2b ...and the discarded run record comes back as the refusal says: with "
+          "the merge committed, reconcile points BF10.1 at RW from its ledger row: %s"
+          % (caught.get("moved"),),
+          discarded != "RW" and _last_run(repo, "BF10") == "RW", (discarded, caught))
+
+    # Interrupted after its first target: the second call completes.
+    repo_c, idx_c, _c, _o = _stopped_merge(tmp, "w-interrupted", env)
+    real_write = M._write
+    wrote = []
+
+    def stop_after_first(path, text, newline=None):
+        real_write(path, text, newline)
+        wrote.append(os.path.relpath(path, repo_c).replace(os.sep, "/"))
+        raise _Interrupted()
+    M._write = stop_after_first
+    try:
+        try:
+            M.resolve(idx_c, "theirs")
+        except _Interrupted:
+            pass
+    finally:
+        M._write = real_write
+    partial = _plan_bytes(repo_c)
+    code, out = _resolve(["resolve", idx_c, "--renumber", "theirs"])
+    check("rw5 a resolve stopped after writing its first target is completed by the "
+          "next call rather than refused for ever by its own write: the stop wrote the "
+          "index alone and changed it, and the rerun exits 0 with the undisturbed "
+          "bytes: %s" % (out,),
+          wrote == ["docs/audit/plan.json"]
+          and partial["docs/audit/plan.json"] != _harness.git(
+              repo_c, "show", ":docs/audit/plan.json").encode("utf-8")
+          and code == 0 and _plan_bytes(repo_c) == clean, wrote)
+
+    # A conflicted target holding JSON (a hand resolution, or a write into it) is
+    # a stray too: only markers, or resolve's own bytes, are accounted for there.
+    repo_d, idx_d, _c, _o = _stopped_merge(tmp, "w-hand", env)
+    _split, shards = _mio.split_manifest(
+        _window_plan({"title": "ours", "files": ["src/o.ts"]}))
+    with open(os.path.join(repo_d, _W_SHARD % "P1"), "w", encoding="utf-8") as fh:
+        fh.write(_mio.json_document(shards["P1"]))
+    hand = _plan_bytes(repo_d)
+    code, out = _resolve(["resolve", idx_d, "--renumber", "theirs"])
+    refused = code != 0 and _plan_bytes(repo_d) == hand \
+        and "git checkout -m -- %s" % (_W_SHARD % "P1",) in out
+    _harness.git(repo_d, "checkout", "-m", "--", _W_SHARD % "P1")
+    code2, out2 = _resolve(["resolve", idx_d, "--renumber", "theirs"])
+    check("rw6 a conflicted target holding JSON instead of the driver's markers is "
+          "refused with nothing written, naming `git checkout -m --`, and after that "
+          "command brings the conflict back resolve completes: %s | %s" % (out, out2),
+          refused and code2 == 0 and _plan_bytes(repo_d) == clean)
 
 
 def _load_or_empty(path):

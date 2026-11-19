@@ -808,6 +808,12 @@ Checklist for a new `.py` under `hooks/` or `scripts/`:
   unplaced file by name.
 - **A tree line and a section in `PLUGIN-BUILD-GUIDE.md`** — the enumeration
   lint fails a missing one.
+- **A row for every function that decides a path it writes** —
+  `_deps.plan_writer_violations()` fails an unplaced one by name. A plan file goes
+  in `PLAN_WRITERS` with the case showing the function reads the plan behind the
+  index lock (read inside the locked section, never before it); anything else
+  goes in `OTHER_WRITERS` saying what the file is. A helper that only writes the
+  path its caller hands in needs no row: its caller is the one placed.
 
 Most of this list is enforced by lints, not by review: the checklist is the
 map, the lints are the territory.

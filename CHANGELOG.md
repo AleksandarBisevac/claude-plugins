@@ -130,6 +130,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   reads as before.
 
 ### Changed
+- **Every function that writes a file is placed in a table, and a plan writer names the case
+  proving it reads behind the index lock** (contributors). `_deps.plan_writer_violations()`
+  fails a function that decides a path it writes and that no table classifies - a plan writer
+  with its case, a writer the state lint holds, or a writer of something else saying what - so a
+  new save helper is caught at its caller whatever it is named.
 - **The bug a red CI run owes is filed in one place, and names the failed jobs.**
   `full-gate.py --ci-run` files it, titled with the branch, commit and run as before; the drive
   no longer files one itself. Reading the same run again files nothing: a bug with that title,
@@ -258,6 +263,36 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   is named cannot bind, and the binding says so.
 
 ### Fixed
+- **A run record written while a repair was running is no longer lost.** `repair-commits.py
+  --apply` and `repair-tests-add.py --apply` read the plan before taking the index lock and saved
+  that read under it, so a gate's record, a pointer or a verb's change made in between was
+  written back out. Both now read the plan again inside the lock and save only that read: a
+  commit is cleared only where the fresh read still names the lost SHA, and an entry is rewritten
+  only where its text still matches. Exit codes, the report mode and the refusal texts are as
+  they were.
+- **`--reconcile` keeps the run a repeat repeated when that run is held only as the record it
+  replaces.** A repeat's ledger row reconciled onto a subject whose record was the run it
+  repeated (a clone whose ledger never had that run) wrote the "steps not carried" marker over
+  the only copy of it; the record writer and reconcile now look for a repeat's source through
+  one helper, in the ledger, the plan's records and the record being replaced.
+- **A layout change no longer drops a write made while it ran.** `/audit:layout` takes the index
+  lock by hand around the converter, so a gate of the same session is answered as the lock's
+  holder and could record mid-conversion; the converter then saved its earlier read. It now
+  compares the plan with that read just before saving and refuses, naming the change, when they
+  differ - the write stands and a rerun converts.
+- **`merge-manifest.py resolve` no longer overwrites a plan write made while the merge was
+  stopped.** It builds every plan file from git's commits, so a gate's run record landing in a
+  shard the merge left clean was replaced without a word. Under the index lock and before its
+  first write it now refuses, writing nothing, when a file holds anything but the merge's
+  conflict markers, what git's merge left, or what `resolve` itself writes there - so a run
+  stopped part way still completes when run again. The refusal names each file and the command
+  that puts it back (which discards the write), and says how a discarded run record comes back.
+  The "written:" line now names files relative to the work tree when the plan is reached
+  through a symlinked directory, where it printed `../` paths.
+- **A record refused because the index lock stayed busy stops a drive with the wait rule**
+  ("wait and run next again") a verb's busy lock already had, instead of the generic stop. A
+  lock directory that cannot be written is now said as that - not as a lock "not free within"
+  its wait - and still refuses the record, for every writer through the evidence helper.
 - **A task added before the project recorded how to run a subset gets the narrow gate once it
   does.** Such a task stored the phase's whole gate, saying no spelling was known, and recording
   the spelling later changed nothing for it, so it ran the whole gate on its turn. `/audit:phase

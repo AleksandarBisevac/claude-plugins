@@ -1475,8 +1475,9 @@ re-anchor: no search for a commit with the same message or the same tree, becaus
 task was verified against is gone and a plausible substitute makes the trail read as intact when
 it is not. It nulls the unreachable SHA and writes a journal row carrying what was there, so the
 manifest says *this commit is no longer reachable* — which is true. Report mode is the default
-and writes nothing; `--apply` takes the index lock, revalidates before saving, and refuses rather
-than leave a half-repaired manifest. Where a commit is merely unreachable, the report says so and
+and writes nothing; `--apply` takes the index lock, reads the plan again inside it and clears only
+the commits that read still names, revalidates before saving, and refuses rather than leave a
+half-repaired manifest. Where a commit is merely unreachable, the report says so and
 points at **restoring a branch onto it** first — clearing is the fallback, not the first move.
 
 **The verdict a task commit carries is read here too**, because it is a question about a recorded
@@ -1516,7 +1517,8 @@ what `/audit:task scope`'s append-only rule protects is a grading that reads `fi
 and a prefix can only add to the paths an entry names. `files` and the `fileIndex` are **not**
 touched; they are `audit-task.py`'s to derive, and a second writer of that index is how two
 writers come to disagree about it. Report mode is the default and writes nothing; `--apply` takes
-the index lock, revalidates before saving, refuses rather than leave a half-repaired manifest, and
+the index lock, reads the plan again inside it and applies the rows found to that read by text as
+well as index, revalidates before saving, refuses rather than leave a half-repaired manifest, and
 journals what moved. `tests_add_graded` in `_manifest_phases.py` is the filter both this and the
 validator's warning read, so the migration cannot offer to repair an entry nothing complained
 about.
@@ -1857,6 +1859,22 @@ a temp name of their own, which is what a fixed `<target>.tmp` shared between tw
 at once did not. `state_write_sites()` prints the corpus the rule judged. A method of the same name
 on a string or a path is not the `os` module's and is not read — the allow row in
 `tools/prove-gates.py` holds that line.
+`plan_writer_violations()` classifies every function under `scripts/` and `hooks/` that DECIDES a
+path some write lands on — a writing `open`, an os move, a shutil copy or a path's `write_text` in
+its own body, or a call of a function that forwards one of its parameters to one, found to a
+fixpoint — into exactly one class: a plan writer (`PLAN_WRITERS`, naming the callee each of its
+writes goes through and the case proving it reads the plan behind the index lock), a writer the
+state lint already holds (derived from `STATE_WRITERS`), or a writer of something else
+(`OTHER_WRITERS`, saying what it writes). A function in none is red by name; plan words in its
+path are a hint printed beside that report, never the verdict, so a new save helper whose names
+carry no plan word is still caught at its caller. A row naming no such function, a plan row whose
+callee no longer matches the code or whose case is gone from its suite, a short reason and a
+function in two classes are each reported, and a scan that read nothing is refused.
+`plan_writer_sites()` prints the corpus. The verbs' rows sit at their `cmd_*` doors because a
+write through a callable handed in (`_under_lock`'s `body`) is invisible to the scan; the door
+itself is held by `tests/test__evidence_io.py`'s `pa0`, and the same block runs each mechanism
+through the real command with another writer's change landed as it asks for the lock. Its
+docstring's *WHAT IT CANNOT SEE* names the rest, a subprocess's writes among them.
 `step_pointer_violations()` reads every pointer to a numbered step of a document — the document
 named before or after the word, the word in any case (docstrings here capitalise it), a comma
 list, a lettered range, a pointer wrapped across a comment line — in every `.md`, `.py` and script this repo keeps, and fails one naming a step the document
@@ -4117,6 +4135,51 @@ holder is not taken over here — that is a human's decision — and the refusal
 then what to run: release it (`audit-lock.py release index --force`), then the writer's own
 repair.
 
+**A held lock and an unwritable claim are two refusals, worded apart, and both refuse the work.**
+A claim another live run holds is refused, after the wait, in `INDEX_BUSY_HEAD`'s sentence, and
+`index_lock_busy()` is the one reading of it: the drive reads the gate runner's exit 3 through it,
+so a record refused on a busy lock stops the drive on `stop-index-lock` — wait, and run next again,
+the rule a verb's exit 3 already had — while an exit 3 for any other reason is the generic stop.
+A claim that could not be *written* (a lock directory this run cannot write) names no holder, so
+`unwritable_claim_reason()` says that and says it is not a report the lock is held. `_locks` calls
+that state refusing the lock and not the work, leaving the work to a caller's other guard; a plan
+writer has none, and the panel's writer and both repairs already refuse on it, so this helper
+refuses too, once for every caller: a record written unlocked beside a verb mid-write is a loss
+nothing reports, where a refused record is exit 3 with its ledger row standing for `--reconcile`.
+**The realistic way a record waits out its bound** is the commit verb: `commit-task-work.py
+--state` on a sharded plan holds `index` across its `git commit`, so a project's slow pre-commit
+hook keeps a wave sibling's record waiting for as long as the hook runs.
+
+**Every other writer of a plan file is held to the same rule by a lint, and git's own writes are
+outside it.** `_deps.plan_writer_violations()` (under `_deps.py` above) places every function that
+decides a written path, each plan writer with the case showing it reads behind the lock — the two
+repairs re-read the plan inside their locked section and save only that read (`rc12`, `rt16`),
+and the layout converter, run under a lock its command took by hand, refuses a plan that changed
+since its read (`ml1`: a gate of the same session is answered as that lock's holder and wrote
+mid-conversion, which the converter's save then dropped). The merge driver's `resolve` is inside
+the rule too, though it reads no plan file at all: it builds every file from git's commits, so
+under `index` and before its first write it asks each target what it holds, and refuses the whole
+write, naming each file, when one holds anything but the driver's markers, what git's merge left
+there, or what `resolve` is about to write (`rw1`: a run record written into a shard the merge
+left clean survives with nothing written; `rw5`: a `resolve` stopped after its first file is
+completed by the next call). A conflicted shard holding the driver's marker block needs no
+comparison, because each `PLAN_WRITERS` row reads the file it writes as JSON first and a marker
+block is not JSON (`rw3`: the evidence writer refuses a record for a task in it, and the plan's
+loader fails on it); one holding JSON instead is a stray like any other. **Writes no plugin lock
+covers:** git
+writes plan files with no lock — a merge or fast-forward in the parent checkout (`ml2` holds that a
+merge rewrites a shard while another session holds `index`), a member tree's records refresh, which
+checks committed record paths out in that member tree, and the merge driver, whose `%A` file git
+moves into the work tree itself. Each is safe only where no plugin writer runs in the same tree at
+that moment: the parent checkout's merge runs at close, after the phase's writers are done and
+before its stamp (taken under `index`) re-reads the result; a records refresh is `git checkout
+<head> -- <records>` in the member tree, run by the drive's gate step for that member before the
+member's gate records anything there; the driver runs inside a git merge,
+whose result lands as one commit; and a task tree's files put back from its kept copy
+(`_worktrees`' restore of a moved or set-aside tree) are written by that tree's own move with no
+index lock, and nothing here establishes that no writer of that member's plan runs at that moment. A plugin writer running in that tree beside any of them can
+lose a write, and nothing detects it.
+
 **The record is the run, and its write is not allowed to fail quietly.** `write_record()` puts
 `lastRun` (`RECORD_KEY`) on the subject — the run whole, built by `run_record()` from the row
 `record()` just appended, the machine and attribution lines printed beside it, and a `--launch`
@@ -4129,9 +4192,12 @@ wait is refused with the shard untouched, and `run-test-gate.py` makes that exit
 never appended, so a record's size is the gate's width — `MAX_STEPS` steps of at most
 `MAX_FAILING` failing lines at the journal's value bound. **A repeated verdict carries the run it
 repeated** (`repeat_carried()`): that run whole under `repeatedRun` (`REPEATED_RUN_KEY`) and, for
-a whole repeat, its steps, each naming the run it came from — read from the run's ledger row, or,
-under the lock, from the record the write replaces when that is the run (by the reuse rule it is
-the subject's newest). When neither holds it, `repeatedRunUnread` (`REPEAT_UNREAD_KEY`) names the
+a whole repeat, its steps, each naming the run it came from — found by `repeat_source()`, the one
+lookup every writer of a record asks: among every run the ledger and the plan's records hold, then,
+under the lock, the record the write replaces when that is the run (by the reuse rule it is the
+subject's newest). `reconcile()` asks it too, so a repeat whose source is held only as the record
+it replaces carries that run rather than writing the unread marker over its only copy. When none
+holds it, `repeatedRunUnread` (`REPEAT_UNREAD_KEY`) names the
 run and says its steps are not carried; a reader asks `repeatedRun` first and this only when it is
 absent. A whole repeat's `startedAt` is absent and its `durationMs` is its own lookup's; the run it
 repeated keeps its own under `repeatedRun`. A subtree equal to the carried run's, and a whole
@@ -4147,7 +4213,8 @@ schema lets `steps` be absent exactly when that list names it. `rk1` in
 pointer from the ledger and from each subject's record, the newer of the two — a pointer
 deleted from a plan whose ledger holds no row is restored from the record, and a ledger row
 newer than the record (a record write that was refused) rewrites the record from that row in
-the same write, so the pointer and `lastRun` name one run — newest run per
+the same write, so the pointer and `lastRun` name one run, a repeat's carrying the run it
+repeated even when that run is held only as the record being replaced (`rv5`) — newest run per
 subject **by `ts` and never by file position** (rows land in
 one file per writer per month, so two worktrees concatenate in no meaningful order). Running it
 over an already-correct plan moves nothing and says so — a repair that rewrote a correct pointer
@@ -7097,7 +7164,9 @@ duplicate `BUG-` ids in either direction, `--dry-run` previews. Going to single-
 emptied shard directory aside under a `.bak-<UTC>` name in that directory — one `os.rename`, so it cannot half-apply and
 nothing is deleted — as the last step, after the result has validated, because it is the only mutation
 restoring the index does not undo. No lock is taken in the script: the index lock belongs to the
-command driving it. Locks moved to the shared git dir(two-tier: index + per-phase-shard); ids allocate under the index lock; bug status is derived from the
+command driving it, and since that claim is the session's, a gate of the same session is answered
+as its holder and can write mid-conversion — so just before its save the converter reads the plan
+again and refuses, naming the change, when it no longer assembles to its first read. Locks moved to the shared git dir(two-tier: index + per-phase-shard); ids allocate under the index lock; bug status is derived from the
 linked task (so runs never write `bugs[]`). Schema bumped to v3 (phase requires only `id`/`title`; adds
 `shard`/`claim`). Fully back-compat — v2 manifests keep working, migration is opt-in.
 
@@ -7141,7 +7210,10 @@ plans from the merge's COMMITS rather than from git's stages - in the sharded la
 on both sides with one title merges its index cleanly and conflicts only in the shard file, so the
 index has no stages to read - renumbers each id both sides minted on the side named through
 `_id_refs`, merges again, and writes the plan through `split_manifest`, each file rendered against
-the one conflict list. `.gitattributes` gets the manifest and its
+the one conflict list. Because nothing it writes was read from the work tree, it first asks every
+target, under `index`, whether it holds only what the merge or `resolve` itself put there, and
+writes nothing when one does not (the evidence section's rule paragraph has the three states).
+`.gitattributes` gets the manifest and its
 shard glob; a clone that has not installed falls back to git's own line merge, which is why that
 file is safe to commit. `_merge_install.replay_merges` is the doctor's measurement of what the
 layout has cost: the recent merges whose two sides both changed the plan, replayed with

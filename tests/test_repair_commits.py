@@ -91,6 +91,48 @@ def _journal_rows(repo):
     return rows
 
 
+def _windowed_record(repo, mpath):
+    """Write a real run record for P0.1 through the evidence writer, which
+    takes and gives back the index lock itself."""
+    import _evidence_io
+    row = {"v": 1, "runId": "RW", "ts": "2026-11-19T10:00:00Z",
+           "scope": "task", "taskId": "P0.1", "phaseId": "P0",
+           "status": "passed", "durationMs": 10, "steps": [
+               {"name": "unit", "exit": 0, "ran": 1, "outcome": "passed",
+                "durationMs": 10}]}
+    return _evidence_io.write_record(
+        repo, mpath, "task", {"taskId": "P0.1", "phaseId": "P0"},
+        _evidence_io.run_record(row), session_id="another-writer")
+
+
+def _between_read_and_lock(tmp, name, locks):
+    """Run `main([mpath, "--apply"])` with a record written by another writer
+    at the moment the repair asks for the index lock -> what the plan holds
+    afterwards. `windowed` says the record was in the plan before the repair's
+    acquire went on, so a lost record is the repair's write and nothing else."""
+    repo, mpath, _shas = _repo_with_orphan(tmp, name=name)
+    real = locks.acquire
+    seen = []
+
+    def acquire(project, lock_name, *a, **k):
+        if lock_name == M.LOCK_NAME and not seen:
+            # Marked before the write: the record writer takes this lock too,
+            # and its own acquire must reach the real one.
+            seen.append(None)
+            seen[0] = _windowed_record(repo, mpath).get("written")
+        return real(project, lock_name, *a, **k)
+    locks.acquire = acquire
+    try:
+        code = M.main([mpath, "--apply"])
+    finally:
+        locks.acquire = real
+    task = json.load(open(mpath))["phases"][0]["tasks"][0]
+    return {"code": code, "windowed": seen == [True],
+            "lastRun": (task.get("lastRun") or {}).get("runId"),
+            "pointer": (task.get("testEvidence") or {}).get("runId"),
+            "commit": task.get("commit")}
+
+
 def _cases(check):
     check("rc0 no arguments is a usage error, not an accidental clean report",
           M.main([]) == 2)
@@ -188,6 +230,20 @@ def _cases(check):
               and "took it over" in said2
               and json.load(open(mpath2))["phases"][0]["tasks"][0]["commit"]
               is None)
+
+        # A WRITE THAT LANDS BETWEEN THE REPAIR'S READ AND ITS LOCK. The
+        # command reads the plan, asks git, and only then takes the index
+        # lock; a gate's record written in that window is real and must
+        # survive. The window is opened by the fixture, not by a sleep: the
+        # record is written from inside the acquire, before the real call.
+        rc12 = _between_read_and_lock(tmp, "r3", _locks)
+        check("rc12 A RUN RECORD WRITTEN BETWEEN THE REPAIR'S READ AND ITS "
+              "LOCK SURVIVES --apply: the repair re-reads the plan inside its "
+              "locked section, so the task's `lastRun` and its pointer are "
+              "kept and the unreachable commit is still cleared: %r" % (rc12,),
+              rc12["code"] == 0 and rc12["windowed"] is True
+              and rc12["lastRun"] == "RW" and rc12["pointer"] == "RW"
+              and rc12["commit"] is None)
     finally:
         _harness.remove_tree(tmp)
 

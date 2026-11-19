@@ -291,6 +291,46 @@ def _cases(check):
               and payload["rewrite"] == []
               and [r["taskId"] for r in payload["owed"]] == ["P0.1"]
               and payload["graded"] == 3)
+
+        # A WRITE THAT LANDS BETWEEN THE REPAIR'S READ AND ITS LOCK: another
+        # writer's record, written from inside the acquire before the real
+        # call, so the window is the fixture's and not a sleep's.
+        import _locks
+        import _evidence_io
+        wrepo, wpath = _repo(tmp, "windowed", _plan([
+            _task("P0.1", "pending", [LOOSE])]))
+        _real_acquire = _locks.acquire
+        _seen = []
+
+        def _acquire(project, lock_name, *a, **k):
+            if lock_name == M.LOCK_NAME and not _seen:
+                # Marked before the write: the record writer takes this lock
+                # too, and its own acquire must reach the real one.
+                _seen.append(None)
+                _seen[0] = (_evidence_io.write_record(
+                    wrepo, wpath, "task", {"taskId": "P0.1", "phaseId": "P0"},
+                    _evidence_io.run_record({
+                        "v": 1, "runId": "RW", "ts": "2026-11-19T10:00:00Z",
+                        "scope": "task", "taskId": "P0.1", "phaseId": "P0",
+                        "status": "passed", "durationMs": 10, "steps": []}),
+                    session_id="another-writer").get("written"))
+            return _real_acquire(project, lock_name, *a, **k)
+        _locks.acquire = _acquire
+        try:
+            _wout, _wcode = _harness._capture(M.main, [wpath, "--apply"])
+        finally:
+            _locks.acquire = _real_acquire
+        _wtask = _read(wpath)["phases"][0]["tasks"][0]
+        check("rt16 A RUN RECORD WRITTEN BETWEEN THE REPAIR'S READ AND ITS LOCK "
+              "SURVIVES --apply: the repair re-reads the plan inside its locked "
+              "section, so the task keeps `lastRun` and its pointer and its "
+              "entry is still rewritten: %r"
+              % ((_wcode, _seen, _wtask.get("lastRun", {}).get("runId"),
+                  _wtask["tests"]["add"]),),
+              _wcode == 0 and _seen == [True]
+              and (_wtask.get("lastRun") or {}).get("runId") == "RW"
+              and (_wtask.get("testEvidence") or {}).get("runId") == "RW"
+              and _wtask["tests"]["add"] == [FIXED])
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)

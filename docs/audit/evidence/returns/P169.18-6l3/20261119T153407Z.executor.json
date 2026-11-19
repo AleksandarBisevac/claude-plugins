@@ -1,0 +1,86 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py (whole tree, after the last edit: 198/198 files ok, 19578 cases)": "pass",
+    "python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_repair_commits.py tests/test_repair_tests_add.py tests/test_drive_phase.py tests/test_migrate_manifest.py tests/test__deps.py tests/test_merge_manifest.py tests/test_close_phase.py tests/test_integrate_task.py tests/test__doctor_setup.py tests/test__merge_install.py tests/test__manifest_merge.py tests/test__panel_write.py tests/test_audit_task.py (before the final GIT_PATH_BASE_EXEMPT row; 13/14 ok, gb1 red, fixed by that row and green in the whole-tree run)": "fail",
+    "python3 tools/prove-gates.py --only plan_writer": "pass",
+    "python3 tools/prove-gates.py --list": "pass",
+    "ruff check plugins/audit tools tests .claude/hooks": "pass",
+    "vermin -t=3.8- --no-tips --violations plugins/audit/scripts plugins/audit/hooks tests tools/lints": "pass",
+    "python3 tools/gate-parity.py": "pass",
+    "python3 tools/check-rendered-artifacts.py --before-commit": "pass",
+    "python3 tools/check-example-ledgers.py": "pass",
+    "python3 tools/check-git-pipeline.py": "pass",
+    "python3 tools/measure-context.py --gate": "pass"
+  },
+  "redFirst": {
+    "at": "2026-11-19T17:14:16Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test__evidence_io.py tests/test_repair_commits.py tests/test_repair_tests_add.py tests/test_migrate_manifest.py tests/test_merge_manifest.py` in a throwaway tree at HEAD exited 1 with 13 of 22 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - rv5 (house FAIL), uw1 (house FAIL), rw1 (house FAIL), ml1 (house FAIL), rc12 (house FAIL), rt16 (house FAIL): SELFTEST FAILED: 21/22 cases passed; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time; fix run: no time held back, .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "repeat_source as the one lookup (record_carrying, _put_record, reconcile, _reconciled); both repairs re-read the plan under the index lock; an unwritable claim has its own sentence and still refuses; the drive reads the runner's busy exit 3 as stop-index-lock; the layout converter refuses a plan changed since its read; merge-manifest resolve decides every target under the index lock before its first write (conflicted with markers / equal to git's stage 0 or to its own output / stray) and refuses writing nothing on any stray, naming each file and the command that puts it back; its written line is now work-tree relative through realpath. Total writer lint _deps.plan_writer_violations with PLAN_WRITERS (resolve row, case rw1) and OTHER_WRITERS, proving rows, gate-parity audit rows, a GIT_PATH_BASE_EXEMPT row for _stray_targets. Guide, CONTRIBUTING, CHANGELOG updated. Whole-tree sweep after the last edit 198/198 files, 19578 cases.",
+    "descriptive": "every plan writer, merge-manifest resolve included, now reads behind the index lock or refuses, and a lint holds the list"
+  },
+  "testsAdded": [
+    "rv5/rv5b/rv5c reconcile carries a repeat's source held only as the record it replaces, through one helper",
+    "pa0-pa10 each plan-writer mechanism keeps a change landed as it asks for the lock",
+    "rc12/rt16 a record written between a repair's read and its lock survives --apply",
+    "rw0-rw6 resolve: a run record in a shard the merge left clean survives with nothing written; the refusal's way on works and reconcile brings the record back; an interrupted resolve completes; a conflicted path holding JSON is refused; markers block every writer",
+    "dl12/dl12b the runner's busy-lock exit 3 is the wait rule",
+    "uw1-uw3 an unwritable claim has its own sentence and refuses",
+    "ml1/ml1b/ml2 converter under a hand-taken lock; git writes outside the lock",
+    "pw1-pw9 the total writer lint"
+  ],
+  "casesAdded": [
+    [
+      "rv5",
+      "rv5b",
+      "rv5c",
+      "pa0",
+      "pa1",
+      "pa2",
+      "pa3",
+      "pa4",
+      "pa5",
+      "pa6",
+      "pa7",
+      "pa8",
+      "pa9",
+      "pa10",
+      "rw0",
+      "rw1",
+      "rw1b",
+      "rw1c",
+      "rw2",
+      "rw2b",
+      "rw3",
+      "rw4",
+      "rw4b",
+      "rw5",
+      "rw6"
+    ],
+    [
+      "rc12",
+      "rt16"
+    ],
+    [
+      "dl12",
+      "dl12b"
+    ],
+    [
+      "uw1",
+      "uw2",
+      "uw3"
+    ],
+    [
+      "ml1",
+      "ml1b",
+      "ml2"
+    ]
+  ],
+  "claims": "claims:\n1 resolve: _stray_targets/_stray_refusal in merge-manifest.py, called under the index lock before the write loop; the guide's rule paragraph and merge section say so; 'each PLAN_WRITERS row reads the file it writes as JSON first' checked by row (loaders, write_plan_file, migrate-json-encoding refuses unreadable files) and shown for the evidence writer and loader by rw3; the refusal's way on is shown true by rw2 (git checkout --), rw6 (git checkout -m --) and rw2b (reconcile restores the run from its ledger row after the merge commits); no automatic caller invokes resolve (grep: only merge-manifest's own main, the driver's conflict text, commands/layout.md which prints output verbatim, reference/manifest-conventions.md)\n2 mutations.py on scratch copies, anchors counted ==1, __pycache__ purged, restored green: no comparison -> rw1, rw1b, rw1c, rw6 FAIL (rw4, rw5 PASS); equals-own-output arm removed -> rw5 FAIL; per-file decision -> rw1b FAIL (rw1 PASS); earlier rows rc12, rt16, rv5/rv5b, rv5c, uw1, dl12, ml1, pa3; prove-gates --only plan_writer: red rows RED, allow row RED at pw5\n3 class = a writer saving bytes it did not read behind its lock; held by the total lint (0 violations, 140 deciders), resolve now inside it with case rw1\n4 rule enforced by _deps.plan_writer_violations and git_path_base_violations (row with reason for _stray_targets)\n5 resolve byte identity with HEAD measured once by probe/resolve_identity.py (identical, 3 files); lint wall time 2.94/2.90 s, 3.03 s at 16:24:59 and 2.93 s at 16:34:02 UTC\n6 n/a - no command-reading guard\n7 no number written into committed prose; counts here carry their commands",
+  "stamp": "audit-stamp: {\"content\":\"sha256:985322bb4168a8af2e078db58d4cab4b7f9ba3131dec61f04ab40c3df4098b89\",\"dirtyDigest\":\"sha256:630218330c844ff751ade6366efd3681b67097c6ea7c08933637bcc3c76a506b\",\"dirtyPaths\":{\"CHANGELOG.md\":\"6a671bafa1a15fc5\",\"CONTRIBUTING.md\":\"fc6c3448a124628f\",\"PLUGIN-BUILD-GUIDE.md\":\"349b687e72420908\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"fcfd87cee43a1ff4\",\"plugins/audit/scripts/governance/drive-phase.py\":\"7f19aff61f592264\",\"plugins/audit/scripts/manifest/merge-manifest.py\":\"56c6f770e3700101\",\"plugins/audit/scripts/manifest/migrate-manifest.py\":\"29a375cef78eb192\",\"plugins/audit/scripts/manifest/repair-commits.py\":\"6f6f466f06e6546a\",\"plugins/audit/scripts/manifest/repair-tests-add.py\":\"efc662f1c1ba0931\",\"tests/test__deps.py\":\"8fc60e08fa5fba7d\",\"tests/test__evidence_io.py\":\"bb094ffc5cf2d357\",\"tests/test_drive_phase.py\":\"c251c934cb8c8801\",\"tests/test_merge_manifest.py\":\"71fa799312860db9\",\"tests/test_migrate_manifest.py\":\"f3c523dde5282b91\",\"tests/test_repair_commits.py\":\"70cd5e93c599573b\",\"tests/test_repair_tests_add.py\":\"68db8754a6de568a\",\"tools/gate-parity.py\":\"91cc488bfdb364b5\",\"tools/lints/_deps.py\":\"cfaeba194ac9bb86\",\"tools/prove-gates.py\":\"dc2494c6e5ef21e6\"},\"head\":\"c645ea58\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"CONTRIBUTING.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/commands/migrate.md\",\"plugins/audit/scripts/git/close-phase.py\",\"plugins/audit/scripts/git/integrate-task.py\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/manifest/merge-manifest.py\",\"plugins/audit/scripts/manifest/migrate-manifest.py\",\"plugins/audit/scripts/manifest/repair-commits.py\",\"plugins/audit/scripts/manifest/repair-tests-add.py\",\"tests/test__deps.py\",\"tests/test__evidence_io.py\",\"tests/test_close_phase.py\",\"tests/test_drive_phase.py\",\"tests/test_integrate_task.py\",\"tests/test_merge_manifest.py\",\"tests/test_migrate_manifest.py\",\"tests/test_repair_commits.py\",\"tests/test_repair_tests_add.py\",\"tools/gate-parity.py\",\"tools/lints/_deps.py\",\"tools/prove-gates.py\"],\"scopeDigest\":\"sha256:4bd3c6d10daf5836721cba0fe31cf13ddd9623539b31b95403549550e4b3516d\",\"v\":2}",
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

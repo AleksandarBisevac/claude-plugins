@@ -805,8 +805,132 @@ def _backup_cases(check):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _held_conversion(tmp, name, interleave):
+    """Convert a single-file plan to sharded with the index lock taken by hand
+    first, as `/audit:layout` takes it, by session `S` - and, when `interleave`,
+    a run record written by a gate of THAT session after the converter's read
+    and before its save (from inside `planned_redactions`, the converter's last
+    step before the save, so the window is the fixture's and not a sleep's).
+    -> what came back and what the plan holds afterwards."""
+    import _evidence_io
+    import _locks
+    root = os.path.join(tmp, name)
+    adir = os.path.join(root, "docs", "audit")
+    os.makedirs(adir)
+    os.makedirs(os.path.join(root, ".claude"))
+    with open(os.path.join(root, ".claude", "audit.config.json"), "w") as fh:
+        json.dump({"manifestPath": "docs/audit/audit-plan.json"}, fh)
+    path = os.path.join(adir, "audit-plan.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(_legacy(), fh)
+    _harness.git(None, "init", "-q", root, prefix=("git",))
+    quiet = lambda *_a, **_k: None                             # noqa: E731
+    taken = _locks.acquire(root, "index", note="layout", session="S",
+                           handed_off=True, out=quiet)
+    real = _mio.planned_redactions
+    said = []
+
+    def window(target, manifest):
+        if interleave and not said:
+            said.append(_evidence_io.write_record(
+                root, path, "task", {"taskId": "P2.1", "phaseId": "P2"},
+                _evidence_io.run_record({
+                    "v": 1, "runId": "RG", "ts": "2026-11-19T10:00:00Z",
+                    "scope": "task", "taskId": "P2.1", "phaseId": "P2",
+                    "status": "passed", "durationMs": 10, "steps": []}),
+                session_id="S"))
+        return real(target, manifest)
+    _mio.planned_redactions = window
+    try:
+        code, msg = M.migrate(path)
+    finally:
+        _mio.planned_redactions = real
+        _locks.release(root, "index", session="S", out=quiet)
+    def last_run():
+        plan = _mio.load_manifest(path)
+        task = [t for p in plan["phases"] for t in p["tasks"]
+                if t["id"] == "P2.1"][0]
+        return (task.get("lastRun") or {}).get("runId")
+    got = {"taken": taken, "code": code, "msg": msg,
+           "written": [s.get("written") for s in said],
+           "layout": _mio.layout_of(_mio.read_json(path)),
+           "lastRun": last_run()}
+    if code != 0:
+        again, _said = M.migrate(path)
+        got["rerun"] = (again, _mio.layout_of(_mio.read_json(path)), last_run())
+    return got
+
+
+def _held_lock_cases(check):
+    """(ml) The converter under a hand-taken index lock, and git's own writes
+    beside the lock: each question settled by a probe, not by reading."""
+    tmp = _harness.fixture_root("migrate-held-")
+    try:
+        got = _held_conversion(tmp, "interleaved", True)
+        check("ml1 A GATE OF THE SESSION HOLDING THE LOCK IS ANSWERED AS THE "
+              "HOLDER and writes mid-conversion (the probe: its record "
+              "write lands) - and its record is NOT dropped by the "
+              "converter's earlier read: the converter finds the plan changed "
+              "since it read it and converts nothing, so the record stands in "
+              "the plan, still one file, and a rerun converts it: %r"
+              % (dict((k, v) for k, v in got.items() if k != "msg"),),
+              got["taken"] == 0 and got["written"] == [True]
+              and got["code"] == 1 and "changed since" in got["msg"]
+              and got["layout"] == "single-file" and got["lastRun"] == "RG"
+              and got.get("rerun") == (0, "sharded", "RG"), got["msg"])
+        plain = _held_conversion(tmp, "quiet", False)
+        check("ml1b SECOND DIRECTION: with no write in the window the same "
+              "held-lock conversion goes through - the check refuses a "
+              "changed plan, not a lock held by the session converting: %r"
+              % (dict((k, v) for k, v in plain.items() if k != "msg"),),
+              plain["taken"] == 0 and plain["code"] == 0
+              and plain["layout"] == "sharded", plain["msg"])
+
+        # ml2: git writes a plan file with no plugin lock. Another session
+        # holds the index lock; a merge in the checkout rewrites the shard
+        # anyway - the lock is the plugin's, and git does not ask for it.
+        import _locks
+        repo = os.path.join(tmp, "merge")
+        os.makedirs(os.path.join(repo, "docs", "audit", "phases"))
+        shard = os.path.join(repo, "docs", "audit", "phases", "P1.json")
+        with open(shard, "w", encoding="utf-8") as fh:
+            json.dump({"id": "P1", "status": "pending"}, fh)
+        _harness.git(None, "init", "-q", "-b", "main", repo, prefix=("git",))
+        g = lambda *argv: _harness.git(repo, *argv)            # noqa: E731
+        for argv in (("config", "user.email", "t@example.com"),
+                     ("config", "user.name", "T"), ("add", "-A"),
+                     ("commit", "-qm", "base"), ("checkout", "-qb", "side")):
+            g(*argv)
+        with open(shard, "w", encoding="utf-8") as fh:
+            json.dump({"id": "P1", "status": "done"}, fh)
+        g("commit", "-qam", "side")
+        g("checkout", "-q", "main")
+        quiet = lambda *_a, **_k: None                         # noqa: E731
+        held = _locks.acquire(repo, "index", note="another run",
+                              session="another-session", handed_off=True,
+                              out=quiet)
+        try:
+            g("merge", "-q", "--ff-only", "side")
+        finally:
+            _locks.release(repo, "index", session="another-session", out=quiet)
+        with open(shard, encoding="utf-8") as fh:
+            merged = json.load(fh).get("status")
+        check("ml2 GIT WRITES A PLAN FILE OUTSIDE THE RULE: with the index lock "
+              "held by another session, a merge in the checkout rewrites the "
+              "shard all the same - which is why the guide names git's writes "
+              "as outside the lock and says when each is safe: %r"
+              % ((held, merged),),
+              held == 0 and merged == "done")
+    except Exception as exc:                                   # noqa: BLE001
+        check("ml0 the held-lock block ran to its end (%s: %s)"
+              % (type(exc).__name__, exc), False)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _selftest():
     def body(check):
+        _held_lock_cases(check)
         _backup_cases(check)
         _redact_cases(check)
         _cases(check)

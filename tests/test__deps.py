@@ -3851,6 +3851,115 @@ _PHASE_DIFF_AT_46E9E2EC = '''def _phase_diff_paths(ctx, base, head):
 '''
 
 
+# A new save helper whose names carry no plan word, and the callers that hand
+# it a path: the probe the vocabulary arm alone would have let through.
+_PW_HELPER_SRC = (
+    "import json\n"
+    "import os\n\n\n"
+    "def keep(p, doc):\n"
+    "    with open(p, 'w') as fh:\n"
+    "        json.dump(doc, fh)\n\n\n"
+    "def tidy(where, doc):\n"
+    "    keep(os.path.join(where, 'phases', 'P1.json'), doc)\n\n\n"
+    "def carry(where, doc):\n"
+    "    keep(os.path.join(where, shard_name(where)), doc)\n\n\n"
+    "def shard_name(where):\n"
+    "    return 'P1.json'\n\n\n"
+    "def peek(where):\n"
+    "    with open(os.path.join(where, 'x.json'), 'r') as fh:\n"
+    "        return fh.read()\n\n\n"
+    "def relay(p, doc):\n"
+    "    keep(p, doc)\n")
+_PW_REASON = ("a reason long enough to say what this function writes and why it "
+              "is not a plan file")
+
+
+def _plan_writer_cases(check):
+    """(pw) Every function deciding a written path is classified once: the
+    real tree clean, a new unlisted writer red by name, and each kind of row
+    that is no longer true reported."""
+    real = M.plan_writer_violations()
+    check("pw1 ALLOW: the committed tree - every function deciding a path it "
+          "writes is a plan writer with its case, a state writer, or a writer "
+          "of something else saying what: %r" % (real[:4],),
+          real == [])
+    sites = M.plan_writer_sites()
+    named = set((f, fn) for f, fn, _s, _h in sites)
+    check("pw2 ...and that answer is about a scan that FOUND the writers: the "
+          "two repairs, the evidence helper's callers and the verbs' doors are "
+          "among them, and every row of both tables names one: %d deciders"
+          % (len(sites),),
+          set([("scripts/manifest/repair-commits.py", "main"),
+               ("scripts/manifest/repair-tests-add.py", "main"),
+               ("scripts/governance/_evidence_io.py", "write_record"),
+               ("scripts/manifest/audit-task.py", "cmd_note")]) <= named
+          and all((r[0], r[1]) in named
+                  for r in M.PLAN_WRITERS + M.OTHER_WRITERS))
+    tree = _ck_tree((("saver.py", _PW_HELPER_SRC),))
+    hooks = os.path.join(tree, "no-hooks-here")
+    try:
+        bare = M.plan_writer_violations(tree, hooks, (), (), (), repo=tree)
+        flagged = sorted(w.split("()")[0] for _f, w in bare)
+        check("pw3 A NEW WRITER NO TABLE NAMES IS RED BY NAME, with no plan word "
+              "anywhere: `keep(p, doc)` - a fresh `json.dump` through a "
+              "parameter named `p` - forwards, so its callers `tidy` and `carry` "
+              "decide the path and each is reported: %r" % (bare,),
+              flagged == ["carry", "tidy"]
+              and all("no table classifies it" in w for _f, w in bare))
+        hinted = dict((w.split("()")[0], "LOOKS like a plan writer" in w)
+                      for _f, w in bare)
+        check("pw4 ...and the vocabulary is a HINT on that report, never the "
+              "verdict: the caller whose path is named by a `shard_name` call "
+              "is told it looks like a plan writer, and the one whose path "
+              "carries no plan word is reported all the same: %r" % (hinted,),
+              hinted == {"carry": True, "tidy": False})
+        check("pw5 SECOND DIRECTION (the over-fire the totality must not "
+              "cause): `keep` and `relay`, which write only a path their caller "
+              "hands in, and `peek`, which only reads, are not reported: %r"
+              % (flagged,),
+              not set(flagged) & set(["keep", "relay", "peek", "shard_name"]))
+        rows = (("scripts/saver.py", "tidy", "<write>",
+                 "tests/none.py pw0", _PW_REASON),)
+        other = (("scripts/saver.py", "carry", _PW_REASON),
+                 ("scripts/saver.py", "keep", _PW_REASON))
+        held = M.plan_writer_violations(tree, hooks, rows, other, (), repo=tree)
+        said = " | ".join(w for _f, w in held)
+        check("pw6 EACH ROW IS HELD TO THE CODE: a plan row whose callee "
+              "pattern a write does not match (`tidy` writes through "
+              "`saver.keep`, not a primitive), a plan row whose case is gone, "
+              "and a row naming a function that decides nothing (`keep` only "
+              "forwards) are each reported: %r" % (held,),
+              "says it writes through <write>" in said
+              and "names case pw0 in tests/none.py, which cannot be read" in said
+              and "OTHER_WRITERS row for keep() names no function" in said)
+        twice = M.plan_writer_violations(
+            tree, hooks, (), (("scripts/saver.py", "tidy", _PW_REASON),
+                              ("scripts/saver.py", "carry", _PW_REASON)),
+            (("scripts/saver.py", "tidy", _PW_REASON),), repo=tree)
+        check("pw7 A WRITER IN TWO CLASSES IS REPORTED - an OTHER_WRITERS row "
+              "for a function STATE_WRITERS already holds: %r" % (twice,),
+              any("tidy() is in OTHER_WRITERS and STATE_WRITERS" in w
+                  for _f, w in twice))
+        short = M.plan_writer_violations(
+            tree, hooks, (), (("scripts/saver.py", "tidy", "writes"),
+                              ("scripts/saver.py", "carry", _PW_REASON)), (),
+            repo=tree)
+        check("pw8 a row whose reason is a label is reported: %r" % (short,),
+              any("has no reason" in w for _f, w in short))
+    finally:
+        shutil.rmtree(tree, ignore_errors=True)
+    empty = _ck_tree(())
+    try:
+        blind = M.plan_writer_violations(empty, os.path.join(empty, "none"),
+                                         (), (), (), repo=empty)
+        check("pw9 A SCAN THAT LOOKED AT NOTHING IS REFUSED, never clean: a "
+              "tree with no file to read answers a refusal, not []: %r"
+              % (blind,),
+              len(blind) == 1 and "looked at nothing" in blind[0][1])
+    finally:
+        shutil.rmtree(empty, ignore_errors=True)
+
+
 def _with_function_replaced(source, name, replacement):
     """`source` with the top-level def `name` swapped for `replacement`."""
     tree = ast.parse(source)
@@ -4610,6 +4719,7 @@ STAGES = (
     ("dg-config-key", "_config_key_cases"),
     ("dg-dict-key", "_dict_key_cases"),
     ("dg-writer", "_writer_cases"),
+    ("dg-plan-writer", "_plan_writer_cases"),
     ("dg-git-path-base", "_git_path_base_cases"),
     ("dg-step-pointer", "_step_pointer_cases"),
 )

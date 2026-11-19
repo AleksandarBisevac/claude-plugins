@@ -476,6 +476,20 @@ TABLE = (
   "def state_write_violations(script_dir=None, hooks_dir=None, table=None):\n"
   "    return []",
   DEP, "sw3"),
+ # The every-writer-classified rule, crippled. It is what keeps a new function
+ # that saves a plan file from going in unplaced, and a version reporting
+ # nothing reads exactly like a tree whose writers are all in a table.
+ ("plan_writer_violations", L + "_deps.py", "replace",
+  "    plan_table = PLAN_WRITERS if plan_table is None else plan_table",
+  "    return []", DEP, "pw3"),
+ # ...and the same rule with its vocabulary made the VERDICT: an unclassified
+ # writer is reported only when its path carries a plan word. A save helper
+ # named with none (`keep(p, doc)`, a path from `os.path.join`) then passes.
+ ("plan_writer_violations", L + "_deps.py", "replace",
+  "        if not classes:\n            violations.append((named, (",
+  "        if not classes and not hint:\n            continue\n"
+  "        if not classes:\n            violations.append((named, (",
+  DEP, "pw3"),
  # The scrub-by-default rule, crippled. It is what keeps a new caller from
  # reaching the JSON writer that leaves machine paths in, and a version
  # reporting nothing reads exactly like a tree whose only raw writes are listed.
@@ -1346,6 +1360,14 @@ ALLOW = (
   "            and isinstance(func.value, ast.Name) and func.value.id in modules:",
   "            and isinstance(func.value, (ast.Name, ast.Attribute)):",
   DEP, "sw4"),
+ # The every-writer-classified rule, widened from the functions that DECIDE a
+ # written path to every function with a write at all. A helper writing only
+ # the path its caller handed in decides nothing, and convicting it would put
+ # a row on every forwarding helper of the tree - `pw5`'s fixture holds two.
+ ("plan_writer_violations", L + "_deps.py", "replace",
+  "                   if not (isinstance(target, ast.Name) and target.id in unit[5])]",
+  "                   if True]",
+  DEP, "pw5"),
  # The raw-writer allow-list, ignored: a site that names its reason for
  # writing bytes exactly as given - a re-encoding, the user's own settings -
  # would be convicted anyway, and `rj2`'s fixture holds one beside the

@@ -232,8 +232,26 @@ def _clear_under_lock(mpath, manifest, lost):
     above has ONE answer to decorate: inline, the refusal below returned past the
     `finally` that released, so a lock that declined could only be reported on
     the path where nothing else had gone wrong.
+
+    THE PLAN IS READ AGAIN HERE, UNDER THE LOCK, and what is written is made of
+    that read. `main` read it before the lock - git is asked about every
+    recorded commit in between - and saving every shard and the index from
+    that earlier read wrote any record, pointer or verb's change made in the
+    window back out of existence. `manifest` is the earlier read and decides
+    nothing written: a commit is cleared only where the fresh read still names
+    the very SHA found lost, so a task given a new commit meanwhile keeps it.
     """
-    manifest, cleared = _commit_trail.clear(manifest, lost)
+    del manifest
+    try:
+        fresh = _mio.load_manifest(mpath)
+    except Exception as exc:                                   # noqa: BLE001
+        return "cannot re-read %s under the lock, so nothing was written: %s" % (
+            mpath, exc), []
+    still = _still_lost(fresh, lost)
+    if not still:
+        return ("every commit found lost was changed in the plan since it was "
+                "read, so nothing was written - re-run to look again"), []
+    manifest, cleared = _commit_trail.clear(fresh, still)
     findings, _warnings = _rules.validate(manifest)
     if findings:
         return ("the result would be invalid, so nothing was written: "
@@ -243,6 +261,14 @@ def _clear_under_lock(mpath, manifest, lost):
     # and the scrub journaled.
     _panel_write.save_in_layout(mpath, manifest)
     return None, cleared
+
+
+def _still_lost(manifest, lost):
+    """The rows of `lost` - `(phase, task, sha)` found unreachable - whose task
+    in `manifest` still names that SHA."""
+    now = dict(((str(p), str(t)), str(s or "")) for p, t, s in
+               _commit_trail.recorded(manifest))
+    return [(p, t, s) for p, t, s in lost if now.get((str(p), str(t))) == str(s)]
 
 
 def main(argv):

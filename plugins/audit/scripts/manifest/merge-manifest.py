@@ -42,7 +42,10 @@ Usage:
 
 Exit codes: driver - 0 merged cleanly, 1 conflicted (markers written). install /
 uninstall - 0 done, 1 refused, 2 usage. status - 0 installed and current, 1 not
-installed or stale, 2 usage.
+installed or stale, 2 usage. resolve - 0 written, 1 refused (nothing written: no
+merge, no collision, a busy lock, or a plan file holding a write it did not account
+for - see "what resolve may write over") or written with conflicts or findings left,
+2 usage.
 
 This script carries no `--selftest` of its own; its cases live in
 `tests/test_merge_manifest.py`.
@@ -468,12 +471,20 @@ def resolve(path, side):
         if not _locks.held(lock):
             return 1, "%s refused: %s" % (_TAG, _locks.refusal(lock, "index"))
     try:
+        # Decided for every target before the first is written: a refusal that
+        # came after some files were already replaced would leave the plan half
+        # merged and the stray write gone anyway.
+        strays, problem = _stray_targets(top, files)
+        if problem:
+            return 1, "%s refused: nothing was written - %s" % (_TAG, problem)
+        if strays:
+            return 1, _stray_refusal(strays)
         for target, text in files:
             _write(target, text)
     finally:
         if _locks.took(lock):
             _locks.release(top, "index", out=lambda *_a, **_k: None)
-    written = [os.path.relpath(t, top).replace(os.sep, "/") for t, _x in files]
+    written = [_tree_rel(top, t) for t, _x in files]
     lines = ["%s %s: renumbered on %s (%d reference(s) rewritten):"
              % (_TAG, rel, side, count)]
     lines += ["    %s -> %s" % (old, mapping[old]) for old in ids]
@@ -494,6 +505,117 @@ def resolve(path, side):
                  "written and finish the merge. The renumbered side's commit messages "
                  "and journal rows still name the old id - they are history.")
     return 0, "\n".join(lines)
+
+
+# --- what resolve may write over --------------------------------------------------
+# `resolve` builds every file from git's commits and never reads the work tree, so
+# a plan write made while the merge is stopped - a gate's run record landing in a
+# shard the merge left clean, which the evidence writer does because it reads only
+# that shard - would be replaced without a word. So each target is put in one of
+# three states under the index lock, every writer of the plan taking the same lock:
+#   - CONFLICTED, holding what does not read as JSON: the driver's marker block, or
+#     git's line merge. Each writer `_deps.PLAN_WRITERS` lists reads the file it
+#     writes as JSON first, so none can have written there since the merge stopped;
+#   - EQUAL to what git's merge left (stage 0, compared by git itself, so a
+#     clean/smudge or line-ending filter is applied as git applies it), or to the
+#     text resolve is about to write - which is what lets a resolve stopped part
+#     way be run again rather than refused for ever by its own first write;
+#   - anything else: a STRAY, and one stray refuses the whole write.
+# A target missing from the work tree holds nothing to lose.
+_UNREADABLE = object()
+
+
+def _tree_rel(top, path):
+    """`path` relative to the work tree `top` (a realpath), `/`-separated - through
+    the same realpath, or a plan reached through a symlinked directory is named
+    `../../..` and asked of git as a path outside the tree."""
+    return os.path.relpath(os.path.realpath(path), top).replace(os.sep, "/")
+
+
+def _held_text(path):
+    """What `path` holds, read the way `_write` wrote it; None when it is absent."""
+    try:
+        return _read(path)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError):
+        return _UNREADABLE
+
+
+def _reads_as_json(text):
+    if text is None or text is _UNREADABLE:
+        return False
+    try:
+        json.loads(text)
+    except ValueError:
+        return False
+    return True
+
+
+def _git_paths(top, *args):
+    """(exit code, [path]) of a `-z` git listing."""
+    code, out = _mi.git(top, *args)
+    return code, [p for p in out.split("\0") if p]
+
+
+def _stray_targets(top, files):
+    """([(rel, what it holds, the command that puts it back)], problem) - the
+    targets holding bytes resolve cannot account for. `problem` is a sentence
+    when git could not be asked, and then nothing may be written."""
+    rels = [_tree_rel(top, t) for t, _x in files]
+    asked = {}
+    for name, argv in (("unmerged", ("ls-files", "-u", "-z", "--")),
+                       ("tracked", ("ls-files", "-z", "--")),
+                       ("changed", ("diff", "--name-only", "-z", "--no-ext-diff",
+                                    "--no-textconv", "--"))):
+        code, paths = _git_paths(top, *(argv + tuple(rels)))
+        if code != 0:
+            return [], ("git could not say which plan files the merge left as they "
+                        "are (`git %s` exited %d)" % (" ".join(argv[:-1]), code))
+        asked[name] = paths
+    unmerged = set(p.split("\t", 1)[1] for p in asked["unmerged"] if "\t" in p)
+    tracked, changed = set(asked["tracked"]), set(asked["changed"])
+    strays = []
+    for (target, text), rel in zip(files, rels):
+        held = _held_text(target)
+        if held is None or held == text:
+            continue
+        if rel in unmerged:
+            if not _reads_as_json(held):
+                continue
+            strays.append((rel, "conflicted, but holds JSON where the merge left its "
+                                "conflict markers", "git checkout -m -- %s" % (rel,)))
+        elif rel in tracked:
+            if rel not in changed:
+                continue
+            strays.append((rel, "changed since git's merge left it clean",
+                           "git checkout -- %s" % (rel,)))
+        else:
+            strays.append((rel, "not tracked by git, and not what resolve writes there",
+                           "move %s out of the work tree - git does not track it, so "
+                           "nothing puts it back" % (rel,)))
+    return strays, None
+
+
+def _stray_refusal(strays):
+    """The refusal for targets resolve would overwrite unaccounted - each named,
+    with the way on that is true: put the file back, which discards the write."""
+    lines = ["%s refused: nothing was written - %d plan file(s) hold bytes neither "
+             "git's merge left there nor resolve wrote, and writing the merged plan "
+             "would replace them:" % (_TAG, len(strays))]
+    lines += ["    %s - %s" % (rel, held) for rel, held, _fix in strays]
+    lines.append("    a write made while the merge is stopped cannot be committed with "
+                 "it, and no command here carries it into the merged plan. To go on, "
+                 "put each file back, which DISCARDS what it holds, then run resolve "
+                 "again:")
+    lines += ["      %s" % (fix,) for _rel, _held, fix in strays]
+    lines.append("    what a discarded write held: a run record comes back through "
+                 "`run-test-gate.py <manifestPath> <phaseId> --reconcile` once the "
+                 "merge is committed, which points each subject at the newest run its "
+                 "ledger holds, or by running the gate again; anything else is made "
+                 "again by running the verb that wrote it. To keep the bytes as they "
+                 "are, copy the file out of the work tree first.")
+    return "\n".join(lines)
 
 
 def _sharded_at(top, rel):

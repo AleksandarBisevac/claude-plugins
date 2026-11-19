@@ -1490,6 +1490,17 @@ AUDITED_EXEMPTIONS = {
     # row whose reason is short enough to be a label; it does not judge whether
     # the sentence is true, so this is the weaker of the two strengths.
     "STATE_WRITERS": ("live", "state_write_violations"),
+    # The functions that call a plan save, each with the case showing it reads the
+    # plan behind the index lock. The lint that reads the table reports a caller no
+    # row names, a row naming no caller, and a row whose case is gone from its
+    # suite; whether the sentence is true it does not judge, so this is the weaker
+    # of the two strengths.
+    "PLAN_WRITERS": ("live", "plan_writer_violations"),
+    # Every other function that decides a path it writes, each saying WHAT it
+    # writes. The same lint reports a writer no table classifies and a row naming
+    # no such function; that the file named is not a plan file is the sentence's
+    # claim and not judged, so this too is the weaker strength.
+    "OTHER_WRITERS": ("live", "plan_writer_violations"),
     # The sites allowed to write JSON without the machine-path scrub. The lint
     # reports a reach of the raw writer from a site no row names, and a row whose
     # site no longer reaches it; whether its reason is true it does not judge.

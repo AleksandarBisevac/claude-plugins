@@ -5568,6 +5568,40 @@ def _lock_stop_cases(check):
           code2 == 2 and not held_later
           and _drive_state(root).get("lock") != "taken")
 
+    # The gate runner's exit 3 is a run whose record was not stored. When the
+    # record was refused because the index lock stayed held past its wait, the
+    # remedy is the verb's: wait and run next again - not the generic stop.
+    held = ("GATE NOT RECORDED: the gate itself passed and its evidence row is "
+            "in the ledger, but the plan holds no record of the run\n"
+            "  pointer:  NOT updated - %s 30s (held by another live run); "
+            "nothing was written to the plan\n" % (M._evio.INDEX_BUSY_HEAD,))
+    ctx = {"phase": PHASE}
+    _code, said = M.relay_refusal(ctx, "run-test-gate.py", 3, held)
+    rule = list((M.STEPS.get("stop-index-lock") or {}).get("rule") or ())
+    check("dl12 THE RUNNER'S EXIT 3 ON A BUSY INDEX LOCK IS THE VERB'S WAIT "
+          "RULE: the stop is `stop-index-lock` and its rule is printed under "
+          "the runner's own words: %r" % ((ctx.get("stop"), said),),
+          ctx.get("stop") == "stop-index-lock" and rule
+          and all(line in said for line in rule) and held.rstrip("\n") in said)
+    others = {}
+    for label, text in (
+            ("unwritable", "  pointer:  NOT updated - the index lock's claim "
+                           "could not be written; nothing was written"),
+            ("ledger", "GATE NOT RECORDED: the gate itself passed, but "
+                       "--record stored no evidence row")):
+        ctx = {"phase": PHASE}
+        M.relay_refusal(ctx, "run-test-gate.py", 3, text)
+        others[label] = ctx.get("stop")
+    ctx = {"phase": PHASE}
+    M.relay_refusal(ctx, "run-test-gate.py", 2, held)
+    others["exit 2"] = ctx.get("stop")
+    check("dl12b SECOND DIRECTION: an exit 3 that is not a busy lock - a claim "
+          "that could not be written, a ledger row not stored - and a busy-lock "
+          "text under another exit are the generic stop, never a wait for a "
+          "lock nobody holds: %r" % (others,),
+          others == {"unwritable": "stopped", "ledger": "stopped",
+                     "exit 2": "stopped"})
+
 
 def _key_cases(check):
     """`review.perTask` read by the driver, in `reviewer_due` alone: `phase`

@@ -239,7 +239,18 @@ def apply_repair(mpath, manifest, ans):
                               out=lambda *_a, **_k: None)
         if not _locks.held(code):
             return False, _locks.refusal(code, LOCK_NAME), []
+    # THE PLAN IS READ AGAIN UNDER THE LOCK, and what is saved is made of that
+    # read. The one `main` handed in was read before the lock was asked for,
+    # and saving every shard and the index from it wrote any record, pointer
+    # or verb's change made in the window back out of existence. The rows
+    # found then are applied to the fresh read by their text as well as their
+    # index (`rewrite`), so an entry that moved meanwhile is left alone.
     try:
+        try:
+            manifest = _mio.load_manifest(mpath)
+        except Exception as exc:                               # noqa: BLE001
+            return False, ("cannot re-read %s under the lock, so nothing was "
+                           "written: %s" % (mpath, exc)), []
         applied = rewrite(manifest, ans["rewrite"])
         findings, _warnings = _rules.validate(manifest)
         other_findings = _findings_besides_tests_add(findings)

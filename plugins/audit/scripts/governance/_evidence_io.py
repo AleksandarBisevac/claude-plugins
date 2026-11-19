@@ -2771,6 +2771,46 @@ def shard_lock_state(project, session_id=None, outcome="", repair=""):
                       session_id=session_id, outcome=outcome, repair=repair)
 
 
+# THE TWO REFUSALS OF THE LOCK, WORDED APART. A claim another live run holds is
+# waited out and then refused with `INDEX_BUSY_HEAD` - the one refusal that
+# clears by itself, so the one a caller may wait on (`index_lock_busy`, which
+# the drive reads off the gate runner's words). A claim that could not be
+# WRITTEN - a lock directory this run cannot write - names no holder at all, and
+# waiting for it to free would be waiting for a run that was never there.
+#
+# BOTH REFUSE THE WORK, and that is decided here once for every writer through
+# `write_plan_file`. `_locks` calls an unwritable claim "refusing the LOCK, not
+# the work" and leaves the work to the caller's other guard; a plan writer has
+# none - the index lock IS the guard every verb, the panel and the repairs take,
+# and each of them refuses on this same answer. A record written with no lock
+# beside a verb mid-write is a lost write nothing reports; a refused record is
+# exit 3 with the run's ledger row standing, which `--reconcile` catches up once
+# the directory is writable. So the cost of a read-only state directory is a
+# loud refusal, never a quiet race.
+INDEX_BUSY_HEAD = "the %s lock was not free within" % (SHARD_LOCK_LABEL,)
+
+
+def index_lock_busy(text):
+    """True when `text` - a refusal, or a command's words carrying one - says
+    the plan's index lock was held past the wait (`INDEX_BUSY_HEAD`), the one
+    refusal a later run of the same command can get past by waiting."""
+    return INDEX_BUSY_HEAD in (text or "")
+
+
+def unwritable_claim_reason(said, outcome="", repair=""):
+    """The refusal for an index-lock claim that could not be written, from the
+    lock's own first line (`said`, what `acquire` printed). It is not a report
+    that the lock is held, and it says what to fix before the caller's repair."""
+    first = [" ".join(str(s).split()) for s in said or [] if str(s).strip()]
+    why = first[0] if first else "acquire answered exit %d" % (_locks.E_ERR,)
+    return ("the %s lock's claim could not be written (%s): this is not a report "
+            "that the lock is held - nobody was found holding it - and a plan "
+            "file is not written without it, so %s. Make the lock directory "
+            "writable, then %s" % (
+                SHARD_LOCK_LABEL, why.replace("[audit-lock] ", ""),
+                outcome or "nothing was written", repair or "run this again"))
+
+
 def _unwritten(reason, refused=None):
     """`write_plan_file`'s answer for a write that did not happen."""
     return {"written": False, "reason": reason, "path": None,
@@ -2814,10 +2854,12 @@ def write_plan_file(project, path, change, note, session_id=None, wait=None,
         said = []
         code = _locks.acquire(project, SHARD_LOCK, note=note,
                               session=session_id, out=said.append, wait=wait)
+        if code == _locks.E_ERR:
+            return _unwritten(unwritable_claim_reason(said, outcome, repair))
         if not _locks.held(code):
             bound = _locks.WAIT_SECONDS if wait is None else float(wait)
-            return _unwritten("the %s lock was not free within %gs (%s); %s" % (
-                SHARD_LOCK_LABEL, bound,
+            return _unwritten("%s %gs (%s); %s" % (
+                INDEX_BUSY_HEAD, bound,
                 detail or " ".join(" ".join(str(s).split()) for s in said)
                 or _locks.refusal(code, SHARD_LOCK),
                 "; ".join(s for s in (outcome, repair) if s)))
@@ -3191,15 +3233,38 @@ def record_carrying(project, row, lines=None, launch=None, config=None, *,
     could not carry the run (`REPEAT_UNREAD_KEY`) rather than carrying nothing
     silently."""
     source = None
-    wanted = repeated_source_id(row)
-    if wanted:
+    if repeated_source_id(row):
         try:
-            source = row_by_run(read_rows(project, config=config,
-                                          manifest_path=manifest_path)["rows"],
-                                wanted)
+            source = repeat_source(row, read_rows(
+                project, config=config, manifest_path=manifest_path)["rows"])
         except Exception:                                      # noqa: BLE001
             source = None
     return run_record(row, lines=lines, launch=launch, source=source)
+
+
+def repeat_source(row, rows=(), replaced=None, scope=None, ids=None):
+    """The run the repeat `row` repeated, row-shaped, or None - THE ONE LOOKUP
+    every writer of a record asks.
+
+    First among `rows`, which a caller hands as `read_rows` returns them: the
+    ledger's rows AND the plan's records, one entry per run. Then the record
+    being replaced, `replaced` - `(scope, ids)` name its subject - which a
+    writer reads under the lock: by the reuse rule the run repeated is the
+    subject's newest, which is that record. A lookup among ledger rows alone
+    found nothing for a run held only as a record - a clone or worktree whose
+    ledger never had it - and the record written over that run then carried
+    the unread marker, so the run the repeat names was readable nowhere."""
+    wanted = repeated_source_id(row)
+    if wanted is None:
+        return None
+    found = row_by_run(list(rows or []), wanted)
+    if found is not None:
+        return found
+    if isinstance(replaced, dict) and str(replaced.get("runId")) == wanted:
+        ids = ids or {}
+        return record_row(replaced, scope, ids.get("taskId") if scope == "task"
+                          else ids.get("phaseId"), ids.get("phaseId"))
+    return None
 
 
 # The keys `_record_of` shapes itself rather than copying: the moment, the
@@ -3513,13 +3578,12 @@ def _put_record(body, scope, ids, sharded, record, stages=()):
     if problem is not None:
         return None, problem, None
     replaced = subject.get(RECORD_KEY)
-    if isinstance(replaced, dict) and record.get(REPEAT_UNREAD_KEY) \
-            and str(replaced.get("runId")) == repeated_source_id(record):
+    source = repeat_source(record, replaced=replaced, scope=scope, ids=ids) \
+        if record.get(REPEAT_UNREAD_KEY) else None
+    if source is not None:
         record = finished_record(repeat_carried(
             dict((k, v) for k, v in record.items() if k != REPEAT_UNREAD_KEY),
-            record_row(replaced, scope, ids.get("taskId") if scope == "task"
-                       else ids.get("phaseId"), ids.get("phaseId"))),
-            RECORD_MAX_BYTES)
+            source), RECORD_MAX_BYTES)
     # The base runs the replaced red kept, while this run reads its red
     # against the same commit (`carry_kept_bases`).
     record = carry_kept_bases(record, replaced)
@@ -4593,11 +4657,12 @@ def reconcile(project, manifest_path, session_id=None, config=None, wait=None):
             ids = {"phaseId": subject}
         # A LEDGER ROW THAT WON is a run the plan holds no record of: its
         # record is written with the pointer, so the two stay one run.
+        # Its source is looked for where the record writer looks: every run
+        # the plan and the ledger hold, then (under the lock) the record this
+        # write replaces.
         record = None
         if str(row.get("runId")) in ledger_runs:
-            repeated = repeated_source_id(row)
-            record = run_record(row, source=row_by_run(ledger, repeated)
-                                if repeated else None)
+            record = run_record(row, source=repeat_source(row, read["rows"]))
         out = _reconcile_subject(project, manifest_path, scope, ids, row,
                                  record, session_id, config, wait)
         said = "%s %s" % (scope, subject)
@@ -4649,6 +4714,15 @@ def _reconciled(body, scope, ids, sharded, target, record):
     if problem is not None:
         return None, problem, None
     held = subject.get(RECORD_KEY)
+    # A repeat whose source was read nowhere before the lock looks once more,
+    # in the record it is about to replace - `_put_record`'s look, through the
+    # same helper, so the two writers of a record carry the same run.
+    source = repeat_source(record, replaced=held, scope=scope, ids=ids) \
+        if record is not None and record.get(REPEAT_UNREAD_KEY) else None
+    if source is not None:
+        record = finished_record(repeat_carried(
+            dict((k, v) for k, v in record.items() if k != REPEAT_UNREAD_KEY),
+            source), RECORD_MAX_BYTES)
     if record is not None and isinstance(held, dict):
         mine = stamp_moment(held.get("at"))
         theirs = stamp_moment(target.get("ts"))

@@ -23,9 +23,12 @@ backup is mentioned. What the reverse direction changes is that going back is no
 something a user has to do by hand at all.
 
 NO LOCK IS TAKEN HERE, deliberately. The index lock belongs to the command driving this -
-`commands/migrate.md` runs `audit-lock.py acquire index` around the call - so acquiring it
-in this file would be a second, uncoordinated acquisition by the process already holding
-it.
+`commands/layout.md` (which `commands/migrate.md` follows) runs `audit-lock.py acquire
+index` around the call - so acquiring it in this file would be a second, uncoordinated
+acquisition by the process already holding it. That claim is the SESSION's, so a gate of
+the same session is answered as its holder and may write the plan mid-conversion; the
+save refuses when the plan no longer assembles to what was read (`_changed_since`), so
+such a write is named rather than dropped.
 
 Usage:
   migrate-manifest.py <manifest> [--to=sharded|single-file]
@@ -63,6 +66,7 @@ hyphenated name is not importable). It is one of the three pilots of that migrat
 see `tests/_harness.py`.
 """
 import datetime
+import json
 import os
 import shutil
 import sys
@@ -297,6 +301,40 @@ def _preview(raw_index, index_path, manifest, to, target):
                else ("leave the shards in place: %s" % why)))
 
 
+def _plan_text(manifest):
+    """The assembled plan as one canonical string, the form `_changed_since`
+    compares - taken before `--renumber` edits the dict in place."""
+    return json.dumps(manifest, sort_keys=True)
+
+
+def _changed_since(path, as_read):
+    """None while the plan at `path` still assembles to `as_read`, else the
+    refusal: something wrote it after this run read it.
+
+    THE LOCK THIS RUNS UNDER DOES NOT STOP THAT WRITE. `/audit:layout` takes the
+    index lock by hand before calling this script, so the claim is the SESSION's,
+    and a gate or verb of that same session asking for the lock is answered as
+    its holder and writes - a probe showed a run record landing in the window
+    and the save below writing it back out of existence. Comparing a fresh read
+    with the first one just before the save turns that lost write into a
+    refusal that names it. It does not close the window: a write landing
+    between this read and the save is still lost, and that interval holds no
+    other step of this run, where before it held the validation and the backup.
+    """
+    try:
+        now = _plan_text(_mio.load_manifest(path))
+    except Exception as exc:                                   # noqa: BLE001
+        return "cannot re-read %s before writing it, so nothing was converted: %s" % (
+            path, exc)
+    if now == as_read:
+        return None
+    return ("refusing: %s changed since this run read it - another write landed "
+            "while the layout change was being prepared (a gate or verb of this "
+            "same session is answered as the holder of the index lock this "
+            "command took). Nothing was converted and that write stands; run "
+            "the layout change again." % (path,))
+
+
 def migrate(path, *, to="sharded", dry_run=False, force=False, renumber=False, out=None):
     """Change the manifest's LAYOUT. Returns (exit_code, message).
 
@@ -321,6 +359,7 @@ def migrate(path, *, to="sharded", dry_run=False, force=False, renumber=False, o
         return 2, "cannot load %s: %s" % (path, exc)
     if not isinstance(manifest, dict):
         return 2, "%s is not a JSON object" % path
+    as_read = _plan_text(manifest)
 
     vm = _load_validator()
     if renumber:
@@ -374,6 +413,11 @@ def migrate(path, *, to="sharded", dry_run=False, force=False, renumber=False, o
     # Asked of the ASSEMBLED plan before either save splits or joins it: the
     # news is about values, wherever the layout puts them.
     pointers = _mio.planned_redactions(target, manifest)
+    changed = _changed_since(path, as_read)
+    if changed:
+        if backup:
+            os.remove(backup)
+        return 1, changed
     try:
         if to == "sharded":
             written = _mio.save_sharded(target, manifest)
