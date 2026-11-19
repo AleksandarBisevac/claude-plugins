@@ -1,7 +1,7 @@
 {
   "id": "SG1",
   "title": "A brief outranks a skill, and a weakened test is reported",
-  "status": "in_progress",
+  "status": "done",
   "description": "Evidence is in the study report (quality-gates-internal reports/2026-11-16-agent-skills). Measured on this repository's own benchmark (docs/research/benchmark-feature-results.md section 4.1): the plain arm edited a protected test's assertion in every session, and the plugin arm differed from the skills-and-rules arm in nothing a grader measured - the same prose rule protected both. Live: _skill_places.resolve_skill refuses another plugin's skill; _policy.resolve allows a single named skill per active area. Read: agents/audit-reviewer.md says a named review skill is invoked FIRST while its must-not list forbids writes, with no sentence ranking the two; audit-lookup.py does not mention a review skill at all.",
   "desiredOutcome": "An agent brief states that its hard rules win over a skill's instructions; a configured review skill is named in the phase reviewer's brief on the drive route; a task whose diff weakens an existing test, deletes one, adds a skip or a suppression is reported to the reviewer by a script; a refactor task can prove its tests were green on the base; an agent's edit-tool write to .claude/audit.config.json is refused or asked; /audit:init shows its assumptions before synthesis; both shipped eval cases have the scaffold they name",
   "testGate": [
@@ -18,7 +18,7 @@
   "blockedBy": [],
   "baseRef": "95f43749107e704a26a21e5c90228107b7ef8459",
   "branch": "audit/sg1-a-brief-outranks-a-skill-and-a",
-  "mergedAt": null,
+  "mergedAt": "2026-11-19T14:58:51Z",
   "review": {
     "tool": null,
     "model": "sonnet",
@@ -6119,5 +6119,6 @@
     "runId": "2026-11-19T14:31:37Z.8f0ae0",
     "status": "passed",
     "at": "2026-11-19T14:31:37Z"
-  }
+  },
+  "mergedHead": "b16417751c2693c90c2e3564c6ebd60b55802c4f"
 }
