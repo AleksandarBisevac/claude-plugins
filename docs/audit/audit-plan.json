@@ -1048,6 +1048,12 @@
       "title": "A brief outranks a skill, and a weakened test is reported",
       "status": "done",
       "shard": "phases/SG1.json"
+    },
+    {
+      "id": "SG2",
+      "title": "A named skill is the one that was reviewed",
+      "status": "in_progress",
+      "shard": "phases/SG2.json"
     }
   ],
   "fileIndex": {
@@ -1397,6 +1403,7 @@
       "SG1.23-ukq",
       "SG1.24-ukq",
       "SG1.25-ukq",
+      "SG2.1-ukq",
       "SG1.26-ukq",
       "SG1.27-ukq",
       "SG1.28-ukq",
@@ -1423,13 +1430,15 @@
       "SG1.49-ukq",
       "SG1.50-ukq",
       "SG1.51-ukq",
+      "SG2.2-ukq",
       "SG1.52-ukq",
       "SG1.53-ukq",
       "SG1.54-ukq",
       "SG1.55-ukq",
       "SG1.56-ukq",
       "SG1.57-ukq",
-      "SG1.58-ukq"
+      "SG1.58-ukq",
+      "SG2.3"
     ],
     "CLAUDE.md": [
       "P32.10",
@@ -1537,7 +1546,9 @@
       "SG1.5",
       "SG1.6",
       "SG1.15-ukq",
-      "SG1.24-ukq"
+      "SG1.24-ukq",
+      "SG2.2-ukq",
+      "SG2.3"
     ],
     "CONTRIBUTING.md": [
       "P2.2",
@@ -2115,13 +2126,15 @@
       "SG1.49-ukq",
       "SG1.50-ukq",
       "SG1.51-ukq",
+      "SG2.2-ukq",
       "SG1.52-ukq",
       "SG1.53-ukq",
       "SG1.54-ukq",
       "SG1.55-ukq",
       "SG1.56-ukq",
       "SG1.57-ukq",
-      "SG1.58-ukq"
+      "SG1.58-ukq",
+      "SG2.3"
     ],
     "QUICKSTART.md": [
       "P18.10",
@@ -2239,6 +2252,7 @@
       "SG1.48-ukq",
       "SG1.49-ukq",
       "SG1.51-ukq",
+      "SG2.2-ukq",
       "SG1.52-ukq",
       "SG1.53-ukq",
       "SG1.54-ukq",
@@ -2391,7 +2405,8 @@
       "P132.4",
       "P154.3-mkf",
       "P159.2",
-      "SG1.5"
+      "SG1.5",
+      "SG2.3"
     ],
     "examples/acme-store/acme-store-audit.html": [
       "P13.3",
@@ -2635,6 +2650,7 @@
       "SG1.19-ukq",
       "SG1.22-ukq",
       "SG1.25-ukq",
+      "SG2.1-ukq",
       "SG1.26-ukq",
       "SG1.30-ukq",
       "SG1.31-ukq",
@@ -2650,12 +2666,14 @@
       "SG1.49-ukq",
       "SG1.50-ukq",
       "SG1.51-ukq",
+      "SG2.2-ukq",
       "SG1.52-ukq",
       "SG1.53-ukq",
       "SG1.54-ukq",
       "SG1.55-ukq",
       "SG1.56-ukq",
-      "SG1.57-ukq"
+      "SG1.57-ukq",
+      "SG2.3"
     ],
     "plugins/audit/SECURITY.md": [
       "P72.1"
@@ -2856,6 +2874,7 @@
       "SG1.8",
       "SG1.18-ukq",
       "SG1.24-ukq",
+      "SG2.1-ukq",
       "SG1.29-ukq"
     ],
     "plugins/audit/commands/layout.md": [
@@ -3349,7 +3368,8 @@
       "P130.40-ywo",
       "P131.1",
       "P131.2",
-      "P142.1"
+      "P142.1",
+      "SG2.2-ukq"
     ],
     "plugins/audit/hooks/guard-capabilities.py": [
       "P15.4",
@@ -3373,6 +3393,7 @@
       "SG1.7",
       "SG1.23-ukq",
       "SG1.25-ukq",
+      "SG2.1-ukq",
       "SG1.30-ukq",
       "SG1.34-ukq",
       "SG1.43-ukq",
@@ -3487,7 +3508,8 @@
       "P125.39-0h5",
       "P125.42-0h5",
       "P159.2",
-      "P159.4-pue"
+      "P159.4-pue",
+      "SG2.2-ukq"
     ],
     "plugins/audit/hooks/journal-writes.py": [
       "P15.4",
@@ -3526,7 +3548,8 @@
       "SG1.46-ukq",
       "SG1.47-ukq",
       "SG1.49-ukq",
-      "SG1.51-ukq"
+      "SG1.51-ukq",
+      "SG2.2-ukq"
     ],
     "plugins/audit/hooks/meter-usage.py": [
       "P15.4",
@@ -3700,6 +3723,7 @@
       "SG1.19-ukq",
       "SG1.20-ukq",
       "SG1.22-ukq",
+      "SG2.1-ukq",
       "SG1.26-ukq",
       "SG1.27-ukq",
       "SG1.31-ukq",
@@ -3911,7 +3935,8 @@
       "SG1.5",
       "SG1.14-ukq",
       "SG1.19-ukq",
-      "SG1.22-ukq"
+      "SG1.22-ukq",
+      "SG2.3"
     ],
     "plugins/audit/schema/audit-config.schema.json": [
       "P41.1",
@@ -4244,7 +4269,8 @@
       "P156.18-3st",
       "P156.20-3st",
       "P159.2",
-      "SG1.5"
+      "SG1.5",
+      "SG2.3"
     ],
     "plugins/audit/scripts/config/_help.py": [
       "P10.2",
@@ -5200,7 +5226,8 @@
       "P155.18-gfj",
       "P155.35-gfj",
       "P156.18-3st",
-      "P156.20-3st"
+      "P156.20-3st",
+      "SG2.3"
     ],
     "plugins/audit/scripts/manifest/_commit_trail.py": [
       "P69.4-j6r",
@@ -5425,7 +5452,8 @@
       "P155.35-gfj",
       "P156.18-3st",
       "P156.20-3st",
-      "SG1.6"
+      "SG1.6",
+      "SG2.3"
     ],
     "plugins/audit/scripts/manifest/_merge_install.py": [
       "P60.5",
@@ -6346,7 +6374,8 @@
       "P131.2",
       "P131.12",
       "SG1.13-ukq",
-      "SG1.19-ukq"
+      "SG1.19-ukq",
+      "SG2.3"
     ],
     "plugins/audit/scripts/status/audit-doctor.py": [
       "P10.3",
@@ -6462,7 +6491,8 @@
       "SG1.19-ukq",
       "SG1.22-ukq",
       "SG1.24-ukq",
-      "SG1.25-ukq"
+      "SG1.25-ukq",
+      "SG2.3"
     ],
     "plugins/audit/scripts/status/audit-status.py": [
       "P3.2",
@@ -9192,7 +9222,8 @@
       "SG1.16-ukq",
       "SG1.19-ukq",
       "SG1.22-ukq",
-      "SG1.25-ukq"
+      "SG1.25-ukq",
+      "SG2.3"
     ],
     "tools/redfirst.sh": [
       "P55.13",
@@ -10559,7 +10590,8 @@
       "SG1.9",
       "SG1.16-ukq",
       "SG1.17-ukq",
-      "SG1.18-ukq"
+      "SG1.18-ukq",
+      "SG2.1-ukq"
     ],
     "plugins/audit/evals/guard-stop/case.yaml": [
       "P101.3",
@@ -10569,6 +10601,7 @@
       "SG1.17-ukq",
       "SG1.18-ukq",
       "SG1.21-ukq",
+      "SG2.1-ukq",
       "SG1.28-ukq"
     ],
     "plugins/audit/scripts/ui/panel-css/tokens-and-reset.css": [
@@ -11303,7 +11336,8 @@
       "SG1.14-ukq",
       "SG1.19-ukq",
       "SG1.22-ukq",
-      "SG1.25-ukq"
+      "SG1.25-ukq",
+      "SG2.3"
     ],
     "plugins/audit/tests/test_drive_phase.py": [
       "P118.5",
@@ -12060,7 +12094,8 @@
       "P156.18-3st",
       "P156.20-3st",
       "P156.21-3st",
-      "P156.22-3st"
+      "P156.22-3st",
+      "SG2.3"
     ],
     "plugins/audit/hooks/hold-handback.py": [
       "P128.6-0h5"
@@ -12850,7 +12885,8 @@
       "P156.20-3st",
       "P156.21-3st",
       "P156.22-3st",
-      "SG1.6"
+      "SG1.6",
+      "SG2.3"
     ],
     "tests/test__manifest_rules.py": [
       "P131.1",
@@ -12970,7 +13006,9 @@
       "SG1.18-ukq",
       "SG1.22-ukq",
       "SG1.24-ukq",
-      "SG1.25-ukq"
+      "SG1.25-ukq",
+      "SG2.1-ukq",
+      "SG2.3"
     ],
     "tests/test__report_html.py": [
       "P131.1",
@@ -13060,7 +13098,8 @@
       "P131.12",
       "P129.8-izt",
       "SG1.13-ukq",
-      "SG1.19-ukq"
+      "SG1.19-ukq",
+      "SG2.3"
     ],
     "tests/test__surface_digest.py": [
       "P131.1"
@@ -13198,7 +13237,8 @@
       "SG1.19-ukq",
       "SG1.24-ukq",
       "SG1.22-ukq",
-      "SG1.25-ukq"
+      "SG1.25-ukq",
+      "SG2.3"
     ],
     "tests/test_audit_status.py": [
       "P131.1",
@@ -13216,7 +13256,8 @@
       "P155.49-gfj",
       "P156.6",
       "SG1.13-ukq",
-      "SG1.19-ukq"
+      "SG1.19-ukq",
+      "SG2.3"
     ],
     "tests/test_audit_task.py": [
       "P131.1",
@@ -13277,7 +13318,8 @@
       "SG1.6",
       "SG1.15-ukq",
       "SG1.22-ukq",
-      "SG1.24-ukq"
+      "SG1.24-ukq",
+      "SG2.3"
     ],
     "tests/test_audit_usage.py": [
       "P131.1",
@@ -13461,9 +13503,10 @@
       "SG1.13-ukq",
       "SG1.14-ukq",
       "SG1.19-ukq",
-      "SG1.20-ukq",
       "SG1.22-ukq",
-      "SG1.25-ukq"
+      "SG1.20-ukq",
+      "SG1.25-ukq",
+      "SG2.3"
     ],
     "tests/test_explain_ado_drift.py": [
       "P131.1"
@@ -13488,7 +13531,8 @@
       "P131.1",
       "P129.9-izt",
       "P132.5-5mm",
-      "P142.1"
+      "P142.1",
+      "SG2.2-ukq"
     ],
     "tests/test_guard_capabilities.py": [
       "P131.1"
@@ -13499,6 +13543,7 @@
       "SG1.18-ukq",
       "SG1.23-ukq",
       "SG1.25-ukq",
+      "SG2.1-ukq",
       "SG1.30-ukq",
       "SG1.34-ukq",
       "SG1.43-ukq",
@@ -13541,7 +13586,8 @@
       "P159.5-pue",
       "SG1.7",
       "SG1.23-ukq",
-      "SG1.25-ukq"
+      "SG1.25-ukq",
+      "SG2.2-ukq"
     ],
     "tests/test_import_evidence.py": [
       "P131.1",
@@ -13568,6 +13614,7 @@
       "SG1.48-ukq",
       "SG1.49-ukq",
       "SG1.51-ukq",
+      "SG2.2-ukq",
       "SG1.52-ukq",
       "SG1.53-ukq",
       "SG1.54-ukq",
@@ -13797,7 +13844,8 @@
       "P152.10",
       "P155.30-gfj",
       "SG1.16-ukq",
-      "SG1.18-ukq"
+      "SG1.18-ukq",
+      "SG2.1-ukq"
     ],
     "tools/lints/_ui_theme_lints.py": [
       "P131.2"
@@ -13833,13 +13881,15 @@
       "P157.3",
       "P157.12-mwz",
       "SG1.10-ukq",
-      "SG1.23-ukq"
+      "SG1.23-ukq",
+      "SG2.3"
     ],
     "plugins/audit/scripts/governance/_clause_coverage.py": [
       "P131.7",
       "P148.5",
       "SG1.15-ukq",
       "SG1.24-ukq",
+      "SG2.1-ukq",
       "SG1.29-ukq",
       "SG1.33-ukq",
       "SG1.39-ukq",
@@ -13849,6 +13899,7 @@
       "P131.7",
       "SG1.15-ukq",
       "SG1.24-ukq",
+      "SG2.1-ukq",
       "SG1.29-ukq",
       "SG1.33-ukq",
       "SG1.39-ukq",
@@ -13871,7 +13922,8 @@
       "P155.30-gfj",
       "P161.5-toy",
       "SG1.16-ukq",
-      "SG1.18-ukq"
+      "SG1.18-ukq",
+      "SG2.1-ukq"
     ],
     "tests/test__ui_theme_lints.py": [
       "P131.2"
@@ -14014,6 +14066,7 @@
       "SG1.12-ukq",
       "SG1.18-ukq",
       "SG1.19-ukq",
+      "SG2.1-ukq",
       "SG1.26-ukq",
       "SG1.31-ukq",
       "SG1.35-ukq",
@@ -14029,6 +14082,7 @@
       "SG1.12-ukq",
       "SG1.18-ukq",
       "SG1.19-ukq",
+      "SG2.1-ukq",
       "SG1.26-ukq",
       "SG1.31-ukq",
       "SG1.35-ukq",
@@ -14037,7 +14091,8 @@
       "SG1.50-ukq",
       "SG1.56-ukq",
       "SG1.57-ukq",
-      "SG1.58-ukq"
+      "SG1.58-ukq",
+      "SG2.3"
     ],
     "plugins/audit/evals/bugfix/scaffold.sh": [
       "SG1.9",
@@ -14051,7 +14106,8 @@
       "SG1.9",
       "SG1.16-ukq",
       "SG1.21-ukq",
-      "SG1.25-ukq"
+      "SG1.25-ukq",
+      "SG2.1-ukq"
     ],
     "tests/test_eval_scaffolds.py": [
       "SG1.9"
@@ -14062,6 +14118,7 @@
       "SG1.18-ukq",
       "SG1.21-ukq",
       "SG1.25-ukq",
+      "SG2.1-ukq",
       "SG1.28-ukq"
     ],
     "tests/test_sweep_selftests.py": [
@@ -14757,6 +14814,38 @@
       "taskId": null,
       "fixedIn": null,
       "notes": "Phase P156 answered every finding carried here: P156.1-.10 fixed or answered each by id, grouped by area, and P156.11-.22 fixed what the five review rounds and the release-tier CI runs found in that work (P156-R1 to R30, every one resolved to its fixing task). P156 signed off and landed at 524e1d72."
+    },
+    {
+      "id": "BUG-34-ukq",
+      "title": "The phase reviewer's brief never names the configured review skill",
+      "status": "fixed",
+      "severity": "med",
+      "reportedAt": "2026-11-16T16:59:27Z",
+      "reportedBy": null,
+      "description": "agents/audit-reviewer.md tells the phase reviewer to invoke a named review skill first and lists it as an input of the computed phase brief, but audit-lookup.py brief --role phase writes no review-skill section, and drive-phase.py reads _areas.resolve_review_skill only to decide whether a review is due. On the drive route a plan with phase.reviewSkill, an area's reviewSkill or meta.reviewSkill gets a review that never learns the skill's name.",
+      "repro": "A scratch plan whose phase resolves reviewSkill from phase.reviewSkill, from meta.areas[tag].reviewSkill, or from meta.reviewSkill; run audit-lookup.py <plan> brief P1 --role phase --project <proj> at 0eeb2b7f.",
+      "expected": "The written phase.md names the resolved skill and the level it resolved from, as _areas.resolve_review_skill returns them, and the headless reviewer session loads it.",
+      "actual": "Exit 0 at all three levels; the skill name appears nowhere in phase.md, so the reviewer is never told which skill to invoke.",
+      "files": [],
+      "taskId": null,
+      "fixedIn": "2e4716d",
+      "notes": "Fixed inside the pipeline by task SG1.2, which existed before the bug was filed and so could not be linked with add --bug: the phase brief now names the resolved review skill (cases rk1-rk5 in tests/test_audit_lookup.py, vk1-vk3 in tests/test_drive_phase.py), reviewed clean"
+    },
+    {
+      "id": "BUG-35-ukq",
+      "title": "An agent can switch off the policy that governs it by editing the audit config with an edit tool",
+      "status": "fixed",
+      "severity": "med",
+      "reportedAt": "2026-11-17T09:44:45Z",
+      "reportedBy": null,
+      "description": "The capability policy and the plan gate are configured in .claude/audit.config.json, and the agents they govern can rewrite that file with Edit or Write. guard-edits.py protects the installed plugin's files, the plan-bypass state files and the journal, and does not name the config. Fixed by task SG1.7 of this plan.",
+      "repro": "In a project with policy.enabled true and the plan gate denying, have a subagent (executor or reviewer) Write or Edit .claude/audit.config.json to set policy.enabled false, planGate observe or journal.enabled false.",
+      "expected": "The write is refused for a subagent and asked of the human for the main session, the way guard-edits.py already protects the installed plugin's files, the plan-bypass state files and the journal.",
+      "actual": "The write goes through: .claude/** is in the plan gate's default exemptGlobs and no guard names the config file, so the only trace is a journal row. Present since the capability policy shipped; not a regression.",
+      "files": [],
+      "taskId": null,
+      "fixedIn": "d383ad4",
+      "notes": "Fixed by task SG1.7: guard-edits.py refuses a subagent's edit-tool write to the audit config and asks the main session; verified live by driving the hook as a process."
     }
   ],
   "deferred": {
