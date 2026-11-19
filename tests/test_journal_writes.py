@@ -35,6 +35,7 @@ Exit codes (as a command): 0 selftest pass - 1 selftest fail - 2 usage error.
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import sys
@@ -3042,6 +3043,19 @@ def _sn_hashes(tree):
     return set(r.get("hash") for r in _journal_io.read_all(tree))
 
 
+def _sn_reading_name(key):
+    """The name a call's reading of the switch takes for the writer `key`, as
+    a pattern built from `_config`'s own format and digest width, so the case
+    follows the module rather than a copy of its spelling."""
+    parts = _config.CALL_READING_FILE.split("%s")
+    if len(parts) != 3:
+        raise RuntimeError("the reading's name format is not <key>.<digest>: %r"
+                           % (_config.CALL_READING_FILE,))
+    return re.compile("^%s%s%s[0-9a-f]{%d}%s$" % (
+        re.escape(parts[0]), re.escape(key), re.escape(parts[1]),
+        _config.CALL_READING_HEX, re.escape(parts[2])))
+
+
 def _switch_reading_cases(check):
     """sn1-sn7: a call that did not switch the journal off leaves no row after
     the switch went off some other way; sn8-sn11: the call that did leaves its
@@ -3452,9 +3466,13 @@ def _switch_reading_cases(check):
           % ([s for s in seen if not s[2]],), all(s[2] for s in seen), repr(seen))
 
     # (sn20) a hand flip with no tool call of its own: between calls it leaves
-    # no row and the trail check sees nothing; while one call is open - the
-    # session's command, a subagent's MCP read - the row is that call's, under
-    # its writer: it says in whose window the switch went off, not whose hand.
+    # no row, and here - `fresh()` removed the journal, and the seeding `ls`
+    # writes no row - no row ever recorded the config, so the trail check has
+    # nothing to compare and says nothing (sn23 is the same flip with such a
+    # row, where it warns; sn23b a journal holding rows, none of them about
+    # the config, where it is silent); while one call is open - the session's command,
+    # a subagent's MCP read - the row is that call's, under its writer: it
+    # says in whose window the switch went off, not whose hand.
     def trail_quiet():
         v = _journal_io.verify(proj)
         return (not v.get("findings")
@@ -3476,8 +3494,9 @@ def _switch_reading_cases(check):
     since = _sn_hashes(proj)
     call("sess-a", act=hand(_CF_OFF), tool=_SN_READ, tin=read, agent="agent0007")
     in_mcp = _sn_rows(proj, since)
-    check("sn20 a switch-off by hand between calls leaves no row and the trail "
-          "check says nothing; by hand while a command or a subagent's MCP read "
+    check("sn20 on a journal where no row ever recorded the config, a switch-off "
+          "by hand between calls leaves no row and the trail check says "
+          "nothing; by hand while a command or a subagent's MCP read "
           "is open it leaves one row, under that call's writer - (between, "
           "trail quiet) %r, command %r, subagent's read %r"
           % (between, in_cmd, in_mcp),
@@ -3501,6 +3520,162 @@ def _switch_reading_cases(check):
     check("sn22 a switch-off by a call whose pass after never runs - a command or "
           "an edit tool - leaves no row, and the writer's next command adds none: "
           "%r" % (seen,), all(s[1] == [] for s in seen), repr(seen))
+
+    # (sn23) sn20's flip between calls, on a journal where a row already
+    # records the config - the ordinary state: an edit-tool write, a command
+    # or the panel's save made while on wrote it. The switch then goes off
+    # between calls, by hand or by the panel's save. No row is written for
+    # that, and the trail check warns that the config has changed since the
+    # last row that recorded it - with a later call of the session and with
+    # none. sn20 is the twin with no such row, where the check is silent.
+    def panel_save(enabled):
+        import _panel_write
+
+        def edit(cfg):
+            out = dict(cfg)
+            out["journal"] = dict(out.get("journal") or {}, enabled=enabled)
+            out["planGate"] = "observe" if enabled else "warn"
+            return out
+
+        res = _panel_write.write_config(proj, mutate=edit)
+        if not (res or {}).get("ok"):
+            raise RuntimeError("the panel's writer refused: %r" % (res,))
+
+    seeds = (("an edit tool", lambda: call(
+                  "sess-a", act=hand(_SN_ON2), tool="Write",
+                  tin={"file_path": conf, "content": _SN_ON2})),
+             ("a command", lambda: call("sess-a", act=hand(_SN_ON2))),
+             ("the panel's save", lambda: panel_save(True)))
+    offs = (("by hand, a later command", hand(_CF_OFF), True),
+            ("by hand, no later call", hand(_CF_OFF), False),
+            ("by the panel's save, a later command",
+             lambda: panel_save(False), True))
+    seen = []
+    for seed_how, seed in seeds:
+        for flip_how, flip, later in offs:
+            fresh()
+            seed()
+            recorded = _sn_rows(proj)
+            since = _sn_hashes(proj)
+            flip()
+            if later:
+                call("sess-a")
+            v = _journal_io.verify(proj)
+            warns = [w for w in v.get("warnings") or []
+                     if "never saw" in w and _config.CONFIG_REL in w]
+            after = _sn_rows(proj, since)
+            seen.append((seed_how, flip_how,
+                         len(recorded) == 1 and after == [] and len(warns) == 1
+                         and not v.get("findings"),
+                         len(recorded), after, warns, v.get("findings")))
+    check("sn23 on a journal where a row recorded the config - written while on "
+          "by an edit tool, a command or the panel's save - a switch-off "
+          "between calls, by hand or by the panel's save, leaves no row, and "
+          "the trail check warns that the config changed since the last row "
+          "that recorded it, with a later call or none: %r"
+          % ([s for s in seen if not s[2]],),
+          len(seen) == 9 and all(s[2] for s in seen), repr(seen))
+
+    # (sn23b) sn23's twin: a journal that holds rows, none of which recorded
+    # the config - the session's command rewrote the phase file while on. A
+    # switch-off between calls, by hand, with a later call or none: no row,
+    # and the trail check says nothing about the config. sn20's journal holds
+    # no row at all, so the check returns before it compares anything; this
+    # fixture reaches the comparison, which is what a check that warned
+    # without a row recording the config would turn red.
+    phase = os.path.join(proj, "docs", "audit", "phases", "P1.json")
+    seen = []
+    for later in (True, False):
+        fresh()
+        # A title of its own per round: the phase file outlives `fresh()`.
+        body = json.dumps({"id": "P1", "title": "p, retitled %s" % (later,),
+                           "status": "pending", "tasks": []}) + "\n"
+        call("sess-a", act=lambda: _cf_put(phase, body),
+             tin={"command": "sh ./retitle.sh"})
+        rows = _journal_io.read_all(proj)
+        since = _sn_hashes(proj)
+        hand(_CF_OFF)()
+        if later:
+            call("sess-a")
+        v = _journal_io.verify(proj)
+        warns = [w for w in v.get("warnings") or [] if _config.CONFIG_REL in w]
+        after = _sn_rows(proj, since)
+        seen.append((later, bool(rows) and _sn_rows(proj) == [] and after == []
+                     and warns == [] and not v.get("findings")
+                     and bool(v.get("rows")),
+                     [(r.get("action"), r.get("target")) for r in rows],
+                     after, warns, v.get("findings")))
+    check("sn23b on a journal holding rows, none of which recorded the config, a "
+          "switch-off by hand between calls, with a later call or none, leaves "
+          "no row and the trail check says nothing about the config: %r"
+          % ([s for s in seen if not s[1]],),
+          len(seen) == 2 and all(s[1] for s in seen), repr(seen))
+
+    # (sn24) an ordinary call made while the journal is on - a command, an MCP
+    # read, each by the session and by its subagent, and an edit-tool write of
+    # the config that leaves the switch on - leaves no reading of the switch
+    # in the state directory once its pass after has run, and exactly one
+    # between its two passes, so the case cannot pass on a reading that was
+    # never written. The removal is held where each lane makes it, not in the
+    # helper alone. Two commands of one writer in flight: the first's pass
+    # after removes its own reading and leaves the other's.
+    state = os.path.join(proj, str(_config.DEFAULTS["stateDir"]))
+
+    def readings(agent=None):
+        data = {"session_id": "sess-a"}
+        if agent:
+            data["agent_id"] = agent
+            data["agent_type"] = "audit-executor"
+        pat = _sn_reading_name(_config.writer_key(data))
+        try:
+            names = os.listdir(state)
+        except OSError:
+            names = []
+        return sorted(n for n in names if pat.match(n))
+
+    def passes(tool, tin, agent=None, act=None):
+        """A call's Pre, `act()`, its Post. -> (readings between, after)"""
+        seq[0] += 1
+        ident = "sn-reading-%d" % (seq[0],)
+        codes.append(_sn_hook("PreToolUse", proj, "sess-a", tool, tin, ident, agent))
+        between = readings(agent)
+        if act is not None:
+            act()
+        codes.append(_sn_hook("PostToolUse", proj, "sess-a", tool, tin, ident, agent))
+        return between, readings(agent)
+
+    seen = []
+    for how, tool, tin, agent, act in (
+            ("a command", "Bash", {"command": "ls"}, None, None),
+            ("an MCP read", _SN_READ, read, None, None),
+            ("a subagent's command", "Bash", {"command": "ls"}, "agent0007", None),
+            ("a subagent's MCP read", _SN_READ, read, "agent0007", None),
+            ("an edit tool writing the config, the switch left on", "Write",
+             {"file_path": conf, "content": _SN_ON2}, None, hand(_SN_ON2))):
+        fresh()
+        between, after = passes(tool, tin, agent, act)
+        seen.append((how, len(between) == 1 and after == [], between, after))
+    fresh()
+    seq[0] += 1
+    ids = ("sn-reading-%d-a" % (seq[0],), "sn-reading-%d-b" % (seq[0],))
+    ls = {"command": "ls"}
+    for ident in ids:
+        codes.append(_sn_hook("PreToolUse", proj, "sess-a", "Bash", ls, ident))
+    both = readings()
+    codes.append(_sn_hook("PostToolUse", proj, "sess-a", "Bash", ls, ids[0]))
+    other = readings()
+    codes.append(_sn_hook("PostToolUse", proj, "sess-a", "Bash", ls, ids[1]))
+    last = readings()
+    two = (len(both) == 2 and len(other) == 1 and other[0] in both
+           and last == [])
+    seen.append(("two commands in flight", two, both, other, last))
+    check("sn24 an ordinary call with the journal on - a command, an MCP read, "
+          "each by the session and by its subagent, an edit-tool write of the "
+          "config - holds exactly one reading of the switch between its "
+          "passes and leaves none after its pass after; of two calls in "
+          "flight, the first's pass after removes only its own: %r"
+          % ([s for s in seen if not s[1]],),
+          len(seen) == 6 and all(s[1] for s in seen), repr(seen))
     check("sn12 every pass of the cases above exited 0: %r"
           % (sorted(set(codes)),), codes and set(codes) == {0}, repr(codes))
 

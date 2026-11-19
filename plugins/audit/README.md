@@ -1389,8 +1389,13 @@ config switched off. That row belongs to each call in whose window the switch we
 call's own reading of the switch before and after it - two calls of one writer included, each
 keeping its reading under its own tool call id; a call that began after the switch-off, by
 this session, a subagent or another session, adds none. Whose row it is when no tool call made
-the switch-off: by hand or in the panel between calls, there is no row and the trail check does
-not see it (`sn20` in `tests/test_journal_writes.py`); one that lands while a call is open is
+the switch-off: by hand or in the panel between calls, there is no row; the trail check warns
+that the config has changed since the last row that recorded it whenever that row recorded the
+config as it stood before the switch-off - a panel save, or an edit-tool or command write of the
+config made while the journal was on - with a later call or none (`sn23` in
+`tests/test_journal_writes.py`), and says nothing when no row ever recorded the config
+(`sn23b` on a journal holding other rows, `sn20` on one holding none); one that lands while a
+call is open is
 recorded under that call, as any write the sweep sees in a call's window is - the row says in
 whose window the switch went off, not whose hand did it (`sn20`); and a switch-off by a call
 whose pass after never runs leaves no row (`sn22`). `/audit:doctor` will say the trail was running and has been turned off. For extra friction, `journal.strictManifestState: "ask"` surfaces a

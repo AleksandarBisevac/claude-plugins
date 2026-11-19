@@ -504,7 +504,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   (`sn16`, `sn17`, `sn21`); each call open across the flip leaves one (`sn18`). A reading whose
   pass after never runs is removed by the state directory's existing sweep. A payload naming no
   call id marks nothing. Whose row it is when no tool call made the switch-off: by hand or in the
-  panel between calls there is no row and the trail check does not see it; one that lands while
+  panel between calls there is no row; the trail check warns that the config has changed since
+  the last row that recorded it whenever that row recorded the config as it stood before the
+  switch-off - a panel save, or an edit-tool or command write of the config made while the
+  journal was on - with a later call or none (`sn23`), and says nothing when no row ever
+  recorded the config (`sn23b` on a journal holding other rows, `sn20` on one holding none); one
+  that lands while
   a call is open is recorded under that call - the row says in whose window the switch went
   off, not whose hand did it (`sn20`); and a switch-off by a call whose pass after never runs
   leaves no row (`sn22`).

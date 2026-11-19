@@ -1,0 +1,93 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_journal_writes.py": "pass"
+  },
+  "redFirst": {
+    "status": "not-attempted",
+    "basis": "tests.expectGreenFirst is true: this task's added tests must PASS on the base, so a green-first proof is owed in place of a red-first one",
+    "at": "2026-11-19T02:29:53Z"
+  },
+  "outcome": {
+    "technical": "tests/test_journal_writes.py: added sn23, sn23b, sn24 in _switch_reading_cases (before sn12, so their passes join sn12's exit-code check), a module helper _sn_reading_name(key) that builds the reading's file-name pattern from _config.CALL_READING_FILE and _config.CALL_READING_HEX (the module exposes both; nothing retyped), and import re. sn20 relabelled and its comment rewritten to say it is the case with no journal at all; no assertion of sn20 changed. sn23: on a journal where one row recorded the config (seeded by an edit-tool Write, a command, or the panel's save via _panel_write.write_config, each made while on), a switch-off between calls (by hand with a later command, by hand with no later call, by the panel's save with a later command) leaves no new config row, and verify gives exactly one warning naming the config with 'never saw' and no finding (sn3's assertion form), 9 fixtures. sn23b: a journal holding rows, none recording the config (a command rewrote the phase file while on), hand switch-off with a later call or none: no config row, no config warning, no finding. sn24: through the hook's passes as processes, for a command, an MCP read, a subagent's command, a subagent's MCP read, and an edit-tool Write of the config that keeps the switch on, exactly one reading named for that writer between Pre and Post and none after Post; and two commands of one writer in flight: two readings, one after the first Post (one of the two), none after the second. Documents: the false sentence 'by hand or in the panel between calls there is no row and the trail check does not see it' was replaced in SECURITY.md, plugins/audit/README.md, PLUGIN-BUILD-GUIDE.md and CHANGELOG.md with: no row (sn20 by hand, sn4 in the panel); the trail check warns that the config has changed since the last row that recorded it whenever that row recorded the config as it stood before the switch-off (a panel save, or an edit-tool or command write of the config made while on), with a later call or none (sn23); it says nothing when no row ever recorded the config (sn23b with other rows, sn20 with none). README and CHANGELOG cite sn23 without the 'by hand and in the panel' qualifier. SECURITY.md's other 'does not see it' (the MCP write of another tree's config, oq5) is the config hold's and was left. Deviation from the description's wording, on purpose: the documents say 'says nothing when no row ever recorded the config', not 'only when', because 'only' is false when the last config row recorded the bytes the switch-off restores (a last-will row recorded the config off, a hand switch-on with no row, a hand switch-off back to the same bytes: verify compares bytes, _journal_io.verify's 'elif now != state'), and the warning half is worded 'whenever that row recorded the config as it stood before the switch-off' for the same reason. Panel route, from the sn23 run: a panel save made while on writes its own config row (recorded == 1); a panel save that switches the journal off writes none and then draws the warning, so 'in the panel ... no row' stays true. Edit lane: it keeps a reading only for a write of the config itself (journal-writes.py pre_cache: rel == CONFIG_REL) and removes it at its own call site (post_rows, the _drop_reading after own =); sn24's edit-tool row covers it. Runs: tests/test_journal_writes.py through the sweep alone, before: exit 0, 208 cases, 123.16 s wall; after: exit 0, 211 cases, 131.50 s wall (each measured once, under load from other sessions and with the probe running concurrently during the after run; an intermediate after-run with 210 cases took 86.59 s). Doc lints: python3 tools/sweep-selftests.py --jobs 4 tests/test__deps.py tests/test__output_lints.py tests/test__refs.py exit 0 (792 cases); python3 tools/gate-parity.py exit 0; python3 tools/prove-gates.py --list exit 0, all rerun after the last document edit. The orchestrator's gate unrecorded (run-test-gate.py ... SG1 --task SG1.54-ukq, no --record) exit 0, GATE GREEN, on the final tree. Mutation probe (scratch sg1.54/mutations.py, run from the worktree root, copies the tracked files to a temp dir, asserts each anchor matched once, purges __pycache__, restores byte for byte): baseline sn stage 25/25; R1 sweep-lane drop made 'if own is not None' -> sn24 red, and in the FULL suite sn24 is the only red (210/211); R2 the same on the edit lane's own call site -> sn24 red; R3 the pass before never writes the reading (_keep_reading returns None) -> sn24 red (its between half; also sn5, sn6, sn8, sn9, sn13, sn16-sn21); R4 the pass after removes every reading of the writer -> sn24 and sn18 red (also sn16, sn17, sn19, sn21); R5 verify silent on a changed config (elif False and ...) -> sn23 red (and sn3); R6 verify warns on a journal holding rows but no config row -> sn23b red; R7 verify warns when the project has no journal at all -> sn20 red. MUTATIONS ALL CAUGHT, exit 0. An earlier probe run had R6 aimed at sn20 and it SURVIVED: verify returns before any comparison when the journal directory is absent (out['exists'] false), so sn20's silence never reached the code the mutation changed; that is why sn23b exists and R7 targets the early return. Dependants: SECURITY.md's readers (guard-release.py, guard-uncommitted.py, require-claim-block.py, the before-you-claim evals, the issue-template config, .gitignore, _config.py, guard-bash-writes.py; in prose guard-history-rewrite.py, test_guard_history_rewrite.py, check-prohibitions.py) still correct: only one sentence of the journal-switch passage changed, no fail-mode table row changed, and the 'write, after the fact' phrase tests/test_hooks.py quotes is untouched. tests/test_journal_writes.py's: journal-writes.py is its subject and unchanged; PLUGIN-BUILD-GUIDE.md, SECURITY.md and README now cite sn4, sn20, sn23 and sn23b for this sentence, each a case the suite prints; .github/sweep-costs.json holds a per-file cost which the added cases raise somewhat, not re-recorded (out of scope); test__output.py and test_guard_secrets_read.py share only the names _cases/_selftest, untouched. README, CHANGELOG and PLUGIN-BUILD-GUIDE dependants (the doc lints, _invariants, audit-usage, affected.py, _doctor_hygiene, the suites reading them): still correct, the doc-lint suites and gate-parity exit 0 after the edits. The section 'PLUGIN-BUILD-GUIDE.md ### plugins/audit/README.md' is not made untrue. Left as is: the sentence 'the Post removes it' in PLUGIN-BUILD-GUIDE.md does not cite sn24 (the description keeps every other sentence of the passage).",
+    "descriptive": "The four documents now say a switch-off between calls draws the trail check's warning whenever a row recorded the config (sn23) and is silent when none did (sn23b, sn20), and sn24 holds that an ordinary call's reading exists between its passes and is gone after, on both lanes."
+  },
+  "testsAdded": [
+    "sn23: a row recorded the config (edit tool, command, panel save, made while on), then a switch-off between calls by hand or by the panel's save, with a later call or none: no row, exactly one 'changed since the last row that recorded it' warning, no finding",
+    "sn23b: a journal holding rows, none recording the config, then a hand switch-off with a later call or none: no row and no config warning",
+    "sn24: through the hook's passes as processes, a command, an MCP read, each by the session and a subagent, and an edit-tool write of the config: one reading between the passes, none after; two calls in flight: the first's pass after removes only its own"
+  ],
+  "casesAdded": [
+    [
+      "sn23",
+      "sn23b"
+    ],
+    [
+      "sn24"
+    ]
+  ],
+  "claims": "claims:\n1 SECURITY.md, plugins/audit/README.md, PLUGIN-BUILD-GUIDE.md, CHANGELOG.md: the warning half is _journal_io.verify's 'elif now != state' over the newest config anchor, shown by sn23 (9 fixtures, warning text seen in the run); the silent half is the absent-journal early return (sn20) and no config anchor (sn23b); 'only' dropped because the check compares bytes\n2 R1-R7 in the scratch probe sg1.54/mutations.py, each anchor asserted once on a copy, restored byte for byte: R1/R2 -> sn24 red (R1: full suite 210/211, sn24 the only red); R3 (allow twin, reading never written) -> sn24 red; R4 (over-fire, every reading removed) -> sn24, sn18 red; R5 -> sn23 red; R6 (over-fire, rows but no config row) -> sn23b red; R7 (over-fire, no journal) -> sn20 red; an earlier R6 aimed at sn20 survived, which produced sn23b\n3 grep -n 'does not see it' over the four documents: 4 hits; SECURITY.md:1602 left (the config hold's MCP sentence, oq5), the other three fixed; the README's copy wrapped across lines and was found by grep -n sn20, fixed: four documents in all\n4 n/a - no rule to an agent\n5 suite seconds measured once each (before 123.16 s, after 131.50 s, under load) and reported as measured once; no property recorded in a document\n6 n/a - no guard\n7 n/a - no number written into the documents",
+  "greenFirst": {
+    "at": "2026-11-19T02:34:39Z",
+    "basis": "`python3 tools/sweep-selftests.py tests/test_journal_writes.py` in a throwaway tree at HEAD exited 0 with HEAD's own tests green on HEAD's code and the task's own cases seen by the passed count: tests/test_journal_writes.py passed 208 case(s) at HEAD's own run and 211 with the task's - 1/1 files ok, 211 cases; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+    "status": "proved",
+    "source": "green-first-helper"
+  },
+  "stamp": "audit-stamp: {\"content\":\"sha256:f313a47afcc9a3e90ca8da13b0d04a437e786ab284761416a182bd728eb9aadc\",\"dirtyDigest\":\"sha256:bead36b340a3596020dcb1c8a32ecc5f7fcf70b109249c96f0ce0419a969eb86\",\"dirtyPaths\":{\"CHANGELOG.md\":\"4619f7ad5d98d55e\",\"PLUGIN-BUILD-GUIDE.md\":\"b3da60582031af3b\",\"SECURITY.md\":\"c9d7750615952ef2\",\"plugins/audit/README.md\":\"aeb10bc7de029023\",\"tests/test_journal_writes.py\":\"96660d0d6af5f32f\"},\"head\":\"9e56af32\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"SECURITY.md\",\"plugins/audit/README.md\",\"tests/test_journal_writes.py\"],\"scopeDigest\":\"sha256:3f9cd9ee8e26b1931c8e1f851dc2ae89db98bcf15bf486ad23f3c4de676e1215\",\"v\":2}",
+  "floorGuard": {
+    "answer": "partly-read",
+    "basis": "compared 0 of the diff's 5 file(s) and found none of the moves (test-deleted, definition-changed, skip-added, suppression-added, stub-added); 4 file(s) not read that cannot hold a move as read here: CHANGELOG.md, PLUGIN-BUILD-GUIDE.md, SECURITY.md, plugins/audit/README.md; 1 file(s) that could hold a move not compared: tests/test_journal_writes.py",
+    "findings": [],
+    "declared": [],
+    "renamed": [
+      {
+        "path": "tests/test_journal_writes.py",
+        "from": "sn20 a switch-off by hand between calls leaves no row and the trail check says nothing; by hand while a command or a subagent's MCP read is open it leaves one row, under that call's writer - (between, trail quiet) %r, command %r, subagent's read %r",
+        "to": "sn20 on a journal where no row ever recorded the config, a switch-off by hand between calls leaves no row and the trail check says nothing; by hand while a command or a subagent's MCP read is open it leaves one row, under that call's writer - (between, trail quiet) %r, command %r, subagent's read %r",
+        "line": 3497
+      }
+    ],
+    "couldNotTell": [],
+    "notRead": [
+      {
+        "path": "CHANGELOG.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "PLUGIN-BUILD-GUIDE.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "SECURITY.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "plugins/audit/README.md",
+        "move": null,
+        "reason": "no comment or string syntax this reading knows for its name",
+        "kind": "cannot-hold-a-move"
+      },
+      {
+        "path": "tests/test_journal_writes.py",
+        "move": "definition-changed",
+        "reason": "code outside its labelled checks was only added: every statement of the base copy outside them stands in the tree copy, in order and in place, and the first added one is at tree line 38 (`import re`); what it runs is not compared",
+        "kind": "could-hold-one"
+      }
+    ],
+    "base": {
+      "commit": "9e56af327fd1a775f0519570711e7adbe08e68c1"
+    },
+    "acceptedSuppressions": [
+      "noqa: E402"
+    ],
+    "source": "floor-guard",
+    "at": "2026-11-19T02:34:41Z"
+  },
+  "testsAddGaps": [],
+  "testsAddUnchecked": []
+}

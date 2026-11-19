@@ -1126,8 +1126,12 @@ than `_GC_MAX_AGE` (`cr5`), and an ordinary call pays nothing for that: no listi
 state directory on a tool call. What an ordinary call does pay, with the switch on: the swept
 Pre reads the config once more and writes one small file, and the Post removes it. Whose row it
 is when no tool call made the switch-off: by hand or in the panel between calls there is no
-row and the trail check does not see it (`sn20` by hand, the trail check included; `sn4` in
-the panel); one that lands while a call is open is
+row (`sn20` by hand, `sn4` in the panel); the trail check warns that the config has changed
+since the last row that recorded it whenever that row recorded the config as it stood before
+the switch-off — a panel save, or an edit-tool or command write of the config made while the
+journal was on — with a later call or none (`sn23`, by hand and in the panel), and says
+nothing when no row ever recorded the config (`sn23b` on a journal holding other rows, `sn20`
+on one holding none); one that lands while a call is open is
 that call's row, as any write the sweep sees in its window is — it says in whose window the
 switch went off, not whose hand did it (`sn20`); and a switch-off by a call whose Post never
 runs leaves no row (`sn22`). `_append_rows` hands a marked row over with

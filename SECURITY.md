@@ -1710,8 +1710,13 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    flipping call began, leaves none (`sn19`); and of two writers' calls the one
    that cannot tell whose write it was names no session (`sn9`). Whose row it
    is when no tool call made the switch-off: by hand or in the panel between
-   calls, there is no row and the trail check does not see it (`sn20` by
-   hand, the trail check included; `sn4` in the panel);
+   calls, there is no row (`sn20` by hand, `sn4` in the panel); the trail
+   check warns that the config has changed since the last row that recorded
+   it whenever that row recorded the config as it stood before the
+   switch-off - a panel save, or an edit-tool or command write of the config
+   made while the journal was on - with a later call or none (`sn23`, by hand
+   and in the panel), and says nothing when no row ever recorded the config
+   (`sn23b` on a journal holding other rows, `sn20` on one holding none);
    one that lands while a call is open is recorded under that call, as any
    write the sweep sees in a call's window is - the row says in whose window
    the switch went off, not whose hand did it (`sn20`); and a switch-off by a

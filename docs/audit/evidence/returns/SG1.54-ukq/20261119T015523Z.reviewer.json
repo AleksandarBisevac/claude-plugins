@@ -1,0 +1,22 @@
+{
+ "findings": [
+  {"id": 1, "severity": "low", "file": "tests/test_journal_writes.py:3600-3680",
+   "issue": "The task's HOW TO PROVE names an allow twin for rule 2: 'a call whose pass after never ran leaves its one reading, as the documents already say'. sn24 has no such case. Every row it drives runs both passes, and its 'two in flight' leg runs both Posts. The executor's filed 'allow twin' (R3, the pass before never writes the reading) is a different mutation. sn18 and sn22 touch calls whose Post never runs, but do not assert that the ordinary call's reading is still the one file in the state directory. A pass after that removed readings of calls it never ran (R4 over-fire) is therefore held only indirectly. The executor's probe says R4 turned sn24 and sn18 red; I did not re-run it.",
+   "resolution": "Add one row to sn24: an ordinary command whose Post is not run (call(..., post=False), or the Pre pass only). Assert readings() holds exactly one file, and that a later call of the same writer leaves that file in place."},
+  {"id": 2, "severity": "low", "file": "plugins/audit/README.md:1392-1396; CHANGELOG.md:507-512",
+   "issue": "The task asks for 'one wording' in the four documents. SECURITY.md and PLUGIN-BUILD-GUIDE.md say the warning appears 'with a later call or none (sn23, by hand and in the panel)'. README and CHANGELOG drop 'by hand and in the panel'. The 'no row' half is cited to sn20/sn4 in SECURITY.md and the build guide, but README and CHANGELOG cite only sn23 for it (sn23 does assert no new row). The four citations are not the same set.",
+   "resolution": "Use the SECURITY.md sentence verbatim (modulo the dash glyph) in all four documents, including the qualifier and both half-citations."}
+ ],
+ "preExisting": [],
+ "intent": {
+  "answer": "matches",
+  "note": "Clause 1 (the four documents say what a run shows): the diff replaces the false 'no row and the trail check does not see it' in SECURITY.md, README, the build guide and the changelog. The new text says: no row; the trail check warns that the config changed since the last row that recorded it whenever that row recorded the config as it stood before the switch-off; it says nothing when no row ever recorded it. It cites sn23, sn23b and sn20. I read _journal_io.verify (plugins/audit/scripts/governance/_journal_io.py:3154-3166): the warning is raised on 'elif now != state' over the newest config anchor, and an absent journal returns early. So the text is true. The executor's departure from 'only when' is correct, because the comparison is byte equality. Clause 2 (an ordinary call leaves no reading, held where it is removed): sn24 runs journal-writes.py as processes for a command, an MCP read, a subagent's command, a subagent's MCP read and an edit-tool config write. It requires exactly one reading between the passes and none after. The reading's name pattern is built from _config.CALL_READING_FILE and CALL_READING_HEX (both exist, plugins/audit/hooks/_config.py:5686-5687) and writer_key. No file under hooks/ or scripts/ changed, as required. The claim describes the diff: the three cases, the helper, the import, the sn20 relabel with no assertion change and the four document edits are all in it. I did not re-run the executor's mutation probe (R1-R7), so those results are unverified here. The green-first record shows 208 cases on HEAD and 211 with the task's.",
+  "missing": [],
+  "redFirst": "not-attempted",
+  "redFirstBasis": "The executor filed not-attempted: 'tests.expectGreenFirst is true: this task's added tests must PASS on the base, so a green-first proof is owed in place of a red-first one'. The brief's green-first helper filed proved (208 cases at HEAD, 211 with the task's, exit 0). That the cases can fail rests on the executor's own mutation probe, not on a red run I was handed.",
+  "inheritedTests": "none-found",
+  "inheritedTestsBasis": "tests.gate is `python3 tools/sweep-selftests.py tests/test_journal_writes.py`, which selects every case in that file. I read sn20 (test_journal_writes.py:3468-3508), sn22 (3510-3522) and the three added cases. sn20's 'trail quiet' half used to pass vacuously, because verify returns before comparing anything on a journal with no rows. The task relabels it to say so, and sn23b now reaches the comparison, so that shape is covered. I found no other case in the passage whose assertion the named behaviour never reaches. I did not read the whole 3000-line file."
+ },
+ "verdict": "findings",
+ "tasks": []
+}
