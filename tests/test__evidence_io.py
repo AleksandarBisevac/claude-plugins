@@ -41,6 +41,7 @@ import _output                                     # noqa: E402  (REPO_ROOT: whe
 import _panel_composition                          # noqa: E402  (the panel's reading of the full gate)
 import _doctor_trail                               # noqa: E402  (the doctor's full-run check)
 import _doctor_report                              # noqa: E402  (the collector that check reports into)
+import _json_schema                                # noqa: E402  (the schema reader validate-manifest uses)
 
 
 def _project(root, config=None):
@@ -6288,11 +6289,319 @@ def _shared_subtree_cases(check):
         _harness.remove_tree(tmp)
 
 
+# --- every record the recorder composes, against the published schema --------
+# Read with the reader `validate-manifest` reads the plan with, so the answer is
+# the one a user's revalidation gives - never a second reading of the schema.
+_RK_SCHEMA = os.path.join(_output.PLUGIN_ROOT, "schema", "audit-plan.schema.json")
+_RK_TASK = {"taskId": "P1.1", "phaseId": "P1"}
+_RK_PHASE = {"phaseId": "P1"}
+_RK_SOURCE = {"runId": "RS", "ts": "2026-11-18T10:00:00Z",
+              "startedAt": "2026-11-18T09:59:00Z"}
+_RK_REUSED = {"runId": "RS", "ts": "2026-11-18T10:00:00Z", "status": "failed"}
+
+
+def _rk_measured():
+    """A measured run's gate result carrying every field a run can leave on
+    its row (`_rs_full_result`, its repeat fields taken off) and a second step,
+    so a part repeat has one to copy."""
+    out = _rs_full_result()
+    out.pop(M.VERDICT_SOURCE, None)
+    out.pop("reusedFrom", None)
+    out["steps"] = list(out["steps"]) + [_ri_step("lint", ms=700)]
+    out["banners"] = ["a banner the run printed"]
+    return out
+
+
+def _rk_repeat(verdict, **extra):
+    """A repeat of RS's result: whole (`M.REUSED`, no step ran) or part (the
+    lint step copied, the sweep measured again)."""
+    out = dict(_rk_measured(), **{M.VERDICT_SOURCE: verdict,
+                                  "reusedFrom": dict(_RK_REUSED)})
+    if verdict == M.REUSED:
+        out["steps"] = []
+    else:
+        out["steps"] = [out["steps"][0], dict(out["steps"][1], reusedFrom={
+            "runId": "RS", "ts": _RK_SOURCE["ts"]})]
+    out.update(extra)
+    return out
+
+
+def _rk_rows(root):
+    """Every ledger row a shape is composed from, as `row_for` builds it."""
+    def row(result, run_id, ts, scope="task", identity=None):
+        ids = _RK_TASK if scope == "task" else _RK_PHASE
+        return M.row_for(root, result, scope, ids,
+                         dict(identity or {}, runId=run_id, ts=ts))
+    big = {"overlap": ["src/%s/c%d.py" % ("c" * 40, i)
+                       for i in range(M.MAX_PATHS)],
+           "treeMutated": [" M src/%s/m%d.py" % ("m" * 40, i)
+                           for i in range(M.MAX_PATHS)]}
+    reading = dict(_rs_full_result()[M.BASE_RED_KEY], head=_KB_HEAD,
+                   verdict="no-base", run=None)
+    many = _rk_measured()
+    many["steps"] = [_ri_step("s%d" % i) for i in range(M.MAX_STEPS + 1)]
+    return {
+        "source": row(_rk_measured(), "RS", _RK_SOURCE["ts"],
+                      identity={"startedAt": _RK_SOURCE["startedAt"]}),
+        "part": row(_rk_repeat(M.PART_REUSED), "RP", "2026-11-18T10:05:00Z"),
+        "whole": row(_rk_repeat(M.REUSED), "RR", "2026-11-18T10:06:00Z"),
+        "differ": row(_rk_repeat(M.REUSED, **{M.GATE_REACH_KEY: _sh_reach("b")}),
+                      "RD", "2026-11-18T10:07:00Z"),
+        "other": row(_ri_result("passed", [_ri_step("lint")],
+                                _ri_state(RI_H1, False, "sha256:s"), "sha256:o"),
+                     "RX", "2026-11-18T09:00:00Z"),
+        "many": row(many, "RM", "2026-11-18T10:08:00Z"),
+        "big source": row(dict(_rk_measured(), **big), "RS",
+                          _RK_SOURCE["ts"]),
+        "big": row(_rk_repeat(M.PART_REUSED, **dict(
+            big, **{M.BASE_RED_KEY: reading})), "RC", "2026-11-18T10:09:00Z"),
+        "phase": row(_ri_result("passed", [_ri_step(RI_JOINED, ms=4000)],
+                                _ri_state(RI_H0, True, "sha256:scope-p1"),
+                                "sha256:k7"), "R7", "2026-11-18T10:25:00Z",
+                     scope="phase"),
+        "red": row(dict(_rk_measured(), testedState=dict(
+            _ri_state(_KB_HEAD, False, "sha256:s")), **{M.BASE_RED_KEY: {
+                "run": None, "head": _KB_HEAD, "verdict": "no-base",
+                "atBase": [], "introduced": [], "unknown": [],
+                "basis": "no run recorded at base"}}),
+            "RK", "2026-11-18T10:10:00Z"),
+    }
+
+
+def _rk_shapes(rows):
+    """`[(shape, scope, steps)]`: every record shape the recorder writes, each
+    as the writes that compose it - a record written by `write_record`, or a
+    call `(root, manifest)` of the writer's own (`keep_base`)."""
+    rec, src = M.run_record, rows["source"]
+    lines = {"machine": "this run had the machine to itself",
+             "attribution": "the red is this run's own"}
+    return [
+        ("a measured run", "task", [rec(src, lines=lines, launch="tok-1")]),
+        ("a part repeat", "task", [rec(rows["part"], source=src)]),
+        ("a whole repeat sharing every equal subtree", "task",
+         [rec(rows["whole"], source=src)]),
+        ("a whole repeat keeping its own reach reading", "task",
+         [rec(rows["differ"], source=src)]),
+        ("a whole repeat of the record it replaces", "task",
+         [rec(src), rec(rows["whole"])]),
+        ("a repeat whose source neither holds", "task",
+         [rec(rows["other"]), rec(rows["whole"])]),
+        ("a run whose steps were cut at MAX_STEPS", "task", [rec(rows["many"])]),
+        ("a record replacing launched runs", "task",
+         [rec(src, launch="tok-A"), rec(rows["part"], source=src,
+                                         launch="tok-B")]),
+        ("a red carrying kept base runs", "task",
+         [rec(rows["red"]), lambda root, mpath: M.keep_base(
+             root, mpath, rows["red"], _kb_base("RB", "RK"))]),
+        ("a red carrying a settled base reading", "task", [rec(src)]),
+        ("a phase-scope record", "phase", [rec(rows["phase"])]),
+        ("a phase-scope whole repeat", "phase",
+         [rec(rows["whole"], source=src)]),
+    ]
+
+
+def _rk_compose(tmp, index, scope, steps):
+    """`(stored record, stored pointer, refusals)` after `steps` ran against a
+    fresh project; `refusals` names each write that did not land."""
+    root, mpath, spath = _lr_project(tmp, "rk%d" % (index,))
+    ids = _RK_TASK if scope == "task" else _RK_PHASE
+    refused = []
+    for step in steps:
+        got = (step(root, mpath) if callable(step)
+               else M.write_record(root, mpath, scope, ids, step))
+        if not (isinstance(got, dict) and got.get("written") is True):
+            refused.append(got)
+    body = _lr_shard(spath)
+    holder = body if scope == "phase" else body["tasks"][0]
+    return holder.get(M.RECORD_KEY), holder.get(M.POINTER_KEY), refused
+
+
+def _rk_cut_names(record):
+    """The fields `record` names as cut, in `RECORD_CUT_ORDER`'s spelling: a
+    cut of the carried run is named on that run's own record."""
+    carried = record.get(M.REPEATED_RUN_KEY) or {}
+    return (["%s.%s" % (M.REPEATED_RUN_KEY, n)
+             for n in carried.get(M.RECORD_CUT_KEY) or []]
+            + list(record.get(M.RECORD_CUT_KEY) or []))
+
+
+def _rk_cut_walk(rows):
+    """`[(fields this bound newly cut, record)]`: the record the writer
+    finishes (`finished_record` - cut, then shared) at each bound from just
+    under the record's whole size down, one entry per bound that cut more.
+    The record is a part repeat whose own run and carried run hold every
+    observation the order cuts, and whose reading keeps a base run, composed
+    as `keep_base` composes one."""
+    whole = M.resolved_shared(M.run_record(rows["big"], source=rows["big source"],
+                                           bound=10 ** 9))
+    reading = whole[M.BASE_RED_KEY]
+    whole[M.BASE_RED_KEY] = M.with_kept_bases(reading, M.kept_bases(reading) + [
+        M.kept_base(_kb_base("RB", "RC"))])
+    out, before, bound = [], [], M.record_bytes(whole) - 1
+    while bound > 0:
+        cut = M.finished_record(json.loads(json.dumps(whole)), bound)
+        names = _rk_cut_names(cut)
+        new = [n for n in names if n not in before]
+        if not new:
+            break
+        out.append((new, cut))
+        before = names
+        bound = M.record_bytes(M.resolved_shared(cut)) - 1
+    return out
+
+
+def _rk_said(doc, ref, value, where):
+    """Every line the schema reader says of `value` under `ref`: its findings,
+    and each keyword it met and could not check - never read as a pass."""
+    found, unread = _json_schema.check_findings({"$ref": ref}, value, doc, where)
+    return [str(f) for f in found] + ["unread keyword %s" % (k,)
+                                      for k in sorted(unread)]
+
+
+def _rk_definitions(doc):
+    """Every `lastRun` a `properties` table of the schema names, as the node it
+    holds: one definition is one `$ref` everywhere it is placed."""
+    out = []
+
+    def walk(node, where):
+        if isinstance(node, dict):
+            props = node.get("properties")
+            if isinstance(props, dict) and M.RECORD_KEY in props:
+                out.append((where, props[M.RECORD_KEY]))
+            for key, val in node.items():
+                walk(val, "%s/%s" % (where, key))
+        elif isinstance(node, list):
+            for val in node:
+                walk(val, where)
+    walk(doc, "#")
+    return out
+
+
+def _record_schema_cases(check):
+    """(rk) Every record the recorder can write is one the published schema
+    accepts, read by the schema reader `validate-manifest` uses. The shapes are
+    composed THROUGH THE WRITER, and the tables that decide a record's shape -
+    the cut order, the paths a repeat may share, the keys only a record holds -
+    are read off the module, so an entry added to one is composed here or
+    named as one the case could not compose."""
+    tmp = _harness.fixture_root("audit-evidence-schema-")
+    try:
+        doc = _json_schema.load_document(_RK_SCHEMA)
+        rows_root = os.path.join(tmp, "rows")
+        ri_plan(rows_root)
+        rows = _rk_rows(rows_root)
+        stored, refused, pointers = [], [], []
+        for i, (shape, scope, steps) in enumerate(_rk_shapes(rows)):
+            record, pointer, said = _rk_compose(tmp, i, scope, steps)
+            if said or not isinstance(record, dict):
+                refused.append((shape, said))
+                continue
+            stored.append((shape, record))
+            pointers.append((shape, pointer, M.pointer_from_record(record)))
+        cuts = _rk_cut_walk(rows)
+        stored.extend(("a record cut through %s" % (", ".join(names),), record)
+                      for names, record in cuts)
+        refusals = dict((shape, lines) for shape, lines in (
+            (shape, _rk_said(doc, "#/$defs/lastRun", record, M.RECORD_KEY))
+            for shape, record in stored) if lines)
+        check("rk1 THE INVARIANT: every record shape the recorder composes - "
+              "measured, part and whole repeats, a record sharing each subtree "
+              "it can share, one cut at every position of the cut order, kept "
+              "and settled base readings, replaced launches, a phase's - is "
+              "stored and is accepted by the published `lastRun`, read by the "
+              "reader validate-manifest uses, with no keyword left unread: "
+              "refused by the writer %r / refused by the schema %r"
+              % (refused, refusals),
+              refused == [] and refusals == {} and len(stored) > len(cuts))
+
+        cut_last = set(n for names, _r in cuts if len(names) == 1 for n in names)
+        # What a repeat may share: a key of a measured record outside
+        # `_NEVER_SHARED` holding a subtree - a dict or a list - longer than
+        # the path naming it (`_shared_paths`' rule); and the steps, which a
+        # whole repeat shares by derivation (the never-shared table's comment).
+        measured = M.run_record(rows["source"])
+        shareable = sorted(
+            set(k for k, v in measured.items() if k not in M._NEVER_SHARED
+                and isinstance(v, (dict, list))
+                and M.record_bytes(v) > M.record_bytes(k) + 1)
+            | set(["steps"]))
+        shared = set(p.split(".")[0] for _s, r in stored
+                     for p in r.get(M.SHARED_KEY) or [])
+        shaped = set()
+        for _s, r in stored:
+            shaped |= set(r) | set(r.get(M.REPEATED_RUN_KEY) or {})
+            shaped |= set((r.get(M.BASE_RED_KEY) or {}))
+        owed = (list(M._RECORD_SHAPED) + list(M.RECORD_LINE_KEYS)
+                + [M.REPEAT_UNREAD_KEY, M.REPLACED_KEY, M.LAUNCH_KEY,
+                   M.BASE_RUNS_KEY])
+        uncomposed = {
+            "RECORD_CUT_ORDER": [c for c in M.RECORD_CUT_ORDER
+                                 if c not in cut_last],
+            "shareable paths": [p for p in shareable if p not in shared],
+            "record-shaped keys": [k for k in owed if k not in shaped]}
+        check("rk2 THE TABLES ARE COMPOSED: each entry of the cut order is the "
+              "one field some bound newly cut, each path a repeat may share (a record's "
+              "keys outside `_NEVER_SHARED`, and the steps) is shared by some "
+              "record, and each key only a record holds is held by some record "
+              "- an entry no shape reached is named: %r" % (uncomposed,),
+              all(v == [] for v in uncomposed.values())
+              and len(M.RECORD_CUT_ORDER) > 0 and len(shareable) > 1)
+
+        ptr_said = [(shape, _rk_said(doc, "#/$defs/testEvidence", pointer,
+                                     M.POINTER_KEY), pointer == derived)
+                    for shape, pointer, derived in pointers]
+        ptr_said += [(name, _rk_said(doc, "#/$defs/testEvidence",
+                                     M.pointer_for(row), M.POINTER_KEY), True)
+                     for name, row in sorted(rows.items())]
+        check("rk3 THE POINTER FORMS: the pointer each write left beside its "
+              "record is the one `pointer_from_record` derives from it, and it - "
+              "and the pointer `pointer_for` makes of every row - is accepted by "
+              "the published `testEvidence`: %r"
+              % ([p for p in ptr_said if p[1] or not p[2]],),
+              pointers and all(not lines and same
+                               for _s, lines, same in ptr_said))
+
+        whole = [r for s, r in stored
+                 if s == "a whole repeat sharing every equal subtree"]
+        whole = whole[0] if whole else {}
+        bare = dict(M.run_record(rows["source"]))
+        bare.pop("steps", None)
+        other = dict(whole, **{M.SHARED_KEY: [
+            p for p in whole.get(M.SHARED_KEY) or [] if p != "steps"]
+            or [M.GATE_REACH_KEY]})
+        other.pop("steps", None)
+        twins = dict((name, _rk_said(doc, "#/$defs/lastRun", r, M.RECORD_KEY))
+                     for name, r in (("no steps, nothing shared", bare),
+                                     ("no steps, others shared", other)))
+        check("rk4 SECOND DIRECTION: a record with no `steps` that does not "
+              "name them as shared is REFUSED, each naming `lastRun.steps` - "
+              "the case that fails if the schema excused an absent `steps` "
+              "whatever the record shares: %r" % (twins,),
+              "steps" in (whole.get(M.SHARED_KEY) or [])
+              and all(any("%s.steps" % (M.RECORD_KEY,) in line for line in lines)
+                      for lines in twins.values()))
+
+        placed = _rk_definitions(doc)
+        check("rk5 ONE DEFINITION: every place the schema names a `lastRun` - a "
+              "task's and a phase's - is a `$ref` to `$defs/lastRun`, so the "
+              "shape these records are held to is the one validate-manifest "
+              "reads at each place: %r" % (placed,),
+              len(placed) >= 2
+              and all((node or {}).get("$ref") == "#/$defs/lastRun"
+                      for _w, node in placed))
+    except Exception as exc:                                   # noqa: BLE001
+        check("rk0 the record-schema block ran to its end (%s: %s)"
+              % (type(exc).__name__, exc), False)
+    finally:
+        _harness.remove_tree(tmp)
+
+
 def _selftest():
     def body(check):
         _harness.stage(check, "ev-block", _cases)
         _harness.stage(check, "rs-block", _record_sufficiency_cases)
         _harness.stage(check, "sh-block", _shared_subtree_cases)
+        _harness.stage(check, "rk-block", _record_schema_cases)
         _harness.stage(check, "lr-block", _last_run_cases)
         _harness.stage(check, "rv-block", _repeat_record_cases)
         _harness.stage(check, "lk-block", _shard_lock_ast_cases)

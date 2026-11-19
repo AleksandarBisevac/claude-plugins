@@ -64,6 +64,8 @@ KEYWORD_ROWS = (
     ("additionalProperties schema", {"additionalProperties": {"type": "integer"}},
      {"k": 1}, {"k": "s"}, "type"),
     ("items", {"items": {"type": "string"}}, ["a"], ["a", 2], "type"),
+    ("contains", {"contains": {"const": 1}}, ["a", 1.0], ["a", True],
+     "contains"),
     ("oneOf", {"oneOf": [{"type": "string"}, {"type": "integer"}]}, 3, None,
      "arms"),
     ("oneOf ambiguous", {"oneOf": [{"type": "number"}, {"type": "integer"}]},
@@ -114,6 +116,23 @@ def _cases(check):
     reasons, unread = M.check({"$ref": "#/$defs/nope"}, "s", {}, "x")
     check("js6 a $ref that names nothing is unread, never a pass: %r"
           % ((reasons, unread),), reasons == [] and len(unread) == 1)
+
+    # `contains` asks for at least one item (draft 2020-12's default
+    # `minContains`), judges nothing that is not an array, and carries up a
+    # keyword its subschema could not check - one line, never one per item.
+    node = {"contains": {"const": "steps"}}
+    judged = dict((name, M.check(node, value, {}, "x")) for name, value in (
+        ("empty", []), ("not an array", "steps"), ("object", {"a": "steps"})))
+    nested = M.check({"contains": {"uniqueItems": True}}, ["a", "b"], {}, "x")
+    check("js12 `contains` refuses an EMPTY array with one reason naming the "
+          "path, and leaves a value that is not an array to the other keywords "
+          "(no reason) - while a keyword inside it the reader cannot check is "
+          "returned unread, never a pass: %r / %r" % (judged, nested),
+          judged["empty"][0] == [("contains", "x holds no item the schema's "
+                                  "`contains` admits")]
+          and judged["not an array"] == ([], set())
+          and judged["object"] == ([], set())
+          and nested[1] == set(["uniqueItems"]))
 
     # ECMAScript's \s stays Unicode-wide: the earlier re.ASCII reading narrowed
     # it along with \d.

@@ -137,7 +137,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   only as a record answers the drive, the gate's repeat, the panel and the report as its row
   would; a record over its byte bound drops the coverage paths first and says so. A repeat's
   record holds each field equal to the run it carries once, in that run, and a whole repeat's
-  steps are derived from it rather than copied, so a repeat no longer weighs twice its source;
+  steps are derived from it rather than copied, so a repeat no longer weighs twice its source -
+  and the published schema accepts that stored form: `steps` may be absent exactly when
+  `sharedWithRepeated` names them, which `validate-manifest` checks with the `contains` keyword
+  its schema reader now reads, where it used to warn that every such record broke the schema;
   and the step names a count's basis samples are cut to the sample budget like every name
   after them, so a gate whose step is a long command no longer copies that command into the
   sentence whole. A missing

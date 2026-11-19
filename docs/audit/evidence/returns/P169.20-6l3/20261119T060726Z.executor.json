@@ -1,0 +1,68 @@
+{
+  "gates": {
+    "python3 tools/sweep-selftests.py tests/test_drive_phase.py tests/test_run_test_gate.py tests/test__evidence_io.py (the task's declared gate)": "pass",
+    "python3 tools/sweep-selftests.py tests/test_audit_lookup.py + test__deps, test__output_lints, test__refs, test__manifest_vocab, test_gen_demo_manifest, tools/_suite.py, test__help (one run with the gate suites: 11/11 files ok, 3466 cases, exit 0)": "pass",
+    "python3 tools/check-rendered-artifacts.py --before-commit": "pass",
+    "python3 tools/measure-context.py --gate (orchestrator.md 62000/62000)": "pass",
+    "python3 tools/sweep-selftests.py (full, after the last edit: 197/198 files ok, 19370 cases, exit 1 - the single red is tests/test_validate_manifest.py sp1, red on the live plan because the previous task's record for a reused verdict (P169.5 lastRun) stores no steps while the schema's lastRun requires steps; recorded as its own finding for the next task, not changed here)": "fail"
+  },
+  "redFirst": {
+    "at": "2026-11-19T07:09:58Z",
+    "basis": "`python3 tests/test_drive_phase.py --selftest --stage bh-block --stage bo-block` in a throwaway tree at HEAD exited 1 with 9 of 10 collected tests failing an assertion, the task's own among them (named by --case, HEAD's own tests on HEAD's code failing only the unknown-stage check for `bh-block`, `bo-block`, which the task's test files add - the stage is new at HEAD: its cases did not exist at HEAD, which is red for them), each passing with the working tree's implementation - bh0 (house FAIL), bh1 (house FAIL), bh2 (house FAIL), bh3 (house FAIL), bh4 (house FAIL), bo1 (house FAIL), bo2 (house FAIL), bo3 (house FAIL), bo4 (house FAIL): SELFTEST FAILED: 0/10 cases passed; --case bh5, bh6, bh7, bh8, bh5r names no case that failed an assertion in this run; run without CLAUDE_PROJECT_DIR, OLDPWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+    "status": "proved",
+    "source": "red-first-helper"
+  },
+  "outcome": {
+    "technical": "ONE RULE: a base run that is skipped, unread or still running never changes who a red is charged to, and never costs the task anything a held base would not have. Stated once as BASE_TURNS above base_turn() in drive-phase.py; red_decision_name() is the one reading of the decision a red would be asked. THE TABLE AS IT STANDS: (running-this, gate-red-writer) -> beside [decide now, the resume spends nothing]; (running-this, gate-red) -> hold [wait-base, its retry would spend an attempt over an unmeasured base]; (running-this, gate-red-base | gate-red-base-unknown) -> hold, UNREACHABLE because a running base leaves the row's own reading naming no base run and nothing unknown; (running-other, *) -> hold; (running-earlier, *) -> join [no second launch, the start takes the running launch of its commit]; (ended-pending, answered) -> refuse [answer refused, nothing spent, decision taken again]; (ended-pending, unanswered) -> retake; (ended-green, *) -> settle [mark decided, stage queued, verdict kept on the green record via _evidence_io.keep_settled_base under baseRed.settledOf, dated BASE_GREEN_NOTE when the base had the red]; (kept-unread, *) -> fall [this start's measurement decides, else gate-red-base-unknown in the refusal's words]; (own, *) -> read; any pair no row names -> hold. FINDINGS: R41 (bh0-bh3), R42 own_red asks git of the runner's path via absent_at, any git failure or a cut list measures (bo1-bo4), R43 (bh7), R44 (bh4), R45 settle_green + the note now READ: audit-lookup.py base_green_lines() matches notes by _evidence_io.BASE_GREEN_MARK, the reviewer's brief gains a 'A red its base already had' section and the sign-off's per-task section the same lines (bh5/bh6, bh5r/bh6r end to end through settle_green and the reviewer brief, bg1-bg4 in test_audit_lookup.py), R46 step_answered (kb4), R47 stamp_end/resumesAtEnd (bh8), R48 schema wording names RECORD_CUT_ORDER as the table (doc only), R49 keep_base refusing another commit (kb5). Reproduced red at HEAD 199bfe76: R41-R47 (bh0-bh8, bo1-bo4, kb4). NOT reproduced: R49 - HEAD's keep_base already refused another commit; kb5 is green at HEAD and held by mutation m10 only. MUTATIONS on a scratch copy (anchor counted, landing confirmed, restored and compared, pycache purged; logs scratchpad/p16920/mut.log and mut2.log): m1 beside for gate-red -> bh1,bh2; m2 second launch -> bh3; m3 late answer applied -> bh4; m4 declared spelling asked -> bo4; m5 git failure read as absent -> bo2; m6 kept-only failure sent to writer -> bh7; m7 green not settled -> bh5,bh6; m8 unanswered step measured -> kb4; m9 count past the end -> bh8; m10 keep_base accepts another commit -> kb5; m11 reader matches its own spelling -> bg1,bg3,bh5r; m12 writer's note drops the mark -> bg1,bg3,bh5,bh5r; m13 sign-off drops the lines -> bg3; m14 reviewer section always -> bg2,bh6r. CANCELLED BOUND / REPLACED LAUNCH vs A BASE MARK (read, no case covers it): cancelled_gate reads only GATE_LAUNCH_KEY marks; a gate relaunched after a beside resume skips base_gate (mark is beside) and never touches the base mark; a gate-cancelled decision carries no BESIDE_KEY so a base end does not drop it; after a join, launch_base's replaced (via _marked_any_start) is the joined mark carrying the same launch, so release_replaced releases the right claim; release_orphaned_launches names the joined launch and does not release it; measure-base drops the mark as before; no defect found. WALL-TIME COUNT: python3 scratchpad/p16920/reds.py <repo> 2 -> red task runs 210, writer-path tasks 1 (P131.6), free resume 0, held 210; python3 scratchpad/p16920/base_reds.py <repo> -> base runs 15, of a writer-path red 0, held 15, base durationMs sum 493795, max 161549 (one over the 120000 bound); read 07:37:10, 07:37:28, 07:45:35, identical. The beside saving has applied to no recorded run in this repository, because every recorded red took the agent path (plain gate-red, no executor.writerModel), so the fix holds nothing that was free before. BYTES: python3 scratchpad/p16920/widest.py <repo> -> widest lastRun 13261 bytes (P169.14-6l3) at all three readings, records carrying settledOf 0, so existing plans grow 0; settled_bytes.py -> the settled baseRed is 221 bytes, a widest record with it 13482-13483 (two readings at 07:37, spread 0). BRIEF COST: measure-context --gate exit 0, orchestrator.md 62000/62000 (reviewer and sign-off briefs are subagent reads, outside its entries); the section added 450 bytes to a reviewer brief and 440 to a sign-off brief carrying one note (bg2/bg4), 504 bytes on the drive fixture's real note (bh5r 3174 vs bh6r 2670), and 0 when absent - the no-note and ordinary-note briefs are byte-identical (bg2, bg4). Help payload: my first schema description pushed it to 160038 (headroom 39962 < 40000, test__help p5); trimmed, test__help green.",
+    "descriptive": "A base run that is skipped, unread or still running no longer changes who a red is charged to or costs the task more than a held base, and a red the base already had that the writer turned green reaches the reviewer and the sign-off."
+  },
+  "testsAdded": [
+    "bh0-bh8: the BASE_TURNS rows walked through the drive",
+    "bh5r/bh6r: the note settle_green writes read through the reviewer's brief, end to end, and its twin",
+    "bo1-bo4: the own-files skip asks git of the runner's path and measures on failure or a cut list",
+    "kb4: an unanswered base step measures nothing",
+    "kb5: keep_base refuses a base of another commit and writes nothing",
+    "bg1-bg4: reviewer brief and sign-off section show the base-green note, matched by BASE_GREEN_MARK, and say nothing byte for byte without it"
+  ],
+  "casesAdded": [
+    [
+      "bh1",
+      "bh2",
+      "bh0",
+      "bh3"
+    ],
+    [
+      "bo1",
+      "bo2",
+      "bo3",
+      "bo4"
+    ],
+    "bh7",
+    "bh4",
+    [
+      "bh5",
+      "bh6",
+      "bh5r",
+      "bh6r",
+      "bg1",
+      "bg2",
+      "bg3",
+      "bg4"
+    ],
+    "kb4",
+    "bh8",
+    "kb5"
+  ],
+  "claims": "claims:\n- comment/doc: BASE_TURNS' table, the base_green_lines comment, execute-task.md, PLUGIN-BUILD-GUIDE.md, CHANGELOG.md and the schema state only behaviour bh0-bh8, bh5r/bh6r, bo1-bo4, kb4, kb5 and bg1-bg4 exercise; the two unreachable rows say why\n- check can fail: m1-m14 each turned the named cases red on a scratch copy, the anchor counted and the restore compared\n- class, not instance: one table and one function answer every base-state site; R41-R47 are its rows; the note's writer and reader share one constant, and m11/m12 prove a drift on either side goes red\n- rule with a mechanism: the base-green note is read by both briefs (bg1, bg3, bh5r), not left in prose\n- measured twice: widest record and red counts read at 07:37:10, 07:37:28 and 07:45:35, identical; brief cost read off the cases' own printed lengths\n- guard reads operation: not a guard\n- numbers in prose: none added to any document; figures live in this outcome only",
+  "stamp": "audit-stamp: {\"content\":\"sha256:d18a05d274b5f8268cdc6ab2a804f01ac35b6d9b77bc504c7b0ad59a1d525135\",\"dirtyDigest\":\"sha256:f8fbce8dd3b9330ca82e697a15dbbaa3affe4f1a620599446ebe162a54f8a538\",\"dirtyPaths\":{\"CHANGELOG.md\":\"58450046d27cc0c5\",\"PLUGIN-BUILD-GUIDE.md\":\"f3d01ace84be6eca\",\"plugins/audit/reference/execute-task.md\":\"5aae441c2ba30d89\",\"plugins/audit/reference/orchestrator.md\":\"64d1ade0c2c08124\",\"plugins/audit/schema/audit-plan.schema.json\":\"510b5aa17efff9a7\",\"plugins/audit/scripts/governance/_evidence_io.py\":\"dddf4c11f1a228a4\",\"plugins/audit/scripts/governance/drive-phase.py\":\"2ed810ae52826dc6\",\"plugins/audit/scripts/governance/run-test-gate.py\":\"c84ff1eb72c69662\",\"plugins/audit/scripts/status/audit-lookup.py\":\"cea5fbd6a12a6409\",\"tests/test__evidence_io.py\":\"b07572486934c728\",\"tests/test_audit_lookup.py\":\"956a01306a80e7ab\",\"tests/test_drive_phase.py\":\"1a2d799e5c9d606b\"},\"head\":\"199bfe76\",\"manifest\":\"docs/audit/audit-plan.json\",\"scope\":[\"CHANGELOG.md\",\"PLUGIN-BUILD-GUIDE.md\",\"plugins/audit/reference/execute-task.md\",\"plugins/audit/reference/orchestrator.md\",\"plugins/audit/schema/audit-plan.schema.json\",\"plugins/audit/scripts/governance/_evidence_io.py\",\"plugins/audit/scripts/governance/drive-phase.py\",\"plugins/audit/scripts/governance/run-test-gate.py\",\"plugins/audit/scripts/status/audit-lookup.py\",\"tests/test__evidence_io.py\",\"tests/test_audit_lookup.py\",\"tests/test_drive_phase.py\",\"tests/test_run_test_gate.py\"],\"scopeDigest\":\"sha256:aad0c2c38f9ef73b79d6d3a8aeb78701d6856df5c29103fa5f0aa461a1eeedae\",\"v\":2}",
+  "testsAddGaps": [
+    "tests/test_drive_phase.py: A green gate whose start holds an ended base mark settles it: the base's verdict is kept where the plan holds it, the time record gets its stage, and when the ... - bound to `bg1`, which the suite did not print",
+    "tests/test_drive_phase.py: A green gate whose start holds an ended base mark settles it: the base's verdict is kept where the plan holds it, the time record gets its stage, and when the ... - bound to `bg2`, which the suite did not print",
+    "tests/test_drive_phase.py: A green gate whose start holds an ended base mark settles it: the base's verdict is kept where the plan holds it, the time record gets its stage, and when the ... - bound to `bg3`, which the suite did not print",
+    "tests/test_drive_phase.py: A green gate whose start holds an ended base mark settles it: the base's verdict is kept where the plan holds it, the time record gets its stage, and when the ... - bound to `bg4`, which the suite did not print"
+  ],
+  "testsAddUnchecked": [
+    "tests/test__evidence_io.py: A base step counts as measured only when it answered - not checked: the submit's command did not run `tests/test__evidence_io.py`, so the ids bound to it were not compared with any printed label",
+    "tests/test__evidence_io.py: A case that hands keep_base a base of another commit and asserts the refusal's sentence and that nothing is written - not checked: the submit's command did not run `tests/test__evidence_io.py`, so the ids bound to it were not compared with any printed label"
+  ]
+}

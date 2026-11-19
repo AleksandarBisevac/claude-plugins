@@ -63,8 +63,9 @@ import _output  # noqa: E402  (the anchor: install_path, py_files, safe_stdio)
 
 _output.install_path()
 
-SUPPORTED = frozenset(["$ref", "type", "enum", "const", "items", "oneOf",
-                       "anyOf", "allOf", "pattern", "properties", "required",
+SUPPORTED = frozenset(["$ref", "type", "enum", "const", "items", "contains",
+                       "oneOf", "anyOf", "allOf", "pattern", "properties",
+                       "required",
                        "additionalProperties", "minLength", "maxLength",
                        "minimum", "maximum", "exclusiveMinimum",
                        "exclusiveMaximum"])
@@ -322,6 +323,10 @@ def _check_part(part, value, doc, where, depth):
                                   "%s[%d]" % (where, i), depth + 1)
             findings.extend(r)
             unread |= u
+    if "contains" in part and isinstance(value, list):
+        r, u = _check_contains(part["contains"], value, doc, where, depth)
+        findings.extend(r)
+        unread |= u
     if isinstance(value, dict):
         r, u = _check_object(part, value, doc, where, depth)
         findings.extend(r)
@@ -424,6 +429,23 @@ def _check_object(part, value, doc, where, depth):
         findings.extend(r)
         unread |= u
     return findings, unread
+
+
+def _check_contains(node, value, doc, where, depth):
+    """`contains` over the list `value`: at least one item `node` admits -
+    draft 2020-12's default `minContains`, so an empty list is refused. One
+    reason for the list, never one per item: an item that fails `node` is no
+    fault, only a list none of whose items passes is."""
+    unread = set()
+    admits = False
+    for i, item in enumerate(value):
+        r, u = check_findings(node, item, doc, "%s[%d]" % (where, i), depth + 1)
+        unread |= u
+        admits = admits or not r
+    if admits:
+        return [], unread
+    return [_output.finding("schema.contains", "%s holds no item the schema's "
+                            "`contains` admits" % (where,))], unread
 
 
 def _check_arms(part, combiner, value, doc, where, depth):

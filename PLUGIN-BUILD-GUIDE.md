@@ -4134,8 +4134,14 @@ under the lock, from the record the write replaces when that is the run (by the 
 the subject's newest). When neither holds it, `repeatedRunUnread` (`REPEAT_UNREAD_KEY`) names the
 run and says its steps are not carried; a reader asks `repeatedRun` first and this only when it is
 absent. A whole repeat's `startedAt` is absent and its `durationMs` is its own lookup's; the run it
-repeated keeps its own under `repeatedRun`. `subject_records()` reads every record a plan's files
-hold.
+repeated keeps its own under `repeatedRun`. A subtree equal to the carried run's, and a whole
+repeat's steps, are stored once, in `repeatedRun`, and named under `sharedWithRepeated`
+(`shared_with_repeated()`); `record_row()` gives them back through `resolved_shared()`, and the
+schema lets `steps` be absent exactly when that list names it. `rk1` in
+`tests/test__evidence_io.py` validates every shape the writer composes against the schema, and
+`rk2` names any entry of `RECORD_CUT_ORDER`, of what `_NEVER_SHARED` leaves shareable, or of
+`_RECORD_SHAPED` that no composed shape reached.
+`subject_records()` reads every record a plan's files hold.
 
 **`reconcile()` is that repair**, and it is why the refusal is affordable: it re-derives every
 pointer from the ledger and from each subject's record, the newer of the two — a pointer
