@@ -833,17 +833,20 @@ def _job_runs(lines):
 
 
 def _step_runs(lines):
-    """[(run, the step's `if:` or "", its `continue-on-error:` or "")] for a
-    job's lines.
+    """{"runs": [(run, the step's `if:` or "", its `continue-on-error:` or "")],
+    "flow": [the opening line of each flow-style step]} for a job's lines.
 
     A step is one item of the job's `steps:` list, and its keys sit at the
     item's own depth whichever key opens the item (`- if:` or `- name:` with
     `if:` below it), so a script line that happens to read `if:` is never taken
-    for one. A job with no `steps:` block gives its runs neither key."""
+    for one. A job with no `steps:` block gives its runs neither key. A step
+    written in flow style (`- { name: a, run: ... }`) has no key lines to read,
+    so it is returned by its opening line rather than read as a step with no
+    run and no `continue-on-error`."""
     head = next((i for i, ln in enumerate(lines)
                  if re.match(r"^\s*steps:\s*(#.*)?$", ln)), None)
     if head is None:
-        return [(run, "", "") for run in _job_runs(lines)]
+        return {"runs": [(run, "", "") for run in _job_runs(lines)], "flow": []}
     base = len(lines[head]) - len(lines[head].lstrip(" "))
     steps, item = [], None
     for ln in lines[head + 1:]:
@@ -857,8 +860,11 @@ def _step_runs(lines):
             steps.append([ln])
         elif steps:
             steps[-1].append(ln)
-    out = []
+    out, flow = [], []
     for step in steps:
+        if step[0][item + 2:].lstrip().startswith(("{", "[")):
+            flow.append(step[0].strip())
+            continue
         own = [" " * (item + 2) + step[0][item + 2:]] + step[1:]
         keys = {}
         for got in (_key_line(ln) for ln in own):
@@ -866,7 +872,7 @@ def _step_runs(lines):
                 keys.setdefault(got[1], got[2])
         out += [(run, keys.get("if", ""), keys.get("continue-on-error", ""))
                 for run in _job_runs(step)]
-    return out
+    return {"runs": out, "flow": flow}
 
 
 # A SLICE IS NEVER THE THING ALLOWED TO FAIL. `continue-on-error` turns a failed step
@@ -982,7 +988,8 @@ def job_slices(text):
     The `if:` of the step carrying a call is read the same way as the job's
     (`_step_runs`, `_call_tier`): a job that runs on every run can still skip
     the step its slices are in. A `continue-on-error` that is not `false` on
-    that step, or on a job carrying a call, is a `problems` row (`_may_fail`).
+    that step, or on a job carrying a call, is a `problems` row (`_may_fail`),
+    and so is a step written in flow style, whose keys this reader cannot see.
     """
     jobs = _workflow_jobs(text)
     if not jobs:
@@ -991,7 +998,13 @@ def job_slices(text):
     out, problems = [], []
     for job, lines in jobs:
         calls = []
-        for run, condition, tolerated in _step_runs(lines):
+        stepped = _step_runs(lines)
+        problems += [(job, "a flow-style step (%s) this reader cannot read, so a "
+                      "`run:` in it is not counted as run and its "
+                      "`continue-on-error` is not checked; write it as a block "
+                      "mapping, one key per line" % (opening,))
+                     for opening in stepped["flow"]]
+        for run, condition, tolerated in stepped["runs"]:
             step_calls = _verify_args(run)
             if not step_calls:
                 continue        # a step running no gate has no condition to prove
@@ -1438,6 +1451,10 @@ AUDITED_EXEMPTIONS = {
     "SCHEMA_EXEMPTIONS": ("live", "schema_coverage"),
     "NOT_A_GATE": ("live", "coverage"),
     "PLUGIN_OWNED_IN_CLAUDE": ("live", "tests/test_commit_task_work.py ctw-at9"),
+    # The real tools the browser install's shell may reach: `bp8` reports an entry no
+    # step's script names any longer, or one a stub serves too; the sentence beside
+    # each entry is not compared against anything.
+    "ALLOWED_TOOLS": ("live", "tools/check-browser-install.py bp8"),
     # The keys of a ledger row the plan's record does not carry: `rs2` reports an
     # entry naming a key `row_for` cannot write, so a row outliving its key is red;
     # the sentence beside each entry is not compared against anything.
@@ -1520,6 +1537,11 @@ NOT_AN_EXEMPTION = {
                    "what the stamp is allowed to claim rather than excusing "
                    "anything from a rule",
     "PRESETS": "theme presets - a named palette per preset, not an excuse",
+    "CACHE_KEYS": "the key expression each cache path of the browser install must "
+                  "be stored under - a value a case requires, not an excuse",
+    "_SYSDEPS_ENV": "the env the browser install's `sysdeps` step must read from "
+                    "the `pins` step's outputs - a value a case requires, not an "
+                    "excuse",
     "VERDICT_HELP": "what each invariant verdict means, printed beside it",
     "_SH_SELF_DIR_SHAPES": "a RULE table, and the opposite of an exemption: each "
                            "row is a way a shell script may NOT read its own "
@@ -3446,6 +3468,24 @@ def _slice_cases(check):
           seed_shape != _SLICE_CI and falsy != _SLICE_CI
           and slice_drift(seed_shape, _SLICE_LISTED) == []
           and slice_drift(falsy, _SLICE_LISTED) == [])
+
+    # A FLOW-STYLE STEP is not read, so it is a finding of its own: the verify step
+    # written `- { ... }` and allowed to fail, and one that runs nothing. sv26 above
+    # is this case's allow side - a reader taking every step for flow style turns
+    # it red.
+    flows = [_SLICE_CI.replace(lint_step, step) for step in (
+        "      - { name: verify slices, continue-on-error: true, "
+        "run: sh tools/verify.sh --only lint,runner }\n",
+        "      - { uses: actions/checkout@v5 }\n" + lint_step)]
+    flow_found = [[w for s, w in slice_drift(t, _SLICE_LISTED)
+                   if s == "lint (job)" and "flow-style" in w] for t in flows]
+    check("sv27 a flow-style step is the job's finding, once, naming its line - "
+          "whether it would run verify.sh or not - never a step read as running "
+          "nothing: %r" % (flow_found,),
+          all(t != _SLICE_CI for t in flows)
+          and [len(f) for f in flow_found] == [1, 1]
+          and "continue-on-error: true" in flow_found[0][0]
+          and "actions/checkout@v5" in flow_found[1][0])
 
 
 # THE WINDOWS PART COUNT, pinned rather than read, because the windows sweep cells
