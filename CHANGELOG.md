@@ -302,6 +302,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   dimension the rule names and runs both copies of each, so its oracle is the run and not the
   module. What is proven, declined and still read without proof is stated once, in the build
   guide's section on `_floor_guard.py`.
+- **The floor guard's proof is one switch per file and a short list of proven uses, and a name's
+  resolution decides only whether a skip's reason is set aside.** A skip imported once, or a
+  base bound once by a class statement, rebound through the file's namespace or its entry in
+  the modules table still resolved, since that store only marked the scope it stood in; the
+  namespace on the left of `in` or `==`, handed to `getattr` or `isinstance`, or spelled through
+  the builtins module or the modules entry's `__dict__` was taken as read in place - each let a
+  bare new test read clean while the base copy ran a failing test the tree copy no longer runs.
+  Now one switch per file, computed from the base copy alone, comes first: an unproven use of
+  the namespace at any depth, an exec or eval call, a star import, or a store or setattr on the
+  file's own modules entry leaves nothing of the file proven, and the scope-by-scope reading of
+  those forms is gone. The proven uses are a short list made from a sweep of this repository's
+  test files - handed directly to another module's callee, and the namespace's own `get` - and
+  the list of reading methods and the list of builtins that write are gone with it; a form no
+  test file holds is not on it. Two findings had stopped being reported and are again: with the
+  module imported twice or any star import, every argument of a skip spelled call was set aside,
+  so a widened skip condition read not compared; and any call on a receiver named `mark` was
+  taken as a mark, so a changed assertion through a dictionary or a match object called `mark`
+  read not compared. A call is now spelled like a skip only by its own last names, and only its
+  reason position is set aside, so a condition, an assertion, a new skip or a deleted test is
+  a finding in any file. The module states its binding kinds once (`BINDING_KINDS`) and the
+  suite holds a rebinding pair, or the reason there can be none, for each, failing by name for a
+  kind with neither; a second generated case holds every reported move in every file context.
+  The rule as built is stated in the build guide's section on `_floor_guard.py`.
 - **An Acceptance list the clause reader could not number is now read, never silently dropped.**
   The items after a task description's last `Acceptance:` were read only when numbered
   `(1) ... (2) ...`; a Markdown numbered list and unnumbered prose read as no clause, so on the

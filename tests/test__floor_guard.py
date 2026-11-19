@@ -1613,8 +1613,11 @@ def _inert_twins(check):
 # is blanked in a check's dump (`_inv_text`); a new test definition is holed only
 # when it is bare, under a name the base copy holds as no identifier and as no word
 # of a string, in a scope where it binds nothing by computation (`_inv_walk`,
-# `_inv_bound`); a docstring holding no doctest prompt is deleted from every dump
-# (`_InvAside`); and a skip's reason has its literal text blanked, and nothing
+# `_inv_bound` - neither fixture holds a form that leaves the module proving
+# nothing of a file, so this route reads scope by scope, and a fixture given one
+# disagrees with the module on every new test of it); a docstring holding no
+# doctest prompt is deleted from every dump (`_InvAside`); and a skip's reason
+# has its literal text blanked, and nothing
 # else of it, where that skip's own signature names it, for the spellings and
 # receivers the module's table names and no other (`INV_REASONS`). Beside every
 # row the edits include ones just outside it (`INV_OUTSIDE`) - a value inside a
@@ -1718,8 +1721,8 @@ class TestA(unittest.TestCase):
         self.helper.skipIf(False, "held")
 
 
-class TestB(unittest.TestCase):
-    locals()["test_" + "made"] = lambda self: self.assertTrue(BASE)
+class TestB(unittest.TestCase, metaclass=type):
+    made = BASE
 
     def test_eight(self):
         self.assertEqual(str(BASE), "2")
@@ -3274,6 +3277,7 @@ class TestA(unittest.TestCase):
 
 BOUND_READ = '''import sys
 import types
+from _harness import run_blocks as _run_blocks
 
 CONFIG = globals().get("CONFIG_OVERRIDE", {})
 STAND_IN = types.ModuleType("stand_in")
@@ -3422,13 +3426,9 @@ def _bound_allow(check):
     for label, base, tree in (
             ("a file binding nothing by computation, the name mentioned nowhere",
              BOUND_PLAIN, BOUND_PLAIN + method % "test_fresh"),
-            ("another class than the one whose body stores into locals()", BOUND_LOCALS,
-             BOUND_LOCALS + method % "test_fresh"),
             ("another class than the one the module calls setattr on", BOUND_SETATTR,
              BOUND_SETATTR.replace("    def test_other(self):",
                                    (method % "test_fresh")[1:] + "\n    def test_other(self):")),
-            ("a module function where only a class body stores into locals()", BOUND_LOCALS,
-             BOUND_LOCALS + "\n\ndef test_fresh():\n    assert 1\n"),
             ("a name the base copy's strings hold only as part of longer words",
              BOUND_PLAIN, BOUND_PLAIN + method % "test_alpha"),
             ("a name a string holds as part of a longer word, beside test_beta_two",
@@ -3444,8 +3444,9 @@ def _bound_allow(check):
         got = _run([(path, base, tree)])
         seen.append((label, (got["answer"], got["findings"], got["notRead"]), _show(got)))
     check("fa55 THE TWIN of fm78 and fm79: a bare new test in a file whose base copy binds "
-          "nothing by computation, in another class than the one bound by computation, as a "
-          "module function where only a class body binds, or under a name the base copy's "
+          "nothing by computation, in another class than the one a setattr of the module binds "
+          "into, beside a namespace read through its own get and handed to an imported runner, "
+          "or under a name the base copy's "
           "strings hold only inside longer words, is a new unit and reads clean: %r" % (seen,),
           [s[1] for s in seen] == [(M.CLEAN, [], [])] * len(seen))
 
@@ -3836,8 +3837,10 @@ PROOF_PLAIN = ("class TestA(unittest.TestCase):\n    def test_plain(self):\n"
 PROOF_FAIL = "def _fail():\n    assert False\n\n\n"
 PROOF_INSTALL = ('def _install(ns):\n    for n in ("a", "b"):\n        ns["test_" + n] = '
                  "_fail\n\n\n")
-PROOF_CHECKS = ('class _Checks(object):\n    for _n in ("a", "b"):\n        locals()["test_" + _n]'
-                " = lambda self: self.fail()\n\n\n")
+# A generating base that binds by a setattr on the class, not through the
+# namespace, so a file holding it is read class by class rather than not at all.
+PROOF_CHECKS = ('class _Checks(object):\n    pass\n\n\nfor _n in ("a", "b"):\n'
+                '    setattr(_Checks, "test_" + _n, lambda self: self.fail())\n\n\n')
 PROOF_FN = "\n\ndef test_plain():\n    assert True\n"
 
 
@@ -3846,9 +3849,9 @@ def _proof_inputs():
     for each measured input that loses a failing test, the first two read clean
     once a spelling was read through the file's imports alone."""
     unit = "import unittest\n"
-    factory = (unit + "\n\ndef _make():\n    class _B(unittest.TestCase):\n"
-               '        for _n in ("a", "b"):\n            locals()["test_" + _n] = '
-               "lambda self: self.fail()\n    return _B\n\n\n_Base = _make()\n\n\n"
+    factory = (unit + "\n\ndef _make():\n    class _B(unittest.TestCase):\n        pass\n"
+               '    for n in ("a", "b"):\n        setattr(_B, "test_" + n, '
+               "lambda self: self.fail())\n    return _B\n\n\n_Base = _make()\n\n\n"
                + PROOF_PLAIN.replace("(unittest.TestCase)", "(_Base)"))
     return (
         ("a bare skip name rebound by assignment after its import",
@@ -3930,8 +3933,6 @@ def _unresolved_never_finding(check):
     for label, base, tree, name in (
             ("a dotted skip's reason, the module imported from two places", TWO_PLACES,
              TWO_PLACES.replace("old reason", "new reason"), "`unittest`"),
-            ("a dotted skip's condition, the module imported from two places", TWO_PLACES,
-             TWO_PLACES.replace('"nope"', '"other"'), "`unittest`"),
             ("a dotted skip's reason, the module name rebound", rebound,
              rebound.replace("old reason", "new reason"), "`unittest`"),
             ("a bare skip's reason, the name reaching the file by a star import", starred,
@@ -3941,8 +3942,8 @@ def _unresolved_never_finding(check):
         seen.append((label, (got["answer"], got["findings"], len(said) == 1
                              and name in said[0] and "test_plain" in said[0]), said))
     check("fm84 a skip spelled through a name that does not resolve - a module imported "
-          "from two places, a module name rebound, a bare name a star import may bind - is "
-          "never a finding: its reason or condition changed reads not compared, naming the "
+          "from two places, a module name rebound, a bare name a star import may bind - has "
+          "its reason changed read not compared, naming the "
           "name, how the file binds it and the test it stands on: %r" % (seen,),
           [s[1] for s in seen] == [(PARTLY_READ, [], True)] * len(seen))
     # The other direction: a call spelled like a skip whose name IS proven - one
@@ -3974,9 +3975,9 @@ def _proof_allow(check):
                              "'old')\n")
     runner = PROOF_FAIL + "import _harness\n\n\n_harness.run_blocks(ns=globals())\n" + PROOF_FN
     uncalled = PROOF_FAIL + "import _harness\n\n\n_harness.run_blocks(globals)\n" + PROOF_FN
-    reads = ("import sys\n\n\nNAME = globals()[\"__name__\"]\nHAS = \"CONFIG\" in globals()\n"
-             "CONFIG = globals().get(\"CONFIG\", {})\nNAMES = sorted(k for k in globals())\n"
-             "SIZE = len(globals())\n" + PROOF_FN)
+    # Only the namespace's own get is a reading form a test file here holds; fm89
+    # holds the forms that are not on the list.
+    reads = "import sys\n\n\nCONFIG = globals().get(\"CONFIG\", {})\n" + PROOF_FN
     seen = []
     for label, base, tree in (
             ("a class with a dotted skip under a single import",
@@ -3999,8 +4000,7 @@ def _proof_allow(check):
             ("the namespace handed by keyword to a runner of an imported module", runner, None),
             ("the namespace function handed, not called, to a runner of an imported module",
              uncalled, None),
-            ("the namespace subscripted to read, tested for membership, asked through a "
-             "reading method, iterated and handed to a builtin", reads, None)):
+            ("the namespace asked through its own get", reads, None)):
         if tree is None:
             tree = base + (method if "class TestA" in base else function)
         got = _run([(path, base, tree)])
@@ -4009,8 +4009,329 @@ def _proof_allow(check):
           "under its one import, a module imported under an alias - a reason changed "
           "through it included -, a same-file base binding nothing in any position, a "
           "namespace handed directly to an imported runner, by keyword or uncalled, and a "
-          "namespace read in place read clean: %r" % (seen,),
+          "namespace asked through its own get read clean: %r" % (seen,),
           [s[1] for s in seen] == [(M.CLEAN, [], [])] * len(seen))
+
+
+# --- one switch per file, a short list of proven uses -------------------------------
+# A file whose base copy uses its own namespace in a way the reading has not proven
+# harmless - or calls exec or eval, has a star import, or stores into its own entry
+# of the modules table - proves nothing at all: no name of it resolves, and a bare
+# new test anywhere in it is not compared, its reason naming the first such line.
+# Each input of `_switch_pairs` with a marker loses a failing test when both copies
+# run (the generated case runs them); the rest only turn the switch.
+
+NS_WRITER = '''class _W(object):
+    def __contains__(self, ns):
+        for n in ("a", "b"):
+            ns["test_" + n] = _fail
+        return True
+
+    def __eq__(self, ns):
+        for n in ("a", "b"):
+            ns["test_" + n] = _fail
+        return True
+
+    __hash__ = None
+
+
+'''
+# Generates by a setattr on itself, so the namespace write is the only line that
+# leaves the file proving nothing.
+NS_GEN = ('class _Gen(unittest.TestCase):\n    pass\n\n\nfor _n in ("a", "b"):\n'
+          '    setattr(_Gen, "test_" + _n, lambda self: self.fail())\n\n\n')
+
+
+def _switch_pairs():
+    """(dimension, value, base copy, tree copy, the text of the base copy's first
+    line that turns the switch, loses a failing test) for each way a file writes its
+    own namespace that the reading must see: a proven name rebound through it, and
+    a use of it the reading once took as reading in place."""
+    unit, plain = "import unittest\n", PROOF_PLAIN
+    based = plain.replace("(unittest.TestCase)", "(_Base)")
+    writer_cls = NS_WRITER.replace('ns["test_" + n] = _fail', 'ns["test_" + n] = lambda self: self.fail()')
+    meta = ("class _M(type):\n    def __instancecheck__(cls, ns):\n        for n in (\"a\", \"b\"):\n"
+            "            ns[\"test_\" + n] = _fail\n        return True\n\n\nclass _C(metaclass=_M):\n"
+            "    pass\n\n\n")
+    rebound = "namespace rebinds a proven name"
+    unseen = "namespace written unseen"
+    rows = (
+        (rebound, "a skip through a store into globals()",
+         unit + "from unittest import skip\n\n\n" + PROOF_REGISTER
+         + "globals()['sk' + 'ip'] = _register\n\n\n@skip('never')\n" + plain,
+         "globals()['sk' + 'ip']", "class"),
+        (rebound, "a skip through setattr on the modules entry",
+         "import sys\n" + unit + "from unittest import skip\n\n\n" + PROOF_REGISTER
+         + "setattr(sys.modules[__name__], 'sk' + 'ip', _register)\n\n\n@skip('never')\n" + plain,
+         "setattr(sys.modules", "class"),
+        (rebound, "a base through a store into globals()",
+         unit + "\n\n" + NS_GEN + "class _Base(unittest.TestCase):\n    pass\n\n\n"
+         "globals()['_Ba' + 'se'] = _Gen\n\n\n" + based, "globals()['_Ba'", "class"),
+        (rebound, "a base through the modules entry's dictionary",
+         unit + "import sys\n\n\n" + NS_GEN + "class _Base(unittest.TestCase):\n    pass\n\n\n"
+         "sys.modules[__name__].__dict__['_Ba' + 'se'] = _Gen\n\n\n" + based,
+         "sys.modules[__name__].__dict__", "class"),
+        (unseen, "membership in a writer",
+         PROOF_FAIL + NS_WRITER + "globals() in _W()\n" + PROOF_FN, "globals() in _W()", "module"),
+        (unseen, "equality with a writer",
+         PROOF_FAIL + NS_WRITER + "_W() == globals()\n" + PROOF_FN, "_W() == globals()", "module"),
+        (unseen, "membership in a writer, in a class body",
+         PROOF_FAIL + unit + "\n\n" + writer_cls + "class TestA(unittest.TestCase):\n"
+         "    locals() in _W()\n\n    def test_plain(self):\n        self.assertTrue(True)\n",
+         "locals() in _W()", "class"),
+        (unseen, "through the builtins module",
+         PROOF_FAIL + "import builtins\n\n\nbuiltins.globals()['test_' + 'a'] = _fail\n" + PROOF_FN,
+         "builtins.globals()", "module"),
+        (unseen, "through the modules entry's dictionary",
+         PROOF_FAIL + "import sys\n\n\nsys.modules[__name__].__dict__['test_' + 'a'] = _fail\n"
+         + PROOF_FN, "sys.modules[__name__].__dict__", "module"),
+        (unseen, "a writer fetched by getattr",
+         PROOF_FAIL + "getattr(globals(), 'update')(('test_' + n, _fail) for n in ('a', 'b'))\n"
+         + PROOF_FN, "getattr(globals(), 'update')", "module"),
+        (unseen, "a store method fetched by getattr",
+         PROOF_FAIL + "for n in ('a', 'b'):\n    getattr(globals(), '__setitem__')('test_' + n, _fail)\n"
+         + PROOF_FN, "getattr(globals(), '__setitem__')", "module"),
+        (unseen, "isinstance with a writing metaclass",
+         PROOF_FAIL + meta + "isinstance(globals(), _C)\n" + PROOF_FN, "isinstance(globals(), _C)",
+         "module"))
+    out = []
+    for dim, value, base, marker, where in rows:
+        added = GEN_METHOD if where == "class" else GEN_FUNCTION
+        out.append((dim, value, base, base + added, marker, True))
+    # The switch at any depth: a use never reached, deep in a function, turns it
+    # for a bare new test in an unrelated class; so do exec, eval, a star import
+    # and a store on the modules entry wherever they stand.
+    far = "\n\nclass TestB(unittest.TestCase):\n    def test_b(self):\n        self.assertTrue(True)\n"
+    for value, text, marker in (
+            ("a namespace returned from a nested function never called",
+             "def _outer():\n    def _inner():\n        return globals()\n    return _inner\n",
+             "return globals()"),
+            ("an exec in a method never called",
+             "class _Never(object):\n    def run(self):\n        exec('x = 1', {})\n", "exec('x = 1'"),
+            ("an eval in a function never called", "def _never():\n    return eval('1')\n",
+             "eval('1')"),
+            ("a star import", "from os.path import *\n", "from os.path import *"),
+            ("an attribute store on the modules entry in a function never called",
+             "import sys\n\n\ndef _never():\n    sys.modules[__name__].CONFIG = 1\n",
+             "sys.modules[__name__].CONFIG"),
+            ("a setattr on the modules entry in a function never called",
+             "import sys\n\n\ndef _never():\n    setattr(sys.modules[__name__], 'CONFIG', 1)\n",
+             "setattr(sys.modules")):
+        base = unit + "\n\n" + text + "\n\n" + plain + far
+        out.append(("switch at any depth", value, base, base + GEN_METHOD.replace("test_a", "test_c"),
+                    marker, False))
+    return out
+
+
+def _first_line(text, marker):
+    return [k + 1 for k, ln in enumerate(text.splitlines()) if marker in ln][0]
+
+
+def _switch_deny(check):
+    path = "tests/test_switch.py"
+    seen = []
+    for dim, value, base, tree, marker, _loses in _switch_pairs():
+        name = "test_c" if dim == "switch at any depth" else "test_a"
+        got = _run([(path, base, tree)])
+        line = "line %d of the base copy" % _first_line(base, marker)
+        said = [n["reason"] for n in got["notRead"]]
+        seen.append((value, _not_unit(got, path, tree, base, name, "by computation"),
+                     len(said) == 1 and line in said[0], said))
+    # A class body storing into locals() turns the switch for the whole file: a bare
+    # new test in another class, or as a module function, is not compared either.
+    line = "line %d of the base copy" % _first_line(BOUND_LOCALS, 'locals()["test_gen"]')
+    for value, tree in (
+            ("another class than the one whose body stores into locals()",
+             BOUND_LOCALS + "\n    def test_fresh(self):\n        self.assertTrue(1)\n"),
+            ("a module function where only a class body stores into locals()",
+             BOUND_LOCALS + "\n\ndef test_fresh():\n    assert 1\n")):
+        got = _run([(path, BOUND_LOCALS, tree)])
+        said = [n["reason"] for n in got["notRead"]]
+        seen.append((value, _not_unit(got, path, tree, BOUND_LOCALS, "test_fresh", "by computation"),
+                     len(said) == 1 and line in said[0], said))
+    check("fm86 a proven name rebound through the namespace or the modules entry, the "
+          "namespace in a membership test or an equality with a writer, spelled through the "
+          "builtins module or the modules entry's dictionary, handed to getattr or "
+          "isinstance, and a namespace use, an exec, an eval, a star import or a store on the "
+          "modules entry anywhere in the file - a store into locals() of another class "
+          "included - leave its bare new test not compared, the one "
+          "reason naming the first such line of the base copy: %s"
+          % some_of([s for s in seen if s[1:3] != ((PARTLY_READ, [], True, True), True)],
+                    render=repr),
+          seen != [] and [s[1:3] for s in seen]
+          == [((PARTLY_READ, [], True, True), True)] * len(seen))
+
+
+# The forms this repository's test files hold, by the sweep that made the list:
+# the namespace handed directly to a callee imported at module level (the staged
+# suites hand globals() to their runner) and the namespace's own `get` method
+# called. Everything else is not proven, however harmless it reads.
+NS_STAGED = ("import sys\nimport _harness\n\nSTAGES = ()\n" + PROOF_FN + "\n\nif __name__ == "
+             "\"__main__\":\n    raise SystemExit(_harness.staged_main(sys.argv[1:], STAGES, globals(), "
+             "\"x-\"))\n")
+
+
+def _switch_allow(check):
+    path = "tests/test_switch.py"
+    seen = []
+    for label, base in (
+            ("a namespace handed to a staged runner of an imported module", NS_STAGED),
+            ("a namespace's own get called, in a function and at module level",
+             "def _probe():\n    return locals().get(\"stuck\")\n\n\nCONFIG = globals().get(\"CONFIG\", {})\n"
+             + PROOF_FN),
+            ("a skip imported once and used on a class",
+             "import unittest\nfrom unittest import skip\n\n\n@skip('never')\n" + PROOF_PLAIN)):
+        tree = base + (GEN_METHOD if "class TestA" in base else GEN_FUNCTION)
+        got = _run([(path, base, tree)])
+        seen.append((label, (got["answer"], got["findings"], got["notRead"])))
+    check("fa61 THE TWIN of fm86: a namespace handed directly to a runner of an imported module, "
+          "the namespace's own get called, and a skip imported once and used, give a bare new "
+          "test that reads clean: %r" % (seen,),
+          [s[1] for s in seen] == [(M.CLEAN, [], [])] * len(seen))
+
+
+def _switch_unlisted(check):
+    """The cost of a short list, held so a form is not put on it unswept: each of
+    these reads in place and writes nothing, and no test file here holds it."""
+    path = "tests/test_switch.py"
+    seen = []
+    for label, text in (
+            ("tested for membership", "HAS = 'x' in globals()\n"),
+            ("subscripted to read", "NAME = globals()['__name__']\n"),
+            ("iterated", "NAMES = sorted(k for k in globals())\n"),
+            ("handed to a builtin", "SIZE = len(globals())\n"),
+            ("a reading method fetched by getattr", "_X = getattr(globals(), 'get')('CONFIG')\n")):
+        base = text + PROOF_FN
+        got = _run([(path, base, base + GEN_FUNCTION)])
+        seen.append((label, _not_unit(got, path, base + GEN_FUNCTION, base, "test_a",
+                                      "by computation")))
+    check("fm89 a use of the namespace no test file of this repository holds - a membership "
+          "test, a subscript read, an iteration, a builtin, getattr - is not on the proven "
+          "list, and a bare new test beside it is not compared: %r" % (seen,),
+          [s[1] for s in seen] == [(PARTLY_READ, [], True, True)] * len(seen))
+
+
+# --- a name's resolution decides one thing ----------------------------------------
+# Whether the REASON of a skip or a mark may be set aside. A changed condition, a
+# changed assertion, a new skip or a deleted test is a finding whatever the file
+# imports or names; a call is spelled like a skip or a mark only by its own last
+# names, never by a receiver called mark.
+
+SPELL_HEADS = (
+    ("once", "import sys\nimport unittest\n\n\n"),
+    ("the module imported twice", "import sys\nimport unittest\n\n\ndef _helper():\n"
+     "    import unittest\n    return unittest\n\n\n"),
+    ("a star import", "import sys\nimport unittest\nfrom os.path import *\n\n\n"),
+    ("a parameter of the same name", "import sys\nimport unittest\n\n\ndef _helper(unittest):\n"
+     "    return unittest\n\n\n"))
+SPELL_UNIT = ("class TestA(unittest.TestCase):\n    @unittest.skipIf(sys.platform == 'nope', 'r')\n"
+              "    def test_plain(self):\n        self.assertEqual(1, 1)\n")
+SPELL_PYTEST = ("import sys\nimport pytest\n%s\n\n@pytest.mark.skipif(sys.platform == 'nope', "
+                "reason='r')\ndef test_plain():\n    assert 1 == 1\n")
+SPELL_PYTEST_EXTRA = (("once", ""), ("the module imported twice",
+                                     "\n\ndef _h():\n    import pytest\n    return pytest\n"),
+                      ("a star import", "from os.path import *\n"),
+                      ("a parameter of the same name", "\n\ndef _h(pytest):\n    return pytest\n"))
+MARK_RE = ("import re\n\n\ndef test_parse():\n    mark = re.match(r'(a)(b)', 'ab')\n"
+           "    assert mark.group(1) == 'a'\n")
+MARK_DICT = "def test_state():\n    mark = {'done': True}\n    assert mark.get('done') is True\n"
+MARK_ATTR = ("class _S(object):\n    pass\n\n\ndef test_attr():\n    s = _S()\n    s.mark = {'done': True}\n"
+             "    assert s.mark.get('done') is True\n")
+
+
+def _spell_moves():
+    """(label, base, tree) for every move outside the reason, under every head."""
+    out = []
+    for label, head in SPELL_HEADS:
+        if label == "once":
+            continue
+        base = head + SPELL_UNIT
+        out.append(("unittest, %s: the condition widened" % label, base,
+                    base.replace("'nope'", "sys.platform")))
+        out.append(("unittest, %s: the assertion changed" % label, base,
+                    base.replace("assertEqual(1, 1)", "assertTrue(True)")))
+        out.append(("unittest, %s: the reason and the condition changed" % label, base,
+                    base.replace("'nope'", "sys.platform").replace("'r')", "'r2')")))
+        bare = head + SPELL_UNIT.replace("    @unittest.skipIf(sys.platform == 'nope', 'r')\n", "")
+        out.append(("unittest, %s: a new skip" % label, bare, base))
+    for label, extra in SPELL_PYTEST_EXTRA:
+        if label == "once":
+            continue
+        base = SPELL_PYTEST % extra
+        out.append(("pytest, %s: the condition widened" % label, base,
+                    base.replace("'nope'", "sys.platform")))
+        out.append(("pytest, %s: the assertion changed" % label, base,
+                    base.replace("assert 1 == 1", "assert True")))
+    out.append(("unittest, imported from two places: the condition changed", TWO_PLACES,
+                TWO_PLACES.replace('"nope"', '"other"')))
+    for label, base, old, new in (
+            ("a match named mark, the group asserted", MARK_RE, "mark.group(1) == 'a'",
+             "mark.group(0) == 'ab'"),
+            ("a dict named mark, the key asserted", MARK_DICT, "mark.get('done') is True",
+             "mark.get('nothing') is None"),
+            ("an attribute named mark, the key asserted", MARK_ATTR, "s.mark.get('done') is True",
+             "s.mark.get('nothing') is None"),
+            ("a dict named mark, only the key asserted",
+             MARK_DICT.replace("{'done': True}", "{'done': True, 'seeded': True}"),
+             "mark.get('done')", "mark.get('seeded')"),
+            ("a match named mark, only the group asserted", MARK_RE.replace("== 'a'", "in ('a', 'ab')"),
+             "mark.group(1)", "mark.group(0)")):
+        assert base.count(old) == 1, label
+        out.append((label, base, base.replace(old, new)))
+    return out
+
+
+def _spell_deny(check):
+    path = "tests/test_spell.py"
+    seen = []
+    for label, base, tree in _spell_moves():
+        got = _run([(path, base, tree)])
+        seen.append((label, got["answer"], bool(got["findings"]), got["notRead"] == [],
+                     got["notRead"]))
+    check("fm87 a widened skip condition, a changed assertion, a new skip, and a reason changed "
+          "together with its condition are findings under the module imported twice and under "
+          "a star import, for unittest and pytest, and so is an assertion through a receiver "
+          "named mark - each with nothing left not compared, since a reason set aside on a "
+          "definition that is a finding is that finding: %s"
+          % some_of([s for s in seen if s[1:4] != (M.FINDINGS, True, True)], render=repr),
+          seen != [] and [s[1:4] for s in seen] == [(M.FINDINGS, True, True)] * len(seen))
+
+
+def _spell_reason(check):
+    path = "tests/test_spell.py"
+    seen = []
+    for label, head in SPELL_HEADS[1:]:
+        base = head + SPELL_UNIT
+        seen.append(("unittest, %s" % label, base, base.replace("'r')", "'r2')")))
+    for label, extra in SPELL_PYTEST_EXTRA[1:]:
+        base = SPELL_PYTEST % extra
+        seen.append(("pytest, %s" % label, base, base.replace("reason='r'", "reason='r2'")))
+    got_all = []
+    for label, base, tree in seen:
+        got = _run([(path, base, tree)])
+        said = [n["reason"] for n in got["notRead"]]
+        got_all.append((label, (got["answer"], got["findings"], len(said) == 1
+                                and "test_plain" in said[0]), said))
+    check("fm88 a skip's reason changed alone, where its name does not resolve - the module "
+          "imported twice, a star import, a parameter of the same name - is not compared, "
+          "naming the test it stands on: %r"
+          % (got_all,),
+          [g[1] for g in got_all] == [(PARTLY_READ, [], True)] * len(got_all))
+    twins = []
+    for label, base, tree in (
+            ("unittest, once", SPELL_HEADS[0][1] + SPELL_UNIT,
+             (SPELL_HEADS[0][1] + SPELL_UNIT).replace("'r')", "'r2')")),
+            ("pytest, once", SPELL_PYTEST % "", (SPELL_PYTEST % "").replace("reason='r'",
+                                                                           "reason='r2'")),
+            ("a local named mark beside the skip", SPELL_HEADS[0][1] + SPELL_UNIT.replace(
+                "        self.assertEqual(1, 1)\n", "        mark = {'k': 1}\n"
+                "        self.assertEqual(mark.get('k'), 1)\n"), None)):
+        tree = tree or base.replace("'r')", "'r2')")
+        got = _run([(path, base, tree)])
+        twins.append((label, (got["answer"], got["findings"], got["notRead"])))
+    check("fa62 THE TWIN of fm88: a skip's reason changed where its name resolves - one import "
+          "of unittest or pytest, a local named mark beside it - reads clean: %r" % (twins,),
+          [t[1] for t in twins] == [(M.CLEAN, [], [])] * len(twins))
 
 
 # --- the reading held by running both copies ---------------------------------------
@@ -4040,6 +4361,16 @@ GEN_DIMENSIONS = (
     ("binding", ("setattr on the class", "setattr on the module", "a class made by type",
                  "exec in place", "a star import", "a class decorator that adds tests",
                  "a metaclass", "a base running code for each subclass")),
+    ("namespace rebinds a proven name", ("a skip through a store into globals()",
+                                         "a skip through setattr on the modules entry",
+                                         "a base through a store into globals()",
+                                         "a base through the modules entry's dictionary")),
+    ("namespace written unseen", ("membership in a writer", "equality with a writer",
+                                  "membership in a writer, in a class body",
+                                  "through the builtins module",
+                                  "through the modules entry's dictionary",
+                                  "a writer fetched by getattr", "a store method fetched by getattr",
+                                  "isinstance with a writing metaclass")),
 )
 
 GEN_ADDS, GEN_STAR, GEN_RUNNER, GEN_PACKAGE = ("_fg_gen_adds", "_fg_gen_star", "_fg_gen_runner",
@@ -4134,10 +4465,10 @@ def _gen_spelling():
 
 
 def _gen_bases():
-    """Each place and spelling of a same-file base: the deny copy's base generates
-    two failing tests in its body, the twin's defines a helper."""
-    adds = 'class _Checks(object):\n    for _n in ("a", "b"):\n        locals()["test_" + _n] = ' \
-        "lambda self: self.fail()\n\n\n"
+    """Each place and spelling of a same-file base: the deny copy's base gets two
+    failing tests by a setattr on it, the twin's defines a helper. A setattr, not
+    a store into the class's namespace, so the base is what is read."""
+    adds = PROOF_CHECKS
     quiet = "class _Checks(object):\n    def helper(self):\n        return 1\n\n\n"
     rows = (
         ("first", "", "(_Checks, unittest.TestCase)", True),
@@ -4208,11 +4539,13 @@ def _gen_namespace_uses():
     proves; a store, a write, a name bound to it and a function returning it
     each have a deny copy storing two failing tests and a twin that only reads."""
     stores = 'for _n in ("a", "b"):\n    %s["test_" + _n] = _fail\n'
+    # Only the namespace's own get is on the proven list; the other reading forms
+    # are honest and unproven, since no test file of this repository holds them.
     rows = (
-        ("subscripted to read", None, '_SEEN.append(globals()["__name__"])\n', True),
-        ("tested for membership", None, '_SEEN.append("CONFIG" in globals())\n', True),
+        ("subscripted to read", None, '_SEEN.append(globals()["__name__"])\n', False),
+        ("tested for membership", None, '_SEEN.append("CONFIG" in globals())\n', False),
         ("a reading method", None, '_SEEN.append(globals().get("CONFIG"))\n', True),
-        ("iterated", None, "_SEEN.extend(k for k in globals())\n", True),
+        ("iterated", None, "_SEEN.extend(k for k in globals())\n", False),
         ("subscripted to store", stores % "globals()", 'globals()["CONFIG"] = 1\n', False),
         ("a writing method", 'globals().update(("test_" + n, _fail) for n in ("a", "b"))\n',
          "globals().update(CONFIG=1)\n", False),
@@ -4232,15 +4565,17 @@ def _gen_namespace_uses():
 
 def _gen_builtins():
     """A builtin handed the namespace: exec and eval write into it, from inside a
-    function too; one that reads is a twin the rule proves."""
+    function too; one that reads is an honest twin no builtin's reading proves,
+    and an exec anywhere leaves the file proving nothing, so its twin is honest
+    and not provable either."""
     code = '"def test_a():\\n    assert False\\n\\n\\ndef test_b():\\n    assert False\\n"'
     rows = (
         ("exec", "def _load():\n    exec(%s, globals())\n\n\n_load()\n" % code,
-         'def _load():\n    exec("x = 1", {})\n\n\n_load()\n', True),
+         'def _load():\n    exec("x = 1", {})\n\n\n_load()\n', False),
         ("eval", 'def _load():\n    for n in ("a", "b"):\n        eval(compile("def test_%s():'
          '\\n    assert False\\n" % n, "g", "exec"), globals())\n\n\n_load()\n',
          '_SEEN.append(eval("1 + 1", globals()))\n', False),
-        ("one that reads", None, "_SEEN.append(len(globals()))\n", True))
+        ("one that reads", None, "_SEEN.append(len(globals()))\n", False))
     out = []
     for value, deny, honest, provable in rows:
         for twin, text in ((False, deny), (True, honest)):
@@ -4270,12 +4605,14 @@ def _gen_bindings():
 
     def into_class(base):
         return base.replace(GEN_CLASS, GEN_CLASS + GEN_METHOD, 1)
+    # A setattr on the modules table's entry leaves the whole file proving
+    # nothing, so its twin in another class is honest and not provable.
     rows = (
         ("setattr on the class", on_class, into_class, GEN_FRESH, True),
         ("setattr on the module",
          "import sys\nimport unittest\n\n\n" + GEN_HEAD + 'def _load():\n    for n in ("a", "b"):\n'
          "        setattr(sys.modules[__name__], \"test_\" + n, _fail)\n\n\n_load()\n" + other,
-         GEN_FUNCTION, GEN_METHOD.replace("test_a", "test_fresh"), True),
+         GEN_FUNCTION, GEN_METHOD.replace("test_a", "test_fresh"), False),
         ("exec in place", GEN_HEAD + 'exec("def test_a():\\n    assert False\\n\\n\\n'
          'def test_b():\\n    assert False\\n")\n', GEN_FUNCTION, None, False),
         ("a star import", "from %s import *\n" % GEN_STAR, GEN_FUNCTION, None, False),
@@ -4314,9 +4651,78 @@ def _gen_bindings():
     return out
 
 
+# One row for every kind of binding the module's resolution counts, keyed by the
+# words the module states once (`BINDING_KINDS`): the statements, each its own
+# pair, that rebind a skip imported once from unittest to a decorator adding two
+# failing tests - or None and the reason no statement of that kind can make a
+# pair lose a test. A pair puts the decorated class after the rebinding, but an
+# except target's, unbound when its handler ends, has the class in the handler.
+GEN_REBINDINGS = (
+    ("an import", (("a second import", "from %s import skipIf\n" % GEN_ADDS),)),
+    ("a store", (
+        ("an assignment", "skipIf = _register\n"),
+        ("an augmented assignment", "class _Swap(object):\n    def __radd__(self, other):\n"
+                                    "        return _register\n\n\nskipIf += _Swap()\n"),
+        ("an annotated assignment", "skipIf: object = _register\n"),
+        ("a for target", "for skipIf in (_register,):\n    pass\n"),
+        ("a walrus", "(skipIf := _register)\n"),
+        ("a with target", "import contextlib\n\n\nwith contextlib.nullcontext(_register) as skipIf:"
+                          "\n    pass\n"))),
+    # The name, deleted, is looked up among the builtins, where the copy put a
+    # decorator that takes itself out again once called.
+    ("a del", (("a del", "import builtins\n\n\ndef _once(*a):\n    del builtins.skipIf\n"
+                         "    return _register(*a)\n\n\nbuiltins.skipIf = _once\ndel skipIf\n"),)),
+    ("a def", (("a def", "def skipIf(*a):\n    return _register(*a)\n"),)),
+    ("a class statement", (("a class statement", "class skipIf(object):\n"
+                                                  "    def __new__(cls, *a):\n"
+                                                  "        return _register(*a)\n"),)),
+    ("a match capture", (("a match capture", "match _register:\n    case skipIf:\n        pass\n"),)),
+    ("an except target", (("an except target", "class _Boom(Exception):\n"
+                                                "    def __call__(self, *a):\n"
+                                                "        return _register(*a)\n\n\ntry:\n"
+                                                "    raise _Boom()\nexcept _Boom as skipIf:\n"),)),
+    ("a parameter", None, "binds the name only inside its function, where no class a runner "
+                          "collects stands"),
+    ("a type parameter", None, "binds the name only in its own annotation scope"),
+    ("a global declaration", None, "binds nothing itself; the store it lets a function make "
+                                   "is counted as a store"),
+    ("a nonlocal declaration", None, "binds nothing itself, and only in an enclosing function"))
+GEN_NO_MATCH = sys.version_info < (3, 10)
+
+
+def _gen_rebindings():
+    """A pair for each statement of `GEN_REBINDINGS`; the match capture's is left
+    out where the language has no match statement, and named and counted."""
+    head = "import unittest\nfrom unittest import skipIf\n\n\n" + PROOF_REGISTER
+    deco = '@skipIf(False, "never")\n'
+    out, skipped = [], []
+    for row in GEN_REBINDINGS:
+        kind, statements = row[0], row[1]
+        for form, text in statements or ():
+            if kind == "a match capture" and GEN_NO_MATCH:
+                skipped.append(kind)
+                continue
+            if kind == "an except target":
+                base = head + text + _gen_indent(deco + GEN_CLASS, 4)
+                tree = base + _gen_indent(GEN_METHOD, 4)
+            else:
+                base = head + text + "\n\n" + deco + GEN_CLASS
+                tree = base + GEN_METHOD
+            out.append(((("rebinding", kind), ("rebinding statement", form)), base, tree,
+                        False, False))
+    return out, skipped
+
+
+def _gen_switch():
+    """The pairs of `_switch_pairs` that lose a failing test, each under its own
+    dimension."""
+    return [(((dim, value),), base, tree, False, False)
+            for dim, value, base, tree, _marker, loses in _switch_pairs() if loses]
+
+
 def _gen_pairs():
     return (_gen_spelling() + _gen_bases() + _gen_callees() + _gen_namespace_uses()
-            + _gen_builtins() + _gen_bindings())
+            + _gen_builtins() + _gen_bindings() + _gen_rebindings()[0] + _gen_switch())
 
 
 def _gen_install():
@@ -4380,8 +4786,17 @@ def _gen_label(dims, honest):
 def _generated(check):
     path = "tests/test_generated.py"
     pairs = _gen_pairs()
-    values = dict(GEN_DIMENSIONS)
+    skipped = _gen_rebindings()[1]
+    # The rebinding dimension's values are the suite's table's kinds that have a
+    # statement; fx15 holds that table to the module's own list of kinds.
+    with_pairs = [r for r in GEN_REBINDINGS if r[1] is not None]
+    dimensions = GEN_DIMENSIONS + (
+        ("rebinding", tuple(r[0] for r in with_pairs)),
+        ("rebinding statement", tuple(form for r in with_pairs for form, _t in r[1])))
+    values = dict(dimensions)
     used, stray, broken, wrong, tally = set(), [], [], [], collections.Counter()
+    used.update(("rebinding", kind) for kind in skipped)
+    used.update(("rebinding statement", kind) for kind in skipped)
     put = _gen_install()
     try:
         for serial, (dims, base, tree, honest, provable) in enumerate(pairs):
@@ -4410,16 +4825,146 @@ def _generated(check):
                 wrong.append((label, "a provable twin read %s: %r" % (got["answer"], got["notRead"])))
     finally:
         _gen_remove(put)
-    unused = ["%s=%s" % (dim, v) for dim, vs in GEN_DIMENSIONS for v in vs if (dim, v) not in used]
+    unused = ["%s=%s" % (dim, v) for dim, vs in dimensions for v in vs if (dim, v) not in used]
     check("fx13 one generated case runs both copies of each of %d pairs (%d losing a failing "
-          "test, %d twins of which %d provable) across every value of %d dimensions: values no "
-          "pair uses %r, values of no dimension %r, copies that did not run %r, pairs the run "
-          "and the reading disagree on %s"
+          "test, %d twins of which %d provable) across every value of %d dimensions, skipping "
+          "%d pairs this Python cannot compile %r: values no pair uses %r, values of no "
+          "dimension %r, copies that did not run %r, pairs the run and the reading disagree "
+          "on %s"
           % (len(pairs), tally[(True, False)], tally[(False, False)] + tally[(False, True)],
-             tally[(False, True)], len(GEN_DIMENSIONS), unused, stray, broken,
-             some_of(wrong, render=repr)),
+             tally[(False, True)], len(dimensions), len(skipped),
+             ["rebinding=%s on Python %d.%d" % ((k,) + tuple(sys.version_info[:2]))
+              for k in skipped], unused, stray, broken, some_of(wrong, render=repr)),
           len(pairs) > 0 and sum(tally.values()) == len(pairs) and tally[(True, False)] > 0
           and tally[(False, True)] > 0 and not unused and not stray and not broken and not wrong)
+
+
+def _binding_kinds(check):
+    """The suite's rebinding table against the module's own list of the kinds its
+    resolution counts: this check may read that list; the oracle may not."""
+    module = tuple(getattr(M, "BINDING_KINDS", None) or ())
+    suite = [row[0] for row in GEN_REBINDINGS]
+    bare = [row[0] for row in GEN_REBINDINGS if row[1] is None and not (row[2:] and row[2])]
+    missing = [k for k in module if k not in suite]
+    stray = [k for k in suite if k not in module]
+    check("fx15 every kind of binding the module's resolution counts has a rebinding pair in "
+          "the generated case or a reason it cannot make one lose a test, and the table names "
+          "no kind the module does not count: module kinds %d, with no row %r, rows the module "
+          "does not count %r, rows with neither a pair nor a reason %r"
+          % (len(module), missing, stray, bare),
+          module != () and len(set(suite)) == len(suite) and not missing and not stray
+          and not bare)
+
+
+# Each move the guard reports, in each file context, for both frameworks. The
+# oracle is the move the generator applied: every move but the changed reason is a
+# finding everywhere; the changed reason is clean where the context's skip name
+# resolves and not compared where it does not - which the context row states.
+GEN_MOVES = ("a widened condition", "a changed assertion", "a new skip", "a deleted test",
+             "a changed reason")
+GEN_MOVE_UNIT = ("{head}class TestA(unittest.TestCase):\n    {deco}\n    def test_plain(self):\n"
+                 "{body}\n    def test_other(self):\n        self.assertTrue(True)\n")
+GEN_MOVE_PYTEST = ("{head}{deco}\ndef test_plain():\n{body}\n\ndef test_other():\n    assert True\n")
+GEN_MOVE_FRAMEWORKS = (
+    ("unittest", GEN_MOVE_UNIT, "import sys\nimport unittest\n",
+     "@unittest.skipIf(sys.platform == 'nope', 'why')", "        ", "self.assertEqual(%s, 1)",
+     "self.assertTrue(True)"),
+    ("pytest", GEN_MOVE_PYTEST, "import sys\nimport pytest\n",
+     "@pytest.mark.skipif(sys.platform == 'nope', reason='why')", "    ", "assert %s == 1",
+     "assert True"))
+# (context, text after the imports, the value asserted, lines the test body runs
+# first, the reason the changed-reason move edits, whether that reason's call resolves)
+GEN_MOVE_CONTEXTS = (
+    ("one import", "", "1", "", "'why'", True),
+    ("the module imported twice", "\n\ndef _again():\n    import {module}\n    return {module}\n",
+     "1", "", "'why'", False),
+    ("a star import", "from os.path import *\n", "1", "", "'why'", False),
+    ("a local named for a mark or a skip", "", "mark.get('k')", "mark = {{'k': 1}}\nskip = False\n",
+     "'why'", True),
+    ("a same-file function named skip", "\n\ndef skip(reason):\n    return reason\n", "1",
+     "_why = skip('kept')\n", "'kept'", False))
+
+
+def _move_pairs():
+    """(framework, context, move, base, tree, resolves) for every move in every
+    context: the copies are written from the templates above, and each move is
+    asserted to change exactly one place."""
+    out = []
+    for fw, template, imports, deco, pad, assertion, weak in GEN_MOVE_FRAMEWORKS:
+        module = fw
+        for context, extra, value, first, reason, resolves in GEN_MOVE_CONTEXTS:
+            body = "".join(pad + ln + "\n" for ln in first.format().splitlines())
+            strong = assertion % value
+            body += pad + strong + "\n"
+            head = imports + extra.format(module=module) + "\n\n"
+            base = template.format(head=head, deco=deco, body=body)
+            moves = (
+                ("a widened condition", base, "sys.platform == 'nope'", "sys.platform != 'nope'"),
+                ("a changed assertion", base, strong, weak),
+                ("a changed reason", base, reason, reason[:-1] + " now'"))
+            for move, text, old, new in moves:
+                assert text.count(old) == 1, (fw, context, move, old)
+                out.append((fw, context, move, text, text.replace(old, new), resolves))
+            unmarked = base.replace(("    " if fw == "unittest" else "") + deco + "\n", "", 1)
+            assert unmarked != base and deco not in unmarked, (fw, context)
+            out.append((fw, context, "a new skip", unmarked, base, resolves))
+            start = base.index(("    " if fw == "unittest" else "") + deco)
+            end = base.index("def test_other")
+            gone = base[:start] + base[end - (4 if fw == "unittest" else 0):]
+            assert "test_plain" not in gone and "test_other" in gone, (fw, context)
+            out.append((fw, context, "a deleted test", base, gone, resolves))
+    return out
+
+
+def _move_expect(move, resolves):
+    """The oracle: the answer a move must give, from the move and the context's own
+    statement of whether its reason's call resolves."""
+    if move != "a changed reason":
+        return "findings"
+    return "clean" if resolves else "partly-read"
+
+
+def _oracle_reads(names):
+    """The module-reading names each oracle function of this file refers to - `M`,
+    and `_run` that asks the module - so an oracle given the module's answer fails."""
+    with open(__file__, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    out = {}
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name in names:
+            out[node.name] = sorted(set(
+                "%s at line %d" % (n.id, n.lineno) for n in ast.walk(node)
+                if isinstance(n, ast.Name) and n.id in ("M", "_run", "_floor_guard")))
+    return out
+
+
+def _moves_in_contexts(check):
+    path = "tests/test_moves.py"
+    pairs = _move_pairs()
+    wrong, cells = [], set()
+    for fw, context, move, base, tree, resolves in pairs:
+        cells.add((fw, context, move))
+        want = _move_expect(move, resolves)
+        got = _run([(path, base, tree)])
+        if want == "findings":
+            ok = got["answer"] == "findings" and bool(got["findings"])
+        elif want == "clean":
+            ok = (got["answer"], got["findings"], got["notRead"]) == ("clean", [], [])
+        else:
+            ok = got["answer"] == "partly-read" and got["findings"] == [] and got["notRead"] != []
+        if not ok:
+            wrong.append(("%s, %s, %s" % (fw, context, move), want, _show(got), got["notRead"]))
+    oracles = _oracle_reads(("_move_expect", "_move_pairs", "_gen_failing"))
+    check("fx16 every move the guard reports - %s - in every file context - %s - for unittest "
+          "and pytest is a finding, but the changed reason, clean where its call resolves and "
+          "not compared where it does not: %d pairs, %d cells, the oracle functions found %r "
+          "and reading the module at %r, wrong %s"
+          % (", ".join(GEN_MOVES), ", ".join(c[0] for c in GEN_MOVE_CONTEXTS), len(pairs),
+             len(cells), sorted(oracles), dict((k, v) for k, v in oracles.items() if v),
+             some_of(wrong, render=repr)),
+          len(cells) == len(GEN_MOVES) * len(GEN_MOVE_CONTEXTS) * len(GEN_MOVE_FRAMEWORKS)
+          and len(pairs) == len(cells) and not wrong and len(oracles) == 3
+          and not any(oracles.values()))
 
 
 # The README's list of binding forms and the build guide's paragraph on what is
@@ -4661,7 +5206,14 @@ def _cases(check):
     _proof_deny(check)
     _unresolved_never_finding(check)
     _proof_allow(check)
+    _switch_deny(check)
+    _switch_allow(check)
+    _switch_unlisted(check)
+    _spell_deny(check)
+    _spell_reason(check)
     _generated(check)
+    _binding_kinds(check)
+    _moves_in_contexts(check)
     _forms_documented(check)
     _time(check)
     _untold(check)
