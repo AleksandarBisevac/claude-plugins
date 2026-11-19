@@ -364,6 +364,7 @@ def _cases(check):
     _registration_cases(check)
     _member_cases(check)
     _relative_registration_cases(check)
+    _topology_cases(check)
 
 
 # --- cf: the audit config is the owner's, not an agent's ------------------------
@@ -982,12 +983,25 @@ def _spelling_cases(check, cfg, tf, nested, _cf, _w):
         if top is not None and top != real_root:
             _config._holds_repository(top)
 
+    def _is_repository_entry(at):
+        """A git entry that is a repository: one stat of the entry, then, for
+        a directory, one lstat of the HEAD it holds."""
+        import stat
+        dotgit = os.path.join(at, ".git")
+        found, st = _harness.attempt(os.stat, dotgit)
+        if not found:
+            return False
+        if stat.S_ISDIR(st.st_mode):
+            return os.path.lexists(os.path.join(dotgit, "HEAD"))
+        return False
+
     def _checkout_walk(project):
-        """The walk from the project up to the first directory holding a git
-        entry: the project resolved, then one entry asked per directory - one
-        here, the project being its checkout's top."""
+        """The walk from the project up to the first directory whose git entry
+        is a repository: the project resolved, then one entry asked per
+        directory and the HEAD in the one that ends it - one directory here,
+        the project being its checkout's top."""
         at = os.path.realpath(project)
-        while not os.path.lexists(os.path.join(at, ".git")):
+        while not _is_repository_entry(at):
             at = os.path.dirname(at)
         return at
 
@@ -1859,9 +1873,9 @@ _GEN_DIMS = (
     # inside the project, or outside every tree.
     _Dim("dest", ("owner", "project", "outside")),
     _Dim("present", (False, True)),
-    # Where the project lies in its checkout: at the top, or one directory
-    # below it - a member project, `top/app`, whose every tree has a member
-    # place `<tree>/app` beside its top.
+    # Where the project lies in its checkout: at the top, or below it - a
+    # member project, `top/<_GEN_MEMBER>`, whose every tree has a member place
+    # `<tree>/<_GEN_MEMBER>` beside its top.
     _Dim("member", ("top", "down")),
     # Which place of the owner's tree the config is: its top, or the member's
     # place in it. A project at its checkout's top has none apart from the top.
@@ -1882,8 +1896,11 @@ _Arr = collections.namedtuple("_Arr", [d.name for d in _GEN_DIMS])
 _GEN_WORLD_DIMS = ("whose", "folder", "dest", "present", "member", "place")
 # The dimensions a family is counted by: the case fails when one value ran none.
 _GEN_FAMILY_DIMS = ("whose", "folder", "dest", "member", "place")
-# The member's place below its checkout's top, for a member project.
-_GEN_MEMBER = "app"
+# The member's place below its checkout's top, for a member project: two
+# directories, so a member path cut to its last component or a walk stopped one
+# directory above the project answers wrong here. `_member_world` keeps the
+# one-directory row.
+_GEN_MEMBER = os.path.join("a", "b")
 _GEN_BODY_KEY = "cfMark"
 _GEN_PLAN = {"meta": {"version": 3, "developmentBranch": "main"}, "phases": []}
 _GEN_MCP = "mcp__fs__write_file"
@@ -2452,6 +2469,21 @@ def _generated_cases(check):
           len(rep) >= 2 * len(_GEN_DIMS[0].values)
           and any("-member-" in r[0] for r in rep)
           and all(r[2] == r[3] for r in rep))
+    # Read off the worlds the sweep built, not off the constant: the member
+    # rows above hold a member path of more than one directory only while
+    # every member world puts its project that far below its checkout's top.
+    member_worlds = [w for k, w in worlds.items()
+                     if k[_GEN_WORLD_DIMS.index("member")] == "down"]
+    depths = sorted(set(len(os.path.relpath(w["proj"], w["top"]).split(os.sep))
+                        for w in member_worlds))
+    deep_held = sum(1 for r in seen if r[0].member == "down" and r[3]
+                    and _gen_residual(r[0]) is None)
+    check("cf36d ...and every member world the sweep built puts its project "
+          "more than one directory below its checkout's top, its worktrees' "
+          "member places as deep, with arrangements read by a loader among "
+          "them (worlds %d, depths %r, member arrangements held %d)"
+          % (len(member_worlds), depths, deep_held),
+          bool(member_worlds) and min(depths) >= 2 and deep_held > 0)
 
 
 # --- cf: what an ordinary write starts, from each place a session stands ---------
@@ -2820,18 +2852,25 @@ def _malformed_registration_cases(check, base, proj, ext, common, rel):
 
 
 # --- cf: a project that is a directory below its checkout's top --------------------
-# A member project: the session's project is `R/app` while the repository's git
+# A member project: the session's project is `R/a/b` while the repository's git
 # entry is at `R`. A loader can be handed the checkout's top `R`, the project, a
-# registered worktree's top `W`, and the member's own place in it `W/app`; a plain
-# repository with no linked worktree has `R` and `R/app` alone. Each row is the
-# hook run as a process for a subagent and for the main session, the write then
-# made, and the loader asked for every one of those places - listed by the
-# builder, never found by a walk - so the oracle shares nothing with the module.
-def _member_repo(top, branch_dir):
-    """A repository at `top` whose tracked files lie under `top/app`, committed
-    so a worktree of it checks out `app` too."""
-    os.makedirs(os.path.join(top, "app", "src"))
-    with open(os.path.join(top, "app", "src", "x.ts"), "w",
+# registered worktree's top `W`, and the member's own place in it `W/a/b`; a plain
+# repository with no linked worktree has `P` and `P/app` alone. The member path is
+# two directories in the first and one in the second, because a member path cut
+# to its last component, or a walk that stops one directory above the project,
+# still answers right at one directory. Each row is the hook run as a process for
+# a subagent and for the main session, the write then made, and the loader asked
+# for every one of those places - listed by the builder, never found by a walk -
+# so the oracle shares nothing with the module.
+_MEMBER_DEEP = os.path.join("a", "b")
+_MEMBER_SHALLOW = "app"
+
+
+def _member_repo(top, branch_dir, member):
+    """A repository at `top` whose tracked files lie under `top/<member>`,
+    committed so a worktree of it checks `member` out too."""
+    os.makedirs(os.path.join(top, member, "src"))
+    with open(os.path.join(top, member, "src", "x.ts"), "w",
               encoding="utf-8") as fh:
         fh.write("export const x = 1;\n")
     for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "c"]):
@@ -2842,34 +2881,35 @@ def _member_repo(top, branch_dir):
 
 
 def _member_world(base):
-    """R with the project R/app and a worktree W outside it; P a plain member
+    """R with the project R/a/b and a worktree W outside it; P a plain member
     repository, P/app its project, no linked worktree. R's, W's and P's config
-    folders are links to directories outside every tree; W/app's is a real
-    folder. -> {"base", "trees" (every place a loader could be handed), ...}"""
+    folders are links to directories outside every tree; W/a/b's is a real
+    folder. -> {"base", "proj", "place", "pproj", "trees" (every place a loader
+    could be handed), ...}"""
     rel = _config.CONFIG_REL.split("/")
     top, wt, plain = (os.path.join(base, n) for n in ("R", "W", "P"))
-    _member_repo(top, wt)
-    _member_repo(plain, None)
+    _member_repo(top, wt, _MEMBER_DEEP)
+    _member_repo(plain, None, _MEMBER_SHALLOW)
     store = os.path.join(base, "store")
     for tree, name in ((top, "rcfg"), (wt, "wcfg"), (plain, "pcfg")):
         os.makedirs(os.path.join(store, name))
         os.symlink(os.path.join(store, name), os.path.join(tree, rel[0]))
-    os.makedirs(os.path.join(wt, "app", rel[0]))
+    proj, place = (os.path.join(t, _MEMBER_DEEP) for t in (top, wt))
+    pproj = os.path.join(plain, _MEMBER_SHALLOW)
+    os.makedirs(os.path.join(place, rel[0]))
     os.makedirs(os.path.join(wt, "notes"))
     return {"base": base, "top": top, "wt": wt, "plain": plain,
-            "store": store,
-            "trees": [top, os.path.join(top, "app"), wt,
-                      os.path.join(wt, "app"), plain,
-                      os.path.join(plain, "app")]}
+            "store": store, "proj": proj, "place": place, "pproj": pproj,
+            "trees": [top, proj, wt, place, plain, pproj]}
 
 
 def _member_rows(world):
     """(name, project, cwd, path, held) for every row the member cases run."""
     rel = _config.CONFIG_REL.split("/")
     top, wt, plain, store = (world[k] for k in ("top", "wt", "plain", "store"))
-    proj, pproj = os.path.join(top, "app"), os.path.join(plain, "app")
+    proj, place, pproj = (world[k] for k in ("proj", "place", "pproj"))
     return (
-        ("wt-member-place", proj, proj, os.path.join(wt, "app", *rel), True),
+        ("wt-member-place", proj, proj, os.path.join(place, *rel), True),
         ("wt-top-at-destination", proj, proj,
          os.path.join(store, "wcfg", rel[1]), True),
         ("wt-top-through-link", proj, proj, os.path.join(wt, *rel), True),
@@ -2882,14 +2922,18 @@ def _member_rows(world):
         # The allow twins: ordinary writes in the member project and in its
         # worktree; a config-named file in a folder of the worktree that is no
         # place a loader is handed (red when every subdirectory of a
-        # registered tree is asked); one in the directory above the checkout
-        # (red when every directory above the project is asked).
+        # registered tree is asked); one in the directory the walk passes
+        # between the project and its checkout (red when every directory the
+        # walk passes is asked as a tree); one in the directory above the
+        # checkout (red when every directory above the project is asked).
         ("ordinary-in-project", proj, proj, os.path.join(proj, "src", "x.ts"),
          False),
-        ("ordinary-in-worktree", proj, os.path.join(wt, "app"),
-         os.path.join(wt, "app", "src", "x.ts"), False),
+        ("ordinary-in-worktree", proj, place,
+         os.path.join(place, "src", "x.ts"), False),
         ("worktree-folder-no-place", proj, proj,
          os.path.join(wt, "notes", *rel), False),
+        ("between-project-and-checkout", proj, proj,
+         os.path.join(os.path.dirname(proj), *rel), False),
         ("above-the-checkout", proj, proj,
          os.path.join(world["base"], *rel), False),
     )
@@ -2921,9 +2965,10 @@ def _member_cases(check):
         seen.append((name, (sub, main), reads, held))
     deny = [s for s in seen if s[3]]
     allow = [s for s in seen if not s[3]]
-    check("cf39 in a member project - the project R/app below its checkout's "
-          "top R, a registered worktree W, and a plain member repository P/app "
-          "with no linked worktree - a config-named write that the checkout's "
+    check("cf39 in a member project - the project R/a/b two directories below "
+          "its checkout's top R, a registered worktree W, and a plain member "
+          "repository P/app one directory down with no linked worktree - a "
+          "config-named write that the checkout's "
           "top, the worktree's top or the member's place in the worktree "
           "would load, written through a linked-out folder, at its "
           "destination or directly, is refused to a subagent and asked of the "
@@ -2934,11 +2979,26 @@ def _member_cases(check):
           and all(v == ("block", "ask") and r for _n, v, r, _h in deny))
     check("cf39b ...while its allow twins stay quiet - an ordinary write in the "
           "member project and in its worktree's member place, a config-named "
-          "file in a worktree folder that is no place a loader is handed, and "
-          "one in the directory above the checkout - none read by a loader "
+          "file in a worktree folder that is no place a loader is handed, one "
+          "in the directory between the project and its checkout, and one in "
+          "the directory above the checkout - none read by a loader "
           "(row, (sub, main), read by): %r" % (allow,),
-          len(allow) == 4
+          len(allow) == 5
           and all(v == ("allow", "allow") and not r for _n, v, r, _h in allow))
+    # The depth is the fixture's, read off what it built: the rows above hold
+    # a member path of more than one directory only while the world has one.
+    depths = sorted(len(os.path.relpath(world[p], world[t]).split(os.sep))
+                    for p, t in (("proj", "top"), ("place", "wt"),
+                                 ("pproj", "plain")))
+    held_deep = [s[0] for s in deny if s[0].startswith(("wt-", "top-"))]
+    check("cf39e ...and the member path those rows hold is two directories "
+          "deep below the checkout's top and below the worktree's - the "
+          "worktree's member place and its top, the checkout's top - with one "
+          "plain repository one directory deep (member depths built %r, deep "
+          "rows held %r)" % (depths, held_deep),
+          depths == [1, 2, 2] and len(held_deep) == 4
+          and all(v == ("block", "ask") and r for n, v, r, _h in deny
+                  if n in held_deep))
     _member_cost_case(check, world)
     _member_hard_link_case(check, world)
 
@@ -2954,8 +3014,7 @@ def _member_hard_link_case(check, world):
     for a config-named write alone, and an ordinary write walks to no
     checkout."""
     rel = _config.CONFIG_REL.split("/")
-    proj = os.path.join(world["top"], "app")
-    place = os.path.join(world["wt"], "app")
+    proj, place = world["proj"], world["place"]
     conf = os.path.join(place, *rel)
     link = os.path.join(proj, "notes", "hl.json")
     os.makedirs(os.path.dirname(link))
@@ -2988,7 +3047,7 @@ def _member_hard_link_case(check, world):
 def _member_cost_case(check, world):
     """cf39c: an ordinary write in a member project, in process."""
     cfg = _config._deep_merge(_config.DEFAULTS, {})
-    proj = os.path.join(world["top"], "app")
+    proj = world["proj"]
     common = os.path.join(world["top"], ".git")
     # The git entries a walk from the project up to its checkout would ask
     # about beyond the project's own, which the session's tree is compared
@@ -3007,8 +3066,8 @@ def _member_cost_case(check, world):
         for name, cwd, path in (
                 ("in-project", proj, os.path.join(proj, "src", "x.ts")),
                 ("in-project-new", proj, os.path.join(proj, "src", "n.ts")),
-                ("in-worktree", os.path.join(world["wt"], "app"),
-                 os.path.join(world["wt"], "app", "src", "x.ts"))):
+                ("in-worktree", world["place"],
+                 os.path.join(world["place"], "src", "x.ts"))):
             question = _reg_question(cfg, path, cwd)
             (way, touched), opened, listed, started = _reg_counted(
                 lambda: _git_entries_touched(question), common)
@@ -3238,6 +3297,221 @@ def _cut_pointer_case(check, base, proj, store, rel):
           "without it ((held, loose), trees asked) without %r, with %r"
           % (before, after),
           before == after and before[0] == ("block", "allow") and before[1])
+
+
+# --- cf: the checkout a member project's walk finds, whatever its layout -----------
+# A member project finds its checkout by a walk up from the project to the first
+# git entry that is a repository. That checkout's top is a tree a loader is handed
+# however git keeps its common directory: apart from it (a separate git
+# directory), or inside a superproject's (a submodule). A git entry that is no
+# repository - an empty directory, a file naming no git directory - is passed
+# over as git passes over it. Each world lists the places a loader could be
+# handed - every top git itself names from the project, each with its member
+# place - and the rows are the hook run as a process; the twins are an ordinary
+# write in each world and a config-named write no listed place reads.
+def _topo_repo(top, files):
+    """Each of `files` (relative) written under `top`, plus a committed
+    repository there."""
+    for rel_path in files:
+        full = os.path.join(top, rel_path)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "w", encoding="utf-8") as fh:
+            fh.write("export const x = 1;\n")
+    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "c"]):
+        _harness.git(top, *argv, prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+
+
+def _topo_link_out(tree, store):
+    """`tree`'s config folder a link to `store`, made here.
+    -> the config file at the link's destination."""
+    os.makedirs(store)
+    os.symlink(store, os.path.join(tree, _config.CONFIG_REL.split("/")[0]))
+    return os.path.join(store, _config.CONFIG_REL.split("/")[1])
+
+
+def _topo_sepgit(base):
+    """R made with its git directory apart at G.git; the project R/a/b."""
+    rel = _config.CONFIG_REL.split("/")
+    top = os.path.join(base, "R")
+    os.makedirs(os.path.join(top, "a", "b", "src"))
+    with open(os.path.join(top, "a", "b", "src", "x.ts"), "w",
+              encoding="utf-8") as fh:
+        fh.write("export const x = 1;\n")
+    _harness.git(base, "init", "-q", "--separate-git-dir",
+                 os.path.join(base, "G.git"), top,
+                 prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+    for argv in (["add", "-A"], ["commit", "-qm", "c"]):
+        _harness.git(top, *argv, prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+    proj = os.path.join(top, "a", "b")
+    dest = _topo_link_out(top, os.path.join(base, "store", "rcfg"))
+    return {"name": "separate-git-dir", "base": base, "proj": proj,
+            "trees": [top, proj],
+            "rows": (("sepgit-top-at-destination", proj, dest, True),
+                     ("sepgit-ordinary", proj,
+                      os.path.join(proj, "src", "x.ts"), False),
+                     ("sepgit-between-project-and-checkout", proj,
+                      os.path.join(top, "a", *rel), False))}
+
+
+def _topo_submodule(base):
+    """S a repository holding the submodule S/sub, made from a local one; the
+    project S/sub/app."""
+    src, sup = os.path.join(base, "libsrc"), os.path.join(base, "S")
+    _topo_repo(src, [os.path.join("app", "src", "x.ts")])
+    _topo_repo(sup, [os.path.join("src", "s.ts")])
+    _harness.git(sup, "-c", "protocol.file.allow=always", "submodule", "add",
+                 "-q", src, "sub", prefix=_harness.WORKTREE_PAIR_GIT,
+                 timeout=30)
+    sub = os.path.join(sup, "sub")
+    proj = os.path.join(sub, "app")
+    dest = _topo_link_out(sub, os.path.join(base, "store", "scfg"))
+    return {"name": "submodule", "base": base, "proj": proj,
+            "trees": [sup, sub, proj],
+            "rows": (("submodule-top-at-destination", proj, dest, True),
+                     ("submodule-ordinary", proj,
+                      os.path.join(proj, "src", "x.ts"), False))}
+
+
+def _topo_stray_entry(base):
+    """R with the project R/mid/app, an empty directory R/mid/.git between
+    them, and a worktree W of R outside it."""
+    rel = _config.CONFIG_REL.split("/")
+    top, wt = os.path.join(base, "R"), os.path.join(base, "W")
+    _topo_repo(top, [os.path.join("mid", "app", "src", "x.ts")])
+    _harness.git(top, "worktree", "add", "-q", wt, "-b", "w",
+                 prefix=_harness.WORKTREE_PAIR_GIT, timeout=30)
+    os.makedirs(os.path.join(top, "mid", ".git"))
+    proj = os.path.join(top, "mid", "app")
+    place = os.path.join(wt, "mid", "app")
+    rdest = _topo_link_out(top, os.path.join(base, "store", "rcfg"))
+    wdest = _topo_link_out(wt, os.path.join(base, "store", "wcfg"))
+    return {"name": "empty-git-entry-between", "base": base, "proj": proj,
+            "trees": [top, proj, wt, place],
+            "rows": (("stray-top-at-destination", proj, rdest, True),
+                     ("stray-wt-top-at-destination", proj, wdest, True),
+                     ("stray-wt-member-place", proj,
+                      os.path.join(place, *rel), True),
+                     ("stray-ordinary", proj,
+                      os.path.join(proj, "src", "x.ts"), False))}
+
+
+def _topo_no_repository(base):
+    """X holding an empty directory X/.git and Y holding a file Y/.git that
+    names no git directory, nothing above either a repository; the projects
+    X/app and Y/app, each folder's config linked out."""
+    worlds_rows, trees = [], []
+    for name, entry in (("X", "dir"), ("Y", "file")):
+        at = os.path.join(base, name)
+        proj = os.path.join(at, "app")
+        os.makedirs(os.path.join(proj, "src"))
+        with open(os.path.join(proj, "src", "x.ts"), "w",
+                  encoding="utf-8") as fh:
+            fh.write("export const x = 1;\n")
+        if entry == "dir":
+            os.makedirs(os.path.join(at, ".git"))
+        else:
+            with open(os.path.join(at, ".git"), "w", encoding="utf-8") as fh:
+                fh.write("not a pointer to a git directory\n")
+        dest = _topo_link_out(at, os.path.join(base, "store", name.lower()))
+        trees.append(proj)
+        worlds_rows.append(("no-repo-%s-entry-at-destination" % (entry,), proj,
+                            dest, False))
+        worlds_rows.append(("no-repo-%s-entry-ordinary" % (entry,), proj,
+                            os.path.join(proj, "src", "x.ts"), False))
+    return {"name": "no-repository-above", "base": base, "proj": None,
+            "trees": trees, "rows": tuple(worlds_rows)}
+
+
+_TOPO_BUILDERS = (("t1", _topo_sepgit), ("t2", _topo_submodule),
+                  ("t3", _topo_stray_entry), ("t0", _topo_no_repository))
+# The allow twins each world owes, so a twin dropped from a builder is red.
+_TOPO_TWINS = (("t1", 2), ("t2", 1), ("t3", 1), ("t0", 4))
+
+
+def topology_worlds(base):
+    """Each topology world built under `base`, or the reason it could not be.
+    -> [(tag, built, world or reason)]"""
+    out = []
+    for tag, build in _TOPO_BUILDERS:
+        at = os.path.join(base, tag)
+        os.makedirs(at)
+        built, world = _harness.attempt(build, at)
+        out.append((tag, built, world))
+    return out
+
+
+def _topo_unbuildable(why):
+    """Whether `why`, a fixture's failure, is this git lacking what the world
+    needs - an option it does not know - rather than a broken fixture."""
+    return any(w in str(why) for w in ("unknown option", "usage: git"))
+
+
+def _topology_cases(check):
+    """cf41, cf41b, cf41c: the checkout found by a member project's walk."""
+    label = ("cf41 a member project's checkout top is asked whatever its "
+             "repository's layout")
+    base = os.path.realpath(_harness.fixture_root("guard-edits-topo-"))
+    probe = os.path.join(base, "probe-link")
+    linked, why = _harness.attempt(os.symlink, base, probe)
+    if not linked:
+        _harness.skip(check, label, "no symlink can be made here (%s)" % (why,),
+                      os.name == "nt" or not hasattr(os, "symlink"))
+        return
+    os.remove(probe)
+    seen, skipped = [], []
+    for tag, built, world in topology_worlds(base):
+        if not built:
+            if not _topo_unbuildable(world):
+                check("%s: the %s world builds (%s)" % (label, tag, world),
+                      False)
+                return
+            skipped.append((tag, str(world)[:160]))
+            continue
+        for name, cwd, path, held in world["rows"]:
+            proj = world["proj"] or cwd
+            sub = _hook_verdict(proj, cwd, path, _CF_BODY, True)
+            main = _hook_verdict(proj, cwd, path, _CF_BODY, False)
+            reads = (_gen_reads(world, None, path, cwd, name)
+                     if os.path.basename(path) == os.path.basename(
+                         _config.CONFIG_REL) else [])
+            seen.append((tag, name, (sub, main), reads, held))
+    for tag, why in skipped:
+        _harness.skip(check, "cf41 the %s world" % (tag,),
+                      "this git cannot build it: %s" % (why,), True)
+
+    def held_right(rows):
+        return all(v == ("block", "ask") and r for _t, _n, v, r, _h in rows)
+    outside = [s for s in seen if s[0] in ("t1", "t2") and s[4]]
+    stray = [s for s in seen if s[0] == "t3" and s[4]]
+    twins = [s for s in seen if not s[4]]
+    want_outside = 2 - sum(1 for t, _w in skipped if t in ("t1", "t2"))
+    check("cf41 in a member project of a repository made with its git "
+          "directory apart (R/a/b, G.git) and of a project inside a submodule "
+          "(S/sub/app), the checkout top's config written at its linked-out "
+          "folder's destination is refused to a subagent and asked of the main "
+          "session, the hook run as a process, each read by the top's loader "
+          "(world, row, (sub, main), read by): %r" % (outside,),
+          len(outside) == want_outside and held_right(outside))
+    check("cf41b ...and with an empty directory R/mid/.git between the project "
+          "R/mid/app and its checkout R - no repository, passed over as git "
+          "passes over it - R's config and its worktree W's, each at its "
+          "linked-out folder's destination, and the config of W's member "
+          "place W/mid/app are held, each read by a loader (world, row, (sub, "
+          "main), read by): %r" % (stray,),
+          len(stray) == (0 if "t3" in dict(skipped) else 3)
+          and held_right(stray))
+    check("cf41c ...while their allow twins stay quiet - an ordinary write in "
+          "each of those projects, a config-named file in the directory "
+          "between a member project and its checkout, and a directory holding "
+          "an empty git entry, or a .git file naming no git directory, with "
+          "nothing above it a repository: its config at its linked-out "
+          "folder's destination is asked of no tree, none of them read by a "
+          "place the fixture listed (world, row, (sub, main), read by): %r"
+          % (twins,),
+          len(twins) == sum(n for t, n in _TOPO_TWINS if t not in dict(skipped))
+          and any(s[0] == "t0" for s in twins)
+          and all(v == ("allow", "allow") and not r
+                  for _t, _n, v, r, _h in twins))
 
 
 def _selftest():

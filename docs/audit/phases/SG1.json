@@ -5582,7 +5582,7 @@
     {
       "id": "SG1.54-ukq",
       "title": "The documents say when the trail check sees a switch-off made by hand between calls, and a case holds that an ordinary call leaves no reading behind",
-      "status": "in_progress",
+      "status": "done",
       "description": "A narrow review of the task that keeps a call's reading of the journal switch per call found no regression: no row re-reports another call's change, three calls open across the flip each leave a row, a call that began after it leaves none, a pass after run twice leaves one, names of readings and of preimage slots cannot collide, and an ordinary call lists nothing and starts no process. It found two things; each was run by the reviewer and again by the orchestrator.\n\nMEASURED on the tree as it stands.\n(a) A SENTENCE THAT IS FALSE, in four documents. SECURITY.md, the README, the build guide and the changelog say that when the switch is turned off by hand or in the panel between calls there is no row and the trail check does not see it, citing a case. That case deletes the journal before the hand flip, so no row records the config and the check has nothing to compare. With a row that records the config - a panel save, an edit-tool or a command write made while the journal was on, which is the ordinary state - a hand flip between calls draws the check's warning that the config has changed since the last row that recorded it, with or without a later call. The code did not change; the sentence was written into that task's own rule by the orchestrator from a run on an empty journal, and replaced a true one.\n(b) A REMOVAL NO CASE HOLDS AT ITS CALL SITE. With the pass after changed to remove its reading only when it marks a flip, the journal suite stays green, and every ordinary command, MCP or subagent call made with the journal on then leaves its reading in the state directory until the age sweep. The case that holds the removal drives the helper alone.\n\nTHE RULE TO BUILD.\n1. THE SENTENCE SAYS WHAT A RUN SHOWS, in each of the four documents and in one wording: a switch-off by hand or in the panel between calls leaves no row; the trail check warns that the config has changed since the last row that recorded it whenever such a row exists, and is silent only when no row ever recorded the config. It cites one case for each half, and the case for the first half has a row that records the config before the flip.\n2. AN ORDINARY CALL LEAVES NO READING, HELD WHERE IT IS REMOVED: after an ordinary call with the journal on - by a command, by an MCP tool, by a subagent - through the hook's passes run as processes, the state directory holds no reading of that call; and after the pass before alone it holds exactly one, so the case cannot pass by the reading never having been written.\n\nWHAT STAYS. No file under the plugin's hooks or scripts changes. Every other sentence of the passage, and every case as it is, apart from the one the sentence cites if it must gain its row.\n\nHOW TO PROVE. Both cases pin behaviour that is already right, so they pass on the tree before this task: the proof is green on the base, and that each can fail is shown by mutation, on a copy and never on this checkout. For rule 1: a config row, a hand flip between calls, the check's warning; the same on an empty journal, silent; red when the check is made silent, and red when it is made to warn on the empty journal. For rule 2: the reviewer's mutation of the call site - the suite green without your case and red with it. Allow twin: a call whose pass after never ran leaves its one reading, as the documents already say.\n\nNOT in this task: any change to the hook; a config write that moves the state directory; a payload with no call id.\n\nAcceptance:\n(1) SECURITY.md, the README, the build guide and the changelog say that a switch-off by hand between calls leaves no row and that the trail check warns whenever a row recorded the config, each half cited to a case that shows it.\n(2) A case run through the hook's passes fails when the pass after keeps the reading of an ordinary call, for a command, an MCP tool and a subagent, and requires the reading to exist between the two passes.",
       "files": [
         "tests/test_journal_writes.py",
@@ -5611,14 +5611,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "aee230a1b358",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "tests/test_journal_writes.py: added sn23, sn23b, sn24 in _switch_reading_cases (before sn12, so their passes join sn12's exit-code check), a module helper _sn_reading_name(key) that builds the reading's file-name pattern from _config.CALL_READING_FILE and _config.CALL_READING_HEX (the module exposes both; nothing retyped), and import re. sn20 relabelled and its comment rewritten to say it is the case with no journal at all; no assertion of sn20 changed. sn23: on a journal where one row recorded the config (seeded by an edit-tool Write, a command, or the panel's save via _panel_write.write_config, each made while on), a switch-off between calls (by hand with a later command, by hand with no later call, by the panel's save with a later command) leaves no new config row, and verify gives exactly one warning naming the config with 'never saw' and no finding (sn3's assertion form), 9 fixtures. sn23b: a journal holding rows, none recording the config (a command rewrote the phase file while on), hand switch-off with a later call or none: no config row, no config warning, no finding. sn24: through the hook's passes as processes, for a command, an MCP read, a subagent's command, a subagent's MCP read, and an edit-tool Write of the config that keeps the switch on, exactly one reading named for that writer between Pre and Post and none after Post; and two commands of one writer in flight: two readings, one after the first Post (one of the two), none after the second. Documents: the false sentence 'by hand or in the panel between calls there is no row and the trail check does not see it' was replaced in SECURITY.md, plugins/audit/README.md, PLUGIN-BUILD-GUIDE.md and CHANGELOG.md with: no row (sn20 by hand, sn4 in the panel); the trail check warns that the config has changed since the last row that recorded it whenever that row recorded the config as it stood before the switch-off (a panel save, or an edit-tool or command write of the config made while on), with a later call or none (sn23); it says nothing when no row ever recorded the config (sn23b with other rows, sn20 with none). README and CHANGELOG cite sn23 without the 'by hand and in the panel' qualifier. SECURITY.md's other 'does not see it' (the MCP write of another tree's config, oq5) is the config hold's and was left. Deviation from the description's wording, on purpose: the documents say 'says nothing when no row ever recorded the config', not 'only when', because 'only' is false when the last config row recorded the bytes the switch-off restores (a last-will row recorded the config off, a hand switch-on with no row, a hand switch-off back to the same bytes: verify compares bytes, _journal_io.verify's 'elif now != state'), and the warning half is worded 'whenever that row recorded the config as it stood before the switch-off' for the same reason. Panel route, from the sn23 run: a panel save made while on writes its own config row (recorded == 1); a panel save that switches the journal off writes none and then draws the warning, so 'in the panel ... no row' stays true. Edit lane: it keeps a reading only for a write of the config itself (journal-writes.py pre_cache: rel == CONFIG_REL) and removes it at its own call site (post_rows, the _drop_reading after own =); sn24's edit-tool row covers it. Runs: tests/test_journal_writes.py through the sweep alone, before: exit 0, 208 cases, 123.16 s wall; after: exit 0, 211 cases, 131.50 s wall (each measured once, under load from other sessions and with the probe running concurrently during the after run; an intermediate after-run with 210 cases took 86.59 s). Doc lints: python3 tools/sweep-selftests.py --jobs 4 tests/test__deps.py tests/test__output_lints.py tests/test__refs.py exit 0 (792 cases); python3 tools/gate-parity.py exit 0; python3 tools/prove-gates.py --list exit 0, all rerun after the last document edit. The orchestrator's gate unrecorded (run-test-gate.py ... SG1 --task SG1.54-ukq, no --record) exit 0, GATE GREEN, on the final tree. Mutation probe (scratch sg1.54/mutations.py, run from the worktree root, copies the tracked files to a temp dir, asserts each anchor matched once, purges __pycache__, restores byte for byte): baseline sn stage 25/25; R1 sweep-lane drop made 'if own is not None' -> sn24 red, and in the FULL suite sn24 is the only red (210/211); R2 the same on the edit lane's own call site -> sn24 red; R3 the pass before never writes the reading (_keep_reading returns None) -> sn24 red (its between half; also sn5, sn6, sn8, sn9, sn13, sn16-sn21); R4 the pass after removes every reading of the writer -> sn24 and sn18 red (also sn16, sn17, sn19, sn21); R5 verify silent on a changed config (elif False and ...) -> sn23 red (and sn3); R6 verify warns on a journal holding rows but no config row -> sn23b red; R7 verify warns when the project has no journal at all -> sn20 red. MUTATIONS ALL CAUGHT, exit 0. An earlier probe run had R6 aimed at sn20 and it SURVIVED: verify returns before any comparison when the journal directory is absent (out['exists'] false), so sn20's silence never reached the code the mutation changed; that is why sn23b exists and R7 targets the early return. Dependants: SECURITY.md's readers (guard-release.py, guard-uncommitted.py, require-claim-block.py, the before-you-claim evals, the issue-template config, .gitignore, _config.py, guard-bash-writes.py; in prose guard-history-rewrite.py, test_guard_history_rewrite.py, check-prohibitions.py) still correct: only one sentence of the journal-switch passage changed, no fail-mode table row changed, and the 'write, after the fact' phrase tests/test_hooks.py quotes is untouched. tests/test_journal_writes.py's: journal-writes.py is its subject and unchanged; PLUGIN-BUILD-GUIDE.md, SECURITY.md and README now cite sn4, sn20, sn23 and sn23b for this sentence, each a case the suite prints; .github/sweep-costs.json holds a per-file cost which the added cases raise somewhat, not re-recorded (out of scope); test__output.py and test_guard_secrets_read.py share only the names _cases/_selftest, untouched. README, CHANGELOG and PLUGIN-BUILD-GUIDE dependants (the doc lints, _invariants, audit-usage, affected.py, _doctor_hygiene, the suites reading them): still correct, the doc-lint suites and gate-parity exit 0 after the edits. The section 'PLUGIN-BUILD-GUIDE.md ### plugins/audit/README.md' is not made untrue. Left as is: the sentence 'the Post removes it' in PLUGIN-BUILD-GUIDE.md does not cite sn24 (the description keeps every other sentence of the passage).",
+        "descriptive": "The four documents now say a switch-off between calls draws the trail check's warning whenever a row recorded the config (sn23) and is silent when none did (sn23b, sn20), and sn24 holds that an ordinary call's reading exists between its passes and is gone after, on both lanes."
       },
       "startedAt": "2026-11-19T01:55:23Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-19T02:55:08Z",
+      "verifiedBy": [
+        "sn23: a row recorded the config (edit tool, command, panel save, made while on), then a switch-off between calls by hand or by the panel's save, with a later call or none: no row, exactly one 'changed since the last row that recorded it' warning, no finding",
+        "sn23b: a journal holding rows, none recording the config, then a hand switch-off with a later call or none: no row and no config warning",
+        "sn24: through the hook's passes as processes, a command, an MCP read, each by the session and a subagent, and an edit-tool write of the config: one reading between the passes, none after; two calls in flight: the first's pass after removes only its own"
+      ],
       "notes": [
         {
           "at": "2026-11-19T01:55:19Z",
@@ -5681,12 +5685,29 @@
         "runId": "2026-11-19T02:52:56Z.2db99d",
         "status": "passed",
         "at": "2026-11-19T02:52:56Z"
+      },
+      "intentCheck": {
+        "answer": "matches",
+        "commit": "aee230a1b358",
+        "at": "2026-11-19T02:55:08Z",
+        "return": "docs/audit/evidence/returns/SG1.54-ukq/20261119T015523Z.reviewer.json"
+      },
+      "redFirst": {
+        "status": "not-attempted",
+        "basis": "tests.expectGreenFirst is true: this task's added tests must PASS on the base, so a green-first proof is owed in place of a red-first one",
+        "at": "2026-11-19T02:29:53Z"
+      },
+      "greenFirst": {
+        "at": "2026-11-19T02:34:39Z",
+        "basis": "`python3 tools/sweep-selftests.py tests/test_journal_writes.py` in a throwaway tree at HEAD exited 0 with HEAD's own tests green on HEAD's code and the task's own cases seen by the passed count: tests/test_journal_writes.py passed 208 case(s) at HEAD's own run and 211 with the task's - 1/1 files ok, 211 cases; run without CLAUDE_PROJECT_DIR, OLDPWD, PWD; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - .github/sweep-costs.json holds windows-2025's slot-seconds at 4 workers, not this host's (darwin): no ratio between the two is recorded, so none of its figures is read as this host's time",
+        "status": "proved",
+        "source": "green-first-helper"
       }
     },
     {
       "id": "SG1.55-ukq",
       "title": "The checkout the walk finds is itself asked, a git entry that is no repository does not end the walk, and the member path is held at more than one directory",
-      "status": "pending",
+      "status": "in_progress",
       "description": "A narrow review of the task that built the config hold for a member project found no regression: a project whose checkout is a linked worktree, a member three directories down through a symlinked parent, a project spelled in another letter case, ordinary writes in every place, the regression matrix and the generated case's oracle all came out right. It found two things and one smaller; each was run by the reviewer and again by the orchestrator.\n\nMEASURED on the tree as it stands.\n(a) THE CHECKOUT THE WALK FINDS IS NOT ASKED when its common directory is not named for a plain repository. The walk finds the directory above the project that holds the git entry, and that directory is used only to find the common directory; the main tree is added only when the common directory's last name is the plain one. So in a member project of a repository made with a separate git directory, and of a project inside a submodule, the checkout's own top - which git itself prints as the toplevel - is never asked: its config written at its linked-out folder's destination is allowed for a subagent and for the main session while that top's loader reads it. The tree before that task allowed the same; the README, SECURITY.md and the build guide say the checkout top's config is matched for a project below it.\n(b) THE MEMBER PATH IS HELD AT ONE DIRECTORY ONLY. Every member fixture puts the project one directory below its checkout. With the member path cut to its last component, or with the walk stopped one directory above the project, the guard's member, generated and registration cases and the journal's generated case stay green, and at two directories each change allows a write its loader reads. The code as it stands is right at two and three; no case says so.\n(c) SMALLER, the same walk. A git entry that is no repository - an empty directory - between a member project and its real checkout ends the walk there, while git passes over it and prints the real checkout: the checkout top's config, a worktree's, and the member's place in the worktree are then allowed while read. Allowed before that task too.\n\nTHE RULE TO BUILD.\n1. THE DIRECTORY THE WALK FINDS IS A TREE AND IS ASKED, at its top and at the member's place, whatever its common directory is named and whether or not any registration exists. The main-tree reading by the common directory's name stays for what it adds - the main tree of a project that is a linked worktree.\n2. THE WALK ENDS AT A REPOSITORY, NOT AT A NAME. A git entry ends it when it is a directory holding a HEAD entry or a regular file whose first line, read to a bound, names a git directory; any other entry of that name is passed over and the walk goes on. By lstat and one bounded read, no listing, no process, and still only for a config-named write.\n3. THE MEMBER DIMENSION OF THE FIXTURES HAS A PROJECT MORE THAN ONE DIRECTORY BELOW ITS CHECKOUT, in the measured rows and in the generated case, so the two changes of (b) each turn a named case red.\n4. THE DOCUMENTS say what is matched from runs: the checkout top for a member project of a separate-git-directory repository and of a submodule moves to matched; the not-matched item on a separate git directory keeps only what a run still shows allowed.\n\nWHAT STAYS. Every answer of every earlier probe and of the reviewer's regression runs (the brief says where), except the rows of (a) and (c), which become holds, each with its journal row for an edit tool. Ordinary writes: no walk, no registration read, no listing, no process. A project that is its checkout's top answers as before, and its config-named write makes the calls it makes today plus what rule 2's test of the project's own entry adds - measured, in the disk-call case. The journal's answers. The hook import budget.\n\nHOW TO PROVE. Red before, each as the guard run as a process on real repositories: the two rows of (a) and the three of (c) allowed while a loader reads the write; the two changes of (b) green over the suites. Allow twins that must stay quiet: an ordinary write in each of those arrangements; a config-named file in a member project that no place a loader is handed reads; a directory holding an empty git entry and nothing above it that is a repository - no tree found, nothing asked beyond today. A mutation probe the orchestrator can run from the worktree root: the found top not asked; the walk ended at any entry of the name; the member path cut to its last component; the walk stopped one directory above the project; and an allow row - every directory the walk passes asked as a tree - turns a twin red.\n\nNOT in this task: a config-named write beside an empty git entry being held by the nested-repository reading; anything on the documents' not-matched list other than the separate-git-directory item; writes through the shell.\n\nAcceptance:\n(1) In a member project of a repository with a separate git directory and of a project inside a submodule, a config-named write the checkout's top would load is blocked for a subagent and asked about for the main session, and leaves its journal row for an edit tool.\n(2) A git entry that is no repository between a member project and its checkout does not end the walk, and the three measured rows are held.\n(3) A member project two directories below its checkout is held by cases that go red when the member path is cut or the walk stops early.\n(4) An ordinary write walks nothing and reads no registration, and a project that is its checkout's top answers as before.\n(5) SECURITY.md, the README, the build guide and the changelog say what is matched and what is not, true of the code.",
       "files": [
         "plugins/audit/hooks/_config.py",
@@ -5716,16 +5737,74 @@
       "risk": "low",
       "blockedBy": [],
       "dependsOn": [],
-      "attempts": 0,
+      "attempts": 1,
       "maxAttempts": 3,
       "commit": null,
       "outcome": {
         "technical": null,
         "descriptive": null
       },
-      "startedAt": null,
+      "startedAt": "2026-11-19T02:55:22Z",
       "completedAt": null,
-      "verifiedBy": []
+      "verifiedBy": [],
+      "notes": [
+        {
+          "at": "2026-11-19T02:55:20Z",
+          "text": "it quotes the name of the security contact section of SECURITY.md; this task edits only the passage on which trees the config hold asks",
+          "waives": ".github/ISSUE_TEMPLATE/config.yml"
+        },
+        {
+          "at": "2026-11-19T02:55:20Z",
+          "text": "it quotes the sentence of SECURITY.md that the policy denies the tool, not the knowledge; this task edits only the passage on which trees the config hold asks",
+          "waives": "tests/test__panel_page.py"
+        },
+        {
+          "at": "2026-11-19T02:55:20Z",
+          "text": "it quotes the heading of SECURITY.md on the name-based secret-read guard; this task edits only the passage on which trees the config hold asks",
+          "waives": "tests/test_guard_secrets_read.py"
+        },
+        {
+          "at": "2026-11-19T02:55:20Z",
+          "text": "it quotes the phrase of SECURITY.md on a write journalled after the fact; this task edits only the passage on which trees the config hold asks and leaves that phrase as it is",
+          "waives": "tests/test_hooks.py"
+        },
+        {
+          "at": "2026-11-19T02:55:20Z",
+          "text": "it quotes a phrase of SECURITY.md's passage on committed paths; this task edits only the passage on which trees the config hold asks",
+          "waives": "tools/check-committed-pii.py"
+        },
+        {
+          "at": "2026-11-19T02:55:20Z",
+          "text": "it quotes the phrase of SECURITY.md on a deliberately loud failure; this task edits only the passage on which trees the config hold asks",
+          "waives": "tools/check-git-pipeline.py"
+        },
+        {
+          "at": "2026-11-19T02:55:20Z",
+          "text": "it reads the fail-mode table of SECURITY.md by its heading; this task changes no row of that table - the guard's event and fail mode stay as they are",
+          "waives": "tools/gate-parity.py"
+        },
+        {
+          "at": "2026-11-19T02:55:20Z",
+          "text": "it quotes the fail-mode row of guard-edits in SECURITY.md; this task changes which trees the guard's question asks, not its event or its fail mode, so the row stays as it is",
+          "waives": "tools/prove-gates.py"
+        },
+        {
+          "at": "2026-11-19T02:55:20Z",
+          "text": "a dated design note with a section on SECURITY.md as it stood; this task edits only the passage on which trees the config hold asks and the note records history",
+          "waives": "docs/research/guard-ownership-design.md"
+        },
+        {
+          "at": "2026-11-19T02:55:20Z",
+          "text": "it reads the Unreleased heading of CHANGELOG.md; this task adds an entry on the config hold under that heading and leaves the heading as it is",
+          "waives": "tools/release.py"
+        }
+      ],
+      "reviewPerTask": "signals",
+      "testEvidence": {
+        "runId": "2026-11-19T04:19:04Z.fec52f",
+        "status": "passed",
+        "at": "2026-11-19T04:19:04Z"
+      }
     }
   ],
   "parentBranch": "integration/skill-gates",

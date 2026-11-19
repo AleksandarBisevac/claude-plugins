@@ -1499,10 +1499,17 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    hang off inside it. Asked of a write whose file is named as the config is,
    and of no other: **every tree the repository the project lies in
    registers** — the repository found from the first directory at or above the
-   project that holds a git entry, the project resolved and then one `lstat`
-   per directory, no listing and no process
+   project whose git entry is a repository, a directory holding a `HEAD` entry
+   or a file whose first line, read to a bound, names a git directory; any
+   other entry of that name, an empty directory among them, is passed over as
+   git's discovery passes over it. The project is resolved and then one `stat`
+   is made per directory, plus one `lstat` or one bounded read where an entry
+   stands, no listing and no process
    (`_config._checkout_of`), so a project that is a directory below its
-   checkout's top reads them as one at the top does; its main tree and each
+   checkout's top reads them as one at the top does; for such a project, the
+   checkout's own top, whatever its common directory is named and whether or
+   not one can be read from it — a checkout made with its git directory apart
+   from it, or a submodule's; its main tree and each
    worktree its common directory's registrations name, read from those files
    with no process (`_config._registered_trees`), wherever the tree lies and
    whatever its config folder is: a real directory, a symlink inside the
@@ -1551,17 +1558,29 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    itself a linked worktree, the main checkout's config and a sibling
    worktree's, each written at its folder link's destination: the main tree is
    found beside the common directory, the sibling in its registration.
-   `cf39`–`cf39c` hold a member project — the project a directory below its
-   checkout's top, a registered worktree beside it, and a plain repository
-   with no linked worktree — the hook run as a process: the checkout's top's
-   config, a worktree's top's and the member's place in a worktree are each
-   held where a loader reads the write, through a linked-out folder, at its
-   destination or directly; their twins - an ordinary write in the project and
-   in a worktree's member place, a config-named file in a worktree folder that
-   is no such place, one above the checkout - are allowed; and an ordinary
-   write there walks to no checkout. `cf36` adds the project's place in its
-   checkout and the tree's place a config is of to its dimensions, its fixture
-   listing each tree's top and member place. `cf40` holds a worktree whose
+   `cf39`–`cf39c` hold a member project — the project two directories below
+   its checkout's top, a registered worktree beside it, and a plain repository
+   one directory down with no linked worktree — the hook run as a process: the
+   checkout's top's config, a worktree's top's and the member's place in a
+   worktree are each held where a loader reads the write, through a
+   linked-out folder, at its destination or directly; their twins - an
+   ordinary write in the project and in a worktree's member place, a
+   config-named file in a worktree folder that is no such place, one in the
+   directory between the project and its checkout, one above the checkout -
+   are allowed; and an ordinary write there walks to no checkout. `cf39e`
+   reads the member depths off the world the fixture built. `cf36` adds the
+   project's place in its checkout and the tree's place a config is of to its
+   dimensions, its fixture listing each tree's top and member place, and
+   `cf36d` holds every member world it built more than one directory deep.
+   `cf41`–`cf41c` hold the checkout a member project's walk finds whatever
+   the repository's layout: the checkout's top's config, at its linked-out
+   folder's destination, in a repository made with its git directory apart
+   and in a submodule; and with an empty git directory between the project
+   and its checkout, that checkout's top, a worktree's top and the member's
+   place in the worktree; their twins - an ordinary write in each, and a
+   folder holding an empty git entry, or a `.git` file naming no git
+   directory, with no repository above it, whose config is asked of no tree -
+   are allowed. `cf40` holds a worktree whose
    registration git wrote relative to its own directory
    (`worktree.useRelativePaths`, git 2.48 on; on an older git the case
    rewrites the registration relative by hand and says so, never a skip).
@@ -1570,7 +1589,10 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    as above — written through the link or at its destination, from a session
    standing anywhere — and, for a project below its checkout's top, the
    checkout's top's config and each registered tree's at its top and at the
-   member's place in it (`cf39`); a nested repository's under the project, a
+   member's place in it (`cf39`), whatever the repository's layout: a git
+   directory made apart from the checkout or a submodule (`cf41`), and a git
+   entry that is no repository between the project and its checkout passed
+   over (`cf41b`); a nested repository's under the project, a
    symlinked folder on the way included, a worktree under the project whose
    registration is gone among them (`cf40c`); a hard link to the config of the
    project or of the session's tree under any name, wherever it is placed; and
@@ -1597,7 +1619,8 @@ per session (`detect-plan-skip`) and blocks `/audit` at preflight.
    (`oq1`–`oq4d` in `tests/test_journal_writes.py`, the hook run as a process
    over real linked worktrees and symlinked folders, and tables through both
    hooks; `oq5` over the generated arrangements, `oq5b`, `oq5c` and, for a
-   member project, `oq5d` the hook run as a process on the measured ones). An MCP write of another tree's config
+   member project, `oq5d` the hook run as a process on the measured ones, and
+   `oq5e` on `cf41`'s worlds). An MCP write of another tree's config
    leaves no row, whatever the guard says — the journal's sweep after the call
    does not see it, and `oq5` names those arrangements as a skip. The row's target is `.claude/audit.config.json` when the
    file is the config of the tree whose trail the row goes into, whatever

@@ -1838,22 +1838,45 @@ def _config_named(spelled, real):
     return any(os.path.basename(p).casefold() == want for p in (spelled, real))
 
 
+def _git_entry_is_repository(at):
+    """Does the directory `at` hold a `.git` entry that is a repository: a
+    directory holding a `HEAD` entry, or a regular file whose first line,
+    read to `_POINTER_BYTES` (`_read_pointer`, the reader `_admin_of_tree`
+    uses), names a git directory? One `stat` of the entry - followed through
+    a link, as git follows one - then one `lstat` or one bounded read. Any
+    other entry of that name - an empty directory, a file naming nothing, a
+    link to nowhere, a pipe - is no repository, and git's discovery passes
+    over it too."""
+    import stat
+    dotgit = os.path.join(at, ".git")
+    st = _stat_or_none(dotgit)
+    if st is None:
+        return False
+    if stat.S_ISDIR(st.st_mode):
+        return os.path.lexists(os.path.join(dotgit, "HEAD"))
+    if stat.S_ISREG(st.st_mode):
+        return _read_pointer(dotgit).startswith("gitdir:")
+    return False
+
+
 def _checkout_of(project):
     """(the checkout the directory `project` lies in, the project's path below
     that checkout's top) - the first directory at or above `project`, resolved,
-    that holds a `.git` entry, and "" for the path when the project is that top
-    itself - or (None, "") when no directory up to the root holds one.
+    whose `.git` entry is a repository (`_git_entry_is_repository`), and ""
+    for the path when the project is that top itself - or (None, "") when no
+    directory up to the root holds one.
 
     Walked as git's discovery walks from a session's directory: from the
-    resolved directory up, one `lstat` of `.git` per directory, ending at the
-    root, with no process and no listing. `checkout_top` answers the same
-    question with a `git rev-parse` process, which a config question does not
-    start; `_tree_as_spelled` walks as spelled and stops at the project, so it
-    cannot find a checkout above it."""
+    resolved directory up, one `stat` of `.git` per directory, passing over an
+    entry of that name that is no repository and ending at the root, with no
+    process and no listing. `checkout_top` answers the same question with a
+    `git rev-parse` process, which a config question does not start;
+    `_tree_as_spelled` walks as spelled and stops at the project, so it cannot
+    find a checkout above it."""
     real = os.path.realpath(project)
     at = real
     while True:
-        if os.path.lexists(os.path.join(at, ".git")):
+        if _git_entry_is_repository(at):
             return at, real[len(at):].lstrip(os.sep)
         parent = os.path.dirname(at)
         if parent == at:
@@ -1863,17 +1886,23 @@ def _checkout_of(project):
 
 def _registered_trees(project):
     """Every place a session of the repository the directory `project` lies in
-    could be opened at: the repository's main tree - the directory holding the
-    common git directory, when that directory is a `.git` (a bare repository
-    has none) - and each worktree registered in
-    `<common>/worktrees/<name>/gitdir`, the one-line file naming the path of
-    that worktree's `.git` file, relative to the registration where it is not
-    absolute; and, for a project lying below its checkout's top
-    (`_checkout_of`), each of those trees at the project's own path below it
-    too - the member's place in that tree, where a session in it would open.
-    Read from the files with no process; a registration that is no regular
-    file, names a directory that does not exist, or may have been cut
-    (`_read_pointer`) is passed over.
+    could be opened at: the checkout the project lies in (`_checkout_of`),
+    when the project lies below its top - whatever the common git directory
+    is named and whether or not one can be read from it, so the top of a
+    checkout made with its git directory apart, or of a submodule, is asked;
+    the repository's main tree - the directory holding the common git
+    directory, when that directory is a `.git` (a bare repository has none,
+    and neither does one made with its git directory apart) - which is what
+    finds the main checkout from a project that is a linked worktree; and
+    each worktree registered in `<common>/worktrees/<name>/gitdir`, the
+    one-line file naming the path of that worktree's `.git` file, relative to
+    the registration where it is not absolute; and, for a project lying below
+    its checkout's top, each of those trees at the project's own path below
+    it too - the member's place in that tree, where a session in it would
+    open. Read from the files with no process; a registration that is no
+    regular file, names a directory that does not exist, or may have been cut
+    (`_read_pointer`) is passed over. A project that is its checkout's top is
+    asked anyway, so its checkout adds nothing.
 
     The repository is found from the checkout the project lies in, not from
     the project's own `.git` entry alone: a project that is a directory below
@@ -1887,13 +1916,14 @@ def _registered_trees(project):
     top, below = _checkout_of(project)
     if top is None:
         return []
+    out = [top] if below else []
     common = _common_of(top)
     if not common:
-        return []
+        return _with_member_places(out, below)
     common = os.path.normpath(common)
-    out = []
-    if os.path.basename(common) == ".git":
-        out.append(os.path.dirname(common))
+    main = os.path.dirname(common)
+    if os.path.basename(common) == ".git" and main not in out:
+        out.append(main)
     regs = os.path.join(common, "worktrees")
     try:
         names = sorted(os.listdir(regs))
@@ -1907,9 +1937,15 @@ def _registered_trees(project):
         at = os.path.dirname(os.path.normpath(os.path.join(reg, dotgit)))
         if os.path.isdir(at):
             out.append(at)
+    return _with_member_places(out, below)
+
+
+def _with_member_places(trees, below):
+    """Each of `trees`, followed - for a project lying `below` its checkout's
+    top - by that tree at the project's own path below it."""
     if not below:
-        return out
-    return [p for tree in out for p in (tree, os.path.join(tree, below))]
+        return list(trees)
+    return [p for tree in trees for p in (tree, os.path.join(tree, below))]
 
 
 def _nested_tops(spelled, real, project):
@@ -1981,8 +2017,10 @@ def audit_config_way(tree, which=False):
     Asked of a write whose file is named as the config is, as spelled or
     resolved, and of no other (`_candidate_tops`): every tree the repository
     the project lies in registers - found from the first directory at or above
-    the project holding a `.git` entry (`_checkout_of`), so a project below its
-    checkout's top reads them too - its main tree and each worktree in its
+    the project whose `.git` entry is a repository (`_checkout_of`), so a
+    project below its checkout's top reads them too - that checkout's own top
+    for such a project, whatever its common directory is named, its main tree
+    and each worktree in its
     common directory's registrations (`_registered_trees`), wherever each lies
     and whatever its config folder is, each asked at its top and, for a
     project below its checkout's top, at the project's own path below that
@@ -2010,8 +2048,10 @@ def audit_config_way(tree, which=False):
     session's directory does not find; a repository nested under a tree other
     than the project; a worktree outside the project whose registration is
     gone (one under the project is a repository nested under it); the main
-    checkout of a repository whose git directory was made apart from it - its
-    common directory is not named `.git`; a repository that is no tree of
+    checkout of a repository whose git directory was made apart from it, from
+    a project that is a linked worktree of it - its common directory is not
+    named `.git`, and the walk finds the project's own tree; a repository
+    that is no tree of
     this one and lies outside the project; and a repository nested under the
     project that is no tree of this one, its config written at its folder
     link's destination from a session standing elsewhere - no component of

@@ -611,9 +611,14 @@ Asked of every write: the project, the tree the session stands in (`_session_tre
 the path was placed in, and a repository the resolved path's config components hang off inside
 that tree. Asked of a file named as the config is, and of no other: every tree the repository
 the project lies in registers (`_registered_trees` — the repository found from the first
-directory at or above the project holding a `.git` entry, the project resolved and then one
-`lstat` per directory by
-`_checkout_of`, which `checkout_top` cannot serve since it starts a `git` process; the main tree
+directory at or above the project whose `.git` entry is a repository
+(`_git_entry_is_repository`: a directory holding `HEAD`, or a regular file whose first line,
+read by `_read_pointer`, names a git directory; any other entry of the name is passed over),
+the project resolved and then one `stat` per directory, plus one `lstat` or one bounded read
+where an entry stands, by
+`_checkout_of`, which `checkout_top` cannot serve since it starts a `git` process; for a
+project below that checkout's top, the top itself, whatever its common directory is named and
+whether or not one can be read; the main tree
 beside a common directory named `.git`, and each `<common>/worktrees/<name>/gitdir`
 registration naming an existing directory, joined with the registration's own directory when
 relative, read with no process, each pointer file read only when regular and to a bounded
@@ -977,7 +982,9 @@ when `.claude` is a symlink — inside the project, out of the repository, into 
 `.claude`, to a repository, through a chain, or dangling — written through the link or at its
 destination, the config present or not; for a project below its checkout's top, the checkout's
 top's config and each registered worktree's at its top and at the project's place in it
-(`cf39`); a nested repository's under the project, a symlinked folder on the way included, a
+(`cf39`), in a checkout made with its git directory apart or a submodule too (`cf41`), and past
+a git entry that is no repository between the project and its checkout (`cf41b`); a nested
+repository's under the project, a symlinked folder on the way included, a
 worktree under the project whose registration is gone among them (`cf40c`); a hard link to the
 config of the project or of the session's tree under any name, wherever it is placed; and a
 spelling differing only in letter case, at any directory level, where the directory that name
@@ -995,8 +1002,10 @@ loader of each tree the fixture built then reads, over a table of symlinked arra
 hook run as a process; `cf36`–`cf36c` over arrangements generated from named dimensions, the
 project's place in its checkout among them; `cf38`–`cf38c` count the registrations, listings
 and processes the question costs, `cf38d` holds the main checkout's config from a project that
-is itself a linked worktree, `cf39`–`cf39c` a member project's trees and `cf40` a registration
-written relative. The journal writes its config row for exactly
+is itself a linked worktree, `cf39`–`cf39c` a member project's trees two directories below its
+checkout's top (`cf39e` and `cf36d` read the depth off the worlds built), `cf40` a registration
+written relative, and `cf41`–`cf41c` the checkout a member project's walk finds in each
+repository layout. The journal writes its config row for exactly
 the edit-tool writes this hook holds, apart from a hold made without regard to case whose write
 created another file. (2) `guardEdits.customRules` (config) — each
 `{pathPrefix, bannedPattern, message}` blocks its regex under its path prefix; ships EMPTY (the

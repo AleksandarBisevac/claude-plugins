@@ -461,7 +461,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions are t
   repository is now found from the first directory at or above the project holding a git entry,
   with no process, and each tree it registers is asked at its top and at the project's place in
   it; the property case gains the project's place in its checkout as a dimension, its fixture
-  listing every place a loader could be handed. A registration git wrote relative to its own
+  listing every place a loader could be handed. The checkout that walk finds was itself asked
+  only when its common directory was named `.git`, so in a member project of a checkout made
+  with its git directory apart, or of a submodule, that checkout's top's config was allowed
+  while its loader read it; and the walk ended at any entry named `.git`, so an empty directory
+  of that name between a member project and its checkout left the checkout's top, a worktree's
+  and the project's place in the worktree allowed while read. The checkout found is now asked at
+  its top and at the project's place whatever its layout, and the walk ends only at an entry
+  that is a repository - a directory holding `HEAD`, or a file naming a git directory - passing
+  over any other as git does. Every member fixture had put the project one directory below its
+  checkout, where a member path cut to its last component or a walk stopped one directory above
+  the project still answered right; the member cases and the property case's member dimension
+  now put it two directories down, one plain repository keeping one. A registration git wrote relative to its own
   directory is held by a case, and a registration read up to its bound without reaching its
   line's end is passed over, since a cut path can name a directory the whole one does not.
   Still not matched, each a case allowing the write while a loader reads it: a hard link placed

@@ -2091,6 +2091,7 @@ def _cases(check):
     _one_question_cases(check)
     _link_question_cases(check)
     _generated_question_cases(check)
+    _topology_question_cases(check)
     _slot_follows_file_cases(check)
     _created_file_cases(check)
     _harness.stage(check, "sn0 the switch-reading cases", _switch_reading_cases)
@@ -2554,6 +2555,70 @@ def _generated_question_cases(check):
           "place the fixture listed: %r" % (member,),
           len(member) >= 4 and all(loaded for _n, loaded, _r, _c in member)
           and one_row_where_read(member))
+
+
+def _topology_question_cases(check):
+    """oq5e: the journal's config row over the guard suite's topology worlds."""
+    import test_guard_edits as TGE
+    label = ("oq5e the journal over a member project's checkout in every "
+             "repository layout")
+    base = os.path.realpath(_harness.fixture_root("journal-oq-topo-"))
+    probe = os.path.join(base, "probe-link")
+    made, why = _harness.attempt(os.symlink, base, probe)
+    if not made:
+        _harness.skip(check, label, "no symlink can be made here (%s)" % (why,),
+                      os.name == "nt" or not hasattr(os, "symlink"))
+        return
+    os.remove(probe)
+    name_of = os.path.basename(_config.CONFIG_REL)
+    held, quiet, skipped = [], [], []
+    for tag, built, world in TGE.topology_worlds(base):
+        if not built:
+            if not TGE._topo_unbuildable(world):
+                check("%s: the %s world builds (%s)" % (label, tag, world),
+                      False)
+                return
+            skipped.append((tag, str(world)[:160]))
+            continue
+        for name, cwd, path, want in world["rows"]:
+            if os.path.basename(path) != name_of:
+                continue
+            rows, codes = _oq_write(path, world["proj"] or cwd,
+                                    "sess-oq5e-" + name, world["trees"])
+            # Read by a loader exactly when the config file of a place the
+            # fixture listed holds the write; the file is taken away before
+            # the next row, so each row is judged by its own write.
+            loaded = any(_oq_holds_body(t) for t in world["trees"])
+            os.remove(path)
+            (held if want else quiet).append((tag, name, loaded, rows, codes))
+    for tag, why in skipped:
+        _harness.skip(check, "oq5e the %s world" % (tag,),
+                      "this git cannot build it: %s" % (why,), True)
+
+    def config_rows(rows):
+        return [r[0] for r in rows if r[0] == "config.edit"]
+
+    def owed(want_held):
+        # The config-named rows each world owes, so a row dropped from a
+        # builder is red; a world this git cannot build owes none.
+        table = {"t1": (1, 1), "t2": (1, 0), "t3": (3, 0), "t0": (0, 2)}
+        return sum(n[0 if want_held else 1] for t, n in table.items()
+                   if t not in dict(skipped))
+    check("oq5e in a member project of a repository with its git directory "
+          "apart and of a submodule, and with an empty git entry between a "
+          "member project and its checkout, the checkout's or its worktree's "
+          "config written by an edit tool where a loader reads it leaves one "
+          "config row - the journal hook run as a process - while a "
+          "config-named write no listed place reads, beside an entry that is "
+          "no repository or between the project and its checkout, leaves "
+          "none (held: world, row, read, rows, codes) %r; (quiet) %r"
+          % (held, quiet),
+          len(held) == owed(True) and len(quiet) == owed(False)
+          and all(loaded and codes == (0, 0)
+                  and config_rows(rows) == ["config.edit"]
+                  for _t, _n, loaded, rows, codes in held)
+          and all(not loaded and codes == (0, 0) and not config_rows(rows)
+                  for _t, _n, loaded, rows, codes in quiet))
 
 
 def _oq_holds_body(tree):
