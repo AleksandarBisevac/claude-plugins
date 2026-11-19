@@ -599,6 +599,11 @@ slice_lint() {
   # truncated to answer, which is why CI's checkout takes the whole history.
   run "committed ledgers record a verdict the runner can make, and every commit a manifest names resolves" \
     python3 tools/check-example-ledgers.py
+  # The browser install's shell, which only a runner otherwise executes, run out of
+  # the committed action against stubs of sudo and apt: a hit that falls back to the
+  # archive is red here, where on a runner it is green with one warning. POSIX only,
+  # like the job that runs this slice; on another host it says it could not run.
+  run "the browser install's shell, against stubs" python3 tools/check-browser-install.py
 }
 
 # --- slice: js, the browser JavaScript as behaviour ----------------------------------------

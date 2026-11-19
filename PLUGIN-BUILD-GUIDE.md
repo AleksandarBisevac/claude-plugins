@@ -7784,9 +7784,22 @@ collapsible, filterable Composition tab (v0.14.0).
 `tools/verify.sh` is the one description of the gate set, grouped into named slices, and
 `sh tools/verify.sh --list` prints every slice and the steps it runs. CI
 (`.github/workflows/ci.yml`) is that runner and nothing else: every job is setup plus one
-`tools/verify.sh --only <slices>` call, on ubuntu and windows, for every push/PR - and a push
-to main whose commit a run already verified runs only `tools/ci-verified.py`.
-`CONTRIBUTING.md`'s *Tests* section says why each slice holds what it holds. Locally:
+`tools/verify.sh --only <slices>` call, on ubuntu and windows, for every push/PR. A push to
+main whose commit a run already verified runs no slice: `tools/ci-verified.py` names the run
+that verified it, and the browser jobs (`browser-panel`, `browser-report`) run without their
+slice to seed GitHub's cache. Each looks both of the install's cache keys up, installs nothing
+when both have an entry, and otherwise installs Chromium and the system packages the image
+lacks and saves them under `main`'s scope. Both branches of a seed have run on a runner, on
+a branch whose dispatches forced `seed` on (`ci/P169-seed-probe3`). A seed that finds both
+entries pays the job's setup and an action of about 4s - `npm ci`, the dry run and the two
+lookups - and restores, fetches and saves nothing (run 44428930205: the panel job's action
+00:26:07 to 00:26:11, the report job's 00:26:14 to 00:26:17). A seed that misses pays what
+any miss pays, and that depends on the mirror: in run 44426388905 the same 21.1 MB took the
+panel job's install about 36s and the report job's 6m21s ("Fetched 21.1 MB in 5min 19s
+(66.2 kB/s)"), and the panel job saved both entries. Not yet seen in a run: a seed on `main`
+from a real verified push, and another branch restoring what `main` saved. A failed seed is a
+warning on the run, not a red job (the comment above `browser-panel` in `ci.yml`). `CONTRIBUTING.md`'s *Tests* section says why each slice holds
+what it holds. Locally:
 
 ```bash
 # 1. Every gate CI runs, and the list of what that is today

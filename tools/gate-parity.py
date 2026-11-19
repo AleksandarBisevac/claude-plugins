@@ -20,7 +20,9 @@ runs - so the copies are gone rather than compared. A job that runs no slice (th
 commit-verified question) names no slice to hold: the slice rules read no run in
 it, while the bound, runner-image and job-cap rules read it like any job. A step's
 `if:` is read like its job's, since a job that runs on every run may still skip
-the step carrying its slice (`job_slices`). What is left to hold is what
+the step carrying its slice (`job_slices`), and neither that step nor its job may
+carry a `continue-on-error` that is not `false`, since a slice allowed to fail
+reddens nothing (`_may_fail`). What is left to hold is what
 the workflow says ABOUT the slices, and `slice_drift()` and `shard_matrix_drift()`
 hold it against `verify.sh --list`, asked of the real runner:
 
@@ -831,15 +833,17 @@ def _job_runs(lines):
 
 
 def _step_runs(lines):
-    """[(run, the `if:` of the step carrying it, or "")] for a job's lines.
+    """[(run, the step's `if:` or "", its `continue-on-error:` or "")] for a
+    job's lines.
 
-    A step is one item of the job's `steps:` list, and its `if:` is a key at
-    the item's own depth, so a script line that happens to read `if:` is never
-    taken for it. A job with no `steps:` block gives its runs no condition."""
+    A step is one item of the job's `steps:` list, and its keys sit at the
+    item's own depth whichever key opens the item (`- if:` or `- name:` with
+    `if:` below it), so a script line that happens to read `if:` is never taken
+    for one. A job with no `steps:` block gives its runs neither key."""
     head = next((i for i, ln in enumerate(lines)
                  if re.match(r"^\s*steps:\s*(#.*)?$", ln)), None)
     if head is None:
-        return [(run, "") for run in _job_runs(lines)]
+        return [(run, "", "") for run in _job_runs(lines)]
     base = len(lines[head]) - len(lines[head].lstrip(" "))
     steps, item = [], None
     for ln in lines[head + 1:]:
@@ -856,12 +860,27 @@ def _step_runs(lines):
     out = []
     for step in steps:
         own = [" " * (item + 2) + step[0][item + 2:]] + step[1:]
-        conditions = [got[2] for got in (_key_line(ln) for ln in own)
-                      if got is not None and got[0] == item + 2
-                      and got[1] == "if"]
-        out += [(run, conditions[0] if conditions else "")
+        keys = {}
+        for got in (_key_line(ln) for ln in own):
+            if got is not None and got[0] == item + 2:
+                keys.setdefault(got[1], got[2])
+        out += [(run, keys.get("if", ""), keys.get("continue-on-error", ""))
                 for run in _job_runs(step)]
     return out
+
+
+# A SLICE IS NEVER THE THING ALLOWED TO FAIL. `continue-on-error` turns a failed step
+# (or job) into a success for the job's (or run's) conclusion, so a red slice under
+# it reddens nothing and reads as a pass. The browser jobs carry it on purpose on
+# their install step, and only on a seed (a verified push to main, which runs no
+# slice): a cache it could not fill must not redden a commit already verified. That
+# step runs no verify.sh, so the rule never reads it; any value on a step or job that
+# runs one - `true`, or an expression that might be true on some run - is a finding,
+# because only a literal `false` is proved false on every run.
+def _may_fail(value):
+    """True when a `continue-on-error:` value is anything but absent or false."""
+    text = _collapse(value).strip().strip("'\"").lower()
+    return text not in ("", "false", "${{false}}")
 
 
 def _call_tier(job_tier, step_tier):
@@ -962,7 +981,8 @@ def job_slices(text):
     resolve is a `problems` row naming the job, never a silently dropped run.
     The `if:` of the step carrying a call is read the same way as the job's
     (`_step_runs`, `_call_tier`): a job that runs on every run can still skip
-    the step its slices are in.
+    the step its slices are in. A `continue-on-error` that is not `false` on
+    that step, or on a job carrying a call, is a `problems` row (`_may_fail`).
     """
     jobs = _workflow_jobs(text)
     if not jobs:
@@ -971,7 +991,7 @@ def job_slices(text):
     out, problems = [], []
     for job, lines in jobs:
         calls = []
-        for run, condition in _step_runs(lines):
+        for run, condition, tolerated in _step_runs(lines):
             step_calls = _verify_args(run)
             if not step_calls:
                 continue        # a step running no gate has no condition to prove
@@ -979,6 +999,10 @@ def job_slices(text):
             if step_why is not None:
                 problems.append((job, "the step running verify.sh: %s"
                                  % (step_why,)))
+            if _may_fail(tolerated):
+                problems.append((job, "the step running verify.sh carries "
+                                 "`continue-on-error: %s`, so a red slice there "
+                                 "leaves the job green" % (tolerated,)))
             calls += [(args, step_tier or "unproved") for args in step_calls]
         keys = _job_keys(lines)
         tier, why = _if_tier(keys.get("if", ""))
@@ -989,6 +1013,10 @@ def job_slices(text):
             continue            # a guard job carries no slice, so no condition to prove
         if why is not None:
             problems.append((job, why))
+        if _may_fail(keys.get("continue-on-error", "")):
+            problems.append((job, "the job runs verify.sh and carries "
+                             "`continue-on-error: %s`, so a red slice in it leaves "
+                             "the run green" % (keys["continue-on-error"],)))
         matrix = _matrix_cells(lines)
         if matrix["problem"] is not None:
             problems.append((job, matrix["problem"]))
@@ -3345,6 +3373,75 @@ def _slice_cases(check):
           % (_SLICE_CLAUSE, tiered_found),
           sorted(s for s, _w in tiered_found) == ["lint", "runner"]
           and all("only the release tier" in w for _s, w in tiered_found))
+
+    # THE FORM ci.yml WRITES: `- name:` opens the step and `if:` follows it at the
+    # same depth. The cases above open the step with `- if:`, so a reader that found
+    # a step's keys only on its opening line would pass them and read ci.yml's verify
+    # steps as unconditioned. Both directions, in this form.
+    def named(cond):
+        text = _SLICE_CI.replace(
+            lint_step, "      - name: verify slices\n"
+                       "        if: %s\n"
+                       "        shell: bash\n"
+                       "        run: sh tools/verify.sh --only lint,runner\n" % (cond,))
+        assert text != _SLICE_CI, "the lint step moved in the fixture"
+        return text
+
+    named_guarded = named("${{ needs.verified.outputs.run == '' }}")
+    named_pushed = slice_drift(named("${{ github.event_name == 'push' }}"),
+                               _SLICE_LISTED)
+    named_runs = [r["tiers"] for j in job_slices(named_guarded)["jobs"]
+                  if j["job"] == "lint" for r in j["runs"]]
+    check("sv24 %s (a verify step written `- name:` first with its `if:` below, as "
+          "ci.yml writes it, is read by that `if:`: the verified-commit guard runs on "
+          "every run, and a push-only condition is the job's finding: %r / %r / %r)"
+          % (_SLICE_CLAUSE, slice_drift(named_guarded, _SLICE_LISTED), named_runs,
+             named_pushed),
+          slice_drift(named_guarded, _SLICE_LISTED) == []
+          and named_runs == [("per-run", "release")]
+          and sorted(s for s, _w in named_pushed) == ["lint", "lint (job)", "runner"]
+          and any("step" in w for s, w in named_pushed if s == "lint (job)"))
+
+    # A SLICE IS NEVER THE THING ALLOWED TO FAIL (`_may_fail`). Red: the verify step
+    # carrying `continue-on-error`, literal or an expression, and the job carrying it.
+    def tolerated_step(value):
+        return _SLICE_CI.replace(
+            lint_step, "      - name: verify slices\n"
+                       "        continue-on-error: %s\n"
+                       "        run: sh tools/verify.sh --only lint,runner\n" % (value,))
+
+    tolerant = [slice_drift(tolerated_step(v), _SLICE_LISTED)
+                for v in ("true", "${{ needs.verified.outputs.run != '' }}")]
+    tolerant_job = slice_drift(_SLICE_CI.replace(
+        "  lint:\n    timeout-minutes: 5\n",
+        "  lint:\n    continue-on-error: true\n    timeout-minutes: 5\n"), _SLICE_LISTED)
+    check("sv25 a verify step carrying `continue-on-error: true`, one carrying an "
+          "expression that may be true, and a slice-running job carrying it are each "
+          "the job's finding naming the key: %r / %r" % (tolerant, tolerant_job),
+          all([s for s, _w in found] == ["lint (job)"]
+              and "continue-on-error" in found[0][1] for found in tolerant)
+          and [s for s, _w in tolerant_job] == ["lint (job)"]
+          and "continue-on-error" in tolerant_job[0][1])
+
+    # THE ALLOW CASE, red under a reader that refuses the key wherever it sits: the
+    # seed's shape - a step that runs no verify.sh tolerated on an expression, beside
+    # the verify step - and a verify step whose value is a literal false.
+    seed_shape = _SLICE_CI.replace(
+        lint_step, "      - name: install\n"
+                   "        id: install\n"
+                   "        continue-on-error: ${{ needs.verified.outputs.run != '' }}\n"
+                   "        uses: ./.github/actions/browser-install\n"
+                   "      - name: verify slices\n"
+                   "        if: ${{ needs.verified.outputs.run == '' }}\n"
+                   "        run: sh tools/verify.sh --only lint,runner\n")
+    falsy = tolerated_step("false")
+    check("sv26 (THE ALLOW CASE for sv25) a step that runs no verify.sh may carry "
+          "`continue-on-error`, and a verify step may carry it as a literal false: "
+          "%r / %r" % (slice_drift(seed_shape, _SLICE_LISTED),
+                       slice_drift(falsy, _SLICE_LISTED)),
+          seed_shape != _SLICE_CI and falsy != _SLICE_CI
+          and slice_drift(seed_shape, _SLICE_LISTED) == []
+          and slice_drift(falsy, _SLICE_LISTED) == [])
 
 
 # THE WINDOWS PART COUNT, pinned rather than read, because the windows sweep cells

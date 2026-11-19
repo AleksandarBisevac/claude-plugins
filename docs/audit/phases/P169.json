@@ -199,9 +199,51 @@
         "file": "tests/test_run_test_gate.py:9411-9412",
         "issue": "The new mask replaces ` *\\b<duration>` with a fixed ` <duration>`, so it swallows the whole run of spaces between the exit code and the duration as well as the digit-dependent padding. A change to the step line's column layout that only a present-but-empty executor.phaseGateOnly caused (the gap between `exit N` and the duration) is no longer visible to pgo7. Measured in a scratch copy: a runner that, only when the key is present, widens that gap (`exit 0  ` -> `exit 0     `) is FAIL under the old mask and PASS under the new one. The class pgo7 exists for (the setting changing what the runner prints) is still caught for an extra line, a reworded banner, a renamed step, a changed check-count text and a changed duration unit; only pure whitespace layout inside the swallowed gap is lost.",
         "resolution": "Keep the layout invariant instead of dropping it: the width of (padding + duration text) is constant for one exit-code width, so substitute with a function that returns `\"<duration>\".rjust(len(match.group(0)))` (or equivalent) rather than a fixed ' <duration>'. The digit-count-dependent padding then still collapses to one spelling while a real column-width change still reddens the case."
+      },
+      {
+        "id": "P169-R24",
+        "severity": "med",
+        "file": "tools/check-browser-install.py:529-536,573-593",
+        "issue": "A command the action calls that has no stub runs for REAL. The `sudo` stub is `STUB_USER=root exec \"$@\"`, so `sudo <anything not stubbed>` executes the host's own tool, as the invoking user, on any path; PATH is the fixture bin plus /usr/bin:/bin:/usr/sbin:/sbin, and only apt-get, apt-config, mkdir, cp, chown and sudo are stubbed (rm is not). Measured in a scratch copy: appending `sudo rm -rf <scratch>/outside/victim` and `sudo touch <scratch>/outside/made` to the `sysdeps-install` script left the check at '22 of 22 cases held', the victim deleted and `made` created outside the fixture. Today the real `sudo rm -rf \"$d\"` is HOME-bound only because `d` is spelled from the fixture HOME; an edit to the action that names an absolute path (`sudo rm -rf /var/lib/apt/lists/*`, `sudo tee`, `sudo sh -c`) would run on a developer's machine in the lint slice and under the sweep, and the docstring says only that real sudo, apt and dpkg are never reached. Also `/usr/bin/sudo` by absolute path reaches the real sudo (stdin is inherited, so it can prompt).",
+        "resolution": "Make the fixture bin the whole of PATH: symlink only the real tools the steps need (sed, ls, printf, tr, cut, sha256sum, id, wc, dirname, bash utilities) next to the stubs, give `rm` a stub that refuses a path outside the fixture root, and make the `sudo` stub exec only a name found in the fixture bin, otherwise print 'unstubbed command under sudo: NAME' and exit 99. Add a selftest row that appends `sudo touch <outside>` to a copy of the action and requires the check red with the file absent. Pass stdin=DEVNULL in run_script."
+      },
+      {
+        "id": "P169-R25",
+        "severity": "med",
+        "file": ".github/workflows/ci.yml:121 (and the comment at 94-108)",
+        "issue": "`longest browser-panel: 7m46s (run 44385960921)` is not the longest recorded run: run 44424245100 (a dispatch, in the diff's own evidence for the report line) has browser (panel) 2026-11-18T23:51:27Z to 2026-11-19T00:02:56Z, 11m29s, success (install 5m59s on a miss, slice 5m00s), per `gh run view 44424245100 --json jobs`. The panel bound stays 18, which is 1.57 times that run, under the two-times rule `job_bound_evidence` states (it passes only because the stale line is still the one it reads). The diff rewrote the report's line from the same family of runs and left the panel's.",
+        "resolution": "Set `longest browser-panel` to 11m29s (run 44424245100, 23:51:27 to 00:02:56), raise the panel's timeout-minutes to at least 23, and say so in the comment above browser-panel; or state in the comment why that run is not a measurement of this job."
+      },
+      {
+        "id": "P169-R26",
+        "severity": "low",
+        "file": "tools/check-browser-install.py:710-788,793-865",
+        "issue": "Several plainly broken actions are green. Measured in a scratch copy, each gives '22 of 22 cases held': the `npx playwright install chromium` step deleted; the `npm ci` step deleted; the `sysdeps` step's `key=` line replaced by `key=constant` (the hash and the version gone from the cache key); the `sysdeps-install` step's `missing != ''` guard dropped; `seed` defaulting to \"true\"; and the system packages' key expression changed to the same other value in both the lookup and its restore (sd1 only compares them with each other). The docstring discloses that npm ci, Chromium and the dry run are not run, but not that the sysdeps step's key output and the restore steps' key expressions are unread, nor that deleting a step passes (sd3 judges only the steps that exist).",
+        "resolution": "Add to sd: the restore steps' `key:` must equal `${{ steps.pins.outputs.browser-key }}` and `${{ steps.sysdeps.outputs.key }}`; the Chromium install step and the npm ci step must exist and the Chromium one be guarded by the plan; the `seed` input's default must be \"false\"; run the sysdeps step's key lines against a stub dpkg-query/npx so the key's parts are read. Add a bm row per property, or state each as unread in the docstring."
+      },
+      {
+        "id": "P169-R27",
+        "severity": "low",
+        "file": "tools/gate-parity.py:_step_runs / _job_runs (new rule in job_slices ~999)",
+        "issue": "The new rule never sees a flow-style step. `- { name: a, continue-on-error: true, run: sh tools/verify.sh --only lint }` gives job_slices zero runs and no problem (measured: problems [] and runs [0]), so a slice allowed to fail by that spelling is neither a finding nor counted as run. The other shapes I tried read correctly: `- continue-on-error:` on the opening line, quoted \"true\", True, a trailing comment, the key after a `run: |` block, an expression, a job-level key, and `continue-on-error: true` text inside a run block (not read, correctly); the seed's install step beside a guarded verify step is allowed. The step-keys reader does not own this blindness (`_key_line` and `_job_runs` already ignore `- {`) but the new rule's claim is that a slice can never be the thing allowed to fail.",
+        "resolution": "In `_step_runs`/job_slices, report a `problems` row for any `steps:` item that opens with `{` (or `[`), 'a flow-style step this reader cannot read', and add a case beside sv25."
+      },
+      {
+        "id": "P169-R28",
+        "severity": "low",
+        "file": "PLUGIN-BUILD-GUIDE.md (seed paragraph), CONTRIBUTING.md:219-231, ci.yml:153-162",
+        "issue": "The documents state the failed-seed behaviour as fact ('A seed never reddens the verified push', 'A failed seed is a warning on the run, not a red job', 'the next step writes a warning annotation'), but no run exercised it. In the runs they cite the seed-true install step succeeded and the warning step was skipped (run 44426388905: `seed: say that the install failed` skipped in both browser jobs; run 44428930205 likewise). The return's unobserved list names only a seed on main and the cross-branch restore, and every place that says 'Not yet seen in a run' omits this path.",
+        "resolution": "Add 'a seed whose install fails: the conclusion staying green and the warning being written' to the not-yet-seen sentences in ci.yml, CONTRIBUTING.md and the guide, or observe it once on the probe branch with a forced install failure and cite that run."
+      },
+      {
+        "id": "P169-R29",
+        "severity": "low",
+        "file": "tools/check-browser-install.py:516-520,625-641",
+        "issue": "A failure path leaves a directory behind: `build_fixture` makes `tempfile.mkdtemp` and then does the makedirs and writes, and `_install_case` calls it BEFORE its `try/finally`, so an exception inside build_fixture (full disk, a write refused) leaks the scratch directory into the sweep's watched TMPDIR. All other cases (run_pins, _plan_case, a stub timeout) are cleaned in finally. Separately, on a non-POSIX host the gate is red 'could not run here' for 17 cases, so a local `sh tools/verify.sh` lint slice on Windows fails on a check the CI lint job (ubuntu) never runs there; the verify.sh comment says only that it 'says it could not run'.",
+        "resolution": "Wrap the body of build_fixture in try/except that rmtree()s root and re-raises, or create root in the caller and rmtree it in the same finally. For the host case either exit 0 with a printed 'skipped: <reason>' from the gate (the selftest already records a skip) or say in verify.sh that the slice is red on a host without POSIX."
       }
     ],
-    "outcome": "[findings: 23 - 0 high, 9 med, 14 low; 0 with a recorded fix commit]"
+    "outcome": "[findings: 29 - 0 high, 11 med, 18 low; 0 with a recorded fix commit]"
   },
   "summary": null,
   "tasks": [
@@ -2152,7 +2194,7 @@
     {
       "id": "P169.13-6l3",
       "title": "A commit's verdict trailers read the same on Windows: a folded or carriage-return value is read whole, and the Windows shape has a case that is red on any platform",
-      "status": "in_progress",
+      "status": "done",
       "description": "One case of tests/test__commit_trail.py, vt8, is red on Windows CI and green everywhere else: it failed in \"selftests (windows, plain 2)\" in both runs that carried the verdict-trailers commit (44379408461 and 44380971983), with \"FAIL vt8 a FOLDED trailer reads as git unfolds it - the line break and its indent become one space - which is why the writer refuses a reason holding a line break rather than folding it: 'first half' / ['first half']\". So on that runner the reader returned only the first line of a folded trailer value, where the case expects git's unfolded value. The reader asks git for `%(trailers:only,unfold)`; what differs on Windows is not established: the git version on the runner image, a carriage return in the commit message the fixture writes (a `\\r\\n` line end makes the continuation line something other than a folded line), or how the fixture hands the message to git there.\n\nThis matters beyond the case: the product's reader of a commit's verdict must read the same value on every platform a plan is driven on, and a reason that the WRITER refuses to fold can still arrive folded from a commit written by hand or by another tool.\n\nDo this in order. First establish the cause with evidence, without a Windows machine: read the failing job's log for the git version (read-only gh calls on those two runs), read how the fixture writes the message (text mode, newline translation, `-F` file against `-m`), and reproduce the Windows shape here by writing the same bytes Windows would write (a `\\r\\n` message through `git commit -F`, and `core.autocrlf` as the runner sets it) and reading it back with the reader. Second, fix where the cause is: if the reader must tolerate a carriage return in a trailer block, it does so for every trailer it reads and not only the reason; if the fixture is what differs, the fixture writes bytes; if the runner's git does not support the unfold option the reader asks for, the reader says so as a reason it could not read, rather than returning half a value. Third, a case that is red here, on this platform, for the cause you found (the reproduction above), so the next regression does not need a Windows runner to be seen.\n\nACCEPTANCE.\n1. The cause is named with its evidence in the outcome, or stated as not established with what was ruled out; a case skipped or loosened on Windows is not accepted.\n2. A case reproducing the Windows shape on any platform is red at HEAD and green after the fix.\n3. The reader returns the same verdict for a commit whose message uses `\\r\\n` line ends as for the same message with `\\n`, for every trailer name it reads; proven by a case.\n4. The orchestrator dispatches CI for you: hand back READY-FOR-RUN when the suite is green here, and say which job must show vt8 passing. File only after that run is read.\n\nDEPENDANTS to answer for by name: status and the panel (they print what the reader returns), the commit writer's refusal of a line break in a reason (it relies on the reader's unfolding rule), the doctor's trail checks and `_invariants.trailer_carriers`.",
       "files": [
         "plugins/audit/scripts/manifest/_commit_trail.py",
@@ -2174,14 +2216,18 @@
       "dependsOn": [],
       "attempts": 1,
       "maxAttempts": 3,
-      "commit": null,
+      "commit": "0e4a8ce65917",
       "outcome": {
-        "technical": null,
-        "descriptive": null
+        "technical": "MECHANISM (established, reproduced on git 2.53.0 here): tests/test__commit_trail.py's _commit wrote the message file in text mode, so on Windows each \\n became \\r\\n. Git breaks lines at \\n only, so %(trailers:only,unfold) keeps the \\r before a fold and prints `Audit-Override: first half\\r second  half` (it trims a \\r at a value's end). _commit_trail.trailer_pairs, and the suite's reference reading _parsed of `git interpret-trailers --parse`, both split git's output with str.splitlines(), which also breaks at a bare \\r, so both cut the value to 'first half' - exactly CI's `'first half' / ['first half']`, and why vt1 (reader vs git parse) stayed green while vt8 went red. Ruled out: core.autocrlf (a commit under -c core.autocrlf=true keeps the \\r in the message the same); the runner's git version is not in the failed log and was not needed, since the same bytes reproduce the same cut on macOS. FIX: trailer_pairs splits only at \\n and reads a \\r left inside a value, with the whitespace after it, as a line break folded into one space by git's unfold rule (_CARRIAGE_RETURN = re.compile(\"\\r[ \\t\\r\\v\\f]*\")), for every trailer name; import re added; the module's rule comment gained the property. SUITE: _commit writes the message bytes as given (newline=\"\"), so every platform commits the same message; _parsed splits at \\n only; new cases vt21 (reader fed a CRLF message as git prints it, every line still ending CRLF, and a lone \\r - every key reads as the LF message reads, no \\r in any key or value), vt22 (the same message committed with CRLF and with LF reads an equal verdict for task, status, digest, run and the folded override, no \\r in any value), vt23 (a lone \\r in a value reads as the LF-folded value, 'one two'). MUTATIONS in a scratch export (each confirmed landed, __pycache__ purged): \\r rule dropped -> vt21-vt23 red 54/57; splitlines() back -> vt21-vt23 red 54/57; \\r deleted not folded -> vt21-vt23 red 54/57; over-fire collapsing every whitespace run -> vt1, vt8, vt21, vt22, wt5 red 52/57; fix 57/57. COMMANDS (worktree, exit 0 each): sweep over test__commit_trail, test__deps, test__output_lints, test__refs, tools/_suite.py -> '5/5 files ok, 853 cases'; cp1252 sweep over the suite -> '1/1 files ok, 57 cases'; ruff and vermin -t=3.8- clean on both files. WINDOWS CONFIRMATION: the orchestrator committed this tree's diff as f1a3f0f4 on ci/P169-vt8; CI run 44424245100 concluded success, every job green; on leg 'selftests (windows, plain 3)' (job 135224843473) the sweep printed `ok tests/test__commit_trail.py 57 cases` at 2026-11-18T23:56:56Z, so all 57 cases of the file - vt8, vt21, vt22 and vt23 among them - passed on Windows; the sweep prints no per-case line for a green file, and no Windows cp1252 leg result is claimed beyond the run being green. DEPENDANTS: status, the panel and the report - still correct, they print what verdicts_at/plan_verdicts return, now whole and free of \\r; the writer's refusal of a line break (_line_break_refusal) - unchanged and still right, it already treats \\r as a line break, now the reader's rule too; the doctor's trail checks and _invariants.trailer_carriers - unaffected, trailer_carriers reads %B itself, not this reader, and its splitlines() treats \\r\\n as one break with edges stripped, so its single-line nonce values read the same under CRLF; PLUGIN-BUILD-GUIDE.md section at line 1456 - no sentence becomes untrue (the reader still goes through git's own parser). Tests to note for the record (not in tests.add, which is empty): vt21, vt22, vt23.",
+        "descriptive": "A commit's verdict trailers now read the same from a \\r\\n message as from \\n on every platform; vt8 green on Windows CI (run 44424245100), and the Windows shape is held by cases red on any platform."
       },
       "startedAt": "2026-11-18T23:43:05Z",
-      "completedAt": null,
-      "verifiedBy": [],
+      "completedAt": "2026-11-19T00:17:54Z",
+      "verifiedBy": [
+        "vt21: the reader fed the CRLF shapes git's output can carry (crlf as git prints it, every line ending crlf, a lone CR) reads every key as the LF message does, with no CR in any key or value",
+        "vt22: the same message committed with CRLF and with LF reads an equal verdict for every trailer name, the folded override included",
+        "vt23: a lone CR inside a value reads as the LF-folded value"
+      ],
       "notes": [
         {
           "at": "2026-11-18T19:39:18Z",
@@ -2210,6 +2256,24 @@
             "ms": 331025,
             "basis": "durationMs in run 2026-11-19T00:17:32Z.6f7dd1's record (run-test-gate --record)",
             "runId": "2026-11-19T00:17:32Z.6f7dd1"
+          },
+          {
+            "basis": "hand-out to the filed return (journal row task.return.filed at 2026-11-19T00:11:23Z); the agent's own start is not recorded, so any wait before it is inside this length",
+            "kind": "writer",
+            "ms": 1695000,
+            "startedAt": "2026-11-18T23:43:08Z"
+          },
+          {
+            "basis": "hand-out stamped by the drive -> start of evidence row 2026-11-19T00:17:32Z.6f7dd1",
+            "kind": "wait",
+            "ms": 1000,
+            "startedAt": "2026-11-19T00:11:37Z"
+          },
+          {
+            "basis": "commit-task-work.py's own 1 run(s), timed by the drive and added up, commit 0e4a8ce65917",
+            "kind": "commit",
+            "ms": 1722,
+            "startedAt": "2026-11-19T00:17:51Z"
           }
         ],
         "firstStartedAt": "2026-11-18T23:43:05Z"
@@ -2281,6 +2345,18 @@
         "runId": "2026-11-19T00:17:49Z.8f2d7e",
         "status": "passed",
         "at": "2026-11-19T00:17:49Z"
+      },
+      "intentCheck": {
+        "answer": "not-asked",
+        "commit": "0e4a8ce65917",
+        "at": "2026-11-19T00:17:54Z",
+        "basis": "review.perTask signals: no signal fired - red-first proved and the return's gates agree with the recorded green"
+      },
+      "redFirst": {
+        "at": "2026-11-19T00:11:22Z",
+        "basis": "`python3 tests/test__commit_trail.py --selftest` in a throwaway tree at HEAD exited 1 with 3 of 57 collected tests failing an assertion, the task's own among them (HEAD's own tests green on HEAD's code), each passing with the working tree's implementation - vt21 (house FAIL), vt22 (house FAIL), vt23 (house FAIL): SELFTEST FAILED: 54/57 cases passed; run without CLAUDE_PROJECT_DIR; dependencies linked from the project root, entry by entry as symlinks: node_modules - .cache, .vite, .vite-temp are not linked and a new entry a runner makes beside the links stays in the throwaway, but a write into a linked entry lands in the project's own node_modules and is not watched; no .npmrc to carry or drop; deadline: 480s, the default - the command is not a sweep naming suites, so there is no recorded cost to size it from",
+        "status": "proved",
+        "source": "red-first-helper"
       }
     },
     {
@@ -2388,10 +2464,113 @@
         "P169-R8"
       ],
       "timing": {
-        "stages": [],
+        "stages": [
+          {
+            "kind": "selection",
+            "startedAt": "2026-11-19T00:40:06Z",
+            "ms": 12326,
+            "basis": "selectionMs in run 2026-11-19T00:46:33Z.6e4fe1's record (run-test-gate --record), ending at its startedAt",
+            "runId": "2026-11-19T00:46:33Z.6e4fe1"
+          },
+          {
+            "kind": "gate",
+            "startedAt": "2026-11-19T00:40:19Z",
+            "ms": 373357,
+            "basis": "durationMs in run 2026-11-19T00:46:33Z.6e4fe1's record (run-test-gate --record)",
+            "runId": "2026-11-19T00:46:33Z.6e4fe1"
+          }
+        ],
         "firstStartedAt": "2026-11-18T23:43:09Z"
       },
-      "reviewPerTask": "signals"
+      "reviewPerTask": "signals",
+      "lastRun": {
+        "runId": "2026-11-19T00:46:47Z.8543cb",
+        "durationMs": 178,
+        "selectionMs": 12390,
+        "status": "passed",
+        "failed": [],
+        "verdictSource": "reused",
+        "reusedFrom": {
+          "runId": "2026-11-19T00:46:33Z.6e4fe1",
+          "ts": "2026-11-19T00:46:33Z",
+          "status": "passed"
+        },
+        "reuseKey": "1:sha256:2fc8d1c674bdf9bc41e0ca1633c7634d408ab6879d1bae9d33cafd4fcd71dc54",
+        "gateDigest": "sha256:a1fdc79fb4f366fd25d69d528d6745f95894e6d805826f4fb9b1eb4bb47a8b0d",
+        "gateSource": "task",
+        "banners": [],
+        "at": "2026-11-19T00:46:47Z",
+        "steps": [
+          {
+            "name": "python3 tools/gate-parity.py",
+            "exit": 0,
+            "ran": null,
+            "measured": "not-knowable",
+            "suiteReader": "none",
+            "command": "python3 tools/gate-parity.py",
+            "reusedFrom": {
+              "runId": "2026-11-19T00:46:33Z.6e4fe1",
+              "ts": "2026-11-19T00:46:33Z"
+            }
+          },
+          {
+            "name": "python3 tools/sweep-selftests.py tools/gate-parity.py tools/check-browser-install.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_io.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_phase.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_import_evidence.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_outside_run.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_run_test_gate.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+            "exit": 0,
+            "ran": null,
+            "measured": "not-knowable",
+            "suiteReader": "none",
+            "reusedFrom": {
+              "runId": "2026-11-19T00:46:33Z.6e4fe1",
+              "ts": "2026-11-19T00:46:33Z"
+            }
+          }
+        ],
+        "machine": "this run had the machine to itself",
+        "repeatedRun": {
+          "runId": "2026-11-19T00:46:33Z.6e4fe1",
+          "startedAt": "2026-11-19T00:40:19Z",
+          "durationMs": 373357,
+          "selectionMs": 12326,
+          "status": "passed",
+          "failed": [],
+          "reuseKey": "1:sha256:2fc8d1c674bdf9bc41e0ca1633c7634d408ab6879d1bae9d33cafd4fcd71dc54",
+          "gateDigest": "sha256:a1fdc79fb4f366fd25d69d528d6745f95894e6d805826f4fb9b1eb4bb47a8b0d",
+          "gateSource": "task",
+          "banners": [],
+          "at": "2026-11-19T00:46:33Z",
+          "testedState": {
+            "head": "0e4a8ce6",
+            "dirtyDigest": "sha256:3b04ea568497b4f1cdf648ea02c4497426f9f50cc716e537d81c91874bcda424",
+            "scopeDigest": "sha256:8b831ad7bc34c2a94bbdd7ef2e06fff8e33b9031b3e7ccab28336128e93753ed",
+            "scopeListDigest": "sha256:65853eccffa26b2f2e96c5202a91aa4b604c480ed68e90ae14836f33775c6a88",
+            "treeKey": "5929abf25f40"
+          },
+          "steps": [
+            {
+              "name": "python3 tools/gate-parity.py",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "suiteReader": "none",
+              "command": "python3 tools/gate-parity.py",
+              "durationMs": 1372
+            },
+            {
+              "name": "python3 tools/sweep-selftests.py tools/gate-parity.py tools/check-browser-install.py + affected/related: .claude/hooks/arm-release-bypass.py, .claude/hooks/guard-release.py, .claude/hooks/guard-uncommitted.py, .claude/hooks/require-claim-block.py, tests/test__ado_connect.py, tests/test__ado_conventions.py, tests/test__ado_drift.py, tests/test__ado_fetch.py, tests/test__ado_fields.py, tests/test__ado_parent.py, tests/test__ado_tracked.py, tests/test__affected_tests.py, tests/test__areas.py, tests/test__branch.py, tests/test__claude_home.py, tests/test__clause_coverage.py, tests/test__cli_fmt.py, tests/test__commit_trail.py, tests/test__config.py, tests/test__config_rules.py, tests/test__config_rules_lints.py, tests/test__demo_cast.py, tests/test__deps.py, tests/test__doctor_ado.py, tests/test__doctor_completions.py, tests/test__doctor_hygiene.py, tests/test__doctor_policy.py, tests/test__doctor_report.py, tests/test__doctor_setup.py, tests/test__doctor_trail.py, tests/test__evidence_io.py, tests/test__evidence_view.py, tests/test__excerpt.py, tests/test__filed_returns.py, tests/test__fmt.py, tests/test__gate_derive.py, tests/test__gate_feed.py, tests/test__help.py, tests/test__help_lints.py, tests/test__id_refs.py, tests/test__id_shape.py, tests/test__impact.py, tests/test__invariants.py, tests/test__journal_io.py, tests/test__json_schema.py, tests/test__live_copy.py, tests/test__loader.py, tests/test__locks.py, tests/test__machine_paths.py, tests/test__manifest_ado.py, tests/test__manifest_crossrefs.py, tests/test__manifest_io.py, tests/test__manifest_merge.py, tests/test__manifest_phases.py, tests/test__manifest_rules.py, tests/test__manifest_typos.py, tests/test__manifest_vocab.py, tests/test__merge_install.py, tests/test__output.py, tests/test__output_lints.py, tests/test__panel_composition.py, tests/test__panel_discovery.py, tests/test__panel_page.py, tests/test__panel_paths.py, tests/test__panel_policy.py, tests/test__panel_runstate.py, tests/test__panel_settings.py, tests/test__panel_state.py, tests/test__panel_ui.py, tests/test__panel_usage.py, tests/test__panel_viewer.py, tests/test__panel_write.py, tests/test__policy.py, tests/test__priority.py, tests/test__proc_group.py, tests/test__proposals.py, tests/test__refs.py, tests/test__report_html.py, tests/test__report_md.py, tests/test__report_page.py, tests/test__report_ui.py, tests/test__report_usage.py, tests/test__runner_collects.py, tests/test__runner_output.py, tests/test__scope_companions.py, tests/test__scoped_commit.py, tests/test__skill_places.py, tests/test__status_facts.py, tests/test__surface_digest.py, tests/test__task_outputs.py, tests/test__task_timing.py, tests/test__tree_stamp.py, tests/test__ui_theme.py, tests/test__ui_theme_lints.py, tests/test__usage_bench.py, tests/test__usage_core.py, tests/test__usage_coverage.py, tests/test__usage_detail.py, tests/test__usage_economics.py, tests/test__usage_load.py, tests/test__usage_markdown.py, tests/test__usage_overview.py, tests/test__usage_routing.py, tests/test__usage_spend.py, tests/test__usage_viz.py, tests/test__utc_stamp.py, tests/test__verdict_binding.py, tests/test__warning_groups.py, tests/test__wave.py, tests/test__worktrees.py, tests/test_ado_connect.py, tests/test_audit_doctor.py, tests/test_audit_journal.py, tests/test_audit_lock.py, tests/test_audit_logs.py, tests/test_audit_lookup.py, tests/test_audit_status.py, tests/test_audit_task.py, tests/test_audit_usage.py, tests/test_audit_version.py, tests/test_bench_report.py, tests/test_check_ado_item.py, tests/test_close_phase.py, tests/test_commit_task_work.py, tests/test_derive_phase_gate.py, tests/test_detect_plan_skip.py, tests/test_drive_phase.py, tests/test_drive_without_model.py, tests/test_explain_ado_drift.py, tests/test_fetch_ado_items.py, tests/test_full_gate.py, tests/test_gen_demo_manifest.py, tests/test_gen_demo_usage.py, tests/test_guard_bash_writes.py, tests/test_guard_capabilities.py, tests/test_guard_edits.py, tests/test_guard_history_rewrite.py, tests/test_guard_secrets_read.py, tests/test_hooks.py, tests/test_import_evidence.py, tests/test_integrate_task.py, tests/test_journal_writes.py, tests/test_manage_worktrees.py, tests/test_materialize_proposal.py, tests/test_merge_manifest.py, tests/test_meter_usage.py, tests/test_migrate_json_encoding.py, tests/test_migrate_manifest.py, tests/test_panel_server.py, tests/test_plan_window.py, tests/test_propose_gates.py, tests/test_py_launch.py, tests/test_read_ado_links.py, tests/test_record_outside_run.py, tests/test_record_risk_confirmation.py, tests/test_remind_tdd.py, tests/test_render_report.py, tests/test_repair_commits.py, tests/test_repair_tests_add.py, tests/test_require_plan.py, tests/test_resolve_ado_parent.py, tests/test_resolve_ado_tracked.py, tests/test_resolve_branch.py, tests/test_run_agent_session.py, tests/test_run_test_gate.py, tests/test_set_priority.py, tests/test_stamp_verification.py, tests/test_usage_ledger.py, tests/test_validate_config.py, tests/test_validate_manifest.py, tests/test_verify_invariants.py, tools/_suite.py, tools/affected.py, tools/bench-hooks.py, tools/capture-demo-gif.py, tools/check-committed-pii.py, tools/check-example-ledgers.py, tools/check-example-pins.py, tools/check-git-pipeline.py, tools/check-plan-gate-e2e.py, tools/check-prohibitions.py, tools/check-release-published.py, tools/check-rendered-artifacts.py, tools/ci-verified.py, tools/count-ui-pins.py, tools/harvest-worktree.py, tools/measure-affected-miss.py, tools/measure-context.py, tools/orchestrator-state.py, tools/prove-gates.py, tools/reach-diff.py, tools/release.py, tools/stream-cost.py, tools/sweep-selftests.py, tools/where.py",
+              "exit": 0,
+              "ran": null,
+              "measured": "not-knowable",
+              "suiteReader": "none",
+              "durationMs": 371909
+            }
+          ]
+        }
+      },
+      "testEvidence": {
+        "runId": "2026-11-19T00:46:47Z.8543cb",
+        "status": "passed",
+        "at": "2026-11-19T00:46:47Z"
+      }
     },
     {
       "id": "P169.15-6l3",

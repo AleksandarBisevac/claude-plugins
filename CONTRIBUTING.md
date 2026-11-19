@@ -219,13 +219,27 @@ and its system packages from GitHub's cache, and a run can read only what its ow
 or the default branch saved. So on a verified push to `main` they skip the slice step
 and seed: their install (`.github/actions/browser-install`, the one copy both call)
 installs nothing when an entry exists for both keys, and otherwise installs and saves
-what the next `ci/` branch's first run restores. Without that, `main` would save no
-entry and every `ci/` branch's first run would miss.
+what a `ci/` branch's first run is meant to restore. Without that, `main` would save no
+entry and every `ci/` branch's first run would miss. Both branches of a seed have run on a
+runner, on a branch with `seed` forced on by a probe (runs 44426388905, a miss that saved,
+and 44428930205, a hit that installed and saved nothing); a seed on `main` from a real
+verified push, and a `ci/` branch restoring what one saved, have not yet been seen in a
+run. A seed never reddens the
+verified push: on that path the install step carries `continue-on-error` and the step after
+it writes a warning when it failed, while on every other run a failed install is red as
+before (the comment above `browser-panel` in `ci.yml`).
+
+**The install's shell is run here, not only on a runner.** `tools/check-browser-install.py`,
+in the `lint` slice, executes the action's own `run:` blocks against stubs of sudo, apt and
+the set's ownership - a hit that falls back to the archive is red there, where a runner
+shows it green with one warning - and its docstring says what runner behaviour the stubs
+cannot see.
 
 **`tools/gate-parity.py` holds the workflow to the list** - in the `lint` slice, with its
 own cases in the sweep: every slice a job names is one `--list` prints, every per-run
-slice is run by some job outside the release tier, and a sharded slice's matrix runs every
-part 1..N on every runner (`shard_matrix_drift()`). It compares no description of the gate
+slice is run by some job outside the release tier, a step or job running a slice never
+carries a `continue-on-error` that is not `false` (`_may_fail()`), and a sharded slice's
+matrix runs every part 1..N on every runner (`shard_matrix_drift()`). It compares no description of the gate
 set against the runner: the documents point at `verify.sh --list` rather than listing
 commands, so there is no such description left to read. It also holds the rules that read a runner or a file for a living: every check the
 `--affected` selector names is one the runner can dispatch (`affected_dispatch()`),

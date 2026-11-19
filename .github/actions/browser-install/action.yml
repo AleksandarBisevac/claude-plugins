@@ -49,6 +49,13 @@ description: >-
 # The `path` each cache step names is part of the entry's version, so a lookup that
 # names another path finds nothing: the seed's lookups below name the same two
 # paths as the restores.
+#
+# THE SHELL BELOW IS RUN, NOT ONLY READ: tools/check-browser-install.py (verify.sh's
+# `lint` slice) executes the `pins`, `plan` and `sysdeps-install` scripts out of
+# this file against stubs of sudo, apt and the set's ownership, and reads the
+# steps' keys for the seed's wiring. Its selftest breaks a copy of this file once
+# per property by replacing a line it names, so an edit that moves such a line
+# turns that row red as "not applied" until the row names the new text.
 inputs:
   seed:
     description: >-
